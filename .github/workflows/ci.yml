@@ -248,6 +248,18 @@ jobs:
         # with --require-mago) and never counts as Mago acceptance.
         timeout-minutes: 10
         run: node scripts/test-php-laravel-type-roundtrip.mjs
+      - name: Run the Composer/Laravel native-gates harness (issue #61)
+        # Pure planner legs on every OS: targeted selection, mandatory
+        # cross-module gates, exactly-once suites, hostile decoder
+        # probes, stale-custody zero-spawn refusals, and the release-
+        # full fallback — driven in-process with process-launching
+        # functions disabled, so zero-spawn claims are enforced by the
+        # interpreter. The Rust `native run` parity leg runs when the
+        # built binary is present; the confined runtime qualification
+        # leg stays pending its operator/CI provisioning (research doc
+        # section 8.5) and never fakes a pass.
+        timeout-minutes: 10
+        run: node scripts/test-php-laravel-native-gates.mjs
       - name: Run the Mago integration gate, fake mode (issue #55)
         # Requires PHP but no Mago binary and no network: the receipt
         # decoder, the analysis states, and the strict-profile gates run
@@ -262,6 +274,13 @@ jobs:
       - name: Run the Laratesto scenario E2E gate (issue #56)
         timeout-minutes: 10
         run: node scripts/test-php-laravel-scenario-tests.mjs
+      - name: Run the Laravel routes runtime gate (issue #60)
+        # The composed types + operations + routes generation through
+        # the real adapter exchange, then the planner fixture serving
+        # the Today/focus endpoints through the generated surface over
+        # the real HTTP kernel (the provisioned vendor tree above).
+        timeout-minutes: 15
+        run: node scripts/test-php-laravel-routes.mjs
       - name: Run the Laravel migration pipeline gate (issue #57)
         # The pipeline stages (CLI goldens, PHP artifacts, custody)
         # run wherever the repo's gates run; the PostgreSQL execution

@@ -1,0 +1,47 @@
+{
+  "schema_version": "lekalo/observed-baseline/v0.1.0",
+  "identity": "dev.lekalo.observed-baseline@0.1.0",
+  "role": "observed-baseline",
+  "target": "node-typescript",
+  "note": "The pinned observed baseline of the Node planner implementation, frozen before the first contracted Laravel + Vue pilot (issue #114). Source behavior is primary here: this fixture records what the Node backend speaks and does today, digest-pinned, so any later change is a visible baseline move and no old-backend removal is decided without the contract/equivalence report. Public fixture: planner and target naming only.",
+  "pins": [
+    {
+      "artifact": "event-envelope",
+      "description": "the observed event emission envelope and its durable observation contract",
+      "path": "tests/fixtures/pilot/observed-baseline/event-envelope.json"
+    },
+    {
+      "artifact": "integration-protocol",
+      "description": "the closed core-adapter wire protocol (lekalo.target/v1 @ 0.3.2) with its schema and committed goldens",
+      "path": "tests/fixtures/pilot/observed-baseline/integration-protocol.json"
+    },
+    {
+      "artifact": "openapi.contracted-slice",
+      "description": "the OpenAPI document of the contracted planner-slice fixture (node-typescript target)",
+      "path": "tests/fixtures/contracted/planner-slice/openapi-planner.json"
+    },
+    {
+      "artifact": "openapi.planner-join",
+      "description": "the #46 OpenAPI projection of the current planner join - the live API truth both targets answer to",
+      "path": "tests/fixtures/php-laravel/routes/inputs/openapi/planner.openapi.json"
+    },
+    {
+      "artifact": "behavior.scenario-rows",
+      "description": "the observed behavior baseline: semantic outcome rows of the six corpus scenarios under node:test",
+      "path": "tests/fixtures/pilot/observed-baseline/behavior/node.scenario-rows.json"
+    },
+    {
+      "artifact": "equivalence.comparison",
+      "description": "the neutral node/laravel scenario comparison the removal gate consumes",
+      "path": "tests/fixtures/pilot/equivalence/node-laravel.scenario-comparison.json"
+    }
+  ],
+  "digests": {
+    "tests/fixtures/pilot/observed-baseline/event-envelope.json": "sha256:7a3cec30212a04708f6eacf26f494037866a93e344adb346fa5ea247b2bdea5c",
+    "tests/fixtures/pilot/observed-baseline/integration-protocol.json": "sha256:aeb2c709d165ae1342defb19cd63166ba0ddebeaaca8264008f24b7558d5dd86",
+    "tests/fixtures/contracted/planner-slice/openapi-planner.json": "sha256:e016735988a34826030f8582bab8622d2afd3cab72089cd84017a42fc6452d1f",
+    "tests/fixtures/php-laravel/routes/inputs/openapi/planner.openapi.json": "sha256:b007bdd2ad1982b385b7190b037d81e204e5fd62ae5c991f98a98078d36edbd0",
+    "tests/fixtures/pilot/observed-baseline/behavior/node.scenario-rows.json": "sha256:893adf983a9a4ec8428dcef981e0a70de47e67a83b316acaeb88ec204c5a99ed",
+    "tests/fixtures/pilot/equivalence/node-laravel.scenario-comparison.json": "sha256:839411435421da29628bb1611bb45782060a7367ce99f44ad77c9d2534d76e21"
+  }
+}

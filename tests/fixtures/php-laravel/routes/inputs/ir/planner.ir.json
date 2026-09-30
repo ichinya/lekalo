@@ -1,0 +1,952 @@
+{
+ "contract": "dev.lekalo.ir@0.2.16",
+ "definitions": [
+  {
+   "derived_from": [
+    "PLANNER-REQ-002"
+   ],
+   "description": "The workspace tasks with no planning row yet, in stable title order",
+   "id": "planner.backlog_tasks",
+   "kind": "query",
+   "reads": [
+    "planner.user_task_planning"
+   ],
+   "returns": {
+    "list": {
+     "ref": "planner.user_task_planning"
+    }
+   },
+   "version": 1
+  },
+  {
+   "derived_from": [
+    "PLANNER-REQ-004"
+   ],
+   "description": "The planning rows of earlier days, served at their original planned_for; a read never rewrites the stored date",
+   "id": "planner.carry_over",
+   "kind": "query",
+   "reads": [
+    "planner.user_task_planning"
+   ],
+   "returns": {
+    "list": {
+     "ref": "planner.user_task_planning"
+    }
+   },
+   "version": 1
+  },
+  {
+   "derived_from": [
+    "PLANNER-REQ-007"
+   ],
+   "description": "Complete one planned task; stamps completed_at from the declared clock and refuses an already completed row",
+   "effects": [
+    "planner.effect_planning_completed"
+   ],
+   "id": "planner.complete_planning",
+   "input": [
+    {
+     "name": "planning_id",
+     "required": true,
+     "type": {
+      "ref": "planner.planning_id"
+     }
+    }
+   ],
+   "kind": "command",
+   "version": 1
+  },
+  {
+   "derived_from": [
+    "PLANNER-REQ-007"
+   ],
+   "description": "The planning rows the actor completed, newest day first; a completed row keeps its day and position",
+   "id": "planner.completed_planning",
+   "kind": "query",
+   "reads": [
+    "planner.user_task_planning"
+   ],
+   "returns": {
+    "list": {
+     "ref": "planner.user_task_planning"
+    }
+   },
+   "version": 1
+  },
+  {
+   "derived_from": [
+    "PLANNER-REQ-001"
+   ],
+   "description": "Count focused tasks",
+   "id": "planner.count_focused",
+   "kind": "query",
+   "reads": [
+    "planner.task"
+   ],
+   "returns": {
+    "ref": "planner.task_state"
+   },
+   "version": 1
+  },
+  {
+   "applies_to": [
+    "planner.focus_task"
+   ],
+   "decision": "deny",
+   "description": "Bulk focus is out of scope",
+   "id": "planner.deny_bulk_focus",
+   "kind": "policy",
+   "version": 1
+  },
+  {
+   "applies_to": [
+    "planner.complete_planning",
+    "planner.move_task",
+    "planner.pause_planning",
+    "planner.plan_task",
+    "planner.reorder_planned",
+    "planner.unplan_task"
+   ],
+   "decision": "deny",
+   "derived_from": [
+    "PLANNER-REQ-006"
+   ],
+   "description": "Planning state is scoped to the actor's own workspace and user; foreign rows are invisible and every cross-tenant access is denied",
+   "id": "planner.deny_foreign_planning",
+   "kind": "policy",
+   "version": 1
+  },
+  {
+   "description": "Stamps the completion time of one planning row",
+   "emits": [
+    "planner.task_completed"
+   ],
+   "entity": "planner.user_task_planning",
+   "id": "planner.effect_planning_completed",
+   "kind": "effect",
+   "operation": "update",
+   "version": 1
+  },
+  {
+   "description": "Creates one planning row for the actor",
+   "emits": [
+    "planner.task_planned"
+   ],
+   "entity": "planner.user_task_planning",
+   "id": "planner.effect_planning_created",
+   "kind": "effect",
+   "operation": "create",
+   "version": 1
+  },
+  {
+   "description": "Removes one planning row",
+   "emits": [
+    "planner.task_unplanned"
+   ],
+   "entity": "planner.user_task_planning",
+   "id": "planner.effect_planning_deleted",
+   "kind": "effect",
+   "operation": "delete",
+   "version": 1
+  },
+  {
+   "description": "Moves one planning row to its new day and position",
+   "entity": "planner.user_task_planning",
+   "id": "planner.effect_planning_moved",
+   "kind": "effect",
+   "operation": "update",
+   "version": 1
+  },
+  {
+   "description": "Stamps the pause time of one planning row",
+   "emits": [
+    "planner.planning_paused"
+   ],
+   "entity": "planner.user_task_planning",
+   "id": "planner.effect_planning_paused",
+   "kind": "effect",
+   "operation": "update",
+   "version": 1
+  },
+  {
+   "description": "Rewrites the order of one planned day under the optimistic version",
+   "emits": [
+    "planner.planning_reordered"
+   ],
+   "entity": "planner.user_task_planning",
+   "id": "planner.effect_planning_reordered",
+   "kind": "effect",
+   "operation": "update",
+   "version": 1
+  },
+  {
+   "description": "The workspace tasks with no planning row yet",
+   "id": "planner.endpoint_backlog",
+   "invokes": "planner.backlog_tasks",
+   "kind": "endpoint",
+   "method": "GET",
+   "path": "/planning/backlog",
+   "version": 1
+  },
+  {
+   "description": "The planning rows of earlier days at their original dates",
+   "id": "planner.endpoint_carry_over",
+   "invokes": "planner.carry_over",
+   "kind": "endpoint",
+   "method": "GET",
+   "path": "/planning/carry-over",
+   "version": 1
+  },
+  {
+   "description": "Complete one planned task from the screen",
+   "id": "planner.endpoint_complete",
+   "invokes": "planner.complete_planning",
+   "kind": "endpoint",
+   "method": "POST",
+   "path": "/planning/{planning_id}/complete",
+   "version": 1
+  },
+  {
+   "description": "The planning rows the actor completed",
+   "id": "planner.endpoint_completed",
+   "invokes": "planner.completed_planning",
+   "kind": "endpoint",
+   "method": "GET",
+   "path": "/planning/completed",
+   "version": 1
+  },
+  {
+   "description": "Focus one task from a path id",
+   "id": "planner.endpoint_focus_task_by_id",
+   "invokes": "planner.focus_task",
+   "kind": "endpoint",
+   "method": "POST",
+   "path": "/tasks/{task_id}/focus",
+   "version": 1
+  },
+  {
+   "description": "Move one planned task to an explicit day and position",
+   "id": "planner.endpoint_move",
+   "invokes": "planner.move_task",
+   "kind": "endpoint",
+   "method": "PATCH",
+   "path": "/planning/{planning_id}",
+   "version": 1
+  },
+  {
+   "description": "Pause one planned task",
+   "id": "planner.endpoint_pause",
+   "invokes": "planner.pause_planning",
+   "kind": "endpoint",
+   "method": "POST",
+   "path": "/planning/{planning_id}/pause",
+   "version": 1
+  },
+  {
+   "description": "Plan one task into the actor's day",
+   "id": "planner.endpoint_plan",
+   "invokes": "planner.plan_task",
+   "kind": "endpoint",
+   "method": "POST",
+   "path": "/planning",
+   "version": 1
+  },
+  {
+   "description": "Reorder one planned day under the optimistic version",
+   "id": "planner.endpoint_reorder",
+   "invokes": "planner.reorder_planned",
+   "kind": "endpoint",
+   "method": "POST",
+   "path": "/planning/reorder",
+   "version": 1
+  },
+  {
+   "description": "The maintained focus route of the fixture app, checked in contracted mode",
+   "id": "planner.endpoint_tasks_focus",
+   "invokes": "planner.focus_task",
+   "kind": "endpoint",
+   "method": "POST",
+   "path": "/api/tasks/{task_id}/focus",
+   "version": 1
+  },
+  {
+   "description": "The today board: the planner focus state over HTTP",
+   "id": "planner.endpoint_today",
+   "invokes": "planner.count_focused",
+   "kind": "endpoint",
+   "method": "GET",
+   "path": "/today",
+   "version": 1
+  },
+  {
+   "description": "The planning rows of the actor-local today",
+   "id": "planner.endpoint_today_planning",
+   "invokes": "planner.today_planning",
+   "kind": "endpoint",
+   "method": "GET",
+   "path": "/planning/today",
+   "version": 1
+  },
+  {
+   "description": "Remove one planned task from the plan",
+   "id": "planner.endpoint_unplan",
+   "invokes": "planner.unplan_task",
+   "kind": "endpoint",
+   "method": "DELETE",
+   "path": "/planning/{planning_id}",
+   "version": 1
+  },
+  {
+   "derived_from": [
+    "PLANNER-REQ-001"
+   ],
+   "description": "Focus one task",
+   "effects": [
+    "planner.update_task"
+   ],
+   "id": "planner.focus_task",
+   "input": [
+    {
+     "name": "task_id",
+     "required": true,
+     "type": {
+      "ref": "planner.task_id"
+     }
+    }
+   ],
+   "kind": "command",
+   "version": 1
+  },
+  {
+   "derived_from": [
+    "PLANNER-REQ-001"
+   ],
+   "description": "The today board: list the planner tasks",
+   "id": "planner.list_tasks",
+   "kind": "query",
+   "reads": [
+    "planner.task"
+   ],
+   "returns": {
+    "list": {
+     "ref": "planner.task"
+    }
+   },
+   "version": 1
+  },
+  {
+   "derived_from": [
+    "PLANNER-REQ-002"
+   ],
+   "description": "Move one planned task to an explicit day and position",
+   "effects": [
+    "planner.effect_planning_moved"
+   ],
+   "id": "planner.move_task",
+   "input": [
+    {
+     "name": "planning_id",
+     "required": true,
+     "type": {
+      "ref": "planner.planning_id"
+     }
+    },
+    {
+     "name": "planned_for",
+     "required": true,
+     "type": {
+      "ref": "planner.planning_date"
+     }
+    },
+    {
+     "name": "position",
+     "required": true,
+     "type": {
+      "ref": "planner.position"
+     }
+    }
+   ],
+   "kind": "command",
+   "version": 1
+  },
+  {
+   "derived_from": [
+    "PLANNER-REQ-003"
+   ],
+   "description": "Pause one planned task; stamps paused_at from the declared clock",
+   "effects": [
+    "planner.effect_planning_paused"
+   ],
+   "id": "planner.pause_planning",
+   "input": [
+    {
+     "name": "planning_id",
+     "required": true,
+     "type": {
+      "ref": "planner.planning_id"
+     }
+    }
+   ],
+   "kind": "command",
+   "version": 1
+  },
+  {
+   "derived_from": [
+    "PLANNER-REQ-002"
+   ],
+   "description": "Plan one task into the actor's day; idempotent per workspace, user, task and day",
+   "effects": [
+    "planner.effect_planning_created"
+   ],
+   "id": "planner.plan_task",
+   "input": [
+    {
+     "name": "task_id",
+     "required": true,
+     "type": {
+      "ref": "planner.task_id"
+     }
+    },
+    {
+     "name": "planned_for",
+     "required": true,
+     "type": {
+      "ref": "planner.planning_date"
+     }
+    }
+   ],
+   "kind": "command",
+   "version": 1
+  },
+  {
+   "base": "date",
+   "description": "Calendar day a task is planned for; the actor-local date, never rewritten by reads",
+   "id": "planner.planning_date",
+   "kind": "scalar",
+   "version": 1,
+   "visibility": "project"
+  },
+  {
+   "base": "uuid",
+   "description": "Stable planning-row identifier",
+   "id": "planner.planning_id",
+   "kind": "scalar",
+   "version": 1,
+   "visibility": "project"
+  },
+  {
+   "base": "string",
+   "description": "Ordered planning-row ids of one planned day, joined by commas; the wire spelling of the reorder input",
+   "id": "planner.planning_order",
+   "kind": "scalar",
+   "version": 1,
+   "visibility": "project"
+  },
+  {
+   "description": "One planned task was paused",
+   "id": "planner.planning_paused",
+   "kind": "event",
+   "payload": [
+    {
+     "name": "planning_id",
+     "required": true,
+     "type": {
+      "ref": "planner.planning_id"
+     }
+    },
+    {
+     "name": "paused_at",
+     "required": true,
+     "type": {
+      "ref": "planner.timestamp"
+     }
+    }
+   ],
+   "version": 1
+  },
+  {
+   "description": "One planned day was reordered under a new optimistic version",
+   "id": "planner.planning_reordered",
+   "kind": "event",
+   "payload": [
+    {
+     "name": "planned_for",
+     "required": true,
+     "type": {
+      "ref": "planner.planning_date"
+     }
+    },
+    {
+     "name": "reorder_version",
+     "required": true,
+     "type": {
+      "ref": "planner.reorder_version"
+     }
+    }
+   ],
+   "version": 1
+  },
+  {
+   "base": "number",
+   "description": "One-based position of the task inside one planned day",
+   "id": "planner.position",
+   "kind": "scalar",
+   "version": 1,
+   "visibility": "project"
+  },
+  {
+   "derived_from": [
+    "PLANNER-REQ-005"
+   ],
+   "description": "Reorder one planned day; refused with reorder_stale unless the expected reorder version still matches",
+   "effects": [
+    "planner.effect_planning_reordered"
+   ],
+   "id": "planner.reorder_planned",
+   "input": [
+    {
+     "name": "planned_for",
+     "required": true,
+     "type": {
+      "ref": "planner.planning_date"
+     }
+    },
+    {
+     "name": "expected_version",
+     "required": true,
+     "type": {
+      "ref": "planner.reorder_version"
+     }
+    },
+    {
+     "name": "order",
+     "required": true,
+     "type": {
+      "ref": "planner.planning_order"
+     }
+    }
+   ],
+   "kind": "command",
+   "version": 1
+  },
+  {
+   "base": "number",
+   "description": "Optimistic reorder version of one planned day; every reorder compares and swaps it inside the planning transaction",
+   "id": "planner.reorder_version",
+   "kind": "scalar",
+   "version": 1,
+   "visibility": "project"
+  },
+  {
+   "covers": [
+    "planner.complete_planning",
+    "planner.completed_planning",
+    "planner.endpoint_complete",
+    "planner.endpoint_completed",
+    "planner.today_planning"
+   ],
+   "derived_from": [
+    "PLANNER-REQ-007"
+   ],
+   "description": "The screen completes one planned task and the completed bucket renders it",
+   "id": "planner.screen_complete_day",
+   "kind": "scenario",
+   "summary": "Given one planned row, the screen completes it; the row renders in the completed bucket with its stamped time.",
+   "version": 1
+  },
+  {
+   "covers": [
+    "planner.endpoint_focus_task_by_id",
+    "planner.endpoint_today_planning",
+    "planner.focus_task",
+    "planner.today_planning"
+   ],
+   "derived_from": [
+    "PLANNER-REQ-001"
+   ],
+   "description": "The today board loads, the actor focuses one task from the screen, and the focused state renders",
+   "id": "planner.screen_focus_flow",
+   "kind": "scenario",
+   "summary": "Given one backlog task on the today board, the actor focuses it through the screen and the focused state renders from the next read.",
+   "version": 1
+  },
+  {
+   "covers": [
+    "planner.backlog_tasks",
+    "planner.endpoint_backlog",
+    "planner.endpoint_plan",
+    "planner.plan_task"
+   ],
+   "derived_from": [
+    "PLANNER-REQ-002"
+   ],
+   "description": "The screen plans one backlog task and rolls the optimistic card back when the day conflicts",
+   "id": "planner.screen_plan_conflict_rollback",
+   "kind": "scenario",
+   "summary": "Given one backlog task, the screen plans it optimistically; a declared planning_conflict rolls the card back to its bucket.",
+   "version": 1
+  },
+  {
+   "covers": [
+    "planner.endpoint_reorder",
+    "planner.reorder_planned",
+    "planner.today_planning"
+   ],
+   "derived_from": [
+    "PLANNER-REQ-005"
+   ],
+   "description": "The screen reorders one planned day and surfaces the stale-version conflict",
+   "id": "planner.screen_stale_reorder",
+   "kind": "scenario",
+   "summary": "Given one planned day, the screen reorders it under the expected version; a declared reorder_stale keeps the rendered order.",
+   "version": 1
+  },
+  {
+   "description": "A focusable task",
+   "fields": [
+    {
+     "name": "task_id",
+     "required": true,
+     "type": {
+      "ref": "planner.task_id"
+     }
+    },
+    {
+     "name": "title",
+     "required": true,
+     "type": {
+      "ref": "planner.text"
+     }
+    },
+    {
+     "name": "state",
+     "required": true,
+     "type": {
+      "ref": "planner.task_state"
+     }
+    }
+   ],
+   "id": "planner.task",
+   "identity": [
+    "task_id"
+   ],
+   "kind": "entity",
+   "version": 1
+  },
+  {
+   "description": "One planned task was completed",
+   "id": "planner.task_completed",
+   "kind": "event",
+   "payload": [
+    {
+     "name": "planning_id",
+     "required": true,
+     "type": {
+      "ref": "planner.planning_id"
+     }
+    },
+    {
+     "name": "task_id",
+     "required": true,
+     "type": {
+      "ref": "planner.task_id"
+     }
+    },
+    {
+     "name": "completed_at",
+     "required": true,
+     "type": {
+      "ref": "planner.timestamp"
+     }
+    }
+   ],
+   "version": 1
+  },
+  {
+   "description": "A task became focused",
+   "id": "planner.task_focused",
+   "kind": "event",
+   "payload": [
+    {
+     "name": "task_id",
+     "required": true,
+     "type": {
+      "ref": "planner.task_id"
+     }
+    }
+   ],
+   "version": 1
+  },
+  {
+   "base": "uuid",
+   "description": "Stable task identifier",
+   "id": "planner.task_id",
+   "kind": "scalar",
+   "version": 1,
+   "visibility": "project"
+  },
+  {
+   "description": "A task was planned into a user's day",
+   "id": "planner.task_planned",
+   "kind": "event",
+   "payload": [
+    {
+     "name": "planning_id",
+     "required": true,
+     "type": {
+      "ref": "planner.planning_id"
+     }
+    },
+    {
+     "name": "task_id",
+     "required": true,
+     "type": {
+      "ref": "planner.task_id"
+     }
+    },
+    {
+     "name": "planned_for",
+     "required": true,
+     "type": {
+      "ref": "planner.planning_date"
+     }
+    },
+    {
+     "name": "position",
+     "required": true,
+     "type": {
+      "ref": "planner.position"
+     }
+    }
+   ],
+   "version": 1
+  },
+  {
+   "description": "Task lifecycle state",
+   "id": "planner.task_state",
+   "kind": "enum",
+   "values": [
+    {
+     "description": "Not started",
+     "value": "backlog"
+    },
+    {
+     "description": "Currently focused",
+     "value": "focused"
+    },
+    {
+     "description": "Completed",
+     "value": "done"
+    }
+   ],
+   "version": 1
+  },
+  {
+   "description": "A task was removed from the plan",
+   "id": "planner.task_unplanned",
+   "kind": "event",
+   "payload": [
+    {
+     "name": "planning_id",
+     "required": true,
+     "type": {
+      "ref": "planner.planning_id"
+     }
+    },
+    {
+     "name": "task_id",
+     "required": true,
+     "type": {
+      "ref": "planner.task_id"
+     }
+    }
+   ],
+   "version": 1
+  },
+  {
+   "base": "string",
+   "description": "Human-readable text",
+   "id": "planner.text",
+   "kind": "scalar",
+   "version": 1
+  },
+  {
+   "base": "datetime",
+   "description": "UTC event timestamp",
+   "id": "planner.timestamp",
+   "kind": "scalar",
+   "version": 1,
+   "visibility": "project"
+  },
+  {
+   "derived_from": [
+    "PLANNER-REQ-002"
+   ],
+   "description": "The planning rows of the actor-local today; the date never shifts silently",
+   "id": "planner.today_planning",
+   "kind": "query",
+   "reads": [
+    "planner.user_task_planning"
+   ],
+   "returns": {
+    "list": {
+     "ref": "planner.user_task_planning"
+    }
+   },
+   "version": 1
+  },
+  {
+   "derived_from": [
+    "PLANNER-REQ-002"
+   ],
+   "description": "Remove one planned task from the plan",
+   "effects": [
+    "planner.effect_planning_deleted"
+   ],
+   "id": "planner.unplan_task",
+   "input": [
+    {
+     "name": "planning_id",
+     "required": true,
+     "type": {
+      "ref": "planner.planning_id"
+     }
+    }
+   ],
+   "kind": "command",
+   "version": 1
+  },
+  {
+   "description": "Focuses an existing task row",
+   "emits": [
+    "planner.task_focused"
+   ],
+   "entity": "planner.task",
+   "id": "planner.update_task",
+   "kind": "effect",
+   "operation": "update",
+   "version": 1
+  },
+  {
+   "base": "uuid",
+   "description": "Workspace user identifier",
+   "id": "planner.user_id",
+   "kind": "scalar",
+   "version": 1,
+   "visibility": "project"
+  },
+  {
+   "derived_from": [
+    "PLANNER-REQ-002"
+   ],
+   "description": "One task planned into one user's day; unique per workspace, user and task; at most one active focus per user at any instant",
+   "fields": [
+    {
+     "name": "planning_id",
+     "required": true,
+     "type": {
+      "ref": "planner.planning_id"
+     }
+    },
+    {
+     "name": "workspace_id",
+     "required": true,
+     "type": {
+      "ref": "planner.workspace_id"
+     }
+    },
+    {
+     "name": "user_id",
+     "required": true,
+     "type": {
+      "ref": "planner.user_id"
+     }
+    },
+    {
+     "name": "task_id",
+     "required": true,
+     "type": {
+      "ref": "planner.task_id"
+     }
+    },
+    {
+     "name": "planned_for",
+     "required": true,
+     "type": {
+      "ref": "planner.planning_date"
+     }
+    },
+    {
+     "name": "position",
+     "required": true,
+     "type": {
+      "ref": "planner.position"
+     }
+    },
+    {
+     "name": "focused_at",
+     "type": {
+      "optional": {
+       "ref": "planner.timestamp"
+      }
+     }
+    },
+    {
+     "name": "paused_at",
+     "type": {
+      "optional": {
+       "ref": "planner.timestamp"
+      }
+     }
+    },
+    {
+     "name": "completed_at",
+     "type": {
+      "optional": {
+       "ref": "planner.timestamp"
+      }
+     }
+    },
+    {
+     "name": "reorder_version",
+     "required": true,
+     "type": {
+      "ref": "planner.reorder_version"
+     }
+    }
+   ],
+   "id": "planner.user_task_planning",
+   "identity": [
+    "planning_id"
+   ],
+   "kind": "entity",
+   "version": 1
+  },
+  {
+   "base": "uuid",
+   "description": "Workspace identifier",
+   "id": "planner.workspace_id",
+   "kind": "scalar",
+   "version": 1,
+   "visibility": "project"
+  }
+ ],
+ "modelVersion": "0.2.16",
+ "modules": [
+  {
+   "description": "Task focus module",
+   "id": "planner",
+   "kind": "module",
+   "version": 1
+  }
+ ],
+ "project": {
+  "derived_from": [
+   "PLANNER-REQ-001"
+  ],
+  "description": "Focus planner routes corpus (issue #60)",
+  "id": "planner",
+  "kind": "project",
+  "version": 1
+ }
+}

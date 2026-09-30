@@ -1,0 +1,290 @@
+{
+ "schemaVersion": "lekalo/php-operations-input/v0.4.0",
+ "identity": "dev.lekalo.php-operations-input@0.4.0",
+ "projectId": "planner",
+ "irDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+ "typesInputDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+ "operations": [
+  {
+   "id": "planner.backlog_tasks",
+   "kind": "query",
+   "mode": "managed",
+   "recipe": {
+    "kind": "port-delegation",
+    "port": "BacklogReader",
+    "method": "backlog"
+   },
+   "errors": [
+    "planner.input_invalid",
+    "planner.store_unavailable"
+   ],
+   "transaction": {
+    "mode": "forbidden"
+   }
+  },
+  {
+   "id": "planner.carry_over",
+   "kind": "query",
+   "mode": "managed",
+   "recipe": {
+    "kind": "port-delegation",
+    "port": "CarryOverReader",
+    "method": "carryOver"
+   },
+   "errors": [
+    "planner.input_invalid",
+    "planner.store_unavailable"
+   ],
+   "transaction": {
+    "mode": "forbidden"
+   }
+  },
+  {
+   "id": "planner.complete_planning",
+   "kind": "command",
+   "mode": "managed",
+   "recipe": {
+    "kind": "port-delegation",
+    "port": "TaskCompleter",
+    "method": "complete"
+   },
+   "errors": [
+    "planner.input_invalid",
+    "planner.planning_conflict",
+    "planner.planning_denied",
+    "planner.planning_not_found",
+    "planner.store_unavailable"
+   ],
+   "policy": {
+    "id": "planner.deny_foreign_planning"
+   },
+   "transaction": {
+    "mode": "required"
+   }
+  },
+  {
+   "id": "planner.completed_planning",
+   "kind": "query",
+   "mode": "managed",
+   "recipe": {
+    "kind": "port-delegation",
+    "port": "CompletedReader",
+    "method": "completed"
+   },
+   "errors": [
+    "planner.input_invalid",
+    "planner.store_unavailable"
+   ],
+   "transaction": {
+    "mode": "forbidden"
+   }
+  },
+  {
+   "id": "planner.count_focused",
+   "kind": "query",
+   "mode": "managed",
+   "recipe": {
+    "kind": "port-delegation",
+    "port": "FocusedCounter",
+    "method": "count"
+   },
+   "errors": [
+    "planner.store_unavailable"
+   ],
+   "transaction": {
+    "mode": "forbidden"
+   }
+  },
+  {
+   "id": "planner.focus_task",
+   "kind": "command",
+   "mode": "managed",
+   "recipe": {
+    "kind": "single-entity-update",
+    "entity": "planner.task",
+    "key": "task_id",
+    "assignments": [
+     {
+      "field": "state",
+      "value": {
+       "enumCase": {
+        "type": "planner.task_state",
+        "value": "focused"
+       }
+      }
+     }
+    ],
+    "kept": [
+     "title"
+    ],
+    "preconditions": [
+     {
+      "field": "state",
+      "equals": {
+       "enumCase": {
+        "type": "planner.task_state",
+        "value": "backlog"
+       }
+      },
+      "error": "planner.focus_conflict"
+     }
+    ],
+    "missingBehavior": {
+     "error": "planner.task_not_found"
+    },
+    "emit": [
+     {
+      "event": "planner.task_focused",
+      "payload": {
+       "task_id": {
+        "fromInput": "task_id"
+       }
+      }
+     }
+    ]
+   },
+   "errors": [
+    "planner.focus_conflict",
+    "planner.focus_denied",
+    "planner.input_invalid",
+    "planner.store_unavailable",
+    "planner.task_not_found"
+   ],
+   "policy": {
+    "id": "planner.deny_bulk_focus"
+   },
+   "transaction": {
+    "mode": "required"
+   }
+  },
+  {
+   "id": "planner.move_task",
+   "kind": "command",
+   "mode": "managed",
+   "recipe": {
+    "kind": "port-delegation",
+    "port": "TaskMover",
+    "method": "move"
+   },
+   "errors": [
+    "planner.input_invalid",
+    "planner.planning_conflict",
+    "planner.planning_denied",
+    "planner.planning_not_found",
+    "planner.store_unavailable"
+   ],
+   "policy": {
+    "id": "planner.deny_foreign_planning"
+   },
+   "transaction": {
+    "mode": "required"
+   }
+  },
+  {
+   "id": "planner.pause_planning",
+   "kind": "command",
+   "mode": "managed",
+   "recipe": {
+    "kind": "port-delegation",
+    "port": "FocusPauser",
+    "method": "pause"
+   },
+   "errors": [
+    "planner.input_invalid",
+    "planner.planning_denied",
+    "planner.planning_not_found",
+    "planner.store_unavailable"
+   ],
+   "policy": {
+    "id": "planner.deny_foreign_planning"
+   },
+   "transaction": {
+    "mode": "required"
+   }
+  },
+  {
+   "id": "planner.plan_task",
+   "kind": "command",
+   "mode": "managed",
+   "recipe": {
+    "kind": "port-delegation",
+    "port": "TaskPlanner",
+    "method": "plan"
+   },
+   "errors": [
+    "planner.input_invalid",
+    "planner.planning_conflict",
+    "planner.planning_denied",
+    "planner.store_unavailable",
+    "planner.task_not_found"
+   ],
+   "policy": {
+    "id": "planner.deny_foreign_planning"
+   },
+   "transaction": {
+    "mode": "required"
+   }
+  },
+  {
+   "id": "planner.reorder_planned",
+   "kind": "command",
+   "mode": "managed",
+   "recipe": {
+    "kind": "port-delegation",
+    "port": "DayReorderer",
+    "method": "reorder"
+   },
+   "errors": [
+    "planner.input_invalid",
+    "planner.planning_denied",
+    "planner.reorder_stale",
+    "planner.store_unavailable"
+   ],
+   "policy": {
+    "id": "planner.deny_foreign_planning"
+   },
+   "transaction": {
+    "mode": "required"
+   }
+  },
+  {
+   "id": "planner.today_planning",
+   "kind": "query",
+   "mode": "managed",
+   "recipe": {
+    "kind": "port-delegation",
+    "port": "TodayReader",
+    "method": "today"
+   },
+   "errors": [
+    "planner.input_invalid",
+    "planner.store_unavailable"
+   ],
+   "transaction": {
+    "mode": "forbidden"
+   }
+  },
+  {
+   "id": "planner.unplan_task",
+   "kind": "command",
+   "mode": "managed",
+   "recipe": {
+    "kind": "port-delegation",
+    "port": "TaskUnplanner",
+    "method": "unplan"
+   },
+   "errors": [
+    "planner.input_invalid",
+    "planner.planning_denied",
+    "planner.planning_not_found",
+    "planner.store_unavailable"
+   ],
+   "policy": {
+    "id": "planner.deny_foreign_planning"
+   },
+   "transaction": {
+    "mode": "required"
+   }
+  }
+ ]
+}

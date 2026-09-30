@@ -1437,7 +1437,7 @@ try {
         entity.fields[0].name = hostile;
         Object.defineProperty(entity.fields[0], hostile, { value: hostilePayload, enumerable: true });
       },
-      ["model.field-unknown", "lekalo/modules/planner/entities.yaml[6]/fields[0]", "field:unknown"]
+      ["model.field-unknown", "lekalo/modules/planner/entities.yaml[13]/fields[0]", "field:unknown"]
     ],
     [
       "nested-enum-unknown-property",
@@ -1448,7 +1448,7 @@ try {
         enumeration.values[0].value = hostile;
         Object.defineProperty(enumeration.values[0], hostile, { value: hostilePayload, enumerable: true });
       },
-      ["model.field-unknown", "lekalo/modules/planner/entities.yaml[4]/values[0]", "field:unknown"]
+      ["model.field-unknown", "lekalo/modules/planner/entities.yaml[11]/values[0]", "field:unknown"]
     ]
   ];
   for (const [name, sourceProject, fileName, mutate, reasonCodes] of nestedUnknownCases) {
@@ -1482,7 +1482,7 @@ try {
     ["unknown-type-wrapper", validPlannerV1, "entities.yaml", (document, hostile) => {
       const entity = document.definitions.find((definition) => definition.kind === "entity");
       entity.fields[0].type = { [hostile]: { ref: "planner.task_id" } };
-    }, ["model.type-expression", "lekalo/modules/planner/entities.yaml[6]/fields:task_id", "wrapper:unknown"]],
+    }, ["model.type-expression", "lekalo/modules/planner/entities.yaml[13]/fields:task_id", "wrapper:unknown"]],
     ["enum-visibility", validPlannerV1, "entities.yaml", (document, hostile) => { document.definitions[0].visibility = hostile; }, ["model.constraint", "lekalo/modules/planner/entities.yaml[0]", "value:string"]],
     ["enum-portability", validPlannerV1, "entities.yaml", (document, hostile) => { document.definitions[0].portability = hostile; }, ["model.constraint", "lekalo/modules/planner/entities.yaml[0]", "value:string"]],
     ["enum-scalar-base", validPlannerV1, "entities.yaml", (document, hostile) => { document.definitions[0].base = hostile; }, ["model.constraint", "lekalo/modules/planner/entities.yaml[0]", "value:string"]],

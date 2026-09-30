@@ -28,7 +28,11 @@ const scenarioHome = join(repoRoot, "tests", "fixtures", "orchestration", "proje
 const irEvidence = join(repoRoot, "tests", "fixtures", "adapter-conformance", "inputs", "ir-minimal.json");
 const SCENARIO_DIR = "src/generated/php-laravel/scenario-tests";
 const RUN_RECORD_DIR = join(".lekalo", "import", "scenario-runs");
-const GENERATED_TEST_COUNT = 4;
+// Issue #114: the corpus grew to six scenarios — the four issue-#56
+// legs plus the authorization leg (focus_denied) and the transaction
+// leg (focus_rollback). Only the race case is unsupported-only; every
+// executed scenario must pass all of its assertion rows.
+const GENERATED_TEST_COUNT = 6;
 
 /** Locate a runnable PHP interpreter (CI provisions one; the script never
  * silently skips: a missing runtime is a hard failure with the exact
@@ -60,12 +64,15 @@ const step = (name, body) => {
  * (a provisioning step: never inside a compiler or adapter process,
  * never with scripts). */
 function ensureVendor() {
-  if (existsSync(join(fixtureRoot, "vendor", "autoload.php"))) return;
-  process.stdout.write("provisioning the fixture vendor tree from the committed lock\n");
-  const result = spawnSync("composer", [
-    "install", "--no-interaction", "--prefer-dist", "--no-scripts", "--ignore-platform-reqs",
-  ], { cwd: fixtureRoot, encoding: "utf8", timeout: 600_000 });
-  assert.equal(result.status, 0, `composer install failed:\n${result.stderr?.slice(0, 2000)}`);
+  // Issue #61: verification never provisions. A missing vendor tree is
+  // a blocker with a separate provisioning instruction — zero downloads
+  // and zero install/update subprocesses from any gate or harness.
+  if (!existsSync(join(fixtureRoot, "vendor", "autoload.php"))) {
+    assert.fail(
+      "provisioned vendor tree missing at " + join(fixtureRoot, "vendor", "autoload.php") +
+        "; run the operator bootstrap (composer install --no-interaction --prefer-dist --no-scripts) outside verification, then re-run this harness",
+    );
+  }
 }
 
 /** One adapter exchange over stdin; returns the parsed envelope. */

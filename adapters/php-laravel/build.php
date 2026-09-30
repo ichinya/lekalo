@@ -46,6 +46,7 @@ function fail(string $message): never
 $adapterRoot = dirname(__FILE__);
 $artifactPath = $adapterRoot . '/adapter.php';
 $lockPath = $adapterRoot . '/mago-toolchain.lock.json';
+$policyPath = $adapterRoot . '/composer-gates-policy.json';
 $scenarioModulePaths = [
     $adapterRoot . '/src/scenario-map.php',
     $adapterRoot . '/src/scenario-emit.php',
@@ -56,7 +57,19 @@ $scenarioModulePaths = [
     $adapterRoot . '/src/type-codec.php',
     $adapterRoot . '/src/type-emit.php',
     $adapterRoot . '/src/type-bindings.php',
+    // The operations-generator modules ride last, in the fixed order
+    // the kernel's `load_operation_modules()` names (issue #59).
+    $adapterRoot . '/src/operation-policy.php',
+    $adapterRoot . '/src/operation-map.php',
+    $adapterRoot . '/src/operation-emit.php',
+    $adapterRoot . '/src/operation-bindings.php',
+    // The routes-generator modules ride last, in the fixed order the
+    // kernel's `load_route_modules()` names (issue #60).
+    $adapterRoot . '/src/route-policy.php',
+    $adapterRoot . '/src/route-map.php',
+    $adapterRoot . '/src/route-emit.php',
 ];
+$nativeModulePaths = [$adapterRoot . '/src/native-policy.php', $adapterRoot . '/src/native-plan.php'];
 
 $lockBytes = file_get_contents($lockPath);
 if ($lockBytes === false || $lockBytes === '') {
@@ -81,6 +94,42 @@ $lockEmbed = "\n// ---- bundled toolchain lock (issue #55) ---------------------
     . "// The exact bytes are part of this artifact, so the artifact digest\n"
     . "// changes whenever the supported toolchain changes (custody binds).\n"
     . "const MAGO_TOOLCHAIN_LOCK_BUNDLED = " . php_single_quoted($lockBytes) . ";\n";
+
+// Issue #61: the checked-in Composer execution policy rides the same
+// verbatim-embed custody — the planner verifies confirmations against
+// these exact bytes and the artifact digest changes with the policy.
+$policyBytes = file_get_contents($policyPath);
+if ($policyBytes === false || $policyBytes === '') {
+    fail('build: composer-gates-policy.json is missing or empty');
+}
+try {
+    json_decode($policyBytes, true, 64, JSON_THROW_ON_ERROR);
+} catch (JsonException) {
+    fail('build: composer-gates-policy.json is not valid JSON');
+}
+$policyEmbed = "\n// ---- bundled Composer gates policy (issue #61) ------------------\n"
+    . "// EMBEDDED BY build.php from composer-gates-policy.json. Never edit.\n"
+    . "// Confirmation data only — never execution authority. The exact\n"
+    . "// bytes are part of this artifact (upgrade custody binds).\n"
+    . "const NATIVE_GATES_POLICY_BUNDLED = " . php_single_quoted($policyBytes) . ";\n";
+
+$nativeModules = '';
+foreach ($nativeModulePaths as $modulePath) {
+    $module = file_get_contents($modulePath);
+    if ($module === false || $module === '') {
+        fail('build: native module source is missing or empty: ' . basename($modulePath));
+    }
+    if (!str_starts_with($module, "<?php\n")) {
+        fail('build: native module must start with the open tag: ' . basename($modulePath));
+    }
+    $module = substr($module, 6);
+    // The artifact declares strict_types once in the banner; the
+    // module-local declare (kept for standalone source loading) is
+    // stripped deterministically so the concatenated file stays legal.
+    $module = (string) preg_replace('/^declare\(strict_types=1\);\n/m', '', $module, 1);
+    $nativeModules .= "\n// ----- native gate module: " . basename($modulePath) . " -----\n\n"
+        . $module;
+}
 
 $scenarioModules = '';
 foreach ($scenarioModulePaths as $modulePath) {
@@ -141,6 +190,13 @@ foreach (BUNDLED_MODULES as $module) {
 // `load_scenario_modules()` names (issue #56); inside the artifact the
 // kernel's function_exists guards make the require_once path inert.
 $body .= $scenarioModules;
+// The bundled Composer execution policy rides with the native gate
+// modules (issue #61): one artifact carries its own confirmation
+// custody, no sibling file at runtime.
+$body .= $policyEmbed;
+// The native gate modules ride after the scenario modules in the
+// fixed order `load_native_modules()` names (issue #61).
+$body .= $nativeModules;
 
 $artifact = $banner . $body
     . "\nexit(main());\n";

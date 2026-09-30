@@ -1,0 +1,1 @@
+{"contract":"lekalo/client-sdk-map/v0.4.0","generator":{"id":"lekalo-core/client-sdk","version":"0.4.0"},"inputs":{"clientSdk":"sha256:8d98740497177b539a0906ca60dc3c3e0d3183399b9e7bef9eaa4c6490a63202"},"pointers":{"/client":"planner","/client-go":"planner","/compatibility":"lekalo-core/client-sdk"}}

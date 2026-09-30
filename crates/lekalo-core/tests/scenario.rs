@@ -67,6 +67,22 @@ const FIXTURE_SCENARIOS: &[(&str, &[u8])] = &[
             "../../../tests/fixtures/orchestration/project/lekalo/scenarios/planner.scenario.focus_concurrent.json"
         ),
     ),
+    // Issue #114: the authorization leg (the declared deny policy
+    // refuses the bulk actor and still allows a solo actor) and the
+    // transaction leg (a failed focus writes nothing). Same custody as
+    // every fixture scenario: production decoding, canonical bytes.
+    (
+        "planner.scenario.focus_denied",
+        include_bytes!(
+            "../../../tests/fixtures/orchestration/project/lekalo/scenarios/planner.scenario.focus_denied.json"
+        ),
+    ),
+    (
+        "planner.scenario.focus_rollback",
+        include_bytes!(
+            "../../../tests/fixtures/orchestration/project/lekalo/scenarios/planner.scenario.focus_rollback.json"
+        ),
+    ),
 ];
 
 /// The committed adversarial vectors: (name, fixture bytes, expectation

@@ -13,6 +13,8 @@ declare(strict_types=1);
 require __DIR__ . '/src/analyzer.php';
 require __DIR__ . '/src/strict-profile.php';
 require __DIR__ . '/src/kernel.php';
+require __DIR__ . '/src/native-policy.php';
+require __DIR__ . '/src/native-plan.php';
 // The scenario compiler and type generator modules (issues #56, #58):
 // the kernel lazy-loads them, so the source-mode entry requires them
 // explicitly to keep the same 1:1 module surface as the bundle.

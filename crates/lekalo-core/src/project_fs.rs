@@ -697,7 +697,7 @@ impl Fs {
 }
 
 /// The closed set of canonical `lekalo/` root entries.
-const CANONICAL_ROOT_ENTRIES: [&str; 11] = [
+const CANONICAL_ROOT_ENTRIES: [&str; 13] = [
     "project.yaml",
     "modules",
     "targets",
@@ -716,6 +716,10 @@ const CANONICAL_ROOT_ENTRIES: [&str; 11] = [
     "query-model.yaml",
     // Issue #58: the PHP type-generation input home (optional).
     "types",
+    // Issue #59: the PHP operations-generation input home (optional).
+    "operations",
+    // Issue #60: the PHP routes-generation input home (optional).
+    "routes",
 ];
 
 /// The closed runtime top-level entries under `.lekalo/`. `adapters` is

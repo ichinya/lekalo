@@ -30,7 +30,11 @@ const scenarioHome = join(nodeFixture, "lekalo", "scenarios");
 const irEvidence = join(repoRoot, "tests", "fixtures", "adapter-conformance", "inputs", "ir-minimal.json");
 const NODE_SCENARIO_DIR = "src/generated/node-typescript/scenario-tests";
 const RUN_RECORD_DIR = join(".lekalo", "import", "scenario-runs");
-const GENERATED_TEST_COUNT = 4;
+// Issue #114: the corpus grew to six scenarios — the four issue-#47
+// legs plus the authorization leg (focus_denied) and the transaction
+// leg (focus_rollback). Only the race case is unsupported-only; every
+// executed scenario must produce at least one real pass row.
+const GENERATED_TEST_COUNT = 6;
 
 const scenarioIds = readdirSync(scenarioHome)
   .filter((name) => name.endsWith(".json"))
@@ -68,12 +72,15 @@ const php = locatePhp();
  * (a provisioning step: never inside a compiler or adapter process,
  * never with scripts). */
 function ensureVendor() {
-  if (existsSync(join(phpFixture, "vendor", "autoload.php"))) return;
-  process.stdout.write("provisioning the fixture vendor tree from the committed lock\n");
-  const result = spawnSync("composer", [
-    "install", "--no-interaction", "--prefer-dist", "--no-scripts", "--ignore-platform-reqs",
-  ], { cwd: phpFixture, encoding: "utf8", timeout: 600_000 });
-  assert.equal(result.status, 0, `composer install failed:\n${result.stderr?.slice(0, 2000)}`);
+  // Issue #61: verification never provisions. A missing vendor tree is
+  // a blocker with a separate provisioning instruction — zero downloads
+  // and zero install/update subprocesses from any gate or harness.
+  if (!existsSync(join(phpFixture, "vendor", "autoload.php"))) {
+    assert.fail(
+      "provisioned vendor tree missing at " + join(phpFixture, "vendor", "autoload.php") +
+        "; run the operator bootstrap (composer install --no-interaction --prefer-dist --no-scripts) outside verification, then re-run this harness",
+    );
+  }
 }
 
 // --- node-typescript backend -----------------------------------------------
@@ -269,6 +276,13 @@ const semanticRecord = (record) => ({
   assertions: semanticRows(record),
 });
 
+/** The durable comparison evidence (issue #114): per-scenario semantic
+ * rows for both backends, emitted only with --emit-evidence. The
+ * document carries identity, corpus digests, and outcome rows — no
+ * runner identity, no host data, no timestamps. */
+const comparison = new Map();
+let mutationComparison = null;
+
 /** Lying-port mutations (one per backend): the emissions capture answers
  * empty, so every emitted-observation assertion fails for real while the
  * given/when steps stay healthy. */
@@ -335,6 +349,11 @@ try {
       const phpRecord = semanticRecord(readRecord(phpRoot, scenarioId));
       assert.deepEqual(phpRecord, nodeRecord,
         `${scenarioId}: semantic rows diverge\nnode: ${JSON.stringify(nodeRecord.assertions)}\nphp:  ${JSON.stringify(phpRecord.assertions)}`);
+      comparison.set(scenarioId, {
+        equal: true,
+        node: nodeRecord.assertions,
+        php: phpRecord.assertions,
+      });
     }
   });
 
@@ -382,6 +401,11 @@ try {
         `${backend}: the mutation is a recorded fail row at step emitted`,
       );
     }
+    mutationComparison = {
+      equal: true,
+      node: nodeRecord.assertions.filter((row) => row.outcome === "fail"),
+      php: phpRecord.assertions.filter((row) => row.outcome === "fail"),
+    };
   });
 } finally {
   rmSync(nodeRoot, { recursive: true, force: true });
@@ -391,5 +415,46 @@ try {
 if (failures > 0) {
   process.stdout.write(`${JSON.stringify({ ok: false, gate: "php-laravel-parity", failures })}\n`);
   process.exit(1);
+}
+
+// Durable evidence (issue #114): --emit-evidence <path> pins the neutral
+// per-scenario comparison as a committed artifact. Deterministic: the
+// corpus is sorted, every digest is content-derived, no host data.
+const emitIndex = process.argv.indexOf("--emit-evidence");
+if (emitIndex !== -1) {
+  const outPath = process.argv[emitIndex + 1];
+  if (!outPath) {
+    process.stderr.write("--emit-evidence requires a path\n");
+    process.exit(1);
+  }
+  const document = {
+    schema_version: "lekalo/scenario-comparison/v0.1.0",
+    identity: "dev.lekalo.scenario-comparison@0.1.0",
+    role: "observed-baseline-equivalence-evidence",
+    corpus: {
+      scenario_count: scenarioIds.length,
+      scenarios: scenarioIds.map((file) => ({
+        id: file.replace(/\.json$/, ""),
+        digest: "sha256:" + createHash("sha256").update(readFileSync(join(scenarioHome, file))).digest("hex"),
+      })),
+    },
+    ir_evidence: {
+      path: "tests/fixtures/adapter-conformance/inputs/ir-minimal.json",
+      digest: "sha256:" + createHash("sha256").update(readFileSync(irEvidence)).digest("hex"),
+    },
+    backends: [
+      { backend: "node-typescript", runner: "node:test", binding_mode: "generated" },
+      { backend: "php-laravel", runner: "laratesto", binding_mode: "generated" },
+    ],
+    scenarios: Object.fromEntries([...comparison.entries()].sort(([a], [b]) => (a < b ? -1 : 1))),
+    mutation: {
+      kind: "shared-lying-port",
+      note: "one recorded assertion failure per backend at the same semantic step",
+      focus_happy: mutationComparison,
+    },
+  };
+  writeFileSync(outPath, JSON.stringify(document, null, 2) + "\n");
+  process.stdout.write(`${JSON.stringify({ ok: true, gate: "php-laravel-parity", scenarios: scenarioIds.length, evidence: outPath })}\n`);
+  process.exit(0);
 }
 process.stdout.write(`${JSON.stringify({ ok: true, gate: "php-laravel-parity", scenarios: scenarioIds.length })}\n`);

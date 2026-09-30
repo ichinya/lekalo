@@ -1,0 +1,91 @@
+schemaVersion: lekalo/query-model/v0.2.16
+identity: dev.lekalo.query-model@0.2.16
+attachmentRevision: "0.2.16"
+projectId: planner
+modelRef:
+  modelVersion: "0.2.16"
+  digest: sha256:233c179a27425b890beb600df00eb378edbbf3e2e950d79b9c402af81452882e
+irRef:
+  identity: dev.lekalo.ir@0.2.16
+  digest: sha256:1fc2133af11b1a7ee9186d51104a963bf21d3043febf37d0401b504114806b43
+tenancy:
+  - entity: planner.task
+    field: user_id
+  - entity: planner.user_task_planning
+    field: workspace_id
+queries:
+  - query: planner.today_planning
+    source: planner.user_task_planning
+    cardinality: list
+    consistency: strong
+    parameters:
+      - name: planned_for
+        type: planner.planning_date
+    filter:
+      field: planned_for
+      op: eq
+      value:
+        param: planned_for
+    sort:
+      - field: position
+        direction: asc
+      - field: planning_id
+        direction: asc
+  - query: planner.backlog_tasks
+    source: planner.user_task_planning
+    cardinality: list
+    consistency: stale-ok
+    sort:
+      - field: planning_id
+        direction: asc
+  - query: planner.carry_over
+    source: planner.user_task_planning
+    cardinality: list
+    consistency: strong
+    parameters:
+      - name: planned_for
+        type: planner.planning_date
+    filter:
+      field: planned_for
+      op: lt
+      value:
+        param: planned_for
+    sort:
+      - field: planned_for
+        direction: asc
+      - field: position
+        direction: asc
+      - field: planning_id
+        direction: asc
+  - query: planner.completed_planning
+    source: planner.user_task_planning
+    cardinality: list
+    consistency: strong
+    filter:
+      field: completed_at
+      op: is-not-null
+    sort:
+      - field: planned_for
+        direction: desc
+      - field: planning_id
+        direction: asc
+  - query: planner.count_focused
+    source: planner.task
+    cardinality: one
+    consistency: strong
+    filter:
+      field: state
+      op: eq
+      value:
+        literal:
+          kind: enum-member
+          value: focused
+    cost:
+      maxRows: 1
+  - query: planner.list_tasks
+    source: planner.task
+    cardinality: list
+    consistency: stale-ok
+    sort:
+      - field: task_id
+        direction: asc

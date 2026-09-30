@@ -60,7 +60,7 @@ test("validators refuse unknown members, bad ids, and digest drift", () => {
 });
 
 test("run receipt schema version is pinned", () => {
-  assert.equal(RUN_SCHEMA_VERSION, "lekalo/native-gate-run/v0.3.2");
+  assert.equal(RUN_SCHEMA_VERSION, "lekalo/native-gate-run/v0.4.0");
 });
 
 test("the run result golden: never-executed commands carry unknown valueState", () => {

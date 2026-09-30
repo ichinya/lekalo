@@ -1,0 +1,58 @@
+{
+  "schema_version": "lekalo/native-selection/v0.4.0",
+  "completeness": "complete",
+  "modules": [
+    {
+      "id": "planner",
+      "roots": [
+        "app/",
+        "bootstrap/",
+        "config/",
+        "routes/"
+      ],
+      "gates": [
+        "mago-analyze",
+        "mago-format",
+        "mago-lint",
+        "scenario-tests"
+      ]
+    },
+    {
+      "id": "legacy",
+      "roots": [
+        "tests/legacy/"
+      ],
+      "gates": [
+        "legacy-tests",
+        "testo-full"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "legacy",
+      "to": "planner",
+      "kind": "target-binding"
+    }
+  ],
+  "tests": [
+    {
+      "suite_id": "laravel",
+      "module": "planner",
+      "gate_id": "scenario-tests"
+    },
+    {
+      "suite_id": "laravel",
+      "module": "legacy",
+      "gate_id": "testo-full"
+    },
+    {
+      "suite_id": "legacy-suite",
+      "module": "legacy",
+      "gate_id": "legacy-tests"
+    }
+  ],
+  "mandatory_gate_ids": [
+    "application-boot"
+  ]
+}

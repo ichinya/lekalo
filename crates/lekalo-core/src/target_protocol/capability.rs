@@ -17,8 +17,10 @@ use serde::Serialize;
 /// (issue #70), `generate.storage-ddl` and `scan.storage-schema`
 /// (issue #69), `scan.schema`/`verify.schema-projection`
 /// (issue #117), `preserve.classification` (issue #87),
-/// `generate.client-sdk` (issue #72), and `generate.types`
-/// (issue #58).
+/// `generate.client-sdk` (issue #72), `generate.types`
+/// (issue #58), `generate.operations`/`verify.operations`
+/// (issue #59), and `generate.routes`/`verify.routes`
+/// (issue #60).
 pub const REGISTRY_IDENTITY: &str = "dev.lekalo.target-capabilities@0.4.0";
 
 /// One versioned capability definition.
@@ -49,6 +51,18 @@ const DEFINITIONS: &[CapabilityDefinition] = &[
         definition_version: "0.3.1",
         domain: "generate",
         semantics: "Emits an OpenAPI document from the compiled project IR. `full` covers every declared operation and type; `partial` covers a declared subset; `unsupported` never emits; `unknown` is a declared state the core does not treat as available.",
+    },
+    CapabilityDefinition {
+        id: "generate.operations",
+        definition_version: "0.4.0",
+        domain: "generate",
+        semantics: "Emits the explicit PHP Laravel use-case classes (command/query handlers, narrow ports, typed errors) from the operations input over the compiled project IR under the declared per-operation mode (issue #59). The closed managed recipe vocabulary is a bounded subset, so `full` is reachable only over records the vocabulary covers; `partial` covers the declared subset with per-operation boundaries reported as findings; `unsupported` never emits; `unknown` is a declared state the core does not treat as available.",
+    },
+    CapabilityDefinition {
+        id: "generate.routes",
+        definition_version: "0.4.0",
+        domain: "generate",
+        semantics: "Emits the PHP Laravel route layer from the routes input joined with the transport-http evidence (issue #60): one registration per managed route, thin decode/delegate/encode controllers, the typed request bindings, the explicit error-to-status map, and the digest-bound OpenAPI projection. The governed surface is exactly the declared route records, so `partial` covers the declared subset; `unsupported` never emits; `unknown` is a declared state the core does not treat as available.",
     },
     CapabilityDefinition {
         id: "generate.storage-ddl",
@@ -111,6 +125,18 @@ const DEFINITIONS: &[CapabilityDefinition] = &[
         semantics: "Enumerates project symbols through the `scan` operation. `full` covers every declared module and entity; `partial` covers a declared subset; `unsupported` never scans; `unknown` is a declared state the core does not treat as available.",
     },
     CapabilityDefinition {
+        id: "verify.operations",
+        definition_version: "0.4.0",
+        domain: "verify",
+        semantics: "Verifies the declared operations against current custody and observed shape evidence (issue #59): managed drift, scaffold existence, and the checked/custom identity join over the observed-handler evidence. `full` verifies every declared operation including scenario execution; `partial` verifies the declared subset without scenario execution (`verify.scenarios` stays separate); `unsupported` never verifies; `unknown` is a declared state the core does not treat as available.",
+    },
+    CapabilityDefinition {
+        id: "verify.routes",
+        definition_version: "0.4.0",
+        domain: "verify",
+        semantics: "Verifies the declared routes against current custody and observed route evidence (issue #60): managed drift over the emitted registrations, wrappers, and the OpenAPI projection, plus the checked identity join (method, uri, name, action, controller bytes) over the observed-routes evidence. `full` also executes endpoint scenarios (`verify.transport-http` stays separate); `partial` verifies the declared subset without scenario execution; `unsupported` never verifies; `unknown` is a declared state the core does not treat as available.",
+    },
+    CapabilityDefinition {
         id: "verify.schema-projection",
         definition_version: "0.4.0",
         domain: "verify",
@@ -154,6 +180,8 @@ mod tests {
             vec![
                 "generate.client-sdk",
                 "generate.openapi",
+                "generate.operations",
+                "generate.routes",
                 "generate.storage-ddl",
                 "generate.types",
                 "generate.transport-http",
@@ -164,6 +192,8 @@ mod tests {
                 "scan.schema",
                 "scan.storage-schema",
                 "scan.symbols",
+                "verify.operations",
+                "verify.routes",
                 "verify.schema-projection",
                 "verify.scenarios",
                 "verify.transport-http",

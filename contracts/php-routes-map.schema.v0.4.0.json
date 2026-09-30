@@ -1,0 +1,434 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://dev.lekalo/php-routes-map.schema.v0.4.0.json",
+ "title": "Lekalo PHP Routes Map",
+ "description": "Closed contract for the deterministic routes map sidecar the PHP Laravel routes emitter writes beside its artifacts (issue #60). The sidecar is the custody receipt and the exported link table: it binds every governed route to its endpoint symbol, operation id, controller and request symbols, declared error-to-status projection, auth binding, scenario references, and the emitted OpenAPI document pointer, and carries the complete path-sorted artifact inventory with content digests. The sidecar never contains declaration byte ranges - source-map documents are a separate `declarations` shape, and this sidecar's `.map.json` suffix therefore binds nothing in the core source-map ingester. The map's own file digest belongs to the ownership manifest, never inside the hashed content.",
+ "type": "object",
+ "additionalProperties": false,
+ "required": [
+  "schemaVersion",
+  "identity",
+  "projectId",
+  "adapter",
+  "digests",
+  "routes",
+  "artifacts"
+ ],
+ "properties": {
+  "schemaVersion": {
+   "const": "lekalo/php-routes-map/v0.4.0"
+  },
+  "identity": {
+   "const": "dev.lekalo.php-routes-map@0.4.0"
+  },
+  "projectId": {
+   "type": "string",
+   "pattern": "^[a-z][a-z0-9_]*$"
+  },
+  "adapter": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "id",
+    "version",
+    "digest"
+   ],
+   "properties": {
+    "id": {
+     "type": "string",
+     "const": "lekalo-target-php-laravel"
+    },
+    "version": {
+     "type": "string",
+     "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "digest": {
+     "$ref": "#/$defs/sha256"
+    }
+   }
+  },
+  "digests": {
+   "description": "The exact input digests this map was derived from; any change invalidates the derivation.",
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "ir",
+    "transport",
+    "input",
+    "typesInput",
+    "operationsInput",
+    "openapi"
+   ],
+   "properties": {
+    "ir": {
+     "$ref": "#/$defs/sha256"
+    },
+    "transport": {
+     "description": "The canonical transport-http attachment bytes the routes were projected from.",
+     "$ref": "#/$defs/sha256"
+    },
+    "input": {
+     "description": "The routes input document digest.",
+     "$ref": "#/$defs/sha256"
+    },
+    "typesInput": {
+     "description": "The bound types input document digest.",
+     "$ref": "#/$defs/sha256"
+    },
+    "operationsInput": {
+     "description": "The bound operations input document digest.",
+     "$ref": "#/$defs/sha256"
+    },
+    "openapi": {
+     "description": "The canonical OpenAPI projection bytes emitted verbatim as `openapi.json`.",
+     "$ref": "#/$defs/sha256"
+    }
+   }
+  },
+  "routes": {
+   "description": "One entry per governed route, sorted by id.",
+   "type": "array",
+   "minItems": 1,
+   "maxItems": 2048,
+   "items": {
+    "$ref": "#/$defs/route"
+   }
+  },
+  "artifacts": {
+   "description": "The complete artifact inventory, path-sorted, every file the plan covers (emitted bytes under the custody root; declared-only maintained entries for checked records carry a `declared: true` role and no digest).",
+   "type": "array",
+   "minItems": 1,
+   "maxItems": 4096,
+   "items": {
+    "$ref": "#/$defs/artifact"
+   }
+  }
+ },
+ "$defs": {
+  "sha256": {
+   "type": "string",
+   "pattern": "^sha256:[0-9a-f]{64}$"
+  },
+  "semanticId": {
+   "type": "string",
+   "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$"
+  },
+  "fqn": {
+   "type": "string",
+   "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\\\[A-Za-z_][A-Za-z0-9_]*){1,7}$"
+  },
+  "logicalPath": {
+   "type": "string",
+   "pattern": "^[a-z][a-z0-9_./-]*$"
+  },
+  "operationId": {
+   "description": "The effective transport operation id: the deterministic camel transform of the endpoint id, or the declared override.",
+   "type": "string",
+   "pattern": "^[a-z][A-Za-z0-9]{0,191}$"
+  },
+  "httpMethod": {
+   "enum": [
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE"
+   ]
+  },
+  "httpStatus": {
+   "type": "integer",
+   "minimum": 100,
+   "maximum": 599
+  },
+  "route": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "id",
+    "operation",
+    "operationId",
+    "mode",
+    "method",
+    "pathTemplate",
+    "name",
+    "errors",
+    "errorDefaults",
+    "links"
+   ],
+   "properties": {
+    "id": {
+     "description": "The Model endpoint symbol.",
+     "$ref": "#/$defs/semanticId"
+    },
+    "operation": {
+     "description": "The invoked command or query symbol.",
+     "$ref": "#/$defs/semanticId"
+    },
+    "operationId": {
+     "$ref": "#/$defs/operationId"
+    },
+    "mode": {
+     "enum": [
+      "managed",
+      "checked"
+     ]
+    },
+    "method": {
+     "$ref": "#/$defs/httpMethod"
+    },
+    "pathTemplate": {
+     "description": "The Model path template, verbatim.",
+     "type": "string",
+     "pattern": "^/[A-Za-z0-9_{}/-]*$"
+    },
+    "name": {
+     "description": "The generated Laravel route name (the operation id).",
+     "$ref": "#/$defs/operationId"
+    },
+    "controller": {
+     "description": "The generated thin controller symbol and path (managed mode).",
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "fqn",
+      "path",
+      "action"
+     ],
+     "properties": {
+      "fqn": {
+       "$ref": "#/$defs/fqn"
+      },
+      "path": {
+       "$ref": "#/$defs/logicalPath"
+      },
+      "action": {
+       "description": "The public action method name (the operation id).",
+       "$ref": "#/$defs/operationId"
+      }
+     }
+    },
+    "request": {
+     "description": "The generated typed request-binding symbol and path, for routes with a declared body.",
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "fqn",
+      "path"
+     ],
+     "properties": {
+      "fqn": {
+       "$ref": "#/$defs/fqn"
+      },
+      "path": {
+       "$ref": "#/$defs/logicalPath"
+      }
+     }
+    },
+    "entry": {
+     "description": "The invoked operation entrypoint: managed derives the generated handler FQN; checked carries the declared existing entry.",
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "fqn",
+      "method"
+     ],
+     "properties": {
+      "fqn": {
+       "$ref": "#/$defs/fqn"
+      },
+      "method": {
+       "type": "string",
+       "pattern": "^[a-z][A-Za-z0-9_]{0,63}$"
+      }
+     }
+    },
+    "middleware": {
+     "description": "The attached middleware spellings, sorted; empty when no scheme mapping declared one.",
+     "type": "array",
+     "minItems": 0,
+     "maxItems": 8,
+     "items": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9:_.-]*$"
+     }
+    },
+    "success": {
+     "description": "The declared success projection: status and the optional body mode.",
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "status"
+     ],
+     "properties": {
+      "status": {
+       "$ref": "#/$defs/httpStatus"
+      },
+      "bodyMode": {
+       "enum": [
+        "whole-output",
+        "explicit"
+       ]
+      }
+     }
+    },
+    "errors": {
+     "description": "The declared per-error status projection, sorted by error id.",
+     "type": "array",
+     "minItems": 0,
+     "maxItems": 256,
+     "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "error",
+       "status"
+      ],
+      "properties": {
+       "error": {
+        "$ref": "#/$defs/semanticId"
+       },
+       "status": {
+        "$ref": "#/$defs/httpStatus"
+       }
+      }
+     }
+    },
+    "errorDefaults": {
+     "description": "The declared category defaults (validation, auth, conflict, not-found, domain, infrastructure).",
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "validation",
+      "auth",
+      "conflict",
+      "not-found",
+      "domain",
+      "infrastructure"
+     ],
+     "properties": {
+      "validation": {
+       "$ref": "#/$defs/httpStatus"
+      },
+      "auth": {
+       "$ref": "#/$defs/httpStatus"
+      },
+      "conflict": {
+       "$ref": "#/$defs/httpStatus"
+      },
+      "not-found": {
+       "$ref": "#/$defs/httpStatus"
+      },
+      "domain": {
+       "$ref": "#/$defs/httpStatus"
+      },
+      "infrastructure": {
+       "$ref": "#/$defs/httpStatus"
+      }
+     }
+    },
+    "auth": {
+     "description": "The declared security binding, when the endpoint declares one.",
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "actor",
+      "schemes"
+     ],
+     "properties": {
+      "actor": {
+       "$ref": "#/$defs/semanticId"
+      },
+      "schemes": {
+       "type": "array",
+       "minItems": 1,
+       "maxItems": 4,
+       "items": {
+        "$ref": "#/$defs/semanticId"
+       }
+      },
+      "policyRef": {
+       "$ref": "#/$defs/semanticId"
+      }
+     }
+    },
+    "links": {
+     "description": "The exported trace links: endpoint symbol, operation symbol, controller/request symbols, scenario references, and the OpenAPI operation pointer.",
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "endpoint",
+      "operation",
+      "scenarios",
+      "openapiPointer"
+     ],
+     "properties": {
+      "endpoint": {
+       "$ref": "#/$defs/semanticId"
+      },
+      "operation": {
+       "$ref": "#/$defs/semanticId"
+      },
+      "controller": {
+       "$ref": "#/$defs/fqn"
+      },
+      "request": {
+       "$ref": "#/$defs/fqn"
+      },
+      "scenarios": {
+       "type": "array",
+       "minItems": 0,
+       "maxItems": 32,
+       "items": {
+        "$ref": "#/$defs/semanticId"
+       }
+      },
+      "openapiPointer": {
+       "description": "The JSON pointer of this route's operation inside the emitted `openapi.json`.",
+       "type": "string",
+       "pattern": "^/paths/.+$"
+      }
+     }
+    }
+   }
+  },
+  "artifact": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "path",
+    "role",
+    "lifecycle"
+   ],
+   "properties": {
+    "path": {
+     "$ref": "#/$defs/logicalPath"
+    },
+    "role": {
+     "description": "The bounded artifact role (routes-file, controller, request, error-map, envelope, openapi, classmap, map).",
+     "type": "string",
+     "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "lifecycle": {
+     "enum": [
+      "generated",
+      "declared"
+     ]
+    },
+    "digest": {
+     "description": "Present for generated artifacts; absent for declared-only maintained entries.",
+     "$ref": "#/$defs/sha256"
+    },
+    "fqn": {
+     "description": "The primary PHP symbol of the artifact, when one exists.",
+     "$ref": "#/$defs/fqn"
+    },
+    "declared": {
+     "description": "True for a checked record's declared-only entry (no bytes are owned).",
+     "enum": [
+      true
+     ]
+    }
+   }
+  }
+ }
+}

@@ -1,3 +1,5 @@
+#![recursion_limit = "512"]
+
 //! Target-neutral request and result contracts for Lekalo.
 
 pub mod adapter_conformance;
@@ -32,6 +34,8 @@ pub mod nfr;
 pub mod observed;
 pub mod openapi;
 pub mod orchestration;
+pub mod php_operations;
+pub mod php_routes;
 pub mod privacy;
 pub mod project_fs;
 pub mod query_model;

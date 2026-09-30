@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://dev.lekalo/native-gate-run.schema.v0.3.2.json",
+  "$id": "https://dev.lekalo/native-gate-run.schema.v0.4.0.json",
   "title": "Lekalo Native Gate Run Request and Receipt",
-  "description": "Closed contract for one native gate run request and its terminal receipt (issue #48). The run request names one exact approved plan digest with an explicit or checked-in approval that lives outside the hashed plan — a plan can never approve itself — plus the trusted fixture catalog reference for the test-only runner. The receipt is the terminal, exactly-once result: the closed outcome set distinguishes passed, failed, missing, blocked, unsupported, infrastructure and security; per-command results carry valueState measurements (a never-executed command reports unknown, never a fabricated zero); mutation, original-verification and cleanup sections propagate security and cleanup defects over any gate exit; and portable evidence carries repository-relative paths only.",
+  "description": "Successor of the v0.3.2 native gate run contract (issue #61; the v0.3.2 enums are never silently broadened). Closed contract for one native gate run request and its terminal receipt (issue #48). The run request names one exact approved plan digest with an explicit or checked-in approval that lives outside the hashed plan — a plan can never approve itself — plus the trusted fixture catalog reference for the test-only runner. The receipt is the terminal, exactly-once result: the closed outcome set distinguishes passed, failed, missing, blocked, unsupported, infrastructure and security; per-command results carry valueState measurements (a never-executed command reports unknown, never a fabricated zero); mutation, original-verification and cleanup sections propagate security and cleanup defects over any gate exit; and portable evidence carries repository-relative paths only.",
   "type": "object",
   "oneOf": [
     {
@@ -122,7 +122,7 @@
       ],
       "properties": {
         "schema_version": {
-          "const": "lekalo/native-gate-run/v0.3.2"
+          "const": "lekalo/native-gate-run/v0.4.0"
         },
         "kind": {
           "const": "native-run-request"
@@ -183,11 +183,13 @@
         "mutation_summary",
         "original_verification",
         "cleanup",
-        "capability_evidence"
+        "capability_evidence",
+        "verdict",
+        "coverage"
       ],
       "properties": {
         "schema_version": {
-          "const": "lekalo/native-gate-run/v0.3.2"
+          "const": "lekalo/native-gate-run/v0.4.0"
         },
         "kind": {
           "const": "native-run-result"
@@ -238,6 +240,12 @@
         },
         "provenance": {
           "$ref": "#/$defs/sha256Digest"
+        },
+        "verdict": {
+          "$ref": "#/$defs/verdict"
+        },
+        "coverage": {
+          "$ref": "#/$defs/coverage"
         }
       }
     },
@@ -263,7 +271,10 @@
         "tool_ref",
         "argv",
         "env_names",
-        "outcome"
+        "outcome",
+        "gate_id",
+        "required",
+        "failure_class"
       ],
       "properties": {
         "command_id": {
@@ -349,6 +360,18 @@
               }
             }
           ]
+        },
+        "gate_id": {
+          "$ref": "#/$defs/gateId"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "failure_class": {
+          "$ref": "#/$defs/failureClass"
+        },
+        "toolchain_ref": {
+          "$ref": "#/$defs/sha256Digest"
         }
       }
     },
@@ -535,6 +558,64 @@
         },
         "receipt_digest": {
           "$ref": "#/$defs/sha256Digest"
+        }
+      }
+    },
+    "gateId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+      "maxLength": 128
+    },
+    "failureClass": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "assertion",
+            "static-analysis",
+            "boot",
+            "missing-tool",
+            "incompatible",
+            "infrastructure"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "passed",
+        "failed",
+        "blocked",
+        "degraded"
+      ]
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "uncovered_gate_ids"
+      ],
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "complete",
+            "incomplete",
+            "unknown"
+          ]
+        },
+        "uncovered_gate_ids": {
+          "type": "array",
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/gateId"
+          }
         }
       }
     }

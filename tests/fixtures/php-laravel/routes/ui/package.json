@@ -1,0 +1,12 @@
+{
+  "name": "lekalo-planner-screen-fixture",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "The planning-screen pilot surface (issue #53): one maintained Vue screen over the generated client contract. Dependencies are provisioning-only (pinned TypeScript + @vue/compiler-sfc through NODE_PATH); the emitted client has no dependency and the fixture never installs at runtime.",
+  "devDependencies": {
+    "@vue/compiler-sfc": "3.4.38",
+    "typescript": "5.9.3",
+    "vue": "3.4.38"
+  }
+}

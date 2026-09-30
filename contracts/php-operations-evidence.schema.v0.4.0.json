@@ -1,0 +1,221 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://dev.lekalo/php-operations-evidence.schema.v0.4.0.json",
+ "title": "Lekalo PHP Operations Evidence",
+ "description": "Closed contract for the observed-handler evidence document the checked and custom mode join consumes (issue #59). The document is produced outside the compiler by a controlled producer (the pinned external analyzer lane) and staged under `.lekalo/import/observed/operations-evidence.json`; the adapter only validates its shape and digests and joins it against the declared operations. Presence of a document with plausible digests is never trusted as producer execution: the producer receipt reference must validate, and a missing, stale, ambiguous or partial record is a typed finding - never a pass, never a silent rewrite. The document is pure data - no credentials, hosts, URLs, users, wall-clock timestamps, or provider output.",
+ "type": "object",
+ "additionalProperties": false,
+ "required": [
+  "schemaVersion",
+  "identity",
+  "projectId",
+  "irDigest",
+  "operationsInputDigest",
+  "producer",
+  "sources",
+  "operations"
+ ],
+ "properties": {
+  "schemaVersion": {
+   "const": "lekalo/php-operations-evidence/v0.4.0"
+  },
+  "identity": {
+   "const": "dev.lekalo.php-operations-evidence@0.4.0"
+  },
+  "projectId": {
+   "type": "string",
+   "pattern": "^[a-z][a-z0-9_]*$"
+  },
+  "irDigest": {
+   "description": "The IR evidence digest the observation was produced against; a stale digest makes every record unknown.",
+   "$ref": "#/$defs/sha256"
+  },
+  "operationsInputDigest": {
+   "description": "The operations input document digest the observation was produced against.",
+   "$ref": "#/$defs/sha256"
+  },
+  "producer": {
+   "description": "The controlled producer receipt: the tool, its pinned version, and the exact receipt document the run recorded. The join validates the reference but never fabricates execution.",
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "tool",
+    "version"
+   ],
+   "properties": {
+    "tool": {
+     "type": "string",
+     "const": "mago"
+    },
+    "version": {
+     "type": "string",
+     "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "receiptPath": {
+     "type": "string",
+     "pattern": "^[.a-z][a-z0-9_./-]*\\.json$"
+    },
+    "receiptDigest": {
+     "$ref": "#/$defs/sha256"
+    }
+   }
+  },
+  "sources": {
+   "description": "The complete observed source inventory, path-sorted; every operation record's path must appear here with the identical digest.",
+   "type": "array",
+   "minItems": 1,
+   "maxItems": 4096,
+   "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+     "path",
+     "digest"
+    ],
+    "properties": {
+     "path": {
+      "$ref": "#/$defs/logicalPath"
+     },
+     "digest": {
+      "$ref": "#/$defs/sha256"
+     }
+    }
+   }
+  },
+  "operations": {
+   "description": "One record per observed operation entrypoint, sorted by id.",
+   "type": "array",
+   "minItems": 1,
+   "maxItems": 4096,
+   "items": {
+    "$ref": "#/$defs/operation"
+   }
+  }
+ },
+ "$defs": {
+  "sha256": {
+   "type": "string",
+   "pattern": "^sha256:[0-9a-f]{64}$"
+  },
+  "semanticId": {
+   "type": "string",
+   "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$"
+  },
+  "fqn": {
+   "type": "string",
+   "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\\\[A-Za-z_][A-Za-z0-9_]*){0,7}$"
+  },
+  "logicalPath": {
+   "type": "string",
+   "pattern": "^[a-z][a-z0-9_./-]*\\.php$"
+  },
+  "operation": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "id",
+    "fqn",
+    "method",
+    "path",
+    "digest",
+    "constructor",
+    "parameters",
+    "returnType",
+    "publicMethods"
+   ],
+   "properties": {
+    "id": {
+     "$ref": "#/$defs/semanticId"
+    },
+    "fqn": {
+     "$ref": "#/$defs/fqn"
+    },
+    "method": {
+     "const": "handle"
+    },
+    "path": {
+     "description": "The case-preserving native path as observed; the join lowercases only for the wire.",
+     "type": "string",
+     "pattern": "^[A-Za-z][A-Za-z0-9_./-]*\\.php$"
+    },
+    "digest": {
+     "description": "The sha256 of the exact observed source bytes.",
+     "$ref": "#/$defs/sha256"
+    },
+    "constructor": {
+     "description": "The observed constructor slots in declared order, each with its resolved property type identity.",
+     "type": "array",
+     "maxItems": 16,
+     "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "name",
+       "type"
+      ],
+      "properties": {
+       "name": {
+        "type": "string",
+        "pattern": "^[a-z][A-Za-z0-9_]*$"
+       },
+       "type": {
+        "description": "The resolved type identity (FQN or builtin spelling).",
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+       }
+      }
+     }
+    },
+    "parameters": {
+     "description": "The observed entrypoint parameters in declared order.",
+     "type": "array",
+     "minItems": 1,
+     "maxItems": 8,
+     "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "name",
+       "type",
+       "required"
+      ],
+      "properties": {
+       "name": {
+        "type": "string",
+        "pattern": "^[a-z][A-Za-z0-9_]*$"
+       },
+       "type": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+       },
+       "required": {
+        "type": "boolean"
+       },
+       "nullable": {
+        "type": "boolean"
+       }
+      }
+     }
+    },
+    "returnType": {
+     "description": "The observed return type identity, `void` or `never` inclusive.",
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 256
+    },
+    "publicMethods": {
+     "description": "Every public method name of the observed class, sorted; a second business entrypoint is a finding.",
+     "type": "array",
+     "minItems": 1,
+     "maxItems": 32,
+     "items": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+     }
+    }
+   }
+  }
+ }
+}

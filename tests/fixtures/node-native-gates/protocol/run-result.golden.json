@@ -1,5 +1,5 @@
 {
-  "schema_version": "lekalo/native-gate-run/v0.3.2",
+  "schema_version": "lekalo/native-gate-run/v0.4.0",
   "kind": "native-run-result",
   "plan_digest": "sha256:4848484848484848484848484848484848484848484848484848484848484848",
   "execution_policy_ref": {
@@ -17,7 +17,7 @@
     "version": "0.3.2",
     "digest": "sha256:5643547b96e1ca9f422e91e699c8d04e676e6eb820b4ef21a88860c74133c3b9"
   },
-  "outcome": "passed",
+  "outcome": "blocked",
   "reason_codes": [],
   "commands": [
     {
@@ -44,7 +44,10 @@
       },
       "outcome": "passed",
       "reason_codes": [],
-      "output_ref": "sha256:5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b"
+      "output_ref": "sha256:5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b",
+      "gate_id": "packages_planner-test",
+      "required": true,
+      "failure_class": null
     },
     {
       "command_id": "not-run-command",
@@ -70,7 +73,10 @@
       },
       "output_ref": {
         "state": "withheld"
-      }
+      },
+      "gate_id": "packages_cli-test",
+      "required": true,
+      "failure_class": null
     }
   ],
   "mutation_summary": {
@@ -95,5 +101,12 @@
     "process_containment": "enforced",
     "backend": "fixture-runner",
     "receipt_digest": "sha256:5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d"
+  },
+  "verdict": "blocked",
+  "coverage": {
+    "state": "incomplete",
+    "uncovered_gate_ids": [
+      "packages_cli-test"
+    ]
   }
 }

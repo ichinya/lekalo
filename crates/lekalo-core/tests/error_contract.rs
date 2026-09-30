@@ -172,8 +172,8 @@ fn rule_ids(set: &lekalo_core::diagnostics::DiagnosticSet) -> Vec<String> {
 fn embedded_registry_round_trips_canonical_bytes() {
     let _guard = CWD_LOCK.lock().expect("cwd lock");
     let registry = registry();
-    assert_eq!(registry.errors().len(), 5);
-    assert_eq!(registry.bindings().len(), 3);
+    assert_eq!(registry.errors().len(), 9);
+    assert_eq!(registry.bindings().len(), 13);
     assert_eq!(registry.tombstones().len(), 1);
     assert_eq!(
         registry.canonical_bytes().as_bytes(),
@@ -209,15 +209,29 @@ fn empty_project_reports_unresolved_operations_types_and_members() {
     };
     let findings = error_contract::validate(&registry(), &project);
     let ids = rule_ids(&findings);
-    // Three unresolved operations, plus the two distinct unresolved
-    // payload leaves (planner.text and planner.task_id; identical
-    // findings collapse).
+    // Thirteen unresolved operations, plus the five distinct unresolved
+    // payload leaves (planner.text, planner.task_id, planner.user_id,
+    // planner.planning_id, planner.reorder_version; identical findings
+    // collapse).
     assert_eq!(
         ids,
         vec![
             "error.binding-invalid".to_owned(),
             "error.binding-invalid".to_owned(),
             "error.binding-invalid".to_owned(),
+            "error.binding-invalid".to_owned(),
+            "error.binding-invalid".to_owned(),
+            "error.binding-invalid".to_owned(),
+            "error.binding-invalid".to_owned(),
+            "error.binding-invalid".to_owned(),
+            "error.binding-invalid".to_owned(),
+            "error.binding-invalid".to_owned(),
+            "error.binding-invalid".to_owned(),
+            "error.binding-invalid".to_owned(),
+            "error.binding-invalid".to_owned(),
+            "error.payload-invalid".to_owned(),
+            "error.payload-invalid".to_owned(),
+            "error.payload-invalid".to_owned(),
             "error.payload-invalid".to_owned(),
             "error.payload-invalid".to_owned(),
         ]

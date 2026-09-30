@@ -1,10 +1,10 @@
 {
-  "schema_version": "lekalo/native-gate-policy/v0.3.2",
+  "schema_version": "lekalo/native-gate-policy/v0.4.0",
   "kind": "native-gate-policy",
   "policy_digest": "sha256:ba1eb9bf6e1df8a4bf76e66873c547468b6d4c886628911861c36255826340e2",
   "identity": {
     "id": "fixture-native-policy",
-    "version": "0.3.2"
+    "version": "0.4.0"
   },
   "repository_role": "consumer-repository",
   "trust": {
@@ -52,8 +52,12 @@
         "entry_digest": "sha256:c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
         "version": "unknown"
       },
-      "rule_version": "0.3.2",
-      "rule_digest": "sha256:d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1"
+      "rule_version": "0.4.0",
+      "rule_digest": "sha256:d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+      "gate_id": "packages_planner-test",
+      "gate_kind": "composer-script",
+      "required": true,
+      "cwd": "packages/planner"
     },
     {
       "package_id": "packages/api=@fixture/api",
@@ -73,8 +77,12 @@
         "entry_digest": "sha256:c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
         "version": "unknown"
       },
-      "rule_version": "0.3.2",
-      "rule_digest": "sha256:d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2"
+      "rule_version": "0.4.0",
+      "rule_digest": "sha256:d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2",
+      "gate_id": "packages_api-typecheck",
+      "gate_kind": "composer-script",
+      "required": true,
+      "cwd": "packages/api"
     },
     {
       "package_id": "packages/cli=@fixture/cli",
@@ -94,8 +102,12 @@
         "entry_digest": "sha256:c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
         "version": "unknown"
       },
-      "rule_version": "0.3.2",
-      "rule_digest": "sha256:d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3"
+      "rule_version": "0.4.0",
+      "rule_digest": "sha256:d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3",
+      "gate_id": "packages_cli-test",
+      "gate_kind": "composer-script",
+      "required": true,
+      "cwd": "packages/cli"
     },
     {
       "package_id": ".=@fixture/standalone",
@@ -115,8 +127,12 @@
         "entry_digest": "sha256:c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
         "version": "unknown"
       },
-      "rule_version": "0.3.2",
-      "rule_digest": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+      "rule_version": "0.4.0",
+      "rule_digest": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4",
+      "gate_id": "fixture_standalone-test",
+      "gate_kind": "composer-script",
+      "required": true,
+      "cwd": "."
     }
   ],
   "fallback_rule": {

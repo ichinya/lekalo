@@ -39,10 +39,10 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (p) => JSON.parse(readFileSync(resolve(root, p), "utf8"));
 
 const schemas = {
-  policy: read("contracts/native-gate-policy.schema.v0.3.2.json"),
-  plan: read("contracts/native-gate-plan.schema.v0.3.2.json"),
-  run: read("contracts/native-gate-run.schema.v0.3.2.json"),
-  view: read("contracts/native-gate-view.schema.v0.3.2.json"),
+  policy: read("contracts/native-gate-policy.schema.v0.4.0.json"),
+  plan: read("contracts/native-gate-plan.schema.v0.4.0.json"),
+  run: read("contracts/native-gate-run.schema.v0.4.0.json"),
+  view: read("contracts/native-gate-view.schema.v0.4.0.json"),
 };
 const validators = Object.fromEntries(
   Object.entries(schemas).map(([name, schema]) => {

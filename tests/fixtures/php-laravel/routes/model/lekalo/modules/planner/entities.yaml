@@ -1,0 +1,130 @@
+schema_version: "0.2.16"
+definitions:
+  - id: planner.task_id
+    kind: scalar
+    version: 1
+    description: "Stable task identifier"
+    base: uuid
+    visibility: project
+  - id: planner.text
+    kind: scalar
+    version: 1
+    description: "Human-readable text"
+    base: string
+  - id: planner.planning_id
+    kind: scalar
+    version: 1
+    description: "Stable planning-row identifier"
+    base: uuid
+    visibility: project
+  - id: planner.timestamp
+    kind: scalar
+    version: 1
+    description: "UTC event timestamp"
+    base: datetime
+    visibility: project
+  - id: planner.user_id
+    kind: scalar
+    version: 1
+    description: "Workspace user identifier"
+    base: uuid
+    visibility: project
+  - id: planner.workspace_id
+    kind: scalar
+    version: 1
+    description: "Workspace identifier"
+    base: uuid
+    visibility: project
+  - id: planner.planning_date
+    kind: scalar
+    version: 1
+    description: "Calendar day a task is planned for; the actor-local date, never rewritten by reads"
+    base: date
+    visibility: project
+  - id: planner.position
+    kind: scalar
+    version: 1
+    description: "One-based position of the task inside one planned day"
+    base: number
+    visibility: project
+  - id: planner.reorder_version
+    kind: scalar
+    version: 1
+    description: "Optimistic reorder version of one planned day; every reorder compares and swaps it inside the planning transaction"
+    base: number
+    visibility: project
+  - id: planner.planning_order
+    kind: scalar
+    version: 1
+    description: "Ordered planning-row ids of one planned day, joined by commas; the wire spelling of the reorder input"
+    base: string
+    visibility: project
+  - id: planner.task_state
+    kind: enum
+    version: 1
+    description: "Task lifecycle state"
+    values:
+      - value: backlog
+        description: "Not started"
+      - value: focused
+        description: "Currently focused"
+      - value: done
+        description: "Completed"
+  - id: planner.task
+    kind: entity
+    version: 1
+    description: "A focusable task"
+    fields:
+      - name: task_id
+        type: "planner.task_id"
+        required: true
+      - name: title
+        type: "planner.text"
+        required: true
+      - name: state
+        type: "planner.task_state"
+        required: true
+    identity:
+      - task_id
+  - id: planner.user_task_planning
+    kind: entity
+    version: 1
+    description: "One task planned into one user's day; unique per workspace, user and task; at most one active focus per user at any instant"
+    derived_from:
+      - "PLANNER-REQ-002"
+    fields:
+      - name: planning_id
+        type: "planner.planning_id"
+        required: true
+      - name: workspace_id
+        type: "planner.workspace_id"
+        required: true
+      - name: user_id
+        type: "planner.user_id"
+        required: true
+      - name: task_id
+        type: "planner.task_id"
+        required: true
+      - name: planned_for
+        type: "planner.planning_date"
+        required: true
+      - name: position
+        type: "planner.position"
+        required: true
+      - name: focused_at
+        type:
+          optional:
+            ref: "planner.timestamp"
+      - name: paused_at
+        type:
+          optional:
+            ref: "planner.timestamp"
+      - name: completed_at
+        type:
+          optional:
+            ref: "planner.timestamp"
+      - name: reorder_version
+        type: "planner.reorder_version"
+        required: true
+    identity:
+      - planning_id

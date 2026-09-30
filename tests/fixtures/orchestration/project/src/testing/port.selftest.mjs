@@ -59,8 +59,10 @@ await test("clock freeze, ids seed, actor, and authorize answer their surfaces",
   port.clock.freeze("2026-01-02T03:04:05Z");
   port.ids.seed({ algorithm: "sequence", seed: "planner-1" });
   assert.deepEqual(port.actor("planner/member", "planner"), { ref: "planner/member", scope: "planner" });
-  assert.equal(await port.authorize({ ref: "planner/member" }, "planner.deny_bulk_focus", "planner.focus_task"), "allowed");
-  assert.equal(await port.authorize("bulk-agent", "planner.deny_bulk_focus", "planner.focus_task"), "denied");
+  // The deny policy resolves through the scenario-vocabulary spelling
+  // of the IR symbol `planner.deny_bulk_focus` (issue #114).
+  assert.equal(await port.authorize({ ref: "planner/member" }, "planner.policies/deny-bulk-focus", "planner.focus_task"), "allowed");
+  assert.equal(await port.authorize("bulk-agent", "planner.policies/deny-bulk-focus", "planner.focus_task"), "denied");
 });
 
 await test("emissions and effects logs capture entries with their operation", async () => {

@@ -64,7 +64,38 @@ fn is_logical_path(value: &str) -> bool {
     crate::target_protocol::scopes::is_logical_path(value)
 }
 
+/// Whether one string is a grammatical env name: uppercase with digits
+/// and underscores, exactly the shape the JSON schema requires.
+fn is_env_name(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 64
+        && value.starts_with(|c: char| c.is_ascii_uppercase())
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_')
+}
+
 const GATE_KINDS: [&str; 4] = ["build", "typecheck", "lint", "test"];
+/// The closed v0.4.0 gate-kind metadata set (issue #61): the gate
+/// member stays the four-value execution class, the gate_kind member
+/// distinguishes the Composer/Laravel semantics without inventing
+/// values in the old enum.
+pub const GATE_KIND_METADATA: [&str; 14] = [
+    "composer-script",
+    "mago-format",
+    "mago-lint",
+    "mago-analyze",
+    "mago-guard",
+    "laratesto",
+    "pest",
+    "phpunit",
+    "artisan-check",
+    "boot-smoke",
+    "migration-static",
+    "migration-execute",
+    "discovery-smoke",
+    "legacy-suite",
+];
 const REASON_KINDS: [&str; 6] = [
     "changed-package",
     "dependent-closure",
@@ -80,13 +111,19 @@ const EXCLUDED_REASONS: [&str; 5] = [
     "owner-unknown",
     "out-of-scope",
 ];
-const MANAGERS: [&str; 5] = [
+const MANAGERS: [&str; 6] = [
     "pnpm-workspace",
     "npm-standalone",
     "npm-workspaces",
     "yarn",
     "bun",
+    "composer-project",
 ];
+
+/// Whether one string is a closed gate-kind metadata value.
+pub fn gate_kind_is_valid(value: &str) -> bool {
+    GATE_KIND_METADATA.contains(&value)
+}
 
 /// Decode one native gate plan from canonical JSON bytes and validate it
 /// independently: shape, bounds, enum closure, package/edge consistency,
@@ -159,6 +196,57 @@ pub fn validate_plan(plan: &NativePlan) -> Result<(), PlanRejection> {
             }
         }
     }
+    // The selection document (issue #61): mode must agree with the
+    // top-level selection_mode, mandatory gate ids must name executed
+    // commands, and exclusions/uncertainties reference real packages.
+    if plan.selection.mode != plan.selection_mode {
+        return shape("selection-mode-disagree");
+    }
+    if plan.selection.modules.len() > 256 || plan.selection.tests.len() > 256 {
+        return shape("selection-bound");
+    }
+    if plan.selection.mandatory_gate_ids.len() > 128 {
+        return shape("selection-bound");
+    }
+    for module in &plan.selection.modules {
+        if !is_command_id(module) {
+            return shape("selection-module");
+        }
+    }
+    for suite in &plan.selection.tests {
+        if !is_command_id(suite) {
+            return shape("selection-suite");
+        }
+    }
+    let executed_gate_ids: std::collections::BTreeSet<&str> = plan
+        .commands
+        .iter()
+        .map(|command| command.gate_id.as_str())
+        .collect();
+    for gate_id in &plan.selection.mandatory_gate_ids {
+        if !is_command_id(gate_id) || !executed_gate_ids.contains(gate_id.as_str()) {
+            return shape("selection-mandatory-gate");
+        }
+    }
+    for excluded in &plan.selection.excluded {
+        if !package_ids.contains(&excluded.package_id)
+            || !EXCLUDED_REASONS.contains(&excluded.reason.as_str())
+        {
+            return shape("selection-excluded");
+        }
+    }
+    for uncertainty in &plan.selection.uncertainties {
+        if let Some(package_id) = &uncertainty.package_id {
+            if !package_ids.contains(package_id) {
+                return shape("selection-uncertainty");
+            }
+        }
+    }
+    if let Some(rule_ref) = &plan.selection.fallback_rule_ref {
+        if !is_sha256(rule_ref) {
+            return shape("selection-fallback-ref");
+        }
+    }
     for excluded in &plan.excluded {
         if !package_ids.contains(&excluded.package_id)
             || !EXCLUDED_REASONS.contains(&excluded.reason.as_str())
@@ -168,11 +256,35 @@ pub fn validate_plan(plan: &NativePlan) -> Result<(), PlanRejection> {
     }
     // Commands: direct argv only, bounded, referencing real packages.
     let mut command_ids = std::collections::BTreeSet::new();
+    let mut gate_ids = std::collections::BTreeSet::new();
     for command in &plan.commands {
         if !is_command_id(&command.id) || command_ids.contains(&command.id) {
             return shape("command-id");
         }
         command_ids.insert(command.id.clone());
+        if !is_command_id(&command.gate_id) || !gate_ids.insert(command.gate_id.clone()) {
+            return shape("command-gate-id");
+        }
+        if !GATE_KIND_METADATA.contains(&command.gate_kind.as_str()) {
+            return shape("command-gate-kind");
+        }
+        if !is_sha256(&command.selection_ref) {
+            return shape("command-selection-ref");
+        }
+        // The selection reference must equal the digest the host
+        // computes over the plan's own selection document: the
+        // selection artifacts are pinned inside the approved plan.
+        if command.selection_ref != super::selection_digest(&plan.selection) {
+            return shape("command-selection-ref");
+        }
+        if command.covers_suite_ids.len() > 256 {
+            return shape("command-suite-bound");
+        }
+        for suite in &command.covers_suite_ids {
+            if !is_command_id(suite) {
+                return shape("command-suite-id");
+            }
+        }
         if !package_ids.contains(&command.package_id) {
             return shape("command-package");
         }
@@ -224,12 +336,52 @@ pub fn validate_plan(plan: &NativePlan) -> Result<(), PlanRejection> {
             return shape("command-limits");
         }
     }
+    // Depends_on endpoints must resolve to declared command ids: a
+    // dangling endpoint would order a command against nothing.
+    for command in &plan.commands {
+        for dependency in &command.depends_on {
+            if !command_ids.contains(dependency) {
+                return shape("command-depends-on");
+            }
+        }
+    }
     // Trust: the plan never claims more than the accepted generations.
     if plan.trust.mode != "private"
         && plan.trust.mode != "untrusted"
         && plan.trust.mode != "public-fixture"
     {
         return shape("trust-mode");
+    }
+    // Env recipe cross-checks (the schema spells the grammars; the
+    // approvals are cross-member): allowed names and binding names use
+    // the closed env grammar, binding kinds come from the closed set,
+    // and every command's env grants must ride the approved names.
+    for name in &plan.env.allowed_names {
+        if !is_env_name(name) {
+            return shape("env-allowed-name");
+        }
+    }
+    for binding in &plan.env.bindings {
+        if !is_env_name(&binding.name) {
+            return shape("env-binding-name");
+        }
+        if ![
+            "literal",
+            "execution-temp",
+            "execution-home",
+            "platform-system-root",
+        ]
+        .contains(&binding.kind.as_str())
+        {
+            return shape("env-binding-kind");
+        }
+    }
+    for command in &plan.commands {
+        for name in &command.env {
+            if !is_env_name(name) || !plan.env.allowed_names.contains(name) {
+                return shape("command-env-unapproved");
+            }
+        }
     }
     if !is_sha256(&plan.input_manifest_digest)
         || !is_sha256(&plan.tool_catalog_digest)
@@ -328,6 +480,99 @@ mod tests {
         assert_eq!(
             validate_plan(&plan).unwrap_err(),
             PlanRejection::Shape("edge-self-loop")
+        );
+    }
+
+    #[test]
+    fn the_composer_manager_is_accepted_only_in_the_successor() {
+        // Issue #61: composer-project is the proposed manager of the
+        // v0.4.0 successor — never a silent v0.3.2 enum broadening.
+        let mut plan = golden_plan();
+        plan.workspace.manager = "composer-project".into();
+        plan.plan_digest = plan_digest(&plan);
+        assert!(validate_plan(&plan).is_ok());
+    }
+
+    #[test]
+    fn unknown_gate_kind_metadata_is_a_shape_refusal() {
+        let mut plan = golden_plan();
+        plan.commands[0].gate_kind = "deploy-special".into();
+        plan.plan_digest = plan_digest(&plan);
+        assert_eq!(
+            validate_plan(&plan).unwrap_err(),
+            PlanRejection::Shape("command-gate-kind")
+        );
+    }
+
+    #[test]
+    fn a_selection_ref_not_pinned_to_the_selection_document_is_refused() {
+        let mut plan = golden_plan();
+        plan.commands[0].selection_ref = format!("sha256:{}", "0".repeat(64));
+        plan.plan_digest = plan_digest(&plan);
+        assert_eq!(
+            validate_plan(&plan).unwrap_err(),
+            PlanRejection::Shape("command-selection-ref")
+        );
+    }
+
+    #[test]
+    fn a_selection_mode_disagreement_is_a_shape_refusal() {
+        let mut plan = golden_plan();
+        plan.selection.mode = "release-full".into();
+        plan.selection.fallback_rule_ref = Some(format!("sha256:{}", "3".repeat(64)));
+        plan.selection_mode = "targeted".into();
+        plan.plan_digest = plan_digest(&plan);
+        assert_eq!(
+            validate_plan(&plan).unwrap_err(),
+            PlanRejection::Shape("selection-mode-disagree")
+        );
+    }
+
+    #[test]
+    fn a_dangling_depends_on_endpoint_is_refused() {
+        let mut plan = golden_plan();
+        plan.commands[0].depends_on = vec!["never-planned-command".to_owned()];
+        plan.plan_digest = plan_digest(&plan);
+        assert_eq!(
+            validate_plan(&plan).unwrap_err(),
+            PlanRejection::Shape("command-depends-on")
+        );
+    }
+
+    #[test]
+    fn a_command_env_grant_outside_the_approved_names_is_refused() {
+        let mut plan = golden_plan();
+        plan.env.allowed_names = vec!["APPROVED_VAR".to_owned()];
+        plan.commands[0].env = vec!["UNAPPROVED_VAR".to_owned()];
+        plan.plan_digest = plan_digest(&plan);
+        assert_eq!(
+            validate_plan(&plan).unwrap_err(),
+            PlanRejection::Shape("command-env-unapproved")
+        );
+        // The approved grant passes, and the env-name grammar is
+        // enforced on the allowed-names list itself.
+        plan.commands[0].env = vec!["APPROVED_VAR".to_owned()];
+        plan.plan_digest = plan_digest(&plan);
+        assert!(validate_plan(&plan).is_ok());
+        plan.env.allowed_names = vec!["lowercase_var".to_owned()];
+        plan.commands[0].env = vec![];
+        plan.plan_digest = plan_digest(&plan);
+        assert_eq!(
+            validate_plan(&plan).unwrap_err(),
+            PlanRejection::Shape("env-allowed-name")
+        );
+    }
+
+    #[test]
+    fn a_mandatory_gate_id_without_an_executed_command_is_refused() {
+        let mut plan = golden_plan();
+        plan.selection
+            .mandatory_gate_ids
+            .push("never-planned-gate".into());
+        plan.plan_digest = plan_digest(&plan);
+        assert_eq!(
+            validate_plan(&plan).unwrap_err(),
+            PlanRejection::Shape("selection-mandatory-gate")
         );
     }
 }

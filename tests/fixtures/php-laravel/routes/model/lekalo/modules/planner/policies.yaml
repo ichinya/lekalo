@@ -1,0 +1,23 @@
+schema_version: "0.2.16"
+definitions:
+  - id: planner.deny_bulk_focus
+    kind: policy
+    version: 1
+    description: "Bulk focus is out of scope"
+    applies_to:
+      - "planner.focus_task"
+    decision: deny
+  - id: planner.deny_foreign_planning
+    kind: policy
+    version: 1
+    description: "Planning state is scoped to the actor's own workspace and user; foreign rows are invisible and every cross-tenant access is denied"
+    derived_from:
+      - "PLANNER-REQ-006"
+    applies_to:
+      - "planner.plan_task"
+      - "planner.move_task"
+      - "planner.unplan_task"
+      - "planner.reorder_planned"
+      - "planner.pause_planning"
+      - "planner.complete_planning"
+    decision: deny

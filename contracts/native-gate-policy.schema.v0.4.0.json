@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://dev.lekalo/native-gate-policy.schema.v0.3.2.json",
+  "$id": "https://dev.lekalo/native-gate-policy.schema.v0.4.0.json",
   "title": "Lekalo Native Gate Execution Policy",
-  "description": "Closed contract for one checked-in native gate execution policy (issue #48): the exact package+script+manifest-hash+tool-recipe confirmations, the allowed gate kinds, the release fallback rule, the environment recipe, whole-run and per-command limits, output and write scopes, and the trust restriction. The policy is confirmation, never execution authority by itself: an execution still needs an approved exact plan digest, and a script merely named here without its exact manifest hash matches nothing. CI uses only this checked-in document; the absence of a confirmation blocks, it never prompts.",
+  "description": "Successor of the v0.3.2 native gate policy (issue #61; the v0.3.2 enums are never silently broadened). Closed contract for one checked-in native gate execution policy (issue #48): the exact package+script+manifest-hash+tool-recipe confirmations, the allowed gate kinds, the release fallback rule, the environment recipe, whole-run and per-command limits, output and write scopes, and the trust restriction. The policy is confirmation, never execution authority by itself: an execution still needs an approved exact plan digest, and a script merely named here without its exact manifest hash matches nothing. CI uses only this checked-in document; the absence of a confirmation blocks, it never prompts.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -24,7 +24,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": "lekalo/native-gate-policy/v0.3.2"
+      "const": "lekalo/native-gate-policy/v0.4.0"
     },
     "kind": {
       "const": "native-gate-policy"
@@ -246,7 +246,11 @@
         "argv",
         "tool_ref",
         "rule_version",
-        "rule_digest"
+        "rule_digest",
+        "gate_id",
+        "gate_kind",
+        "required",
+        "cwd"
       ],
       "properties": {
         "package_id": {
@@ -281,8 +285,36 @@
         },
         "rule_digest": {
           "$ref": "#/$defs/sha256Digest"
+        },
+        "gate_id": {
+          "$ref": "#/$defs/gateId"
+        },
+        "gate_kind": {
+          "$ref": "#/$defs/gateKindMetadata"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "cwd": {
+          "oneOf": [
+            {
+              "const": "."
+            },
+            {
+              "$ref": "#/$defs/logicalPath"
+            }
+          ]
+        },
+        "covers_suite_ids": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/gateId"
+          }
         }
-      }
+      },
+      "description": "One confirmed (package, gate) recipe. Confirmations join per package by the stable gate_id (issue #61): several confirmations for one package are allowed and each produces its own proposed command."
     },
     "packageId": {
       "description": "The stable native package id: the workspace-relative root with its declared package name, joined by '=' (lowercase portable segments only).",
@@ -506,6 +538,30 @@
       "type": "string",
       "pattern": "^(?!(?:.*[/])?(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:[./]|$))(?!(?:.*[/])?\\.{1,2}(?:/|$))(?!.*\\.(?:/|$))[a-z0-9.][a-z0-9._-]{0,63}(?:/[a-z0-9.][a-z0-9._-]{0,63})*$",
       "maxLength": 512
+    },
+    "gateId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+      "maxLength": 128
+    },
+    "gateKindMetadata": {
+      "type": "string",
+      "enum": [
+        "composer-script",
+        "mago-format",
+        "mago-lint",
+        "mago-analyze",
+        "mago-guard",
+        "laratesto",
+        "pest",
+        "phpunit",
+        "artisan-check",
+        "boot-smoke",
+        "migration-static",
+        "migration-execute",
+        "discovery-smoke",
+        "legacy-suite"
+      ]
     }
   }
 }

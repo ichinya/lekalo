@@ -408,17 +408,24 @@ step("scaffold-once emits once, keeps user bytes, and refuses unowned paths", ()
 step("checked custody is strict: absent evidence can never pass", () => {
   const root = mkdtempSync(join(tmpdir(), "lekalo-types-c-"));
   materialize(root, "inputs/planner-checked.types.json", corpusIr, "planner-checked.types.json");
-  // Zero writes, and the absent observer is a finding for every id.
-  // A findings outcome plans nothing and carries no plan id: there is
-  // nothing to apply.
+  // Zero writes, and the absent observer vetoes the plan as the
+  // bounded in-envelope error (the closed generate result carries no
+  // findings member): the first sorted finding code names the refusal.
+  // A veto plans nothing and carries no plan id: there is nothing to
+  // apply.
   const dry = adapterCall(root, {
     ...baseRequest("generate", "lekalo/types/planner-checked.types.json"),
     request_id: requestId("checked-absent"),
     dry_run: true,
   });
-  assert.equal(dry.status, "ok");
-  assert.deepEqual(dry.result.writes, [], "checked custody never emits");
-  const findings = dry.result.findings;
+  assert.equal(dry.status, "error");
+  assert.equal(dry.error.class, "invalid");
+  assert.equal(dry.error.code, "php-types.binding-missing");
+  assert.equal(dry.writes, undefined, "a veto never carries a writes member");
+  assert.equal(dry.evidence.plan_id, undefined, "a veto carries no plan authority");
+  // The full per-id enumeration stays on the validate surface, where
+  // the findings member is legal.
+  const findings = validate(root, "lekalo/types/planner-checked.types.json", "checked-absent-validate");
   const missingCodes = new Set(findings.map((f) => f.code));
   assert.ok(missingCodes.has("php-types.binding-missing"));
   assert.equal(findings.length, 13);
@@ -503,12 +510,20 @@ for (const [name, irFixture, reason] of [
       request_id: requestId(`unsupported-${reason}`),
       dry_run: true,
     });
-    assert.equal(dry.status, "ok");
-    assert.deepEqual(dry.result.writes, [], "an unsupported projection never publishes a partial DTO set");
-    const finding = dry.result.findings.find(
-      (f) => f.code === "php-types.mapping-unsupported" && f.detail.includes(reason),
+    assert.equal(dry.status, "error");
+    assert.equal(dry.writes, undefined, "a veto never carries a writes member");
+    assert.equal(dry.error.class, "invalid");
+    assert.equal(dry.error.code, "php-types.mapping-unsupported", `the ${reason} finding is reported`);
+    assert.ok(dry.error.message.includes(reason), `the ${reason} detail rides the message`);
+    assert.equal(dry.evidence.plan_id, undefined, "a veto carries no plan authority");
+    // The typed finding enumeration stays on the validate surface.
+    const findings = validate(root, "lekalo/types/planner.types.json", `unsupported-${reason}`);
+    assert.ok(
+      findings.some(
+        (f) => f.code === "php-types.mapping-unsupported" && (f.detail ?? "").includes(reason),
+      ),
+      `the ${reason} finding is reported on validate`,
     );
-    assert.ok(finding, `the ${reason} finding is reported`);
     rmSync(root, { recursive: true, force: true });
   });
 }
