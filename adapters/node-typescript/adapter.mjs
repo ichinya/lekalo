@@ -223278,10 +223278,13 @@ var LIMITATION_CODES = /* @__PURE__ */ new Set([
   "projection-dynamic",
   "returning-dynamic",
   "join-target-unresolved",
-  "query-shape-ignored",
   "alias-continuation",
   "input-dynamic",
   "upsert-alternative",
+  // recognized Drizzle surfaces outside the qualified static subset —
+  // they are never dropped silently (issue #116 fix round)
+  "relational-query-unsupported",
+  "batch-unsupported",
   // transactions
   "query-not-tx-bound",
   "tx-escaped",
@@ -223300,6 +223303,7 @@ var LIMITATION_CODES = /* @__PURE__ */ new Set([
   "bindings-input-missing",
   "bindings-input-invalid",
   "binding-unresolved",
+  "binding-ambiguous",
   "binding-stale-table-native-missing",
   "binding-stale-table-source-changed",
   "projection-input-invalid",
@@ -223511,6 +223515,17 @@ function resolveAliasSymbol(checker, symbol) {
 function symbolInClosure(symbol, closurePrefix) {
   return (symbol?.declarations ?? []).some((declaration) => declaration.getSourceFile().fileName.startsWith(closurePrefix));
 }
+function closureCalleeSymbol(context, calleeNode) {
+  let symbol;
+  try {
+    symbol = context.checker.getSymbolAtLocation(calleeNode);
+  } catch {
+    return null;
+  }
+  symbol = resolveAliasSymbol(context.checker, symbol);
+  if (!symbolInClosure(symbol, context.closurePrefix)) return null;
+  return symbol;
+}
 function closureDeclarationPath(symbol, closurePrefix) {
   for (const declaration of symbol?.declarations ?? []) {
     const fileName = declaration.getSourceFile().fileName;
@@ -223582,6 +223597,7 @@ var ExtractorContext = class {
     this.queries = [];
     this.transactions = [];
     this.migrations = [];
+    this.sectionGaps = /* @__PURE__ */ new Set();
     this.contributingFiles = /* @__PURE__ */ new Map();
     this.fileDigestCache = /* @__PURE__ */ new Map();
   }
@@ -223933,23 +223949,20 @@ function resolveReferencesTarget(context, args) {
   };
 }
 function extractTable(context, sourceFile, node, exportName) {
-  const { ts: ts2, checker } = context;
+  const { ts: ts2 } = context;
   const calleeNode = node.expression;
-  const calleeName = calleeNode.kind === ts2.SyntaxKind.Identifier ? calleeNode.text : calleeNode.kind === ts2.SyntaxKind.PropertyAccessExpression ? calleeNode.name.getText() : null;
-  if (calleeName === null) return null;
-  let symbol;
-  try {
-    symbol = checker.getSymbolAtLocation(calleeNode);
-  } catch {
+  if (calleeNode.kind !== ts2.SyntaxKind.Identifier && calleeNode.kind !== ts2.SyntaxKind.PropertyAccessExpression) {
     return null;
   }
-  symbol = resolveAliasSymbol(checker, symbol);
-  if (!symbolInClosure(symbol, context.closurePrefix)) return null;
-  const dialect = calleeName === "pgTable" ? "postgresql" : calleeName === "mysqlTable" ? "mysql" : null;
+  const symbol = closureCalleeSymbol(context, calleeNode);
+  if (symbol === null) return null;
+  const factoryName = symbol.getName();
+  const dialect = factoryName === "pgTable" ? "postgresql" : factoryName === "mysqlTable" ? "mysql" : null;
   const modulePath = context.modulePathOf(sourceFile);
   if (dialect === null) {
-    if (calleeName === "sqliteTable" || calleeName === "singlestoreTable") {
-      context.limit("unsupported-dialect", modulePath, lineOf(sourceFile, node), calleeName);
+    if (factoryName === "sqliteTable" || factoryName === "singlestoreTable") {
+      context.limit("unsupported-dialect", modulePath, lineOf(sourceFile, node), factoryName);
+      context.sectionGaps.add("tables");
     }
     return null;
   }
@@ -224030,7 +224043,6 @@ function extractTable(context, sourceFile, node, exportName) {
   if (scopeColumn !== void 0) {
     row.tenantKey = { column: scopeColumn.tsName, evidence: "declaration-only" };
   }
-  void checker;
   return row;
 }
 var CONSTRAINT_NAMES = /* @__PURE__ */ new Set([
@@ -224084,6 +224096,12 @@ function extractConstraint(context, sourceFile, node, tableRow) {
   }
   const whereCall = [...chain.links].reverse().find((link) => link.kind === "call" && link.name === "where");
   const limitations = [];
+  const checkBody = kind === "check" ? firstCall.node.arguments?.[1] : void 0;
+  const sqlPredicate = kind === "check" && (whereCall !== void 0 || checkBody !== void 0);
+  if (sqlPredicate) {
+    context.limit("raw-sql", tableRow.module, lineOf(sourceFile, node), constraintName ?? "check");
+    limitations.push("raw-sql");
+  }
   if (members.length === 0 && kind !== "check") {
     context.limit("constraint-member-unresolved", tableRow.module, lineOf(sourceFile, node), kind);
     limitations.push("constraint-member-unresolved");
@@ -224100,6 +224118,7 @@ function extractConstraint(context, sourceFile, node, tableRow) {
     membersResolved: members.map((member) => member.resolved),
     referenced,
     actions: Object.keys(actions).length > 0 ? actions : null,
+    sqlPredicate,
     span: spanOf(sourceFile, node),
     limitations
   };
@@ -224130,10 +224149,12 @@ function extractRelations(context, sourceFile, node) {
   const sourceTableRow = context.tableForNodeIdentifier(node.arguments?.[0]);
   const callback = node.arguments?.[1];
   if (sourceTableRow === null) {
+    context.sectionGaps.add("relations");
     context.limit("relation-target-unresolved", modulePath, lineOf(sourceFile, node), "source-table");
     return null;
   }
   if (callback === void 0 || callback.kind !== ts2.SyntaxKind.ArrowFunction && callback.kind !== ts2.SyntaxKind.FunctionExpression) {
+    context.sectionGaps.add("relations");
     context.limit("relation-policy-missing", modulePath, lineOf(sourceFile, node), "callback");
     return null;
   }
@@ -224154,6 +224175,7 @@ function extractRelations(context, sourceFile, node) {
     body = body.expression;
   }
   if (body?.kind !== ts2.SyntaxKind.ObjectLiteralExpression) {
+    context.sectionGaps.add("relations");
     context.limit("relation-policy-missing", modulePath, lineOf(sourceFile, node), "config-object");
     return null;
   }
@@ -224224,6 +224246,9 @@ function extractRelations(context, sourceFile, node) {
       limitations,
       confidence: "inferred"
     });
+  }
+  if (rows.length === 0) {
+    context.sectionGaps.add("relations");
   }
   void checker;
   return rows;
@@ -224432,7 +224457,7 @@ function extractQueryChain(context, sourceFile, { root, links }, receiverKind, t
   } else {
     query.effects = [{ action: "delete", level: "entity", fields: [] }];
   }
-  if (!query.awaited && !query.terminal) {
+  if (!query.awaited && !query.terminal && !isReturnedChain(ts2, links[links.length - 1].node)) {
     query.limitations.push("builder-not-executed");
   }
   void root;
@@ -224452,6 +224477,19 @@ function isAwaitedChain(ts2, node) {
   let guard = 0;
   while (current !== void 0 && current !== null && guard++ < 12) {
     if (current.kind === ts2.SyntaxKind.AwaitExpression) return true;
+    if (current.kind === ts2.SyntaxKind.PropertyAccessExpression || current.kind === ts2.SyntaxKind.CallExpression || current.kind === ts2.SyntaxKind.ParenthesizedExpression || current.kind === ts2.SyntaxKind.NonNullExpression || current.kind === ts2.SyntaxKind.AsExpression) {
+      current = current.parent;
+      continue;
+    }
+    return false;
+  }
+  return false;
+}
+function isReturnedChain(ts2, node) {
+  let current = node.parent;
+  let guard = 0;
+  while (current !== void 0 && current !== null && guard++ < 12) {
+    if (current.kind === ts2.SyntaxKind.ReturnStatement) return true;
     if (current.kind === ts2.SyntaxKind.PropertyAccessExpression || current.kind === ts2.SyntaxKind.CallExpression || current.kind === ts2.SyntaxKind.ParenthesizedExpression || current.kind === ts2.SyntaxKind.NonNullExpression || current.kind === ts2.SyntaxKind.AsExpression) {
       current = current.parent;
       continue;
@@ -224558,6 +224596,17 @@ function recordInput(context, sourceFile, node, query, role) {
   if (primitive !== null) {
     query.inputs.push({ role, expr: "literal", typeToken: primitive.kind, value: primitive.token });
     return;
+  }
+  if (node.kind === ts2.SyntaxKind.PropertyAccessExpression) {
+    const tableRow = context.tableForNodeIdentifier(node.expression);
+    if (tableRow !== null) {
+      if (query.reads.length < MAX_QUERY_FIELDS) {
+        query.reads.push({ table: tableRow.exportName, column: node.name.getText(), role });
+      } else {
+        context.limit("truncated", query.module, lineOf(sourceFile, node), "reads");
+      }
+      return;
+    }
   }
   if (node.kind === ts2.SyntaxKind.Identifier || node.kind === ts2.SyntaxKind.PropertyAccessExpression) {
     let typeToken = null;
@@ -224748,20 +224797,38 @@ function extractTransaction(context, sourceFile, callNode, receiverKind, parentT
             sourceFile,
             { root, links },
             identity,
-            tx ?? row.id
+            tx
           );
           if (query !== null) {
             if (tx === null) {
               context.limit("query-not-tx-bound", modulePath, lineOf(sourceFile, node));
               query.limitations.push("query-not-tx-bound");
+            } else {
+              row.members.push(query.id);
             }
             if (conditional) {
               query.conditional = true;
               query.limitations.push("conditional-flow");
             }
             context.queries.push(query);
-            row.members.push(query.id);
           }
+          return;
+        }
+      }
+      if (links.length > 0 && (identity === "tx" || identity === "tx-alias" || identity === "db" || identity === "db-alias")) {
+        if (links[0].kind === "access" && links[0].name === "query") {
+          context.limit(
+            "relational-query-unsupported",
+            modulePath,
+            lineOf(sourceFile, node),
+            "relational-query-api"
+          );
+          context.sectionGaps.add("queries");
+          return;
+        }
+        if (links[0].kind === "call" && links[0].name === "batch") {
+          context.limit("batch-unsupported", modulePath, lineOf(sourceFile, node), "batch-api");
+          context.sectionGaps.add("queries");
           return;
         }
       }
@@ -224890,6 +224957,12 @@ function rootIdentityKind(context, root, state) {
   return "unknown";
 }
 function extractMigrations(extract, ts2, manifest, readBytes) {
+  const allFiles = [
+    ...manifest.sourceFiles,
+    ...manifest.configFiles,
+    ...manifest.packageFiles,
+    ...manifest.otherFiles
+  ];
   const configEntries = manifest.sourceFiles.filter((entry) => /drizzle\.config\.[cm]?tsx?$/.test(entry.path)).slice(0, 8);
   for (const entry of configEntries) {
     let text;
@@ -224961,6 +225034,7 @@ function extractMigrations(extract, ts2, manifest, readBytes) {
           }
           const entryOverflow = { hit: false };
           for (const file3 of folderEntries.slice(0, MAX_MIGRATION_ENTRIES)) {
+            extract.noteFile(file3.path, "sha256:" + file3.digest);
             pushBounded(row.entries, MAX_MIGRATION_ENTRIES, {
               path: file3.path,
               digest: "sha256:" + file3.digest,
@@ -224978,6 +225052,11 @@ function extractMigrations(extract, ts2, manifest, readBytes) {
       if (schemaRef.includes("..") || schemaRef.startsWith("/")) {
         extract.limit("migration-path-escapes-root", entry.path, null, schemaRef);
         row.limitations.push("migration-path-escapes-root");
+        continue;
+      }
+      if (!inventoryRefKnown(allFiles, schemaRef)) {
+        extract.limit("migration-ref-missing", entry.path, row.span?.start?.line ?? null, schemaRef);
+        row.limitations.push("migration-ref-missing");
       }
     }
     pushBounded(extract.migrations, MAX_MIGRATIONS, row, extract.overflow);
@@ -224985,6 +225064,13 @@ function extractMigrations(extract, ts2, manifest, readBytes) {
 }
 function context2Limit(extract, code, path, line, detail) {
   extract.limit(code, path, line, detail);
+}
+function inventoryRefKnown(allFiles, schemaRef) {
+  const paths = allFiles.map((file3) => file3.path);
+  if (paths.includes(schemaRef)) return true;
+  const base = schemaRef.replace(/\/\*\*?\/?(?:\.[a-z]+)?$/i, "");
+  const prefix = base !== schemaRef && base.length > 0 ? base : schemaRef;
+  return paths.some((path) => path.startsWith(`${prefix}/`));
 }
 function normalizeRelativeRef(value) {
   return value.replace(/^\.\//, "").replace(/\/$/, "");
@@ -225164,12 +225250,18 @@ function attachDrizzleEvidence({
   manifest,
   readBytes,
   drizzleBindingsInput,
-  drizzleProjectionInput,
-  bindingsInputPath,
-  projectionInputPath
+  drizzleProjectionInput
 }) {
   if (!drizzleAttachment?.attached || !drizzleClosure) {
     index.drizzle = null;
+    if (drizzleAttachment && !drizzleAttachment.attached && (drizzleAttachment.reason === "pin-not-exact" || drizzleAttachment.reason === "pin-mismatch")) {
+      index.drizzleAttachment = {
+        attached: false,
+        reason: drizzleAttachment.reason,
+        declared: drizzleAttachment.declared ?? [],
+        supported: drizzleAttachment.supported ?? null
+      };
+    }
     return null;
   }
   const closurePrefix = `/lekalo/deps/drizzle-orm@${drizzleClosure.pin}/`;
@@ -225183,11 +225275,14 @@ function attachDrizzleEvidence({
     extract.fileDigestCache.set(sourceFile.fileName, digest);
     return digest;
   };
-  if (drizzleBindingsInput !== null) {
-    extract.noteFile(bindingsInputPath, "sha256:" + sha256Hex2(drizzleBindingsInput));
+  const bindingsInput = drizzleBindingsInput?.value ?? null;
+  const projectionRecord = drizzleProjectionInput ?? null;
+  const projectionInput = projectionRecord?.value ?? null;
+  if (bindingsInput !== null && drizzleBindingsInput.path !== null) {
+    extract.noteFile(drizzleBindingsInput.path, "sha256:" + sha256Hex2(bindingsInput));
   }
-  if (drizzleProjectionInput !== null) {
-    extract.noteFile(projectionInputPath, "sha256:" + sha256Hex2(canonicalText(drizzleProjectionInput)));
+  if (projectionInput !== null && projectionRecord.path !== null) {
+    extract.noteFile(projectionRecord.path, "sha256:" + sha256Hex2(canonicalText(projectionInput)));
   }
   for (const sourceFile of program.getSourceFiles()) {
     const modulePath = normalizePathForIndex(sourceFile, context);
@@ -225228,7 +225323,7 @@ function attachDrizzleEvidence({
     if (normalizePathForIndex(sourceFile, context) === null) continue;
     const walkRelations = (node) => {
       if (node === void 0 || node === null) return;
-      if (node.kind === ts2.SyntaxKind.CallExpression && node.expression?.kind === ts2.SyntaxKind.Identifier && node.expression.text === "relations") {
+      if (node.kind === ts2.SyntaxKind.CallExpression && node.expression?.kind === ts2.SyntaxKind.Identifier && closureCalleeSymbol(extract, node.expression)?.getName() === "relations") {
         const rows = extractRelations(extract, sourceFile, node);
         if (rows !== null) {
           for (const row of rows) {
@@ -225287,6 +225382,21 @@ function attachDrizzleEvidence({
           const shapePair = links.some((link) => link.kind === "call" && (link.name === "from" || link.name === "values" || link.name === "set" || link.name === "where"));
           if (shapePair) {
             extract.limit("receiver-unknown", modulePath, lineOf(sourceFile, node));
+            extract.sectionGaps.add("queries");
+          }
+        }
+        if (links.length > 0 && (links[0].kind === "access" && links[0].name === "query" || links[0].kind === "call" && links[0].name === "batch")) {
+          const identity = rootIdentityKind(extract, root, state);
+          if (identity === "db" || identity === "db-alias" || identity === "tx") {
+            const code = links[0].name === "query" ? "relational-query-unsupported" : "batch-unsupported";
+            extract.limit(
+              code,
+              modulePath,
+              lineOf(sourceFile, node),
+              links[0].name === "query" ? "relational-query-api" : "batch-api"
+            );
+            extract.sectionGaps.add("queries");
+            if (links[0].kind === "access") return;
           }
         }
         if (tailName === "execute") {
@@ -225304,8 +225414,8 @@ function attachDrizzleEvidence({
   const scopeRows = extractScopeRows(extract);
   let bindings = [];
   let bindingsState = "missing";
-  if (drizzleBindingsInput !== null) {
-    const decoded = decodeBindingsInput(drizzleBindingsInput);
+  if (bindingsInput !== null) {
+    const decoded = decodeBindingsInput(bindingsInput);
     if (!decoded.ok) {
       extract.limit("bindings-input-invalid", null, null, decoded.reason);
       bindingsState = "invalid";
@@ -225313,7 +225423,30 @@ function attachDrizzleEvidence({
       bindingsState = "decoded";
       const overflow = { hit: false };
       for (const entity of decoded.entities) {
-        const tableRow = extract.tableByExport.get(entity.table) ?? extract.tableByPhysical.get(entity.table)?.[0] ?? null;
+        const exportMatches = extract.tables.filter((table) => table.exportName === entity.table);
+        const physicalMatches = extract.tableByPhysical.get(entity.table) ?? [];
+        let tableRow = null;
+        let ambiguous = false;
+        if (exportMatches.length === 1) {
+          tableRow = exportMatches[0];
+        } else if (exportMatches.length > 1) {
+          ambiguous = true;
+        } else if (physicalMatches.length === 1) {
+          tableRow = physicalMatches[0];
+        } else if (physicalMatches.length > 1) {
+          ambiguous = true;
+        }
+        if (ambiguous) {
+          extract.limit("binding-ambiguous", null, null, `${entity.entity}->${entity.table}`);
+          pushBounded(bindings, MAX_BINDINGS, {
+            entity: entity.entity,
+            table: { exportName: entity.table, native: null, physicalName: null, fileDigest: null },
+            status: "ambiguous",
+            basis: "explicit-owner-input",
+            limitations: ["binding-ambiguous"]
+          }, overflow);
+          continue;
+        }
         if (tableRow === null) {
           extract.limit("binding-unresolved", null, null, `${entity.entity}->${entity.table}`);
           pushBounded(bindings, MAX_BINDINGS, {
@@ -225340,22 +225473,28 @@ function attachDrizzleEvidence({
       }
       if (overflow.hit) extract.limit("truncated", null, null, "bindings");
     }
+  } else if (drizzleBindingsInput && drizzleBindingsInput.reason !== "absent") {
+    extract.limit("bindings-input-invalid", null, null, drizzleBindingsInput.reason);
+    bindingsState = "invalid";
   } else {
     extract.limit("bindings-input-missing", null, null);
   }
   let projectionRows = [];
   let projectionState = "absent";
-  if (drizzleProjectionInput !== null && drizzleProjectionInput !== void 0) {
-    const comparison = compareProjection(extract, drizzleProjectionInput);
+  if (projectionInput !== null) {
+    const comparison = compareProjection(extract, projectionInput);
     projectionRows = comparison.rows;
     projectionState = comparison.state;
+  } else if (projectionRecord && projectionRecord.reason !== "absent") {
+    extract.limit("projection-input-invalid", null, null, projectionRecord.reason);
+    projectionState = "invalid";
   }
   const partialFromRows = (rows) => rows.some((row) => (row.limitations?.length ?? 0) > 0);
   const sections = {
-    tables: extract.tables.every((table) => table.completeness === "complete") && !extract.overflow.hit ? "complete" : "partial",
-    relations: extract.relations.length === 0 ? "complete" : partialFromRows(extract.relations) ? "partial" : "partial",
-    queries: extract.queries.length === 0 ? "complete" : partialFromRows(extract.queries) ? "partial" : "partial",
-    transactions: extract.transactions.length === 0 ? "complete" : partialFromRows(extract.transactions) ? "partial" : "partial",
+    tables: !extract.sectionGaps.has("tables") && extract.tables.every((table) => table.completeness === "complete") && !extract.overflow.hit ? "complete" : "partial",
+    relations: extract.sectionGaps.has("relations") || partialFromRows(extract.relations) ? "partial" : "complete",
+    queries: extract.sectionGaps.has("queries") || partialFromRows(extract.queries) ? "partial" : "complete",
+    transactions: partialFromRows(extract.transactions) ? "partial" : "complete",
     migrations: extract.migrations.every((row) => row.limitations.length === 0) ? "complete" : "partial",
     scope: "partial",
     bindings: bindingsState === "decoded" ? "complete" : "partial",
@@ -225379,14 +225518,21 @@ function attachDrizzleEvidence({
     },
     provenance: {
       // Mirrors the scanner's input manifest key: the full input
-      // revision this evidence is fresh against.
+      // revision this evidence is fresh against. otherFiles are inputs
+      // too — migration SQL/journal edits (same byte length or not)
+      // must change the revision (issue #116 fix round, research §2).
       inputRevision: sha256Hex2(canonicalText({
         sourceFiles: manifest.sourceFiles.length,
         configFiles: manifest.configFiles.length,
         packageFiles: manifest.packageFiles.length,
         otherFiles: manifest.otherFiles.length,
         totalBytes: manifest.totalBytes,
-        files: [...manifest.sourceFiles, ...manifest.configFiles, ...manifest.packageFiles]
+        files: [
+          ...manifest.sourceFiles,
+          ...manifest.configFiles,
+          ...manifest.packageFiles,
+          ...manifest.otherFiles
+        ]
       })),
       files: [...extract.contributingFiles.entries()].map(([path, digest]) => ({ path, digest })).sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0).slice(0, MAX_PROVENANCE_FILES)
     },
@@ -226595,7 +226741,7 @@ function runScan({ profile, readView, permittedProjectRoot, limits }) {
     if (drizzlePaths === null) {
       throw new RequestRefusal("drizzle-closure", "the embedded drizzle closure misses a supported subpath");
     }
-    options.paths = drizzlePaths;
+    options.paths = { ...drizzlePaths, ...options.paths };
   }
   programOptions = options;
   const configured = new Set(rootNames.map((name) => name.toLowerCase()));
@@ -226651,10 +226797,8 @@ function runScan({ profile, readView, permittedProjectRoot, limits }) {
     drizzleClosure,
     manifest,
     readBytes,
-    drizzleBindingsInput: drizzleBindingsInput.value,
-    drizzleProjectionInput: drizzleProjectionInput.value,
-    bindingsInputPath: drizzleBindingsInput.path,
-    projectionInputPath: drizzleProjectionInput.path
+    drizzleBindingsInput,
+    drizzleProjectionInput
   });
   return finalizeScan(index, manifest, profile, readView, programOptions);
 }
@@ -226667,12 +226811,21 @@ function readOptionalProjectInput(manifest, readBytes, path, { json = false } = 
   ];
   const entry = allFiles.find((file3) => file3.path === path);
   if (entry === void 0) return { value: null, path: null, reason: "absent" };
+  let text;
   try {
-    const text = readBytes(path).toString("utf8");
-    if (!json) return { value: text, path, reason: null };
-    return { value: JSON.parse(text), path, reason: null };
+    text = readBytes(path).toString("utf8");
   } catch (error) {
-    return { value: null, path, reason: String(error?.code ?? "unreadable").slice(0, 64) };
+    return {
+      value: null,
+      path,
+      reason: `unreadable:${String(error?.code ?? error?.name ?? "error").slice(0, 32)}`
+    };
+  }
+  if (!json) return { value: text, path, reason: null };
+  try {
+    return { value: JSON.parse(text), path, reason: null };
+  } catch {
+    return { value: null, path, reason: "invalid-json" };
   }
 }
 function finalizeScan(index, manifest, profile, readView, programOptions) {
