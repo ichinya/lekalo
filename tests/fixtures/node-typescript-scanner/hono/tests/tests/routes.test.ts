@@ -23,6 +23,11 @@ describe("items", () => {
     const res = await app.request(path);
     void res;
   });
+
+  it("binds mounted routes through the root app", async () => {
+    const res = await app.request("/sub/other");
+    void res;
+  });
 });
 
 describe("client", () => {

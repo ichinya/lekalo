@@ -1046,6 +1046,7 @@ function resolveOneRoute(ctx, event, scope, routes) {
     instance: event.instance,
     mount: scope.mount ?? null,
     mountChain: scope.mountChain ?? null,
+    rootInstance: scope.mountChain?.[0]?.instance ?? event.instance,
     path: fullPath,
     methods: methods.filter(Boolean),
     terminal,

@@ -168,19 +168,25 @@ function collectClientVerb(ctx, node, expression, verb, sourceFile, fromModule, 
 }
 
 /**
- * Match one static request against the resolved routes of the same
- * app identity; unique → bind the terminal handler, ambiguous/missing
- * → incomplete records with the reason, never a guessed link.
+ * Match one static request against the resolved routes rooted at the
+ * same app identity: standalone routes of the instance AND routes that
+ * reached it through mount ancestry (rootInstance). Test flows on a
+ * mounting app can therefore bind mounted routes; a unique match binds
+ * the terminal handler and inherits the route's completeness (a bound
+ * but incomplete route never claims a complete flow). Ambiguous or
+ * missing matches stay reasoned incomplete records, never guesses.
  */
 function emitMatchedRouteTest(ctx, { module, sourceFile, node, testScopes, instance, method, path, methodResolved, pathResolved }) {
   const candidates = [];
   for (const route of ctx.routes ?? []) {
-    if (route.instance.key !== instance.key) continue;
+    if (route.rootInstance?.key !== instance.key) continue;
     for (const routeMethod of route.methods) {
       if (routeMethod === method && route.path === path) candidates.push(route);
     }
   }
   const unique = candidates.length === 1 ? candidates[0] : null;
+  const bound = unique !== null;
+  const complete = bound && unique.status === "complete";
   emitRouteTest(ctx, {
     module,
     sourceFile,
@@ -191,14 +197,14 @@ function emitMatchedRouteTest(ctx, { module, sourceFile, node, testScopes, insta
     terminal: unique?.terminal ?? null,
     method,
     path,
-    status: unique ? "complete" : candidates.length === 0 ? "incomplete" : "incomplete",
-    reasons: unique
-      ? []
+    status: complete ? "complete" : bound ? unique.status : "incomplete",
+    reasons: bound
+      ? [...(unique.reasons ?? [])]
       : candidates.length === 0
         ? (methodResolved && pathResolved ? ["missing-endpoint-join"] : ["dynamic-test-target"])
         : ["ambiguous-endpoint-join"],
-    confidence: unique ? "exact" : "low",
-    note: unique ? "app-request" : `app-request:${candidates.length}-matches`,
+    confidence: complete ? "exact" : bound ? "medium" : "low",
+    note: bound ? "app-request" : `app-request:${candidates.length}-matches`,
   });
 }
 

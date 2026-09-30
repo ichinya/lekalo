@@ -157,6 +157,12 @@ test("tests: app.request and testClient flows bind to resolved routes", async ()
     assert.ok(missing.reasons.includes("missing-endpoint-join"));
     // Dynamic URL: never guessed.
     assert.ok(context.hono.uncertainty.some((row) => row.kind === "hono-dynamic-test-target"));
+    // Mounted routes bind through the root app: GET /sub/other resolves
+    // through app.route('/sub', other) and binds listHandler.
+    const mounted = byNote.get("GET /sub/other");
+    assert.ok(mounted, "mounted route bound through the root app");
+    assert.equal(mounted.to.name, "listHandler");
+    assert.equal(mounted.status, "complete");
     // testClient binds the app identity.
     const client = bindings.find((row) => row.note === "test-client");
     assert.ok(client, "testClient app identity recorded");
