@@ -414,7 +414,18 @@ test("mounted basePath children and alias targets: prefixes and subtrees survive
     // grandchildBase + route path — every own prefix composes.
     assert.equal(byKey.get("GET /bp/v/n/nb/leaf").to.name, "leafHandler");
     assert.equal(byKey.get("GET /bp/v/n/nb/leaf").status, "complete");
+    // MAJOR: the mount target is a const ALIAS of the view; the alias
+    // resolves to the target's events, so the subtree is not silently
+    // empty under the alias mount.
+    assert.equal(byKey.get("GET /bp2/v/in").to.name, "inHandler");
+    assert.equal(byKey.get("GET /bp2/v/in").status, "complete");
+    assert.equal(byKey.get("GET /bp2/v/n/nb/leaf").to.name, "leafHandler");
+    assert.equal(byKey.get("GET /bp2/v/n/nb/leaf").status, "complete");
     // An alias-name registration after the mount stays snapshot-honest.
+    const aliasIn = byKey.get("GET /bp2/v/alias-in");
+    assert.ok(aliasIn, "alias-name registration resolved under the alias mount");
+    assert.equal(aliasIn.status, "incomplete");
+    assert.ok(aliasIn.reasons.includes("post-mount-registration"));
     // Mount reachability still constrains every prefixed subtree.
     for (const key of ["GET /bpc/v/in", "GET /bpc/v/n/nb/leaf"]) {
       assert.equal(byKey.get(key).status, "incomplete");
@@ -428,19 +439,20 @@ test("mounted basePath children and alias targets: prefixes and subtrees survive
     // less guesses, the uncomposed grandchild, and the mounted view's
     // standalone-surface mount are all gone.
     for (const key of [
-      "GET /bp/in", "GET /bpi/in", "GET /bp/v/n/leaf",
+      "GET /bp/in", "GET /bpi/in", "GET /bp2/in", "GET /bp/v/n/leaf",
       "GET /v/in", "GET /v/n/leaf", "GET /v/n/nb/leaf", "GET /nb/leaf",
     ]) {
       assert.equal(byKey.get(key), undefined, `${key} must not exist`);
     }
-    // Mount relations: every occurrence recorded, conditional and
-    // deferred mounts stay incomplete, and the nested /n fact is
-    // emitted exactly once.
+    // Mount relations: every occurrence recorded, the alias mount
+    // names the alias binding, conditional and deferred mounts stay
+    // incomplete, and the nested /n fact is emitted exactly once.
     const mounts = recordsOfRelation(context, "mounts-router");
     const mountsByPath = new Map(mounts.map((row) => [row.path, row]));
-    for (const path of ["/bp", "/bpi", "/bpc", "/bpd", "/n"]) {
+    for (const path of ["/bp", "/bpi", "/bp2", "/bpc", "/bpd", "/n"]) {
       assert.ok(mountsByPath.get(path), `mount ${path} recorded`);
     }
+    assert.equal(mountsByPath.get("/bp2").to.name, "aliased");
     assert.equal(mountsByPath.get("/bp").to.name, "view");
     assert.ok(mountsByPath.get("/bpc").reasons.includes("conditional-registration"));
     assert.ok(mountsByPath.get("/bpd").reasons.includes("deferred-registration"));

@@ -24,3 +24,10 @@ function deferredMount() {
   app.route("/bpd", view);
 }
 void deferredMount;
+
+// MAJOR regression: the mount target is a const ALIAS of the view.
+// The alias and its target are the same runtime object, so the
+// target's registrations are the mounted subtree.
+const aliased = view;
+app.route("/bp2", aliased);
+aliased.get("/alias-in", aliasHandler);

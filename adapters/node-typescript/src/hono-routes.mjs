@@ -821,8 +821,19 @@ export function resolveComposition(ctx, events) {
   const openapiEvents = events.filter((event) => event.kind === "openapi");
   const definitions = events.filter((event) => event.kind === "route-definition");
 
-  // Mounted children are excluded from standalone resolution.
-  const mountedChildren = new Set(mountEvents.map((event) => event.childInstance?.key).filter(Boolean));
+  // Mounted children are excluded from standalone resolution — through
+  // alias cliques too: a child mounted via its const alias is mounted,
+  // so neither name's registrations may claim a standalone surface
+  // (issue #115 fix round 3).
+  const cliquesOf = aliasCliquesOf(ctx);
+  const mountedChildren = new Set();
+  for (const event of mountEvents) {
+    if (!event.childInstance) continue;
+    mountedChildren.add(event.childInstance.key);
+    for (const key of cliquesOf.get(event.childInstance.key) ?? []) {
+      mountedChildren.add(key);
+    }
+  }
   const routes = [];
 
   // 1. Error-handler and openapi registrations resolve app-level.
@@ -893,10 +904,10 @@ export function resolveComposition(ctx, events) {
     // A mount is a root mount when its parent is not itself the child
     // of another mount in the same module (nested mounts are reached
     // recursively from the outermost parent's resolution).
-    return !isNestedMount(mountEvents, event);
+    return !isNestedMount(ctx, mountEvents, event, cliquesOf);
   });
   for (const mount of rootMounts) {
-    resolveMount(ctx, mount, mountEvents, routeEvents, routes, 0, [], closureOf, "/", emittedMounts);
+    resolveMount(ctx, mount, mountEvents, routeEvents, routes, 0, [], closureOf, "/", emittedMounts, undefined, cliquesOf);
   }
   // 5. Mounted children keep their own deeper mounts resolved through
   // step 4's recursion; nothing standalone remains here.
@@ -940,16 +951,25 @@ function importClosureOf(ctx) {
 }
 
 
-/**
- * Every mount whose parent instance is not itself a mounted child is
- * a root mount: nested mounts are reached recursively from the
- * outermost parent's resolution, so a view-parented mount under a
- * mounted view composes under the mount prefix instead of re-claiming
- * a phantom standalone surface (issue #115 fix round 3).
- */
-function isNestedMount(mountEvents, event) {
-  return mountEvents.some((other) =>
-    other !== event && other.childInstance?.key === event.instance.key);
+function isNestedMount(ctx, mountEvents, event, cliquesOf) {
+  // An event whose parent instance is a mounted child is reached
+  // through that child's mount resolution, not as a root. Alias
+  // cliques count as the same child: a view mounted through its const
+  // alias is mounted, so its own nested mounts compose under the mount
+  // prefix instead of re-claiming a phantom standalone surface (issue
+  // #115 fix round 3). An instance no mount provably binds is never
+  // nested — its mounts stay root-level at the standalone base.
+  const parentKeys = cliqueOf(ctx, cliquesOf, event.instance);
+  return mountEvents.some((other) => {
+    if (other === event || !other.childInstance) return false;
+    if (parentKeys.has(other.childInstance.key)) return true;
+    const childKeys = cliquesOf.get(other.childInstance.key);
+    if (!childKeys) return false;
+    for (const key of childKeys) {
+      if (parentKeys.has(key)) return true;
+    }
+    return false;
+  });
 }
 
 /** True when `inner` lies inside `outer`'s source range (same file). */
@@ -1001,6 +1021,68 @@ function mountChildBaseOf(ctx, child) {
 }
 
 /**
+ * Every instance key that denotes the SAME runtime object as
+ * `instance` (issue #115 fix round 3): an immutable const alias is
+ * another name for one Hono app, so a mount through the alias must
+ * resolve the target's registration events (and vice versa). Only
+ * alias edges join a clique — a basePath view is a distinct clone
+ * with its own route table, never the target's surface. Bounded and
+ * cycle-safe; one clique per instance key.
+ */
+function runtimeAliasKeysOf(ctx, instance, cliques) {
+  const keys = new Set(instance ? [instance.key] : []);
+  if (!instance) return keys;
+  // Upward: the alias's own target chain.
+  let current = instance;
+  for (let depth = 0; depth < 16 && current.kind === "alias"; depth += 1) {
+    const owner = current.ownerSymbol ? ctx.instanceBySymbol.get(current.ownerSymbol) : null;
+    if (!owner || keys.has(owner.key)) break;
+    keys.add(owner.key);
+    current = owner;
+  }
+  // Downward: every alias whose chain reaches a known key.
+  const added = new Set();
+  for (const app of ctx.apps) {
+    if (app.kind !== "alias" || keys.has(app.key)) continue;
+    let owner = app;
+    for (let depth = 0; depth < 16; depth += 1) {
+      const next = owner.kind === "alias" && owner.ownerSymbol
+        ? ctx.instanceBySymbol.get(owner.ownerSymbol)
+        : null;
+      if (!next) break;
+      if (keys.has(next.key) || added.has(next.key)) {
+        added.add(app.key);
+        break;
+      }
+      owner = next;
+    }
+  }
+  for (const key of added) keys.add(key);
+  cliques.set(instance.key, keys);
+  return keys;
+}
+
+/** One alias-clique set per instance key, computed once per scan.
+ * Instances outside the inventoried apps (inline ephemeral views) get
+ * their clique computed lazily and memoized into the same map. */
+function aliasCliquesOf(ctx) {
+  const cliques = new Map();
+  for (const app of ctx.apps) {
+    if (!cliques.has(app.key)) runtimeAliasKeysOf(ctx, app, cliques);
+  }
+  return cliques;
+}
+
+/** The alias clique of one instance, memoized (lazily computed for
+ * instances that never entered the inventoried app list). */
+function cliqueOf(ctx, cliquesOf, instance) {
+  if (!instance) return new Set();
+  const known = cliquesOf.get(instance.key);
+  if (known) return known;
+  return runtimeAliasKeysOf(ctx, instance, cliquesOf);
+}
+
+/**
  * Resolve one mount: emit the mounts-router record and the child's
  * route events under the mount prefix with snapshot semantics, then
  * recurse into the child's own mounts. `basePrefix` carries the full
@@ -1016,7 +1098,7 @@ function mountChildBaseOf(ctx, child) {
  * reached through different ancestor chains is one fact, not a
  * duplicate record.
  */
-function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack, closureOf, basePrefix, emittedMounts, chain) {
+function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack, closureOf, basePrefix, emittedMounts, chain, cliquesOf) {
   if (depth >= HONO_MAX_MOUNT_DEPTH) {
     ctx.addUncertaintyAt(mount.sourceFile, mount.node, "composition-depth", String(depth));
     return;
@@ -1039,12 +1121,17 @@ function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack
   if (mount.childInstance) {
     const child = mount.childInstance;
     const stackNext = [...stack, child.key];
+    // Alias cliques: a mount through a const alias of the target is
+    // the same runtime surface, so the target's registration events
+    // (and its own nested mounts) resolve under this mount too (issue
+    // #115 fix round 3).
+    const childKeys = cliqueOf(ctx, cliquesOf, child);
     // The child's OWN base joins the mount prefix (issue #115 fix
-    // round 3): a mounted view child keeps its standalone prefix in
-    // the mounted surface — `app.route('/bp', inner.basePath('/v'))`
-    // resolves `/bp/v/...` exactly as the runtime serves it. An
-    // unresolvable child base is explicit uncertainty, never a
-    // guessed complete path.
+    // round 3): a mounted view/alias child keeps its standalone
+    // prefix in the mounted surface — `app.route('/bp',
+    // inner.basePath('/v'))` resolves `/bp/v/...` exactly as the
+    // runtime serves it. An unresolvable child base is explicit
+    // uncertainty, never a guessed complete path.
     const childBase = mountChildBaseOf(ctx, child);
     const childMountBase = childBase === null ? mountBase : joinPaths(mountBase, childBase);
     const baseScope = childBase === null
@@ -1080,9 +1167,10 @@ function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack
       : mountChainScopeOf(chainNext);
     // Snapshot: child route events before the mount occurrence in the
     // same module are fully included; later/other-module events stay
-    // resolved but incomplete.
+    // resolved but incomplete. Registrations made through any alias
+    // name of the child belong to the same surface.
     for (const event of routeEvents) {
-      if (event.instance.key !== child.key) continue;
+      if (!childKeys.has(event.instance.key)) continue;
       // Chain targets: registrations inside the mount's own argument
       // expression are fully evaluated before the mount call executes,
       // so they are snapshot-included regardless of positional order
@@ -1106,8 +1194,8 @@ function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack
       }, routes);
     }
     for (const nested of mountEvents) {
-      if (nested.instance.key !== child.key) continue;
-      resolveMount(ctx, nested, mountEvents, routeEvents, routes, depth + 1, stackNext, closureOf, mountBase, emittedMounts, chainNext);
+      if (!childKeys.has(nested.instance.key)) continue;
+      resolveMount(ctx, nested, mountEvents, routeEvents, routes, depth + 1, stackNext, closureOf, mountBase, emittedMounts, chainNext, cliquesOf);
     }
   } else {
     if (!emittedMounts.has(mount)) {

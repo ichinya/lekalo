@@ -215041,7 +215041,15 @@ function resolveComposition(ctx, events) {
   const errorEvents = events.filter((event) => event.kind === "error");
   const openapiEvents = events.filter((event) => event.kind === "openapi");
   const definitions = events.filter((event) => event.kind === "route-definition");
-  const mountedChildren = new Set(mountEvents.map((event) => event.childInstance?.key).filter(Boolean));
+  const cliquesOf = aliasCliquesOf(ctx);
+  const mountedChildren = /* @__PURE__ */ new Set();
+  for (const event of mountEvents) {
+    if (!event.childInstance) continue;
+    mountedChildren.add(event.childInstance.key);
+    for (const key of cliquesOf.get(event.childInstance.key) ?? []) {
+      mountedChildren.add(key);
+    }
+  }
   const routes = [];
   for (const event of errorEvents) {
     const penalty = reachabilityPenaltyOf(event);
@@ -215099,10 +215107,10 @@ function resolveComposition(ctx, events) {
   const closureOf = importClosureOf(ctx);
   const emittedMounts = /* @__PURE__ */ new Set();
   const rootMounts = mountEvents.filter((event) => {
-    return !isNestedMount(mountEvents, event);
+    return !isNestedMount(ctx, mountEvents, event, cliquesOf);
   });
   for (const mount of rootMounts) {
-    resolveMount(ctx, mount, mountEvents, routeEvents, routes, 0, [], closureOf, "/", emittedMounts);
+    resolveMount(ctx, mount, mountEvents, routeEvents, routes, 0, [], closureOf, "/", emittedMounts, void 0, cliquesOf);
   }
   emitOpenApiRecords(ctx, openapiEvents, definitions);
   return { routes, events };
@@ -215132,8 +215140,18 @@ function importClosureOf(ctx) {
   };
   return closureOf;
 }
-function isNestedMount(mountEvents, event) {
-  return mountEvents.some((other) => other !== event && other.childInstance?.key === event.instance.key);
+function isNestedMount(ctx, mountEvents, event, cliquesOf) {
+  const parentKeys = cliqueOf(ctx, cliquesOf, event.instance);
+  return mountEvents.some((other) => {
+    if (other === event || !other.childInstance) return false;
+    if (parentKeys.has(other.childInstance.key)) return true;
+    const childKeys = cliquesOf.get(other.childInstance.key);
+    if (!childKeys) return false;
+    for (const key of childKeys) {
+      if (parentKeys.has(key)) return true;
+    }
+    return false;
+  });
 }
 function nodeIsWithin(inner, outer) {
   return Boolean(inner && outer && inner.getSourceFile() === outer.getSourceFile() && inner.getStart() >= outer.getStart() && inner.getEnd() <= outer.getEnd());
@@ -215162,7 +215180,48 @@ function mountChildBaseOf(ctx, child) {
   if (!owner) return null;
   return standaloneBaseOf(ctx, owner);
 }
-function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack, closureOf, basePrefix, emittedMounts, chain) {
+function runtimeAliasKeysOf(ctx, instance, cliques) {
+  const keys = new Set(instance ? [instance.key] : []);
+  if (!instance) return keys;
+  let current = instance;
+  for (let depth = 0; depth < 16 && current.kind === "alias"; depth += 1) {
+    const owner = current.ownerSymbol ? ctx.instanceBySymbol.get(current.ownerSymbol) : null;
+    if (!owner || keys.has(owner.key)) break;
+    keys.add(owner.key);
+    current = owner;
+  }
+  const added = /* @__PURE__ */ new Set();
+  for (const app of ctx.apps) {
+    if (app.kind !== "alias" || keys.has(app.key)) continue;
+    let owner = app;
+    for (let depth = 0; depth < 16; depth += 1) {
+      const next = owner.kind === "alias" && owner.ownerSymbol ? ctx.instanceBySymbol.get(owner.ownerSymbol) : null;
+      if (!next) break;
+      if (keys.has(next.key) || added.has(next.key)) {
+        added.add(app.key);
+        break;
+      }
+      owner = next;
+    }
+  }
+  for (const key of added) keys.add(key);
+  cliques.set(instance.key, keys);
+  return keys;
+}
+function aliasCliquesOf(ctx) {
+  const cliques = /* @__PURE__ */ new Map();
+  for (const app of ctx.apps) {
+    if (!cliques.has(app.key)) runtimeAliasKeysOf(ctx, app, cliques);
+  }
+  return cliques;
+}
+function cliqueOf(ctx, cliquesOf, instance) {
+  if (!instance) return /* @__PURE__ */ new Set();
+  const known = cliquesOf.get(instance.key);
+  if (known) return known;
+  return runtimeAliasKeysOf(ctx, instance, cliquesOf);
+}
+function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack, closureOf, basePrefix, emittedMounts, chain, cliquesOf) {
   if (depth >= HONO_MAX_MOUNT_DEPTH) {
     ctx.addUncertaintyAt(mount.sourceFile, mount.node, "composition-depth", String(depth));
     return;
@@ -215181,6 +215240,7 @@ function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack
   if (mount.childInstance) {
     const child = mount.childInstance;
     const stackNext = [...stack, child.key];
+    const childKeys = cliqueOf(ctx, cliquesOf, child);
     const childBase = mountChildBaseOf(ctx, child);
     const childMountBase = childBase === null ? mountBase : joinPaths(mountBase, childBase);
     const baseScope = childBase === null ? { status: "unknown", reasons: ["unresolved-mount-base"] } : null;
@@ -215207,7 +215267,7 @@ function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack
     }
     const chainScope = baseScope ? mergeScopes(mountChainScopeOf(chainNext), baseScope) : mountChainScopeOf(chainNext);
     for (const event of routeEvents) {
-      if (event.instance.key !== child.key) continue;
+      if (!childKeys.has(event.instance.key)) continue;
       const included = mount.chainTarget && nodeIsWithin(event.node, mount.childExpression) ? { status: "complete", reasons: [] } : classifyChildEvent(mount, event, closureOf);
       if (included === null) continue;
       const merged = mergeScopes(included, chainScope);
@@ -215221,8 +215281,8 @@ function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack
       }, routes);
     }
     for (const nested of mountEvents) {
-      if (nested.instance.key !== child.key) continue;
-      resolveMount(ctx, nested, mountEvents, routeEvents, routes, depth + 1, stackNext, closureOf, mountBase, emittedMounts, chainNext);
+      if (!childKeys.has(nested.instance.key)) continue;
+      resolveMount(ctx, nested, mountEvents, routeEvents, routes, depth + 1, stackNext, closureOf, mountBase, emittedMounts, chainNext, cliquesOf);
     }
   } else {
     if (!emittedMounts.has(mount)) {
