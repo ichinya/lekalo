@@ -1007,15 +1007,16 @@ mod committed_exemplar_tests {
         assert_eq!(document.adapter_id(), "lekalo-target-node-typescript");
         assert_eq!(document.adapter_version().as_str(), "0.4.0");
         // Issue #115: the Hono framework-provider modules join the
-        // bundle (and the fix rounds for PR #142 revise them — round 3
-        // composes a mounted child's own basePath prefix into the mount
-        // scope and resolves alias-target mounts to their target's
-        // subtree), so the committed artifact bytes (and with them the
-        // canonical package digest) change; the exemplar guard keeps
-        // the manifest bound to the exact committed bytes.
+        // bundle (and the fix rounds for PR #142 revise them — round 4
+        // models the shared route-table semantics of basePath families:
+        // mounting any member exposes the whole family's registrations
+        // under the mount prefix, each with its own member base), so
+        // the committed artifact bytes (and with them the canonical
+        // package digest) change; the exemplar guard keeps the manifest
+        // bound to the exact committed bytes.
         assert_eq!(
             document.package_digest().as_str(),
-            "sha256:19b4af18dbdfc45c7cb398635815da4024411bdc11d87bd717d55967a4de88aa"
+            "sha256:79300ab048e0e33ae3d5acdafc92c58c2f03c0e048b2e7f54689592208b7fe45"
         );
     }
 
