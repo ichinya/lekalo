@@ -487,6 +487,21 @@ function calleeSpellingName(ts, calleeNode) {
  * When `probe` is given, `probe.boundHit` marks a resolution that died
  * at the MAX_ALIAS_HOPS bound — recognized, but unprovable within the
  * bound; callers must keep that explicit, never silent.
+ *
+ * Fix round 5: when the value declaration gives no identity to follow
+ * — a `declare const` binding has no initializer, or the callee is a
+ * parameter — the declared TYPE is the identity anchor:
+ * `typeof import(".../pg-core").pgTable` and `typeof relations` are
+ * type queries naming the vendored construct symbol, so the type
+ * symbol IS the construct identity and the construct extracts exactly
+ * like a spelled import. Function types are matched by symbol
+ * identity, never structurally: an inline signature with the same
+ * shape has no closure symbol and stays unprovable. Value-carrying
+ * declarations (bags, destructures, casts over dynamic data) are
+ * deliberately EXCLUDED — their round-3/round-4 explicit flags are
+ * settled contracts, and a cast is an assertion over data, not
+ * declaration-anchored identity. The fallback never overrides a bound
+ * hit — the bounded explicit flag of round 4 stands.
  */
 function closureCalleeSymbol(context, calleeNode, depth = 0, probe = null) {
   let symbol;
@@ -502,13 +517,26 @@ function closureCalleeSymbol(context, calleeNode, depth = 0, probe = null) {
     return null;
   }
   const declaration = variableDeclarationOf(symbol);
-  if (declaration === null || declaration === undefined) return null;
+  // The type-annotation identity anchor (fix round 5): applied ONLY
+  // to declaration forms where the type is the only identity there is
+  // — a parameter typed by a construct type query, or a `declare
+  // const` binding with no initializer (handled in the
+  // VariableDeclaration branch below). Value-carrying forms (property
+  // bags, destructures, rebind chains) keep the round-3/round-4
+  // contracts: their unprovability stays an explicit `callee-unproven`,
+  // because a cast or a bag value is an assertion over data, not a
+  // declaration-anchored identity.
+  if (declaration === null || declaration === undefined) {
+    const isParameter = (symbol?.declarations ?? []).length > 0
+      && symbol.declarations[0]?.kind === context.ts.SyntaxKind.Parameter;
+    return isParameter ? closureTypeSymbolOf(context, calleeNode) : null;
+  }
   const ts = context.ts;
   if (declaration.kind === ts.SyntaxKind.VariableDeclaration) {
     const initializer = declaration.initializer;
     if (initializer?.kind !== ts.SyntaxKind.Identifier
       && initializer?.kind !== ts.SyntaxKind.PropertyAccessExpression) {
-      return null;
+      return closureTypeSymbolOf(context, calleeNode);
     }
     return closureCalleeSymbol(context, initializer, depth + 1, probe);
   }
@@ -603,6 +631,121 @@ function calleeRecognizedButUnproven(context, calleeNode, constructs, family) {
 
 /** Recognition family name → the factory-name set that recognizes it. */
 const RECOGNITION_FAMILIES = { table: TABLE_FACTORY_NAMES, relations: RELATIONS_FACTORY_NAMES };
+
+/**
+ * The first type symbol of the node whose declaration lives in the
+ * embedded closure — the type-annotation identity anchor for callees
+ * with no value declaration to follow (`declare const rel: typeof
+ * relations`, `declare const pt: typeof import(".../pg-core").pgTable`).
+ * Identity is the TYPE SYMBOL itself (a type query names the exact
+ * vendored declaration), never a structural shape: an inline signature
+ * with the same call shape has no closure symbol and stays unprovable.
+ * Returns null when the type carries no closure symbol.
+ */
+/**
+ * The construct spelling a declared type query names: the member of
+ * `typeof import(".../pg-core").pgTable`, or the entity of `typeof
+ * relations`. Type-alias indirection is followed one hop (the alias
+ * declaration's own type node).
+ */
+function declaredTypeQuerySpelling(context, calleeNode) {
+  const { ts, checker } = context;
+  const spellingOf = (typeNode) => {
+    let node = typeNode;
+    while (node?.kind === ts.SyntaxKind.ParenthesizedType) node = node.type;
+    // `typeof relations` parses as a type query; `typeof
+    // import("...").pgTable` parses as an IMPORT TYPE node (isTypeOf)
+    // whose qualifier carries the member spelling.
+    if (node?.kind === ts.SyntaxKind.TypeQuery) {
+      const entityName = node.exprName;
+      if (entityName?.kind === ts.SyntaxKind.QualifiedName) return entityName.right?.text ?? null;
+      if (entityName?.kind === ts.SyntaxKind.Identifier) return entityName.text ?? null;
+      return null;
+    }
+    if (node?.kind === ts.SyntaxKind.ImportType) {
+      const qualifier = node.qualifier;
+      if (qualifier?.kind === ts.SyntaxKind.QualifiedName) return qualifier.right?.text ?? null;
+      if (qualifier?.kind === ts.SyntaxKind.Identifier) return qualifier.text ?? null;
+      return null;
+    }
+    return null;
+  };
+  let symbol;
+  try {
+    symbol = checker.getSymbolAtLocation(calleeNode);
+  } catch {
+    return null;
+  }
+  const decl = symbol?.declarations?.[0];
+  const direct = spellingOf(symbol?.declarations?.[0]?.type);
+  if (direct !== null) return direct;
+  let type;
+  try {
+    type = checker.getTypeAtLocation(calleeNode);
+  } catch {
+    return null;
+  }
+  return spellingOf(type?.aliasSymbol?.declarations?.[0]?.type);
+}
+
+/**
+ * The vendored export a closure declaration file names. Star
+ * re-exports flatten only through the checker, so the direct export
+ * table is consulted first and getExportsOfModule second.
+ */
+function closureModuleExportOf(context, declaration, name) {
+  if (declaration === null || declaration === undefined || name === null) return null;
+  const moduleSymbol = declaration.getSourceFile?.()?.symbol ?? null;
+  if (moduleSymbol === null || moduleSymbol === undefined) return null;
+  const direct = moduleSymbol.exports?.get(name);
+  if (direct !== undefined && direct !== null) return direct;
+  try {
+    const exports = context.checker.getExportsOfModule(moduleSymbol) ?? [];
+    return exports.find((entry) => entry?.getName() === name) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function closureTypeSymbolOf(context, calleeNode) {
+  const { ts, checker } = context;
+  let type;
+  try {
+    type = checker.getTypeAtLocation(calleeNode);
+  } catch {
+    return null;
+  }
+  if (type === null || type === undefined) return null;
+  const queue = [];
+  if (type.symbol) queue.push(type.symbol);
+  if (type.aliasSymbol) queue.push(type.aliasSymbol);
+  if (typeof type.isUnion === "function" && type.isUnion()) {
+    for (const part of type.types) {
+      if (part.symbol) queue.push(part.symbol);
+      if (part.aliasSymbol) queue.push(part.aliasSymbol);
+    }
+  }
+  for (const symbol of queue) {
+    if (!symbolInClosure(symbol, context.closurePrefix)) continue;
+    // `typeof relations` anchors to the construct function symbol
+    // itself — identity straight away.
+    if (RECOGNITION_FAMILIES.table.has(symbol.getName())
+      || RECOGNITION_FAMILIES.relations.has(symbol.getName())) {
+      return symbol;
+    }
+    // A factory's type query anchors to its CALLABLE INTERFACE
+    // (`PgTableFn`/`MySqlTableFn`), not a construct-named function: the
+    // construct identity comes from the declared type query's member
+    // spelling, resolved through the declaring closure module's export
+    // table (issue #116 fix round 5).
+    const target = closureModuleExportOf(context, symbol.declarations?.[0] ?? null,
+      declaredTypeQuerySpelling(context, calleeNode));
+    if (target !== null && target !== undefined
+      && symbolInClosure(target, context.closurePrefix)) return target;
+    return symbol;
+  }
+  return null;
+}
 
 /**
  * The names of the callee's type symbols whose declarations live in
