@@ -223288,6 +223288,11 @@ var LIMITATION_CODES = /* @__PURE__ */ new Set([
   // a construct-named callee that could not be proven against the
   // closure — never dropped silently (issue #116 fix round 3)
   "callee-unproven",
+  // a member call on a module namespace object (import * as ns) — the
+  // namespace is provably not a database handle, so the call is never
+  // attributed to one; it is an explicit uncertainty instead
+  // (issue #116 fix round 4)
+  "namespace-receiver-unsupported",
   // transactions
   "query-not-tx-bound",
   "tx-escaped",
@@ -223503,6 +223508,7 @@ function variableDeclarationOf(symbol) {
     if (declaration.kind === 261) return declaration;
     if (declaration.kind === 304) return declaration;
     if (declaration.kind === 173) return declaration;
+    if (declaration.kind === 209) return declaration;
   }
   return null;
 }
@@ -223536,7 +223542,7 @@ function calleeSpellingName(ts2, calleeNode) {
   }
   return null;
 }
-function closureCalleeSymbol(context, calleeNode, depth = 0) {
+function closureCalleeSymbol(context, calleeNode, depth = 0, probe = null) {
   let symbol;
   try {
     symbol = context.checker.getSymbolAtLocation(calleeNode);
@@ -223545,19 +223551,104 @@ function closureCalleeSymbol(context, calleeNode, depth = 0) {
   }
   symbol = resolveAliasSymbol(context.checker, symbol);
   if (symbolInClosure(symbol, context.closurePrefix)) return symbol;
-  if (depth >= MAX_ALIAS_HOPS) return null;
-  const declaration = variableDeclarationOf(symbol);
-  if (declaration?.kind !== context.ts.SyntaxKind.VariableDeclaration) return null;
-  const initializer = declaration.initializer;
-  if (initializer?.kind !== context.ts.SyntaxKind.Identifier && initializer?.kind !== context.ts.SyntaxKind.PropertyAccessExpression) {
+  if (depth >= MAX_ALIAS_HOPS) {
+    if (probe !== null) probe.boundHit = true;
     return null;
   }
-  return closureCalleeSymbol(context, initializer, depth + 1);
+  const declaration = variableDeclarationOf(symbol);
+  if (declaration === null || declaration === void 0) return null;
+  const ts2 = context.ts;
+  if (declaration.kind === ts2.SyntaxKind.VariableDeclaration) {
+    const initializer = declaration.initializer;
+    if (initializer?.kind !== ts2.SyntaxKind.Identifier && initializer?.kind !== ts2.SyntaxKind.PropertyAccessExpression) {
+      return null;
+    }
+    return closureCalleeSymbol(context, initializer, depth + 1, probe);
+  }
+  if (declaration.kind === ts2.SyntaxKind.BindingElement) {
+    const propertyName = declaration.propertyName ?? declaration.name;
+    const nameIsSpellable = propertyName?.kind === ts2.SyntaxKind.Identifier || propertyName?.kind === ts2.SyntaxKind.StringLiteral || propertyName?.kind === ts2.SyntaxKind.NoSubstitutionTemplateLiteral;
+    if (!nameIsSpellable) return null;
+    if (declaration.parent?.kind !== ts2.SyntaxKind.ObjectBindingPattern) return null;
+    const owner = declaration.parent.parent;
+    if (owner?.kind !== ts2.SyntaxKind.VariableDeclaration) return null;
+    const initializer = owner.initializer;
+    if (initializer === void 0 || initializer === null) return null;
+    let namespaceSymbol;
+    try {
+      namespaceSymbol = context.checker.getSymbolAtLocation(initializer);
+    } catch {
+      return null;
+    }
+    namespaceSymbol = resolveAliasSymbol(context.checker, namespaceSymbol);
+    if (namespaceSymbol === null || namespaceSymbol === void 0) return null;
+    let target = null;
+    try {
+      const exports = context.checker.getExportsOfModule(namespaceSymbol) ?? context.checker.getExportsOfSymbol(namespaceSymbol) ?? [];
+      target = exports.find((entry) => entry?.getName() === propertyName.text) ?? null;
+    } catch {
+      target = namespaceSymbol.exports?.get(propertyName.text) ?? null;
+    }
+    if (target !== null && target !== void 0 && symbolInClosure(target, context.closurePrefix)) return target;
+    return null;
+  }
+  return null;
 }
-function calleeRecognizedButUnproven(context, calleeNode, constructs) {
-  if (closureCalleeSymbol(context, calleeNode) !== null) return false;
-  const spelling = calleeSpellingName(context.ts, calleeNode);
-  return spelling !== null && constructs.has(spelling);
+function calleeRecognizedButUnproven(context, calleeNode, constructs, family) {
+  const probe = { boundHit: false };
+  if (closureCalleeSymbol(context, calleeNode, 0, probe) !== null) return false;
+  const closureTypeNames = closureTypeSymbolNames(context, calleeNode);
+  if (probe.boundHit) {
+    return closureTypeNames !== null && closureTypeNames.some((name) => RECOGNITION_FAMILIES[family].has(name));
+  }
+  if (closureTypeNames !== null && closureTypeNames.length === 0) return false;
+  return calleeSpellingNames(context, calleeNode).some((spelling) => constructs.has(spelling));
+}
+var RECOGNITION_FAMILIES = { table: TABLE_FACTORY_NAMES, relations: RELATIONS_FACTORY_NAMES };
+function closureTypeSymbolNames(context, calleeNode) {
+  const { ts: ts2, checker } = context;
+  let type;
+  try {
+    type = checker.getTypeAtLocation(calleeNode);
+  } catch {
+    return null;
+  }
+  if (type === null || type === void 0) return null;
+  const queue = [];
+  if (type.symbol) queue.push(type.symbol);
+  if (type.aliasSymbol) queue.push(type.aliasSymbol);
+  if (typeof type.isUnion === "function" && type.isUnion()) {
+    for (const part of type.types) {
+      if (part.symbol) queue.push(part.symbol);
+      if (part.aliasSymbol) queue.push(part.aliasSymbol);
+    }
+  }
+  if (queue.length === 0) return null;
+  const closureNames = [];
+  for (const symbol of queue) {
+    if (symbolInClosure(symbol, context.closurePrefix)) closureNames.push(symbol.getName());
+  }
+  return closureNames;
+}
+function calleeSpellingNames(context, calleeNode) {
+  const ts2 = context.ts;
+  const spellings = [];
+  const direct = calleeSpellingName(ts2, calleeNode);
+  if (direct !== null) spellings.push(direct);
+  let symbol;
+  try {
+    symbol = context.checker.getSymbolAtLocation(calleeNode);
+  } catch {
+    symbol = null;
+  }
+  for (const declaration of symbol?.declarations ?? []) {
+    if (declaration.kind !== ts2.SyntaxKind.BindingElement) continue;
+    if (declaration.parent?.kind !== ts2.SyntaxKind.ObjectBindingPattern) continue;
+    const propertyName = declaration.propertyName ?? declaration.name;
+    const spellable = propertyName?.kind === ts2.SyntaxKind.Identifier || propertyName?.kind === ts2.SyntaxKind.StringLiteral || propertyName?.kind === ts2.SyntaxKind.NoSubstitutionTemplateLiteral;
+    if (spellable) spellings.push(propertyName.text);
+  }
+  return spellings;
 }
 function closureDeclarationPath(symbol, closurePrefix) {
   for (const declaration of symbol?.declarations ?? []) {
@@ -223607,6 +223698,12 @@ function typeInClosure(ts2, checker, node, closurePrefix) {
     }
   }
   return false;
+}
+function isModuleNamespaceSymbol(ts2, checker, symbol, resolved) {
+  const namespaceDeclared = (candidate) => (candidate?.declarations ?? []).some((declaration) => declaration.kind === ts2.SyntaxKind.SourceFile || declaration.kind === ts2.SyntaxKind.NamespaceImport || declaration.kind === ts2.SyntaxKind.ExportSpecifier);
+  if (namespaceDeclared(symbol)) return true;
+  if (resolved === symbol || resolved === null || resolved === void 0) return false;
+  return namespaceDeclared(resolved);
 }
 function symbolKey(symbol) {
   if (!symbol) return "null";
@@ -224955,6 +225052,7 @@ function rootIdentityKind(context, root, state) {
       return "unknown";
     }
     const resolved = resolveAliasSymbol(checker, symbol);
+    if (isModuleNamespaceSymbol(ts2, checker, symbol, resolved)) return "namespace";
     const memoKey = resolved === void 0 || resolved === null ? null : symbolKey(resolved);
     if (memoKey !== null) {
       const memo = state.dbSymbols.get(memoKey);
@@ -225348,7 +225446,7 @@ function attachDrizzleEvidence({
             extract.limit("truncated", modulePath, lineOf(sourceFile, node), "tables");
             extract.overflow.hit = true;
           }
-        } else if (calleeRecognizedButUnproven(extract, node.initializer.expression, TABLE_FACTORY_NAMES)) {
+        } else if (calleeRecognizedButUnproven(extract, node.initializer.expression, TABLE_FACTORY_NAMES, "table")) {
           extract.limit("callee-unproven", modulePath, lineOf(sourceFile, node), "table");
           extract.sectionGaps.add("tables");
         }
@@ -225370,7 +225468,7 @@ function attachDrizzleEvidence({
               if (!pushBounded(extract.relations, MAX_RELATIONS, row, extract.overflow)) break;
             }
           }
-        } else if (calleeRecognizedButUnproven(extract, node.expression, RELATIONS_FACTORY_NAMES)) {
+        } else if (calleeRecognizedButUnproven(extract, node.expression, RELATIONS_FACTORY_NAMES, "relations")) {
           extract.limit(
             "callee-unproven",
             extract.modulePathOf(sourceFile),
@@ -225396,6 +225494,16 @@ function attachDrizzleEvidence({
         const tailName = tail?.kind === "call" ? tail.name : null;
         if (tailName === "transaction") {
           const identity = rootIdentityKind(extract, root, state);
+          if (identity === "namespace") {
+            extract.limit(
+              "namespace-receiver-unsupported",
+              modulePath,
+              lineOf(sourceFile, node),
+              "transaction"
+            );
+            extract.sectionGaps.add("transactions");
+            return;
+          }
           if (identity === "db" || identity === "db-alias") {
             const tx = extractTransaction(extract, sourceFile, node, "db", null, state);
             if (!pushBounded(extract.transactions, MAX_TRANSACTIONS, tx, extract.overflow)) {
@@ -225406,6 +225514,19 @@ function attachDrizzleEvidence({
         }
         if (links.length > 0 && links[0].kind === "call" && (QUERY_HEADS.has(links[0].name) || CONTINUATION_HEADS.has(links[0].name))) {
           const identity = rootIdentityKind(extract, root, state);
+          if (identity === "namespace") {
+            const shapePair2 = links.some((link) => link.kind === "call" && (link.name === "from" || link.name === "values" || link.name === "set" || link.name === "where"));
+            if (shapePair2) {
+              extract.limit(
+                "namespace-receiver-unsupported",
+                modulePath,
+                lineOf(sourceFile, node),
+                "query"
+              );
+              extract.sectionGaps.add("queries");
+            }
+            return;
+          }
           if (identity === "db" || identity === "db-alias" || identity === "tx") {
             const query = extractQueryChain(
               extract,
@@ -225436,7 +225557,16 @@ function attachDrizzleEvidence({
         }
         if (links.length > 0 && (links[0].kind === "access" && links[0].name === "query" || links[0].kind === "call" && links[0].name === "batch")) {
           const identity = rootIdentityKind(extract, root, state);
-          if (identity === "db" || identity === "db-alias" || identity === "tx") {
+          if (identity === "namespace") {
+            extract.limit(
+              "namespace-receiver-unsupported",
+              modulePath,
+              lineOf(sourceFile, node),
+              links[0].name === "query" ? "relational-query-api" : "batch-api"
+            );
+            extract.sectionGaps.add("queries");
+            if (links[0].kind === "access") return;
+          } else if (identity === "db" || identity === "db-alias" || identity === "tx") {
             const code = links[0].name === "query" ? "relational-query-unsupported" : "batch-unsupported";
             extract.limit(
               code,
@@ -225543,7 +225673,7 @@ function attachDrizzleEvidence({
     tables: !extract.sectionGaps.has("tables") && extract.tables.every((table) => table.completeness === "complete") && !extract.overflow.hit ? "complete" : "partial",
     relations: extract.sectionGaps.has("relations") || partialFromRows(extract.relations) ? "partial" : "complete",
     queries: extract.sectionGaps.has("queries") || partialFromRows(extract.queries) ? "partial" : "complete",
-    transactions: partialFromRows(extract.transactions) ? "partial" : "complete",
+    transactions: extract.sectionGaps.has("transactions") || partialFromRows(extract.transactions) ? "partial" : "complete",
     migrations: extract.migrations.every((row) => row.limitations.length === 0) ? "complete" : "partial",
     scope: "partial",
     bindings: bindingsState === "decoded" ? "complete" : "partial",
