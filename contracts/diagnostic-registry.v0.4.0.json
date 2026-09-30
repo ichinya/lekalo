@@ -2929,6 +2929,247 @@
       "lifecycle": "active"
     },
     {
+      "id": "history.busy",
+      "code": "LEK-HST-007",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unavailable"
+      ],
+      "message_id": "history.busy",
+      "default_message": "Another writer held the run history store within the bounded wait.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "history.corrupt",
+      "code": "LEK-HST-009",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "history.corrupt",
+      "default_message": "The run history store failed its integrity or digest verification.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "history.cursor-stale",
+      "code": "LEK-HST-015",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "history.cursor-stale",
+      "default_message": "The history list cursor no longer matches the store generation or scope.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "history.dependent-invalidated",
+      "code": "LEK-HST-014",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "history.dependent-invalidated",
+      "default_message": "The dependent reference was invalidated by a source record deletion or store mutation.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "history.input-invalid",
+      "code": "LEK-HST-002",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "history.input-invalid",
+      "default_message": "The supplied run observation violates the closed observation contract or its semantic rules.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "history.io",
+      "code": "LEK-HST-008",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unavailable",
+        "invalid"
+      ],
+      "message_id": "history.io",
+      "default_message": "The run history store could not be read or written.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "history.path-denied",
+      "code": "LEK-HST-005",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "history.path-denied",
+      "default_message": "The run history home refused an unsafe or out-of-home path.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "history.policy-mismatch",
+      "code": "LEK-HST-003",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "history.policy-mismatch",
+      "default_message": "The record references a policy or authority version outside the accepted custody family.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "history.retention-limit",
+      "code": "LEK-HST-016",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "history.retention-limit",
+      "default_message": "The record exceeds a configured retention bound and was refused.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "history.run-conflict",
+      "code": "LEK-HST-011",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "history.run-conflict",
+      "default_message": "The run id already exists with different record bytes.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "history.scope-mismatch",
+      "code": "LEK-HST-001",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "history.scope-mismatch",
+      "default_message": "The requested run or dependent belongs to another tenant scope.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "history.source-missing",
+      "code": "LEK-HST-012",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "history.source-missing",
+      "default_message": "A bound source record of the dependent reference no longer resolves to live bytes.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "history.tracked-store",
+      "code": "LEK-HST-006",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "history.tracked-store",
+      "default_message": "The run history home contains tracked content or its ignore protection cannot be verified.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "history.unsafe-field",
+      "code": "LEK-HST-004",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "history.unsafe-field",
+      "default_message": "The observation carried content outside the closed safe field grammar and was refused.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "class",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "history.version-unsupported",
+      "code": "LEK-HST-010",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unsupported-version"
+      ],
+      "message_id": "history.version-unsupported",
+      "default_message": "The store or record contract version is outside the accepted registry.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "impact.changed-input-incomplete",
       "code": "LEK-IMPACT-003",
       "category": "infrastructure",
