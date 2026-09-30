@@ -14,8 +14,8 @@ docs commit carrying this file. Design rationale lives in
   (`drizzle-orm@0.44.7`, 303 `.d.ts` files, closure digest
   `sha256:ef22631e127ec6531b24da5da2b30bb0045c8bf5510d7cca64d1e78ecccf320a`)
   with a version-drift refusal; artifact regenerated and manifest
-  golden updated (entry `sha256:93ed2de682366404b2471189807c543b1de8bf28cd023607758382987e5fc60e`,
-  14,613,981 bytes).
+  golden updated (entry `sha256:311f29438c74dac26e8311509debc3d7e5b7c9fdfecb0032a6f8d13d70f600f1`,
+  14,620,383 bytes; regenerated again by the fix round below).
 - `adapters/node-typescript/src/kernel.mjs` — the
   `__attachDrizzleDeclarations` seam (identity-checked attachment) and
   the `embeddedDrizzleDeclarations()` getter.
@@ -29,9 +29,11 @@ docs commit carrying this file. Design rationale lives in
   attachment decision, closure mapping, tables/columns/constraints,
   relations, queries/effects, transactions, migrations, scope,
   bindings decode, projection comparison, staleness audit, document
-  assembly and digest. Closed limitation vocabulary (57 codes) and
+  assembly and digest. Closed limitation vocabulary (60 codes after
+  the fix round) and
   closed bounds on every array.
-- `adapters/node-typescript/test/drizzle-evidence.test.mjs` (19 tests)
+- `adapters/node-typescript/test/drizzle-evidence.test.mjs` (19 tests
+  before the fix round, 28 after)
   + `test/drizzle-helpers.mjs`; gate `scripts/test-node-drizzle.mjs`,
   registered in `.github/workflows/ci.yml` next to the scanner suite.
 - Fixtures `tests/fixtures/node-typescript-drizzle/{postgres,mysql}/`
@@ -169,13 +171,16 @@ document: no core Model/IR file was touched by this implementation.
 ## Gates executed (local receipts)
 
 - `node adapters/node-typescript/build.mjs` — regenerated; `--check`
-  byte-identical (`{"ok":true,...,"digest":"sha256:93ed2de682366404b2471189807c543b1de8bf28cd023607758382987e5fc60e","bytes":14613981}`).
+  byte-identical (`{"ok":true,...,"digest":"sha256:93ed2de682366404b2471189807c543b1de8bf28cd023607758382987e5fc60e","bytes":14613981}`;
+  the fix round re-verified the same property at
+  `sha256:311f29438c74dac26e8311509debc3d7e5b7c9fdfecb0032a6f8d13d70f600f1`).
 - `node scripts/test-adapter-manifest-golden.mjs` — ok (entry digest +
   package digest recompute over the committed artifact).
 - `node scripts/test-node-typescript-scanner.mjs` — ok (3 files; 12
   fixture/unit tests, no regressions from the resolution seam).
 - `node scripts/test-node-typescript-kernel.mjs` — ok (4 files).
-- `node scripts/test-node-drizzle.mjs` — ok (19/19 tests).
+- `node scripts/test-node-drizzle.mjs` — ok (19/19 tests before the
+  fix round, 28/28 after).
 - `cargo fmt --all -- --check` — clean.
 - `cargo clippy --workspace --all-targets --locked -- -D warnings` —
   clean.
@@ -207,8 +212,10 @@ document: no core Model/IR file was touched by this implementation.
    builder subset. Other versions/dialects degrade to
    unresolved-import uncertainty (never quasi-evidence). Relational
    query API (`db.query.*` preview objects), prepared-statement
-   reuse, and batch APIs are outside this qualified subset and
-   surface as unknown shapes rather than guesses.
+   reuse, and batch APIs are outside this qualified subset and emit
+   explicit `relational-query-unsupported` / `batch-unsupported`
+   limitations with a reason code and force the queries section
+   partial — never a silent drop (fix round).
 5. **Runtime verification**: no database, no migration execution, no
    runtime receipts — by scope and by AC7.
 
@@ -222,3 +229,78 @@ transaction, a rollback, an out-of-callback db use, a ghost binding,
 and a projection type divergence. Tests assert each produces its
 specific evidence or limitation — they cannot pass with the negatives
 silently dropped.
+
+## Fix round (two blocking reviews)
+
+Both fix-round reviewers' findings are fixed with regression anchors
+in the new `postgres-edges` fixture and a new test section in
+`drizzle-evidence.test.mjs` (28 tests total in the gate).
+
+Blockers:
+
+- **Silent drops with `complete` sections.** Factory identity now
+  resolves through the callee SYMBOL (declaration), not the local
+  identifier text — `import { pgTable as pt }` and
+  `import { relations as rel }` extract exactly like the spelled
+  names (`closureCalleeSymbol`). The relations walk no longer gates
+  on the literal `relations` text before symbol resolution.
+  Recognized-but-out-of-subset surfaces (`db.query.*`, `db.batch`)
+  emit explicit `relational-query-unsupported` / `batch-unsupported`
+  limitation rows with a reason code; a per-section gap set
+  (`sectionGaps`) plus the removal of the dead
+  `'partial':'partial'` ternaries means a section claims `complete`
+  only when it covered every recognized surface — all-clean rows are
+  now honestly complete, gaps and row limitations force partial.
+
+Majors:
+
+- **tsconfig paths merge.** The drizzle `paths` mapping is merged
+  with the consumer's parsed mapping (consumer wins key conflicts;
+  drizzle added additively) instead of wholesale replacement — a
+  project `@app/*` mapping keeps resolving after the pin attaches.
+  Asserted byte-level via `index.programOptions` and functionally via
+  an `@app`-aliased query resolving its target.
+- **Ambiguous export names.** Bindings resolve via unique evidence
+  only: a unique export match confirms; several modules exporting the
+  same name (or several tables sharing a physical name) produce
+  status `ambiguous` + `binding-ambiguous` — never a guessed
+  `confirmed` pick.
+
+Minors:
+
+- `check(name, sql\`…\`)` bodies record `sqlPredicate: true` + a
+  `raw-sql` limitation instead of being silently absent.
+- `provenance.inputRevision` includes `otherFiles` digests — a
+  same-length migration SQL edit changes the revision; migration
+  folder files are provenance inputs and migration `schemaRefs` are
+  existence-checked against the granted inventory
+  (`migration-ref-missing`).
+- `readOptionalProjectInput` preserves the failure reason; an invalid
+  bindings/projection input reports `bindings-input-invalid` /
+  `projection-input-invalid` (state `invalid`) instead of being
+  mislabeled missing/absent.
+- A rejected-pin project is distinguishable from a non-drizzle
+  project: `index.drizzleAttachment` records the rejection reason,
+  declared specs, and supported pin (plain absence stays unrecorded).
+- Transaction membership and tx binding are separate axes: a
+  non-tx-bound query inside a callback carries `transactionId: null`,
+  is not a group member, and keeps the `query-not-tx-bound`
+  limitation.
+- Join RHS equality columns (`eq(users.id, posts.authorId)`) record
+  field reads of the joined table instead of phantom `reference`
+  inputs; the dead `query-shape-ignored` vocabulary is removed.
+- An explicitly `return`-ed builder no longer adds
+  `builder-not-executed` noise (an intentional handoff).
+
+Bundle: rebuilt deterministically (`build.mjs --check` byte-identical),
+manifest regenerated
+(entry `sha256:311f29438c74dac26e8311509debc3d7e5b7c9fdfecb0032a6f8d13d70f600f1`,
+14,620,383 bytes; package digest
+`sha256:e63b12b9d29f965ec195eaf1a92d46cb4f6cd9192c138c4f2806df5a4ee357b5`),
+and the committed-manifest test's pinned digest moved with the bytes
+it guards. Gates: `cargo fmt --check`, `cargo clippy --workspace
+--all-targets --locked -D warnings`, `cargo test --workspace --locked`
+(all green incl. `the_committed_adapter_manifest_parses`), the
+29-test Node adapter suites (294 tests, incl. the 28-test drizzle
+gate), the manifest golden, and the kernel conformance battery
+(10 pass / 0 fail).

@@ -43,9 +43,11 @@ scan:
   limitations on tenant-key tables whose queries carry no scope
   predicate (a completeness note, never an authorization verdict);
 - **bindings** — the owner-supplied `drizzle.bindings.json` input
-  validated against extracted tables (confirmed/unresolved), plus the
-  storage projection comparison (`drizzle.projection.json`) reporting
-  matched/type-divergent/nullability/missing rows.
+  validated against extracted tables (confirmed/unresolved/ambiguous:
+  an ambiguous export or physical name across modules refuses
+  confirmation with `binding-ambiguous` — never a guessed pick), plus
+  the storage projection comparison (`drizzle.projection.json`)
+  reporting matched/type-divergent/nullability/missing rows.
 
 ## Evidence identity and integrity
 
@@ -72,7 +74,15 @@ changes the revision and the digest.
    computed keys, spreads, and unknown receivers produce limitation
    rows (`raw-sql`, `dynamic-builder`, `dynamic-values`,
    `receiver-unknown`, ...) and partial section completeness — never a
-   silently empty complete set.
+   silently empty complete set. The same holds for recognized
+   Drizzle surfaces outside the qualified static subset: the
+   relational query API (`db.query.*`) and the batch API (`db.batch`)
+   emit `relational-query-unsupported` / `batch-unsupported` with a
+   reason code and force the queries section partial. Section
+   `complete` is claimed only when every recognized surface was
+   covered; aliased imports (`pgTable as t`, `relations as r`)
+   extract through the resolved declaration symbol, so a local
+   spelling can never silently skip a real table.
 4. **Declared schema ≠ live database.** `completeness.databaseState`
    is `unknown` by construction; the projection comparison is a
    declaration-vs-projection check only.
