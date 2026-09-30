@@ -20,6 +20,7 @@
  * unknown record with a span.
  */
 import {
+  HONO_MAX_MOUNT_DEPTH,
   makeRecord,
   makeUncertainty,
 } from "./hono-evidence.mjs";
@@ -766,7 +767,7 @@ export function resolveComposition(ctx, events) {
     return !isNestedMount(mountEvents, event);
   });
   for (const mount of rootMounts) {
-    resolveMount(ctx, mount, mountEvents, routeEvents, routes, 0, [], closureOf);
+    resolveMount(ctx, mount, mountEvents, routeEvents, routes, 0, [], closureOf, "/");
   }
   // 5. Mounted children keep their own deeper mounts resolved through
   // step 4's recursion; nothing standalone remains here.
@@ -837,10 +838,14 @@ function standaloneBaseOf(ctx, instance, seen = new Set()) {
 /**
  * Resolve one mount: emit the mounts-router record and the child's
  * route events under the mount prefix with snapshot semantics, then
- * recurse into the child's own mounts.
+ * recurse into the child's own mounts. `basePrefix` carries the full
+ * ancestor base chain: a mount nested two levels deep composes
+ * root prefix + parent standalone base + every mount path, so
+ * `api2.route('/v1', v1)` + `app.route('/api2', api2)` resolves
+ * `/api2/v1/...` — never the child's prefix alone.
  */
-function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack, closureOf) {
-  if (depth > 8) {
+function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack, closureOf, basePrefix) {
+  if (depth >= HONO_MAX_MOUNT_DEPTH) {
     ctx.addUncertaintyAt(mount.sourceFile, mount.node, "composition-depth", String(depth));
     return;
   }
@@ -848,9 +853,12 @@ function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack
     ctx.addUncertaintyAt(mount.sourceFile, mount.node, "composition-cycle", mount.path ?? "");
     return;
   }
-  const parentBase = mount.instance.kind === "view" || mount.instance.kind === "alias"
-    ? standaloneBaseOf(ctx, mount.instance)
-    : "/";
+  const parentBase = joinPaths(
+    basePrefix ?? "/",
+    mount.instance.kind === "view" || mount.instance.kind === "alias"
+      ? standaloneBaseOf(ctx, mount.instance)
+      : "/",
+  );
   const mountBase = joinPaths(parentBase, mount.path ?? "/");
   if (mount.childInstance) {
     ctx.addRecord(makeRecord({
@@ -888,7 +896,7 @@ function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack
     }
     for (const nested of mountEvents) {
       if (nested.instance.key !== child.key) continue;
-      resolveMount(ctx, nested, mountEvents, routeEvents, routes, depth + 1, stackNext, closureOf);
+      resolveMount(ctx, nested, mountEvents, routeEvents, routes, depth + 1, stackNext, closureOf, mountBase);
     }
   } else {
     ctx.addRecord(makeRecord({
@@ -946,7 +954,7 @@ function classifyChildEvent(mount, event, closureOf) {
  * children produce one resolved set per mount occurrence.
  */
 function resolveInto(ctx, routeEvents, instance, _instanceBase, scope, routes, depth) {
-  if (depth > 8) return;
+  if (depth >= HONO_MAX_MOUNT_DEPTH) return;
   for (const event of routeEvents) {
     if (event.instance.key !== instance.key) continue;
     if (scope.origin.startsWith("mount:") && event.resolvedScopes?.has(scope.origin)) continue;

@@ -45,9 +45,10 @@ const CONSTRUCTOR_VOCABULARY = Object.freeze({
   OpenAPIHono: { specifier: "@hono/zod-openapi", kind: "openapi" },
 });
 
-/** Hard bounds: composition depth, chain length, per-handler work. */
-export const HONO_MAX_MOUNT_DEPTH = 8;
-export const HONO_MAX_CHAIN = 16;
+/** Hard bounds: composition depth, chain length, per-handler work.
+ * The canonical constants live in hono-evidence.mjs (shared leaf); these
+ * re-exports keep the historical import surface stable. */
+export { HONO_MAX_MOUNT_DEPTH, HONO_MAX_CHAIN } from "./hono-evidence.mjs";
 export const HONO_MAX_BODY_NODES = 4096;
 export const HONO_MAX_HANDLER_DIGEST_BYTES = 8192;
 

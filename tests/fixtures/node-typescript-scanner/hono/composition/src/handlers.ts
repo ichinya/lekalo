@@ -23,3 +23,7 @@ export function sharedA(c: Context) {
 export function lateChildRoute(c: Context) {
   return c.text("late");
 }
+
+export function deepLeaf(c: Context) {
+  return c.json({ deep: true });
+}

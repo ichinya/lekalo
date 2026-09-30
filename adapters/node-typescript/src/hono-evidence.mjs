@@ -119,6 +119,12 @@ const FRESHNESS_DOMAIN = "lekalo.hono.freshness.v1";
 export const MAX_HONO_RECORDS = 4096;
 export const MAX_HONO_UNCERTAINTY = 1024;
 
+/** Hard composition bounds (issue #115 fix round): mount chains deeper
+ * than this are refused with `composition-depth` uncertainty; middleware
+ * chains longer than this are truncated explicitly. */
+export const HONO_MAX_MOUNT_DEPTH = 8;
+export const HONO_MAX_CHAIN = 16;
+
 /** Canonical JSON of one closed plain value (sorted keys, compact). */
 export function canonicalHonoText(value) {
   if (value === null) return "null";

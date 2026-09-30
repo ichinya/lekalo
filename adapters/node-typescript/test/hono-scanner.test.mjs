@@ -73,26 +73,29 @@ test("composition: nested routers, shared children, and proven ordering", async 
     assert.equal(context.hono.provider.state, "complete");
     const routes = recordsOfRelation(context, "route-handler");
     const byPath = new Map(routes.map((record) => [`${record.method} ${record.path}`, record]));
-    // Nested: app mounts /api which mounts /v1 twice (shared child).
+    // Nested mounts compose every ancestor prefix: app mounts /api
+    // which mounts /v1 twice (shared child) and /deep (depth 3).
     assert.ok(byPath.get("GET /api/ping"), "parent+mount path");
-    assert.ok(byPath.get("GET /v1/users"), "nested v1 mount");
-    assert.ok(byPath.get("GET /v2/users"), "second mount of the shared child");
+    assert.ok(byPath.get("GET /api/v1/users"), "nested v1 mount keeps the /api prefix");
+    assert.ok(byPath.get("GET /api/v2/users"), "second mount of the shared child keeps the /api prefix");
+    assert.ok(byPath.get("GET /api/deep/leaf"), "depth-3 mount composes root+parent+child prefixes");
     assert.ok(byPath.get("GET /shared/a"), "shared router mounted at /shared");
     assert.ok(byPath.get("GET /v1direct/users"), "basePath view surface");
     // Deterministic ordering: v1.ts provably initializes before the
     // mounting module (import edge), so its pre-mount routes are
     // complete; the same-module post-mount registration stays incomplete.
-    const v1Users = byPath.get("GET /v1/users");
+    const v1Users = byPath.get("GET /api/v1/users");
     assert.equal(v1Users.status, "complete");
     assert.deepEqual(v1Users.reasons, []);
-    const late = byPath.get("GET /v1/late");
+    const late = byPath.get("GET /api/v1/late");
     assert.equal(late.status, "incomplete");
     assert.ok(late.reasons.includes("post-mount-registration"));
-    // Mount relations are recorded per occurrence with the child identity.
+    // Mount relations are recorded per occurrence with the child identity
+    // (relative mount paths; full prefix resolution is on the routes).
     const mounts = recordsOfRelation(context, "mounts-router");
-    assert.equal(mounts.length, 4);
+    assert.equal(mounts.length, 5);
     const mountPaths = mounts.map((mount) => mount.path).sort();
-    assert.deepEqual(mountPaths, ["/api", "/shared", "/v1", "/v2"]);
+    assert.deepEqual(mountPaths, ["/api", "/deep", "/shared", "/v1", "/v2"]);
     // The base-path view is its own relation.
     const basePaths = recordsOfRelation(context, "base-path");
     assert.equal(basePaths.length, 1);

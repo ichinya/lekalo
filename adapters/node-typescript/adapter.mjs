@@ -214243,6 +214243,7 @@ var HONO_RULES_REVISION = "hono-rules-v1";
 var FRESHNESS_DOMAIN = "lekalo.hono.freshness.v1";
 var MAX_HONO_RECORDS = 4096;
 var MAX_HONO_UNCERTAINTY = 1024;
+var HONO_MAX_MOUNT_DEPTH = 8;
 function canonicalHonoText(value) {
   if (value === null) return "null";
   switch (typeof value) {
@@ -214998,7 +214999,7 @@ function resolveComposition(ctx, events) {
     return !isNestedMount(mountEvents, event);
   });
   for (const mount of rootMounts) {
-    resolveMount(ctx, mount, mountEvents, routeEvents, routes, 0, [], closureOf);
+    resolveMount(ctx, mount, mountEvents, routeEvents, routes, 0, [], closureOf, "/");
   }
   emitOpenApiRecords(ctx, openapiEvents, definitions);
   return { routes, events };
@@ -215044,8 +215045,8 @@ function standaloneBaseOf(ctx, instance, seen = /* @__PURE__ */ new Set()) {
   }
   return "/";
 }
-function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack, closureOf) {
-  if (depth > 8) {
+function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack, closureOf, basePrefix) {
+  if (depth >= HONO_MAX_MOUNT_DEPTH) {
     ctx.addUncertaintyAt(mount.sourceFile, mount.node, "composition-depth", String(depth));
     return;
   }
@@ -215053,7 +215054,10 @@ function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack
     ctx.addUncertaintyAt(mount.sourceFile, mount.node, "composition-cycle", mount.path ?? "");
     return;
   }
-  const parentBase = mount.instance.kind === "view" || mount.instance.kind === "alias" ? standaloneBaseOf(ctx, mount.instance) : "/";
+  const parentBase = joinPaths(
+    basePrefix ?? "/",
+    mount.instance.kind === "view" || mount.instance.kind === "alias" ? standaloneBaseOf(ctx, mount.instance) : "/"
+  );
   const mountBase = joinPaths(parentBase, mount.path ?? "/");
   if (mount.childInstance) {
     ctx.addRecord(makeRecord({
@@ -215086,7 +215090,7 @@ function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack
     }
     for (const nested of mountEvents) {
       if (nested.instance.key !== child.key) continue;
-      resolveMount(ctx, nested, mountEvents, routeEvents, routes, depth + 1, stackNext, closureOf);
+      resolveMount(ctx, nested, mountEvents, routeEvents, routes, depth + 1, stackNext, closureOf, mountBase);
     }
   } else {
     ctx.addRecord(makeRecord({
@@ -215125,7 +215129,7 @@ function classifyChildEvent(mount, event, closureOf) {
   return { status: "incomplete", reasons: ["cross-module-registration-order"] };
 }
 function resolveInto(ctx, routeEvents, instance, _instanceBase, scope, routes, depth) {
-  if (depth > 8) return;
+  if (depth >= HONO_MAX_MOUNT_DEPTH) return;
   for (const event of routeEvents) {
     if (event.instance.key !== instance.key) continue;
     if (scope.origin.startsWith("mount:") && event.resolvedScopes?.has(scope.origin)) continue;
