@@ -6,3 +6,9 @@ secret:
   # manifest; no real credential may ever be added here.
   ignored_paths:
     - tests/fixtures/privacy-leaks/**
+  ignored_matches:
+    # RFC 7515 / jwt.io public example token used as a refusal-test input in
+    # crates/lekalo-core/src/run_history/tests.rs — the test asserts the store
+    # REJECTS secret-shaped material. Declared synthetic; sha256 of the match.
+    - match: dfe4ffa03ec5044dec4da6f43daf11a916e52116fd820d07e3fce5c106468b94
+      name: run-history-refusal-fixture-jwt
