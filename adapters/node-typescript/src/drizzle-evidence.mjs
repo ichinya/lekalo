@@ -148,6 +148,11 @@ const LIMITATION_CODES = new Set([
   // a construct-named callee that could not be proven against the
   // closure — never dropped silently (issue #116 fix round 3)
   "callee-unproven",
+  // a member call on a module namespace object (import * as ns) — the
+  // namespace is provably not a database handle, so the call is never
+  // attributed to one; it is an explicit uncertainty instead
+  // (issue #116 fix round 4)
+  "namespace-receiver-unsupported",
   // transactions
   "query-not-tx-bound", "tx-escaped", "rollback", "nested-transaction",
   "tx-callback-shape-unknown",
@@ -564,6 +569,25 @@ function typeInClosure(ts, checker, node, closurePrefix) {
     }
   }
   return false;
+}
+
+/**
+ * Whether the symbol is a module namespace OBJECT (`import * as ns` or
+ * `export * as ns`): its declarations are the module's source file (or
+ * the namespace import specifier), never a runtime handle class. A
+ * db-spelled binding that resolves to a namespace is provably not a
+ * database handle, so typing it as one would fabricate evidence
+ * (issue #116 fix round 4 — `orm.select()` on the drizzle-orm
+ * namespace is not a query on a client).
+ */
+function isModuleNamespaceSymbol(ts, checker, symbol, resolved) {
+  const namespaceDeclared = (candidate) => (candidate?.declarations ?? [])
+    .some((declaration) => declaration.kind === ts.SyntaxKind.SourceFile
+      || declaration.kind === ts.SyntaxKind.NamespaceImport
+      || declaration.kind === ts.SyntaxKind.ExportSpecifier);
+  if (namespaceDeclared(symbol)) return true;
+  if (resolved === symbol || resolved === null || resolved === undefined) return false;
+  return namespaceDeclared(resolved);
 }
 
 function symbolKey(symbol) {
@@ -2130,6 +2154,7 @@ function extractTransaction(context, sourceFile, callNode, receiverKind, parentT
  * The receiver kind of a chain root: "db" (factory-created database or
  * closure-typed parameter), "tx" (transaction callback parameter via
  * the walk state), "db-alias" (variable initialized from a db chain),
+ * "namespace" (a module namespace object — provably NOT a handle),
  * or "unknown".
  */
 function rootIdentityKind(context, root, state) {
@@ -2148,6 +2173,13 @@ function rootIdentityKind(context, root, state) {
     // imported database handle is a variable in another module, and
     // the alias type can be `any` when annotations do not survive.
     const resolved = resolveAliasSymbol(checker, symbol);
+    // A module namespace object (`import * as orm`) is never a
+    // database handle: its type is the module's export surface, which
+    // RESOLVES INTO THE EMBEDDED CLOSURE for vendored modules — the
+    // closure test alone would type the namespace as `db` and
+    // fabricate evidence from a provably-wrong receiver identity
+    // (issue #116 fix round 4).
+    if (isModuleNamespaceSymbol(ts, checker, symbol, resolved)) return "namespace";
     // The proven-receiver memo is keyed by the RESOLVED DECLARATION
     // SYMBOL, never the bare name: two same-named bindings are two
     // different receivers, so a non-Drizzle local named `db` can never
@@ -2711,6 +2743,15 @@ export function attachDrizzleEvidence({
         const tailName = tail?.kind === "call" ? tail.name : null;
         if (tailName === "transaction") {
           const identity = rootIdentityKind(extract, root, state);
+          if (identity === "namespace") {
+            // A module namespace is provably not a transaction owner:
+            // the member call stays an explicit uncertainty instead of
+            // a silent drop (issue #116 fix round 4).
+            extract.limit("namespace-receiver-unsupported", modulePath,
+              lineOf(sourceFile, node), "transaction");
+            extract.sectionGaps.add("transactions");
+            return;
+          }
           if (identity === "db" || identity === "db-alias") {
             const tx = extractTransaction(extract, sourceFile, node, "db", null, state);
             if (!pushBounded(extract.transactions, MAX_TRANSACTIONS, tx, extract.overflow)) {
@@ -2722,6 +2763,21 @@ export function attachDrizzleEvidence({
         if (links.length > 0 && links[0].kind === "call"
           && (QUERY_HEADS.has(links[0].name) || CONTINUATION_HEADS.has(links[0].name))) {
           const identity = rootIdentityKind(extract, root, state);
+          if (identity === "namespace") {
+            // A db-spelled chain root that resolves to a module
+            // namespace is provably not a handle: the query-shaped
+            // chain is an explicit uncertainty, never a fabricated row
+            // (issue #116 fix round 4).
+            const shapePair = links.some((link) => link.kind === "call"
+              && (link.name === "from" || link.name === "values" || link.name === "set"
+                || link.name === "where"));
+            if (shapePair) {
+              extract.limit("namespace-receiver-unsupported", modulePath,
+                lineOf(sourceFile, node), "query");
+              extract.sectionGaps.add("queries");
+            }
+            return;
+          }
           if (identity === "db" || identity === "db-alias" || identity === "tx") {
             const query = extractQueryChain(extract, sourceFile, { root, links }, identity,
               root.kind === ts.SyntaxKind.Identifier ? state.txScopes.get(root.text) ?? null : null);
@@ -2764,7 +2820,19 @@ export function attachDrizzleEvidence({
           && (links[0].kind === "access" && links[0].name === "query"
             || links[0].kind === "call" && links[0].name === "batch")) {
           const identity = rootIdentityKind(extract, root, state);
-          if (identity === "db" || identity === "db-alias" || identity === "tx") {
+          if (identity === "namespace") {
+            // `ns.batch(...)` / `ns.query.*` on a module namespace is
+            // provably not a drizzle client surface: an explicit
+            // namespace limitation, never a batch/relational
+            // misattribution (issue #116 fix round 4).
+            extract.limit("namespace-receiver-unsupported", modulePath,
+              lineOf(sourceFile, node),
+              links[0].name === "query" ? "relational-query-api" : "batch-api");
+            extract.sectionGaps.add("queries");
+            if (links[0].kind === "access") return;
+            // A batch array may carry genuine drizzle chains: keep
+            // walking so its member statements still extract.
+          } else if (identity === "db" || identity === "db-alias" || identity === "tx") {
             const code = links[0].name === "query"
               ? "relational-query-unsupported"
               : "batch-unsupported";
@@ -2904,7 +2972,9 @@ export function attachDrizzleEvidence({
     queries: extract.sectionGaps.has("queries") || partialFromRows(extract.queries)
       ? "partial"
       : "complete",
-    transactions: partialFromRows(extract.transactions) ? "partial" : "complete",
+    transactions: extract.sectionGaps.has("transactions") || partialFromRows(extract.transactions)
+      ? "partial"
+      : "complete",
     migrations: extract.migrations.every((row) => row.limitations.length === 0) ? "complete" : "partial",
     scope: "partial",
     bindings: bindingsState === "decoded" ? "complete" : "partial",
