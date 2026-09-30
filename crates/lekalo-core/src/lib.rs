@@ -42,6 +42,7 @@ pub mod query_model;
 pub mod reference_evaluation;
 pub mod requirements;
 pub mod result;
+pub mod run_history;
 pub mod scenario;
 pub mod scenario_evidence;
 pub mod storage_engine;
