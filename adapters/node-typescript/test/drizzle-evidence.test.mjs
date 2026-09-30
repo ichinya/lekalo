@@ -374,6 +374,11 @@ test("postgres: transaction groups carry members, nesting, rollback, and escape 
 
     const outside = d.queries.find((q) => q.limitations.includes("query-not-tx-bound"));
     assert.ok(outside, "db query inside a transaction callback flagged as not-tx-bound");
+    // The two axes stay separate (issue #116 fix round): a non-tx-bound
+    // query invents no transaction id and is not a group member.
+    assert.equal(outside.transactionId, null);
+    assert.ok(!transfer.members.includes(outside.id), "db queries are not tx members");
+    assert.ok(!txs.some((t) => t.members.includes(outside.id)));
 
     const limitations = new Set(d.limitations.map((l) => l.code));
     assert.ok(limitations.has("rollback"));
@@ -557,6 +562,24 @@ test("a semver-range drizzle pin leaves declarations unattached: imports stay un
     const uncertaintyKinds = new Set(second.index.anyUncertainty.map((u) => u.kind));
     assert.ok(uncertaintyKinds.has("unresolved-import"),
       "drizzle imports surface as unresolved-import uncertainty");
+    // A declared-but-rejected pin is distinguishable from a non-drizzle
+    // project (issue #116 fix round): the rejection reason survives.
+    assert.deepEqual(second.index.drizzleAttachment, {
+      attached: false,
+      reason: "pin-not-exact",
+      declared: ["^0.44.7"],
+      supported: "0.44.7",
+    });
+
+    // A non-drizzle project records no attachment rejection at all.
+    writeFileSync(pkgPath, JSON.stringify({
+      name: "lekalo-drizzle-fixture-postgres",
+      private: true,
+      dependencies: {},
+    }));
+    const plain = fx.rescan();
+    assert.equal(plain.index.drizzle, null);
+    assert.equal(plain.index.drizzleAttachment, undefined);
   } finally {
     dispose(fx.root);
   }
@@ -690,6 +713,210 @@ test("evidence is deterministic and completeness degrades over unknowns", async 
       assert.equal(typeof limitation.code, "string");
       assert.ok(limitation.code.length > 0);
     }
+  } finally {
+    dispose(fx.root);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 11. Fix round (review blockers/majors/minors): regression anchors.
+// ---------------------------------------------------------------------------
+
+test("aliased imports extract by symbol identity: `pgTable as table` and `relations as rel`", async () => {
+  const fx = await scanDrizzleFixture("pg-edges", "postgres-edges");
+  try {
+    const d = fx.index.drizzle;
+    const users = d.tables.find((t) => t.exportName === "users" && t.physicalName === "users");
+    assert.ok(users, "aliased pgTable declaration extracted");
+    assert.equal(users.dialect, "postgresql", "dialect comes from the resolved symbol");
+    assert.ok(users.declarationPath?.startsWith("pg-core/"), "provenance names the closure declaration");
+    const usersV2 = d.tables.find((t) => t.physicalName === "users_v2");
+    assert.ok(usersV2, "the spelled pgTable in the sibling module extracts too");
+    assert.equal(usersV2.exportName, "users");
+
+    const many = d.relations.find((r) => r.name === "posts");
+    assert.ok(many, "aliased relations declaration extracted");
+    assert.equal(many.sourceTable, "users");
+    assert.equal(many.targetTable, "posts");
+    const one = d.relations.find((r) => r.name === "author");
+    assert.ok(one, "second aliased relations declaration extracted");
+    // A recognized relations surface that fails extraction forces the
+    // section partial; here both extract, and their limitations do.
+    assert.equal(d.completeness.sections.relations, "partial");
+  } finally {
+    dispose(fx.root);
+  }
+});
+
+test("db.query and db.batch emit explicit out-of-subset limitations and degrade the queries section", async () => {
+  const fx = await scanDrizzleFixture("pg-edges-query", "postgres-edges");
+  try {
+    const d = fx.index.drizzle;
+    const codes = d.limitations.map((l) => l.code);
+    assert.ok(codes.includes("relational-query-unsupported"),
+      "db.query.* surfaces as an explicit limitation");
+    assert.ok(codes.includes("batch-unsupported"),
+      "db.batch surfaces as an explicit limitation");
+    const relational = d.limitations.find((l) => l.code === "relational-query-unsupported");
+    assert.equal(relational.detail, "relational-query-api");
+    assert.equal(d.completeness.sections.queries, "partial",
+      "out-of-subset surfaces force the queries section partial");
+    // No query rows were silently invented for the out-of-subset calls.
+    assert.ok(!d.queries.some((q) => q.chain[0] === "batch"));
+    assert.ok(!d.queries.some((q) => q.chain[0] === "query"));
+    // The batch member chains are genuine drizzle queries and extract.
+    assert.ok(d.queries.some((q) => q.kind === "insert" && q.target?.exportName === "users"));
+  } finally {
+    dispose(fx.root);
+  }
+});
+
+test("ambiguous export names refuse confirmation: the binding records ambiguity, never a guess", async () => {
+  const fx = await scanDrizzleFixture("pg-edges-bindings", "postgres-edges");
+  try {
+    const d = fx.index.drizzle;
+    const user = d.bindings.find((b) => b.entity === "User");
+    assert.ok(user, "User binding recorded");
+    assert.equal(user.status, "ambiguous", "two `users` exports never confirm one silently");
+    assert.equal(user.table.native, null);
+    assert.equal(user.table.physicalName, null);
+    assert.ok(user.limitations.includes("binding-ambiguous"));
+    assert.ok(d.limitations.some((l) => l.code === "binding-ambiguous"
+      && l.detail === "User->users"));
+    const post = d.bindings.find((b) => b.entity === "Post");
+    assert.equal(post.status, "confirmed", "a unique export name still confirms");
+    assert.equal(post.table.exportName, "posts");
+  } finally {
+    dispose(fx.root);
+  }
+});
+
+test("consumer tsconfig paths survive the drizzle pin: merged, never replaced", async () => {
+  const fx = await scanDrizzleFixture("pg-edges-paths", "postgres-edges");
+  try {
+    const options = JSON.parse(fx.index.programOptions);
+    assert.ok(Array.isArray(options.paths["@app/*"]) && options.paths["@app/*"].length > 0,
+      "the consumer's @app/* mapping survives");
+    assert.ok(options.paths["drizzle-orm"], "the drizzle root mapping is present");
+    assert.ok(options.paths["drizzle-orm/pg-core"], "the drizzle dialect mapping is present");
+    const d = fx.index.drizzle;
+    // Functionally: the @app import resolves to the same table symbol,
+    // so the aliased query resolves its target without uncertainty.
+    const aliased = d.queries.find((q) => q.chain.includes("where")
+      && q.target?.exportName === "users");
+    assert.ok(aliased, "the @app-aliased select extracted");
+    assert.ok(!aliased.limitations.includes("target-unresolved"),
+      "the @app alias resolved through the merged paths");
+    // Join RHS equality columns are field reads of the joined table,
+    // not reference inputs (issue #116 fix round).
+    const joinQuery = d.queries.find((q) => q.joins.length > 0);
+    assert.ok(joinQuery, "join extracted");
+    assert.ok(joinQuery.reads.some((r) => r.role === "join" && r.table === "posts"
+      && r.column === "authorId"), "join RHS column recorded as a field read");
+    assert.ok(!joinQuery.inputs.some((i) => i.role === "join"),
+      "no phantom reference input for the join RHS column");
+    // A builder handed off by an explicit return carries no
+    // builder-not-executed noise.
+    const returned = d.queries.find((q) => q.chain.length === 2
+      && q.chain[0] === "select" && q.chain[1] === "from");
+    assert.ok(returned, "returned builder extracted");
+    assert.ok(!returned.limitations.includes("builder-not-executed"),
+      "an explicitly returned builder is an intentional handoff");
+  } finally {
+    dispose(fx.root);
+  }
+});
+
+test("check() constraint SQL bodies are recorded as explicit raw-sql unknowns", async () => {
+  const fx = await scanDrizzleFixture("pg-edges-check", "postgres-edges");
+  try {
+    const d = fx.index.drizzle;
+    const users = d.tables.find((t) => t.exportName === "users" && t.physicalName === "users");
+    const check = users.constraints.find((c) => c.kind === "check");
+    assert.ok(check, "check constraint extracted");
+    assert.equal(check.name, "users_email_readable");
+    assert.equal(check.sqlPredicate, true, "the SQL body is recorded, not silently absent");
+    assert.ok(check.limitations.includes("raw-sql"));
+    assert.ok(d.limitations.some((l) => l.code === "raw-sql"
+      && l.module === users.module && l.detail === "users_email_readable"));
+    // Constraint rows without a SQL body keep the explicit false.
+    const uniqueIndex = users.constraints.find((c) => c.kind === "unique-index");
+    assert.ok(uniqueIndex, "the non-check constraint extracted");
+    assert.equal(uniqueIndex.sqlPredicate, false);
+  } finally {
+    dispose(fx.root);
+  }
+});
+
+test("invalid owner inputs report invalid, never missing", async () => {
+  const fx = await scanDrizzleFixture("pg-invalid-inputs", "postgres");
+  try {
+    writeFileSync(join(fx.project, "drizzle.projection.json"), "{ not json");
+    const second = fx.rescan();
+    const d = second.index.drizzle;
+    const codes = d.limitations.map((l) => l.code);
+    assert.ok(codes.includes("projection-input-invalid"),
+      "a malformed projection input is invalid, not silently absent");
+    assert.equal(d.projection.state, "invalid");
+    assert.ok(d.limitations.some((l) => l.code === "projection-input-invalid"
+      && l.detail === "invalid-json"));
+  } finally {
+    dispose(fx.root);
+  }
+});
+
+test("a migration-folder edit changes the input revision; migration files appear in provenance", async () => {
+  const fx = await scanDrizzleFixture("pg-migrev", "postgres");
+  try {
+    const before = fx.index.drizzle;
+    assert.ok(before.provenance.files.some((f) => f.path === "drizzle/0000_init.sql"),
+      "migration folder files are provenance inputs");
+    const sqlPath = join(fx.project, "drizzle/0000_init.sql");
+    const original = readFileSync(sqlPath, "utf8");
+    // Same-length edit: only the content digest changes.
+    writeFileSync(sqlPath, original.replace("CREATE TABLE", "CREATE  TABLE"));
+    const after = fx.rescan();
+    assert.notEqual(after.index.drizzle.provenance.inputRevision, before.provenance.inputRevision,
+      "otherFiles digests feed the input revision");
+  } finally {
+    dispose(fx.root);
+  }
+});
+
+test("a dangling migration schemaRef is an explicit limitation, never silently accepted", async () => {
+  const fx = await scanDrizzleFixture("pg-dangling", "postgres");
+  try {
+    writeFileSync(join(fx.project, "src/drizzle.config.ts"), `export default {
+  dialect: "postgresql",
+  schema: "./src/vanished.ts",
+  out: "./drizzle",
+};
+`);
+    const second = fx.rescan();
+    const config = second.index.drizzle.migrations.find((m) => m.kind === "config");
+    assert.ok(config, "config still recorded");
+    assert.ok(config.limitations.includes("migration-ref-missing"));
+    const codes = second.index.drizzle.limitations.map((l) => l.code);
+    assert.ok(codes.includes("migration-ref-missing"));
+    assert.equal(second.index.drizzle.completeness.sections.migrations, "partial");
+  } finally {
+    dispose(fx.root);
+  }
+});
+
+test("fix-round completeness honesty: all-clean sections claim complete; gaps force partial", async () => {
+  const fx = await scanDrizzleFixture("pg-sections", "postgres");
+  try {
+    const d = fx.index.drizzle;
+    // Postgres fixture transaction rows carry no limitations.
+    assert.equal(d.completeness.sections.transactions, "complete");
+    // The fixture's relations carry honesty limitations (unproven
+    // cardinality/policy), so the section stays partial for the right
+    // reason — the dead partial:partial ternary is gone.
+    assert.equal(d.completeness.sections.relations, "partial");
+    assert.ok(d.relations.every((r) => r.limitations.length > 0));
+    // Tables are all complete in this fixture.
+    assert.equal(d.completeness.sections.tables, "complete");
   } finally {
     dispose(fx.root);
   }

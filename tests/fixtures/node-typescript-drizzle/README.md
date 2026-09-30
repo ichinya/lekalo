@@ -19,6 +19,14 @@ shipped adapter bundle (`drizzle-orm@0.44.7`).
   alias sugar, `datetime(6)` precision, `$returningId()`,
   `onDuplicateKeyUpdate`, tenant-scoped predicates, and the same
   transaction/config/migration layout.
+- `postgres-edges/` — the fix-round regression anchors: aliased
+  imports (`pgTable as table`, `relations as rel`), the out-of-subset
+  relational query and batch APIs (`db.query.*`, `db.batch`), an
+  ambiguous export name across two modules, a `check()` constraint
+  with a raw SQL body, a consumer tsconfig `paths` mapping (`@app/*`)
+  exercised through an aliased import, a join whose RHS equality
+  columns must read as field reads, and a builder handed off by an
+  explicit `return`.
 
 The paired dialect fixtures exist to prove AC8: the neutral evidence
 (document shape, effect actions, binding and completeness semantics) is
