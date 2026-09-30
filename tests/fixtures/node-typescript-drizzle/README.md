@@ -60,6 +60,16 @@ shipped adapter bundle (`drizzle-orm@0.44.7`).
   hop bound stay explicitly `callee-unproven`, local construct
   spellings stay silent).
 
+- `postgres-round6/` — the fix-round-6 regression anchors: the type
+  anchor gated to identity no initializer can contradict (a cast-typed
+  binding and a reassigned `let` stay explicitly `callee-unproven`,
+  family-disjoint, never fabricated rows); factory-interface bindings
+  (`declare const t: PgTableFn`, `MySqlTableFn`, and the interface-
+  typed parameter form) which extract by mapped construct identity
+  with closure provenance; and the call-result anchor (`const factory
+  = makeTable()`) which extracts marked `type-sourced` with the row
+  and section degraded.
+
 The paired dialect fixtures exist to prove AC8: the neutral evidence
 (document shape, effect actions, binding and completeness semantics) is
 identical across dialects, while dialect facts stay in target rows

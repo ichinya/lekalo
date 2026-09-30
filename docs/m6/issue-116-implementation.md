@@ -518,3 +518,57 @@ entry `sha256:4af648644c64dd0259ef48016b9b4e99c32f5e82717173185f773779b007ca3f`,
 14,633,510 bytes), manifest package digest regenerated
 (`sha256:ae71cdec1a9da2e464b1cb743f5c8ebe9d02ff30cc570b9f2266230832f6f6d4`),
 committed-manifest pin moved with the bytes it guards.
+
+## Fix round 6 (re-review: two majors introduced by the r5 widening)
+
+The r5 review verified both r4 majors fixed but found the widened
+type-resolution path over-firing. Both majors are fixed with regression
+fixtures/tests, one commit per finding.
+
+Major — the type anchor over-fired on casts and reassignments.
+`const r = (null as unknown) as typeof relations` fabricated a
+relations row (the code's own contract said casts are assertions over
+data — identical semantics to the fixture's destructure-cast negative,
+which flags `callee-unproven`), and `let r = relations; r = localFn`
+extracted on the STALE initializer while the program called the
+replacement. Fix: the anchor fires only when no initializer value can
+contradict it — ambient `declare const` bindings and construct-typed
+parameters. `let`/`var` bindings are declined (following the stale
+initializer is fabrication) and call-result initializers stay
+extractable but are MARKED: the new closed-vocabulary `type-sourced`
+limitation lands on the extracted rows and degrades the section, so a
+type-anchored identity is never claimed as direct construct proof.
+Casts and every other initializer form anchor nothing; when the type
+still names a vendored construct the call stays explicitly
+`callee-unproven` (family-disjoint), never fabricated, never silent.
+
+Major — interface-typed callees silently dropped.
+`declare const t: PgTableFn` (and `PgTableFn`-typed parameters)
+satisfied the round-5 anchor — the resolver returned the in-closure
+interface symbol — and then dropped silently on the extractor's
+factory-name gate while the tables section claimed `complete`. Fix: the
+closed vendored interface→factory map (`PgTableFn`→`pgTable`,
+`MySqlTableFn`→`mysqlTable`, `SQLiteTableFn`→`sqliteTable`,
+`SingleStoreTableFn`→`singlestoreTable`, derived from the vendored
+`export declare const` lines) resolves such bindings to exactly one
+construct so they extract with factory provenance; a closure-resolved
+anchor that is neither a recognized construct nor a mapped factory now
+declines with an explicit `callee-unproven` instead of satisfying the
+resolver and vanishing at the gate.
+
+Residual: the union receiver case (`module ∪ handle` types) keeps the
+conservative `namespace-receiver-unsupported` flag — the value may be a
+handle, so the uncertainty is honest and the flag is accepted.
+
+New `postgres-round6` fixture: cast-initialized and reassigned callees
+(explicit flags, no rows), `PgTableFn`/`MySqlTableFn` bindings and the
+interface-typed parameter form (mapped extraction with pg-core /
+mysql-core closure provenance), and the call-result anchor (extracted,
+marked `type-sourced`, section degraded). Three new gate tests
+(39 -> 42); all three fail on the pre-fix bundle and pass after.
+
+Bundle: rebuilt deterministically (`build.mjs --check` byte-identical,
+entry `sha256:c242ff675ee1fa1887bf97acb3256febd119a25703100893b638b6aa647860f0`,
+14,636,037 bytes), manifest package digest regenerated
+(`sha256:ac2068abace110b4722c55ba7323f5db13aed5a70948d9b8494b4a7dabc9c629`),
+committed-manifest pin moved with the bytes it guards.
