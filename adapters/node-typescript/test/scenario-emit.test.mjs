@@ -653,6 +653,24 @@ test('observes on a consumed given step resolves the given binding and runs (F-2
   }
 });
 
+test('a when action that freezes the clock threads the given ISO (F-5)', () => {
+  // The when step's ctx.clock references a clock given step by id; the
+  // emitter must thread the clock ISO map through renderWhen — an
+  // unbound identifier there crashed the whole emission with a
+  // ReferenceError the moment any action froze the clock (issue #115
+  // fix round 5 unbound-identifier sweep).
+  const scenario = seededScenario();
+  scenario.given = [
+    ...scenario.given,
+    { stepId: 'clock', precondition: { kind: 'clock', at: { type: 'string', value: '2026-01-02T03:04:05Z' } } },
+  ];
+  scenario.when[0].action.clock = { id: 'clock' };
+  const files = emit(map(scenario).scenarios);
+  const testFile = files.find((entry) => entry.path.endsWith('.test.ts'));
+  assert.match(testFile.text, /port\.clock\.freeze\("2026-01-02T03:04:05Z"\)/, 'the clock given freezes the port clock');
+  assert.match(testFile.text, /"clock": "2026-01-02T03:04:05Z"/, 'the when ctx carries the frozen ISO');
+});
+
 test('assertion semantics are enforced, never approximated (F-3)', () => {
   // presence "exists" compiles to >= 1, not == 1 (multi-row entities).
   const existsScenario = happyScenario();

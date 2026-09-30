@@ -1,0 +1,6 @@
+{
+  "name": "hono-ssr-fixture",
+  "private": true,
+  "type": "module",
+  "dependencies": { "hono": "^4.0.0", "zod": "^3.0.0" }
+}

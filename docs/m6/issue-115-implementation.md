@@ -1,0 +1,510 @@
+# Issue #115 — Hono framework bindings: implementation report
+
+Branch `ichinya/m6-issue-115`, milestone M6. This document maps every
+acceptance criterion of [issue #115](https://github.com/ichinya/lekalo/issues/115)
+to its implementing code, fixtures, and executable evidence, and marks
+every partial or unsupported item explicitly. Companion research:
+`docs/m6/issue-115-research.md`.
+
+## Fix round 5 (adversarial re-review of PR #142)
+
+The round-5 re-review verified the round-4 family fix completely, then
+found ONE new blocker, plus the sweep it mandated caught one sibling.
+Each is its own focused commit with its own reproduction and
+regression test; the bundle and manifest are regenerated and the Rust
+exemplar guard tracks the new package digest.
+
+- **BLOCKER — `explicitRoleOf` crashed the whole scan on inline
+  `use()` handlers.** The role reader's inline-handler fallback
+  (`handler.node.kind === ts.SyntaxKind.ArrowFunction`) referenced an
+  unbound `ts` identifier, so ANY executing-chain
+  `app.use(async (c, next) => { ... })` — the commonest Hono idiom —
+  threw `ReferenceError: ts is not defined` and aborted the ENTIRE
+  scan. No fixture covered it because every existing middleware
+  fixture used named, declared middleware. The function now
+  destructures `ts` from the scan context like every sibling
+  (narrowest change). The middleware fixture gains `app.use` with an
+  inline arrow, an inline async arrow, and a declaration-less function
+  expression ahead of a dedicated `/inline` route; the new test
+  asserts all three stay chain members with inline native identities
+  + content digests, detected `next` pass-through, no role claim
+  (absent annotation), exact ordinals/unwinds, and distinct identities
+  (no collapse), while the named forms keep passing.
+- **SWEEP — one sibling unbound identifier, same root cause.** A
+  scope-aware unbound-identifier audit over every adapter module
+  (binding-aware walk of imports, module and block scopes, function
+  parameters, catch/for bindings) flagged exactly one genuine bug
+  beyond the blocker: `scenario-emit.mjs` `renderWhen` referenced the
+  caller-local `clockIsos` map without receiving it, so the first
+  scenario whose when action froze the clock (`action.clock`) died
+  with `ReferenceError: clockIsos is not defined` instead of emitting.
+  `renderWhen` now threads the map like `renderThen`/`renderChecks`
+  already did, and a new scenario-emit test reproduces the crash
+  shape: a given clock step plus a clock-referencing when action emits
+  `port.clock.freeze(...)` and a `ctx` carrying the same frozen ISO.
+  (All other audit flags were audit blind spots — object binding
+  patterns, import/export aliases, `import.meta`, Node globals — not
+  code defects.)
+
+Round-5 gates: `build.mjs --check` byte-identical; bundle +
+`adapter.manifest.json` regenerated (package digest `sha256:e69e3075…`);
+`test-node-hono-bindings` 45 tests across 5 suites (44 prior + the
+inline-use adversarial suite); `test-node-hono-readonly`; the scenario
+suites gain the clock-emission regression (18 emit tests);
+kernel/scanner/transport/native-gates/openapi suites; manifest golden
++ contracts, target-protocol contracts (Ajv 8.17.1), model/lockfile
+Ajv, fixture provenance, contract versions, structure/authority/
+privacy/model checks; `cargo fmt --check`, `cargo clippy -D warnings`,
+`cargo test --workspace` with the exemplar guard re-pinned to the
+round-5 digest.
+
+## Fix round 4 (adversarial re-review of PR #142)
+
+The round-4 re-review verified both round-3 fixes and every prior fix,
+then found ONE new major. It is fixed in a focused commit; the bundle
+and manifest are regenerated and the Rust exemplar guard tracks the
+new package digest.
+
+- **MAJOR — shared route-table semantics of basePath families were not
+  modeled.** Hono's basePath clone shares ONE routes array with its
+  owner (`clone.routes === this.routes`), and `app.route()` iterates
+  the shared array wholesale — so mounting ANY member of a family
+  exposes the WHOLE family's routes: with `inner2.get('/own', h)` and
+  `const view = inner2.basePath('/v'); view.get('/in', h)`, the
+  runtime serves `/bp/own` under `app.route('/bp', view)` AND
+  `/x/v/in` under `app.route('/x', inner2)`. The scanner keyed route
+  events per registering instance and resolved each mount against the
+  child's own registrations only, so `/bp/own` and `/x/v/in` were
+  silently missing while both mounts claimed `status: complete` with
+  zero uncertainty rows — a silent under-claim of real served routes
+  (the round-3 comment "a basePath view is a distinct clone with its
+  own route table" misread `clone.routes`). Family membership is now
+  canonical: every member of a basePath family (owner, views, aliases,
+  the whole owner chain) resolves to the same route-table root, and a
+  mount resolves EVERY family member's registration events under the
+  mount prefix, each composed with its own registering member's
+  standalone base (`mountPrefix + memberBase + path`) — precise
+  modeling, not the honest-uncertainty fallback. Dedupe stays per
+  mount chain, so the same event under different mount prefixes stays
+  distinct; mounted families are excluded from standalone resolution
+  as a whole (no phantom `/own` beside the mounts); nested-mount
+  detection and recursion use the same root test (owner-side nested
+  mounts compose under the mount prefix too, and the family root is
+  what kills the phantom standalone surface); alias-target mounts are
+  the special case where the alias resolves to its target's family
+  root. The round-3 prefix composition, depth handling,
+  conditional/deferred scope propagation, and post-mount snapshot
+  honesty are unchanged and re-asserted. (`mount-base/` fixture: the
+  owner-side `/own` and late registrations plus the `/x` owner mount;
+  the test asserts both mount directions, snapshot ordering of an
+  alias-name registration against the owner mount
+  (`/x/v/alias-in` complete, `/bp2/v/alias-in` post-mount
+  incomplete), constrained family events under conditional/deferred
+  mounts, and absence of every dropped-prefix and standalone-phantom
+  path.)
+
+Round-4 gates: `build.mjs --check` byte-identical; bundle +
+`adapter.manifest.json` regenerated (package digest `sha256:79300ab0…`);
+`test-node-hono-bindings` 44 tests across 5 suites;
+`test-node-hono-readonly`; kernel/scanner/transport/native-gates/
+scenario/openapi suites; manifest golden + contracts, target-protocol
+contracts (Ajv 8.17.1), model/lockfile Ajv, fixture provenance,
+contract versions, structure/authority/privacy/model checks;
+`cargo fmt --check`, `cargo clippy -D warnings`,
+`cargo test --workspace` with the exemplar guard re-pinned to the
+round-4 digest.
+
+## Fix round 3 (adversarial re-review of PR #142)
+
+The round-3 re-review verified every round-2 finding fixed, then found
+two NEW defects in supported territory. Both are fixed; each fix is its
+own commit with its own adversarial fixture + test; the bundle and
+manifest are regenerated and the Rust exemplar guard tracks the new
+package digest.
+
+- **BLOCKER — a mounted child's own `basePath` prefix was dropped.**
+  `resolveMount` built the mounted scope base from the PARENT's
+  `standaloneBaseOf` only, so a child carrying its own base lost the
+  prefix under every mount: `const view = inner.basePath('/v');
+  view.get('/in', h); app.route('/bp', view)` emitted `route-handler`
+  `GET /bp/in` `status: complete`, while the Hono runtime serves
+  `GET /bp/v/in` (#addRoute merges the clone's `_basePath` into each
+  stored route; `route()` re-prefixes those paths) — a
+  wrong-complete-path claim, the same class as the round-1 prefix-drop
+  blocker. The inline form (`app.route('/bp', new Hono().basePath('/v')
+  .get('/in', h))`) dropped the prefix identically, and the loss
+  compounded with depth: a mounted view's nested mount dropped the
+  grandchild's own base too (`/bp/v/n/leaf` instead of
+  `/bp/v/n/nb/leaf`). `mountChildBaseOf` now composes the child's own
+  standalone base into the mount scope base — `mountPrefix +
+  childBase + routePath` at every depth — and a mount whose child base
+  cannot be resolved statically downgrades to an unknown mounts-router
+  record plus an explicit `unresolved-mount-base` uncertainty (new
+  closed-vocabulary reason) instead of a guessed complete path. The
+  round-2 `isNestedMount` blanket (view/alias-parented mounts are
+  always roots) also let a mounted view's own nested mounts re-claim a
+  phantom standalone surface beside the mounted paths (`GET /v/n/leaf`
+  `complete`); a view-parented mount is now nested exactly when its
+  parent instance is provably a mounted child, so it composes under
+  the mount prefix only, while unmounted views keep their standalone
+  mounts (`mount-base/` fixture: variable form, inline form, and the
+  depth-2 based grandchild all resolve with every prefix; conditional
+  and deferred mounts of the based child keep constraining the whole
+  prefixed subtree).
+- **MAJOR — an alias-target mount emitted a complete record over a
+  silently empty subtree.** `const aliased = view;
+  app.route('/bp2', aliased)` emitted `mounts-router` `app -> aliased
+  /bp2` `status: complete` with ZERO route records under `/bp2`: route
+  events are keyed to the target instance's key while the alias
+  binding carries its own key, so `event.instance.key !== child.key`
+  matched nothing — no incomplete/unknown marker, a silent under-claim
+  of the whole mounted surface (and alias-name registrations resolved
+  at the prefix-dropped `/bp2/<path>`). Alias cliques now join the
+  identities that denote the SAME runtime object: a mount through a
+  const alias resolves the target's route events and nested mounts
+  under the mount prefix (and vice versa), and the mounted-children
+  exclusion covers every clique key so neither name re-claims a
+  standalone surface. Only alias edges join a clique — a basePath view
+  is a distinct clone with its own route table, never its owner's
+  surface. Cliques are bounded, cycle-safe, and memoized per instance
+  key; inline ephemeral views compute theirs lazily. The mount record
+  still names the alias binding the code actually wrote, and an
+  alias-name registration after the mount stays snapshot-honest
+  (`post-mount-registration`, never guessed into the mounted surface).
+
+Round-3 gates: `build.mjs --check` byte-identical; bundle +
+`adapter.manifest.json` regenerated (package digest `sha256:19b4af18…`);
+`test-node-hono-bindings` 44 tests across 5 suites (43 prior + the
+mount-base adversarial suite); `test-node-hono-readonly`;
+kernel/scanner/transport/native-gates/scenario/openapi suites;
+manifest golden + contracts, target-protocol contracts (Ajv 8.17.1),
+model/lockfile Ajv, fixture provenance, contract versions,
+structure/authority/privacy/model checks; `cargo fmt --check`,
+`cargo clippy -D warnings`, `cargo test --workspace` (89 binaries,
+1716 tests, 0 failures) with the exemplar guard re-pinned to the
+round-3 digest. Residual documented minor from round 2 (an
+unresolvable `new Hono().route(...)` alias receiver stays an honest
+`hono-unsupported-receiver`) is unchanged.
+
+## Fix round 2 (adversarial re-review of PR #142)
+
+The re-review verified every round-1 finding fixed, then five residual
+defects survived adversarial probing (one blocker, two majors, two
+minors). All five are fixed; each fix is its own commit with its own
+adversarial fixture + test; the bundle and manifest are regenerated and
+the Rust exemplar guard tracks the new package digest.
+
+- **BLOCKER — mount reachability never reached the records it
+  governs.** `resolveMount`'s route scope kept only the
+  `classifyChildEvent` ordering and dropped `mount.status`/
+  `mount.reasons`, while `emitResponseRecord`, `emitContextKeyRecord`,
+  and `joinServiceCalls` hardcoded `status: complete`: a conditional
+  (`if (flag) app.route('/cm', cc)`) or deferred
+  (`function d(){ app.route('/late', child) }`) mount emitted
+  incomplete mounts-router records, yet the route-handler /
+  uses-middleware / returns-response / context-read / handler-call
+  records beneath it claimed complete — phantom served routes asserted
+  as fact through mount indirection. `resolveMount` now merges the
+  full ancestor chain's status/reasons (`mountChainScopeOf`) into every
+  child resolution scope, and the new `mergeRouteEvidence`
+  (hono-evidence.mjs) propagates the resolved route's scope into EVERY
+  derived relation: `validates-request`, `returns-response` (response
+  sites + route classification), `handles-error` (thrown
+  HTTPException), `uses-middleware`, `context-read`/`context-write`,
+  `handler-call`, and `endpoint-contract` joins. Nothing under a
+  conditional/deferred/unreachable/unresolved mount claims complete at
+  any depth (`mount-reach/` fixture: one child mounted conditionally,
+  deferred, and unconditionally; scanner test walks every relation).
+- **MAJOR — repeated `use()` bindings duplicated context records.**
+  Four `use(reader)` events composed four chain members, but
+  `emitContextKeyRecord` carried no binding identity: the handler body
+  was re-walked per member, emitting byte-identical context records —
+  `hono-invalid-record duplicate-record` violations and provider state
+  partial. `buildMiddlewareChains` now threads a per-route identity map
+  keyed by canonical endpoint CONTENT (distinct use events resolve
+  distinct endpoint objects with identical content) with per-site span
+  identity: binding multiplicity stays explicit on uses-middleware
+  ordinals while each context site is exactly one record per route
+  (`use-semantics/` fixture, middleware test).
+- **MAJOR — post-route `use()` claimed membership it can never
+  execute.** `composeChain`'s own-instance filter lacked the ordering
+  test the parent-use path already had: `app.get('/a', h)` followed by
+  `app.use('/a', mw)` emitted uses-middleware on `/a` although Hono's
+  registration order controls entry and a terminal handler never calls
+  `next()`. Same-instance uses now compose only when they precede the
+  route's registration (`event.order < route.event.order`, same
+  module; cross-module ordering stays unproven and keeps conservative
+  inclusion), and every matched-but-unreachable observation is recorded
+  as a `hono-post-route-use` uncertainty naming the route — never
+  silence, never a coverage claim (`use-semantics/`: `/multi` and
+  `/first` keep exactly the four pre-route ordinals, `/after` composes
+  all five).
+- **MINOR — fluent verb chains dropped known fields.**
+  `app.get(p, h).post(p, h2)` resolved the outer link's receiver (the
+  inner registration call) to no instance and fell into the near-miss
+  path: one bare `unsupported-receiver` uncertainty (detail 'post', no
+  path) and zero route records. `collectRegistrations` now unrolls
+  fluent chains rooted at a resolvable instance (`fluentChainOf`):
+  every link — route verbs plus the app-returning shapers
+  `use`/`route`/`onError`/`notFound`/`openapi` — becomes its own
+  registration event with its own method/path/handler arguments,
+  ordering, and reachability; only an unresolvable ROOT (factory
+  receivers, mutable aliases) stays a near-miss (`fluent/` fixture:
+  `get().post().put()` resolves three complete route records, zero
+  unsupported-receiver rows).
+- **MINOR — unresolved inline mount targets emitted orphan routes.**
+  `app.route('/sub', new Hono().get('/inside', h))` could not resolve
+  its child (instance resolution handles identifiers, new-expressions,
+  and basePath views only), so the mount stayed unknown-handler while
+  the inline app's routes emitted standalone complete `/inside` —
+  orphan routes with the wrong path and no link to the failed mount.
+  Mount targets are now unrolled like verb chains: when the chain
+  roots at a provable instance the mount binds it, and registrations
+  inside the mount's own argument expression are snapshot-included (the
+  argument fully evaluates before the mount call executes) while the
+  child's remaining registrations keep proven-order classification;
+  the blocker's mount-scope propagation composes, so a conditional
+  inline mount still constrains its subtree (`inline-mount/` fixture:
+  single-link, multi-link, nested, and conditional inline targets all
+  resolve under their prefixes, zero orphans, zero unknown-handler
+  uncertainty).
+
+Round-2 gates: `build.mjs --check` byte-identical; bundle +
+`adapter.manifest.json` regenerated (package digest
+`sha256:e1517957…`); `test-node-hono-bindings` 43 tests across 5
+suites (38 prior + 5 new adversarial: mount-reach propagation,
+repeated-binding dedupe, post-route ordering, fluent chains, inline
+mount targets); `test-node-hono-readonly`;
+kernel/scanner/transport/native-gates/scenario/openapi suites;
+manifest golden + contracts, target-protocol contracts (Ajv 8.17.1),
+fixture provenance, contract versions, structure/authority/privacy/
+model checks; `cargo fmt --check`, `cargo clippy -D warnings`,
+`cargo test --workspace` (89 binaries, 0 failures) with the exemplar
+guard re-pinned to the round-2 digest.
+
+## Fix round (PR #142 review)
+
+Both independent reviewers returned BLOCK on PR #142. Every blocker,
+major, and minor finding is fixed; the rules revision is bumped to
+`hono-rules-v2` (additive vocabulary + classification changes; no wire
+contract change). Per finding:
+
+- **B1 — reachability.** `collectRegistrations`/`makeEvent` classified
+  no control flow, so `if (cond) app.get(...)` and
+  `function setup(){ app.get(...) }` were emitted as complete facts.
+  Every registration site is now classified: `top-level` straight-line
+  and `called` (a named local function the same module invokes
+  straight-line at top level, hoisting/TDZ respected) stay complete;
+  `conditional` sites emit `incomplete` + `conditional-registration`;
+  unproven `deferred` bodies emit `incomplete` +
+  `deferred-registration`; sites after a same-level `return`/`throw`
+  emit `unknown` + `unreachable-registration`. Mounts-router records
+  keep `incomplete` instead of collapsing to `unknown`, and error/
+  middleware records inherit the same penalty.
+  (`reachability/` fixture; scanner suite.)
+- **B2 — ancestor prefixes.** `resolveMount` recomputed the parent base
+  from `standaloneBaseOf` only and recursed without the enclosing
+  prefix; nested mounts now thread the full ancestor base chain
+  (`app.route('/api2', api2)` + `api2.route('/v1', v1)` resolves
+  `/api2/v1/...`), the depth refusal uses the canonical
+  `HONO_MAX_MOUNT_DEPTH` bound, and the scanner test no longer codified
+  prefix-dropped paths (`composition/` gained a depth-3 mount).
+- **M1 — shared parent multi-mount.** Scope keys were
+  `mount:module:order`, so a shared parent mounted twice collided: the
+  second ancestor chain dropped shared grandchild routes and the same
+  nested mounts-router event re-emitted byte-identical duplicate
+  records. Resolution scope, dedupe keys, and middleware ancestry are
+  now keyed by the full ancestor chain, and mounts-router is emitted
+  once per mount occurrence event (`hub` fixture mounted at `/hub1`
+  and `/hub2`; zero `hono-invalid-record` uncertainty asserted).
+- **M2 — use() filter positions.** A non-literal first `use()` argument
+  was resolved through `resolveHandlerChain`, fabricating
+  `uses-middleware app -> adminPrefix` records from an indexed string
+  const. The filter position is now decided by the compiler (literal,
+  resolvable const alias, string/RegExp/string-array type, or
+  unknowable any/unknown); resolvable aliases behave exactly like
+  literals, and unresolvable filters stay `unknown` with
+  `dynamic-path-filter` (new reason + uncertainty) while handlers bind
+  from the correct argument index. Middleware covered by an unresolved
+  filter stay `incomplete` (conditional-applicability +
+  dynamic-path-filter).
+- **M3 — path-filtered parent middleware.** Only the mount parent's
+  pre-mount GLOBAL `use` events composed, so `app.use('/api/*', auth)`
+  over `app.route('/api', api)` produced zero records on mounted
+  routes. The chain now walks the full mount ancestry (outermost first,
+  each ancestor's pre-mount uses proven by same-module order) and
+  matches every parent path filter against the route's full resolved
+  path: literal disjoint filters are provably excluded, wildcards stay
+  conditional-incomplete (`middleware-mounts/` fixture).
+- **M4 — test bindings through mounts.** `app.request` matched only
+  `route.instance.key === instance.key`, so tests on a mounting app
+  could never bind a mounted route. Resolved routes carry their root
+  instance; matching considers the full ancestry and inherits the
+  route's status/reasons (a bound-but-incomplete route never claims a
+  complete flow) (`tests/` fixture: `app.request('/sub/other')`).
+- **Minors.** (1) `readBytes` ignored its per-call limits argument, so
+  the 64 KiB per-file bound on declared data reads never reached the
+  read view — per-call bounds are translated into the view's cumulative
+  counters (test grows the contract file past the bound and asserts a
+  reasoned refusal, never an unbounded parse); (2) endpoint-contract
+  records carry the JOINED contract method instead of `methods[0]`
+  (multi-method `on` route joins a POST contract in the static
+  fixture); (3) spans align with the research spec: half-open UTF-8
+  byte offsets (`startByte`/`endByte`) converted from the compiler's
+  UTF-16 positions against exact source bytes, proven exact against
+  file bytes via a multibyte fixture anchor; (4) dead bounds removed:
+  `HTTP_VERBS` deleted, `HONO_MAX_MOUNT_DEPTH` wired into the mount
+  refusal, `HONO_MAX_CHAIN` enforced with explicit `chain-budget`
+  uncertainty on overflow; (5) `validateHonoRecords` rebuilt records
+  without the stored `framework` object so any non-default framework
+  version failed its own fingerprint — the rebuild consumes it; (6)
+  bare `request(...)` helpers no longer fabricate `unknown-test-app`
+  uncertainty; (7) `next()` evidence resolves the middleware's own
+  continuation parameter symbol instead of any identifier named
+  `next` (shadowed-import fixture proves `next=absent` while real
+  pass-through stays `next=detected`); (8) createRoute/openapi records
+  name the failed axis (`dynamic-method` vs `dynamic-path` vs the new
+  `operationid-unknown`) and emit reasoned declaration-side records
+  instead of silence; (9) non-literal `use()` filters were covered by
+  M2. One latent envelope defect found during the fix round: the
+  canonical record order was fingerprint-byte noise — `honoCompare`
+  now orders on record content.
+
+## What shipped
+
+The node-typescript adapter gained a Hono framework evidence provider:
+`adapters/node-typescript/src/hono-{evidence,context,scanner,routes,middleware,http,tests,bindings}.mjs`,
+vocabulary in `adapters/node-typescript/hono-compatibility.json`, a
+trusted launch input `--lekalo-framework-policy-json` in the kernel,
+and the fixture family `tests/fixtures/node-typescript-scanner/hono`
+(synthetic authored declaration stubs; no real package is installed,
+read, or executed at scan time).
+
+Scope items delivered (issue "Scope" → module):
+
+| Scope item | Module(s) |
+| --- | --- |
+| Application/router composition detection | `hono-scanner.mjs` (constructor resolution through the reserved import specifier plus an inventoried `.d.ts` class declaration; immutable const aliases; `basePath` views; bare `new Hono()` receivers) |
+| Route method/path/handler bindings | `hono-routes.mjs` (verb methods, `all`, `on` with literal method arrays; literal/template/concat/const-alias paths; per-occurrence chain endpoints; inline occurrence keys + content digests) |
+| Nested routers / base paths | `hono-routes.mjs` (`route()` mounts with mount-time snapshot semantics; transitive ESM import-closure ordering; shared children per mount occurrence; cycle/depth refusal) |
+| Middleware chain + order | `hono-middleware.mjs` (global/path-filtered `use` + inline middleware; entry `ordinal` and `unwindOrdinal`; `next()` detection; conditional applicability) |
+| Auth/tenant/context middleware evidence | `hono-middleware.mjs` (explicit `@lekalo-*` JSDoc roles; `c.set`/`c.get`/`c.var` literal-key records) |
+| Request validation / schema bindings | `hono-routes.mjs` + `hono-http.mjs` (`zValidator`/`validator` targets, schema symbols resolved through alias chains, inline schema digests) |
+| Response / error mapping | `hono-http.mjs` (`c.json/text/html/body/render/status` sites with statuses; thrown `HTTPException`; `onError`/`notFound`) |
+| OpenAPI operation links | `hono-routes.mjs` (`createRoute({method, path, operationId})` + `OpenAPIHono.openapi(definition, handler)`) |
+| Handler → service/command/query references | `hono-bindings.mjs` (`handler-call` records with exact from/to native ids via `getResolvedSignature`) |
+| Test bindings | `hono-tests.mjs` (`app.request`, `testClient` identity, client verbs, describe/it scopes) |
+| JSX/SSR routes marked separately | `hono-http.mjs` (`api/html/ssr/mixed/unknown` facet per route; `.tsx` alone is never SSR) |
+
+Evidence model (issue "Evidence model" → record fields, all in
+`hono-evidence.mjs`): semantic/native symbol (`from`/`to` with module,
+native id, name, indexed flag, structural signature, content digest);
+relation kind (closed `dev.lekalo.hono/…` vocabulary); source span
+(1-based lines/columns plus half-open UTF-8 byte offsets converted from
+the compiler's UTF-16 positions, on the logical project path); source revision
+(profile provenance revision); provenance (`explicit`/`detected`/
+`inferred` — `confirmed` is deliberately absent because a scanner
+cannot mint confirmation); confidence (`exact|high|medium|low|unknown`,
+never percentages); adapter + framework version and rules revision
+(`hono-rules-v2`); freshness fingerprint (domain-separated SHA-256 over
+the whole record — registration identity/order/path, handler and
+middleware identity, structural signature AND body digest, mount
+chain, facet, span).
+
+Issue constraints honored:
+
+- Dynamic route construction is never "fully known": dynamic
+  paths/methods/contexts/statuses become `unknown`/`incomplete` records
+  with closed machine reasons (`HONO_REASONS`).
+- Middleware presence never proves authorization: the provider emits no
+  authorization relation; roles are explicit annotations only; a test
+  asserts no `authorizes` relation can exist.
+- Context keys stay namespaced implementation evidence (`note`), never
+  canonical domain fields.
+- The scanner never edits source: asserted by
+  `scripts/test-node-hono-readonly.mjs` and the process test
+  (full-file inventories before/after three scans per fixture).
+- No regex-only claims where compiler information exists: all
+  recognition runs through the vendored TypeScript checker
+  (symbol resolution, alias chains, resolved signatures); string
+  matching appears only on the reserved import *specifier* spelling,
+  paired with compiler-resolved class identity.
+- Hono relations stay namespaced adapter evidence
+  (`dev.lekalo.hono/…`); the closed wire contract, core schemas, and
+  core vocabulary are untouched.
+- Hono support is disableable without breaking the generic adapter:
+  byte-identity is asserted in `hono-scanner.test.mjs` and exercised
+  through the wire in `hono-process.test.mjs`.
+
+## Acceptance criteria matrix
+
+| Issue acceptance criterion | Status | Evidence |
+| --- | --- | --- |
+| Scanner связывает static Hono routes с handler symbols и HTTP endpoint contracts | **Implemented** (adapter-side; Model/IR-verified join partial, see below) | `route-handler` records bind exact native handler ids: `test/hono-scanner.test.mjs` "static fixture"; endpoint contracts join declared `lekalo/endpoints.json` data by unique compatible method+path: `test/hono-http.test.mjs` "endpoint contracts"; ambiguity (`GET /users` duplicated entry) and gaps (`/v1/status`) stay reasoned `incomplete`. The join is `inferred`/`medium` — a shape candidate, never a confirmation; the IR/transport-verified join requires the successor-contract work of research S2/S5 (out of scope here, coordinated contract change). |
+| Nested routers/base paths разрешаются детерминированно | **Implemented** | `test/hono-scanner.test.mjs` "composition": app → /api → /v1 (×2 shared child), /shared, `basePath` view; v1.ts pre-mount routes `complete` via the proven import closure; post-mount registration `incomplete` with `post-mount-registration`; cycle fixture refuses the cyclic mount as `unknown` (`composition-cycle/src/{app,b}.ts`). Cold == warm byte parity asserted. |
+| Middleware order виден в inspect/impact/context | **Partial** | The adapter emits ordered chains (entry `ordinal`, reverse `unwindOrdinal`, `next()` evidence, conditional applicability) with stable serialization: `test/hono-middleware.test.mjs`. Surfacing inside `inspect`/`impact`/`context` additionally requires the neutral framework-evidence transport, the generic graph overlay, and the query consumers — exactly the coordinated contract successors of research S2/S5 (closed wire `role` vocabulary, observed schema, graph model). That core-side work is **not** part of this dispatch and is not claimed; the ordered adapter evidence is the deliverable this issue's provider can honestly produce today. |
+| Dynamic/ambiguous routes маркируются incomplete/unknown, а не угадываются | **Implemented** | `test/hono-scanner.test.mjs` "uncertainty" (dynamic concatenation → `unknown` + `dynamic-path`; dynamic `on` methods → `dynamic-method`; factory receivers → `unsupported-receiver`; mutable aliases refused); cycle mount → `unknown`; ambiguous endpoint join → `incomplete` + `ambiguous-endpoint-join`. |
+| API и SSR routes различаются | **Implemented** | `test/hono-http.test.mjs` "SSR": `/api/ping` → `api`, `/page` + `/render` → `ssr`, `/mixed` → `mixed`, `.tsx`-but-JSON → `api`; plain-string `c.html` → `html` (http fixture). Endpoint joins refuse API claims for SSR-classified routes (`ssr-api-conflict`). |
+| Route signature/source change инвалидирует stale evidence | **Implemented** (adapter-side; core-side stale recheck partial) | `test/hono-scanner.test.mjs` "freshness": a handler **body-only** edit changes the route record's fingerprint and handler digest while unrelated records stay stable; signature/order/path/span edits are fingerprint inputs by construction (unit-tested in `hono-evidence.test.mjs`). The persisted observed-index stale-state machinery (core-owned recheck of stored evidence) is successor work (research S2.2/S5.4); this dispatch ships the invalidation-carrying evidence, not the core-side recheck loop. |
+| Fixture и один private brownfield consumer проходят read-only scan без source mutation | **Partial** | Fixture side: `scripts/test-node-hono-readonly.mjs` — complete inventories (including every file's bytes) before/after three scans (enabled, disabled, repeat) across four fixture projects are byte-identical; plus the wire-level process test asserting the read-only invariant. Private brownfield consumer: **not performed** — no authorized repository role, snapshot, or type roots were supplied in this dispatch; per research S6.5 it must run under qualified confinement with an admission receipt and is explicitly left as the remaining acceptance item. |
+| Hono support можно отключить без нарушения generic TypeScript adapter | **Implemented** | `test/hono-scanner.test.mjs` "provider disabled or absent": enabled-minus-`frameworks` bytes == disabled bytes; absent policy behaves like disabled; wire-level scans with enabled/disabled policies terminate honestly (`hono-process.test.mjs`); the generic kernel/scanner/transport/scenario suites all pass unchanged. |
+
+## Constraint & honesty controls (adversarial coverage)
+
+- Lookalikes: local `class Hono`, router-shaped modules, shadowed
+  imports → zero apps (`lookalike/` fixture + test).
+- Unresolved constructors and cycle-mounted targets → `unknown`
+  records with spans, never invented applications or routes.
+- Duplicate/overlapping endpoint contracts → `ambiguous-endpoint-join`.
+- Malformed/tampered framework policies → bounded launch refusals
+  (`framework-policy` stderr diagnostic, nonzero exit).
+- Record/uncertainty budgets (4096/1024) with explicit
+  `record-budget` partial states; overflow is never silent.
+- The envelope validator rejects unknown relations, `confirmed`
+  provenance, percentage confidences, unknown reasons, and any
+  fingerprint tampering (`hono-evidence.test.mjs`).
+
+## Gates run (all green)
+
+- `node adapters/node-typescript/build.mjs --check` (deterministic
+  rebuild byte-parity) and `node scripts/regen-adapter-manifest.mjs`
+  (committed artifact + manifest regenerated; the Rust exemplar guard
+  in `crates/lekalo-core/src/adapter_package/manifest.rs` tracks the
+  new canonical package digest).
+- `node scripts/test-node-hono-bindings.mjs` — 38 tests across 5 suites
+  (envelope, scanner/composition/disablement, middleware, HTTP/tests/
+  joins, process/policy/readonly).
+- `node scripts/test-node-hono-readonly.mjs` — read-only inventories.
+- `node scripts/test-node-typescript-{kernel,scanner,transport}.mjs`,
+  `test-node-native-gates.mjs`, `test-node-scenario-units.mjs`,
+  `test-node-scenario-tests.mjs`, `test-node-openapi.mjs`,
+  `test-adapter-manifest-golden.mjs`, `test-adapter-manifest-contracts.mjs`
+  (Ajv 8.17.1), `test-target-protocol-contracts.mjs` (Ajv),
+  `test-fixture-provenance.mjs`, `check-contract-versions.mjs`,
+  `test-contract-versions.mjs`, `check-structure.mjs`,
+  `check-authority.mjs`, `check-privacy.mjs`, `check-model.mjs`.
+- `cargo fmt --all -- --check`; `cargo clippy --workspace --all-targets
+  --locked -- -D warnings`; `cargo test --workspace --locked`
+  (89 binaries, 0 failures).
+- CI: `.github/workflows/ci.yml` gains the two issue gates
+  (`test-node-hono-bindings`, `test-node-hono-readonly`) after the
+  scanner suite.
+
+## Remaining for full acceptance (explicit, not claimed)
+
+1. **Private brownfield consumer scan** — requires the coordinator-
+   supplied authorized role, snapshot, lock/type roots, and policy
+   (research S6.5); must produce an admission receipt. Not executable
+   in this repository dispatch.
+2. **Contract successors for core transport** — publish the
+   framework-evidence member in successor target-protocol/observed
+   contracts, the generic graph overlay, and the inspect/impact/context
+   consumers (research S2/S5). These are coordinated cross-cutting
+   contract changes (closed wire vocabularies and version registries)
+   deliberately not attempted unilaterally here; the adapter side is
+   ready to project into them.
+3. **Runtime oracle qualification** — qualify mount/clone/order and
+   `strict`/custom-`getPath` semantics against a pinned Hono runtime
+   (research S1.3); until then the provider stays marked `partial` in
+   `hono-compatibility.json` and mount ordering follows the documented
+   snapshot rule with proven static initialization order.
