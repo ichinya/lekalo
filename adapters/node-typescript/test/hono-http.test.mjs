@@ -85,11 +85,23 @@ test("openapi: createRoute definitions link operationIds to handlers", async () 
     assert.equal(linked.to.name, "getUserHandler");
     assert.equal(linked.confidence, "exact");
     assert.equal(linked.status, "complete");
-    // The dynamic-method definition stays incomplete with its span.
+    // The dynamic-method definition stays incomplete with its span —
+    // and the reason names the failed AXIS: the method is dynamic, the
+    // path resolved fine (it was mislabeled dynamic-path before).
     const dynamic = operations.find((row) => row.note === "definition-incomplete");
     assert.ok(dynamic, "incomplete definition recorded");
     assert.equal(dynamic.status, "incomplete");
-    assert.ok(dynamic.reasons.includes("dynamic-path"));
+    assert.equal(dynamic.method, null);
+    assert.ok(dynamic.reasons.includes("dynamic-method"));
+    assert.equal(dynamic.reasons.includes("dynamic-path"), false);
+    // The declaration side also emits its own reasoned record — the
+    // missing operationId is its own axis, never silent, never folded
+    // into dynamic-path.
+    const declared = operations.find((row) => row.note === "operationid-unknown" && row.to === null);
+    assert.ok(declared, "declaration-side record present");
+    assert.equal(declared.status, "incomplete");
+    assert.ok(declared.reasons.includes("dynamic-method"));
+    assert.ok(declared.reasons.includes("operationid-unknown"));
   } finally {
     dispose(context.root);
   }
@@ -133,6 +145,13 @@ test("endpoint contracts: unique joins bind, ambiguity and gaps stay reasoned", 
     // No contract for /v1/status: reasoned gap, never a silent drop.
     const status = byPath.get("GET /v1/status");
     assert.ok(status.reasons.includes("missing-endpoint-join"));
+    // The multi-method on() route joins the POST contract: the record
+    // is labeled with the JOINED contract method, never methods[0].
+    const multi = joins.find((row) => row.path === "/multi");
+    assert.ok(multi, "multi-method route joined");
+    assert.equal(multi.status, "complete");
+    assert.equal(multi.method, "POST", "label carries the joined contract method");
+    assert.equal(multi.note, "multi.any");
   } finally {
     dispose(context.root);
   }
@@ -158,6 +177,13 @@ test("tests: app.request and testClient flows bind to resolved routes", async ()
     assert.ok(missing.reasons.includes("missing-endpoint-join"));
     // Dynamic URL: never guessed.
     assert.ok(context.hono.uncertainty.some((row) => row.kind === "hono-dynamic-test-target"));
+    // A bare request(...) helper call is not Hono evidence: no record
+    // and no unknown-app uncertainty may be fabricated for it.
+    assert.equal(
+      context.hono.uncertainty.filter((row) => row.kind === "hono-unknown-test-app").length,
+      0,
+      "bare request() helpers must not produce unknown-app uncertainty",
+    );
     // Mounted routes bind through the root app: GET /sub/other resolves
     // through app.route('/sub', other) and binds listHandler.
     const mounted = byNote.get("GET /sub/other");

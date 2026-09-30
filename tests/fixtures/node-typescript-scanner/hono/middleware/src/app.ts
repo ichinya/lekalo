@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { auth, cacheHeaders, logger, maintenance, tenant } from "./middleware";
+import { auth, cacheHeaders, logger, maintenance, shadowed, tenant } from "./middleware";
 import { down, health, whoami } from "./handlers";
 
 export const app = new Hono();
@@ -21,3 +21,4 @@ app.get("/whoami", whoami);
 app.get("/health", cacheHeaders, health);
 app.get("/admin/panel", (c) => c.json({ panel: true }));
 app.post("/admin/reset", maintenance, (c) => c.json({ reset: true }));
+app.get("/shadowed", shadowed, whoami);

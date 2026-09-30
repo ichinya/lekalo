@@ -146,7 +146,13 @@ function emitMiddlewareRecord(ctx, route, member, ordinal, chainLength) {
   const handler = member.handler;
   if (handler.kind === "validator") return; // validated in the http phase
   const body = functionBodyOf(ctx, handler);
-  const callsNext = body ? containsNextCall(ctx, body) : false;
+  // `next()` evidence is compiler-symbol based: the call must resolve
+  // to the middleware's OWN declared second parameter. A same-named
+  // symbol from any other scope is not pass-through evidence (issue
+  // #115 fix round), and middleware without a next parameter have
+  // nothing to detect.
+  const nextSymbol = nextParamSymbolOf(ctx, handler);
+  const callsNext = body ? containsNextCall(ctx, body, nextSymbol) : false;
   const role = explicitRoleOf(ctx, handler);
   const reasons = [];
   let status = "complete";
@@ -194,16 +200,40 @@ function emitMiddlewareRecord(ctx, route, member, ordinal, chainLength) {
   }));
 }
 
-/** Compiler-walk detection of a `next()` call inside a body. */
-function containsNextCall(ctx, body) {
-  const { ts } = ctx;
+/**
+ * The symbol of the middleware's declared second parameter — the Hono
+ * `next` continuation — resolved for inline and referenced handlers.
+ */
+function nextParamSymbolOf(ctx, handler) {
+  const { ts, checker } = ctx;
+  let declaration = null;
+  if (handler.node
+    && (handler.node.kind === ts.SyntaxKind.ArrowFunction || handler.node.kind === ts.SyntaxKind.FunctionExpression)) {
+    declaration = handler.node;
+  } else if (handler.indexed && handler.symbol) {
+    declaration = handler.symbol.declarations?.find((candidate) => candidate.body
+      && (candidate.kind === ts.SyntaxKind.FunctionDeclaration
+        || candidate.kind === ts.SyntaxKind.MethodDeclaration
+        || candidate.kind === ts.SyntaxKind.ArrowFunction
+        || candidate.kind === ts.SyntaxKind.FunctionExpression)) ?? null;
+  }
+  const second = declaration?.parameters?.[1]?.name;
+  if (!second || second.kind !== ts.SyntaxKind.Identifier) return null;
+  return checker.getSymbolAtLocation(second) ?? null;
+}
+
+/** Compiler-walk detection of a call to the middleware's own `next`
+ * parameter symbol inside its body. */
+function containsNextCall(ctx, body, nextSymbol) {
+  if (!nextSymbol) return false;
+  const { ts, checker } = ctx;
   let found = false;
   let visited = 0;
   const visit = (node) => {
     if (found || visited > MAX_BODY_NODES) return;
     visited += 1;
     if (node.kind === ts.SyntaxKind.CallExpression && node.expression.kind === ts.SyntaxKind.Identifier
-      && node.expression.text === "next") {
+      && checker.getSymbolAtLocation(node.expression) === nextSymbol) {
       found = true;
       return;
     }

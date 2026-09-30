@@ -214212,6 +214212,7 @@ var HONO_REASONS = Object.freeze([
   "dynamic-path",
   "dynamic-method",
   "dynamic-path-filter",
+  "operationid-unknown",
   "unresolved-constructor",
   "unsupported-receiver",
   "mutable-alias",
@@ -214898,7 +214899,10 @@ function collectCreateRoute(ctx, node, sourceFile, fromModule, events) {
     request: read("request"),
     responses: read("responses")
   };
-  if (definition.method === null || definition.path === null) {
+  if (definition.method === null) {
+    ctx.addUncertaintyAt(sourceFile, node, "dynamic-method", "createRoute");
+  }
+  if (definition.path === null) {
     ctx.addUncertaintyAt(sourceFile, node, "dynamic-path", "createRoute");
   }
   events.push({
@@ -215272,7 +215276,10 @@ function emitOpenApiRecords(ctx, openapiEvents, definitions) {
   for (const event of definitions) {
     const definition = event.definition;
     const definitionSource = event.sourceFile;
-    if (definition.method === null || definition.path === null) continue;
+    const structuralReasons = [];
+    if (definition.method === null) structuralReasons.push("dynamic-method");
+    if (definition.path === null) structuralReasons.push("dynamic-path");
+    const operationReasons = definition.operationId ? [] : ["operationid-unknown"];
     ctx.addRecord(makeRecord({
       relation: "dev.lekalo.hono/openapi-operation",
       from: {
@@ -215287,8 +215294,8 @@ function emitOpenApiRecords(ctx, openapiEvents, definitions) {
       note: definition.operationId ?? "operationid-unknown",
       provenance: "detected",
       confidence: definition.operationId ? "exact" : "medium",
-      status: definition.operationId ? "complete" : "incomplete",
-      reasons: definition.operationId ? [] : ["dynamic-path"],
+      status: structuralReasons.length === 0 && operationReasons.length === 0 ? "complete" : "incomplete",
+      reasons: [...structuralReasons, ...operationReasons],
       span: ctx.spanOf(definition.node, definitionSource),
       revision: ctx.revision,
       adapterVersion: ctx.adapterVersion,
@@ -215311,7 +215318,10 @@ function emitOpenApiRecords(ctx, openapiEvents, definitions) {
         provenance: "detected",
         confidence: definition ? "exact" : "low",
         status: definition && handler.reason === void 0 ? "complete" : "incomplete",
-        reasons: definition ? handler.reason ? [handler.reason] : [] : definitionSeen ? ["dynamic-path"] : ["unknown-handler"],
+        reasons: definition ? handler.reason ? [handler.reason] : [] : definitionSeen ? [
+          ...resolved.method === null ? ["dynamic-method"] : [],
+          ...resolved.path === null ? ["dynamic-path"] : []
+        ] : ["unknown-handler"],
         span: ctx.spanOf(event.node, event.sourceFile),
         revision: ctx.revision,
         adapterVersion: ctx.adapterVersion,
@@ -215418,7 +215428,8 @@ function emitMiddlewareRecord(ctx, route, member, ordinal, chainLength) {
   const handler = member.handler;
   if (handler.kind === "validator") return;
   const body = functionBodyOf(ctx, handler);
-  const callsNext = body ? containsNextCall(ctx, body) : false;
+  const nextSymbol = nextParamSymbolOf(ctx, handler);
+  const callsNext = body ? containsNextCall(ctx, body, nextSymbol) : false;
   const role = explicitRoleOf(ctx, handler);
   const reasons = [];
   let status = "complete";
@@ -215463,14 +215474,27 @@ function emitMiddlewareRecord(ctx, route, member, ordinal, chainLength) {
     frameworkVersion: ctx.frameworkVersion
   }));
 }
-function containsNextCall(ctx, body) {
-  const { ts: ts3 } = ctx;
+function nextParamSymbolOf(ctx, handler) {
+  const { ts: ts3, checker } = ctx;
+  let declaration = null;
+  if (handler.node && (handler.node.kind === ts3.SyntaxKind.ArrowFunction || handler.node.kind === ts3.SyntaxKind.FunctionExpression)) {
+    declaration = handler.node;
+  } else if (handler.indexed && handler.symbol) {
+    declaration = handler.symbol.declarations?.find((candidate) => candidate.body && (candidate.kind === ts3.SyntaxKind.FunctionDeclaration || candidate.kind === ts3.SyntaxKind.MethodDeclaration || candidate.kind === ts3.SyntaxKind.ArrowFunction || candidate.kind === ts3.SyntaxKind.FunctionExpression)) ?? null;
+  }
+  const second = declaration?.parameters?.[1]?.name;
+  if (!second || second.kind !== ts3.SyntaxKind.Identifier) return null;
+  return checker.getSymbolAtLocation(second) ?? null;
+}
+function containsNextCall(ctx, body, nextSymbol) {
+  if (!nextSymbol) return false;
+  const { ts: ts3, checker } = ctx;
   let found = false;
   let visited = 0;
   const visit = (node) => {
     if (found || visited > MAX_BODY_NODES) return;
     visited += 1;
-    if (node.kind === ts3.SyntaxKind.CallExpression && node.expression.kind === ts3.SyntaxKind.Identifier && node.expression.text === "next") {
+    if (node.kind === ts3.SyntaxKind.CallExpression && node.expression.kind === ts3.SyntaxKind.Identifier && checker.getSymbolAtLocation(node.expression) === nextSymbol) {
       found = true;
       return;
     }
@@ -215855,7 +215879,7 @@ function collectTestBindings(ctx, routes) {
         }
         if (calleeName === "testClient") {
           collectTestClient(ctx, node, sourceFile, fromModule, routes, testScopes, clientVariables);
-        } else if (calleeName === "request") {
+        } else if (calleeName === "request" && expression.kind === ts3.SyntaxKind.PropertyAccessExpression) {
           collectAppRequest(ctx, node, expression, sourceFile, fromModule, routes, testScopes);
         } else if (calleeName && expression.kind === ts3.SyntaxKind.PropertyAccessExpression && ["get", "post", "put", "patch", "delete", "options", "head"].includes(calleeName)) {
           collectClientVerb(
@@ -216132,7 +216156,10 @@ function joinEndpointContracts(ctx, routes) {
         relation: "dev.lekalo.hono/endpoint-contract",
         from: instanceEndpoint(route.instance),
         to: endpointOf(route.terminal),
-        method: methods[0],
+        // The label is the joined contract's method when the route
+        // itself is multi-method (`on(['GET','POST'], ...)`): methods[0]
+        // would mislabel a POST join as GET (issue #115 fix round).
+        method: methods.length === 1 ? methods[0] : contract.method,
         path: route.path,
         note: conflict ? `${contract.id}:ssr-api-conflict` : contract.id,
         provenance: "inferred",
@@ -216149,7 +216176,7 @@ function joinEndpointContracts(ctx, routes) {
         relation: "dev.lekalo.hono/endpoint-contract",
         from: instanceEndpoint(route.instance),
         to: endpointOf(route.terminal),
-        method: methods[0],
+        method: methods.length === 1 ? methods[0] : null,
         path: route.path,
         note: `${candidates.length}-candidates`,
         provenance: "inferred",
@@ -216166,7 +216193,7 @@ function joinEndpointContracts(ctx, routes) {
         relation: "dev.lekalo.hono/endpoint-contract",
         from: instanceEndpoint(route.instance),
         to: endpointOf(route.terminal),
-        method: methods[0],
+        method: methods.length === 1 ? methods[0] : null,
         path: route.path,
         note: "no-contract",
         provenance: "inferred",

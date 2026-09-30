@@ -81,6 +81,7 @@ export const HONO_REASONS = Object.freeze([
   "dynamic-path",
   "dynamic-method",
   "dynamic-path-filter",
+  "operationid-unknown",
   "unresolved-constructor",
   "unsupported-receiver",
   "mutable-alias",

@@ -27,9 +27,10 @@ test("static fixture: apps, routes, and exact handler bindings", async () => {
     assert.equal(apps.length, 1);
     assert.equal(apps[0].from.name, "app");
     assert.match(apps[0].from.native, /^(ts1-|hono-inline-)/);
-    // Five routes bound to exact handlers.
+    // Five top-level routes plus the multi-method on() route (one
+    // record per resolved method) — all bound to exact handlers.
     const routes = recordsOfRelation(context, "route-handler");
-    assert.equal(routes.length, 5);
+    assert.equal(routes.length, 7);
     const byPath = new Map(routes.map((record) => [`${record.method} ${record.path}`, record]));
     const list = byPath.get("GET /users");
     assert.ok(list, "GET /users bound");
@@ -46,6 +47,9 @@ test("static fixture: apps, routes, and exact handler bindings", async () => {
     const health = byPath.get("GET /health");
     assert.match(health.to.native, /^hono-inline-/);
     assert.match(health.to.digest, /^sha256:[0-9a-f]{64}$/);
+    // The multi-method on() route emits one record per resolved method.
+    assert.ok(byPath.get("GET /multi"), "on() GET leg bound");
+    assert.ok(byPath.get("POST /multi"), "on() POST leg bound");
   } finally {
     dispose(context.root);
   }

@@ -46,6 +46,17 @@ test("middleware chains: global order, path filters, inline order, next evidence
     const logger = reset.find((row) => row.to.name === "logger");
     assert.match(logger.note, /next=detected/);
     assert.equal(logger.status, "complete");
+    // The shadowed middleware calls an UNRELATED import named `next`
+    // while its own continuation parameter is `forward`: symbol
+    // resolution must report next=absent, not a name-based positive.
+    const shadowChain = (byRoute.get("GET /shadowed") ?? []).sort((a, b) => a.ordinal - b.ordinal);
+    const shadowed = shadowChain.find((row) => row.to.name === "shadowed");
+    assert.ok(shadowed, "shadowed middleware recorded");
+    assert.ok(shadowed.reasons.includes("no-next-call-detected"));
+    assert.match(shadowed.note, /next=absent/);
+    // ...while the real pass-through on the same route stays detected.
+    const shadowLogger = shadowChain.find((row) => row.to.name === "logger");
+    assert.match(shadowLogger.note, /next=detected/);
     // Inline middleware keeps its registration ordinal after the
     // globals and the conditional admin filter.
     const health = byRoute.get("GET /health").sort((a, b) => a.ordinal - b.ordinal);
@@ -125,14 +136,14 @@ test("roles: explicit JSDoc annotations only; presence never authorizes", async 
       );
     }
     // Context keys stay namespaced evidence: logger writes requestId on
-    // all five app routes, tenant writes tenantId on all five,
-    // cacheHeaders writes cache on /health. The runtimeApp routes get
-    // neither global middleware, so they add no writes.
+    // all six app routes, tenant writes tenantId on all six, cacheHeaders
+    // writes cache on /health. The runtimeApp routes get neither global
+    // middleware, so they add no writes.
     const writes = recordsOfRelation(context, "context-write");
     const keys = writes.map((row) => row.note).sort();
     assert.deepEqual(keys, [
-      "cache", "requestId", "requestId", "requestId", "requestId", "requestId",
-      "tenantId", "tenantId", "tenantId", "tenantId", "tenantId",
+      "cache", "requestId", "requestId", "requestId", "requestId", "requestId", "requestId",
+      "tenantId", "tenantId", "tenantId", "tenantId", "tenantId", "tenantId",
     ]);
     const reads = recordsOfRelation(context, "context-read");
     assert.ok(reads.every((row) => typeof row.note === "string" && row.note.length > 0));

@@ -141,7 +141,10 @@ export function joinEndpointContracts(ctx, routes) {
         relation: "dev.lekalo.hono/endpoint-contract",
         from: instanceEndpoint(route.instance),
         to: endpointOf(route.terminal),
-        method: methods[0],
+        // The label is the joined contract's method when the route
+        // itself is multi-method (`on(['GET','POST'], ...)`): methods[0]
+        // would mislabel a POST join as GET (issue #115 fix round).
+        method: methods.length === 1 ? methods[0] : contract.method,
         path: route.path,
         note: conflict ? `${contract.id}:ssr-api-conflict` : contract.id,
         provenance: "inferred",
@@ -158,7 +161,7 @@ export function joinEndpointContracts(ctx, routes) {
         relation: "dev.lekalo.hono/endpoint-contract",
         from: instanceEndpoint(route.instance),
         to: endpointOf(route.terminal),
-        method: methods[0],
+        method: methods.length === 1 ? methods[0] : null,
         path: route.path,
         note: `${candidates.length}-candidates`,
         provenance: "inferred",
@@ -175,7 +178,7 @@ export function joinEndpointContracts(ctx, routes) {
         relation: "dev.lekalo.hono/endpoint-contract",
         from: instanceEndpoint(route.instance),
         to: endpointOf(route.terminal),
-        method: methods[0],
+        method: methods.length === 1 ? methods[0] : null,
         path: route.path,
         note: "no-contract",
         provenance: "inferred",

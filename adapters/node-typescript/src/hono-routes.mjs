@@ -632,7 +632,12 @@ function collectCreateRoute(ctx, node, sourceFile, fromModule, events) {
     request: read("request"),
     responses: read("responses"),
   };
-  if (definition.method === null || definition.path === null) {
+  if (definition.method === null) {
+    // A missing method is a dynamic-method question, never dynamic-path
+    // (issue #115 fix round): each axis carries its own reason.
+    ctx.addUncertaintyAt(sourceFile, node, "dynamic-method", "createRoute");
+  }
+  if (definition.path === null) {
     ctx.addUncertaintyAt(sourceFile, node, "dynamic-path", "createRoute");
   }
   events.push({
@@ -1127,7 +1132,13 @@ function emitOpenApiRecords(ctx, openapiEvents, definitions) {
   for (const event of definitions) {
     const definition = event.definition;
     const definitionSource = event.sourceFile;
-    if (definition.method === null || definition.path === null) continue;
+    // Every definition emits a declaration-side record: a definition
+    // missing its method/path/operationId is reasoned incomplete
+    // evidence on its own axis — never silence, never a mislabel.
+    const structuralReasons = [];
+    if (definition.method === null) structuralReasons.push("dynamic-method");
+    if (definition.path === null) structuralReasons.push("dynamic-path");
+    const operationReasons = definition.operationId ? [] : ["operationid-unknown"];
     ctx.addRecord(makeRecord({
       relation: "dev.lekalo.hono/openapi-operation",
       from: {
@@ -1142,8 +1153,8 @@ function emitOpenApiRecords(ctx, openapiEvents, definitions) {
       note: definition.operationId ?? "operationid-unknown",
       provenance: "detected",
       confidence: definition.operationId ? "exact" : "medium",
-      status: definition.operationId ? "complete" : "incomplete",
-      reasons: definition.operationId ? [] : ["dynamic-path"],
+      status: structuralReasons.length === 0 && operationReasons.length === 0 ? "complete" : "incomplete",
+      reasons: [...structuralReasons, ...operationReasons],
       span: ctx.spanOf(definition.node, definitionSource),
       revision: ctx.revision,
       adapterVersion: ctx.adapterVersion,
@@ -1176,7 +1187,12 @@ function emitOpenApiRecords(ctx, openapiEvents, definitions) {
           : "incomplete",
         reasons: definition
           ? (handler.reason ? [handler.reason] : [])
-          : (definitionSeen ? ["dynamic-path"] : ["unknown-handler"]),
+          : (definitionSeen
+            // Each unresolved axis carries its own reason: a dynamic
+            // method was mislabeled dynamic-path here (issue #115 fix).
+            ? [...(resolved.method === null ? ["dynamic-method"] : []),
+              ...(resolved.path === null ? ["dynamic-path"] : [])]
+            : ["unknown-handler"]),
         span: ctx.spanOf(event.node, event.sourceFile),
         revision: ctx.revision,
         adapterVersion: ctx.adapterVersion,

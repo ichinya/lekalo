@@ -58,7 +58,11 @@ export function collectTestBindings(ctx, routes) {
         }
         if (calleeName === "testClient") {
           collectTestClient(ctx, node, sourceFile, fromModule, routes, testScopes, clientVariables);
-        } else if (calleeName === "request") {
+        } else if (calleeName === "request"
+          && expression.kind === ts.SyntaxKind.PropertyAccessExpression) {
+          // Only `app.request(...)` on a resolvable receiver is Hono
+          // evidence; a bare `request(...)` helper is not a Hono-shaped
+          // call and produces no uncertainty (issue #115 fix round).
           collectAppRequest(ctx, node, expression, sourceFile, fromModule, routes, testScopes);
         } else if (calleeName && expression.kind === ts.SyntaxKind.PropertyAccessExpression
           && ["get", "post", "put", "patch", "delete", "options", "head"].includes(calleeName)) {

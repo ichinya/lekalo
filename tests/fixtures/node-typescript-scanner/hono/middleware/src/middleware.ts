@@ -1,4 +1,5 @@
-import type { Context, Middleware } from "hono";
+import type { Context } from "hono";
+import { next } from "./stubs";
 
 /**
  * Request logger.
@@ -46,4 +47,14 @@ export function maintenance(c: Context) {
 // use() but cannot resolve statically.
 export function runtimePrefix(): string {
   return "/runtime";
+}
+
+// Calls ONLY an unrelated import that happens to share the
+// conventional `next` name; the declared continuation parameter
+// `forward` is never invoked. Name-based detection would report
+// pass-through; symbol resolution must report next=absent (and the
+// short-circuit reason), because the chain continuation never runs.
+export async function shadowed(c: Context, forward: () => Promise<void>): Promise<unknown> {
+  await next();
+  return c.json({ shadowed: true });
 }

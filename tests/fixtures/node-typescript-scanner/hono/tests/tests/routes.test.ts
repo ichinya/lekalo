@@ -1,6 +1,6 @@
 import { testClient } from "hono/testing";
 import { describe, it } from "node:test";
-import { app } from "../src/routes";
+import { app, request } from "../src/routes";
 
 describe("items", () => {
   it("lists items", async () => {
@@ -21,6 +21,11 @@ describe("items", () => {
   it("dynamic urls stay unknown", async () => {
     const path = "/items/" + String(1);
     const res = await app.request(path);
+    void res;
+  });
+
+  it("bare helper calls are not hono evidence", async () => {
+    const res = request("/items");
     void res;
   });
 
