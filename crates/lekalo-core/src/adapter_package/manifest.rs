@@ -1007,16 +1007,16 @@ mod committed_exemplar_tests {
         assert_eq!(document.adapter_id(), "lekalo-target-node-typescript");
         assert_eq!(document.adapter_version().as_str(), "0.4.0");
         // Issue #115: the Hono framework-provider modules join the
-        // bundle (and the fix rounds for PR #142 revise them — round 4
-        // models the shared route-table semantics of basePath families:
-        // mounting any member exposes the whole family's registrations
-        // under the mount prefix, each with its own member base), so
-        // the committed artifact bytes (and with them the canonical
-        // package digest) change; the exemplar guard keeps the manifest
-        // bound to the exact committed bytes.
+        // bundle (and the fix rounds for PR #142 revise them — round 5
+        // binds the role reader's unbound TypeScript reference so
+        // inline use() middleware scans instead of aborting, and
+        // threads the scenario clock map through renderWhen), so the
+        // committed artifact bytes (and with them the canonical
+        // package digest) change; the exemplar guard keeps the
+        // manifest bound to the exact committed bytes.
         assert_eq!(
             document.package_digest().as_str(),
-            "sha256:79300ab048e0e33ae3d5acdafc92c58c2f03c0e048b2e7f54689592208b7fe45"
+            "sha256:e69e3075dcb57c2eefd95af5e727cd72999b72355542d8058b3e42e521b763de"
         );
     }
 
