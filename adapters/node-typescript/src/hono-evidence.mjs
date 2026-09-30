@@ -112,7 +112,7 @@ export const HONO_REASONS = Object.freeze([
 ]);
 
 /** The rules revision of this provider (bumped when rules change). */
-export const HONO_RULES_REVISION = "hono-rules-v1";
+export const HONO_RULES_REVISION = "hono-rules-v2";
 
 /** The freshness domain separator. */
 const FRESHNESS_DOMAIN = "lekalo.hono.freshness.v1";

@@ -3,7 +3,7 @@
   "provider": {
     "id": "hono",
     "namespace": "dev.lekalo.hono/",
-    "rulesRevision": "hono-rules-v1",
+    "rulesRevision": "hono-rules-v2",
     "adapter": "lekalo-target-node-typescript",
     "adapterVersion": "0.4.0"
   },
@@ -26,8 +26,10 @@
     "immutable const aliases of instances (one step, const-only)",
     "basePath literal views, including inline chains app.basePath('/x').get(...)",
     "verb methods get/post/put/patch/delete/options/head, all, on(method|methods, path)",
-    "route(path, childRouter) mounts with mount-time snapshot semantics and proven ESM initialization order across modules",
-    "use() with literal path filters or global; inline route middleware chains",
+    "route(path, childRouter) mounts with mount-time snapshot semantics, proven ESM initialization order across modules, and full ancestor base composition (depth bounded at 8)",
+    "reachability classification of every registration site: top-level straight-line and proven-called wrappers stay complete; conditional/deferred/unreachable sites emit incomplete/unknown with explicit reasons and are never complete facts",
+    "use() with literal, const-alias, RegExp, or string-typed path filters; unresolvable filters stay dynamic-path-filter unknown and are never resolved into middleware endpoints",
+    "path-filtered parent middleware composes onto mounted routes against the full resolved path (literal disjoint filters provably excluded, wildcards conditional)",
     "validator/zValidator constructions, including const-bound references",
     "c.json/text/html/body/render/status response sites with literal or in-scope statuses",
     "HTTPException throws, onError/notFound registrations",
@@ -39,13 +41,15 @@
     "custom getPath / router path transforms (recorded unknown when detected)",
     "mutable instance aliases, factory-produced receivers (unsupported-receiver uncertainty)",
     "dynamic paths, dynamic method arrays, dynamic context keys, dynamic statuses (unknown/incomplete with reasons)",
+    "middleware chains longer than maxChainLength (retained in order, overflow recorded as chain-budget uncertainty)",
+    "declared data files (endpoint contracts) larger than the 64 KiB per-file read bound (refused, reported missing, never parsed unbounded)",
     "mounts whose target does not resolve (including import cycles: unknown, never invented)",
     "ambient `declare module \"hono\"` without an inventoried declaration file"
   ],
   "evidenceModel": {
-    "record": "closed envelope: relation, from/to native identity, method/path, facet, role, ordinal/unwindOrdinal, provenance (explicit|detected|inferred — never confirmed), confidence (exact|high|medium|low|unknown), status (complete|incomplete|unknown), machine reasons, 1-based span, source revision, adapter/framework version, rules revision, domain-separated freshness fingerprint",
-    "freshness": "the fingerprint covers registration identity/order/path, handler and middleware identity, structural signature and content digest, mount chain, facet, and span — any edit invalidates derived evidence",
-    "budgets": "4096 records, 1024 uncertainty rows per scan; overflow is an explicit record-budget partial, never silent truncation"
+    "record": "closed envelope: relation, from/to native identity, method/path, facet, role, ordinal/unwindOrdinal, provenance (explicit|detected|inferred — never confirmed), confidence (exact|high|medium|low|unknown), status (complete|incomplete|unknown), machine reasons, 1-based span plus half-open UTF-8 byte offsets converted from the compiler's UTF-16 positions against exact source bytes, source revision, adapter/framework version, rules revision, domain-separated freshness fingerprint",
+    "freshness": "the fingerprint covers registration identity/order/path/reachability, handler and middleware identity, structural signature and content digest, mount chain, facet, and span — any edit invalidates derived evidence; canonical record order is content-derived, never digest-byte order",
+    "budgets": "4096 records, 1024 uncertainty rows, mount depth 8, middleware chain length 16, per-file data reads 64 KiB; overflow is always an explicit bounded refusal or partial state, never silent truncation"
   },
   "bounds": {
     "maxMountDepth": 8,

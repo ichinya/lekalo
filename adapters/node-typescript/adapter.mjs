@@ -214241,7 +214241,7 @@ var HONO_REASONS = Object.freeze([
   "record-budget",
   "framework-version-unknown"
 ]);
-var HONO_RULES_REVISION = "hono-rules-v1";
+var HONO_RULES_REVISION = "hono-rules-v2";
 var FRESHNESS_DOMAIN = "lekalo.hono.freshness.v1";
 var MAX_HONO_RECORDS = 4096;
 var MAX_HONO_UNCERTAINTY = 1024;
