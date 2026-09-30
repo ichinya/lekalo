@@ -484,8 +484,11 @@ function calleeSpellingName(ts, calleeNode) {
  * (issue #116 fix round 4 — previously a renamed destructure escaped
  * both extraction and the unproven flag and was dropped silently).
  * Returns null when the callee does not resolve into the closure.
+ * When `probe` is given, `probe.boundHit` marks a resolution that died
+ * at the MAX_ALIAS_HOPS bound — recognized, but unprovable within the
+ * bound; callers must keep that explicit, never silent.
  */
-function closureCalleeSymbol(context, calleeNode, depth = 0) {
+function closureCalleeSymbol(context, calleeNode, depth = 0, probe = null) {
   let symbol;
   try {
     symbol = context.checker.getSymbolAtLocation(calleeNode);
@@ -494,7 +497,10 @@ function closureCalleeSymbol(context, calleeNode, depth = 0) {
   }
   symbol = resolveAliasSymbol(context.checker, symbol);
   if (symbolInClosure(symbol, context.closurePrefix)) return symbol;
-  if (depth >= MAX_ALIAS_HOPS) return null;
+  if (depth >= MAX_ALIAS_HOPS) {
+    if (probe !== null) probe.boundHit = true;
+    return null;
+  }
   const declaration = variableDeclarationOf(symbol);
   if (declaration === null || declaration === undefined) return null;
   const ts = context.ts;
@@ -557,10 +563,54 @@ function closureCalleeSymbol(context, calleeNode, depth = 0) {
  * (issue #116 fix round 3, the same honesty contract as the out-of-
  * subset surfaces). Proven callees never enter this path.
  */
-function calleeRecognizedButUnproven(context, calleeNode, constructs) {
-  if (closureCalleeSymbol(context, calleeNode) !== null) return false;
+function calleeRecognizedButUnproven(context, calleeNode, constructs, family) {
+  const probe = { boundHit: false };
+  if (closureCalleeSymbol(context, calleeNode, 0, probe) !== null) return false;
+  const closureTypeNames = closureTypeSymbolNames(context, calleeNode);
+  if (probe.boundHit) {
+    // The bound is family-disjoint like every other recognition: the
+    // construct is recognized only when the callee's vendored type
+    // names THIS construct family (issue #116 fix round 4).
+    return closureTypeNames !== null
+      && closureTypeNames.some((name) => RECOGNITION_FAMILIES[family].has(name));
+  }
   return calleeSpellingNames(context, calleeNode)
     .some((spelling) => constructs.has(spelling));
+}
+
+/** Recognition family name → the factory-name set that recognizes it. */
+const RECOGNITION_FAMILIES = { table: TABLE_FACTORY_NAMES, relations: RELATIONS_FACTORY_NAMES };
+
+/**
+ * The names of the callee's type symbols whose declarations live in
+ * the embedded closure: non-null and empty means the type provably
+ * resolved entirely OUTSIDE the closure (foreign); null means the type
+ * was unresolvable (any/error) and nothing is provable either way.
+ */
+function closureTypeSymbolNames(context, calleeNode) {
+  const { ts, checker } = context;
+  let type;
+  try {
+    type = checker.getTypeAtLocation(calleeNode);
+  } catch {
+    return null;
+  }
+  if (type === null || type === undefined) return null;
+  const queue = [];
+  if (type.symbol) queue.push(type.symbol);
+  if (type.aliasSymbol) queue.push(type.aliasSymbol);
+  if (typeof type.isUnion === "function" && type.isUnion()) {
+    for (const part of type.types) {
+      if (part.symbol) queue.push(part.symbol);
+      if (part.aliasSymbol) queue.push(part.aliasSymbol);
+    }
+  }
+  if (queue.length === 0) return null;
+  const closureNames = [];
+  for (const symbol of queue) {
+    if (symbolInClosure(symbol, context.closurePrefix)) closureNames.push(symbol.getName());
+  }
+  return closureNames;
 }
 
 /**
@@ -2765,7 +2815,7 @@ export function attachDrizzleEvidence({
             extract.limit("truncated", modulePath, lineOf(sourceFile, node), "tables");
             extract.overflow.hit = true;
           }
-        } else if (calleeRecognizedButUnproven(extract, node.initializer.expression, TABLE_FACTORY_NAMES)) {
+        } else if (calleeRecognizedButUnproven(extract, node.initializer.expression, TABLE_FACTORY_NAMES, "table")) {
           // A construct-named callee that could not be proven is an
           // explicit limitation, never a silent drop (issue #116 fix
           // round 3); the tables section cannot claim complete over it.
@@ -2798,7 +2848,7 @@ export function attachDrizzleEvidence({
               if (!pushBounded(extract.relations, MAX_RELATIONS, row, extract.overflow)) break;
             }
           }
-        } else if (calleeRecognizedButUnproven(extract, node.expression, RELATIONS_FACTORY_NAMES)) {
+        } else if (calleeRecognizedButUnproven(extract, node.expression, RELATIONS_FACTORY_NAMES, "relations")) {
           // A construct-named callee that could not be proven is an
           // explicit limitation, never a silent drop (issue #116 fix
           // round 3).
