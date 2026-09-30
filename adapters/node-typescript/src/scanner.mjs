@@ -41,6 +41,7 @@ import {
   drizzleEvidenceSummary,
   resolveDrizzleAttachment,
 } from "./drizzle-evidence.mjs";
+import { HONO_PROVIDER_ID, scanHonoProvider } from "./hono-scanner.mjs";
 
 // ---------------------------------------------------------------------------
 // 1. Bounds, domains, and small utilities.
@@ -948,6 +949,15 @@ function indexSourceFile({ ts, checker, sourceFile, modulePath, packageIndex, in
           memberOf: parentNative,
         }));
         (context.nativeByDeclaration ??= new Map()).set(node, native);
+        // Issue #115 seam: symbol→row identity for framework-provider
+        // native joins. Internal only; never serialized.
+        (context.symbolRows ??= new Map()).set(symbol, {
+          native,
+          module: modulePath,
+          qualifiedName,
+          signature,
+          jsdoc: jsdoc === "" ? null : jsdoc,
+        });
         parentNative = native;
         parentName = qualifiedName;
       }
@@ -1443,7 +1453,7 @@ function typeContainsAny(ts, checker, type, seen, depth) {
  * context provides the permitted project root; every read goes through
  * the kernel read view (scope/exclusion/link/byte-budget checks).
  */
-function runScan({ profile, readView, permittedProjectRoot, limits }) {
+function runScan({ profile, readView, permittedProjectRoot, limits, frameworks = [] }) {
   let programOptions = null;
   const ts = assertCompilerAvailable();
   const compilerMeta = {
@@ -1452,10 +1462,30 @@ function runScan({ profile, readView, permittedProjectRoot, limits }) {
   };
   const roots = readView.roots;
   const inventory = enumerateInventory(permittedProjectRoot, roots, profile);
-  const readBytes = (logicalPath) => readView.readFile(logicalPath, {
-    files: limits?.files ?? MAX_SCAN_FILES,
-    bytes: limits?.bytes ?? MAX_SCAN_SOURCE_BYTES,
-  });
+  // The optional second argument is a per-call limits override (used by
+  // the framework provider's readDataFile to bound one declared data
+  // file to its own file/byte budget); without it the whole-scan limits
+  // apply (issue #115 fix round: the per-file 64 KiB bound is enforced
+  // by the read view again, never dropped on the floor).
+  const readBytes = (logicalPath, perCall) => {
+    if (perCall) {
+      // Per-call bound (used by the framework provider's readDataFile):
+      // the read view counters are cumulative, so the single-read
+      // allowance is translated into "at most one more file, at most
+      // perCall.bytes more bytes from this exact read" — the 64 KiB
+      // per-file data bound is enforced again, never dropped (issue
+      // #115 fix round).
+      const counters = readView.counters();
+      return readView.readFile(logicalPath, {
+        files: counters.filesRead + (perCall.files ?? 1),
+        bytes: counters.bytesRead + (perCall.bytes ?? 0),
+      });
+    }
+    return readView.readFile(logicalPath, {
+      files: limits?.files ?? MAX_SCAN_FILES,
+      bytes: limits?.bytes ?? MAX_SCAN_SOURCE_BYTES,
+    });
+  };
   const manifest = buildInputManifest(inventory, readBytes);
   const diagnostics = [];
   const { packages, projects, packageByRoot } = discoverPackagesAndProjects(
@@ -1486,6 +1516,17 @@ function runScan({ profile, readView, permittedProjectRoot, limits }) {
     program: null,
     exceeded: () => false,
   };
+  // Framework-provider seams (issue #115): symbol→row identity for
+  // native binding joins, module-path normalization, and the bounded
+  // paths of declared endpoint-contract data files. Internal only —
+  // none of this changes the generic index bytes.
+  context.symbolRows = new Map();
+  context.normalizeModulePath = (fileName) => normalizeModulePath(fileName, context);
+  context.endpointContractPaths = manifest.sourceFiles
+    .concat(manifest.otherFiles)
+    .map((file) => file.path)
+    .filter((path) => path === "lekalo/endpoints.json" || path.endsWith("/lekalo/endpoints.json"))
+    .sort((a, b) => utf8Compare(a, b));
 
   // Program roots: every tsconfig's parsed file list plus any inventory
   // source file no config covers. The parsed compiler options (paths,
@@ -1586,6 +1627,34 @@ function runScan({ profile, readView, permittedProjectRoot, limits }) {
   indexRoutesAndTests({ ts, checker, program, context, index });
   collectDiagnostics({ ts, program, context, index });
   collectAnySurfaces({ ts, checker, program, context, index });
+
+  // Framework providers (issue #115): strictly policy-gated. With no
+  // policy (or none enabling a provider) nothing runs and the index is
+  // byte-identical to a Hono-unaware scan.
+  if (frameworks.includes(HONO_PROVIDER_ID)) {
+    const hono = scanHonoProvider({
+      ts,
+      checker,
+      program,
+      context,
+      index,
+      revision: profile.provenance?.revision ?? null,
+      readDataFile: (logicalPath, bound) => readBytes(logicalPath, {
+        files: 1,
+        bytes: bound ?? 64 * 1024,
+      }),
+    });
+    index.frameworks = {
+      [HONO_PROVIDER_ID]: {
+        provider: hono.provider,
+        records: hono.records,
+        uncertainty: hono.uncertainty,
+      },
+    };
+    for (const row of hono.uncertainty) {
+      if (index.anyUncertainty.length < 8192) index.anyUncertainty.push(row);
+    }
+  }
 
   // Issue #116: Drizzle ORM evidence extraction (schema, relations,
   // queries, transactions, migrations, scope, bindings). Read-only
@@ -1746,9 +1815,14 @@ export function scanOperation(context) {
   if (typeof permittedProjectRoot !== "string" || permittedProjectRoot === "") {
     return { state: "failed", diagnostics: [{ reason: "root-context-missing" }] };
   }
+  // Issue #115: framework-provider enablement comes only from the
+  // trusted launch policy (or the in-process option); the closed wire
+  // request can never enable one.
+  const frameworkPolicy = context.frameworkPolicy ?? null;
+  const frameworks = enabledFrameworkProviders(frameworkPolicy);
   let index;
   try {
-    index = runScan({ profile, readView, permittedProjectRoot, limits });
+    index = runScan({ profile, readView, permittedProjectRoot, limits, frameworks });
   } catch (error) {
     if (cancellation?.cancelled) {
       return { state: "failed", diagnostics: [{ reason: "cancelled" }] };
@@ -1833,6 +1907,24 @@ export function scanOperation(context) {
     uncertainty: index.anyUncertainty.length,
     errors: errorCount,
   };
+  // The framework-provider summary rides the internal outcome evidence
+  // (bounded: provider state + counts + digest). Full records stay in
+  // the adapter index; the closed wire contract is not extended here.
+  const frameworkEvidence = frameworks.length > 0
+    ? {
+      frameworks: Object.fromEntries(frameworks.map((id) => {
+        const family = index.frameworks?.[id];
+        return [id, family
+          ? {
+            state: family.provider.state,
+            counts: family.provider.counts,
+            digest: family.provider.digest,
+            rulesRevision: family.provider.rulesRevision,
+          }
+          : { state: "unsupported", counts: null, digest: null, rulesRevision: null }];
+      })),
+    }
+    : {};
   // Issue #116: the Drizzle evidence summary rides the internal
   // evidence envelope only (never the wire detail).
   const drizzleSummary = drizzleEvidenceSummary(index.drizzle);
@@ -1840,6 +1932,7 @@ export function scanOperation(context) {
     compiler: index.compiler,
     profileDigest: index.profileDigest,
     counts,
+    ...frameworkEvidence,
   };
   if (drizzleSummary !== null) internalEvidence.drizzle = drizzleSummary;
   if (index.anyUncertainty.length > 0 || errorCount > 0) {
@@ -1857,6 +1950,24 @@ export function scanOperation(context) {
     data: { entries, complete: true },
     evidence: internalEvidence,
   };
+}
+
+/**
+ * The providers enabled by a decoded trusted framework policy. Unknown
+ * ids stay in the list as unsupported requests: the run remains
+ * generic-only and the response names the unsupported provider instead
+ * of silently ignoring the policy.
+ */
+export function enabledFrameworkProviders(policy) {
+  if (!policy || !Array.isArray(policy.providers)) return [];
+  const enabled = [];
+  for (const entry of policy.providers) {
+    if (entry?.state !== "enabled") continue;
+    if (typeof entry.id === "string" && entry.id.length > 0 && entry.id.length <= 64) {
+      enabled.push(entry.id);
+    }
+  }
+  return enabled;
 }
 
 /**

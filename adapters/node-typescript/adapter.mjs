@@ -81917,7 +81917,7 @@ ${lanes.join("\n")}
           if (!typeName) return;
           const rootName = getFirstIdentifier(typeName);
           const meaning = (typeName.kind === 80 ? 788968 : 1920) | 2097152;
-          const rootSymbol = resolveName(
+          const rootSymbol2 = resolveName(
             rootName,
             rootName.escapedText,
             meaning,
@@ -81926,12 +81926,12 @@ ${lanes.join("\n")}
             /*isUse*/
             true
           );
-          if (rootSymbol && rootSymbol.flags & 2097152) {
-            if (canCollectSymbolAliasAccessabilityData && symbolIsValue(rootSymbol) && !isConstEnumOrConstEnumOnlyModule(resolveAlias(rootSymbol)) && !getTypeOnlyAliasDeclaration(rootSymbol)) {
-              markAliasSymbolAsReferenced(rootSymbol);
-            } else if (forDecoratorMetadata && getIsolatedModules(compilerOptions) && getEmitModuleKind(compilerOptions) >= 5 && !symbolIsValue(rootSymbol) && !some(rootSymbol.declarations, isTypeOnlyImportOrExportDeclaration)) {
+          if (rootSymbol2 && rootSymbol2.flags & 2097152) {
+            if (canCollectSymbolAliasAccessabilityData && symbolIsValue(rootSymbol2) && !isConstEnumOrConstEnumOnlyModule(resolveAlias(rootSymbol2)) && !getTypeOnlyAliasDeclaration(rootSymbol2)) {
+              markAliasSymbolAsReferenced(rootSymbol2);
+            } else if (forDecoratorMetadata && getIsolatedModules(compilerOptions) && getEmitModuleKind(compilerOptions) >= 5 && !symbolIsValue(rootSymbol2) && !some(rootSymbol2.declarations, isTypeOnlyImportOrExportDeclaration)) {
               const diag2 = error2(typeName, Diagnostics.A_type_referenced_in_a_decorated_signature_must_be_imported_with_import_type_or_a_namespace_import_when_isolatedModules_and_emitDecoratorMetadata_are_enabled);
-              const aliasDeclaration = find(rootSymbol.declarations || emptyArray, isAliasSymbolDeclaration);
+              const aliasDeclaration = find(rootSymbol2.declarations || emptyArray, isAliasSymbolDeclaration);
               if (aliasDeclaration) {
                 addRelatedInfo(diag2, createDiagnosticForNode(aliasDeclaration, Diagnostics._0_was_imported_here, idText(rootName)));
               }
@@ -96677,17 +96677,17 @@ ${lanes.join("\n")}
         function evaluateElementAccessExpression(expr, location) {
           const root = expr.expression;
           if (isEntityNameExpression(root) && isStringLiteralLike(expr.argumentExpression)) {
-            const rootSymbol = resolveEntityName(
+            const rootSymbol2 = resolveEntityName(
               root,
               111551,
               /*ignoreErrors*/
               true
             );
-            if (rootSymbol && rootSymbol.flags & 384) {
+            if (rootSymbol2 && rootSymbol2.flags & 384) {
               const name = escapeLeadingUnderscores(expr.argumentExpression.text);
-              const member = rootSymbol.exports.get(name);
+              const member = rootSymbol2.exports.get(name);
               if (member) {
-                Debug.assert(getSourceFileOfNode(member.valueDeclaration) === getSourceFileOfNode(rootSymbol.valueDeclaration));
+                Debug.assert(getSourceFileOfNode(member.valueDeclaration) === getSourceFileOfNode(rootSymbol2.valueDeclaration));
                 return location ? evaluateEnumMember(expr, member, location) : getEnumMemberValue(member.valueDeclaration);
               }
             }
@@ -185012,13 +185012,13 @@ ${newComment.split("\n").map((c) => ` * ${c}`).join("\n")}
             );
           }
           function fromRoot(sym, kind) {
-            return firstDefined(checker.getRootSymbols(sym), (rootSymbol) => cbSymbol(
+            return firstDefined(checker.getRootSymbols(sym), (rootSymbol2) => cbSymbol(
               sym,
-              rootSymbol,
+              rootSymbol2,
               /*baseSymbol*/
               void 0,
               kind
-            ) || (rootSymbol.parent && rootSymbol.parent.flags & (32 | 64) && allowBaseTypes(rootSymbol) ? getPropertySymbolsFromBaseTypes(rootSymbol.parent, rootSymbol.name, checker, (base) => cbSymbol(sym, rootSymbol, base, kind)) : void 0));
+            ) || (rootSymbol2.parent && rootSymbol2.parent.flags & (32 | 64) && allowBaseTypes(rootSymbol2) ? getPropertySymbolsFromBaseTypes(rootSymbol2.parent, rootSymbol2.name, checker, (base) => cbSymbol(sym, rootSymbol2, base, kind)) : void 0));
           }
           function getPropertySymbolOfObjectBindingPatternWithoutPropertyName(symbol2, checker2) {
             const bindingElement = getDeclarationOfKind(
@@ -185058,16 +185058,16 @@ ${newComment.split("\n").map((c) => ` * ${c}`).join("\n")}
             false,
             /*onlyIncludeBindingElementAtReferenceLocation*/
             state.options.use !== 2 || !!state.options.providePrefixAndSuffixTextForRename,
-            (sym, rootSymbol, baseSymbol, kind) => {
+            (sym, rootSymbol2, baseSymbol, kind) => {
               if (baseSymbol) {
                 if (isStaticSymbol(referenceSymbol) !== isStaticSymbol(baseSymbol)) {
                   baseSymbol = void 0;
                 }
               }
-              return search.includes(baseSymbol || rootSymbol || sym) ? { symbol: rootSymbol && !(getCheckFlags(sym) & 6) ? rootSymbol : sym, kind } : void 0;
+              return search.includes(baseSymbol || rootSymbol2 || sym) ? { symbol: rootSymbol2 && !(getCheckFlags(sym) & 6) ? rootSymbol2 : sym, kind } : void 0;
             },
             /*allowBaseTypes*/
-            (rootSymbol) => !(search.parents && !search.parents.some((parent2) => explicitlyInheritsFrom(rootSymbol.parent, parent2, state.inheritsFromCache, checker)))
+            (rootSymbol2) => !(search.parents && !search.parents.some((parent2) => explicitlyInheritsFrom(rootSymbol2.parent, parent2, state.inheritsFromCache, checker)))
           );
         }
         function getIntersectingMeaningFromDeclarations(node, symbol) {
@@ -189216,8 +189216,8 @@ ${content}
         if (flags & 131072) return "index";
         if (flags & 4) {
           if (flags & 33554432 && symbol.links.checkFlags & 6) {
-            const unionPropertyKind = forEach(typeChecker.getRootSymbols(symbol), (rootSymbol) => {
-              const rootSymbolFlags = rootSymbol.getFlags();
+            const unionPropertyKind = forEach(typeChecker.getRootSymbols(symbol), (rootSymbol2) => {
+              const rootSymbolFlags = rootSymbol2.getFlags();
               if (rootSymbolFlags & (98308 | 3)) {
                 return "property";
               }
@@ -220969,6 +220969,7 @@ __export(kernel_exports, {
   ADAPTER_VERSION: () => ADAPTER_VERSION,
   ERROR_CODES: () => ERROR_CODES,
   MAX_FILE_BYTES: () => MAX_FILE_BYTES,
+  MAX_FRAMEWORK_POLICY_JSON_BYTES: () => MAX_FRAMEWORK_POLICY_JSON_BYTES,
   MAX_JSON_DEPTH: () => MAX_JSON_DEPTH,
   MAX_PROFILE_JSON_BYTES: () => MAX_PROFILE_JSON_BYTES,
   MAX_REQUEST_BYTES: () => MAX_REQUEST_BYTES,
@@ -220991,6 +220992,7 @@ __export(kernel_exports, {
   createKernel: () => createKernel,
   createReadView: () => createReadView,
   createWriteView: () => createWriteView,
+  decodeFrameworkPolicyJson: () => decodeFrameworkPolicyJson,
   decodeJsonDocument: () => decodeJsonDocument,
   decodeProjectProfileJson: () => decodeProjectProfileJson,
   decodeUtf8Fatal: () => decodeUtf8Fatal,
@@ -220999,6 +221001,7 @@ __export(kernel_exports, {
   embeddedLibFiles: () => embeddedLibFiles,
   entryDigest: () => entryDigest,
   entryPath: () => entryPath,
+  extractFrameworkPolicyJson: () => extractFrameworkPolicyJson,
   extractProjectProfileJson: () => extractProjectProfileJson,
   isCapabilityId: () => isCapabilityId,
   isContractVersion: () => isContractVersion,
@@ -221890,6 +221893,66 @@ var ERROR_CODES = Object.freeze({
     message: "the registered extension failed inside the dispatch boundary"
   })
 });
+var MAX_FRAMEWORK_POLICY_JSON_BYTES = 8 * 1024;
+function decodeFrameworkPolicyJson(text) {
+  if (typeof text !== "string") {
+    throw new RequestRefusal("framework-policy", "the framework policy must be one JSON text");
+  }
+  const bytes = Buffer.from(text, "utf8");
+  if (bytes.length === 0 || bytes.length > MAX_FRAMEWORK_POLICY_JSON_BYTES) {
+    throw new RequestRefusal("framework-policy", "the framework policy exceeds the closed input bound");
+  }
+  const document = decodeJsonDocument(bytes, { maxBytes: MAX_FRAMEWORK_POLICY_JSON_BYTES });
+  if (document.schema !== "lekalo/framework-policy") {
+    throw new RequestRefusal("framework-policy", "unknown framework policy schema");
+  }
+  if (document.version !== 1) {
+    throw new RequestRefusal("framework-policy", "unknown framework policy version");
+  }
+  if (!Array.isArray(document.providers) || document.providers.length > 16) {
+    throw new RequestRefusal("framework-policy", "providers must be a bounded array");
+  }
+  const seen = /* @__PURE__ */ new Set();
+  const providers = document.providers.map((entry) => {
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+      throw new RequestRefusal("framework-policy", "provider must be an object");
+    }
+    const keys = Object.keys(entry);
+    if (keys.length !== 2 || !keys.includes("id") || !keys.includes("state")) {
+      throw new RequestRefusal("framework-policy", "provider shape is closed (id, state)");
+    }
+    const { id, state } = entry;
+    if (typeof id !== "string" || id.length === 0 || id.length > 64 || !/^[a-z][a-z0-9-]*$/.test(id)) {
+      throw new RequestRefusal("framework-policy", "provider id out of bounds");
+    }
+    if (state !== "enabled" && state !== "disabled") {
+      throw new RequestRefusal("framework-policy", "provider state must be enabled or disabled");
+    }
+    if (seen.has(id)) {
+      throw new RequestRefusal("framework-policy", "duplicate provider id");
+    }
+    seen.add(id);
+    return { id, state };
+  });
+  const canonical = { providers };
+  const digest = `sha256:${createHash("sha256").update(canonicalJson(canonical), "utf8").digest("hex")}`;
+  return deepFreeze({ schema: document.schema, version: 1, providers, digest });
+}
+function extractFrameworkPolicyJson(argv = process.argv.slice(2)) {
+  const markers = argv.filter((argument) => argument === "--lekalo-framework-policy-json");
+  if (markers.length > 1) {
+    throw new RequestRefusal("framework-policy", "ambiguous framework policy inputs");
+  }
+  const marker = argv.indexOf("--lekalo-framework-policy-json");
+  if (marker === -1) {
+    return void 0;
+  }
+  const value = argv[marker + 1];
+  if (value === void 0 || value === "") {
+    throw new RequestRefusal("framework-policy", "missing framework policy value");
+  }
+  return value;
+}
 function decodeProjectProfileJson(text) {
   if (typeof text !== "string") {
     throw new RequestRefusal("profile-input", "the launch profile must be one JSON text");
@@ -222497,7 +222560,8 @@ function createKernel(options = {}) {
                 provenance: { ...profile.provenance },
                 ...profile.localReference !== void 0 ? { localReference: structuredClone(profile.localReference) } : {}
               } : null,
-              extensions: [...extensions.keys()]
+              extensions: [...extensions.keys()],
+              ...trustedExecutionContext?.frameworkPolicy ? { frameworkPolicy: { digest: trustedExecutionContext.frameworkPolicy.digest } } : {}
             }
           }
         };
@@ -222612,6 +222676,7 @@ function createKernel(options = {}) {
           profile,
           readView,
           ...writeView !== null ? { writeView } : {},
+          ...trustedExecutionContext.frameworkPolicy ? { frameworkPolicy: trustedExecutionContext.frameworkPolicy } : {},
           cancellation: trustedExecutionContext.cancellation ?? null,
           limits: trustedExecutionContext.limits ?? { files: 4096, bytes: 4 * 1024 * 1024 }
         }));
@@ -223161,10 +223226,18 @@ async function main() {
       });
       options.kernel = kernel2;
     }
+    let frameworkPolicy = null;
+    const policyJson = extractFrameworkPolicyJson();
+    if (policyJson !== void 0) {
+      frameworkPolicy = decodeFrameworkPolicyJson(policyJson);
+    }
     const document = decodeJsonDocument(requestBytes);
     const request = validateRequestObject(document);
     const kernel = options.kernel ?? createKernel();
-    const dispatched = kernel.dispatch(request, { permittedProjectRoot: process.cwd() });
+    const dispatched = kernel.dispatch(request, {
+      permittedProjectRoot: process.cwd(),
+      ...frameworkPolicy !== null ? { frameworkPolicy } : {}
+    });
     process.stdout.write(canonicalJson(dispatched.response));
   } catch (error) {
     process.stderr.write(stderrDiagnostic(error?.code ?? "invalid") + "\n");
@@ -223194,6 +223267,7 @@ __export(scanner_exports, {
   ScannerSession: () => ScannerSession,
   assertCompilerAvailable: () => assertCompilerAvailable,
   buildInputManifest: () => buildInputManifest,
+  enabledFrameworkProviders: () => enabledFrameworkProviders,
   enumerateInventory: () => enumerateInventory,
   lekaloCarrierlessModules: () => lekaloCarrierlessModules,
   lekaloTestIdsByModule: () => lekaloTestIdsByModule,
@@ -223205,7 +223279,7 @@ __export(scanner_exports, {
   signatureGraphOfSymbol: () => signatureGraphOfSymbol,
   sortIndex: () => sortIndex
 });
-import { createHash as createHash3 } from "node:crypto";
+import { createHash as createHash5 } from "node:crypto";
 import { lstatSync as lstatSync2, readdirSync } from "node:fs";
 import { join } from "node:path";
 
@@ -225943,6 +226017,2778 @@ function drizzleEvidenceSummary(document) {
   };
 }
 
+// src/hono-scanner.mjs
+import { createHash as createHash4 } from "node:crypto";
+
+// src/hono-context.mjs
+function importDeclarationOfSymbol(ts2, symbol) {
+  for (const declaration of symbol.declarations ?? []) {
+    if (declaration.kind !== ts2.SyntaxKind.ImportSpecifier) continue;
+    let ancestor = declaration.parent;
+    for (let depth = 0; depth < 4 && ancestor; depth += 1) {
+      if (ancestor.kind === ts2.SyntaxKind.ImportDeclaration) {
+        if (ancestor.moduleSpecifier?.kind === ts2.SyntaxKind.StringLiteral) {
+          return ancestor;
+        }
+        return null;
+      }
+      ancestor = ancestor.parent;
+    }
+  }
+  return null;
+}
+function functionBodyOf(ctx, handler) {
+  const { ts: ts2 } = ctx;
+  const node = handler.node;
+  if (!node) return null;
+  if (node.kind === ts2.SyntaxKind.ArrowFunction || node.kind === ts2.SyntaxKind.FunctionExpression) {
+    return node.body ?? null;
+  }
+  const declaration = handler.symbol?.declarations?.find((candidate) => candidate.body);
+  return declaration?.body ?? null;
+}
+function contextParamSymbolOf(ctx, handler) {
+  const { ts: ts2, checker } = ctx;
+  let declaration = null;
+  if (handler.indexed && handler.symbol) {
+    declaration = handler.symbol.declarations?.find((candidate) => candidate.body && (candidate.kind === ts2.SyntaxKind.FunctionDeclaration || candidate.kind === ts2.SyntaxKind.MethodDeclaration || candidate.kind === ts2.SyntaxKind.ArrowFunction || candidate.kind === ts2.SyntaxKind.FunctionExpression)) ?? null;
+  }
+  if (!declaration && handler.node && (handler.node.kind === ts2.SyntaxKind.ArrowFunction || handler.node.kind === ts2.SyntaxKind.FunctionExpression)) {
+    declaration = handler.node;
+  }
+  const first = declaration?.parameters?.[0]?.name;
+  if (!first || first.kind !== ts2.SyntaxKind.Identifier) return null;
+  return checker.getSymbolAtLocation(first) ?? null;
+}
+function resolvesToContextSymbol(ctx, node, contextSymbol) {
+  if (!node || node.kind !== ctx.ts.SyntaxKind.Identifier) return false;
+  const resolved = ctx.checker.getSymbolAtLocation(node);
+  return resolved === contextSymbol;
+}
+function importSpecifierTextAt(ctx, expression) {
+  const { ts: ts2, checker } = ctx;
+  const target = expression.kind === ts2.SyntaxKind.PropertyAccessExpression ? expression.name : expression;
+  const useSite = checker.getSymbolAtLocation(target);
+  if (!useSite) return null;
+  const useSiteImport = importDeclarationOfSymbol(ts2, useSite);
+  if (useSiteImport !== null) return useSiteImport.moduleSpecifier.text;
+  let symbol = useSite;
+  for (let depth = 0; depth < 8; depth += 1) {
+    if (symbol.flags & ts2.SymbolFlags.Alias) {
+      try {
+        symbol = checker.getAliasedSymbol(symbol);
+      } catch {
+        break;
+      }
+    } else {
+      break;
+    }
+  }
+  const importDeclaration = importDeclarationOfSymbol(ts2, symbol);
+  return importDeclaration === null ? null : importDeclaration.moduleSpecifier.text;
+}
+
+// src/hono-evidence.mjs
+import { createHash as createHash3 } from "node:crypto";
+var HONO_RELATION_NAMESPACE = "dev.lekalo.hono/";
+var HONO_SPECIFIERS = Object.freeze([
+  "hono",
+  "hono/validator",
+  "hono/http-exception",
+  "hono/testing",
+  "@hono/zod-openapi",
+  "@hono/zod-validator"
+]);
+var HONO_RELATIONS = Object.freeze([
+  "app-discovered",
+  "route-handler",
+  "mounts-router",
+  "base-path",
+  "uses-middleware",
+  "validates-request",
+  "returns-response",
+  "handles-error",
+  "context-write",
+  "context-read",
+  "openapi-operation",
+  "handler-call",
+  "route-test",
+  "endpoint-contract"
+].map((name) => HONO_RELATION_NAMESPACE + name));
+var HONO_PROVENANCE = Object.freeze(["explicit", "detected", "inferred"]);
+var HONO_CONFIDENCE = Object.freeze(["exact", "high", "medium", "low", "unknown"]);
+var HONO_STATUS = Object.freeze(["complete", "incomplete", "unknown"]);
+var HONO_FACETS = Object.freeze(["api", "html", "ssr", "mixed", "unknown"]);
+var HONO_MIDDLEWARE_ROLES = Object.freeze(["auth", "tenant", "context", "logging", "custom"]);
+var HONO_REASONS = Object.freeze([
+  "dynamic-path",
+  "dynamic-method",
+  "dynamic-path-filter",
+  "operationid-unknown",
+  "unresolved-constructor",
+  "unsupported-receiver",
+  "mutable-alias",
+  "unknown-handler",
+  "local-handler",
+  "cross-module-registration-order",
+  "post-mount-registration",
+  "composition-cycle",
+  "composition-depth",
+  "unresolved-mount-base",
+  "conditional-registration",
+  "deferred-registration",
+  "unreachable-registration",
+  "conditional-applicability",
+  "no-next-call-detected",
+  "dynamic-context-key",
+  "dynamic-status",
+  "unresolved-schema",
+  "unresolved-validator-target",
+  "mixed-response",
+  "no-response-evidence",
+  "dynamic-test-target",
+  "unknown-test-app",
+  "ambiguous-endpoint-join",
+  "missing-endpoint-join",
+  "ssr-api-conflict",
+  "record-budget",
+  "framework-version-unknown"
+]);
+var HONO_RULES_REVISION = "hono-rules-v2";
+function mergeRouteEvidence(route, status, reasons) {
+  const routeStatus = route?.status ?? "complete";
+  const merged = [.../* @__PURE__ */ new Set([...reasons ?? [], ...route?.reasons ?? []])];
+  if (routeStatus === "complete") return { status, reasons: merged };
+  if (status === "unknown" || routeStatus === "unknown") return { status: "unknown", reasons: merged };
+  return { status: "incomplete", reasons: merged };
+}
+var FRESHNESS_DOMAIN = "lekalo.hono.freshness.v1";
+var MAX_HONO_RECORDS = 4096;
+var MAX_HONO_UNCERTAINTY = 1024;
+var HONO_MAX_MOUNT_DEPTH = 8;
+var HONO_MAX_CHAIN = 16;
+function canonicalHonoText(value) {
+  if (value === null) return "null";
+  switch (typeof value) {
+    case "boolean":
+      return value ? "true" : "false";
+    case "number":
+      if (!Number.isFinite(value)) return "null";
+      return Number.isInteger(value) && Math.abs(value) < 1e15 ? String(value) : JSON.stringify(value);
+    case "string":
+      return JSON.stringify(value);
+    case "object":
+      break;
+    default:
+      return "null";
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalHonoText).join(",")}]`;
+  }
+  const keys = Object.keys(value).sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
+  return `{${keys.map((key) => `${JSON.stringify(key)}:${canonicalHonoText(value[key])}`).join(",")}}`;
+}
+function sha256Hex3(text) {
+  return createHash3("sha256").update(text, "utf8").digest("hex");
+}
+function fingerprintOf(record) {
+  return "sha256:" + sha256Hex3(FRESHNESS_DOMAIN + "\0" + canonicalHonoText(record));
+}
+function makeRecord({
+  relation,
+  from = null,
+  to = null,
+  method = null,
+  path = null,
+  facet = null,
+  role = null,
+  ordinal = null,
+  unwindOrdinal = null,
+  httpStatus = null,
+  note = null,
+  provenance,
+  confidence,
+  status = "complete",
+  reasons = [],
+  span,
+  revision,
+  adapterVersion,
+  frameworkVersion = "unknown"
+}) {
+  if (!HONO_RELATIONS.includes(relation)) {
+    throw new Error(`unknown hono relation ${relation}`);
+  }
+  if (!HONO_PROVENANCE.includes(provenance)) {
+    throw new Error(`unknown hono provenance ${provenance}`);
+  }
+  if (!HONO_CONFIDENCE.includes(confidence)) {
+    throw new Error(`unknown hono confidence ${confidence}`);
+  }
+  if (!HONO_STATUS.includes(status)) {
+    throw new Error(`unknown hono status ${status}`);
+  }
+  for (const reason of reasons) {
+    if (!HONO_REASONS.includes(reason)) {
+      throw new Error(`unknown hono reason ${reason}`);
+    }
+  }
+  if (httpStatus !== null && typeof httpStatus !== "number") {
+    throw new Error("hono record httpStatus must be a number or null");
+  }
+  if (facet !== null && !HONO_FACETS.includes(facet)) {
+    throw new Error(`unknown hono facet ${facet}`);
+  }
+  if (role !== null && !HONO_MIDDLEWARE_ROLES.includes(role)) {
+    throw new Error(`unknown hono middleware role ${role}`);
+  }
+  const record = {
+    relation,
+    from: normalizeEndpoint(from),
+    to: normalizeEndpoint(to),
+    method,
+    path: path === null ? null : String(path).slice(0, 256),
+    facet,
+    role,
+    ordinal,
+    unwindOrdinal,
+    httpStatus: typeof httpStatus === "number" ? httpStatus : null,
+    note: note === null ? null : String(note).slice(0, 128),
+    provenance,
+    confidence,
+    status,
+    reasons: [...reasons],
+    span: normalizeSpan(span),
+    revision,
+    adapterVersion,
+    framework: { name: "hono", version: frameworkVersion },
+    rulesRevision: HONO_RULES_REVISION
+  };
+  record.fingerprint = fingerprintOf(record);
+  return record;
+}
+function normalizeEndpoint(endpoint) {
+  if (endpoint === null) return null;
+  const normalized = {
+    module: typeof endpoint.module === "string" ? endpoint.module : null,
+    native: typeof endpoint.native === "string" ? endpoint.native : null,
+    name: typeof endpoint.name === "string" ? endpoint.name.slice(0, 192) : null,
+    indexed: endpoint.indexed === true,
+    signature: typeof endpoint.signature === "string" ? endpoint.signature : null,
+    digest: typeof endpoint.digest === "string" ? endpoint.digest : null
+  };
+  return normalized;
+}
+function normalizeSpan(span) {
+  return {
+    path: String(span.path),
+    startLine: span.startLine,
+    startColumn: span.startColumn,
+    endLine: span.endLine,
+    endColumn: span.endColumn,
+    // Half-open UTF-8 byte offsets into the exact source bytes (the
+    // research spec's span model); null only for hand-built records.
+    startByte: typeof span.startByte === "number" ? span.startByte : null,
+    endByte: typeof span.endByte === "number" ? span.endByte : null
+  };
+}
+function makeUncertainty(path, kind, detail, line) {
+  return { path, kind: `hono-${kind}`, detail: String(detail).slice(0, 128), line };
+}
+var contentTextCache = /* @__PURE__ */ new WeakMap();
+function canonicalContentText(record) {
+  if (contentTextCache.has(record)) return contentTextCache.get(record);
+  const { fingerprint, ...content } = record;
+  const text = canonicalHonoText(content);
+  contentTextCache.set(record, text);
+  return text;
+}
+function honoCompare(left, right) {
+  const a = Buffer.from(canonicalContentText(left), "utf8");
+  const b = Buffer.from(canonicalContentText(right), "utf8");
+  const length = Math.min(a.length, b.length);
+  for (let index = 0; index < length; index += 1) {
+    if (a[index] !== b[index]) return a[index] - b[index];
+  }
+  return a.length - b.length;
+}
+function sortHonoRecords(records) {
+  records.sort(honoCompare);
+  return records;
+}
+function validateHonoRecords(records) {
+  const violations = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const record of records) {
+    try {
+      const { fingerprint, framework, ...content } = record;
+      const rebuilt = makeRecord({
+        ...content,
+        frameworkVersion: framework?.version ?? "unknown"
+      });
+      if (rebuilt.fingerprint !== fingerprint) {
+        violations.push({ code: "fingerprint-mismatch", record });
+      }
+    } catch (error) {
+      violations.push({ code: "invalid-record", message: String(error?.message ?? error), record });
+    }
+    const key = canonicalHonoText(record);
+    if (seen.has(key)) violations.push({ code: "duplicate-record", record });
+    seen.add(key);
+  }
+  return violations;
+}
+
+// src/hono-routes.mjs
+var ROUTE_METHODS = /* @__PURE__ */ new Set(["get", "post", "put", "patch", "delete", "options", "head", "all", "on"]);
+var APP_METHODS = /* @__PURE__ */ new Set(["route", "use", "basePath", "onError", "notFound", "openapi"]);
+var DEFERRING_KINDS = [
+  "FunctionDeclaration",
+  "FunctionExpression",
+  "ArrowFunction",
+  "MethodDeclaration",
+  "Constructor",
+  "GetAccessor",
+  "SetAccessor"
+];
+var CONDITIONAL_KINDS = [
+  "IfStatement",
+  "SwitchStatement",
+  "ConditionalExpression",
+  "TryStatement",
+  "CatchClause",
+  "ForStatement",
+  "ForOfStatement",
+  "ForInStatement",
+  "WhileStatement",
+  "DoStatement"
+];
+function collectRegistrations(ctx) {
+  const { ts: ts2, checker, program } = ctx;
+  const events = [];
+  const fluentEmitted = /* @__PURE__ */ new WeakSet();
+  precollectValidators(ctx);
+  for (const sourceFile of program.getSourceFiles()) {
+    if (sourceFile.isDeclarationFile) continue;
+    const fromModule = ctx.normalizeModulePath(sourceFile.fileName);
+    if (fromModule === null) continue;
+    const visit = (node) => {
+      if (node.kind !== ts2.SyntaxKind.CallExpression) {
+        ts2.forEachChild(node, visit);
+        return;
+      }
+      const expression = node.expression;
+      if (expression.kind !== ts2.SyntaxKind.PropertyAccessExpression) {
+        const calleeName = expression.kind === ts2.SyntaxKind.Identifier ? expression.text : null;
+        if (calleeName === "createRoute") {
+          collectCreateRoute(ctx, node, sourceFile, fromModule, events);
+        } else if (calleeName === "validator" || calleeName === "zValidator") {
+          collectValidator(ctx, node, expression, sourceFile, fromModule, events);
+        }
+        ts2.forEachChild(node, visit);
+        return;
+      }
+      const methodName = expression.name?.text ?? null;
+      if (methodName === null) {
+        ts2.forEachChild(node, visit);
+        return;
+      }
+      if (fluentEmitted.has(node)) {
+        ts2.forEachChild(node, visit);
+        return;
+      }
+      const instance = ctx.instanceOfExpression(expression.expression, sourceFile);
+      if (!instance) {
+        const chain = fluentChainOf(ctx, node, expression, sourceFile);
+        if (chain === null) {
+          reportNearMissReceiver(ctx, expression, sourceFile, fromModule);
+        } else {
+          for (const link of chain.links) {
+            if (fluentEmitted.has(link.node)) continue;
+            fluentEmitted.add(link.node);
+            events.push(makeEvent(ctx, {
+              kind: classifyMethod(link.method),
+              node: link.node,
+              instance: chain.instance,
+              methodName: link.method,
+              sourceFile,
+              module: fromModule
+            }));
+          }
+        }
+        ts2.forEachChild(node, visit);
+        return;
+      }
+      if (!ROUTE_METHODS.has(methodName) && !APP_METHODS.has(methodName)) {
+        ts2.forEachChild(node, visit);
+        return;
+      }
+      events.push(makeEvent(ctx, {
+        kind: classifyMethod(methodName),
+        node,
+        instance,
+        methodName,
+        sourceFile,
+        module: fromModule
+      }));
+      ts2.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+  }
+  events.sort((left, right) => {
+    const byModule = compareUtf8(left.module, right.module);
+    if (byModule !== 0) return byModule;
+    return left.order - right.order;
+  });
+  for (let index = 0; index < events.length; index += 1) {
+    events[index].order = index;
+  }
+  return events;
+}
+function useFirstArgIsPathFilter(ctx, node, sourceFile) {
+  const { ts: ts2, checker } = ctx;
+  if (node.kind === ts2.SyntaxKind.StringLiteral || node.kind === ts2.SyntaxKind.NoSubstitutionTemplateLiteral) return true;
+  if (ctx.resolveLiteralString(node, sourceFile) !== null) return true;
+  if (node.kind === ts2.SyntaxKind.RegularExpressionLiteral) return true;
+  if (node.kind === ts2.SyntaxKind.NewExpression && node.expression?.kind === ts2.SyntaxKind.Identifier && node.expression.text === "RegExp") return true;
+  if (node.kind === ts2.SyntaxKind.ArrayLiteralExpression) {
+    return (node.elements ?? []).every((element) => element.kind === ts2.SyntaxKind.StringLiteral || element.kind === ts2.SyntaxKind.NoSubstitutionTemplateLiteral || element.kind === ts2.SyntaxKind.RegularExpressionLiteral || ctx.resolveLiteralString(element, sourceFile) !== null);
+  }
+  const type = checker.getTypeAtLocation(node);
+  if (type.flags & (ts2.TypeFlags.StringLike | ts2.TypeFlags.AnyOrUnknown)) return true;
+  if (type.symbol?.name === "RegExp") return true;
+  const valueType = checker.getIndexTypeOfType(type, ts2.IndexKind.String);
+  return Boolean(valueType && valueType.flags & (ts2.TypeFlags.StringLike | ts2.TypeFlags.AnyOrUnknown));
+}
+function classifyMethod(methodName) {
+  if (ROUTE_METHODS.has(methodName)) return "route";
+  if (methodName === "route") return "mount";
+  if (methodName === "use") return "use";
+  if (methodName === "onError" || methodName === "notFound") return "error";
+  if (methodName === "openapi") return "openapi";
+  return "other";
+}
+var FLUENT_LINK_METHODS = /* @__PURE__ */ new Set([...ROUTE_METHODS, "use", "route", "onError", "notFound", "openapi"]);
+function fluentChainOf(ctx, node, expression, sourceFile) {
+  const { ts: ts2 } = ctx;
+  const methodName = expression.name?.text ?? null;
+  if (methodName === null || !FLUENT_LINK_METHODS.has(methodName)) return null;
+  const links = [{ node, method: methodName }];
+  let current = expression.expression;
+  for (let depth = 0; depth < 16; depth += 1) {
+    const instance = ctx.instanceOfExpression(current, sourceFile);
+    if (instance) return { instance, links };
+    if (current.kind !== ts2.SyntaxKind.CallExpression || current.expression?.kind !== ts2.SyntaxKind.PropertyAccessExpression) return null;
+    const method = current.expression.name?.text ?? null;
+    if (method === null || !FLUENT_LINK_METHODS.has(method)) return null;
+    links.push({ node: current, method });
+    current = current.expression.expression;
+  }
+  return null;
+}
+function reachabilityOf(ctx, node, sourceFile) {
+  const { ts: ts2 } = ctx;
+  let conditional = false;
+  let current = node.parent;
+  for (let depth = 0; current && current !== sourceFile && depth < 512; depth += 1) {
+    if (DEFERRING_KINDS.includes(ts2.SyntaxKind[current.kind])) {
+      if (unreachableSiblingBefore(ctx, node, sourceFile)) return "unreachable";
+      return functionIsProvenCalled(ctx, current, sourceFile) ? "called" : "deferred";
+    }
+    const kindName = ts2.SyntaxKind[current.kind];
+    if (CONDITIONAL_KINDS.includes(kindName)) conditional = true;
+    if (kindName === "BinaryExpression" && (current.operatorToken?.kind === ts2.SyntaxKind.AmpersandAmpersandToken || current.operatorToken?.kind === ts2.SyntaxKind.BarBarToken || current.operatorToken?.kind === ts2.SyntaxKind.QuestionQuestionToken)) {
+      conditional = true;
+    }
+    current = current.parent;
+  }
+  if (unreachableSiblingBefore(ctx, node, sourceFile)) return "unreachable";
+  return conditional ? "conditional" : "top-level";
+}
+function unreachableSiblingBefore(ctx, node, sourceFile) {
+  const { ts: ts2 } = ctx;
+  let current = node;
+  while (current && current !== sourceFile) {
+    const parent = current.parent;
+    if (parent && (parent.kind === ts2.SyntaxKind.Block || parent.kind === ts2.SyntaxKind.SourceFile) && Array.isArray(parent.statements)) {
+      for (const statement of parent.statements) {
+        if (statement === current) break;
+        if (statement.kind === ts2.SyntaxKind.ReturnStatement || statement.kind === ts2.SyntaxKind.ThrowStatement) {
+          return true;
+        }
+      }
+    }
+    current = parent;
+  }
+  return false;
+}
+function functionIsProvenCalled(ctx, functionNode, sourceFile) {
+  const { ts: ts2 } = ctx;
+  let name = null;
+  let minCallStart = 0;
+  if (functionNode.kind === ts2.SyntaxKind.FunctionDeclaration && functionNode.name?.kind === ts2.SyntaxKind.Identifier) {
+    name = functionNode.name.text;
+  } else if (functionNode.kind === ts2.SyntaxKind.VariableDeclaration) {
+    name = declaredConstIdentifierText(ts2, functionNode);
+  } else {
+    const declaration = functionNode.parent;
+    if (declaration?.kind === ts2.SyntaxKind.VariableDeclaration) {
+      const list = declaration.parent;
+      if (list?.kind === ts2.SyntaxKind.VariableDeclarationList && list.flags & ts2.NodeFlags.Const) {
+        name = declaration.name?.kind === ts2.SyntaxKind.Identifier ? declaration.name.text : null;
+        minCallStart = declaration.getStart(sourceFile);
+      }
+    }
+  }
+  if (name === null) return false;
+  const counts = topLevelStraightLineCallsOf(ctx, sourceFile);
+  const callStarts = counts.get(name);
+  if (!callStarts || callStarts.length === 0) return false;
+  return callStarts.some((start) => start > minCallStart);
+}
+function declaredConstIdentifierText(ts2, declaration) {
+  const list = declaration.parent;
+  if (list?.kind !== ts2.SyntaxKind.VariableDeclarationList) return null;
+  if (!(list.flags & ts2.NodeFlags.Const)) return null;
+  return declaration.name?.kind === ts2.SyntaxKind.Identifier ? declaration.name.text : null;
+}
+function topLevelStraightLineCallsOf(ctx, sourceFile) {
+  const cached = ctx.topLevelCallCache ??= /* @__PURE__ */ new WeakMap();
+  if (cached.has(sourceFile)) return cached.get(sourceFile);
+  const { ts: ts2 } = ctx;
+  const callsByName = /* @__PURE__ */ new Map();
+  const record = (name, start) => {
+    if (!callsByName.has(name)) callsByName.set(name, []);
+    callsByName.get(name).push(start);
+  };
+  const visit = (node) => {
+    const kindName = ts2.SyntaxKind[node.kind];
+    if (DEFERRING_KINDS.includes(kindName) || CONDITIONAL_KINDS.includes(kindName)) return;
+    if (node.kind === ts2.SyntaxKind.CallExpression && node.expression?.kind === ts2.SyntaxKind.Identifier) {
+      record(node.expression.text, node.getStart(sourceFile));
+      for (const argument of node.arguments ?? []) visit(argument);
+      return;
+    }
+    ts2.forEachChild(node, visit);
+  };
+  for (const statement of sourceFile.statements ?? []) visit(statement);
+  cached.set(sourceFile, callsByName);
+  return callsByName;
+}
+function reachabilityPenaltyOf(event) {
+  switch (event.reachability) {
+    case "conditional":
+      return { reason: "conditional-registration", status: "incomplete" };
+    case "deferred":
+      return { reason: "deferred-registration", status: "incomplete" };
+    case "unreachable":
+      return { reason: "unreachable-registration", status: "unknown" };
+    default:
+      return null;
+  }
+}
+function compareUtf8(left, right) {
+  const a = Buffer.from(left, "utf8");
+  const b = Buffer.from(right, "utf8");
+  return a.compare(b);
+}
+function makeEvent(ctx, { kind, node, instance, methodName, sourceFile, module }) {
+  const { ts: ts2 } = ctx;
+  const args = node.arguments ?? [];
+  const event = {
+    kind,
+    node,
+    instance,
+    methodName,
+    sourceFile,
+    module,
+    order: node.getStart(sourceFile),
+    path: null,
+    pathKind: null,
+    pathNode: null,
+    methods: null,
+    pathFilter: null,
+    pathFilterKind: null,
+    childInstance: null,
+    handlers: [],
+    inlineMiddleware: [],
+    routeDefinition: null,
+    status: "complete",
+    reasons: []
+  };
+  if (kind === "route") {
+    if (methodName === "on") {
+      const methodsArgument = args[0];
+      const literals = literalStringArray(methodsArgument, ts2);
+      if (literals === null) {
+        event.status = "unknown";
+        event.reasons.push("dynamic-method");
+        ctx.addUncertaintyAt(sourceFile, node, "dynamic-method", "on");
+      } else {
+        event.methods = literals;
+      }
+      event.pathNode = args[1] ?? null;
+    } else {
+      event.pathNode = args[0] ?? null;
+      event.methods = [methodName.toUpperCase()];
+    }
+    resolvePathAndHandlers(ctx, event, args, methodName === "on" ? 2 : 1);
+  } else if (kind === "mount") {
+    event.pathNode = args[0] ?? null;
+    const path = ctx.resolveLiteralString(event.pathNode, sourceFile);
+    if (path === null) {
+      event.status = "unknown";
+      event.reasons.push("dynamic-path");
+    } else {
+      event.path = path.value;
+      event.pathKind = path.kind;
+    }
+    const childExpression = args[1] ?? null;
+    if (childExpression) {
+      const child = ctx.instanceOfExpression(childExpression, sourceFile);
+      if (child) {
+        event.childInstance = child;
+      } else if (childExpression.kind === ts2.SyntaxKind.CallExpression && childExpression.expression?.kind === ts2.SyntaxKind.PropertyAccessExpression) {
+        const chain = fluentChainOf(ctx, childExpression, childExpression.expression, sourceFile);
+        if (chain) {
+          event.childInstance = chain.instance;
+          event.chainTarget = true;
+          event.childExpression = childExpression;
+        } else {
+          event.status = "unknown";
+          event.reasons.push("unknown-handler");
+          ctx.addUncertaintyAt(sourceFile, node, "unknown-handler", "mount-target");
+        }
+      } else {
+        event.status = "unknown";
+        event.reasons.push("unknown-handler");
+        ctx.addUncertaintyAt(sourceFile, node, "unknown-handler", "mount-target");
+      }
+    } else {
+      event.status = "unknown";
+      event.reasons.push("unknown-handler");
+    }
+  } else if (kind === "use") {
+    const first = args[0] ?? null;
+    let handlerStart = 0;
+    if (first && useFirstArgIsPathFilter(ctx, first, sourceFile)) {
+      const filter = ctx.resolveLiteralString(first, sourceFile);
+      if (filter !== null) {
+        event.pathFilter = filter.value;
+        event.pathFilterKind = filter.kind;
+      } else {
+        event.pathFilterKind = "unknown";
+        event.status = "unknown";
+        event.reasons.push("dynamic-path-filter");
+        ctx.addUncertaintyAt(sourceFile, first, "dynamic-path-filter", "use");
+      }
+      handlerStart = 1;
+    }
+    event.handlers = resolveHandlerChain(ctx, args, handlerStart, sourceFile);
+  } else if (kind === "error" || kind === "openapi") {
+    if (kind === "openapi") {
+      event.routeDefinition = args[0] ?? null;
+      event.handlers = resolveHandlerChain(ctx, args, 1, sourceFile);
+    } else {
+      event.handlers = resolveHandlerChain(ctx, args, 0, sourceFile);
+    }
+  }
+  event.reachability = reachabilityOf(ctx, node, sourceFile);
+  const penalty = reachabilityPenaltyOf(event);
+  if (penalty) {
+    event.reasons.push(penalty.reason);
+    if (event.status === "complete") event.status = penalty.status;
+  }
+  return event;
+}
+function resolvePathAndHandlers(ctx, event, args, handlerStart) {
+  const path = ctx.resolveLiteralString(event.pathNode, event.sourceFile);
+  if (path === null) {
+    event.status = "unknown";
+    event.reasons.push("dynamic-path");
+    ctx.addUncertaintyAt(event.sourceFile, event.node, "dynamic-path", event.methodName);
+  } else {
+    event.path = path.value;
+    event.pathKind = path.kind;
+  }
+  event.handlers = resolveHandlerChain(ctx, args, handlerStart, event.sourceFile);
+}
+function resolveHandlerChain(ctx, args, handlerStart, sourceFile) {
+  const chain = [];
+  for (let index = handlerStart; index < (args?.length ?? 0); index += 1) {
+    const endpoint = resolveHandlerEndpoint(ctx, args[index], sourceFile);
+    if (endpoint !== null) chain.push(endpoint);
+  }
+  return chain;
+}
+function resolveHandlerEndpoint(ctx, argNode, sourceFile) {
+  if (!argNode) return null;
+  const { ts: ts2, checker } = ctx;
+  if (argNode.kind === ts2.SyntaxKind.ArrowFunction || argNode.kind === ts2.SyntaxKind.FunctionExpression) {
+    return {
+      kind: "inline",
+      node: argNode,
+      module: ctx.normalizeModulePath(sourceFile.fileName),
+      native: ctx.inlineNative(sourceFile, argNode, "handler"),
+      name: "inline",
+      indexed: false,
+      signature: null,
+      digest: ctx.digestOfNode(argNode, sourceFile)
+    };
+  }
+  if (argNode.kind === ts2.SyntaxKind.Identifier || argNode.kind === ts2.SyntaxKind.PropertyAccessExpression) {
+    const symbol = rootSymbolOf(ctx, argNode);
+    if (symbol) {
+      for (const declaration of symbol.declarations ?? []) {
+        if (declaration.kind === ts2.SyntaxKind.VariableDeclaration && declaration.initializer && ctx.validatorByNode.has(declaration.initializer)) {
+          const validator = ctx.validatorByNode.get(declaration.initializer);
+          return {
+            kind: "validator",
+            node: argNode,
+            validator: { ...validator, node: declaration.initializer }
+          };
+        }
+      }
+      const row = ctx.symbolRowOf(symbol);
+      if (row) {
+        const declarationNode = symbol.declarations?.[0] ?? argNode;
+        return {
+          kind: "reference",
+          node: argNode,
+          symbol,
+          module: row.module,
+          native: row.native,
+          name: row.qualifiedName,
+          indexed: true,
+          signature: row.signature,
+          digest: ctx.digestOfNode(declarationNode, declarationNode.getSourceFile())
+        };
+      }
+      return {
+        kind: "local",
+        node: argNode,
+        symbol,
+        module: ctx.normalizeModulePath(sourceFile.fileName),
+        native: ctx.inlineNative(sourceFile, argNode, "local-handler"),
+        name: symbol.name ?? "local",
+        indexed: false,
+        signature: null,
+        digest: ctx.digestOfNode(symbol.declarations?.[0] ?? argNode, sourceFile),
+        reason: "local-handler"
+      };
+    }
+  }
+  if (argNode.kind === ts2.SyntaxKind.CallExpression) {
+    const validator = ctx.validatorByNode.get(argNode);
+    if (validator) {
+      return { kind: "validator", node: argNode, validator };
+    }
+    ctx.addUncertaintyAt(sourceFile, argNode, "unknown-handler", "factory");
+    return {
+      kind: "unknown",
+      node: argNode,
+      module: ctx.normalizeModulePath(sourceFile.fileName),
+      native: ctx.inlineNative(sourceFile, argNode, "unknown-handler"),
+      name: "unknown",
+      indexed: false,
+      signature: null,
+      digest: ctx.digestOfNode(argNode, sourceFile),
+      reason: "unknown-handler"
+    };
+  }
+  ctx.addUncertaintyAt(sourceFile, argNode, "unknown-handler", String(argNode.kind));
+  return null;
+}
+function rootSymbolOf(ctx, node) {
+  const { ts: ts2, checker } = ctx;
+  const target = node.kind === ts2.SyntaxKind.PropertyAccessExpression ? node.name : node;
+  let symbol = checker.getSymbolAtLocation(target);
+  if (!symbol) return null;
+  for (let depth = 0; depth < 8; depth += 1) {
+    if (symbol.flags & ts2.SymbolFlags.Alias) {
+      try {
+        symbol = checker.getAliasedSymbol(symbol);
+      } catch {
+        return symbol;
+      }
+    } else {
+      return symbol;
+    }
+  }
+  return symbol;
+}
+function literalStringArray(node, ts2) {
+  if (!node) return null;
+  if (node.kind === ts2.SyntaxKind.StringLiteral || node.kind === ts2.SyntaxKind.NoSubstitutionTemplateLiteral) {
+    return [node.text.toUpperCase()];
+  }
+  if (node.kind !== ts2.SyntaxKind.ArrayLiteralExpression) return null;
+  const values = [];
+  for (const element of node.elements ?? []) {
+    if (element.kind !== ts2.SyntaxKind.StringLiteral && element.kind !== ts2.SyntaxKind.NoSubstitutionTemplateLiteral) {
+      return null;
+    }
+    values.push(element.text.toUpperCase());
+  }
+  return values;
+}
+function reportNearMissReceiver(ctx, expression, sourceFile, fromModule) {
+  const methodName = expression.name?.text;
+  if (!ROUTE_METHODS.has(methodName) && !APP_METHODS.has(methodName)) return;
+  const { checker } = ctx;
+  const receiverType = checker.getTypeAtLocation(expression.expression);
+  const typeName = receiverType?.symbol?.name;
+  if (typeName === "Hono" || typeName === "OpenAPIHono") {
+    ctx.addUncertaintyAt(sourceFile, expression.parent ?? expression, "unsupported-receiver", methodName);
+  }
+}
+function collectCreateRoute(ctx, node, sourceFile, fromModule, events) {
+  const { ts: ts2 } = ctx;
+  const specifier = importSpecifierTextAt(ctx, node.expression);
+  if (specifier !== "@hono/zod-openapi") return;
+  const config = node.arguments?.[0];
+  if (!config || config.kind !== ts2.SyntaxKind.ObjectLiteralExpression) {
+    ctx.addUncertaintyAt(sourceFile, node, "dynamic-path", "createRoute-config");
+    return;
+  }
+  const read = (propertyName) => {
+    for (const property of config.properties ?? []) {
+      if (property.kind === ts2.SyntaxKind.PropertyAssignment && property.name?.kind === ts2.SyntaxKind.Identifier && property.name.text === propertyName) {
+        return property.initializer ?? null;
+      }
+    }
+    return null;
+  };
+  const methodNode = read("method");
+  const pathNode = read("path");
+  const operationIdNode = read("operationId");
+  const definition = {
+    node,
+    module: fromModule,
+    method: methodNode && methodNode.kind === ts2.SyntaxKind.StringLiteral ? methodNode.text.toUpperCase() : null,
+    path: pathNode ? ctx.resolveLiteralString(pathNode, sourceFile)?.value ?? null : null,
+    operationId: operationIdNode && operationIdNode.kind === ts2.SyntaxKind.StringLiteral ? operationIdNode.text : null,
+    request: read("request"),
+    responses: read("responses")
+  };
+  if (definition.method === null) {
+    ctx.addUncertaintyAt(sourceFile, node, "dynamic-method", "createRoute");
+  }
+  if (definition.path === null) {
+    ctx.addUncertaintyAt(sourceFile, node, "dynamic-path", "createRoute");
+  }
+  events.push({
+    kind: "route-definition",
+    node,
+    instance: null,
+    methodName: "createRoute",
+    sourceFile,
+    module: fromModule,
+    order: node.getStart(sourceFile),
+    definition,
+    handlers: [],
+    status: "complete",
+    reasons: []
+  });
+}
+function precollectValidators(ctx) {
+  const { ts: ts2, checker, program } = ctx;
+  for (const sourceFile of program.getSourceFiles()) {
+    if (sourceFile.isDeclarationFile) continue;
+    const fromModule = ctx.normalizeModulePath(sourceFile.fileName);
+    if (fromModule === null) continue;
+    const visit = (node) => {
+      if (node.kind === ts2.SyntaxKind.CallExpression) {
+        const expression = node.expression;
+        const calleeName = expression.kind === ts2.SyntaxKind.Identifier ? expression.text : null;
+        if (calleeName === "validator" || calleeName === "zValidator") {
+          collectValidator(ctx, node, expression, sourceFile, fromModule, null);
+        }
+      }
+      ts2.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+  }
+}
+function collectValidator(ctx, node, expression, sourceFile, fromModule, events) {
+  const { ts: ts2 } = ctx;
+  const methodName = expression.kind === ts2.SyntaxKind.Identifier ? expression.text : expression.name?.text ?? null;
+  const specifier = importSpecifierTextAt(ctx, expression);
+  const expected = methodName === "zValidator" ? "@hono/zod-validator" : "hono/validator";
+  if (specifier !== expected) return;
+  const args = node.arguments ?? [];
+  const target = args[0]?.kind === ts2.SyntaxKind.StringLiteral ? args[0].text : null;
+  if (target === null) {
+    ctx.addUncertaintyAt(sourceFile, node, "unresolved-validator-target", methodName);
+  }
+  const schemaNode = args[1] ?? null;
+  const validator = {
+    node,
+    module: fromModule,
+    target,
+    schemaNode,
+    kind: methodName
+  };
+  ctx.validatorByNode.set(node, validator);
+  if (events !== null) {
+    events.push({
+      kind: "validator",
+      node,
+      instance: null,
+      methodName,
+      sourceFile,
+      module: fromModule,
+      order: node.getStart(sourceFile),
+      validator,
+      handlers: [],
+      status: "complete",
+      reasons: []
+    });
+  }
+}
+function resolveComposition(ctx, events) {
+  const { ts: ts2 } = ctx;
+  const routeEvents = events.filter((event) => event.kind === "route");
+  const mountEvents = events.filter((event) => event.kind === "mount");
+  const useEvents = events.filter((event) => event.kind === "use");
+  const errorEvents = events.filter((event) => event.kind === "error");
+  const openapiEvents = events.filter((event) => event.kind === "openapi");
+  const definitions = events.filter((event) => event.kind === "route-definition");
+  const rootKeyOf = routeTableRootKeysOf(ctx);
+  const mountedRoots = /* @__PURE__ */ new Set();
+  for (const event of mountEvents) {
+    if (!event.childInstance) continue;
+    mountedRoots.add(rootKeyOf(event.childInstance));
+  }
+  const routes = [];
+  for (const event of errorEvents) {
+    const penalty = reachabilityPenaltyOf(event);
+    for (const handler of event.handlers) {
+      const handlerReason = handler.reason ? [handler.reason] : [];
+      const complete = penalty === null && handlerReason.length === 0;
+      ctx.addRecord(makeRecord({
+        relation: "dev.lekalo.hono/handles-error",
+        from: instanceEndpoint(event.instance),
+        to: endpointOf(handler),
+        note: event.methodName,
+        provenance: "detected",
+        confidence: handler.reason === void 0 ? "exact" : "high",
+        status: complete ? "complete" : penalty?.status === "unknown" ? "unknown" : "incomplete",
+        reasons: [...penalty ? [penalty.reason] : [], ...handlerReason],
+        span: ctx.spanOf(event.node, event.sourceFile),
+        revision: ctx.revision,
+        adapterVersion: ctx.adapterVersion,
+        frameworkVersion: ctx.frameworkVersion
+      }));
+    }
+  }
+  for (const app of ctx.apps) {
+    if (app.kind !== "view" || !app.basePath) continue;
+    const owner = app.ownerSymbol ? ctx.instanceBySymbol.get(app.ownerSymbol) : null;
+    ctx.addRecord(makeRecord({
+      relation: "dev.lekalo.hono/base-path",
+      from: owner ? instanceEndpoint(owner) : null,
+      to: instanceEndpoint(app),
+      path: app.basePath,
+      provenance: "detected",
+      confidence: "exact",
+      status: "complete",
+      reasons: [],
+      span: app.span,
+      revision: ctx.revision,
+      adapterVersion: ctx.adapterVersion,
+      frameworkVersion: ctx.frameworkVersion
+    }));
+  }
+  const standaloneOwners = /* @__PURE__ */ new Map();
+  for (const event of routeEvents) {
+    const key = event.instance.key;
+    if (mountedRoots.has(rootKeyOf(event.instance))) continue;
+    if (!standaloneOwners.has(key)) standaloneOwners.set(key, event.instance);
+  }
+  for (const [key, instance] of standaloneOwners) {
+    resolveInto(ctx, routeEvents, instance, "/", {
+      base: standaloneBaseOf(ctx, instance),
+      status: "complete",
+      reasons: [],
+      origin: "standalone"
+    }, routes, 0);
+  }
+  const closureOf = importClosureOf(ctx);
+  const emittedMounts = /* @__PURE__ */ new Set();
+  const rootMounts = mountEvents.filter((event) => {
+    return !isNestedMount(ctx, mountEvents, event, rootKeyOf);
+  });
+  for (const mount of rootMounts) {
+    resolveMount(ctx, mount, mountEvents, routeEvents, routes, 0, [], closureOf, "/", emittedMounts, void 0, rootKeyOf);
+  }
+  emitOpenApiRecords(ctx, openapiEvents, definitions);
+  return { routes, events };
+}
+function importClosureOf(ctx) {
+  const cached = /* @__PURE__ */ new Map();
+  const adjacency = /* @__PURE__ */ new Map();
+  for (const row of ctx.index?.references ?? []) {
+    if (row.role !== "reference" || !row.from || !row.to) continue;
+    if (!adjacency.has(row.from)) adjacency.set(row.from, /* @__PURE__ */ new Set());
+    adjacency.get(row.from).add(row.to);
+  }
+  const closureOf = (module) => {
+    if (cached.has(module)) return cached.get(module);
+    const closure = /* @__PURE__ */ new Set();
+    const stack = [[module, 0]];
+    while (stack.length > 0) {
+      const [current, depth] = stack.pop();
+      if (depth > 16 || closure.has(current)) continue;
+      if (current !== module) closure.add(current);
+      for (const next of adjacency.get(current) ?? []) {
+        stack.push([next, depth + 1]);
+      }
+    }
+    cached.set(module, closure);
+    return closure;
+  };
+  return closureOf;
+}
+function isNestedMount(ctx, mountEvents, event, rootKeyOf) {
+  const parentRoot = rootKeyOf(event.instance);
+  return mountEvents.some((other) => other !== event && other.childInstance && rootKeyOf(other.childInstance) === parentRoot);
+}
+function nodeIsWithin(inner, outer) {
+  return Boolean(inner && outer && inner.getSourceFile() === outer.getSourceFile() && inner.getStart() >= outer.getStart() && inner.getEnd() <= outer.getEnd());
+}
+function standaloneBaseOf(ctx, instance, seen = /* @__PURE__ */ new Set()) {
+  if (!instance || seen.has(instance.key)) return "/";
+  seen.add(instance.key);
+  if (instance.kind === "view") {
+    const owner = instance.ownerSymbol ? ctx.instanceBySymbol.get(instance.ownerSymbol) : null;
+    return joinPaths(standaloneBaseOf(ctx, owner, seen), instance.basePath ?? "/");
+  }
+  if (instance.kind === "alias") {
+    const owner = instance.ownerSymbol ? ctx.instanceBySymbol.get(instance.ownerSymbol) : null;
+    return standaloneBaseOf(ctx, owner, seen);
+  }
+  return "/";
+}
+function mountChildBaseOf(ctx, child) {
+  if (!child) return null;
+  if (child.kind !== "view" && child.kind !== "alias") return "/";
+  const owner = child.ownerSymbol ? ctx.instanceBySymbol.get(child.ownerSymbol) : null;
+  if (child.kind === "view") {
+    if (child.ownerSymbol && !owner) return null;
+    return joinPaths(owner ? standaloneBaseOf(ctx, owner) : "/", child.basePath ?? "/");
+  }
+  if (!owner) return null;
+  return standaloneBaseOf(ctx, owner);
+}
+function routeTableRootOf(ctx, instance) {
+  let current = instance;
+  for (let depth = 0; current && depth < 16; depth += 1) {
+    if (current.kind !== "view" && current.kind !== "alias") return current;
+    const owner = current.ownerSymbol ? ctx.instanceBySymbol.get(current.ownerSymbol) : null;
+    if (!owner) return current;
+    current = owner;
+  }
+  return instance;
+}
+function routeTableRootKeysOf(ctx) {
+  const cache = /* @__PURE__ */ new Map();
+  return (instance) => {
+    if (!instance) return null;
+    const cached = cache.get(instance.key);
+    if (cached !== void 0) return cached;
+    const root = routeTableRootOf(ctx, instance);
+    const rootKey = root ? root.key : instance.key;
+    cache.set(instance.key, rootKey);
+    return rootKey;
+  };
+}
+function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack, closureOf, basePrefix, emittedMounts, chain, rootKeyOf) {
+  if (depth >= HONO_MAX_MOUNT_DEPTH) {
+    ctx.addUncertaintyAt(mount.sourceFile, mount.node, "composition-depth", String(depth));
+    return;
+  }
+  if (stack.some((key) => key === mount.childInstance?.key)) {
+    ctx.addUncertaintyAt(mount.sourceFile, mount.node, "composition-cycle", mount.path ?? "");
+    return;
+  }
+  const parentBase = joinPaths(
+    basePrefix ?? "/",
+    mount.instance.kind === "view" || mount.instance.kind === "alias" ? standaloneBaseOf(ctx, mount.instance) : "/"
+  );
+  const mountBase = joinPaths(parentBase, mount.path ?? "/");
+  const chainNext = [...chain ?? [], mount];
+  const scopeOrigin = `mount:${chainNext.map((entry) => `${entry.module}:${entry.order}`).join(">")}`;
+  if (mount.childInstance) {
+    const child = mount.childInstance;
+    const stackNext = [...stack, child.key];
+    const childRootKey = rootKeyOf(child);
+    const childBase = mountChildBaseOf(ctx, child);
+    const baseScope = childBase === null ? { status: "unknown", reasons: ["unresolved-mount-base"] } : null;
+    if (baseScope) {
+      ctx.addUncertaintyAt(mount.sourceFile, mount.node, "unresolved-mount-base", mount.path ?? "");
+    }
+    if (!emittedMounts.has(mount)) {
+      emittedMounts.add(mount);
+      const mountStatus = mount.status === "unknown" ? "unknown" : mount.status === "complete" ? "complete" : "incomplete";
+      ctx.addRecord(makeRecord({
+        relation: "dev.lekalo.hono/mounts-router",
+        from: instanceEndpoint(mount.instance),
+        to: instanceEndpoint(child),
+        path: mount.path,
+        provenance: "detected",
+        confidence: "exact",
+        status: baseScope ? "unknown" : mountStatus,
+        reasons: baseScope ? [...mount.reasons, ...baseScope.reasons] : mount.reasons,
+        span: ctx.spanOf(mount.node, mount.sourceFile),
+        revision: ctx.revision,
+        adapterVersion: ctx.adapterVersion,
+        frameworkVersion: ctx.frameworkVersion
+      }));
+    }
+    const chainScope = baseScope ? mergeScopes(mountChainScopeOf(chainNext), baseScope) : mountChainScopeOf(chainNext);
+    for (const event of routeEvents) {
+      if (rootKeyOf(event.instance) !== childRootKey) continue;
+      const included = mount.chainTarget && nodeIsWithin(event.node, mount.childExpression) ? { status: "complete", reasons: [] } : classifyChildEvent(mount, event, closureOf);
+      if (included === null) continue;
+      const merged = mergeScopes(included, chainScope);
+      resolveOneRoute(ctx, event, {
+        base: joinPaths(mountBase, standaloneBaseOf(ctx, event.instance)),
+        status: merged.status,
+        reasons: merged.reasons,
+        origin: scopeOrigin,
+        mount,
+        mountChain: chainNext
+      }, routes);
+    }
+    for (const nested of mountEvents) {
+      if (rootKeyOf(nested.instance) !== childRootKey) continue;
+      resolveMount(ctx, nested, mountEvents, routeEvents, routes, depth + 1, stackNext, closureOf, mountBase, emittedMounts, chainNext, rootKeyOf);
+    }
+  } else {
+    if (!emittedMounts.has(mount)) {
+      emittedMounts.add(mount);
+      ctx.addRecord(makeRecord({
+        relation: "dev.lekalo.hono/mounts-router",
+        from: instanceEndpoint(mount.instance),
+        to: null,
+        path: mount.path,
+        provenance: "detected",
+        confidence: "low",
+        status: "unknown",
+        reasons: mount.reasons,
+        span: ctx.spanOf(mount.node, mount.sourceFile),
+        revision: ctx.revision,
+        adapterVersion: ctx.adapterVersion,
+        frameworkVersion: ctx.frameworkVersion
+      }));
+    }
+  }
+}
+function mountChainScopeOf(chain) {
+  let status = "complete";
+  const reasons = [];
+  for (const mount of chain) {
+    if (mount.status === "unknown") status = "unknown";
+    else if (mount.status !== "complete" && status !== "unknown") status = "incomplete";
+    reasons.push(...mount.reasons);
+  }
+  return { status, reasons: [...new Set(reasons)] };
+}
+function mergeScopes(left, right) {
+  const status = left.status === "unknown" || right.status === "unknown" ? "unknown" : left.status === "complete" && right.status === "complete" ? "complete" : "incomplete";
+  return { status, reasons: [.../* @__PURE__ */ new Set([...left.reasons, ...right.reasons])] };
+}
+function classifyChildEvent(mount, event, closureOf) {
+  if (event.module === mount.module) {
+    return event.order < mount.order ? { status: "complete", reasons: [] } : { status: "incomplete", reasons: ["post-mount-registration"] };
+  }
+  const mountClosure = closureOf(mount.module);
+  const eventClosure = closureOf(event.module);
+  const mountBeforeEvent = mountClosure.has(event.module);
+  const eventBeforeMount = eventClosure.has(mount.module);
+  if (mountBeforeEvent && eventBeforeMount) {
+    return { status: "incomplete", reasons: ["composition-cycle"] };
+  }
+  if (mountBeforeEvent) {
+    return { status: "complete", reasons: [] };
+  }
+  if (eventBeforeMount) {
+    return { status: "incomplete", reasons: ["post-mount-registration"] };
+  }
+  return { status: "incomplete", reasons: ["cross-module-registration-order"] };
+}
+function resolveInto(ctx, routeEvents, instance, _instanceBase, scope, routes, depth) {
+  if (depth >= HONO_MAX_MOUNT_DEPTH) return;
+  for (const event of routeEvents) {
+    if (event.instance.key !== instance.key) continue;
+    if (scope.origin.startsWith("mount:") && event.resolvedScopes?.has(scope.origin)) continue;
+    resolveOneRoute(ctx, event, scope, routes);
+  }
+}
+function resolveOneRoute(ctx, event, scope, routes) {
+  if (scope.origin.startsWith("mount:") && event.resolvedScopes?.has(scope.origin)) return;
+  const methods = event.methods ?? [null];
+  const fullPath = scope.origin === "standalone" ? joinPaths(scope.base, event.path ?? "/") : joinPaths(scope.base, event.path ?? "/");
+  const reasons = [...event.reasons ?? [], ...scope.reasons ?? []];
+  const status = event.status === "unknown" ? "unknown" : scope.status === "complete" && reasons.length === 0 ? "complete" : event.status === "complete" ? "incomplete" : event.status;
+  const terminal = event.handlers.length > 0 ? event.handlers[event.handlers.length - 1] : null;
+  const resolved = {
+    event,
+    instance: event.instance,
+    mount: scope.mount ?? null,
+    mountChain: scope.mountChain ?? null,
+    rootInstance: scope.mountChain?.[0]?.instance ?? event.instance,
+    path: fullPath,
+    methods: methods.filter(Boolean),
+    terminal,
+    middleware: event.handlers.slice(0, Math.max(0, event.handlers.length - 1)),
+    status,
+    reasons,
+    span: ctx.spanOf(event.node, event.sourceFile),
+    module: event.module,
+    order: event.order,
+    origin: scope.origin
+  };
+  routes.push(resolved);
+  if (scope.origin.startsWith("mount:")) {
+    event.resolvedScopes ??= /* @__PURE__ */ new Set();
+    event.resolvedScopes.add(scope.origin);
+  }
+  if (!terminal) {
+    ctx.addUncertaintyAt(event.sourceFile, event.node, "unknown-handler", "missing-handler");
+    return;
+  }
+  for (const method of methods.length > 0 ? methods : [null]) {
+    ctx.addRecord(makeRecord({
+      relation: "dev.lekalo.hono/route-handler",
+      from: instanceEndpoint(event.instance),
+      to: endpointOf(terminal),
+      method,
+      path: fullPath,
+      ordinal: event.handlers.length - 1,
+      provenance: "detected",
+      confidence: confidenceOf(event, terminal, status),
+      status,
+      reasons: dedupe(reasons),
+      span: resolved.span,
+      revision: ctx.revision,
+      adapterVersion: ctx.adapterVersion,
+      frameworkVersion: ctx.frameworkVersion
+    }));
+  }
+}
+function confidenceOf(event, terminal, status) {
+  if (status === "unknown") return "unknown";
+  if (event.pathKind === "literal" && terminal.kind === "reference" && terminal.indexed) return "exact";
+  if (event.pathKind === "const-alias" || terminal.kind === "local") return "high";
+  return terminal.kind === "inline" ? "exact" : "medium";
+}
+function dedupe(values) {
+  return [...new Set(values)];
+}
+function instanceEndpoint(instance) {
+  if (!instance) return null;
+  return {
+    module: instance.module,
+    native: instance.native,
+    name: instance.name,
+    indexed: instance.indexed,
+    signature: null
+  };
+}
+function endpointOf(handler) {
+  if (!handler) return null;
+  return {
+    module: handler.module,
+    native: handler.native,
+    name: handler.name,
+    indexed: handler.indexed === true,
+    signature: handler.signature ?? null,
+    digest: handler.digest ?? null
+  };
+}
+function emitOpenApiRecords(ctx, openapiEvents, definitions) {
+  const definitionByNode = new Map(definitions.map((event) => [event.definition.node, event.definition]));
+  for (const event of definitions) {
+    const definition = event.definition;
+    const definitionSource = event.sourceFile;
+    const structuralReasons = [];
+    if (definition.method === null) structuralReasons.push("dynamic-method");
+    if (definition.path === null) structuralReasons.push("dynamic-path");
+    const operationReasons = definition.operationId ? [] : ["operationid-unknown"];
+    ctx.addRecord(makeRecord({
+      relation: "dev.lekalo.hono/openapi-operation",
+      from: {
+        module: definition.module,
+        native: ctx.inlineNative(definitionSource, definition.node, "openapi"),
+        name: "createRoute",
+        indexed: false
+      },
+      to: null,
+      method: definition.method,
+      path: definition.path,
+      note: definition.operationId ?? "operationid-unknown",
+      provenance: "detected",
+      confidence: definition.operationId ? "exact" : "medium",
+      status: structuralReasons.length === 0 && operationReasons.length === 0 ? "complete" : "incomplete",
+      reasons: [...structuralReasons, ...operationReasons],
+      span: ctx.spanOf(definition.node, definitionSource),
+      revision: ctx.revision,
+      adapterVersion: ctx.adapterVersion,
+      frameworkVersion: ctx.frameworkVersion
+    }));
+  }
+  for (const event of openapiEvents) {
+    const definitionNode = event.routeDefinition;
+    const resolved = definitionNode ? definitionByNode.get(definitionCallNode(ctx, definitionNode)) ?? null : null;
+    const definition = resolved && resolved.method !== null && resolved.path !== null ? resolved : null;
+    const definitionSeen = resolved !== null;
+    for (const handler of event.handlers) {
+      ctx.addRecord(makeRecord({
+        relation: "dev.lekalo.hono/openapi-operation",
+        from: instanceEndpoint(event.instance),
+        to: endpointOf(handler),
+        method: definition?.method ?? null,
+        path: definition?.path ?? null,
+        note: definition?.operationId ?? (definitionSeen ? "definition-incomplete" : "definition-unresolved"),
+        provenance: "detected",
+        confidence: definition ? "exact" : "low",
+        status: definition && handler.reason === void 0 ? "complete" : "incomplete",
+        reasons: definition ? handler.reason ? [handler.reason] : [] : definitionSeen ? [
+          ...resolved.method === null ? ["dynamic-method"] : [],
+          ...resolved.path === null ? ["dynamic-path"] : []
+        ] : ["unknown-handler"],
+        span: ctx.spanOf(event.node, event.sourceFile),
+        revision: ctx.revision,
+        adapterVersion: ctx.adapterVersion,
+        frameworkVersion: ctx.frameworkVersion
+      }));
+    }
+  }
+}
+function definitionCallNode(ctx, node) {
+  const { ts: ts2 } = ctx;
+  if (!node) return null;
+  if (node.kind === ts2.SyntaxKind.CallExpression) return node;
+  if (node.kind === ts2.SyntaxKind.Identifier) {
+    const { checker } = ctx;
+    const symbol = checker.getSymbolAtLocation(node);
+    for (const declaration of symbol?.declarations ?? []) {
+      if (declaration.kind === ts2.SyntaxKind.VariableDeclaration && declaration.initializer?.kind === ts2.SyntaxKind.CallExpression) {
+        return declaration.initializer;
+      }
+    }
+  }
+  return null;
+}
+
+// src/hono-middleware.mjs
+var ROLE_TAGS = [
+  ["@lekalo-auth", "auth"],
+  ["@lekalo-tenant", "tenant"],
+  ["@lekalo-context", "context"],
+  ["@lekalo-logging", "logging"],
+  ["@lekalo-custom", "custom"]
+];
+var MAX_BODY_NODES = 4096;
+function buildMiddlewareChains(ctx, routes, registrations) {
+  const useEvents = registrations.filter((event) => event.kind === "use");
+  for (const route of routes) {
+    const composed = composeChain(route, useEvents);
+    const chain = composed.slice(0, HONO_MAX_CHAIN);
+    if (composed.length > HONO_MAX_CHAIN) {
+      ctx.addUncertaintyAt(route.event.sourceFile, route.event.node, "chain-budget", String(composed.length));
+    }
+    const chainLength = chain.length;
+    for (const event of useEvents) {
+      if (event.instance.key !== route.instance.key) continue;
+      if (event.module !== route.event.module || event.order < route.event.order) continue;
+      if (applicabilityOf(event, route) === "not-applicable") continue;
+      ctx.addUncertaintyAt(event.sourceFile, event.node, "post-route-use", route.path ?? "/");
+    }
+    let ordinal = 0;
+    const contextIdentities = /* @__PURE__ */ new Map();
+    for (const member of chain) {
+      emitMiddlewareRecord(ctx, route, member, ordinal, chainLength);
+      emitContextRecords(ctx, route, member.handler, contextIdentities);
+      ordinal += 1;
+    }
+    if (route.terminal) {
+      emitContextRecords(ctx, route, route.terminal, contextIdentities);
+    }
+  }
+}
+function composeChain(route, useEvents) {
+  const chain = [];
+  const seen = /* @__PURE__ */ new Set();
+  const consider = (event, provenance) => {
+    if (seen.has(event)) return;
+    seen.add(event);
+    const applicability = applicabilityOf(event, route);
+    if (applicability === "not-applicable") return;
+    for (const handler of event.handlers) {
+      chain.push({
+        handler,
+        kind: handler.kind === "validator" ? "validator" : "middleware",
+        useEvent: event,
+        provenance,
+        applicability
+      });
+    }
+  };
+  const mountChain = route.mountChain ?? (route.mount ? [route.mount] : []);
+  for (const mount of mountChain) {
+    const parentUses = useEvents.filter((event) => event.instance.key === mount.instance.key && event.module === mount.module && event.order < mount.order).sort((left, right) => left.order - right.order);
+    for (const event of parentUses) {
+      consider(event, "parent-use");
+    }
+  }
+  const own = useEvents.filter((event) => event.instance.key === route.instance.key && (event.module !== route.event.module || event.order < route.event.order)).sort((left, right) => left.order - right.order);
+  for (const event of own) {
+    consider(event, "use");
+  }
+  for (const handler of route.middleware ?? []) {
+    chain.push({
+      handler,
+      kind: handler.kind === "validator" ? "validator" : "middleware",
+      useEvent: null,
+      provenance: "inline",
+      applicability: "applicable"
+    });
+  }
+  return chain;
+}
+function applicabilityOf(event, route) {
+  if (event.pathFilterKind === "unknown") return "conditional";
+  const filter = event.pathFilter;
+  if (filter === null || filter === void 0) return "applicable";
+  if (filter.includes("*") || filter.includes(":") || filter.includes("?")) {
+    return "conditional";
+  }
+  const target = route.path ?? "/";
+  if (target === filter || target.startsWith(filter.endsWith("/") ? filter : `${filter}/`)) {
+    return "applicable";
+  }
+  return "not-applicable";
+}
+function emitMiddlewareRecord(ctx, route, member, ordinal, chainLength) {
+  const handler = member.handler;
+  if (handler.kind === "validator") return;
+  const body = functionBodyOf(ctx, handler);
+  const nextSymbol = nextParamSymbolOf(ctx, handler);
+  const callsNext = body ? containsNextCall(ctx, body, nextSymbol) : false;
+  const role = explicitRoleOf(ctx, handler);
+  const reasons = [];
+  let status = "complete";
+  if (member.applicability === "conditional") {
+    reasons.push("conditional-applicability");
+    status = "incomplete";
+  }
+  if (member.useEvent?.pathFilterKind === "unknown") {
+    reasons.push("dynamic-path-filter");
+    status = "incomplete";
+  }
+  const reach = member.useEvent ? reachabilityPenaltyOf(member.useEvent) : null;
+  if (reach) {
+    reasons.push(reach.reason);
+    status = reach.status === "unknown" ? "unknown" : "incomplete";
+  }
+  if (!callsNext) {
+    reasons.push("no-next-call-detected");
+    status = status === "complete" ? "incomplete" : status;
+  }
+  if (handler.reason) {
+    reasons.push(handler.reason);
+    status = "incomplete";
+  }
+  const evidence = mergeRouteEvidence(route, status, reasons);
+  ctx.addRecord(makeRecord({
+    relation: "dev.lekalo.hono/uses-middleware",
+    from: instanceEndpoint(route.instance),
+    to: endpointOf(handler),
+    method: route.methods[0] ?? null,
+    path: route.path,
+    ordinal,
+    unwindOrdinal: chainLength - ordinal,
+    role,
+    note: `${member.provenance};next=${callsNext ? "detected" : "absent"}`,
+    provenance: role !== null ? "explicit" : "detected",
+    confidence: member.applicability === "conditional" ? "medium" : "exact",
+    status: evidence.status,
+    reasons: evidence.reasons,
+    span: ctx.spanOf(handler.node, handler.node.getSourceFile()),
+    revision: ctx.revision,
+    adapterVersion: ctx.adapterVersion,
+    frameworkVersion: ctx.frameworkVersion
+  }));
+}
+function nextParamSymbolOf(ctx, handler) {
+  const { ts: ts2, checker } = ctx;
+  let declaration = null;
+  if (handler.node && (handler.node.kind === ts2.SyntaxKind.ArrowFunction || handler.node.kind === ts2.SyntaxKind.FunctionExpression)) {
+    declaration = handler.node;
+  } else if (handler.indexed && handler.symbol) {
+    declaration = handler.symbol.declarations?.find((candidate) => candidate.body && (candidate.kind === ts2.SyntaxKind.FunctionDeclaration || candidate.kind === ts2.SyntaxKind.MethodDeclaration || candidate.kind === ts2.SyntaxKind.ArrowFunction || candidate.kind === ts2.SyntaxKind.FunctionExpression)) ?? null;
+  }
+  const second = declaration?.parameters?.[1]?.name;
+  if (!second || second.kind !== ts2.SyntaxKind.Identifier) return null;
+  return checker.getSymbolAtLocation(second) ?? null;
+}
+function containsNextCall(ctx, body, nextSymbol) {
+  if (!nextSymbol) return false;
+  const { ts: ts2, checker } = ctx;
+  let found = false;
+  let visited = 0;
+  const visit = (node) => {
+    if (found || visited > MAX_BODY_NODES) return;
+    visited += 1;
+    if (node.kind === ts2.SyntaxKind.CallExpression && node.expression.kind === ts2.SyntaxKind.Identifier && checker.getSymbolAtLocation(node.expression) === nextSymbol) {
+      found = true;
+      return;
+    }
+    ts2.forEachChild(node, visit);
+  };
+  visit(body);
+  return found;
+}
+function explicitRoleOf(ctx, handler) {
+  const { ts: ts2 } = ctx;
+  const pieces = [];
+  if (handler.indexed && handler.symbol) {
+    const display = ctx.symbolRowOf(handler.symbol)?.jsdoc;
+    if (typeof display === "string") pieces.push(display);
+  }
+  const declaration = handler.symbol?.declarations?.[0] ?? (handler.node && (handler.node.kind === ts2.SyntaxKind.ArrowFunction || handler.node.kind === ts2.SyntaxKind.FunctionExpression) ? handler.node : null);
+  if (declaration && ctx.ts.getJSDocCommentsAndTags) {
+    const comments = ctx.ts.getJSDocCommentsAndTags(declaration);
+    pieces.push(...comments.map((piece) => piece.getText?.() ?? ""));
+  }
+  const text = pieces.join("\n");
+  if (text === "") return null;
+  for (const [tag, role] of ROLE_TAGS) {
+    if (text.includes(tag)) return role;
+  }
+  return null;
+}
+function emitContextRecords(ctx, route, handler, contextIdentities) {
+  const body = functionBodyOf(ctx, handler);
+  if (!body) return;
+  const handlerKey = canonicalHonoText(endpointOf(handler));
+  const contextParameter = contextParamSymbolOf(ctx, handler);
+  if (!contextParameter) return;
+  const { ts: ts2 } = ctx;
+  let visited = 0;
+  const visit = (node) => {
+    if (visited > MAX_BODY_NODES) return;
+    visited += 1;
+    if (node.kind === ts2.SyntaxKind.CallExpression && node.expression.kind === ts2.SyntaxKind.PropertyAccessExpression) {
+      const methodName = node.expression.name?.text;
+      const receiver = node.expression.expression;
+      if ((methodName === "set" || methodName === "get") && resolvesToContextSymbol(ctx, receiver, contextParameter)) {
+        const keyNode = node.arguments?.[0] ?? null;
+        const key = keyNode && keyNode.kind === ts2.SyntaxKind.StringLiteral ? keyNode.text : null;
+        emitContextKeyRecord(
+          ctx,
+          route,
+          handler,
+          node,
+          methodName === "set" ? "context-write" : "context-read",
+          key,
+          handlerKey,
+          contextIdentities
+        );
+      }
+    } else if ((node.kind === ts2.SyntaxKind.PropertyAccessExpression || node.kind === ts2.SyntaxKind.ElementAccessExpression) && node.expression?.kind === ts2.SyntaxKind.PropertyAccessExpression && node.expression.name?.text === "var" && resolvesToContextSymbol(ctx, node.expression.expression, contextParameter)) {
+      const key = node.kind === ts2.SyntaxKind.PropertyAccessExpression ? node.name?.kind === ts2.SyntaxKind.Identifier ? node.name.text : null : node.argument?.kind === ts2.SyntaxKind.StringLiteral ? node.argument.text : null;
+      emitContextKeyRecord(ctx, route, handler, node, "context-read", key, handlerKey, contextIdentities);
+    }
+    ts2.forEachChild(node, visit);
+  };
+  visit(body);
+}
+function emitContextKeyRecord(ctx, route, handler, node, relation, key, handlerKey, contextIdentities) {
+  if (key === null || key === void 0) {
+    ctx.addUncertaintyAt(node.getSourceFile(), node, "dynamic-context-key", relation);
+    return;
+  }
+  const span = ctx.spanOf(node, node.getSourceFile());
+  const identity = `${relation}|${key}|${span.path}:${span.startLine}:${span.startColumn}:${span.endLine}:${span.endColumn}`;
+  let seen = contextIdentities.get(handlerKey);
+  if (seen === void 0) {
+    seen = /* @__PURE__ */ new Set();
+    contextIdentities.set(handlerKey, seen);
+  }
+  if (seen.has(identity)) return;
+  seen.add(identity);
+  const evidence = mergeRouteEvidence(route, "complete", []);
+  ctx.addRecord(makeRecord({
+    relation: `dev.lekalo.hono/${relation}`,
+    from: endpointOf(handler),
+    to: null,
+    path: route.path,
+    method: route.methods[0] ?? null,
+    note: key.slice(0, 128),
+    provenance: "detected",
+    confidence: "exact",
+    status: evidence.status,
+    reasons: evidence.reasons,
+    span: ctx.spanOf(node, node.getSourceFile()),
+    revision: ctx.revision,
+    adapterVersion: ctx.adapterVersion,
+    frameworkVersion: ctx.frameworkVersion
+  }));
+}
+
+// src/hono-http.mjs
+var RESPONSE_METHODS = /* @__PURE__ */ new Set(["json", "text", "html", "body", "render"]);
+var DEFAULT_STATUS = { json: 200, text: 200, html: 200, body: 200, render: 200 };
+var MAX_BODY_NODES2 = 4096;
+function collectHttpEvidence(ctx, routes, registrations) {
+  const { ts: ts2 } = ctx;
+  for (const route of routes) {
+    const chainMembers = [...route.middleware ?? [], route.terminal].filter(Boolean);
+    for (let index = 0; index < (route.middleware ?? []).length; index += 1) {
+      const member = route.middleware[index];
+      if (member.kind === "validator") {
+        emitValidatorRecord(ctx, route, member, index);
+      }
+    }
+    if (route.terminal) {
+      const sites = collectResponseSites(ctx, route.terminal);
+      for (const site of sites) {
+        emitResponseRecord(ctx, route, route.terminal, site);
+      }
+      collectThrownErrors(ctx, route, route.terminal);
+      emitRouteClassification(ctx, route, sites);
+    }
+  }
+}
+function emitValidatorRecord(ctx, route, member, ordinal) {
+  const validator = member.validator;
+  const schemaNode = validator.schemaNode;
+  let to = null;
+  let status = "complete";
+  let reasons = [];
+  let confidence = "exact";
+  if (schemaNode) {
+    const { ts: ts2, checker } = ctx;
+    const target = schemaNode.kind === ts2.SyntaxKind.PropertyAccessExpression ? schemaNode.name : schemaNode;
+    let symbol = target.kind === ts2.SyntaxKind.Identifier ? checker.getSymbolAtLocation(target) : null;
+    if (symbol) {
+      for (let depth = 0; depth < 8; depth += 1) {
+        if (symbol.flags & ts2.SymbolFlags.Alias) {
+          try {
+            symbol = checker.getAliasedSymbol(symbol);
+          } catch {
+            break;
+          }
+        } else {
+          break;
+        }
+      }
+    }
+    if (symbol) {
+      const row = ctx.symbolRowOf(symbol);
+      if (row) {
+        to = {
+          module: row.module,
+          native: row.native,
+          name: row.qualifiedName,
+          indexed: true,
+          signature: row.signature,
+          digest: ctx.digestOfNode(symbol.declarations?.[0] ?? schemaNode, schemaNode.getSourceFile())
+        };
+      } else {
+        to = {
+          module: ctx.normalizeModulePath(schemaNode.getSourceFile().fileName),
+          native: ctx.inlineNative(schemaNode.getSourceFile(), schemaNode, "schema"),
+          name: symbol.name ?? "schema",
+          indexed: false,
+          digest: ctx.digestOfNode(schemaNode, schemaNode.getSourceFile())
+        };
+        confidence = "high";
+      }
+    } else if (schemaNode.kind === ts2.SyntaxKind.CallExpression || schemaNode.kind === ts2.SyntaxKind.ArrowFunction || schemaNode.kind === ts2.SyntaxKind.FunctionExpression) {
+      to = {
+        module: ctx.normalizeModulePath(schemaNode.getSourceFile().fileName),
+        native: ctx.inlineNative(schemaNode.getSourceFile(), schemaNode, "schema"),
+        name: "inline-schema",
+        indexed: false,
+        digest: ctx.digestOfNode(schemaNode, schemaNode.getSourceFile())
+      };
+      confidence = "high";
+    } else {
+      status = "incomplete";
+      reasons = ["unresolved-schema"];
+      confidence = "low";
+      ctx.addUncertaintyAt(validator.node.getSourceFile(), validator.node, "unresolved-schema", validator.kind);
+    }
+  } else {
+    status = "incomplete";
+    reasons = ["unresolved-schema"];
+    confidence = "low";
+  }
+  const evidence = mergeRouteEvidence(route, status, reasons);
+  ctx.addRecord(makeRecord({
+    relation: "dev.lekalo.hono/validates-request",
+    from: instanceEndpoint(route.instance),
+    to,
+    method: route.methods[0] ?? null,
+    path: route.path,
+    ordinal,
+    note: `${validator.kind}:${validator.target ?? "target-unknown"}`,
+    provenance: "detected",
+    confidence,
+    status: evidence.status,
+    reasons: evidence.reasons,
+    span: ctx.spanOf(validator.node, validator.node.getSourceFile()),
+    revision: ctx.revision,
+    adapterVersion: ctx.adapterVersion,
+    frameworkVersion: ctx.frameworkVersion
+  }));
+}
+function collectResponseSites(ctx, handler) {
+  const body = functionBodyOf(ctx, handler);
+  if (!body) return [];
+  const contextParameter = contextParamSymbolOf(ctx, handler);
+  if (!contextParameter) return [];
+  const { ts: ts2 } = ctx;
+  const sites = [];
+  let currentStatus = null;
+  let visited = 0;
+  const visit = (node) => {
+    if (visited > MAX_BODY_NODES2) return;
+    visited += 1;
+    if (node.kind === ts2.SyntaxKind.CallExpression && node.expression.kind === ts2.SyntaxKind.PropertyAccessExpression) {
+      const method = node.expression.name?.text;
+      const receiver = node.expression.expression;
+      if (resolvesToContextSymbol(ctx, receiver, contextParameter)) {
+        if (method === "status") {
+          const literal = literalNumber(node.arguments?.[0] ?? null, ts2);
+          if (literal !== null) currentStatus = literal;
+          else ctx.addUncertaintyAt(node.getSourceFile(), node, "dynamic-status", "c.status");
+        } else if (RESPONSE_METHODS.has(method)) {
+          const statusArg = method === "render" ? null : literalNumber(node.arguments?.[1] ?? null, ts2);
+          sites.push({
+            node,
+            method,
+            status: statusArg ?? currentStatus ?? DEFAULT_STATUS[method],
+            statusIsDefault: statusArg === null && currentStatus === null,
+            jsx: method === "html" && isJsxNode(ctx, node.arguments?.[0] ?? null) || method === "render",
+            jsxReturn: false
+          });
+        }
+      }
+    } else if (node.kind === ts2.SyntaxKind.ReturnStatement && isJsxNode(ctx, node.expression ?? null)) {
+      sites.push({
+        node,
+        method: "jsx-return",
+        status: 200,
+        statusIsDefault: true,
+        jsx: true,
+        jsxReturn: true
+      });
+    }
+    ts2.forEachChild(node, visit);
+  };
+  visit(body);
+  return sites;
+}
+function literalNumber(node, ts2) {
+  return node && node.kind === ts2.SyntaxKind.NumericLiteral ? Number(node.text) : null;
+}
+function isJsxNode(ctx, node) {
+  if (!node) return false;
+  const { ts: ts2 } = ctx;
+  return node.kind === ts2.SyntaxKind.JsxElement || node.kind === ts2.SyntaxKind.JsxSelfClosingElement || node.kind === ts2.SyntaxKind.JsxFragment;
+}
+function facetOfSite(site) {
+  if (site.method === "json" || site.method === "text" || site.method === "body") return "api";
+  if (site.method === "html") return site.jsx ? "ssr" : "html";
+  if (site.method === "render") return "ssr";
+  if (site.method === "jsx-return") return "ssr";
+  return "unknown";
+}
+function emitResponseRecord(ctx, route, handler, site) {
+  const facet = facetOfSite(site);
+  const evidence = mergeRouteEvidence(route, "complete", []);
+  ctx.addRecord(makeRecord({
+    relation: "dev.lekalo.hono/returns-response",
+    from: instanceEndpoint(route.instance),
+    to: endpointOf(handler),
+    method: route.methods[0] ?? null,
+    path: route.path,
+    facet,
+    httpStatus: site.status,
+    note: `${site.method}${site.statusIsDefault ? ":default-status" : ""}`,
+    provenance: "detected",
+    confidence: site.statusIsDefault ? "high" : "exact",
+    status: evidence.status,
+    reasons: evidence.reasons,
+    span: ctx.spanOf(site.node, site.node.getSourceFile()),
+    revision: ctx.revision,
+    adapterVersion: ctx.adapterVersion,
+    frameworkVersion: ctx.frameworkVersion
+  }));
+}
+function emitRouteClassification(ctx, route, sites) {
+  const facets = new Set(sites.map(facetOfSite).filter((facet2) => facet2 !== "unknown"));
+  let facet;
+  let status = "complete";
+  const reasons = [];
+  if (facets.size === 0) {
+    facet = "unknown";
+    status = "incomplete";
+    reasons.push("no-response-evidence");
+  } else if (facets.size === 1) {
+    facet = [...facets][0];
+  } else if (facets.has("api") && (facets.has("ssr") || facets.has("html"))) {
+    facet = "mixed";
+  } else {
+    facet = "mixed";
+  }
+  route.facet = facet;
+  const evidence = mergeRouteEvidence(route, status, reasons);
+  ctx.addRecord(makeRecord({
+    relation: "dev.lekalo.hono/returns-response",
+    from: instanceEndpoint(route.instance),
+    to: endpointOf(route.terminal),
+    method: route.methods[0] ?? null,
+    path: route.path,
+    facet,
+    note: "route-classification",
+    provenance: "detected",
+    confidence: facet === "unknown" ? "low" : "high",
+    status: evidence.status,
+    reasons: evidence.reasons,
+    span: route.span,
+    revision: ctx.revision,
+    adapterVersion: ctx.adapterVersion,
+    frameworkVersion: ctx.frameworkVersion
+  }));
+}
+function collectThrownErrors(ctx, route, handler) {
+  const body = functionBodyOf(ctx, handler);
+  if (!body) return;
+  const { ts: ts2, checker } = ctx;
+  let visited = 0;
+  const visit = (node) => {
+    if (visited > MAX_BODY_NODES2) return;
+    visited += 1;
+    if (node.kind === ts2.SyntaxKind.ThrowStatement) {
+      const expression = node.expression;
+      const target = expression?.kind === ts2.SyntaxKind.NewExpression ? expression.expression : expression;
+      if (target && (target.kind === ts2.SyntaxKind.Identifier || target.kind === ts2.SyntaxKind.PropertyAccessExpression)) {
+        const symbolNode = target.kind === ts2.SyntaxKind.PropertyAccessExpression ? target.name : target;
+        const symbol = checker.getSymbolAtLocation(symbolNode);
+        const importedFrom = symbol ? importSpecifierTextAt(ctx, target) : null;
+        if (importedFrom === "hono/http-exception") {
+          const statusArgument = expression?.kind === ts2.SyntaxKind.NewExpression ? expression.arguments?.[0]?.kind === ts2.SyntaxKind.NumericLiteral ? Number(expression.arguments[0].text) : null : null;
+          const thrownStatus = statusArgument !== null ? "complete" : "incomplete";
+          const thrownReasons = statusArgument !== null ? [] : ["dynamic-status"];
+          const evidence = mergeRouteEvidence(route, thrownStatus, thrownReasons);
+          ctx.addRecord(makeRecord({
+            relation: "dev.lekalo.hono/handles-error",
+            from: instanceEndpoint(route.instance),
+            to: {
+              module: null,
+              native: null,
+              name: "HTTPException",
+              indexed: false
+            },
+            method: route.methods[0] ?? null,
+            path: route.path,
+            httpStatus: statusArgument,
+            note: "throw",
+            provenance: "detected",
+            confidence: statusArgument !== null ? "exact" : "medium",
+            status: evidence.status,
+            reasons: evidence.reasons,
+            span: ctx.spanOf(node, node.getSourceFile()),
+            revision: ctx.revision,
+            adapterVersion: ctx.adapterVersion,
+            frameworkVersion: ctx.frameworkVersion
+          }));
+        }
+      }
+    }
+    ts2.forEachChild(node, visit);
+  };
+  visit(body);
+}
+
+// src/hono-tests.mjs
+var TEST_CALLEES = /* @__PURE__ */ new Set(["describe", "it", "test"]);
+function isTestModule(path) {
+  return /(^|\/)(test|spec)\.[cm]?[jt]sx?$/.test(path) || /\.(test|spec)\.[cm]?[jt]sx?$/.test(path) || /(^|\/)__tests__\//.test(path);
+}
+function collectTestBindings(ctx, routes) {
+  const { ts: ts2, checker, program } = ctx;
+  for (const sourceFile of program.getSourceFiles()) {
+    if (sourceFile.isDeclarationFile) continue;
+    const fromModule = ctx.normalizeModulePath(sourceFile.fileName);
+    if (fromModule === null || !isTestModule(fromModule)) continue;
+    const testScopes = [];
+    const clientVariables = /* @__PURE__ */ new Map();
+    const visit = (node) => {
+      if (node.kind === ts2.SyntaxKind.CallExpression) {
+        const expression = node.expression;
+        const calleeName = expression.kind === ts2.SyntaxKind.Identifier ? expression.text : expression.kind === ts2.SyntaxKind.PropertyAccessExpression ? expression.name?.text : null;
+        if (calleeName && TEST_CALLEES.has(calleeName)) {
+          const nameNode = node.arguments?.[0];
+          const name = nameNode && nameNode.kind === ts2.SyntaxKind.StringLiteral ? nameNode.text : null;
+          testScopes.push(name);
+          const callback = node.arguments?.find((argument) => argument.kind === ts2.SyntaxKind.ArrowFunction || argument.kind === ts2.SyntaxKind.FunctionExpression);
+          if (callback) {
+            ts2.forEachChild(callback, visit);
+          }
+          testScopes.pop();
+          return;
+        }
+        if (calleeName === "testClient") {
+          collectTestClient(ctx, node, sourceFile, fromModule, routes, testScopes, clientVariables);
+        } else if (calleeName === "request" && expression.kind === ts2.SyntaxKind.PropertyAccessExpression) {
+          collectAppRequest(ctx, node, expression, sourceFile, fromModule, routes, testScopes);
+        } else if (calleeName && expression.kind === ts2.SyntaxKind.PropertyAccessExpression && ["get", "post", "put", "patch", "delete", "options", "head"].includes(calleeName)) {
+          collectClientVerb(
+            ctx,
+            node,
+            expression,
+            calleeName,
+            sourceFile,
+            fromModule,
+            routes,
+            testScopes,
+            clientVariables
+          );
+        }
+      }
+      ts2.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+  }
+}
+function collectTestClient(ctx, node, sourceFile, fromModule, routes, testScopes, clientVariables) {
+  const { ts: ts2, checker } = ctx;
+  const specifier = importSpecifierTextAt(ctx, node.expression);
+  if (specifier !== "hono/testing") return;
+  const appExpression = node.arguments?.[0] ?? null;
+  const instance = appExpression ? ctx.instanceOfExpression(appExpression, sourceFile) : null;
+  if (!instance) {
+    ctx.addUncertaintyAt(sourceFile, node, "unknown-test-app", "testClient");
+    return;
+  }
+  emitRouteTest(ctx, {
+    module: fromModule,
+    sourceFile,
+    node,
+    testScopes,
+    instance,
+    route: null,
+    note: "test-client",
+    terminal: null,
+    method: null,
+    path: null,
+    status: "complete",
+    reasons: [],
+    confidence: "exact"
+  });
+  const declaration = node.parent;
+  if (declaration?.kind === ts2.SyntaxKind.VariableDeclaration && declaration.name?.kind === ts2.SyntaxKind.Identifier) {
+    const symbol = checker.getSymbolAtLocation(declaration.name);
+    if (symbol) clientVariables.set(symbol, instance);
+  }
+}
+function collectAppRequest(ctx, node, expression, sourceFile, fromModule, routes, testScopes) {
+  const { ts: ts2 } = ctx;
+  const instance = ctx.instanceOfExpression(expression.expression, sourceFile);
+  if (!instance) {
+    ctx.addUncertaintyAt(sourceFile, node, "unknown-test-app", "request");
+    return;
+  }
+  const pathNode = node.arguments?.[0] ?? null;
+  const path = pathNode ? ctx.resolveLiteralString(pathNode, sourceFile) : null;
+  const init = node.arguments?.[1] ?? null;
+  const method = init && init.kind === ts2.SyntaxKind.ObjectLiteralExpression ? literalMethodOf(ctx, init) : null;
+  if (path === null) {
+    ctx.addUncertaintyAt(sourceFile, node, "dynamic-test-target", "request-path");
+    return;
+  }
+  emitMatchedRouteTest(ctx, {
+    module: fromModule,
+    sourceFile,
+    node,
+    testScopes,
+    instance,
+    method: method ?? "GET",
+    path: path.value,
+    // An absent init is the documented default (GET); only a present
+    // init without a literal method is dynamic.
+    methodResolved: init ? method !== null : true,
+    pathResolved: true
+  });
+}
+function collectClientVerb(ctx, node, expression, verb, sourceFile, fromModule, routes, testScopes, clientVariables) {
+  const { ts: ts2, checker } = ctx;
+  const receiver = expression.expression;
+  if (receiver.kind !== ts2.SyntaxKind.Identifier) return;
+  const symbol = checker.getSymbolAtLocation(receiver);
+  const instance = symbol ? clientVariables.get(symbol) : null;
+  if (!instance) return;
+  const pathNode = node.arguments?.[0] ?? null;
+  const path = pathNode ? ctx.resolveLiteralString(pathNode, sourceFile) : null;
+  if (path === null) {
+    ctx.addUncertaintyAt(sourceFile, node, "dynamic-test-target", "client-path");
+    return;
+  }
+  emitMatchedRouteTest(ctx, {
+    module: fromModule,
+    sourceFile,
+    node,
+    testScopes,
+    instance,
+    method: verb.toUpperCase(),
+    path: path.value,
+    methodResolved: true,
+    pathResolved: true
+  });
+}
+function emitMatchedRouteTest(ctx, { module, sourceFile, node, testScopes, instance, method, path, methodResolved, pathResolved }) {
+  const candidates = [];
+  for (const route of ctx.routes ?? []) {
+    if (route.rootInstance?.key !== instance.key) continue;
+    for (const routeMethod of route.methods) {
+      if (routeMethod === method && route.path === path) candidates.push(route);
+    }
+  }
+  const unique = candidates.length === 1 ? candidates[0] : null;
+  const bound = unique !== null;
+  const complete = bound && unique.status === "complete";
+  emitRouteTest(ctx, {
+    module,
+    sourceFile,
+    node,
+    testScopes,
+    instance,
+    route: unique,
+    terminal: unique?.terminal ?? null,
+    method,
+    path,
+    status: complete ? "complete" : bound ? unique.status : "incomplete",
+    reasons: bound ? [...unique.reasons ?? []] : candidates.length === 0 ? methodResolved && pathResolved ? ["missing-endpoint-join"] : ["dynamic-test-target"] : ["ambiguous-endpoint-join"],
+    confidence: complete ? "exact" : bound ? "medium" : "low",
+    note: bound ? "app-request" : `app-request:${candidates.length}-matches`
+  });
+}
+function emitRouteTest(ctx, { module, sourceFile, node, testScopes, instance, route, terminal, method, path, status, reasons, confidence, note }) {
+  const testName = [...testScopes].filter(Boolean).join(">");
+  ctx.addRecord(makeRecord({
+    relation: "dev.lekalo.hono/route-test",
+    from: {
+      module,
+      native: ctx.inlineNative(sourceFile, node, "test"),
+      name: testName || "test",
+      indexed: false
+    },
+    to: terminal ? {
+      module: terminal.module,
+      native: terminal.native,
+      name: terminal.name,
+      indexed: terminal.indexed === true,
+      signature: terminal.signature ?? null,
+      digest: terminal.digest ?? null
+    } : instanceEndpoint(instance),
+    method,
+    path,
+    note,
+    provenance: "detected",
+    confidence,
+    status,
+    reasons,
+    span: ctx.spanOf(node, sourceFile),
+    revision: ctx.revision,
+    adapterVersion: ctx.adapterVersion,
+    frameworkVersion: ctx.frameworkVersion
+  }));
+}
+function literalMethodOf(ctx, objectLiteral2) {
+  const { ts: ts2 } = ctx;
+  for (const property of objectLiteral2.properties ?? []) {
+    if (property.kind === ts2.SyntaxKind.PropertyAssignment && property.name?.kind === ts2.SyntaxKind.Identifier && property.name.text === "method" && property.initializer?.kind === ts2.SyntaxKind.StringLiteral) {
+      return property.initializer.text.toUpperCase();
+    }
+  }
+  return null;
+}
+
+// src/hono-bindings.mjs
+var MAX_CALLS_PER_HANDLER = 32;
+var MAX_BODY_NODES3 = 8192;
+function resolveEndpointContracts(readDataFile, paths) {
+  const contracts = [];
+  if (typeof readDataFile !== "function") return contracts;
+  for (const path of (paths ?? []).slice(0, 4)) {
+    let document;
+    try {
+      document = JSON.parse(readDataFile(path, 64 * 1024));
+    } catch {
+      continue;
+    }
+    if (!Array.isArray(document?.endpoints)) continue;
+    for (const endpoint of document.endpoints.slice(0, 256)) {
+      if (typeof endpoint?.id !== "string" || typeof endpoint?.method !== "string" || typeof endpoint?.path !== "string") continue;
+      contracts.push({
+        id: endpoint.id.slice(0, 128),
+        method: endpoint.method.toUpperCase(),
+        path: endpoint.path
+      });
+    }
+  }
+  return contracts;
+}
+function joinServiceCalls(ctx, routes) {
+  const { ts: ts2, checker } = ctx;
+  for (const route of routes) {
+    const handler = route.terminal;
+    if (!handler) continue;
+    const body = handlerBodyOf(ctx, handler);
+    if (!body) continue;
+    let visited = 0;
+    let recorded = 0;
+    const visit = (node) => {
+      if (visited > MAX_BODY_NODES3 || recorded >= MAX_CALLS_PER_HANDLER) return;
+      visited += 1;
+      if (node.kind === ts2.SyntaxKind.CallExpression) {
+        const signature = checker.getResolvedSignature(node);
+        const declaration = signature?.declaration;
+        if (declaration) {
+          const declarationFile = declaration.getSourceFile?.();
+          const module = declarationFile ? ctx.normalizeModulePath(declarationFile.fileName) : null;
+          if (module !== null && !declarationFile.isDeclarationFile) {
+            const symbol = declaration.name ? checker.getSymbolAtLocation(declaration.name) : checker.getSymbolAtLocation(declaration);
+            const row = symbol ? ctx.symbolRowOf(symbol) : null;
+            if (row) {
+              const evidence = mergeRouteEvidence(route, "complete", []);
+              ctx.addRecord(makeRecord({
+                relation: "dev.lekalo.hono/handler-call",
+                from: endpointOf(handler),
+                to: {
+                  module: row.module,
+                  native: row.native,
+                  name: row.qualifiedName,
+                  indexed: true,
+                  signature: row.signature
+                },
+                method: route.methods[0] ?? null,
+                path: route.path,
+                provenance: "detected",
+                confidence: "exact",
+                status: evidence.status,
+                reasons: evidence.reasons,
+                span: ctx.spanOf(node, node.getSourceFile()),
+                revision: ctx.revision,
+                adapterVersion: ctx.adapterVersion,
+                frameworkVersion: ctx.frameworkVersion
+              }));
+              recorded += 1;
+            }
+          }
+        }
+      }
+      ts2.forEachChild(node, visit);
+    };
+    visit(body);
+  }
+}
+function handlerBodyOf(ctx, handler) {
+  const { ts: ts2 } = ctx;
+  const node = handler.node;
+  if (!node) return null;
+  if (node.kind === ts2.SyntaxKind.ArrowFunction || node.kind === ts2.SyntaxKind.FunctionExpression) {
+    return node.body ?? null;
+  }
+  const declaration = handler.symbol?.declarations?.find((candidate) => candidate.body);
+  return declaration?.body ?? null;
+}
+function joinEndpointContracts(ctx, routes) {
+  const contracts = ctx.endpointContracts ?? [];
+  if (contracts.length === 0) return;
+  for (const route of routes) {
+    if (!route.terminal) continue;
+    const methods = route.methods.length > 0 ? route.methods : [null];
+    const candidates = contracts.filter((contract) => methods.some((method) => method === contract.method) && contract.path === route.path);
+    const ssrBlocked = route.facet === "ssr";
+    if (candidates.length === 1) {
+      const contract = candidates[0];
+      const conflict = ssrBlocked || route.facet === "html";
+      const evidence = mergeRouteEvidence(
+        route,
+        conflict ? "incomplete" : "complete",
+        conflict ? ["ssr-api-conflict"] : []
+      );
+      ctx.addRecord(makeRecord({
+        relation: "dev.lekalo.hono/endpoint-contract",
+        from: instanceEndpoint(route.instance),
+        to: endpointOf(route.terminal),
+        // The label is the joined contract's method when the route
+        // itself is multi-method (`on(['GET','POST'], ...)`): methods[0]
+        // would mislabel a POST join as GET (issue #115 fix round).
+        method: methods.length === 1 ? methods[0] : contract.method,
+        path: route.path,
+        note: conflict ? `${contract.id}:ssr-api-conflict` : contract.id,
+        provenance: "inferred",
+        confidence: "medium",
+        status: evidence.status,
+        reasons: evidence.reasons,
+        span: route.span,
+        revision: ctx.revision,
+        adapterVersion: ctx.adapterVersion,
+        frameworkVersion: ctx.frameworkVersion
+      }));
+    } else if (candidates.length > 1) {
+      ctx.addRecord(makeRecord({
+        relation: "dev.lekalo.hono/endpoint-contract",
+        from: instanceEndpoint(route.instance),
+        to: endpointOf(route.terminal),
+        method: methods.length === 1 ? methods[0] : null,
+        path: route.path,
+        note: `${candidates.length}-candidates`,
+        provenance: "inferred",
+        confidence: "low",
+        status: "incomplete",
+        reasons: ["ambiguous-endpoint-join"],
+        span: route.span,
+        revision: ctx.revision,
+        adapterVersion: ctx.adapterVersion,
+        frameworkVersion: ctx.frameworkVersion
+      }));
+    } else {
+      ctx.addRecord(makeRecord({
+        relation: "dev.lekalo.hono/endpoint-contract",
+        from: instanceEndpoint(route.instance),
+        to: endpointOf(route.terminal),
+        method: methods.length === 1 ? methods[0] : null,
+        path: route.path,
+        note: "no-contract",
+        provenance: "inferred",
+        confidence: "low",
+        status: "incomplete",
+        reasons: ["missing-endpoint-join"],
+        span: route.span,
+        revision: ctx.revision,
+        adapterVersion: ctx.adapterVersion,
+        frameworkVersion: ctx.frameworkVersion
+      }));
+    }
+  }
+}
+
+// src/hono-scanner.mjs
+var HONO_PROVIDER_ID = "hono";
+var CONSTRUCTOR_VOCABULARY = Object.freeze({
+  Hono: { specifier: "hono", kind: "app" },
+  OpenAPIHono: { specifier: "@hono/zod-openapi", kind: "openapi" }
+});
+var HONO_MAX_HANDLER_DIGEST_BYTES = 8192;
+function sha256Hex4(text) {
+  return createHash4("sha256").update(text, "utf8").digest("hex");
+}
+function resolveFrameworkConstructor(node, sourceFile, ctx) {
+  const { ts: ts2, checker } = ctx;
+  if (node.kind !== ts2.SyntaxKind.Identifier) return null;
+  const name = node.text;
+  const vocabulary = CONSTRUCTOR_VOCABULARY[name];
+  if (!vocabulary) return null;
+  let symbol = checker.getSymbolAtLocation(node);
+  if (!symbol) return null;
+  const importSpecifierText = importSpecifierOf(ts2, checker, symbol, node, sourceFile);
+  if (importSpecifierText !== vocabulary.specifier) {
+    if (importSpecifierText !== null && HONO_SPECIFIERS.includes(importSpecifierText)) {
+      ctx.addUncertainty(sourceFile, "unresolved-constructor", `${name}:${importSpecifierText}`);
+    }
+    return null;
+  }
+  const root = rootSymbol(ts2, checker, symbol);
+  if (!root) {
+    ctx.addUncertainty(sourceFile, "unresolved-constructor", `${name}:alias`);
+    return null;
+  }
+  const classDeclaration = (root.declarations ?? []).find((declaration) => declaration.kind === ctx.classKind && isInventoryDeclarationFile(declaration, ctx));
+  if (!classDeclaration) {
+    ctx.addUncertainty(sourceFile, "unresolved-constructor", `${name}:unresolved-declaration`);
+    return null;
+  }
+  return { name, kind: vocabulary.kind, symbol: root, classDeclaration };
+}
+function rootSymbol(ts2, checker, symbol) {
+  let current = symbol;
+  for (let depth = 0; depth < 8; depth += 1) {
+    if (current.flags & ts2.SymbolFlags.Alias) {
+      try {
+        current = checker.getAliasedSymbol(current);
+      } catch {
+        return current;
+      }
+    } else {
+      return current;
+    }
+  }
+  return current;
+}
+function importSpecifierOf(ts2, checker, symbol, node, sourceFile) {
+  const importDeclaration = importDeclarationOfSymbol(ts2, symbol);
+  if (importDeclaration !== null) {
+    return importDeclaration.moduleSpecifier.text;
+  }
+  const declarations = symbol.declarations ?? [];
+  for (const declaration of declarations) {
+    if (declaration.kind !== ts2.SyntaxKind.VariableDeclaration) continue;
+    const declared = declaredConstName(ts2, declaration);
+    if (declared !== null && declaration.initializer?.kind === ts2.SyntaxKind.Identifier) {
+      const initializerSymbol = checker.getSymbolAtLocation(declaration.initializer);
+      if (initializerSymbol && initializerSymbol !== symbol) {
+        return importSpecifierOf(ts2, checker, initializerSymbol, declaration.initializer, sourceFile);
+      }
+    }
+  }
+  return null;
+}
+function declaredConstName(ts2, declaration) {
+  const list = declaration.parent;
+  if (list?.kind !== ts2.SyntaxKind.VariableDeclarationList) return null;
+  if (!(list.flags & ts2.NodeFlags.Const)) return null;
+  const nameNode = declaration.name;
+  if (nameNode.kind !== ts2.SyntaxKind.Identifier) return null;
+  return nameNode.text;
+}
+function isInventoryDeclarationFile(declaration, ctx) {
+  const fileName = declaration.getSourceFile?.()?.fileName;
+  if (typeof fileName !== "string") return false;
+  if (!/\.d\.[cm]?ts$/.test(fileName)) return false;
+  return ctx.normalizeModulePath(fileName) !== null;
+}
+var spanOffsetCache = /* @__PURE__ */ new WeakMap();
+function utf8OffsetsOf(sourceFile) {
+  if (spanOffsetCache.has(sourceFile)) return spanOffsetCache.get(sourceFile);
+  const lineStarts = sourceFile.getLineStarts();
+  const text = sourceFile.text;
+  const lineStartBytes = new Array(lineStarts.length);
+  for (let index = 0; index < lineStarts.length; index += 1) {
+    lineStartBytes[index] = index === 0 ? 0 : lineStartBytes[index - 1] + Buffer.byteLength(text.slice(lineStarts[index - 1], lineStarts[index]), "utf8");
+  }
+  const offsets = { lineStarts, lineStartBytes, text };
+  spanOffsetCache.set(sourceFile, offsets);
+  return offsets;
+}
+function utf8ByteOffsetAt(offsets, line, character) {
+  const lineStart = offsets.lineStarts[line];
+  const lineEnd = line + 1 < offsets.lineStarts.length ? offsets.lineStarts[line + 1] : void 0;
+  return offsets.lineStartBytes[line] + Buffer.byteLength(offsets.text.slice(lineStart, lineEnd).slice(0, character), "utf8");
+}
+function spanOf2(node, sourceFile) {
+  const start = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+  const end = sourceFile.getLineAndCharacterOfPosition(node.getEnd());
+  const offsets = utf8OffsetsOf(sourceFile);
+  return {
+    path: null,
+    // bound by the orchestrator to the logical module path
+    startLine: start.line + 1,
+    startColumn: start.character + 1,
+    endLine: end.line + 1,
+    endColumn: end.character + 1,
+    startByte: utf8ByteOffsetAt(offsets, start.line, start.character),
+    endByte: utf8ByteOffsetAt(offsets, end.line, end.character)
+  };
+}
+function scanHonoProvider({ ts: ts2, checker, program, context, index, revision, readDataFile }) {
+  if (typeof revision !== "string" || revision === "") {
+    revision = "unknown-revision";
+  }
+  const classKind = ts2.SyntaxKind.ClassDeclaration;
+  const apps = [];
+  const records = [];
+  const uncertainty = [];
+  let budgetExceeded = false;
+  const addUncertaintyAt = (sourceFile, node, kind, detail) => {
+    if (uncertainty.length >= MAX_HONO_UNCERTAINTY) {
+      budgetExceeded = true;
+      return;
+    }
+    const fromModule = context.normalizeModulePath(sourceFile.fileName);
+    uncertainty.push(makeUncertainty(
+      fromModule ?? "unknown",
+      kind,
+      detail,
+      node === null ? null : sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1
+    ));
+  };
+  const addRecord = (record) => {
+    if (records.length >= MAX_HONO_RECORDS) {
+      budgetExceeded = true;
+      return;
+    }
+    records.push(record);
+  };
+  const ctx = {
+    ts: ts2,
+    checker,
+    program,
+    context,
+    index,
+    revision,
+    adapterVersion: ADAPTER_VERSION,
+    frameworkVersion: "unknown",
+    classKind,
+    apps,
+    records,
+    uncertainty,
+    instanceBySymbol: /* @__PURE__ */ new Map(),
+    instanceByNode: /* @__PURE__ */ new Map(),
+    validatorByNode: /* @__PURE__ */ new Map(),
+    addRecord,
+    addUncertainty: (sourceFile, kind, detail) => addUncertaintyAt(sourceFile, null, kind, detail),
+    addUncertaintyAt,
+    spanOf: (node, file3) => {
+      const sourceFile = file3 ?? node.getSourceFile();
+      return {
+        ...spanOf2(node, sourceFile),
+        path: context.normalizeModulePath(sourceFile.fileName) ?? "unknown"
+      };
+    },
+    normalizeModulePath: (fileName) => context.normalizeModulePath(fileName),
+    symbolRowNative: (symbol) => context.symbolRows?.get(symbol)?.native ?? null,
+    symbolRowOf: (symbol) => context.symbolRows?.get(symbol) ?? null,
+    resolveLiteralString: (node, sourceFile) => resolveLiteralString(ctx, node, sourceFile, 0),
+    instanceOfExpression: (expression, sourceFile) => instanceOfExpression(ctx, expression, sourceFile, 0),
+    instanceSymbolOfExpression: (expression, sourceFile) => instanceSymbolOfExpression(ctx, expression, sourceFile, 0),
+    markBudgetExceeded: () => {
+      budgetExceeded = true;
+    },
+    digestOfNode: (node, sourceFile) => {
+      const text = node.getText(sourceFile ?? node.getSourceFile());
+      return "sha256:" + sha256Hex4(
+        String(text).slice(0, HONO_MAX_HANDLER_DIGEST_BYTES) + `:${String(text).length}`
+      );
+    },
+    inlineNative: (sourceFile, node, role) => {
+      const module = context.normalizeModulePath(sourceFile.fileName) ?? "unknown";
+      const start = node.getStart(sourceFile);
+      return `hono-inline-${sha256Hex4([module, role ?? "inline", start, node.getEnd()].join("\0"))}`;
+    },
+    endpointContracts: resolveEndpointContracts(readDataFile, context.endpointContractPaths ?? [])
+  };
+  discoverInstances(ctx);
+  const registrations = collectRegistrations(ctx);
+  const { routes } = resolveComposition(ctx, registrations);
+  ctx.routes = routes;
+  buildMiddlewareChains(ctx, routes, registrations);
+  collectHttpEvidence(ctx, routes, registrations);
+  joinServiceCalls(ctx, routes);
+  collectTestBindings(ctx, routes);
+  joinEndpointContracts(ctx, routes);
+  const violations = validateHonoRecords(records);
+  for (const violation of violations.slice(0, 16)) {
+    uncertainty.push(makeUncertainty(
+      "hono",
+      "invalid-record",
+      violation.code ?? "invalid",
+      null
+    ));
+  }
+  if (budgetExceeded) {
+    uncertainty.push(makeUncertainty("hono", "record-budget", "records-or-uncertainty", null));
+  }
+  sortHonoRecords(records);
+  uncertainty.sort((left, right) => {
+    const a = Buffer.from(canonicalHonoText(left), "utf8");
+    const b = Buffer.from(canonicalHonoText(right), "utf8");
+    return a.compare(b);
+  });
+  const counts = {
+    apps: apps.length,
+    routes: routes.length,
+    records: records.length,
+    uncertainty: uncertainty.length
+  };
+  const digest = "sha256:" + sha256Hex4(canonicalHonoText({ records, uncertainty }));
+  const state = violations.length > 0 || budgetExceeded ? "partial" : uncertainty.length > 0 ? "partial" : apps.length === 0 ? "empty" : "complete";
+  return {
+    provider: {
+      id: HONO_PROVIDER_ID,
+      rulesRevision: HONO_RULES_REVISION,
+      state,
+      frameworkVersion: ctx.frameworkVersion,
+      counts,
+      digest
+    },
+    records,
+    uncertainty
+  };
+}
+function discoverInstances(ctx) {
+  const { ts: ts2, checker, program } = ctx;
+  for (const sourceFile of program.getSourceFiles()) {
+    if (sourceFile.isDeclarationFile) continue;
+    const fromModule = ctx.normalizeModulePath(sourceFile.fileName);
+    if (fromModule === null) continue;
+    const visit = (node) => {
+      if (node.kind === ts2.SyntaxKind.NewExpression && node.expression?.kind === ts2.SyntaxKind.Identifier) {
+        const constructor = resolveFrameworkConstructor(node.expression, sourceFile, ctx);
+        if (constructor) {
+          registerInstance(ctx, constructor, node, node, sourceFile, fromModule);
+        }
+      } else if (node.kind === ts2.SyntaxKind.VariableDeclaration) {
+        const name = declaredConstName(ts2, node);
+        if (name === null) return;
+        const initializer = node.initializer;
+        if (!initializer) return;
+        if (initializer.kind === ts2.SyntaxKind.NewExpression && initializer.expression?.kind === ts2.SyntaxKind.Identifier) {
+          const constructor = resolveFrameworkConstructor(initializer.expression, sourceFile, ctx);
+          if (constructor) {
+            registerInstance(ctx, constructor, initializer, node, sourceFile, fromModule, node.name);
+          }
+        } else if (initializer.kind === ts2.SyntaxKind.CallExpression && initializer.expression.kind === ts2.SyntaxKind.PropertyAccessExpression) {
+          const method = initializer.expression.name?.text;
+          const receiverSymbol = instanceSymbolOfExpression(ctx, initializer.expression.expression, sourceFile, 0);
+          if (method === "basePath" && receiverSymbol) {
+            const base = ctx.resolveLiteralString(initializer.arguments?.[0], sourceFile);
+            if (base === null) {
+              ctx.addUncertaintyAt(sourceFile, initializer, "dynamic-path", "basePath");
+              return;
+            }
+            bindDerivedView(ctx, node.name, sourceFile, fromModule, {
+              kind: "view",
+              ownerSymbol: receiverSymbol,
+              basePath: base.value
+            }, initializer);
+          }
+        } else if (initializer.kind === ts2.SyntaxKind.Identifier) {
+          const target = instanceSymbolOfExpression(ctx, initializer, sourceFile, 0);
+          if (target) {
+            bindDerivedView(ctx, node.name, sourceFile, fromModule, {
+              kind: "alias",
+              ownerSymbol: target
+            }, initializer);
+          }
+        }
+      }
+      ts2.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+  }
+}
+function registerInstance(ctx, constructor, newNode, occurrence, sourceFile, fromModule, nameNode) {
+  const { ts: ts2, checker } = ctx;
+  const registered = ctx.instanceByNode.get(newNode);
+  if (registered) return registered;
+  const span = ctx.spanOf(occurrence, sourceFile);
+  let symbol = null;
+  let name = constructor.name.toLowerCase();
+  if (nameNode && nameNode.kind === ts2.SyntaxKind.Identifier) {
+    symbol = checker.getSymbolAtLocation(nameNode);
+    name = nameNode.text;
+    const declarations = symbol?.declarations ?? [];
+    if (declarations.length > 1) {
+      ctx.addUncertaintyAt(sourceFile, occurrence, "mutable-alias", name);
+    } else if (hasReassignment(ts2, sourceFile, name)) {
+      ctx.addUncertaintyAt(sourceFile, occurrence, "mutable-alias", name);
+    }
+  }
+  const instance = {
+    key: symbol ? `sym:${name}@${symbol.declarations?.[0]?.getStart?.() ?? 0}` : `node:${fromModule}:${newNode.getStart(sourceFile)}`,
+    kind: constructor.kind,
+    symbol,
+    module: fromModule,
+    name,
+    span,
+    native: symbol ? ctx.symbolRowNative(symbol) ?? ctx.inlineNative(sourceFile, newNode, "app") : ctx.inlineNative(sourceFile, newNode, "app"),
+    indexed: symbol ? ctx.symbolRowNative(symbol) !== null : false,
+    declarationSpan: spanOf2(constructor.classDeclaration, constructor.classDeclaration.getSourceFile())
+  };
+  if (symbol && !ctx.instanceBySymbol.has(symbol)) {
+    ctx.instanceBySymbol.set(symbol, instance);
+  }
+  if (!ctx.instanceByNode.has(newNode)) {
+    ctx.instanceByNode.set(newNode, instance);
+  }
+  ctx.apps.push(instance);
+  ctx.addRecord(makeRecord({
+    relation: "dev.lekalo.hono/app-discovered",
+    from: { module: instance.module, native: instance.native, name: instance.name, indexed: instance.indexed },
+    to: {
+      module: instance.declarationSpan.path ?? instance.module,
+      native: null,
+      name: constructor.name,
+      indexed: false,
+      signature: null
+    },
+    note: constructor.kind,
+    provenance: "detected",
+    confidence: symbol ? "exact" : "high",
+    status: "complete",
+    reasons: [],
+    span,
+    revision: ctx.revision,
+    adapterVersion: ctx.adapterVersion,
+    frameworkVersion: ctx.frameworkVersion
+  }));
+  return instance;
+}
+function hasReassignment(ts2, sourceFile, name) {
+  let found = false;
+  const visit = (node) => {
+    if (found) return;
+    if (node.kind === ts2.SyntaxKind.BinaryExpression && node.operatorToken?.kind === ts2.SyntaxKind.EqualsToken && node.left?.kind === ts2.SyntaxKind.Identifier && node.left.text === name) {
+      found = true;
+      return;
+    }
+    if (node.kind === ts2.SyntaxKind.PostfixUnaryExpression || node.kind === ts2.SyntaxKind.PrefixUnaryExpression) {
+      if (node.operand?.kind === ts2.SyntaxKind.Identifier && node.operand.text === name) found = true;
+    }
+    ts2.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return found;
+}
+function bindDerivedView(ctx, nameNode, sourceFile, fromModule, shape, occurrence) {
+  const { ts: ts2, checker } = ctx;
+  if (!nameNode || nameNode.kind !== ts2.SyntaxKind.Identifier) return;
+  const symbol = checker.getSymbolAtLocation(nameNode);
+  if (!symbol) return;
+  const span = ctx.spanOf(occurrence, sourceFile);
+  const native = ctx.symbolRowNative(symbol) ?? ctx.inlineNative(sourceFile, occurrence, "view");
+  const instance = {
+    key: `sym:${nameNode.text}@${symbol.declarations?.[0]?.getStart?.() ?? 0}`,
+    kind: shape.kind,
+    symbol,
+    module: fromModule,
+    name: nameNode.text,
+    span,
+    native,
+    indexed: ctx.symbolRowNative(symbol) !== null,
+    ownerSymbol: shape.ownerSymbol,
+    basePath: shape.kind === "view" ? shape.basePath : ""
+  };
+  if (!ctx.instanceBySymbol.has(symbol)) {
+    ctx.instanceBySymbol.set(symbol, instance);
+    ctx.apps.push(instance);
+  }
+}
+function instanceSymbolOfExpression(ctx, expression, sourceFile, depth) {
+  const { ts: ts2, checker } = ctx;
+  if (!expression || expression.kind !== ts2.SyntaxKind.Identifier) return null;
+  if (depth > 2) return null;
+  const symbol = checker.getSymbolAtLocation(expression);
+  if (!symbol) return null;
+  const current = rootSymbol(ts2, checker, symbol);
+  if (ctx.instanceBySymbol.has(current)) return current;
+  for (const declaration of current.declarations ?? []) {
+    if (declaration.kind === ts2.SyntaxKind.VariableDeclaration && declaration.initializer?.kind === ts2.SyntaxKind.Identifier) {
+      if (declaredConstName(ts2, declaration) === null) return null;
+      const target = checker.getSymbolAtLocation(declaration.initializer);
+      if (target) {
+        const targetRoot = rootSymbol(ts2, checker, target);
+        if (ctx.instanceBySymbol.has(targetRoot)) return targetRoot;
+      }
+    }
+  }
+  return null;
+}
+function instanceOfExpression(ctx, expression, sourceFile, depth) {
+  const { ts: ts2 } = ctx;
+  if (!expression || depth > 2) return null;
+  if (expression.kind === ts2.SyntaxKind.Identifier) {
+    const symbol = instanceSymbolOfExpression(ctx, expression, sourceFile, depth);
+    return symbol ? ctx.instanceBySymbol.get(symbol) ?? null : null;
+  }
+  if (expression.kind === ts2.SyntaxKind.NewExpression) {
+    return ctx.instanceByNode.get(expression) ?? null;
+  }
+  if (expression.kind === ts2.SyntaxKind.CallExpression && expression.expression.kind === ts2.SyntaxKind.PropertyAccessExpression) {
+    const method = expression.expression.name?.text;
+    if (method !== "basePath") return null;
+    const receiver = instanceOfExpression(ctx, expression.expression.expression, sourceFile, depth + 1);
+    if (!receiver) return null;
+    const base = ctx.resolveLiteralString(expression.arguments?.[0], sourceFile);
+    if (base === null) {
+      ctx.addUncertaintyAt(sourceFile, expression, "dynamic-path", "basePath");
+      return null;
+    }
+    return {
+      key: `${receiver.key}|basePath:${base.value}`,
+      kind: "view",
+      symbol: null,
+      module: receiver.module,
+      name: receiver.name,
+      span: ctx.spanOf(expression, sourceFile),
+      native: receiver.native,
+      indexed: receiver.indexed,
+      ownerSymbol: receiver.symbol,
+      basePath: joinPaths(receiver.basePath ?? "", base.value)
+    };
+  }
+  return null;
+}
+function joinPaths(prefix, suffix) {
+  const left = prefix === "/" ? "" : prefix;
+  const right = suffix === "/" ? "" : suffix;
+  const joined = `${left ?? ""}${right ?? ""}`;
+  return joined === "" ? "/" : joined;
+}
+function resolveLiteralString(ctx, node, sourceFile, depth) {
+  if (!node || depth > 4) return null;
+  const { ts: ts2, checker } = ctx;
+  if (node.kind === ts2.SyntaxKind.StringLiteral || node.kind === ts2.SyntaxKind.NoSubstitutionTemplateLiteral) {
+    return { value: node.text, kind: "literal" };
+  }
+  if (node.kind === ts2.SyntaxKind.TemplateExpression) {
+    let value = node.head?.text ?? "";
+    for (const span of node.templateSpans ?? []) {
+      const part = resolveLiteralString(ctx, span.expression, sourceFile, depth + 1);
+      if (part === null) return null;
+      value += part.value + (span.literal?.text ?? "");
+    }
+    return { value, kind: "template" };
+  }
+  if (node.kind === ts2.SyntaxKind.BinaryExpression && node.operatorToken?.kind === ts2.SyntaxKind.PlusToken) {
+    const left = resolveLiteralString(ctx, node.left, sourceFile, depth + 1);
+    const right = resolveLiteralString(ctx, node.right, sourceFile, depth + 1);
+    if (left === null || right === null) return null;
+    return { value: left.value + right.value, kind: "concat" };
+  }
+  if (node.kind === ts2.SyntaxKind.Identifier) {
+    const symbol = checker.getSymbolAtLocation(node);
+    if (!symbol) return null;
+    for (const declaration of symbol.declarations ?? []) {
+      if (declaration.kind !== ts2.SyntaxKind.VariableDeclaration) continue;
+      if (declaredConstName(ts2, declaration) === null) continue;
+      const initializer = declaration.initializer;
+      const resolved = resolveLiteralString(ctx, initializer, sourceFile, depth + 1);
+      if (resolved !== null) return { value: resolved.value, kind: "const-alias" };
+    }
+    return null;
+  }
+  if (node.kind === ts2.SyntaxKind.PropertyAccessExpression) {
+    const constant = checker.getConstantValue?.(node);
+    if (typeof constant === "string") return { value: constant, kind: "const-alias" };
+    const symbol = checker.getSymbolAtLocation(node);
+    if (symbol) {
+      for (const declaration of symbol.declarations ?? []) {
+        if (declaration.kind === ts2.SyntaxKind.EnumMember && declaration.initializer) {
+          const resolved = resolveLiteralString(ctx, declaration.initializer, sourceFile, depth + 1);
+          if (resolved !== null) return { value: resolved.value, kind: "const-alias" };
+        }
+        if (declaration.kind === ts2.SyntaxKind.PropertyAssignment) {
+          const resolved = resolveLiteralString(ctx, declaration.initializer, sourceFile, depth + 1);
+          if (resolved !== null) return { value: resolved.value, kind: "const-alias" };
+        }
+      }
+    }
+    return null;
+  }
+  return null;
+}
+
 // src/scanner.mjs
 var IDENTITY_DOMAIN = "lekalo.ts.native.v1";
 var SIGNATURE_DOMAIN = "lekalo.ts.signature.v1";
@@ -225958,8 +228804,8 @@ function isEmbeddedLibBase(fileName) {
 function isObject2(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-function sha256Hex3(text) {
-  return createHash3("sha256").update(text, "utf8").digest("hex");
+function sha256Hex5(text) {
+  return createHash5("sha256").update(text, "utf8").digest("hex");
 }
 function canonicalText2(value) {
   if (value === null) return "null";
@@ -226130,7 +228976,7 @@ function buildInputManifest(inventory, readBytes) {
     }
     totalBytes += file3.size;
     const base = file3.path.split("/").pop();
-    const digest = sha256Hex3(readBytes(file3.path).toString("utf8"));
+    const digest = sha256Hex5(readBytes(file3.path).toString("utf8"));
     if (isSourceFile(file3.path) || isDeclarationFile(file3.path)) {
       sourceFiles.push({ path: file3.path, digest, declaration: isDeclarationFile(file3.path) });
     } else if (isConfigFile(file3.path)) {
@@ -226426,7 +229272,7 @@ function nativeIdentityTuple({ locator, modulePath, qualifiedName, family, slot 
   ];
 }
 function nativeId(tuple) {
-  return `ts1-${sha256Hex3(canonicalText2(tuple))}`;
+  return `ts1-${sha256Hex5(canonicalText2(tuple))}`;
 }
 function signatureGraphOfSymbol({ ts: ts2, checker, symbol, program, depthBudget }) {
   const seen = /* @__PURE__ */ new Set();
@@ -226525,7 +229371,7 @@ function lexicalQualifiedName(ts2, checker, symbol) {
   return parts.join(".");
 }
 function signatureDigest(graph) {
-  return `sha256:${sha256Hex3(canonicalText2([SIGNATURE_DOMAIN, graph]))}`;
+  return `sha256:${sha256Hex5(canonicalText2([SIGNATURE_DOMAIN, graph]))}`;
 }
 function emptyIndex(compilerMeta) {
   return {
@@ -226646,6 +229492,13 @@ function indexSourceFile({ ts: ts2, checker, sourceFile, modulePath, packageInde
           memberOf: parentNative
         }));
         (context.nativeByDeclaration ??= /* @__PURE__ */ new Map()).set(node, native);
+        (context.symbolRows ??= /* @__PURE__ */ new Map()).set(symbol, {
+          native,
+          module: modulePath,
+          qualifiedName,
+          signature,
+          jsdoc: jsdoc === "" ? null : jsdoc
+        });
         parentNative = native;
         parentName = qualifiedName;
       }
@@ -227014,7 +229867,7 @@ function typeContainsAny(ts2, checker, type, seen, depth) {
   }
   return false;
 }
-function runScan({ profile, readView, permittedProjectRoot, limits }) {
+function runScan({ profile, readView, permittedProjectRoot, limits, frameworks = [] }) {
   let programOptions = null;
   const ts2 = assertCompilerAvailable();
   const compilerMeta = {
@@ -227023,10 +229876,19 @@ function runScan({ profile, readView, permittedProjectRoot, limits }) {
   };
   const roots = readView.roots;
   const inventory = enumerateInventory(permittedProjectRoot, roots, profile);
-  const readBytes = (logicalPath) => readView.readFile(logicalPath, {
-    files: limits?.files ?? MAX_SCAN_FILES,
-    bytes: limits?.bytes ?? MAX_SCAN_SOURCE_BYTES
-  });
+  const readBytes = (logicalPath, perCall) => {
+    if (perCall) {
+      const counters = readView.counters();
+      return readView.readFile(logicalPath, {
+        files: counters.filesRead + (perCall.files ?? 1),
+        bytes: counters.bytesRead + (perCall.bytes ?? 0)
+      });
+    }
+    return readView.readFile(logicalPath, {
+      files: limits?.files ?? MAX_SCAN_FILES,
+      bytes: limits?.bytes ?? MAX_SCAN_SOURCE_BYTES
+    });
+  };
   const manifest = buildInputManifest(inventory, readBytes);
   const diagnostics = [];
   const { packages, projects, packageByRoot } = discoverPackagesAndProjects(
@@ -227062,6 +229924,9 @@ function runScan({ profile, readView, permittedProjectRoot, limits }) {
     program: null,
     exceeded: () => false
   };
+  context.symbolRows = /* @__PURE__ */ new Map();
+  context.normalizeModulePath = (fileName) => normalizeModulePath(fileName, context);
+  context.endpointContractPaths = manifest.sourceFiles.concat(manifest.otherFiles).map((file3) => file3.path).filter((path) => path === "lekalo/endpoints.json" || path.endsWith("/lekalo/endpoints.json")).sort((a, b) => utf8Compare(a, b));
   const rootNames = [];
   const defaults = {
     module: ts2.ModuleKind.ESNext,
@@ -227139,6 +230004,30 @@ function runScan({ profile, readView, permittedProjectRoot, limits }) {
   indexRoutesAndTests({ ts: ts2, checker, program, context, index });
   collectDiagnostics({ ts: ts2, program, context, index });
   collectAnySurfaces({ ts: ts2, checker, program, context, index });
+  if (frameworks.includes(HONO_PROVIDER_ID)) {
+    const hono = scanHonoProvider({
+      ts: ts2,
+      checker,
+      program,
+      context,
+      index,
+      revision: profile.provenance?.revision ?? null,
+      readDataFile: (logicalPath, bound) => readBytes(logicalPath, {
+        files: 1,
+        bytes: bound ?? 64 * 1024
+      })
+    });
+    index.frameworks = {
+      [HONO_PROVIDER_ID]: {
+        provider: hono.provider,
+        records: hono.records,
+        uncertainty: hono.uncertainty
+      }
+    };
+    for (const row of hono.uncertainty) {
+      if (index.anyUncertainty.length < 8192) index.anyUncertainty.push(row);
+    }
+  }
   const drizzleBindingsInput = readOptionalProjectInput(
     manifest,
     readBytes,
@@ -227204,7 +230093,7 @@ function finalizeScan(index, manifest, profile, readView, programOptions) {
     filesRead: manifest.sourceFiles.length + manifest.configFiles.length + manifest.packageFiles.length + manifest.otherFiles.length,
     bytesRead: manifest.totalBytes
   };
-  index.profileDigest = sha256Hex3(canonicalText2({
+  index.profileDigest = sha256Hex5(canonicalText2({
     id: profile.id,
     readRoots: profile.readRoots.map((root) => ({ ...root }))
   }));
@@ -227224,7 +230113,7 @@ var ScannerSession = class {
   scan(options) {
     this.scans += 1;
     const index = runScan(options);
-    const key = sha256Hex3(canonicalText2(index.inputManifest));
+    const key = sha256Hex5(canonicalText2(index.inputManifest));
     const result = { index, key, warm: this.retain?.key === key };
     this.retain = { key, index };
     return result;
@@ -227239,9 +230128,11 @@ function scanOperation(context) {
   if (typeof permittedProjectRoot !== "string" || permittedProjectRoot === "") {
     return { state: "failed", diagnostics: [{ reason: "root-context-missing" }] };
   }
+  const frameworkPolicy = context.frameworkPolicy ?? null;
+  const frameworks = enabledFrameworkProviders(frameworkPolicy);
   let index;
   try {
-    index = runScan({ profile, readView, permittedProjectRoot, limits });
+    index = runScan({ profile, readView, permittedProjectRoot, limits, frameworks });
   } catch (error) {
     if (cancellation?.cancelled) {
       return { state: "failed", diagnostics: [{ reason: "cancelled" }] };
@@ -227308,11 +230199,23 @@ function scanOperation(context) {
     uncertainty: index.anyUncertainty.length,
     errors: errorCount
   };
+  const frameworkEvidence = frameworks.length > 0 ? {
+    frameworks: Object.fromEntries(frameworks.map((id) => {
+      const family = index.frameworks?.[id];
+      return [id, family ? {
+        state: family.provider.state,
+        counts: family.provider.counts,
+        digest: family.provider.digest,
+        rulesRevision: family.provider.rulesRevision
+      } : { state: "unsupported", counts: null, digest: null, rulesRevision: null }];
+    }))
+  } : {};
   const drizzleSummary = drizzleEvidenceSummary(index.drizzle);
   const internalEvidence = {
     compiler: index.compiler,
     profileDigest: index.profileDigest,
-    counts
+    counts,
+    ...frameworkEvidence
   };
   if (drizzleSummary !== null) internalEvidence.drizzle = drizzleSummary;
   if (index.anyUncertainty.length > 0 || errorCount > 0) {
@@ -227330,6 +230233,17 @@ function scanOperation(context) {
     data: { entries, complete: true },
     evidence: internalEvidence
   };
+}
+function enabledFrameworkProviders(policy) {
+  if (!policy || !Array.isArray(policy.providers)) return [];
+  const enabled = [];
+  for (const entry of policy.providers) {
+    if (entry?.state !== "enabled") continue;
+    if (typeof entry.id === "string" && entry.id.length > 0 && entry.id.length <= 64) {
+      enabled.push(entry.id);
+    }
+  }
+  return enabled;
 }
 function lekaloCarrierlessModules(byModule, carried) {
   const absent = [];
@@ -227408,7 +230322,7 @@ __export(workspace_exports, {
   parseWorkspaceYaml: () => parseWorkspaceYaml,
   patternMatchesDirectory: () => patternMatchesDirectory
 });
-import { createHash as createHash4 } from "node:crypto";
+import { createHash as createHash6 } from "node:crypto";
 var MAX_PACKAGES = 1024;
 var MAX_EDGES = 8192;
 var MAX_PATTERNS = 256;
@@ -227424,7 +230338,7 @@ var WorkspaceRefusal = class extends Error {
   }
 };
 function sha256Text(text) {
-  return "sha256:" + createHash4("sha256").update(text, "utf8").digest("hex");
+  return "sha256:" + createHash6("sha256").update(text, "utf8").digest("hex");
 }
 function utf8Compare2(left, right) {
   const a = Buffer.from(left, "utf8");
@@ -227870,7 +230784,7 @@ __export(native_gate_extension_exports, {
   setAdapterIdentity: () => setAdapterIdentity,
   setLaunchPolicy: () => setLaunchPolicy
 });
-import { createHash as createHash6 } from "node:crypto";
+import { createHash as createHash8 } from "node:crypto";
 
 // src/native-plan.mjs
 var native_plan_exports = {};
@@ -227889,7 +230803,7 @@ __export(native_plan_exports, {
   planDigest: () => planDigest,
   selectionDigest: () => selectionDigest
 });
-import { createHash as createHash5 } from "node:crypto";
+import { createHash as createHash7 } from "node:crypto";
 var PLAN_DIGEST_DOMAIN = "lekalo.native-plan.v0.4.0";
 var SELECTION_DIGEST_DOMAIN = "lekalo.native-selection.v0.4.0";
 var PLAN_CAPABILITY = "plan.native-gates";
@@ -227987,14 +230901,14 @@ function planDigest(plan) {
     Buffer.from(PLAN_DIGEST_DOMAIN, "utf8"),
     Buffer.from(canonicalJsonText2(rest), "utf8")
   ]);
-  return "sha256:" + createHash5("sha256").update(bytes).digest("hex");
+  return "sha256:" + createHash7("sha256").update(bytes).digest("hex");
 }
 function selectionDigest(selection) {
   const bytes = Buffer.concat([
     Buffer.from(SELECTION_DIGEST_DOMAIN, "utf8"),
     Buffer.from(canonicalJsonText2(selection), "utf8")
   ]);
-  return "sha256:" + createHash5("sha256").update(bytes).digest("hex");
+  return "sha256:" + createHash7("sha256").update(bytes).digest("hex");
 }
 function isSafeLiteral(text) {
   if (typeof text !== "string" || text.length === 0 || text.length > 1024) return false;
@@ -228353,7 +231267,7 @@ function setLaunchPolicy(policy) {
   launchPolicy = policy;
 }
 function sha256Text2(text) {
-  return "sha256:" + createHash6("sha256").update(text, "utf8").digest("hex");
+  return "sha256:" + createHash8("sha256").update(text, "utf8").digest("hex");
 }
 function isObject5(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -228808,7 +231722,7 @@ __export(transport_extension_exports, {
   transportExtensionDescriptor: () => transportExtensionDescriptor,
   transportGenerateOperation: () => transportGenerateOperation
 });
-import { createHash as createHash7 } from "node:crypto";
+import { createHash as createHash9 } from "node:crypto";
 import { mkdirSync as mkdirSync2, writeFileSync as writeFileSync2 } from "node:fs";
 import { join as join2, resolve as resolve2 } from "node:path";
 var TRANSPORT_OPERATION = "generate";
@@ -228823,7 +231737,7 @@ var CLIENT_SDK_WRITE_ROOT = "src/generated/node-typescript/clients/**";
 var TRANSPORT_READ_ROOT = ".lekalo/cache/transport";
 var IR_READ_ROOT = ".lekalo/cache/ir";
 var IR_IDENTITY = "dev.lekalo.ir@0.2.16";
-var sha256Text3 = (text) => "sha256:" + createHash7("sha256").update(text, "utf8").digest("hex");
+var sha256Text3 = (text) => "sha256:" + createHash9("sha256").update(text, "utf8").digest("hex");
 var isObject6 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 var canonicalJson2 = (value) => {
   if (Array.isArray(value)) return `[${value.map(canonicalJson2).join(",")}]`;
@@ -228873,7 +231787,7 @@ function decodeEvidence(bytes) {
       // The exact-bytes digest of the evidence document: the
       // transportRef pin binds the bytes that were read, byte-stable
       // across repeats.
-      digest: "sha256:" + createHash7("sha256").update(bytes).digest("hex")
+      digest: "sha256:" + createHash9("sha256").update(bytes).digest("hex")
     }
   };
 }
@@ -229106,10 +232020,10 @@ function transportExtensionDescriptor() {
 }
 
 // src/zod-gen.mjs
-import { createHash as createHash9 } from "node:crypto";
+import { createHash as createHash11 } from "node:crypto";
 
 // src/zod-emit.mjs
-import { createHash as createHash8 } from "node:crypto";
+import { createHash as createHash10 } from "node:crypto";
 
 // src/zod-map.mjs
 var MAP_CONTRACT = "lekalo/zod-map/v0.3.2";
@@ -229495,7 +232409,7 @@ function compareFindings(left, right) {
 // src/zod-emit.mjs
 var ADAPTER_ID2 = "lekalo-target-node-typescript";
 function sha256(text) {
-  return "sha256:" + createHash8("sha256").update(text, "utf8").digest("hex");
+  return "sha256:" + createHash10("sha256").update(text, "utf8").digest("hex");
 }
 function canonicalJson3(value) {
   if (value === null) return "null";
@@ -230150,7 +233064,7 @@ function readIr(readView, irPath) {
   return { document, text };
 }
 function sha256Bytes(bytes) {
-  return "sha256:" + createHash9("sha256").update(bytes).digest("hex");
+  return "sha256:" + createHash11("sha256").update(bytes).digest("hex");
 }
 function byPath(left, right) {
   return left.path < right.path ? -1 : left.path > right.path ? 1 : 0;
@@ -230394,7 +233308,7 @@ function parseInline(token) {
 }
 
 // src/openapi-gen.mjs
-import { createHash as createHash10 } from "node:crypto";
+import { createHash as createHash12 } from "node:crypto";
 
 // src/openapi-policy.mjs
 var POLICY_PATH2 = "lekalo/targets/node-typescript.yaml";
@@ -230517,7 +233431,7 @@ var OWNERSHIP_CONTRACT = "lekalo/openapi-map/v0.4.0";
 var OPENAPI_WRITE_SCOPES = ["docs/**"];
 var MAX_DOCUMENT_BYTES = 4 * 1024 * 1024;
 var IR_IDENTITY3 = "dev.lekalo.ir@0.2.16";
-var sha256Text4 = (text) => "sha256:" + createHash10("sha256").update(text, "utf8").digest("hex");
+var sha256Text4 = (text) => "sha256:" + createHash12("sha256").update(text, "utf8").digest("hex");
 function openapiGenerateOperation(context) {
   const { request, readView } = context;
   if (!readView) {
@@ -231240,7 +234154,7 @@ function compareFindings2(left, right) {
   return symbol !== 0 ? symbol : byKey(left.detail, right.detail);
 }
 function digestOf(bytes) {
-  return "sha256:" + createHash10("sha256").update(bytes).digest("hex");
+  return "sha256:" + createHash12("sha256").update(bytes).digest("hex");
 }
 function bounded2(text) {
   return String(text ?? "unknown").replace(/[^a-zA-Z0-9._: -]+/g, "?").slice(0, 128);
@@ -231532,7 +234446,7 @@ function sidecarPath(documentPath, suffix) {
 }
 
 // src/scenario-gen.mjs
-import { createHash as createHash11 } from "node:crypto";
+import { createHash as createHash13 } from "node:crypto";
 
 // src/scenario-map.mjs
 var SCENARIO_IDENTITY = "dev.lekalo.scenario-ir@0.2.16";
@@ -232753,7 +235667,7 @@ function renderBody(model) {
   const groups = [];
   const wholeScenarioUnsupported = model.unsupported.length > 0;
   const stepVars = /* @__PURE__ */ new Map();
-  const clockIsos2 = /* @__PURE__ */ new Map();
+  const clockIsos = /* @__PURE__ */ new Map();
   if (wholeScenarioUnsupported) {
     const lines = [];
     for (const entry of model.unsupported) {
@@ -232774,7 +235688,7 @@ function renderBody(model) {
       continue;
     }
     groups.push({
-      lines: [`    // given ${step.stepId} (${step.kind})`, ...renderGiven(step, stepVars, clockIsos2)],
+      lines: [`    // given ${step.stepId} (${step.kind})`, ...renderGiven(step, stepVars, clockIsos)],
       stepId: null
     });
   }
@@ -232787,19 +235701,19 @@ function renderBody(model) {
       continue;
     }
     groups.push({
-      lines: [`    // when ${step.stepId} (${step.operation.kind} ${step.operation.id})`, ...renderWhen(step, stepVars)],
+      lines: [`    // when ${step.stepId} (${step.operation.kind} ${step.operation.id})`, ...renderWhen(step, stepVars, clockIsos)],
       stepId: null
     });
   }
   for (const step of model.then) {
-    groups.push({ lines: renderThen(step, model, stepVars, clockIsos2), stepId: step.stepId });
+    groups.push({ lines: renderThen(step, model, stepVars, clockIsos), stepId: step.stepId });
   }
   return groups;
 }
 function unsupportedRow(stepId, observes, kind, detail) {
   return `    recorder.record({ step_id: ${JSON.stringify(stepId)}, observes: ${JSON.stringify(observes)}, kind: ${JSON.stringify(kind)}, outcome: "unsupported", detail: boundedDetail(${JSON.stringify(detail)}) });`;
 }
-function renderGiven(step, stepVars, clockIsos2) {
+function renderGiven(step, stepVars, clockIsos) {
   const variable = `given_${identifierOf(step.stepId)}`;
   stepVars.set(step.stepId, variable);
   const payload = step.payload ?? {};
@@ -232818,7 +235732,7 @@ function renderGiven(step, stepVars, clockIsos2) {
     case "actor":
       return payload.scope === null ? [`    const ${variable} = port.actor(${JSON.stringify(payload.actor)});`] : [`    const ${variable} = port.actor(${JSON.stringify(payload.actor)}, ${JSON.stringify(payload.scope)});`];
     case "clock":
-      clockIsos2.set(step.stepId, payload.at);
+      clockIsos.set(step.stepId, payload.at);
       return [`    port.clock.freeze(${JSON.stringify(payload.at)});`];
     case "id_source":
       return [
@@ -232843,7 +235757,7 @@ function objectLiteral(fieldEntries, stepVars) {
   }
   return object;
 }
-function renderWhen(step, stepVars) {
+function renderWhen(step, stepVars, clockIsos) {
   const variable = `step_${identifierOf(step.stepId)}`;
   stepVars.set(step.stepId, variable);
   const input = {};
@@ -232874,13 +235788,13 @@ function renderWhen(step, stepVars) {
     `    }`
   ];
 }
-function renderThen(step, model, stepVars, clockIsos2) {
+function renderThen(step, model, stepVars, clockIsos) {
   const observed = stepVars.get(step.observes) ?? `step_${identifierOf(step.observes)}`;
   const meta = `step_id: ${JSON.stringify(step.stepId)}, observes: ${JSON.stringify(step.observes)}, kind: ${JSON.stringify(step.kind)}`;
   if (step.unsupported) {
     return [unsupportedRow(step.stepId, step.observes, step.kind, `${step.unsupported.capability}: ${step.unsupported.reason}`)];
   }
-  const checks = renderChecks(step, model, stepVars, clockIsos2, observed);
+  const checks = renderChecks(step, model, stepVars, clockIsos, observed);
   return [
     `    // then ${step.stepId}: ${step.kind} over ${step.observes}`,
     `    try {`,
@@ -232892,7 +235806,7 @@ function renderThen(step, model, stepVars, clockIsos2) {
     `    }`
   ];
 }
-function renderChecks(step, model, stepVars, clockIsos2, observed) {
+function renderChecks(step, model, stepVars, clockIsos, observed) {
   const payload = step.payload ?? {};
   switch (step.kind) {
     case "result": {
@@ -233324,7 +236238,7 @@ function readDocument(readView, path) {
   return { document, text };
 }
 function sha256Bytes2(bytes) {
-  return "sha256:" + createHash11("sha256").update(bytes).digest("hex");
+  return "sha256:" + createHash13("sha256").update(bytes).digest("hex");
 }
 function byPath2(left, right) {
   return left.path < right.path ? -1 : left.path > right.path ? 1 : 0;
@@ -233334,7 +236248,7 @@ function bounded3(text) {
 }
 
 // src/client-sdk-gen.mjs
-import { createHash as createHash12 } from "node:crypto";
+import { createHash as createHash14 } from "node:crypto";
 function tsDecodeMethod() {
   const body = [
     "    private async decode<T>(",
@@ -233396,7 +236310,7 @@ var CLIENT_SDK_WRITE_ROOT2 = "src/generated/node-typescript/clients/**";
 var CLIENT_SDK_EVIDENCE_DIR2 = ".lekalo/cache/client-sdk";
 var SDK_IDENTITY = "dev.lekalo.client-sdk@0.4.0";
 var SDK_SCHEMA_VERSION = "lekalo/client-sdk/v0.4.0";
-var sha256Text5 = (text) => "sha256:" + createHash12("sha256").update(text, "utf8").digest("hex");
+var sha256Text5 = (text) => "sha256:" + createHash14("sha256").update(text, "utf8").digest("hex");
 var isObject7 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 function decodeClientSdkEvidence(bytes) {
   let document;
@@ -233416,7 +236330,7 @@ function decodeClientSdkEvidence(bytes) {
     value: {
       document,
       projectId: typeof document.projectId === "string" ? document.projectId : void 0,
-      digest: "sha256:" + createHash12("sha256").update(bytes).digest("hex")
+      digest: "sha256:" + createHash14("sha256").update(bytes).digest("hex")
     }
   };
 }
@@ -234208,7 +237122,7 @@ function clientSdkPlanIdOf(writes) {
 }
 var planIdOf3 = clientSdkPlanIdOf;
 function digestOf2(bytes) {
-  return "sha256:" + createHash12("sha256").update(bytes).digest("hex");
+  return "sha256:" + createHash14("sha256").update(bytes).digest("hex");
 }
 function bounded4(text) {
   return String(text ?? "unknown").replace(/[^a-zA-Z0-9._: -]+/g, "?").slice(0, 128);

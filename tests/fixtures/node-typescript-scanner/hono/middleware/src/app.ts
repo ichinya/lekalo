@@ -1,0 +1,42 @@
+import { Hono } from "hono";
+import { auth, cacheHeaders, logger, maintenance, shadowed, tenant } from "./middleware";
+import { down, health, whoami } from "./handlers";
+
+export const app = new Hono();
+
+// Global middleware: applies to every route in registration order.
+app.use(logger);
+app.use(tenant);
+
+// Path-filtered middleware: applies to /admin/* shapes only.
+app.use("/admin/*", auth);
+
+// Const-alias filter: resolves exactly like a literal — it must stay a
+// PATH FILTER, never be resolved into a middleware endpoint.
+const consolePrefix = "/console";
+app.use(consolePrefix, auth);
+app.get("/console/panel", (c) => c.json({ console: true }));
+
+app.get("/whoami", whoami);
+app.get("/health", cacheHeaders, health);
+app.get("/admin/panel", (c) => c.json({ panel: true }));
+app.post("/admin/reset", maintenance, (c) => c.json({ reset: true }));
+app.get("/shadowed", shadowed, whoami);
+
+// Chain bound: seventeen inline members exceed HONO_MAX_CHAIN (16).
+// The retained members keep their ordinals and the overflow surfaces
+// as chain-budget uncertainty — never a silently shortened chain.
+app.get("/deep-chain", maintenance, maintenance, maintenance, maintenance, maintenance, maintenance, maintenance, maintenance, maintenance, maintenance, maintenance, maintenance, maintenance, maintenance, maintenance, maintenance, maintenance, whoami);
+
+// Inline middleware in the handler position (fix round 5 regression):
+// inline arrow, inline async arrow, and a declaration-less function
+// expression — none has a resolvable declaration symbol, and all
+// three precede /inline so they compose into its chain.
+app.use((c, next) => next());
+app.use(async (c, next) => {
+  await next();
+});
+app.use(function (c, next) {
+  return next();
+});
+app.get("/inline", (c) => c.json({ inline: true }));

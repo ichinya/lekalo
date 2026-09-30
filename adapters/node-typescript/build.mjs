@@ -64,6 +64,14 @@ const scenarioGenPath = join(adapterRoot, "src", "scenario-gen.mjs");
 const scenarioMapPath = join(adapterRoot, "src", "scenario-map.mjs");
 const scenarioEmitPath = join(adapterRoot, "src", "scenario-emit.mjs");
 const drizzleEvidencePath = join(adapterRoot, "src", "drizzle-evidence.mjs");
+const honoEvidencePath = join(adapterRoot, "src", "hono-evidence.mjs");
+const honoContextPath = join(adapterRoot, "src", "hono-context.mjs");
+const honoScannerPath = join(adapterRoot, "src", "hono-scanner.mjs");
+const honoRoutesPath = join(adapterRoot, "src", "hono-routes.mjs");
+const honoMiddlewarePath = join(adapterRoot, "src", "hono-middleware.mjs");
+const honoHttpPath = join(adapterRoot, "src", "hono-http.mjs");
+const honoTestsPath = join(adapterRoot, "src", "hono-tests.mjs");
+const honoBindingsPath = join(adapterRoot, "src", "hono-bindings.mjs");
 const libsPath = join(adapterRoot, "src", "libs.mjs");
 const drizzleLibsPath = join(adapterRoot, "src", "drizzle-libs.mjs");
 const scratchRoot = join(adapterRoot, ".build");
@@ -445,6 +453,15 @@ async function buildArtifact() {
   writeFileSync(join(scratchRoot, "src", "scenario-map.mjs"), readFileSync(scenarioMapPath, "utf8").replace(stripShebang, ""));
   writeFileSync(join(scratchRoot, "src", "scenario-emit.mjs"), readFileSync(scenarioEmitPath, "utf8").replace(stripShebang, ""));
   writeFileSync(join(scratchRoot, "src", "drizzle-evidence.mjs"), readFileSync(drizzleEvidencePath, "utf8").replace(stripShebang, ""));
+  // Issue #115: the Hono framework provider rides the same bundle.
+  writeFileSync(join(scratchRoot, "src", "hono-evidence.mjs"), readFileSync(honoEvidencePath, "utf8").replace(stripShebang, ""));
+  writeFileSync(join(scratchRoot, "src", "hono-context.mjs"), readFileSync(honoContextPath, "utf8").replace(stripShebang, ""));
+  writeFileSync(join(scratchRoot, "src", "hono-scanner.mjs"), readFileSync(honoScannerPath, "utf8").replace(stripShebang, ""));
+  writeFileSync(join(scratchRoot, "src", "hono-routes.mjs"), readFileSync(honoRoutesPath, "utf8").replace(stripShebang, ""));
+  writeFileSync(join(scratchRoot, "src", "hono-middleware.mjs"), readFileSync(honoMiddlewarePath, "utf8").replace(stripShebang, ""));
+  writeFileSync(join(scratchRoot, "src", "hono-http.mjs"), readFileSync(honoHttpPath, "utf8").replace(stripShebang, ""));
+  writeFileSync(join(scratchRoot, "src", "hono-tests.mjs"), readFileSync(honoTestsPath, "utf8").replace(stripShebang, ""));
+  writeFileSync(join(scratchRoot, "src", "hono-bindings.mjs"), readFileSync(honoBindingsPath, "utf8").replace(stripShebang, ""));
   writeFileSync(join(scratchRoot, "src", "main.mjs"), entryText);
   // The exact compiler pin must resolve from the adapter's own provisioning.
   const tsPackageDir = dirname(require.resolve("typescript/package.json"));

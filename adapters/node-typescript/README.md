@@ -101,6 +101,43 @@ signature digest, up to eight typed reference rows). Uncertainty in
 the index keeps the outcome honestly `partial` — a partial scan is an
 in-envelope error, never a silently complete receipt.
 
+## The Hono framework provider (issue #115)
+
+A framework-specific evidence provider layered on the same scan:
+`src/hono-*.mjs`, vocabulary in `hono-compatibility.json`.
+
+- Enablement is policy-only: the trusted launch input
+  `--lekalo-framework-policy-json` (closed shape
+  `{schema, version, providers:[{id, state}]}`) enables the `hono`
+  provider. Absent or empty policy → the generic scan is
+  **byte-identical** to a Hono-unaware run. The closed wire request can
+  never enable a provider.
+- Recognition is compiler-resolved: `new Hono()` counts only when the
+  import specifier is a reserved Hono-family specifier AND the class
+  symbol resolves into an inventoried declaration file. Lookalike
+  locals, shadowed imports, and unresolved constructors produce
+  uncertainty or nothing — never fabricated applications.
+- Evidence: routes (method/path/handler with exact native ids), nested
+  routers and `basePath` views (deterministic snapshot + proven ESM
+  initialization order; cycles stay unknown), middleware chains with
+  entry/unwind ordinals and `next()` evidence, explicit JSDoc roles
+  (`@lekalo-auth`, `@lekalo-tenant`, …) as namespaced annotations only,
+  context read/write keys (never canonical fields), validator/schema
+  bindings, response/error mapping, `createRoute`/`operationId`
+  OpenAPI links, `handler-call` joins to service symbols through the
+  checker, `app.request`/`testClient` test flows, and an
+  api/html/ssr/mixed/unknown facet per route.
+- Every record carries symbol/relation/span/revision/provenance/
+  confidence/adapter+framework version and a domain-separated
+  freshness fingerprint; dynamic or ambiguous routes are
+  `incomplete`/`unknown` with machine reasons. Relations live in the
+  `dev.lekalo.hono/` namespace — adapter evidence, never core
+  vocabulary — and no scanner step writes to the project.
+- Fixture family: `tests/fixtures/node-typescript-scanner/hono`
+  (synthetic declaration stubs, no real package). Gates:
+  `scripts/test-node-hono-bindings.mjs` and
+  `scripts/test-node-hono-readonly.mjs`.
+
 ## The Zod schema generator (issue #45)
 
 Generation of deterministic, typechecking Zod schemas from the
