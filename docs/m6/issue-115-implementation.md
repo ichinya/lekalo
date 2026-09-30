@@ -6,6 +6,62 @@ to its implementing code, fixtures, and executable evidence, and marks
 every partial or unsupported item explicitly. Companion research:
 `docs/m6/issue-115-research.md`.
 
+## Fix round 4 (adversarial re-review of PR #142)
+
+The round-4 re-review verified both round-3 fixes and every prior fix,
+then found ONE new major. It is fixed in a focused commit; the bundle
+and manifest are regenerated and the Rust exemplar guard tracks the
+new package digest.
+
+- **MAJOR — shared route-table semantics of basePath families were not
+  modeled.** Hono's basePath clone shares ONE routes array with its
+  owner (`clone.routes === this.routes`), and `app.route()` iterates
+  the shared array wholesale — so mounting ANY member of a family
+  exposes the WHOLE family's routes: with `inner2.get('/own', h)` and
+  `const view = inner2.basePath('/v'); view.get('/in', h)`, the
+  runtime serves `/bp/own` under `app.route('/bp', view)` AND
+  `/x/v/in` under `app.route('/x', inner2)`. The scanner keyed route
+  events per registering instance and resolved each mount against the
+  child's own registrations only, so `/bp/own` and `/x/v/in` were
+  silently missing while both mounts claimed `status: complete` with
+  zero uncertainty rows — a silent under-claim of real served routes
+  (the round-3 comment "a basePath view is a distinct clone with its
+  own route table" misread `clone.routes`). Family membership is now
+  canonical: every member of a basePath family (owner, views, aliases,
+  the whole owner chain) resolves to the same route-table root, and a
+  mount resolves EVERY family member's registration events under the
+  mount prefix, each composed with its own registering member's
+  standalone base (`mountPrefix + memberBase + path`) — precise
+  modeling, not the honest-uncertainty fallback. Dedupe stays per
+  mount chain, so the same event under different mount prefixes stays
+  distinct; mounted families are excluded from standalone resolution
+  as a whole (no phantom `/own` beside the mounts); nested-mount
+  detection and recursion use the same root test (owner-side nested
+  mounts compose under the mount prefix too, and the family root is
+  what kills the phantom standalone surface); alias-target mounts are
+  the special case where the alias resolves to its target's family
+  root. The round-3 prefix composition, depth handling,
+  conditional/deferred scope propagation, and post-mount snapshot
+  honesty are unchanged and re-asserted. (`mount-base/` fixture: the
+  owner-side `/own` and late registrations plus the `/x` owner mount;
+  the test asserts both mount directions, snapshot ordering of an
+  alias-name registration against the owner mount
+  (`/x/v/alias-in` complete, `/bp2/v/alias-in` post-mount
+  incomplete), constrained family events under conditional/deferred
+  mounts, and absence of every dropped-prefix and standalone-phantom
+  path.)
+
+Round-4 gates: `build.mjs --check` byte-identical; bundle +
+`adapter.manifest.json` regenerated (package digest `sha256:79300ab0…`);
+`test-node-hono-bindings` 44 tests across 5 suites;
+`test-node-hono-readonly`; kernel/scanner/transport/native-gates/
+scenario/openapi suites; manifest golden + contracts, target-protocol
+contracts (Ajv 8.17.1), model/lockfile Ajv, fixture provenance,
+contract versions, structure/authority/privacy/model checks;
+`cargo fmt --check`, `cargo clippy -D warnings`,
+`cargo test --workspace` with the exemplar guard re-pinned to the
+round-4 digest.
+
 ## Fix round 3 (adversarial re-review of PR #142)
 
 The round-3 re-review verified every round-2 finding fixed, then found
