@@ -140,8 +140,11 @@ const LIMITATION_CODES = new Set([
   "receiver-unknown", "target-unresolved", "predicate-unresolved",
   "dynamic-values", "dynamic-set", "raw-sql", "dynamic-builder",
   "builder-not-executed", "projection-dynamic", "returning-dynamic",
-  "join-target-unresolved", "query-shape-ignored", "alias-continuation",
+  "join-target-unresolved", "alias-continuation",
   "input-dynamic", "upsert-alternative",
+  // recognized Drizzle surfaces outside the qualified static subset —
+  // they are never dropped silently (issue #116 fix round)
+  "relational-query-unsupported", "batch-unsupported",
   // transactions
   "query-not-tx-bound", "tx-escaped", "rollback", "nested-transaction",
   "tx-callback-shape-unknown",
@@ -152,6 +155,7 @@ const LIMITATION_CODES = new Set([
   "scope-predicate-missing", "scope-dynamic",
   // bindings / projection
   "bindings-input-missing", "bindings-input-invalid", "binding-unresolved",
+  "binding-ambiguous",
   "binding-stale-table-native-missing", "binding-stale-table-source-changed",
   "projection-input-invalid", "projection-column-missing",
   "projection-column-extra", "projection-type-divergent",
@@ -421,6 +425,26 @@ function symbolInClosure(symbol, closurePrefix) {
     .some((declaration) => declaration.getSourceFile().fileName.startsWith(closurePrefix));
 }
 
+/**
+ * The DECLARATION symbol of a callee resolved into the embedded
+ * closure — the alias-safe factory identity test (issue #116 fix
+ * round). The local identifier text is never identity: `import {
+ * pgTable as pt } then pt(...)` resolves to the same vendored
+ * declaration and must extract exactly like the spelled name. Returns
+ * null when the callee does not resolve into the closure.
+ */
+function closureCalleeSymbol(context, calleeNode) {
+  let symbol;
+  try {
+    symbol = context.checker.getSymbolAtLocation(calleeNode);
+  } catch {
+    return null;
+  }
+  symbol = resolveAliasSymbol(context.checker, symbol);
+  if (!symbolInClosure(symbol, context.closurePrefix)) return null;
+  return symbol;
+}
+
 /** The first closure declaration path of the symbol (provenance). */
 function closureDeclarationPath(symbol, closurePrefix) {
   for (const declaration of symbol?.declarations ?? []) {
@@ -511,6 +535,10 @@ class ExtractorContext {
     this.queries = [];
     this.transactions = [];
     this.migrations = [];
+    /** Sections with recognized-but-uncovered Drizzle surfaces — a
+     * section may claim complete only with no gaps (issue #116 fix
+     * round: a silent drop can never hide behind a zero-row section). */
+    this.sectionGaps = new Set();
     this.contributingFiles = new Map();
     this.fileDigestCache = new Map();
   }
@@ -885,27 +913,26 @@ function resolveReferencesTarget(context, args) {
  * dialect factory.
  */
 function extractTable(context, sourceFile, node, exportName) {
-  const { ts, checker } = context;
+  const { ts } = context;
   const calleeNode = node.expression;
-  const calleeName = calleeNode.kind === ts.SyntaxKind.Identifier
-    ? calleeNode.text
-    : calleeNode.kind === ts.SyntaxKind.PropertyAccessExpression ? calleeNode.name.getText() : null;
-  if (calleeName === null) return null;
-  let symbol;
-  try {
-    symbol = checker.getSymbolAtLocation(calleeNode);
-  } catch {
+  if (calleeNode.kind !== ts.SyntaxKind.Identifier
+    && calleeNode.kind !== ts.SyntaxKind.PropertyAccessExpression) {
     return null;
   }
-  symbol = resolveAliasSymbol(checker, symbol);
-  if (!symbolInClosure(symbol, context.closurePrefix)) return null;
-  const dialect = calleeName === "pgTable" ? "postgresql"
-    : calleeName === "mysqlTable" ? "mysql"
+  // Factory identity comes from the resolved declaration symbol, never
+  // from the local callee spelling — an aliased `pgTable as pt` is the
+  // same vendored declaration (issue #116 fix round).
+  const symbol = closureCalleeSymbol(context, calleeNode);
+  if (symbol === null) return null;
+  const factoryName = symbol.getName();
+  const dialect = factoryName === "pgTable" ? "postgresql"
+    : factoryName === "mysqlTable" ? "mysql"
     : null;
   const modulePath = context.modulePathOf(sourceFile);
   if (dialect === null) {
-    if (calleeName === "sqliteTable" || calleeName === "singlestoreTable") {
-      context.limit("unsupported-dialect", modulePath, lineOf(sourceFile, node), calleeName);
+    if (factoryName === "sqliteTable" || factoryName === "singlestoreTable") {
+      context.limit("unsupported-dialect", modulePath, lineOf(sourceFile, node), factoryName);
+      context.sectionGaps.add("tables");
     }
     return null;
   }
@@ -997,7 +1024,6 @@ function extractTable(context, sourceFile, node, exportName) {
   if (scopeColumn !== undefined) {
     row.tenantKey = { column: scopeColumn.tsName, evidence: "declaration-only" };
   }
-  void checker;
   return row;
 }
 
@@ -1069,6 +1095,16 @@ function extractConstraint(context, sourceFile, node, tableRow) {
   }
   const whereCall = [...chain.links].reverse().find((link) => link.kind === "call" && link.name === "where");
   const limitations = [];
+  // A `check(name, sql`...`)` body is raw SQL by construction: the
+  // expression is recorded as an explicit unknown, never silently
+  // absent (issue #116 fix round).
+  const checkBody = kind === "check" ? firstCall.node.arguments?.[1] : undefined;
+  const sqlPredicate = kind === "check"
+    && (whereCall !== undefined || checkBody !== undefined);
+  if (sqlPredicate) {
+    context.limit("raw-sql", tableRow.module, lineOf(sourceFile, node), constraintName ?? "check");
+    limitations.push("raw-sql");
+  }
   if (members.length === 0 && kind !== "check") {
     context.limit("constraint-member-unresolved", tableRow.module, lineOf(sourceFile, node), kind);
     limitations.push("constraint-member-unresolved");
@@ -1085,6 +1121,7 @@ function extractConstraint(context, sourceFile, node, tableRow) {
     membersResolved: members.map((member) => member.resolved),
     referenced,
     actions: Object.keys(actions).length > 0 ? actions : null,
+    sqlPredicate,
     span: spanOf(sourceFile, node),
     limitations,
   };
@@ -1124,15 +1161,21 @@ function extractRelations(context, sourceFile, node) {
   }
   symbol = resolveAliasSymbol(checker, symbol);
   if (!symbolInClosure(symbol, context.closurePrefix)) return null;
+  // From here the surface is a RECOGNIZED relations declaration: any
+  // failure to extract it is a coverage gap for the relations section,
+  // never a silent drop (issue #116 fix round). Each failure path
+  // below records the gap before returning.
   const modulePath = context.modulePathOf(sourceFile);
   const sourceTableRow = context.tableForNodeIdentifier(node.arguments?.[0]);
   const callback = node.arguments?.[1];
   if (sourceTableRow === null) {
+    context.sectionGaps.add("relations");
     context.limit("relation-target-unresolved", modulePath, lineOf(sourceFile, node), "source-table");
     return null;
   }
   if (callback === undefined
     || (callback.kind !== ts.SyntaxKind.ArrowFunction && callback.kind !== ts.SyntaxKind.FunctionExpression)) {
+    context.sectionGaps.add("relations");
     context.limit("relation-policy-missing", modulePath, lineOf(sourceFile, node), "callback");
     return null;
   }
@@ -1153,6 +1196,7 @@ function extractRelations(context, sourceFile, node) {
     body = body.expression;
   }
   if (body?.kind !== ts.SyntaxKind.ObjectLiteralExpression) {
+    context.sectionGaps.add("relations");
     context.limit("relation-policy-missing", modulePath, lineOf(sourceFile, node), "config-object");
     return null;
   }
@@ -1233,6 +1277,11 @@ function extractRelations(context, sourceFile, node) {
       limitations,
       confidence: "inferred",
     });
+  }
+  if (rows.length === 0) {
+    // A recognized relations declaration with zero extractable
+    // endpoints is a coverage gap, never a clean empty set.
+    context.sectionGaps.add("relations");
   }
   void checker;
   return rows;
@@ -1475,7 +1524,10 @@ function extractQueryChain(context, sourceFile, { root, links }, receiverKind, t
   }
   // Builder-not-executed honesty: an unawaited, unterminated chain
   // describes a possible query only — never a runtime-verified effect.
-  if (!query.awaited && !query.terminal) {
+  // An explicit `return` hands the builder to the caller on purpose,
+  // so it does not add execution noise (issue #116 fix round).
+  if (!query.awaited && !query.terminal
+    && !isReturnedChain(ts, links[links.length - 1].node)) {
     query.limitations.push("builder-not-executed");
   }
   void root;
@@ -1498,6 +1550,25 @@ function isAwaitedChain(ts, node) {
   let guard = 0;
   while (current !== undefined && current !== null && guard++ < 12) {
     if (current.kind === ts.SyntaxKind.AwaitExpression) return true;
+    if (current.kind === ts.SyntaxKind.PropertyAccessExpression
+      || current.kind === ts.SyntaxKind.CallExpression
+      || current.kind === ts.SyntaxKind.ParenthesizedExpression
+      || current.kind === ts.SyntaxKind.NonNullExpression
+      || current.kind === ts.SyntaxKind.AsExpression) {
+      current = current.parent;
+      continue;
+    }
+    return false;
+  }
+  return false;
+}
+
+/** Whether the chain is handed off by an explicit `return`. */
+function isReturnedChain(ts, node) {
+  let current = node.parent;
+  let guard = 0;
+  while (current !== undefined && current !== null && guard++ < 12) {
+    if (current.kind === ts.SyntaxKind.ReturnStatement) return true;
     if (current.kind === ts.SyntaxKind.PropertyAccessExpression
       || current.kind === ts.SyntaxKind.CallExpression
       || current.kind === ts.SyntaxKind.ParenthesizedExpression
@@ -1612,6 +1683,21 @@ function recordInput(context, sourceFile, node, query, role) {
   if (primitive !== null) {
     query.inputs.push({ role, expr: "literal", typeToken: primitive.kind, value: primitive.token });
     return;
+  }
+  if (node.kind === ts.SyntaxKind.PropertyAccessExpression) {
+    const tableRow = context.tableForNodeIdentifier(node.expression);
+    if (tableRow !== null) {
+      // A column reference on an extracted table is a field read of
+      // that table, not an external input — join RHS equality columns
+      // were previously misrecorded as reference inputs (issue #116
+      // fix round).
+      if (query.reads.length < MAX_QUERY_FIELDS) {
+        query.reads.push({ table: tableRow.exportName, column: node.name.getText(), role });
+      } else {
+        context.limit("truncated", query.module, lineOf(sourceFile, node), "reads");
+      }
+      return;
+    }
   }
   if (node.kind === ts.SyntaxKind.Identifier
     || node.kind === ts.SyntaxKind.PropertyAccessExpression) {
@@ -1833,20 +1919,42 @@ function extractTransaction(context, sourceFile, callNode, receiverKind, parentT
         && (QUERY_HEADS.has(links[0].name) || CONTINUATION_HEADS.has(links[0].name))) {
         if (identity === "tx" || identity === "tx-alias" || identity === "db"
           || identity === "db-alias") {
+          // transactionId is bound ONLY for tx-receiver chains; a db
+          // query inside the callback is not a member of the group —
+          // the two axes stay separate (issue #116 fix round).
           const query = extractQueryChain(context, sourceFile, { root, links },
-            identity, tx ?? row.id);
+            identity, tx);
           if (query !== null) {
             if (tx === null) {
               context.limit("query-not-tx-bound", modulePath, lineOf(sourceFile, node));
               query.limitations.push("query-not-tx-bound");
+            } else {
+              row.members.push(query.id);
             }
             if (conditional) {
               query.conditional = true;
               query.limitations.push("conditional-flow");
             }
             context.queries.push(query);
-            row.members.push(query.id);
           }
+          return;
+        }
+      }
+      // Recognized out-of-subset surfaces inside the callback bound to
+      // a drizzle receiver: explicit limitations, never drops (issue
+      // #116 fix round).
+      if (links.length > 0
+        && (identity === "tx" || identity === "tx-alias" || identity === "db"
+          || identity === "db-alias")) {
+        if (links[0].kind === "access" && links[0].name === "query") {
+          context.limit("relational-query-unsupported", modulePath, lineOf(sourceFile, node),
+            "relational-query-api");
+          context.sectionGaps.add("queries");
+          return;
+        }
+        if (links[0].kind === "call" && links[0].name === "batch") {
+          context.limit("batch-unsupported", modulePath, lineOf(sourceFile, node), "batch-api");
+          context.sectionGaps.add("queries");
           return;
         }
       }
@@ -2015,6 +2123,10 @@ function rootIdentityKind(context, root, state) {
  * never applied-state claims).
  */
 function extractMigrations(extract, ts, manifest, readBytes) {
+  const allFiles = [
+    ...manifest.sourceFiles, ...manifest.configFiles,
+    ...manifest.packageFiles, ...manifest.otherFiles,
+  ];
   const configEntries = manifest.sourceFiles
     .filter((entry) => /drizzle\.config\.[cm]?tsx?$/.test(entry.path))
     .slice(0, 8);
@@ -2089,6 +2201,10 @@ function extractMigrations(extract, ts, manifest, readBytes) {
           }
           const entryOverflow = { hit: false };
           for (const file of folderEntries.slice(0, MAX_MIGRATION_ENTRIES)) {
+            // Migration folder inputs are part of the evidence's file
+            // provenance (issue #116 fix round): their digests feed
+            // both the entry rows and contributingFiles.
+            extract.noteFile(file.path, "sha256:" + file.digest);
             pushBounded(row.entries, MAX_MIGRATION_ENTRIES, {
               path: file.path,
               digest: "sha256:" + file.digest,
@@ -2108,6 +2224,15 @@ function extractMigrations(extract, ts, manifest, readBytes) {
       if (schemaRef.includes("..") || schemaRef.startsWith("/")) {
         extract.limit("migration-path-escapes-root", entry.path, null, schemaRef);
         row.limitations.push("migration-path-escapes-root");
+        continue;
+      }
+      // A schema reference must exist in the granted inventory — exact
+      // file, directory, or bounded glob prefix. A dangling reference
+      // is an explicit limitation, never silently accepted (issue #116
+      // fix round).
+      if (!inventoryRefKnown(allFiles, schemaRef)) {
+        extract.limit("migration-ref-missing", entry.path, row.span?.start?.line ?? null, schemaRef);
+        row.limitations.push("migration-ref-missing");
       }
     }
     pushBounded(extract.migrations, MAX_MIGRATIONS, row, extract.overflow);
@@ -2116,6 +2241,21 @@ function extractMigrations(extract, ts, manifest, readBytes) {
 
 function context2Limit(extract, code, path, line, detail) {
   extract.limit(code, path, line, detail);
+}
+
+/**
+ * Whether a migration schema reference names something the granted
+ * inventory contains: an exact file, a directory prefix, or a bounded
+ * glob prefix (dir slash star, dir slash star-star). Never a
+ * filesystem probe — the inventory is the read view's
+ * already-enumerated truth.
+ */
+function inventoryRefKnown(allFiles, schemaRef) {
+  const paths = allFiles.map((file) => file.path);
+  if (paths.includes(schemaRef)) return true;
+  const base = schemaRef.replace(/\/\*\*?\/?(?:\.[a-z]+)?$/i, "");
+  const prefix = base !== schemaRef && base.length > 0 ? base : schemaRef;
+  return paths.some((path) => path.startsWith(`${prefix}/`));
 }
 
 /** Normalize a config literal (`./drizzle`) to an inventory path. */
@@ -2347,10 +2487,24 @@ export function attachDrizzleEvidence({
   ts, checker, program, context, index,
   drizzleAttachment, drizzleClosure,
   manifest, readBytes,
-  drizzleBindingsInput, drizzleProjectionInput, bindingsInputPath, projectionInputPath,
+  drizzleBindingsInput, drizzleProjectionInput,
 }) {
   if (!drizzleAttachment?.attached || !drizzleClosure) {
     index.drizzle = null;
+    // A project that DECLARES drizzle-orm but fails the pin policy is
+    // not a non-drizzle project: record the rejection reason so hosts
+    // can distinguish declared-but-unsupported from absent (issue #116
+    // fix round). Plain absence stays unrecorded.
+    if (drizzleAttachment && !drizzleAttachment.attached
+      && (drizzleAttachment.reason === "pin-not-exact"
+        || drizzleAttachment.reason === "pin-mismatch")) {
+      index.drizzleAttachment = {
+        attached: false,
+        reason: drizzleAttachment.reason,
+        declared: drizzleAttachment.declared ?? [],
+        supported: drizzleAttachment.supported ?? null,
+      };
+    }
     return null;
   }
   const closurePrefix = `/lekalo/deps/drizzle-orm@${drizzleClosure.pin}/`;
@@ -2364,11 +2518,14 @@ export function attachDrizzleEvidence({
     extract.fileDigestCache.set(sourceFile.fileName, digest);
     return digest;
   };
-  if (drizzleBindingsInput !== null) {
-    extract.noteFile(bindingsInputPath, "sha256:" + sha256Hex(drizzleBindingsInput));
+  const bindingsInput = drizzleBindingsInput?.value ?? null;
+  const projectionRecord = drizzleProjectionInput ?? null;
+  const projectionInput = projectionRecord?.value ?? null;
+  if (bindingsInput !== null && drizzleBindingsInput.path !== null) {
+    extract.noteFile(drizzleBindingsInput.path, "sha256:" + sha256Hex(bindingsInput));
   }
-  if (drizzleProjectionInput !== null) {
-    extract.noteFile(projectionInputPath, "sha256:" + sha256Hex(canonicalText(drizzleProjectionInput)));
+  if (projectionInput !== null && projectionRecord.path !== null) {
+    extract.noteFile(projectionRecord.path, "sha256:" + sha256Hex(canonicalText(projectionInput)));
   }
 
   // Pass A: tables in every inventory module first, then relations —
@@ -2417,7 +2574,11 @@ export function attachDrizzleEvidence({
       if (node === undefined || node === null) return;
       if (node.kind === ts.SyntaxKind.CallExpression
         && node.expression?.kind === ts.SyntaxKind.Identifier
-        && node.expression.text === "relations") {
+        // Alias-safe identity: the DECLARATION resolved into the
+        // vendored closure decides, never the local spelling —
+        // `import { relations as rel } then rel(...)` extracts
+        // exactly like the spelled name (issue #116 fix round).
+        && closureCalleeSymbol(extract, node.expression)?.getName() === "relations") {
         const rows = extractRelations(extract, sourceFile, node);
         if (rows !== null) {
           for (const row of rows) {
@@ -2484,6 +2645,28 @@ export function attachDrizzleEvidence({
               || link.name === "where"));
           if (shapePair) {
             extract.limit("receiver-unknown", modulePath, lineOf(sourceFile, node));
+            extract.sectionGaps.add("queries");
+          }
+        }
+        // Recognized Drizzle surfaces outside the qualified static
+        // subset: the relational query API (`db.query.*`) and the batch
+        // API (`db.batch`). They emit an explicit limitation with a
+        // reason code and force the queries section partial — never a
+        // silent drop (issue #116 fix round).
+        if (links.length > 0
+          && (links[0].kind === "access" && links[0].name === "query"
+            || links[0].kind === "call" && links[0].name === "batch")) {
+          const identity = rootIdentityKind(extract, root, state);
+          if (identity === "db" || identity === "db-alias" || identity === "tx") {
+            const code = links[0].name === "query"
+              ? "relational-query-unsupported"
+              : "batch-unsupported";
+            extract.limit(code, modulePath, lineOf(sourceFile, node),
+              links[0].name === "query" ? "relational-query-api" : "batch-api");
+            extract.sectionGaps.add("queries");
+            if (links[0].kind === "access") return;
+            // A batch array carries genuine drizzle chains: keep
+            // walking so its member statements still extract.
           }
         }
         // Raw execution on a drizzle database handle: the statement is
@@ -2507,8 +2690,8 @@ export function attachDrizzleEvidence({
 
   let bindings = [];
   let bindingsState = "missing";
-  if (drizzleBindingsInput !== null) {
-    const decoded = decodeBindingsInput(drizzleBindingsInput);
+  if (bindingsInput !== null) {
+    const decoded = decodeBindingsInput(bindingsInput);
     if (!decoded.ok) {
       extract.limit("bindings-input-invalid", null, null, decoded.reason);
       bindingsState = "invalid";
@@ -2516,9 +2699,36 @@ export function attachDrizzleEvidence({
       bindingsState = "decoded";
       const overflow = { hit: false };
       for (const entity of decoded.entities) {
-        const tableRow = extract.tableByExport.get(entity.table)
-          ?? extract.tableByPhysical.get(entity.table)?.[0]
-          ?? null;
+        // Resolve by precise evidence, never by guessing a name
+        // collision: several modules may export the same name (or
+        // declare the same physical table), and confirming one of them
+        // would be a guessed pick marked `confirmed` (issue #116 fix
+        // round). A unique export match is exact; the physical-name
+        // spelling only resolves when it is unambiguous too.
+        const exportMatches = extract.tables.filter((table) => table.exportName === entity.table);
+        const physicalMatches = extract.tableByPhysical.get(entity.table) ?? [];
+        let tableRow = null;
+        let ambiguous = false;
+        if (exportMatches.length === 1) {
+          tableRow = exportMatches[0];
+        } else if (exportMatches.length > 1) {
+          ambiguous = true;
+        } else if (physicalMatches.length === 1) {
+          tableRow = physicalMatches[0];
+        } else if (physicalMatches.length > 1) {
+          ambiguous = true;
+        }
+        if (ambiguous) {
+          extract.limit("binding-ambiguous", null, null, `${entity.entity}->${entity.table}`);
+          pushBounded(bindings, MAX_BINDINGS, {
+            entity: entity.entity,
+            table: { exportName: entity.table, native: null, physicalName: null, fileDigest: null },
+            status: "ambiguous",
+            basis: "explicit-owner-input",
+            limitations: ["binding-ambiguous"],
+          }, overflow);
+          continue;
+        }
         if (tableRow === null) {
           extract.limit("binding-unresolved", null, null, `${entity.entity}->${entity.table}`);
           pushBounded(bindings, MAX_BINDINGS, {
@@ -2545,29 +2755,49 @@ export function attachDrizzleEvidence({
       }
       if (overflow.hit) extract.limit("truncated", null, null, "bindings");
     }
+  } else if (drizzleBindingsInput && drizzleBindingsInput.reason !== "absent") {
+    // The input exists but could not be read as text: an invalid input
+    // is recorded as invalid, never mislabeled as missing (issue #116
+    // fix round).
+    extract.limit("bindings-input-invalid", null, null, drizzleBindingsInput.reason);
+    bindingsState = "invalid";
   } else {
     extract.limit("bindings-input-missing", null, null);
   }
 
   let projectionRows = [];
   let projectionState = "absent";
-  if (drizzleProjectionInput !== null && drizzleProjectionInput !== undefined) {
-    const comparison = compareProjection(extract, drizzleProjectionInput);
+  if (projectionInput !== null) {
+    const comparison = compareProjection(extract, projectionInput);
     projectionRows = comparison.rows;
     projectionState = comparison.state;
+  } else if (projectionRecord && projectionRecord.reason !== "absent") {
+    // Malformed JSON / unreadable projection input: explicit invalid
+    // state instead of a silent absence (issue #116 fix round).
+    extract.limit("projection-input-invalid", null, null, projectionRecord.reason);
+    projectionState = "invalid";
   }
 
-  // Completeness per section: any row-level limitation, overflow, or
-  // unresolved input degrades the section — completeness is never
-  // claimed over unknowns.
+  // Completeness per section: any row-level limitation, overflow,
+  // unresolved input, or recognized-but-uncovered surface degrades the
+  // section — completeness is never claimed over unknowns, and a
+  // zero-row section can never hide a silent drop (issue #116 fix
+  // round: the dead `partial:partial` ternaries are gone; sections
+  // with all-clean rows are honestly complete).
   const partialFromRows = (rows) => rows.some((row) => (row.limitations?.length ?? 0) > 0);
   const sections = {
-    tables: extract.tables.every((table) => table.completeness === "complete") && !extract.overflow.hit
+    tables: !extract.sectionGaps.has("tables")
+      && extract.tables.every((table) => table.completeness === "complete")
+      && !extract.overflow.hit
       ? "complete"
       : "partial",
-    relations: extract.relations.length === 0 ? "complete" : (partialFromRows(extract.relations) ? "partial" : "partial"),
-    queries: extract.queries.length === 0 ? "complete" : (partialFromRows(extract.queries) ? "partial" : "partial"),
-    transactions: extract.transactions.length === 0 ? "complete" : (partialFromRows(extract.transactions) ? "partial" : "partial"),
+    relations: extract.sectionGaps.has("relations") || partialFromRows(extract.relations)
+      ? "partial"
+      : "complete",
+    queries: extract.sectionGaps.has("queries") || partialFromRows(extract.queries)
+      ? "partial"
+      : "complete",
+    transactions: partialFromRows(extract.transactions) ? "partial" : "complete",
     migrations: extract.migrations.every((row) => row.limitations.length === 0) ? "complete" : "partial",
     scope: "partial",
     bindings: bindingsState === "decoded" ? "complete" : "partial",
@@ -2594,14 +2824,19 @@ export function attachDrizzleEvidence({
     },
     provenance: {
       // Mirrors the scanner's input manifest key: the full input
-      // revision this evidence is fresh against.
+      // revision this evidence is fresh against. otherFiles are inputs
+      // too — migration SQL/journal edits (same byte length or not)
+      // must change the revision (issue #116 fix round, research §2).
       inputRevision: sha256Hex(canonicalText({
         sourceFiles: manifest.sourceFiles.length,
         configFiles: manifest.configFiles.length,
         packageFiles: manifest.packageFiles.length,
         otherFiles: manifest.otherFiles.length,
         totalBytes: manifest.totalBytes,
-        files: [...manifest.sourceFiles, ...manifest.configFiles, ...manifest.packageFiles],
+        files: [
+          ...manifest.sourceFiles, ...manifest.configFiles,
+          ...manifest.packageFiles, ...manifest.otherFiles,
+        ],
       })),
       files: [...extract.contributingFiles.entries()]
         .map(([path, digest]) => ({ path, digest }))

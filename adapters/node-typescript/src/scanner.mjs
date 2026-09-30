@@ -1548,7 +1548,11 @@ function runScan({ profile, readView, permittedProjectRoot, limits }) {
       // the scan rather than resolve drizzle imports by guesswork.
       throw new RequestRefusal("drizzle-closure", "the embedded drizzle closure misses a supported subpath");
     }
-    options.paths = drizzlePaths;
+    // Merge, never replace (issue #116 fix round): the consumer's own
+    // parsed paths mapping keeps resolving its aliases after the pin
+    // attaches; drizzle subpaths are added and the consumer wins a key
+    // conflict — the documented option-fidelity contract.
+    options.paths = { ...drizzlePaths, ...options.paths };
   }
   // Recorded evidence of the analysis configuration (issue #44 fix F-2):
   // tests and hosts can prove the parsed tsconfig options reached the Program.
@@ -1596,10 +1600,8 @@ function runScan({ profile, readView, permittedProjectRoot, limits }) {
     ts, checker, program, context, index,
     drizzleAttachment, drizzleClosure,
     manifest, readBytes,
-    drizzleBindingsInput: drizzleBindingsInput.value,
-    drizzleProjectionInput: drizzleProjectionInput.value,
-    bindingsInputPath: drizzleBindingsInput.path,
-    projectionInputPath: drizzleProjectionInput.path,
+    drizzleBindingsInput,
+    drizzleProjectionInput,
   });
 
   // Host denial notes stay internal: the restricted host serves only the
@@ -1621,8 +1623,10 @@ function normalizeUnknownPath(hostName) {
 /**
  * Read one optional project-root input (issue #116 owner-supplied
  * binding/projection files) through the read view. A missing file is a
- * plain absence; an oversized or non-decodable file is reported as
- * unavailable with the reason — never partially interpreted.
+ * plain absence (`reason: "absent"`); an unreadable or non-decodable
+ * file carries its failure reason (`unreadable:<code>` /
+ * `invalid-json`) so callers can report invalid inputs as invalid —
+ * never mislabeled as missing (issue #116 fix round).
  */
 function readOptionalProjectInput(manifest, readBytes, path, { json = false } = {}) {
   const allFiles = [
@@ -1631,12 +1635,21 @@ function readOptionalProjectInput(manifest, readBytes, path, { json = false } = 
   ];
   const entry = allFiles.find((file) => file.path === path);
   if (entry === undefined) return { value: null, path: null, reason: "absent" };
+  let text;
   try {
-    const text = readBytes(path).toString("utf8");
-    if (!json) return { value: text, path, reason: null };
-    return { value: JSON.parse(text), path, reason: null };
+    text = readBytes(path).toString("utf8");
   } catch (error) {
-    return { value: null, path, reason: String(error?.code ?? "unreadable").slice(0, 64) };
+    return {
+      value: null,
+      path,
+      reason: `unreadable:${String(error?.code ?? error?.name ?? "error").slice(0, 32)}`,
+    };
+  }
+  if (!json) return { value: text, path, reason: null };
+  try {
+    return { value: JSON.parse(text), path, reason: null };
+  } catch {
+    return { value: null, path, reason: "invalid-json" };
   }
 }
 
