@@ -258,6 +258,43 @@ selects, renders, and maps exits on the accepted envelope.
   `planId` is named.
 - `lekalo storage drift SCAN --projection PATH --profile PATH` —
   the declared-versus-observed comparison; the verdict stays data.
+
+## Run history (issue #121)
+
+The `lekalo history` group records the local-only run history and
+metrics recorder under `.lekalo/history/` — fully offline,
+repository/tenant isolated, atomic with recovery, with configurable
+retention and no export surface. See
+[run-history.md](run-history.md) for the custody rules and the field
+by field privacy posture.
+
+- `lekalo history init [--role ROLE]` — create the governed home
+  with its generated ignore protection and verified untracked
+  custody.
+- `lekalo history scope create` — mint one random local tenant
+  scope token; no tenant name or host identity is accepted.
+- `lekalo history record --input - --scope TOKEN` — validate and
+  atomically append one bounded typed harness observation from
+  stdin; the recorder exit proves ingestion only.
+- `lekalo history list --scope TOKEN [--limit N] [--cursor TOKEN]`
+  — the bounded, sorted, same-scope-only page; cursors bind scope
+  and generation and refuse after any mutation.
+- `lekalo history show RUN_ID --scope TOKEN` — the sanitized
+  record plus its separately stored assertion set, named apart.
+- `lekalo history retention --scope TOKEN [--max-age-days D]
+  [--max-records N] [--max-bytes B]` — configure the retention
+  bounds; the strictest bound is enforced per scope.
+- `lekalo history delete RUN_ID --scope TOKEN (--dry-run |
+  --apply)` / `lekalo history prune ...` / `lekalo history clear
+  --scope TOKEN --apply` — deletion transactionally invalidates
+  every dependent index/claim reference.
+- `lekalo history recover` / `lekalo history compact` — integrity,
+  digest, and foreign-key verification with an index rebuilt only
+  from validated surviving records; `VACUUM` after deletes commit.
+- `lekalo history dependents register|resolve` — the typed local
+  dependent-reference seam for the evidence consumers (#100, #102,
+  #118); resolution revalidates every bound digest against live
+  same-scope bytes.
 - `lekalo storage input PROFILE --projection PATH` — the one
   runtime-neutral engine input document every runtime consumer
   receives.
