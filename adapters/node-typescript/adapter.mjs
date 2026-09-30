@@ -223682,7 +223682,7 @@ function renderBody(model) {
   const groups = [];
   const wholeScenarioUnsupported = model.unsupported.length > 0;
   const stepVars = /* @__PURE__ */ new Map();
-  const clockIsos2 = /* @__PURE__ */ new Map();
+  const clockIsos = /* @__PURE__ */ new Map();
   if (wholeScenarioUnsupported) {
     const lines = [];
     for (const entry of model.unsupported) {
@@ -223703,7 +223703,7 @@ function renderBody(model) {
       continue;
     }
     groups.push({
-      lines: [`    // given ${step.stepId} (${step.kind})`, ...renderGiven(step, stepVars, clockIsos2)],
+      lines: [`    // given ${step.stepId} (${step.kind})`, ...renderGiven(step, stepVars, clockIsos)],
       stepId: null
     });
   }
@@ -223716,19 +223716,19 @@ function renderBody(model) {
       continue;
     }
     groups.push({
-      lines: [`    // when ${step.stepId} (${step.operation.kind} ${step.operation.id})`, ...renderWhen(step, stepVars)],
+      lines: [`    // when ${step.stepId} (${step.operation.kind} ${step.operation.id})`, ...renderWhen(step, stepVars, clockIsos)],
       stepId: null
     });
   }
   for (const step of model.then) {
-    groups.push({ lines: renderThen(step, model, stepVars, clockIsos2), stepId: step.stepId });
+    groups.push({ lines: renderThen(step, model, stepVars, clockIsos), stepId: step.stepId });
   }
   return groups;
 }
 function unsupportedRow(stepId, observes, kind, detail) {
   return `    recorder.record({ step_id: ${JSON.stringify(stepId)}, observes: ${JSON.stringify(observes)}, kind: ${JSON.stringify(kind)}, outcome: "unsupported", detail: boundedDetail(${JSON.stringify(detail)}) });`;
 }
-function renderGiven(step, stepVars, clockIsos2) {
+function renderGiven(step, stepVars, clockIsos) {
   const variable = `given_${identifierOf(step.stepId)}`;
   stepVars.set(step.stepId, variable);
   const payload = step.payload ?? {};
@@ -223747,7 +223747,7 @@ function renderGiven(step, stepVars, clockIsos2) {
     case "actor":
       return payload.scope === null ? [`    const ${variable} = port.actor(${JSON.stringify(payload.actor)});`] : [`    const ${variable} = port.actor(${JSON.stringify(payload.actor)}, ${JSON.stringify(payload.scope)});`];
     case "clock":
-      clockIsos2.set(step.stepId, payload.at);
+      clockIsos.set(step.stepId, payload.at);
       return [`    port.clock.freeze(${JSON.stringify(payload.at)});`];
     case "id_source":
       return [
@@ -223772,7 +223772,7 @@ function objectLiteral(fieldEntries, stepVars) {
   }
   return object;
 }
-function renderWhen(step, stepVars) {
+function renderWhen(step, stepVars, clockIsos) {
   const variable = `step_${identifierOf(step.stepId)}`;
   stepVars.set(step.stepId, variable);
   const input = {};
@@ -223803,13 +223803,13 @@ function renderWhen(step, stepVars) {
     `    }`
   ];
 }
-function renderThen(step, model, stepVars, clockIsos2) {
+function renderThen(step, model, stepVars, clockIsos) {
   const observed = stepVars.get(step.observes) ?? `step_${identifierOf(step.observes)}`;
   const meta = `step_id: ${JSON.stringify(step.stepId)}, observes: ${JSON.stringify(step.observes)}, kind: ${JSON.stringify(step.kind)}`;
   if (step.unsupported) {
     return [unsupportedRow(step.stepId, step.observes, step.kind, `${step.unsupported.capability}: ${step.unsupported.reason}`)];
   }
-  const checks = renderChecks(step, model, stepVars, clockIsos2, observed);
+  const checks = renderChecks(step, model, stepVars, clockIsos, observed);
   return [
     `    // then ${step.stepId}: ${step.kind} over ${step.observes}`,
     `    try {`,
@@ -223821,7 +223821,7 @@ function renderThen(step, model, stepVars, clockIsos2) {
     `    }`
   ];
 }
-function renderChecks(step, model, stepVars, clockIsos2, observed) {
+function renderChecks(step, model, stepVars, clockIsos, observed) {
   const payload = step.payload ?? {};
   switch (step.kind) {
     case "result": {
