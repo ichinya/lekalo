@@ -461,3 +461,60 @@ over the new pin), the drizzle gate (36/36), the kernel/scanner/zod/
 native-gates/transport/openapi/client-sdk/scenario Node suites, the
 fixture-provenance family gate, contract-versions/structure/authority/
 privacy/model checks, and the manifest golden.
+
+## Fix round 5 (re-review: two majors in type-annotated territory)
+
+The r4 review verified all four round-4 fixes and gates green, then
+surfaced two majors in the same honesty contract's blind spot:
+ANNOTATED types. Both are fixed with regression fixtures/tests, one
+commit per finding.
+
+Major — module-TYPED values still fabricated db rows.
+`declare const ns: typeof import("drizzle-orm")`, parameters typed
+`typeof orm` (or through an alias of the module type query), and
+`await import(...)` bindings all classified as `receiver:"db"` and
+produced fabricated clean select rows (real target columns, no
+limitation), plus `batch-unsupported`/`relational-query-unsupported`
+misattributions. Root cause: the round-4 exclusion tests DECLARATION
+kinds (namespace imports), and these values are ordinary
+variables/parameters — but their TYPE is the module's export surface,
+which resolves INTO the embedded closure for vendored modules, so the
+closure test won. Fix: `isModuleNamespaceType` extends the exclusion
+to module-typed values (direct module types, type aliases, and the
+anonymous `default`-wrapped shape a dynamic import produces) in both
+the identifier and non-identifier receiver paths; member calls on them
+emit `namespace-receiver-unsupported` with a section gap — including
+the await-import form, which previously shrugged `receiver-unknown`.
+
+Major — type-provable construct callees silently dropped on VALID
+code. `declare const pt: typeof import("drizzle-orm/pg-core").pgTable`
+and `declare const rel: typeof relations` produced ZERO rows and no
+limitation while sections claimed `complete`: the value-declaration
+walk had nothing to follow and the spelling net only knows construct
+NAMES. Fix: when the declaration form has no value identity to follow
+(a declare-const binding, a construct-typed parameter), the declared
+TYPE is the identity anchor. `typeof relations` anchors to the vendored
+function symbol directly; a factory type query anchors to its callable
+interface (`PgTableFn`) — note `typeof import(...).pgTable` parses as
+an IMPORT TYPE node, not a type query, so the construct identity comes
+from the import type's member spelling resolved through the declaring
+closure module's export table. Function types match by SYMBOL identity
+(never structurally — an inline signature with the same shape has no
+closure symbol and stays unprovable). Value-carrying forms are
+deliberately excluded: property bags, destructures, and casts over
+dynamic data keep the round-3/round-4 explicit `callee-unproven`
+flags, and the round-4 bound-hit contract stands.
+
+New `postgres-round5` fixture: the three typed-namespace receiver
+forms plus the await-import binding (all must limit, never fabricate),
+type-provable construct callees (must extract with closure
+provenance), and honest negatives (dynamic-cast destructure and
+beyond-bound chain stay explicit; four hops extract; local construct
+spellings stay silent). Three new gate tests (36 -> 39); the two
+major-finding tests fail on the pre-fix bundle and pass after.
+
+Bundle: rebuilt deterministically (`build.mjs --check` byte-identical,
+entry `sha256:4af648644c64dd0259ef48016b9b4e99c32f5e82717173185f773779b007ca3f`,
+14,633,510 bytes), manifest package digest regenerated
+(`sha256:ae71cdec1a9da2e464b1cb743f5c8ebe9d02ff30cc570b9f2266230832f6f6d4`),
+committed-manifest pin moved with the bytes it guards.

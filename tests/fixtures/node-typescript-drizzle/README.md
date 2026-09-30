@@ -47,6 +47,19 @@ shipped adapter bundle (`drizzle-orm@0.44.7`).
   provably non-Drizzle member spellings (`builder.relations()` on a
   project class) which must never flag `callee-unproven`.
 
+- `postgres-round5/` — the fix-round-5 regression anchors: module-TYPED
+  namespace receivers (`declare const ns: typeof import("drizzle-orm")`,
+  alias-typed and namespace-import-type parameters, `await import(...)`
+  bindings) which are provably module namespaces and must emit
+  `namespace-receiver-unsupported` instead of fabricated rows;
+  type-provable construct callees (`declare const pt: typeof
+  import("drizzle-orm/pg-core").pgTable`, `declare const rel: typeof
+  relations`, and the construct-typed parameter form) which must
+  extract by declared type identity; and honest negatives preserving
+  the settled contracts (dynamic-cast destructures and the round-4
+  hop bound stay explicitly `callee-unproven`, local construct
+  spellings stay silent).
+
 The paired dialect fixtures exist to prove AC8: the neutral evidence
 (document shape, effect actions, binding and completeness semantics) is
 identical across dialects, while dialect facts stay in target rows
