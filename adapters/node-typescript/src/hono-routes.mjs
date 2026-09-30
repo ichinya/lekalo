@@ -131,6 +131,36 @@ export function collectRegistrations(ctx) {
   return events;
 }
 
+/**
+ * The first `use()` argument is a path filter when the compiler can
+ * tell it is string-shaped (literal, resolvable const alias, string
+ * type, string array, RegExp) or when its type is unknowable (any/
+ * unknown) — the honest failure is a dynamic-path-filter uncertainty,
+ * never a fabricated middleware endpoint. Function-typed arguments are
+ * global middleware in the handler position.
+ */
+function useFirstArgIsPathFilter(ctx, node, sourceFile) {
+  const { ts, checker } = ctx;
+  if (node.kind === ts.SyntaxKind.StringLiteral || node.kind === ts.SyntaxKind.NoSubstitutionTemplateLiteral) return true;
+  if (ctx.resolveLiteralString(node, sourceFile) !== null) return true;
+  if (node.kind === ts.SyntaxKind.RegularExpressionLiteral) return true;
+  if (node.kind === ts.SyntaxKind.NewExpression
+    && node.expression?.kind === ts.SyntaxKind.Identifier
+    && node.expression.text === "RegExp") return true;
+  if (node.kind === ts.SyntaxKind.ArrayLiteralExpression) {
+    return (node.elements ?? []).every((element) =>
+      element.kind === ts.SyntaxKind.StringLiteral
+      || element.kind === ts.SyntaxKind.NoSubstitutionTemplateLiteral
+      || element.kind === ts.SyntaxKind.RegularExpressionLiteral
+      || ctx.resolveLiteralString(element, sourceFile) !== null);
+  }
+  const type = checker.getTypeAtLocation(node);
+  if (type.flags & (ts.TypeFlags.StringLike | ts.TypeFlags.AnyOrUnknown)) return true;
+  if (type.symbol?.name === "RegExp") return true;
+  const valueType = checker.getIndexTypeOfType(type, ts.IndexKind.String);
+  return Boolean(valueType && (valueType.flags & (ts.TypeFlags.StringLike | ts.TypeFlags.AnyOrUnknown)));
+}
+
 function classifyMethod(methodName) {
   if (ROUTE_METHODS.has(methodName)) return "route";
   if (methodName === "route") return "mount";
@@ -307,6 +337,7 @@ function makeEvent(ctx, { kind, node, instance, methodName, sourceFile, module }
     pathNode: null,
     methods: null,
     pathFilter: null,
+    pathFilterKind: null,
     childInstance: null,
     handlers: [],
     inlineMiddleware: [],
@@ -356,13 +387,24 @@ function makeEvent(ctx, { kind, node, instance, methodName, sourceFile, module }
       event.reasons.push("unknown-handler");
     }
   } else if (kind === "use") {
+    // The first argument occupies Hono's path-filter position when it
+    // is a literal/resolvable string, a RegExp, or compiler-typed
+    // string-like/unknown. A filter that cannot resolve stays unknown
+    // (dynamic-path-filter) — the argument is NEVER resolved into a
+    // fabricated middleware endpoint (issue #115 fix round).
     const first = args[0] ?? null;
-    const firstIsPath = first !== null
-      && (first.kind === ts.SyntaxKind.StringLiteral || first.kind === ts.SyntaxKind.NoSubstitutionTemplateLiteral);
     let handlerStart = 0;
-    if (firstIsPath) {
+    if (first && useFirstArgIsPathFilter(ctx, first, sourceFile)) {
       const filter = ctx.resolveLiteralString(first, sourceFile);
-      event.pathFilter = filter === null ? null : filter.value;
+      if (filter !== null) {
+        event.pathFilter = filter.value;
+        event.pathFilterKind = filter.kind;
+      } else {
+        event.pathFilterKind = "unknown";
+        event.status = "unknown";
+        event.reasons.push("dynamic-path-filter");
+        ctx.addUncertaintyAt(sourceFile, first, "dynamic-path-filter", "use");
+      }
       handlerStart = 1;
     }
     event.handlers = resolveHandlerChain(ctx, args, handlerStart, sourceFile);

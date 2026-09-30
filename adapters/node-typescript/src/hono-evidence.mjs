@@ -80,6 +80,7 @@ export const HONO_MIDDLEWARE_ROLES = Object.freeze(["auth", "tenant", "context",
 export const HONO_REASONS = Object.freeze([
   "dynamic-path",
   "dynamic-method",
+  "dynamic-path-filter",
   "unresolved-constructor",
   "unsupported-receiver",
   "mutable-alias",

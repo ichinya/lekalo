@@ -78,16 +78,48 @@ test("roles: explicit JSDoc annotations only; presence never authorizes", async 
       );
     }
     // Context keys stay namespaced evidence: logger writes requestId on
-    // all four routes, tenant writes tenantId on all four, cacheHeaders
-    // writes cache on /health.
+    // all five app routes, tenant writes tenantId on all five,
+    // cacheHeaders writes cache on /health. The runtimeApp routes get
+    // neither global middleware, so they add no writes.
     const writes = recordsOfRelation(context, "context-write");
     const keys = writes.map((row) => row.note).sort();
     assert.deepEqual(keys, [
-      "cache", "requestId", "requestId", "requestId", "requestId",
-      "tenantId", "tenantId", "tenantId", "tenantId",
+      "cache", "requestId", "requestId", "requestId", "requestId", "requestId",
+      "tenantId", "tenantId", "tenantId", "tenantId", "tenantId",
     ]);
     const reads = recordsOfRelation(context, "context-read");
     assert.ok(reads.every((row) => typeof row.note === "string" && row.note.length > 0));
+  } finally {
+    dispose(context.root);
+  }
+});
+
+test("use() filters: const aliases stay filters; dynamic filters never fabricate handlers", async () => {
+  const context = await scanHonoFixture("use-filters", "middleware");
+  try {
+    const middleware = recordsOfRelation(context, "uses-middleware");
+    // No uses-middleware endpoint may be fabricated from a string-
+    // shaped argument: consolePrefix/runtimePrefix never become `to`.
+    const fabricated = middleware.filter((row) => row.to.name === "consolePrefix"
+      || row.to.name === "runtimePrefix");
+    assert.equal(fabricated.length, 0, "no string/filter argument becomes a middleware endpoint");
+    // The const-alias filter resolves like a literal: /console/panel
+    // gets exactly one APPLICABLE auth binding (the /admin/* wildcard
+    // row stays conditional-incomplete).
+    const consoleComplete = middleware.filter((row) => row.path === "/console/panel"
+      && row.to.name === "auth" && row.status === "complete");
+    assert.equal(consoleComplete.length, 1, "const-alias filter applies auth to /console/panel");
+    assert.deepEqual(consoleComplete[0].reasons, []);
+    // The dynamic filter cannot resolve: auth stays bound with
+    // conditional applicability and the dynamic-path-filter reason —
+    // never silently dropped, never guessed applicable.
+    const runtimeDynamic = middleware.filter((row) => row.path === "/runtime/panel"
+      && row.to.name === "auth" && row.reasons.includes("dynamic-path-filter"));
+    assert.equal(runtimeDynamic.length, 1, "dynamic filter keeps auth recorded");
+    assert.equal(runtimeDynamic[0].status, "incomplete");
+    assert.ok(runtimeDynamic[0].reasons.includes("conditional-applicability"));
+    // The unresolved filter surfaces on the uncertainty surface too.
+    assert.ok(context.hono.uncertainty.some((row) => row.kind === "hono-dynamic-path-filter"));
   } finally {
     dispose(context.root);
   }

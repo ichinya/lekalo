@@ -118,6 +118,9 @@ function composeChain(route, useEvents) {
 
 /** Applicability of one use event's path filter to one route. */
 function applicabilityOf(event, route) {
+  // A filter that failed to resolve proves no overlap and no disjointness:
+  // conditional evidence, never a guessed match (issue #115 fix round).
+  if (event.pathFilterKind === "unknown") return "conditional";
   const filter = event.pathFilter;
   if (filter === null || filter === undefined) return "applicable";
   if (filter.includes("*") || filter.includes(":") || filter.includes("?")) {
@@ -141,6 +144,10 @@ function emitMiddlewareRecord(ctx, route, member, ordinal, chainLength) {
   let status = "complete";
   if (member.applicability === "conditional") {
     reasons.push("conditional-applicability");
+    status = "incomplete";
+  }
+  if (member.useEvent?.pathFilterKind === "unknown") {
+    reasons.push("dynamic-path-filter");
     status = "incomplete";
   }
   // A `use` site that is not proven to run at initialization cannot

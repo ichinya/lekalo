@@ -41,3 +41,9 @@ export async function cacheHeaders(c: Context, next: () => Promise<void>) {
 export function maintenance(c: Context) {
   return c.json({ error: "down" }, 503);
 }
+
+// A runtime-computed prefix: occupies the path-filter position of
+// use() but cannot resolve statically.
+export function runtimePrefix(): string {
+  return "/runtime";
+}

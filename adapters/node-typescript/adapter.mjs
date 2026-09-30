@@ -214211,6 +214211,7 @@ var HONO_MIDDLEWARE_ROLES = Object.freeze(["auth", "tenant", "context", "logging
 var HONO_REASONS = Object.freeze([
   "dynamic-path",
   "dynamic-method",
+  "dynamic-path-filter",
   "unresolved-constructor",
   "unsupported-receiver",
   "mutable-alias",
@@ -214485,6 +214486,21 @@ function collectRegistrations(ctx) {
   }
   return events;
 }
+function useFirstArgIsPathFilter(ctx, node, sourceFile) {
+  const { ts: ts3, checker } = ctx;
+  if (node.kind === ts3.SyntaxKind.StringLiteral || node.kind === ts3.SyntaxKind.NoSubstitutionTemplateLiteral) return true;
+  if (ctx.resolveLiteralString(node, sourceFile) !== null) return true;
+  if (node.kind === ts3.SyntaxKind.RegularExpressionLiteral) return true;
+  if (node.kind === ts3.SyntaxKind.NewExpression && node.expression?.kind === ts3.SyntaxKind.Identifier && node.expression.text === "RegExp") return true;
+  if (node.kind === ts3.SyntaxKind.ArrayLiteralExpression) {
+    return (node.elements ?? []).every((element) => element.kind === ts3.SyntaxKind.StringLiteral || element.kind === ts3.SyntaxKind.NoSubstitutionTemplateLiteral || element.kind === ts3.SyntaxKind.RegularExpressionLiteral || ctx.resolveLiteralString(element, sourceFile) !== null);
+  }
+  const type = checker.getTypeAtLocation(node);
+  if (type.flags & (ts3.TypeFlags.StringLike | ts3.TypeFlags.AnyOrUnknown)) return true;
+  if (type.symbol?.name === "RegExp") return true;
+  const valueType = checker.getIndexTypeOfType(type, ts3.IndexKind.String);
+  return Boolean(valueType && valueType.flags & (ts3.TypeFlags.StringLike | ts3.TypeFlags.AnyOrUnknown));
+}
 function classifyMethod(methodName) {
   if (ROUTE_METHODS.has(methodName)) return "route";
   if (methodName === "route") return "mount";
@@ -214615,6 +214631,7 @@ function makeEvent(ctx, { kind, node, instance, methodName, sourceFile, module }
     pathNode: null,
     methods: null,
     pathFilter: null,
+    pathFilterKind: null,
     childInstance: null,
     handlers: [],
     inlineMiddleware: [],
@@ -214665,11 +214682,18 @@ function makeEvent(ctx, { kind, node, instance, methodName, sourceFile, module }
     }
   } else if (kind === "use") {
     const first = args[0] ?? null;
-    const firstIsPath = first !== null && (first.kind === ts3.SyntaxKind.StringLiteral || first.kind === ts3.SyntaxKind.NoSubstitutionTemplateLiteral);
     let handlerStart = 0;
-    if (firstIsPath) {
+    if (first && useFirstArgIsPathFilter(ctx, first, sourceFile)) {
       const filter = ctx.resolveLiteralString(first, sourceFile);
-      event.pathFilter = filter === null ? null : filter.value;
+      if (filter !== null) {
+        event.pathFilter = filter.value;
+        event.pathFilterKind = filter.kind;
+      } else {
+        event.pathFilterKind = "unknown";
+        event.status = "unknown";
+        event.reasons.push("dynamic-path-filter");
+        ctx.addUncertaintyAt(sourceFile, first, "dynamic-path-filter", "use");
+      }
       handlerStart = 1;
     }
     event.handlers = resolveHandlerChain(ctx, args, handlerStart, sourceFile);
@@ -215361,6 +215385,7 @@ function composeChain(route, useEvents) {
   return chain;
 }
 function applicabilityOf(event, route) {
+  if (event.pathFilterKind === "unknown") return "conditional";
   const filter = event.pathFilter;
   if (filter === null || filter === void 0) return "applicable";
   if (filter.includes("*") || filter.includes(":") || filter.includes("?")) {
@@ -215382,6 +215407,10 @@ function emitMiddlewareRecord(ctx, route, member, ordinal, chainLength) {
   let status = "complete";
   if (member.applicability === "conditional") {
     reasons.push("conditional-applicability");
+    status = "incomplete";
+  }
+  if (member.useEvent?.pathFilterKind === "unknown") {
+    reasons.push("dynamic-path-filter");
     status = "incomplete";
   }
   const reach = member.useEvent ? reachabilityPenaltyOf(member.useEvent) : null;
