@@ -1244,3 +1244,81 @@ test("fix-round-5 negatives: declaration-anchored identity only, settled contrac
     dispose(fx.root);
   }
 });
+
+// ---------------------------------------------------------------------------
+// Fix round 6: the type anchor gated to identity no initializer can
+// contradict, and factory-interface callees mapped to their constructs.
+// ---------------------------------------------------------------------------
+
+test("fix-round-6 anchors: cast-initialized and reassigned callees stay explicitly unproven", async () => {
+  const fx = await scanDrizzleFixture("pg-round6-declines", "postgres-round6");
+  try {
+    const d = fx.index.drizzle;
+    // Pre-fix, `(null as unknown) as typeof relations` fabricated a
+    // relations row, and `let r = relations; r = localFn` extracted on
+    // the stale initializer while the program called the replacement.
+    assert.deepEqual(d.relations, [],
+      "no relation row may be invented from a cast or a stale let binding");
+    const source = readFileSync(join(fx.project, "src/declines.ts"), "utf8").split("\n");
+    const lineOf = (needle) => source.findIndex((line) => line.includes(needle)) + 1;
+    const unproven = d.limitations.filter((l) => l.code === "callee-unproven");
+    assert.deepEqual(unproven.map((l) => [l.detail, l.line]).sort(), [
+      ["relations", lineOf("export const castRow = r(users")],
+      ["relations", lineOf("export const staleRow = r2(posts")],
+    ], "exactly one family-disjoint unproven flag per declined call");
+    assert.equal(d.completeness.sections.relations, "partial");
+  } finally {
+    dispose(fx.root);
+  }
+});
+
+test("fix-round-6 callees: factory-interface bindings extract by mapped construct identity", async () => {
+  const fx = await scanDrizzleFixture("pg-round6-ifaces", "postgres-round6");
+  try {
+    const d = fx.index.drizzle;
+    // `declare const t: PgTableFn` — the interface anchors to exactly
+    // one construct through the closed map; pre-fix this satisfied the
+    // resolver and then dropped silently on the factory-name gate.
+    const widgets = d.tables.find((t) => t.exportName === "widgets");
+    assert.ok(widgets, "the PgTableFn-typed binding extracts");
+    assert.equal(widgets.physicalName, "widgets");
+    assert.equal(widgets.dialect, "postgresql");
+    assert.ok(widgets.declarationPath?.startsWith("pg-core/"),
+      "provenance names the closure factory declaration");
+    // The mysql sibling through the same map.
+    const mysqlWidgets = d.tables.find((t) => t.exportName === "mysqlWidgets");
+    assert.ok(mysqlWidgets, "the MySqlTableFn-typed binding extracts");
+    assert.equal(mysqlWidgets.physicalName, "mysql_widgets");
+    assert.equal(mysqlWidgets.dialect, "mysql");
+    assert.ok(mysqlWidgets.declarationPath?.startsWith("mysql-core/"),
+      "mysql provenance names the mysql-core closure declaration");
+    // The interface-typed parameter form shares the anchor.
+    const built = d.tables.find((t) => t.exportName === "built");
+    assert.ok(built, "the interface-typed parameter callee extracts");
+    assert.ok(!d.limitations.some((l) =>
+      l.code === "callee-unproven" && l.module === "src/ifaces.ts"),
+      "mapped factory interfaces never flag callee-unproven");
+  } finally {
+    dispose(fx.root);
+  }
+});
+
+test("fix-round-6 call-results: type-anchored extraction is marked type-sourced", async () => {
+  const fx = await scanDrizzleFixture("pg-round6-callresult", "postgres-round6");
+  try {
+    const d = fx.index.drizzle;
+    const made = d.tables.find((t) => t.exportName === "made");
+    assert.ok(made, "the call-result-anchored table still extracts");
+    assert.equal(made.physicalName, "made");
+    assert.ok(made.limitations.includes("type-sourced"),
+      "the row is marked: identity came from the declared return type");
+    assert.equal(made.completeness, "partial");
+    assert.ok(d.limitations.some((l) =>
+      l.code === "type-sourced" && l.module === "src/callresult.ts"),
+      "the type-sourced marker surfaces at document level too");
+    assert.equal(d.completeness.sections.tables, "partial",
+      "a type-sourced row degrades the section instead of claiming construct proof");
+  } finally {
+    dispose(fx.root);
+  }
+});
