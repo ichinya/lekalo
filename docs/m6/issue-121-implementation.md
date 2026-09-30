@@ -163,3 +163,67 @@ Commits, in order:
   `node scripts/test-diagnostic-contracts.mjs`,
   `node scripts/check-structure.mjs`, `node scripts/test-contract-versions.mjs`
   — all pass unchanged (the #120 frozen family is untouched).
+
+## CI fix round (after the first push)
+
+The first CI run on the branch failed on three regressions; the base
+`ichinya/M6` was green. Fixes, one commit each:
+
+1. **E0599 on Unix (`metadata.nlink()`, `run_history/path.rs`).** The
+   hard-link custody check called `MetadataExt::nlink` under
+   `#[cfg(unix)]` without importing the trait, so every Unix target
+   (build, MSRV, clippy) refused to compile. The import now sits inside
+   the `cfg(unix)` block. Platform semantics are explicit: Unix reads
+   `MetadataExt::nlink`; Windows has no stable link count in std (the
+   `windows_by_handle` API is unstable), so the file is opened and
+   `BY_HANDLE_FILE_INFORMATION::nNumberOfLinks` is read through
+   `GetFileInformationByHandle` on the already-pinned `windows-sys`
+   dependency. A link count above one, or a Windows count that cannot be
+   read at all, is a `history.path-denied` (`hard-linked`) custody
+   refusal — verifiable or refusing, never assuming.
+2. **`entry-count` mismatch in the contract gate (Node 18 + 24).**
+   `scripts/test-classification-contracts.mjs` asserts the successor
+   registry as the v0.3.2 predecessor plus one increment per registered
+   family; issue #121 added exactly fifteen `LEK-HST-*` rules (the
+   `LEK-HST-013` slot stays unassigned by design — the registry and
+   `run_history/codes.rs` agree on the same fifteen ids), so the expected
+   sum gains `+ 15` with the family documented. No registration was
+   wrong; only the expectation moved.
+3. **`structure.selection-alias` on Windows in the run-history e2e gate.**
+   GitHub's Windows runners spell `%TEMP%` with the 8.3 profile alias
+   (`RUNNER~1`); the gate spawned the binary with an alias-spelled
+   working directory and the CLI selection policy denies alias spellings
+   (LEK-STR-025) before any command logic — the same failure mode the
+   Rust CLI suites already document. The gate now resolves the created
+   project directory with `fs.realpathSync.native` (the libuv realpath —
+   the default JS `realpathSync` keeps an 8.3-spelled input as written)
+   before spawning, matching the suites' canonicalize-and-strip
+   treatment.
+
+Reviewer follow-ups also landed in this round:
+
+- **`store::get` re-verifies custody on every read.** The returned record
+  bytes must match the stored `record_digest`, the frozen #120 refs are
+  re-checked, and assertion-set bytes must match their `digest` — a
+  tampered store now refuses as `history.corrupt` at read time, not only
+  at recovery
+  (`recovery_verifies_digests_and_rejects_tampered_records` covers the
+  read path). The earlier "re-verified at read and recovery" wording is
+  now literally true.
+- **`recover` cross-checks the custody body's embedded `runId` against
+  the column identity.** A digest-valid record whose column `run_id`
+  diverges from the embedded `runId` is quarantined — excluded from the
+  rebuilt index, counted in the new `quarantinedRuns` recovery-report
+  field, and never blessed back into the listing; recovery never mutates
+  stored rows
+  (`recovery_quarantines_records_whose_column_and_body_ids_diverge`).
+
+CI fix-round gate evidence: `cargo fmt --check` clean; `cargo clippy
+--workspace --all-targets --locked -- -D warnings` clean on Windows and
+on a real Unix target; `cargo test --workspace --locked` — 1765 tests
+passed, 0 failed (42 `run_history` module tests); the Ajv gates
+`test-run-history-contracts`, `test-run-history-cli`,
+`test-classification-contracts`, `test-error-contracts`,
+`test-diagnostic-contracts`, `test-contract-versions`,
+`test-fixture-provenance`, and `check-contract-versions --base HEAD^`
+all pass.
