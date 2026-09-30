@@ -671,6 +671,14 @@ function calleeRecognizedButUnproven(context, calleeNode, constructs, family) {
     return closureTypeNames !== null
       && closureTypeNames.some((name) => RECOGNITION_FAMILIES[family].has(name));
   }
+  if (probe.typeUnproven) {
+    // The type anchor resolved to a closure symbol that is neither a
+    // recognized construct nor a mapped factory interface: flagging it
+    // is the honest outcome — returning it used to satisfy the resolver
+    // and then drop silently on the factory-name gate
+    // (issue #116 fix round 6).
+    return true;
+  }
   // A provably FOREIGN callee type (every type declaration is real and
   // outside the embedded closure — a project-local helper or another
   // package's member that merely spells `relations`/`pgTable`) is not
@@ -760,7 +768,21 @@ function closureModuleExportOf(context, declaration, name) {
   }
 }
 
-function closureTypeSymbolOf(context, calleeNode) {
+/**
+ * The factory-callable interfaces the vendored closure exports next to
+ * their constructs: a binding typed by the INTERFACE (not by a type
+ * query) anchors to exactly one construct — the mapping is closed and
+ * derived from the vendored declaration files (issue #116 fix round 6,
+ * `export declare const pgTable: PgTableFn` and siblings).
+ */
+const FACTORY_INTERFACE_NAMES = new Map([
+  ["PgTableFn", "pgTable"],
+  ["MySqlTableFn", "mysqlTable"],
+  ["SQLiteTableFn", "sqliteTable"],
+  ["SingleStoreTableFn", "singlestoreTable"],
+]);
+
+function closureTypeSymbolOf(context, calleeNode, probe = null) {
   const { ts, checker } = context;
   let type;
   try {
@@ -790,12 +812,30 @@ function closureTypeSymbolOf(context, calleeNode) {
     // (`PgTableFn`/`MySqlTableFn`), not a construct-named function: the
     // construct identity comes from the declared type query's member
     // spelling, resolved through the declaring closure module's export
-    // table (issue #116 fix round 5).
+    // table (issue #116 fix round 5). A binding typed by the interface
+    // DIRECTLY (`declare const t: PgTableFn`) anchors to exactly one
+    // construct through the closed interface→factory map
+    // (issue #116 fix round 6 — previously it satisfied the resolver
+    // and then dropped silently on the factory-name gate).
+    const mappedFactory = FACTORY_INTERFACE_NAMES.get(symbol.getName());
+    if (mappedFactory !== undefined) {
+      const factory = closureModuleExportOf(context,
+        symbol.declarations?.[0] ?? null, mappedFactory);
+      if (factory !== null && factory !== undefined
+        && symbolInClosure(factory, context.closurePrefix)) return factory;
+      if (probe !== null) probe.typeUnproven = true;
+      return null;
+    }
     const target = closureModuleExportOf(context, symbol.declarations?.[0] ?? null,
       declaredTypeQuerySpelling(context, calleeNode));
     if (target !== null && target !== undefined
       && symbolInClosure(target, context.closurePrefix)) return target;
-    return symbol;
+    // A closure-resolved symbol that is not a recognized construct and
+    // maps to no factory is NOT identity: returning it used to satisfy
+    // the resolver and then drop silently on the factory-name gate
+    // (issue #116 fix round 6). Decline and flag explicitly.
+    if (probe !== null) probe.typeUnproven = true;
+    return null;
   }
   return null;
 }
