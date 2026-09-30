@@ -30,9 +30,11 @@ shipped adapter bundle (`drizzle-orm@0.44.7`).
 - `postgres-callees/` — the fix-round-3 regression anchors: recognized
   constructs behind non-Identifier callees (namespace property access
   `pg.pgTable`/`orm.relations`, const/let rebinding `const f = pgTable`)
-  which must extract by resolved symbol identity, and construct-named
-  but unprovable callees (element access into a property bag) which
-  must produce explicit `callee-unproven` limitations and section gaps.
+  which must extract by resolved symbol identity, construct-named but
+  unprovable callees (element access into a property bag) which must
+  produce explicit `callee-unproven` limitations and section gaps, and
+  a same-named non-Drizzle `db` local which must never inherit the
+  proven receiver identity of the module-level Drizzle client.
 
 The paired dialect fixtures exist to prove AC8: the neutral evidence
 (document shape, effect actions, binding and completeness semantics) is

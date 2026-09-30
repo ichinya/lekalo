@@ -1945,9 +1945,9 @@ function extractTransaction(context, sourceFile, callNode, receiverKind, parentT
     const scoped = nestedState.txScopes.get(name);
     if (scoped !== undefined) return { tx: scoped, identity: "tx" };
     if (nestedState.dbAliases.has(name)) return { tx: null, identity: "db-alias" };
-    if (nestedState.dbNames.has(name)) return { tx: null, identity: "db" };
-    const identity = rootIdentityKind(context, root, nestedState);
-    return { tx: null, identity };
+    // Receiver identity is symbol-resolved (the name-keyed memo is
+    // gone — issue #116 fix round 3).
+    return { tx: null, identity: rootIdentityKind(context, root, nestedState) };
   };
 
   const walkExpression = (node, conditional, localAliases) => {
@@ -2137,7 +2137,6 @@ function rootIdentityKind(context, root, state) {
   if (root.kind === ts.SyntaxKind.Identifier) {
     if (state.txScopes.has(root.text)) return "tx";
     if (state.dbAliases.has(root.text)) return "db-alias";
-    if (state.dbNames.has(root.text)) return "db";
     let symbol;
     try {
       symbol = checker.getSymbolAtLocation(root);
@@ -2148,6 +2147,19 @@ function rootIdentityKind(context, root, state) {
     // imported database handle is a variable in another module, and
     // the alias type can be `any` when annotations do not survive.
     const resolved = resolveAliasSymbol(checker, symbol);
+    // The proven-receiver memo is keyed by the RESOLVED DECLARATION
+    // SYMBOL, never the bare name: two same-named bindings are two
+    // different receivers, so a non-Drizzle local named `db` can never
+    // inherit the identity proven for the Drizzle client handle — and
+    // a real handle can never be masked by a same-named local (issue
+    // #116 fix round 3, the db.*/db.batch receiver short-circuit).
+    const memoKey = resolved === undefined || resolved === null
+      ? null
+      : symbolKey(resolved);
+    if (memoKey !== null) {
+      const memo = state.dbSymbols.get(memoKey);
+      if (memo !== undefined) return memo;
+    }
     const declaration = variableDeclarationOf(resolved);
     const depth = state.depth ?? 0;
     if (declaration !== null && declaration !== undefined
@@ -2156,16 +2168,17 @@ function rootIdentityKind(context, root, state) {
       const kind = rootIdentityKind(context, innerRoot, {
         txScopes: state.txScopes,
         dbAliases: state.dbAliases,
-        dbNames: state.dbNames,
+        dbSymbols: state.dbSymbols,
         depth: depth + 1,
       });
-      if (kind !== "unknown") {
-        if (root.kind === ts.SyntaxKind.Identifier) state.dbNames.set(root.text, true);
+      if (kind === "db" || kind === "db-alias") {
+        if (memoKey !== null) state.dbSymbols.set(memoKey, kind);
         return kind;
       }
+      if (kind !== "unknown") return kind;
     }
     if (typeInClosure(ts, checker, root, context.closurePrefix)) {
-      if (root.kind === ts.SyntaxKind.Identifier) state.dbNames.set(root.text, true);
+      if (memoKey !== null) state.dbSymbols.set(memoKey, "db");
       return "db";
     }
     return "unknown";
@@ -2530,7 +2543,8 @@ function newWalkState() {
   return {
     txScopes: new Map(),
     dbAliases: new Map(),
-    dbNames: new Map(),
+    /** resolved receiver symbol key → proven identity ("db"/"db-alias") */
+    dbSymbols: new Map(),
     txCounter: { next: 1 },
     depth: 0,
   };

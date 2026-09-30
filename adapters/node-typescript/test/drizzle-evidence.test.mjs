@@ -980,3 +980,22 @@ test("fix-round-3 honesty: construct-named but unprovable callees are explicit l
     dispose(fx.root);
   }
 });
+
+test("fix-round-3 receivers: the db.* receiver memo is symbol-bound, not name-bound", async () => {
+  const fx = await scanDrizzleFixture("pg-receivers", "postgres-callees");
+  try {
+    const d = fx.index.drizzle;
+    const source = readFileSync(join(fx.project, "src/receivers.ts"), "utf8").split("\n");
+    const lineOf = (needle) => source.findIndex((line) => line.includes(needle)) + 1;
+    const genuineLine = lineOf("export async function genuineRelational");
+    const shadowedLine = lineOf("function shadowedRelational");
+    const hits = d.limitations.filter((l) => l.code === "relational-query-unsupported");
+    assert.equal(hits.length, 1, "only the genuine drizzle db.query surfaces");
+    assert.ok(hits[0].line >= genuineLine && hits[0].line < shadowedLine,
+      `the limitation anchors to the genuine call (${hits[0].line} in [${genuineLine}, ${shadowedLine}))`);
+    assert.equal(d.completeness.sections.queries, "partial",
+      "the genuine out-of-subset surface still degrades the section");
+  } finally {
+    dispose(fx.root);
+  }
+});
