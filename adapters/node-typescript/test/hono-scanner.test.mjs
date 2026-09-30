@@ -426,6 +426,30 @@ test("mounted basePath children and alias targets: prefixes and subtrees survive
     assert.ok(aliasIn, "alias-name registration resolved under the alias mount");
     assert.equal(aliasIn.status, "incomplete");
     assert.ok(aliasIn.reasons.includes("post-mount-registration"));
+    // Shared route-table family (issue #115 fix round 4): Hono's
+    // basePath clone shares ONE routes array across the owner and its
+    // views, so mounting ANY member serves the WHOLE family's routes —
+    // each member's registrations under its own base.
+    assert.equal(byKey.get("GET /bp/own").to.name, "ownHandler");
+    assert.equal(byKey.get("GET /bp/own").status, "complete");
+    assert.equal(byKey.get("GET /bp2/own").status, "complete");
+    assert.equal(byKey.get("GET /x/own").to.name, "ownHandler");
+    assert.equal(byKey.get("GET /x/own").status, "complete");
+    assert.equal(byKey.get("GET /x/v/in").to.name, "inHandler");
+    assert.equal(byKey.get("GET /x/v/in").status, "complete");
+    assert.equal(byKey.get("GET /x/v/n/nb/leaf").to.name, "leafHandler");
+    assert.equal(byKey.get("GET /x/v/n/nb/leaf").status, "complete");
+    // An alias-name registration BEFORE the owner mount is
+    // snapshot-included there; the same registration after the view
+    // mounts stays post-mount incomplete on every earlier mount.
+    assert.equal(byKey.get("GET /x/v/alias-in").status, "complete");
+    for (const key of ["GET /bp/late", "GET /bp2/late", "GET /x/late"]) {
+      assert.equal(byKey.get(key).status, "incomplete");
+      assert.ok(byKey.get(key).reasons.includes("post-mount-registration"));
+    }
+    // Family events under a conditional/deferred mount stay constrained.
+    assert.ok(byKey.get("GET /bpc/own").reasons.includes("conditional-registration"));
+    assert.ok(byKey.get("GET /bpd/own").reasons.includes("deferred-registration"));
     // Mount reachability still constrains every prefixed subtree.
     for (const key of ["GET /bpc/v/in", "GET /bpc/v/n/nb/leaf"]) {
       assert.equal(byKey.get(key).status, "incomplete");
@@ -436,11 +460,13 @@ test("mounted basePath children and alias targets: prefixes and subtrees survive
       assert.ok(byKey.get(key).reasons.includes("deferred-registration"));
     }
     // No dropped-prefix or phantom-surface paths survive: the prefix-
-    // less guesses, the uncomposed grandchild, and the mounted view's
-    // standalone-surface mount are all gone.
+    // less guesses, the uncomposed grandchild, the mounted view's
+    // standalone-surface mount, and the mounted family's standalone
+    // claims are all gone.
     for (const key of [
       "GET /bp/in", "GET /bpi/in", "GET /bp2/in", "GET /bp/v/n/leaf",
       "GET /v/in", "GET /v/n/leaf", "GET /v/n/nb/leaf", "GET /nb/leaf",
+      "GET /own", "GET /late", "GET /v/alias-in", "GET /v/own",
     ]) {
       assert.equal(byKey.get(key), undefined, `${key} must not exist`);
     }
@@ -449,11 +475,12 @@ test("mounted basePath children and alias targets: prefixes and subtrees survive
     // incomplete, and the nested /n fact is emitted exactly once.
     const mounts = recordsOfRelation(context, "mounts-router");
     const mountsByPath = new Map(mounts.map((row) => [row.path, row]));
-    for (const path of ["/bp", "/bpi", "/bp2", "/bpc", "/bpd", "/n"]) {
+    for (const path of ["/bp", "/bpi", "/bp2", "/bpc", "/bpd", "/n", "/x"]) {
       assert.ok(mountsByPath.get(path), `mount ${path} recorded`);
     }
     assert.equal(mountsByPath.get("/bp2").to.name, "aliased");
     assert.equal(mountsByPath.get("/bp").to.name, "view");
+    assert.equal(mountsByPath.get("/x").to.name, "inner2");
     assert.ok(mountsByPath.get("/bpc").reasons.includes("conditional-registration"));
     assert.ok(mountsByPath.get("/bpd").reasons.includes("deferred-registration"));
     assert.equal(mounts.filter((row) => row.path === "/n").length, 1);

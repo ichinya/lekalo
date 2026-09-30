@@ -16,4 +16,12 @@ export function aliasHandler(c: Context) {
   return c.json({ alias: true });
 }
 
+export function ownHandler(c: Context) {
+  return c.json({ own: true });
+}
+
+export function lateHandler(c: Context) {
+  return c.json({ late: true });
+}
+
 export const enabled = true;

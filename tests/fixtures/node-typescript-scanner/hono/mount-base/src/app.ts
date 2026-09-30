@@ -1,6 +1,6 @@
 import { Hono } from "hono";
-import { aliasHandler, enabled, inHandler, inlineHandler } from "./handlers";
-import { view } from "./view";
+import { aliasHandler, enabled, inHandler, inlineHandler, lateHandler } from "./handlers";
+import { inner2, view } from "./view";
 
 export const app = new Hono();
 
@@ -31,3 +31,12 @@ void deferredMount;
 const aliased = view;
 app.route("/bp2", aliased);
 aliased.get("/alias-in", aliasHandler);
+
+// Shared route-table family: mounting the OWNER exposes the view's
+// routes too (one shared routes array), each member's registrations
+// under its own base.
+app.route("/x", inner2);
+
+// A late owner-side registration after both mounts: snapshot-honest
+// bounded evidence, never a guessed served route.
+inner2.get("/late", lateHandler);
