@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { api } from "./api";
+import { hub } from "./hub";
 import { lateChildRoute, rootHandler } from "./handlers";
 import { shared } from "./shared";
 import { v1 } from "./v1";
@@ -18,3 +19,8 @@ v1.get("/late", lateChildRoute);
 
 // The shared router is also mounted at a second parent prefix.
 app.route("/shared", shared);
+
+// The shared parent (with its own nested mount) is mounted twice:
+// adversarial composition for per-ancestor-chain resolution.
+app.route("/hub1", hub);
+app.route("/hub2", hub);

@@ -27,3 +27,7 @@ export function lateChildRoute(c: Context) {
 export function deepLeaf(c: Context) {
   return c.json({ deep: true });
 }
+
+export function hubOwn(c: Context) {
+  return c.json({ hub: true });
+}

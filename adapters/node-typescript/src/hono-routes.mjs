@@ -760,6 +760,7 @@ export function resolveComposition(ctx, events) {
 
   // 4. Mount composition with proven-order snapshot semantics.
   const closureOf = importClosureOf(ctx);
+  const emittedMounts = new Set();
   const rootMounts = mountEvents.filter((event) => {
     // A mount is a root mount when its parent is not itself the child
     // of another mount in the same module (nested mounts are reached
@@ -767,7 +768,7 @@ export function resolveComposition(ctx, events) {
     return !isNestedMount(mountEvents, event);
   });
   for (const mount of rootMounts) {
-    resolveMount(ctx, mount, mountEvents, routeEvents, routes, 0, [], closureOf, "/");
+    resolveMount(ctx, mount, mountEvents, routeEvents, routes, 0, [], closureOf, "/", emittedMounts);
   }
   // 5. Mounted children keep their own deeper mounts resolved through
   // step 4's recursion; nothing standalone remains here.
@@ -842,9 +843,16 @@ function standaloneBaseOf(ctx, instance, seen = new Set()) {
  * ancestor base chain: a mount nested two levels deep composes
  * root prefix + parent standalone base + every mount path, so
  * `api2.route('/v1', v1)` + `app.route('/api2', api2)` resolves
- * `/api2/v1/...` — never the child's prefix alone.
+ * `/api2/v1/...` — never the child's prefix alone. `chain` carries the
+ * ancestor mount events (outermost first): resolution scope, dedupe
+ * keys, and middleware ancestry are all per FULL chain, so a shared
+ * parent mounted twice resolves its subtree once per ancestor instead
+ * of colliding on a shared key. `emittedMounts` keeps the mounts-router
+ * relation one record per mount occurrence event — the same event
+ * reached through different ancestor chains is one fact, not a
+ * duplicate record.
  */
-function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack, closureOf, basePrefix) {
+function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack, closureOf, basePrefix, emittedMounts, chain) {
   if (depth >= HONO_MAX_MOUNT_DEPTH) {
     ctx.addUncertaintyAt(mount.sourceFile, mount.node, "composition-depth", String(depth));
     return;
@@ -860,21 +868,28 @@ function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack
       : "/",
   );
   const mountBase = joinPaths(parentBase, mount.path ?? "/");
+  const chainNext = [...(chain ?? []), mount];
+  // Per-chain scope key: two ancestor chains that reach the same child
+  // event never share a dedupe entry (the shared-parent collision).
+  const scopeOrigin = `mount:${chainNext.map((entry) => `${entry.module}:${entry.order}`).join(">")}`;
   if (mount.childInstance) {
-    ctx.addRecord(makeRecord({
-      relation: "dev.lekalo.hono/mounts-router",
-      from: instanceEndpoint(mount.instance),
-      to: instanceEndpoint(mount.childInstance),
-      path: mount.path,
-      provenance: "detected",
-      confidence: "exact",
-      status: mount.status === "unknown" ? "unknown" : mount.status === "complete" ? "complete" : "incomplete",
-      reasons: mount.reasons,
-      span: ctx.spanOf(mount.node, mount.sourceFile),
-      revision: ctx.revision,
-      adapterVersion: ctx.adapterVersion,
-      frameworkVersion: ctx.frameworkVersion,
-    }));
+    if (!emittedMounts.has(mount)) {
+      emittedMounts.add(mount);
+      ctx.addRecord(makeRecord({
+        relation: "dev.lekalo.hono/mounts-router",
+        from: instanceEndpoint(mount.instance),
+        to: instanceEndpoint(mount.childInstance),
+        path: mount.path,
+        provenance: "detected",
+        confidence: "exact",
+        status: mount.status === "unknown" ? "unknown" : mount.status === "complete" ? "complete" : "incomplete",
+        reasons: mount.reasons,
+        span: ctx.spanOf(mount.node, mount.sourceFile),
+        revision: ctx.revision,
+        adapterVersion: ctx.adapterVersion,
+        frameworkVersion: ctx.frameworkVersion,
+      }));
+    }
     const child = mount.childInstance;
     const stackNext = [...stack, child.key];
     // Snapshot: child route events before the mount occurrence in the
@@ -890,29 +905,33 @@ function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack
         base: mountBase,
         status: included.status,
         reasons: included.reasons,
-        origin: `mount:${mount.module}:${mount.order}`,
+        origin: scopeOrigin,
         mount,
+        mountChain: chainNext,
       }, routes);
     }
     for (const nested of mountEvents) {
       if (nested.instance.key !== child.key) continue;
-      resolveMount(ctx, nested, mountEvents, routeEvents, routes, depth + 1, stackNext, closureOf, mountBase);
+      resolveMount(ctx, nested, mountEvents, routeEvents, routes, depth + 1, stackNext, closureOf, mountBase, emittedMounts, chainNext);
     }
   } else {
-    ctx.addRecord(makeRecord({
-      relation: "dev.lekalo.hono/mounts-router",
-      from: instanceEndpoint(mount.instance),
-      to: null,
-      path: mount.path,
-      provenance: "detected",
-      confidence: "low",
-      status: "unknown",
-      reasons: mount.reasons,
-      span: ctx.spanOf(mount.node, mount.sourceFile),
-      revision: ctx.revision,
-      adapterVersion: ctx.adapterVersion,
-      frameworkVersion: ctx.frameworkVersion,
-    }));
+    if (!emittedMounts.has(mount)) {
+      emittedMounts.add(mount);
+      ctx.addRecord(makeRecord({
+        relation: "dev.lekalo.hono/mounts-router",
+        from: instanceEndpoint(mount.instance),
+        to: null,
+        path: mount.path,
+        provenance: "detected",
+        confidence: "low",
+        status: "unknown",
+        reasons: mount.reasons,
+        span: ctx.spanOf(mount.node, mount.sourceFile),
+        revision: ctx.revision,
+        adapterVersion: ctx.adapterVersion,
+        frameworkVersion: ctx.frameworkVersion,
+      }));
+    }
   }
 }
 
@@ -964,6 +983,9 @@ function resolveInto(ctx, routeEvents, instance, _instanceBase, scope, routes, d
 
 /** Resolve exactly one route event into its route-handler records. */
 function resolveOneRoute(ctx, event, scope, routes) {
+  // Full-chain scope dedupe: the same event under the same ancestor
+  // chain resolves once; different chains never collide.
+  if (scope.origin.startsWith("mount:") && event.resolvedScopes?.has(scope.origin)) return;
   const methods = event.methods ?? [null];
   const fullPath = scope.origin === "standalone"
     ? joinPaths(scope.base, event.path ?? "/")
@@ -981,6 +1003,7 @@ function resolveOneRoute(ctx, event, scope, routes) {
     event,
     instance: event.instance,
     mount: scope.mount ?? null,
+    mountChain: scope.mountChain ?? null,
     path: fullPath,
     methods: methods.filter(Boolean),
     terminal,

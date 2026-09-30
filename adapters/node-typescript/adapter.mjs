@@ -214995,11 +214995,12 @@ function resolveComposition(ctx, events) {
     }, routes, 0);
   }
   const closureOf = importClosureOf(ctx);
+  const emittedMounts = /* @__PURE__ */ new Set();
   const rootMounts = mountEvents.filter((event) => {
     return !isNestedMount(mountEvents, event);
   });
   for (const mount of rootMounts) {
-    resolveMount(ctx, mount, mountEvents, routeEvents, routes, 0, [], closureOf, "/");
+    resolveMount(ctx, mount, mountEvents, routeEvents, routes, 0, [], closureOf, "/", emittedMounts);
   }
   emitOpenApiRecords(ctx, openapiEvents, definitions);
   return { routes, events };
@@ -215045,7 +215046,7 @@ function standaloneBaseOf(ctx, instance, seen = /* @__PURE__ */ new Set()) {
   }
   return "/";
 }
-function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack, closureOf, basePrefix) {
+function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack, closureOf, basePrefix, emittedMounts, chain) {
   if (depth >= HONO_MAX_MOUNT_DEPTH) {
     ctx.addUncertaintyAt(mount.sourceFile, mount.node, "composition-depth", String(depth));
     return;
@@ -215059,21 +215060,26 @@ function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack
     mount.instance.kind === "view" || mount.instance.kind === "alias" ? standaloneBaseOf(ctx, mount.instance) : "/"
   );
   const mountBase = joinPaths(parentBase, mount.path ?? "/");
+  const chainNext = [...chain ?? [], mount];
+  const scopeOrigin = `mount:${chainNext.map((entry) => `${entry.module}:${entry.order}`).join(">")}`;
   if (mount.childInstance) {
-    ctx.addRecord(makeRecord({
-      relation: "dev.lekalo.hono/mounts-router",
-      from: instanceEndpoint(mount.instance),
-      to: instanceEndpoint(mount.childInstance),
-      path: mount.path,
-      provenance: "detected",
-      confidence: "exact",
-      status: mount.status === "unknown" ? "unknown" : mount.status === "complete" ? "complete" : "incomplete",
-      reasons: mount.reasons,
-      span: ctx.spanOf(mount.node, mount.sourceFile),
-      revision: ctx.revision,
-      adapterVersion: ctx.adapterVersion,
-      frameworkVersion: ctx.frameworkVersion
-    }));
+    if (!emittedMounts.has(mount)) {
+      emittedMounts.add(mount);
+      ctx.addRecord(makeRecord({
+        relation: "dev.lekalo.hono/mounts-router",
+        from: instanceEndpoint(mount.instance),
+        to: instanceEndpoint(mount.childInstance),
+        path: mount.path,
+        provenance: "detected",
+        confidence: "exact",
+        status: mount.status === "unknown" ? "unknown" : mount.status === "complete" ? "complete" : "incomplete",
+        reasons: mount.reasons,
+        span: ctx.spanOf(mount.node, mount.sourceFile),
+        revision: ctx.revision,
+        adapterVersion: ctx.adapterVersion,
+        frameworkVersion: ctx.frameworkVersion
+      }));
+    }
     const child = mount.childInstance;
     const stackNext = [...stack, child.key];
     for (const event of routeEvents) {
@@ -215084,29 +215090,33 @@ function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack
         base: mountBase,
         status: included.status,
         reasons: included.reasons,
-        origin: `mount:${mount.module}:${mount.order}`,
-        mount
+        origin: scopeOrigin,
+        mount,
+        mountChain: chainNext
       }, routes);
     }
     for (const nested of mountEvents) {
       if (nested.instance.key !== child.key) continue;
-      resolveMount(ctx, nested, mountEvents, routeEvents, routes, depth + 1, stackNext, closureOf, mountBase);
+      resolveMount(ctx, nested, mountEvents, routeEvents, routes, depth + 1, stackNext, closureOf, mountBase, emittedMounts, chainNext);
     }
   } else {
-    ctx.addRecord(makeRecord({
-      relation: "dev.lekalo.hono/mounts-router",
-      from: instanceEndpoint(mount.instance),
-      to: null,
-      path: mount.path,
-      provenance: "detected",
-      confidence: "low",
-      status: "unknown",
-      reasons: mount.reasons,
-      span: ctx.spanOf(mount.node, mount.sourceFile),
-      revision: ctx.revision,
-      adapterVersion: ctx.adapterVersion,
-      frameworkVersion: ctx.frameworkVersion
-    }));
+    if (!emittedMounts.has(mount)) {
+      emittedMounts.add(mount);
+      ctx.addRecord(makeRecord({
+        relation: "dev.lekalo.hono/mounts-router",
+        from: instanceEndpoint(mount.instance),
+        to: null,
+        path: mount.path,
+        provenance: "detected",
+        confidence: "low",
+        status: "unknown",
+        reasons: mount.reasons,
+        span: ctx.spanOf(mount.node, mount.sourceFile),
+        revision: ctx.revision,
+        adapterVersion: ctx.adapterVersion,
+        frameworkVersion: ctx.frameworkVersion
+      }));
+    }
   }
 }
 function classifyChildEvent(mount, event, closureOf) {
@@ -215137,6 +215147,7 @@ function resolveInto(ctx, routeEvents, instance, _instanceBase, scope, routes, d
   }
 }
 function resolveOneRoute(ctx, event, scope, routes) {
+  if (scope.origin.startsWith("mount:") && event.resolvedScopes?.has(scope.origin)) return;
   const methods = event.methods ?? [null];
   const fullPath = scope.origin === "standalone" ? joinPaths(scope.base, event.path ?? "/") : joinPaths(scope.base, event.path ?? "/");
   const reasons = [...event.reasons ?? [], ...scope.reasons ?? []];
@@ -215146,6 +215157,7 @@ function resolveOneRoute(ctx, event, scope, routes) {
     event,
     instance: event.instance,
     mount: scope.mount ?? null,
+    mountChain: scope.mountChain ?? null,
     path: fullPath,
     methods: methods.filter(Boolean),
     terminal,

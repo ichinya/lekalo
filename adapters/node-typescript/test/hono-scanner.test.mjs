@@ -81,6 +81,14 @@ test("composition: nested routers, shared children, and proven ordering", async 
     assert.ok(byPath.get("GET /api/deep/leaf"), "depth-3 mount composes root+parent+child prefixes");
     assert.ok(byPath.get("GET /shared/a"), "shared router mounted at /shared");
     assert.ok(byPath.get("GET /v1direct/users"), "basePath view surface");
+    // A shared parent with its own nested mount, mounted twice: every
+    // ancestor chain resolves independently (no dedupe-key collision),
+    // and the nested mounts-router fact is recorded exactly once.
+    assert.ok(byPath.get("GET /hub1/own"), "first hub chain");
+    assert.ok(byPath.get("GET /hub2/own"), "second hub chain");
+    assert.ok(byPath.get("GET /hub1/h/users"), "nested mount under first hub chain");
+    assert.ok(byPath.get("GET /hub2/h/users"), "nested mount under second hub chain");
+    assert.ok(byPath.get("GET /hub2/h/posts"), "second hub chain covers every child route");
     // Deterministic ordering: v1.ts provably initializes before the
     // mounting module (import edge), so its pre-mount routes are
     // complete; the same-module post-mount registration stays incomplete.
@@ -92,10 +100,17 @@ test("composition: nested routers, shared children, and proven ordering", async 
     assert.ok(late.reasons.includes("post-mount-registration"));
     // Mount relations are recorded per occurrence with the child identity
     // (relative mount paths; full prefix resolution is on the routes).
+    // /h is emitted once although the hub is reached through two chains.
     const mounts = recordsOfRelation(context, "mounts-router");
-    assert.equal(mounts.length, 5);
+    assert.equal(mounts.length, 8);
     const mountPaths = mounts.map((mount) => mount.path).sort();
-    assert.deepEqual(mountPaths, ["/api", "/deep", "/shared", "/v1", "/v2"]);
+    assert.deepEqual(mountPaths, ["/api", "/deep", "/h", "/hub1", "/hub2", "/shared", "/v1", "/v2"]);
+    // No duplicate/invalid records: the validator runs inside the scan
+    // and any violation would surface as hono-invalid-record uncertainty.
+    assert.ok(
+      !context.hono.uncertainty.some((row) => row.kind === "hono-invalid-record"),
+      "no duplicate or invalid records",
+    );
     // The base-path view is its own relation.
     const basePaths = recordsOfRelation(context, "base-path");
     assert.equal(basePaths.length, 1);
