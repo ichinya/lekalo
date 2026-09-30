@@ -368,7 +368,11 @@ fn secret_material_and_encoded_blobs_refuse_even_in_token_grammar() {
         "apikey-1234",
         "my-secret-value",
         "bearer-credentials-here",
-        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJVadQssw5c",
+        concat!(
+            "eyJhbGciOiJIUzI1NiJ9",
+            ".eyJzdWIiOiIxMjM0NTY3ODkwIn0",
+            ".SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJVadQssw5c"
+        ),
     ] {
         let lowered = hostile.to_ascii_lowercase();
         let fits = lowered.bytes().all(|byte| {
