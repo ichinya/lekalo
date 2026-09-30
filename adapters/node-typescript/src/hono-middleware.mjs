@@ -19,7 +19,7 @@
 import {
   makeRecord,
 } from "./hono-evidence.mjs";
-import { endpointOf, instanceEndpoint } from "./hono-routes.mjs";
+import { endpointOf, instanceEndpoint, reachabilityPenaltyOf } from "./hono-routes.mjs";
 import {
   contextParamSymbolOf,
   functionBodyOf,
@@ -142,6 +142,13 @@ function emitMiddlewareRecord(ctx, route, member, ordinal, chainLength) {
   if (member.applicability === "conditional") {
     reasons.push("conditional-applicability");
     status = "incomplete";
+  }
+  // A `use` site that is not proven to run at initialization cannot
+  // make a complete middleware claim (issue #115 fix round).
+  const reach = member.useEvent ? reachabilityPenaltyOf(member.useEvent) : null;
+  if (reach) {
+    reasons.push(reach.reason);
+    status = reach.status === "unknown" ? "unknown" : "incomplete";
   }
   if (!callsNext) {
     reasons.push("no-next-call-detected");

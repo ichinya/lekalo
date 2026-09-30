@@ -214220,6 +214220,9 @@ var HONO_REASONS = Object.freeze([
   "post-mount-registration",
   "composition-cycle",
   "composition-depth",
+  "conditional-registration",
+  "deferred-registration",
+  "unreachable-registration",
   "conditional-applicability",
   "no-next-call-detected",
   "dynamic-context-key",
@@ -214399,6 +214402,27 @@ function validateHonoRecords(records) {
 // src/hono-routes.mjs
 var ROUTE_METHODS = /* @__PURE__ */ new Set(["get", "post", "put", "patch", "delete", "options", "head", "all", "on"]);
 var APP_METHODS = /* @__PURE__ */ new Set(["route", "use", "basePath", "onError", "notFound", "openapi"]);
+var DEFERRING_KINDS = [
+  "FunctionDeclaration",
+  "FunctionExpression",
+  "ArrowFunction",
+  "MethodDeclaration",
+  "Constructor",
+  "GetAccessor",
+  "SetAccessor"
+];
+var CONDITIONAL_KINDS = [
+  "IfStatement",
+  "SwitchStatement",
+  "ConditionalExpression",
+  "TryStatement",
+  "CatchClause",
+  "ForStatement",
+  "ForOfStatement",
+  "ForInStatement",
+  "WhileStatement",
+  "DoStatement"
+];
 function collectRegistrations(ctx) {
   const { ts: ts3, checker, program } = ctx;
   const events = [];
@@ -214467,6 +214491,107 @@ function classifyMethod(methodName) {
   if (methodName === "onError" || methodName === "notFound") return "error";
   if (methodName === "openapi") return "openapi";
   return "other";
+}
+function reachabilityOf(ctx, node, sourceFile) {
+  const { ts: ts3 } = ctx;
+  let conditional = false;
+  let current = node.parent;
+  for (let depth = 0; current && current !== sourceFile && depth < 512; depth += 1) {
+    if (DEFERRING_KINDS.includes(ts3.SyntaxKind[current.kind])) {
+      if (unreachableSiblingBefore(ctx, node, sourceFile)) return "unreachable";
+      return functionIsProvenCalled(ctx, current, sourceFile) ? "called" : "deferred";
+    }
+    const kindName = ts3.SyntaxKind[current.kind];
+    if (CONDITIONAL_KINDS.includes(kindName)) conditional = true;
+    if (kindName === "BinaryExpression" && (current.operatorToken?.kind === ts3.SyntaxKind.AmpersandAmpersandToken || current.operatorToken?.kind === ts3.SyntaxKind.BarBarToken || current.operatorToken?.kind === ts3.SyntaxKind.QuestionQuestionToken)) {
+      conditional = true;
+    }
+    current = current.parent;
+  }
+  if (unreachableSiblingBefore(ctx, node, sourceFile)) return "unreachable";
+  return conditional ? "conditional" : "top-level";
+}
+function unreachableSiblingBefore(ctx, node, sourceFile) {
+  const { ts: ts3 } = ctx;
+  let current = node;
+  while (current && current !== sourceFile) {
+    const parent = current.parent;
+    if (parent && (parent.kind === ts3.SyntaxKind.Block || parent.kind === ts3.SyntaxKind.SourceFile) && Array.isArray(parent.statements)) {
+      for (const statement of parent.statements) {
+        if (statement === current) break;
+        if (statement.kind === ts3.SyntaxKind.ReturnStatement || statement.kind === ts3.SyntaxKind.ThrowStatement) {
+          return true;
+        }
+      }
+    }
+    current = parent;
+  }
+  return false;
+}
+function functionIsProvenCalled(ctx, functionNode, sourceFile) {
+  const { ts: ts3 } = ctx;
+  let name = null;
+  let minCallStart = 0;
+  if (functionNode.kind === ts3.SyntaxKind.FunctionDeclaration && functionNode.name?.kind === ts3.SyntaxKind.Identifier) {
+    name = functionNode.name.text;
+  } else if (functionNode.kind === ts3.SyntaxKind.VariableDeclaration) {
+    name = declaredConstIdentifierText(ts3, functionNode);
+  } else {
+    const declaration = functionNode.parent;
+    if (declaration?.kind === ts3.SyntaxKind.VariableDeclaration) {
+      const list = declaration.parent;
+      if (list?.kind === ts3.SyntaxKind.VariableDeclarationList && list.flags & ts3.NodeFlags.Const) {
+        name = declaration.name?.kind === ts3.SyntaxKind.Identifier ? declaration.name.text : null;
+        minCallStart = declaration.getStart(sourceFile);
+      }
+    }
+  }
+  if (name === null) return false;
+  const counts = topLevelStraightLineCallsOf(ctx, sourceFile);
+  const callStarts = counts.get(name);
+  if (!callStarts || callStarts.length === 0) return false;
+  return callStarts.some((start) => start > minCallStart);
+}
+function declaredConstIdentifierText(ts3, declaration) {
+  const list = declaration.parent;
+  if (list?.kind !== ts3.SyntaxKind.VariableDeclarationList) return null;
+  if (!(list.flags & ts3.NodeFlags.Const)) return null;
+  return declaration.name?.kind === ts3.SyntaxKind.Identifier ? declaration.name.text : null;
+}
+function topLevelStraightLineCallsOf(ctx, sourceFile) {
+  const cached = ctx.topLevelCallCache ??= /* @__PURE__ */ new WeakMap();
+  if (cached.has(sourceFile)) return cached.get(sourceFile);
+  const { ts: ts3 } = ctx;
+  const callsByName = /* @__PURE__ */ new Map();
+  const record = (name, start) => {
+    if (!callsByName.has(name)) callsByName.set(name, []);
+    callsByName.get(name).push(start);
+  };
+  const visit = (node) => {
+    const kindName = ts3.SyntaxKind[node.kind];
+    if (DEFERRING_KINDS.includes(kindName) || CONDITIONAL_KINDS.includes(kindName)) return;
+    if (node.kind === ts3.SyntaxKind.CallExpression && node.expression?.kind === ts3.SyntaxKind.Identifier) {
+      record(node.expression.text, node.getStart(sourceFile));
+      for (const argument of node.arguments ?? []) visit(argument);
+      return;
+    }
+    ts3.forEachChild(node, visit);
+  };
+  for (const statement of sourceFile.statements ?? []) visit(statement);
+  cached.set(sourceFile, callsByName);
+  return callsByName;
+}
+function reachabilityPenaltyOf(event) {
+  switch (event.reachability) {
+    case "conditional":
+      return { reason: "conditional-registration", status: "incomplete" };
+    case "deferred":
+      return { reason: "deferred-registration", status: "incomplete" };
+    case "unreachable":
+      return { reason: "unreachable-registration", status: "unknown" };
+    default:
+      return null;
+  }
 }
 function compareUtf8(left, right) {
   const a = Buffer.from(left, "utf8");
@@ -214554,6 +214679,12 @@ function makeEvent(ctx, { kind, node, instance, methodName, sourceFile, module }
     } else {
       event.handlers = resolveHandlerChain(ctx, args, 0, sourceFile);
     }
+  }
+  event.reachability = reachabilityOf(ctx, node, sourceFile);
+  const penalty = reachabilityPenaltyOf(event);
+  if (penalty) {
+    event.reasons.push(penalty.reason);
+    if (event.status === "complete") event.status = penalty.status;
   }
   return event;
 }
@@ -214810,7 +214941,10 @@ function resolveComposition(ctx, events) {
   const mountedChildren = new Set(mountEvents.map((event) => event.childInstance?.key).filter(Boolean));
   const routes = [];
   for (const event of errorEvents) {
+    const penalty = reachabilityPenaltyOf(event);
     for (const handler of event.handlers) {
+      const handlerReason = handler.reason ? [handler.reason] : [];
+      const complete = penalty === null && handlerReason.length === 0;
       ctx.addRecord(makeRecord({
         relation: "dev.lekalo.hono/handles-error",
         from: instanceEndpoint(event.instance),
@@ -214818,8 +214952,8 @@ function resolveComposition(ctx, events) {
         note: event.methodName,
         provenance: "detected",
         confidence: handler.reason === void 0 ? "exact" : "high",
-        status: handler.reason === void 0 ? "complete" : "incomplete",
-        reasons: handler.reason ? [handler.reason] : [],
+        status: complete ? "complete" : penalty?.status === "unknown" ? "unknown" : "incomplete",
+        reasons: [...penalty ? [penalty.reason] : [], ...handlerReason],
         span: ctx.spanOf(event.node, event.sourceFile),
         revision: ctx.revision,
         adapterVersion: ctx.adapterVersion,
@@ -214929,7 +215063,7 @@ function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack
       path: mount.path,
       provenance: "detected",
       confidence: "exact",
-      status: mount.status === "complete" ? "complete" : "unknown",
+      status: mount.status === "unknown" ? "unknown" : mount.status === "complete" ? "complete" : "incomplete",
       reasons: mount.reasons,
       span: ctx.spanOf(mount.node, mount.sourceFile),
       revision: ctx.revision,
@@ -215233,6 +215367,11 @@ function emitMiddlewareRecord(ctx, route, member, ordinal, chainLength) {
   if (member.applicability === "conditional") {
     reasons.push("conditional-applicability");
     status = "incomplete";
+  }
+  const reach = member.useEvent ? reachabilityPenaltyOf(member.useEvent) : null;
+  if (reach) {
+    reasons.push(reach.reason);
+    status = reach.status === "unknown" ? "unknown" : "incomplete";
   }
   if (!callsNext) {
     reasons.push("no-next-call-detected");

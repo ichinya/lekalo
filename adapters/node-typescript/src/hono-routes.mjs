@@ -31,9 +31,32 @@ import { importSpecifierTextAt } from "./hono-context.mjs";
 const ROUTE_METHODS = new Set(["get", "post", "put", "patch", "delete", "options", "head", "all", "on"]);
 /** App-shaping methods (registration affecting, non-route). */
 const APP_METHODS = new Set(["route", "use", "basePath", "onError", "notFound", "openapi"]);
-/** Canonical HTTP verbs (the `ALL` wildcard is kept visible, not expanded). */
-const HTTP_VERBS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]);
 
+/** Node kinds whose bodies defer execution (registrations inside them
+ * are not proven to run at module initialization). */
+const DEFERRING_KINDS = [
+  "FunctionDeclaration",
+  "FunctionExpression",
+  "ArrowFunction",
+  "MethodDeclaration",
+  "Constructor",
+  "GetAccessor",
+  "SetAccessor",
+];
+
+/** Node kinds that gate execution of their children at runtime. */
+const CONDITIONAL_KINDS = [
+  "IfStatement",
+  "SwitchStatement",
+  "ConditionalExpression",
+  "TryStatement",
+  "CatchClause",
+  "ForStatement",
+  "ForOfStatement",
+  "ForInStatement",
+  "WhileStatement",
+  "DoStatement",
+];
 /**
  * Walk every inventoried source file and collect raw registration
  * events on discovered instances. Returns the globally ordered event
@@ -114,6 +137,150 @@ function classifyMethod(methodName) {
   if (methodName === "onError" || methodName === "notFound") return "error";
   if (methodName === "openapi") return "openapi";
   return "other";
+}
+
+/**
+ * Reachability classification of one registration site (issue #115
+ * fix round): only module top-level straight-line code — or code in a
+ * function the same module provably calls at top level — is proven to
+ * run at initialization. Everything else is recorded with an explicit
+ * reason and never emitted as a complete fact:
+ *
+ * - `top-level`: direct module body statement (proven);
+ * - `called`: inside a named local function the module calls straight-
+ *   line at top level (hoisted declarations, or const functions called
+ *   after their declaration); arguments are irrelevant for closed-over
+ *   registrations, but unproven calls never qualify;
+ * - `conditional`: under `if`/`switch`/ternary/loop/try/`&&`/`||` —
+ *   may or may not run (reason `conditional-registration`);
+ * - `deferred`: inside a function body with no proven top-level call
+ *   (reason `deferred-registration`);
+ * - `unreachable`: preceded at the same block level by `return`/`throw`
+ *   (reason `unreachable-registration`).
+ */
+function reachabilityOf(ctx, node, sourceFile) {
+  const { ts } = ctx;
+  let conditional = false;
+  let current = node.parent;
+  for (let depth = 0; current && current !== sourceFile && depth < 512; depth += 1) {
+    if (DEFERRING_KINDS.includes(ts.SyntaxKind[current.kind])) {
+      if (unreachableSiblingBefore(ctx, node, sourceFile)) return "unreachable";
+      return functionIsProvenCalled(ctx, current, sourceFile) ? "called" : "deferred";
+    }
+    const kindName = ts.SyntaxKind[current.kind];
+    if (CONDITIONAL_KINDS.includes(kindName)) conditional = true;
+    if (kindName === "BinaryExpression"
+      && (current.operatorToken?.kind === ts.SyntaxKind.AmpersandAmpersandToken
+        || current.operatorToken?.kind === ts.SyntaxKind.BarBarToken
+        || current.operatorToken?.kind === ts.SyntaxKind.QuestionQuestionToken)) {
+      conditional = true;
+    }
+    current = current.parent;
+  }
+  if (unreachableSiblingBefore(ctx, node, sourceFile)) return "unreachable";
+  return conditional ? "conditional" : "top-level";
+}
+
+/** Any earlier sibling of the enclosing statement that returns or throws. */
+function unreachableSiblingBefore(ctx, node, sourceFile) {
+  const { ts } = ctx;
+  let current = node;
+  while (current && current !== sourceFile) {
+    const parent = current.parent;
+    if (parent
+      && (parent.kind === ts.SyntaxKind.Block || parent.kind === ts.SyntaxKind.SourceFile)
+      && Array.isArray(parent.statements)) {
+      for (const statement of parent.statements) {
+        if (statement === current) break;
+        if (statement.kind === ts.SyntaxKind.ReturnStatement || statement.kind === ts.SyntaxKind.ThrowStatement) {
+          return true;
+        }
+      }
+    }
+    current = parent;
+  }
+  return false;
+}
+
+/**
+ * Is this function-like ancestor a NAMED local function the same module
+ * invokes straight-line at top level? Hoisted declarations qualify from
+ * any top-level call; const-bound arrow/function expressions only from
+ * calls that follow their declaration (no TDZ guessing).
+ */
+function functionIsProvenCalled(ctx, functionNode, sourceFile) {
+  const { ts } = ctx;
+  let name = null;
+  let minCallStart = 0;
+  if (functionNode.kind === ts.SyntaxKind.FunctionDeclaration && functionNode.name?.kind === ts.SyntaxKind.Identifier) {
+    name = functionNode.name.text;
+  } else if (functionNode.kind === ts.SyntaxKind.VariableDeclaration) {
+    name = declaredConstIdentifierText(ts, functionNode);
+  } else {
+    const declaration = functionNode.parent;
+    if (declaration?.kind === ts.SyntaxKind.VariableDeclaration) {
+      const list = declaration.parent;
+      if (list?.kind === ts.SyntaxKind.VariableDeclarationList && (list.flags & ts.NodeFlags.Const)) {
+        name = declaration.name?.kind === ts.SyntaxKind.Identifier ? declaration.name.text : null;
+        minCallStart = declaration.getStart(sourceFile);
+      }
+    }
+  }
+  if (name === null) return false;
+  const counts = topLevelStraightLineCallsOf(ctx, sourceFile);
+  const callStarts = counts.get(name);
+  if (!callStarts || callStarts.length === 0) return false;
+  return callStarts.some((start) => start > minCallStart);
+}
+
+function declaredConstIdentifierText(ts, declaration) {
+  const list = declaration.parent;
+  if (list?.kind !== ts.SyntaxKind.VariableDeclarationList) return null;
+  if (!(list.flags & ts.NodeFlags.Const)) return null;
+  return declaration.name?.kind === ts.SyntaxKind.Identifier ? declaration.name.text : null;
+}
+
+/**
+ * Call expressions in the module's straight-line top-level body, per
+ * callee name (position list). Function-like bodies and conditional
+ * wrappers are skipped: a call under `if` proves nothing. Cached per
+ * source file on the scan context.
+ */
+function topLevelStraightLineCallsOf(ctx, sourceFile) {
+  const cached = ctx.topLevelCallCache ??= new WeakMap();
+  if (cached.has(sourceFile)) return cached.get(sourceFile);
+  const { ts } = ctx;
+  const callsByName = new Map();
+  const record = (name, start) => {
+    if (!callsByName.has(name)) callsByName.set(name, []);
+    callsByName.get(name).push(start);
+  };
+  const visit = (node) => {
+    const kindName = ts.SyntaxKind[node.kind];
+    if (DEFERRING_KINDS.includes(kindName) || CONDITIONAL_KINDS.includes(kindName)) return;
+    if (node.kind === ts.SyntaxKind.CallExpression && node.expression?.kind === ts.SyntaxKind.Identifier) {
+      record(node.expression.text, node.getStart(sourceFile));
+      for (const argument of node.arguments ?? []) visit(argument);
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  for (const statement of sourceFile.statements ?? []) visit(statement);
+  cached.set(sourceFile, callsByName);
+  return callsByName;
+}
+
+/**
+ * The status/reason penalty of one event's reachability, or null when
+ * the registration site is proven to run at initialization.
+ */
+export function reachabilityPenaltyOf(event) {
+  switch (event.reachability) {
+    case "conditional": return { reason: "conditional-registration", status: "incomplete" };
+    case "deferred": return { reason: "deferred-registration", status: "incomplete" };
+    case "unreachable": return { reason: "unreachable-registration", status: "unknown" };
+    default: return null;
+  }
 }
 
 function compareUtf8(left, right) {
@@ -205,6 +372,14 @@ function makeEvent(ctx, { kind, node, instance, methodName, sourceFile, module }
     } else {
       event.handlers = resolveHandlerChain(ctx, args, 0, sourceFile);
     }
+  }
+  // Reachability: a registration site that is not proven to run at
+  // module initialization is never a complete fact (issue #115 fix).
+  event.reachability = reachabilityOf(ctx, node, sourceFile);
+  const penalty = reachabilityPenaltyOf(event);
+  if (penalty) {
+    event.reasons.push(penalty.reason);
+    if (event.status === "complete") event.status = penalty.status;
   }
   return event;
 }
@@ -522,8 +697,13 @@ export function resolveComposition(ctx, events) {
   const routes = [];
 
   // 1. Error-handler and openapi registrations resolve app-level.
+  // Reachability of the registration site carries into the record:
+  // a conditional onError is bounded evidence, never a complete fact.
   for (const event of errorEvents) {
+    const penalty = reachabilityPenaltyOf(event);
     for (const handler of event.handlers) {
+      const handlerReason = handler.reason ? [handler.reason] : [];
+      const complete = penalty === null && handlerReason.length === 0;
       ctx.addRecord(makeRecord({
         relation: "dev.lekalo.hono/handles-error",
         from: instanceEndpoint(event.instance),
@@ -531,8 +711,8 @@ export function resolveComposition(ctx, events) {
         note: event.methodName,
         provenance: "detected",
         confidence: handler.reason === undefined ? "exact" : "high",
-        status: handler.reason === undefined ? "complete" : "incomplete",
-        reasons: handler.reason ? [handler.reason] : [],
+        status: complete ? "complete" : penalty?.status === "unknown" ? "unknown" : "incomplete",
+        reasons: [...(penalty ? [penalty.reason] : []), ...handlerReason],
         span: ctx.spanOf(event.node, event.sourceFile),
         revision: ctx.revision,
         adapterVersion: ctx.adapterVersion,
@@ -680,7 +860,7 @@ function resolveMount(ctx, mount, mountEvents, routeEvents, routes, depth, stack
       path: mount.path,
       provenance: "detected",
       confidence: "exact",
-      status: mount.status === "complete" ? "complete" : "unknown",
+      status: mount.status === "unknown" ? "unknown" : mount.status === "complete" ? "complete" : "incomplete",
       reasons: mount.reasons,
       span: ctx.spanOf(mount.node, mount.sourceFile),
       revision: ctx.revision,

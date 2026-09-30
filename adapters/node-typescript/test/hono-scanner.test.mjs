@@ -102,6 +102,51 @@ test("composition: nested routers, shared children, and proven ordering", async 
   }
 });
 
+test("reachability: conditional/deferred/unreachable registrations are never complete facts", async () => {
+  const context = await scanHonoFixture("reachability", "reachability");
+  try {
+    const routes = recordsOfRelation(context, "route-handler");
+    const byPath = new Map(routes.map((record) => [`${record.method} ${record.path}`, record]));
+    // Top-level straight-line: proven, complete, no reasons.
+    const top = byPath.get("GET /top");
+    assert.ok(top, "top-level route present");
+    assert.equal(top.status, "complete");
+    assert.deepEqual(top.reasons, []);
+    // Conditional: resolved fully, but never a complete fact.
+    const conditional = byPath.get("GET /conditional");
+    assert.ok(conditional, "conditional route present");
+    assert.equal(conditional.status, "incomplete");
+    assert.ok(conditional.reasons.includes("conditional-registration"));
+    // Deferred: inside a function with no proven top-level call.
+    const deferred = byPath.get("GET /deferred");
+    assert.ok(deferred, "deferred route present");
+    assert.equal(deferred.status, "incomplete");
+    assert.ok(deferred.reasons.includes("deferred-registration"));
+    // Proven-called: the module calls the wrapper straight-line at top
+    // level, so the registration provably runs — complete.
+    const called = byPath.get("GET /called");
+    assert.ok(called, "proven-called route present");
+    assert.equal(called.status, "complete");
+    assert.deepEqual(called.reasons, []);
+    // Unreachable: after a top-level return — unknown, never complete.
+    const unreachable = byPath.get("GET /unreachable");
+    assert.ok(unreachable, "unreachable route present");
+    assert.equal(unreachable.status, "unknown");
+    assert.ok(unreachable.reasons.includes("unreachable-registration"));
+    // A deferred `use` passes its reachability into middleware claims:
+    // both /plain records stay incomplete with the same reason.
+    const middleware = recordsOfRelation(context, "uses-middleware")
+      .filter((record) => record.to.name === "deferredMiddleware");
+    assert.ok(middleware.length >= 1, "deferred middleware still recorded");
+    for (const record of middleware) {
+      assert.ok(record.reasons.includes("deferred-registration"));
+      assert.notEqual(record.status, "complete");
+    }
+  } finally {
+    dispose(context.root);
+  }
+});
+
 test("composition cycle: mounts are refused as unknown, never invented", async () => {
   const context = await scanHonoFixture("cycle", "composition-cycle");
   try {
