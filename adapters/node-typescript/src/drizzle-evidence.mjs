@@ -727,6 +727,59 @@ function typeInClosure(ts, checker, node, closurePrefix) {
 }
 
 /**
+ * Whether the node's TYPE is a module namespace type — `typeof
+ * import("drizzle-orm")`, a type query over a namespace-imported
+ * binding (`typeof orm`), or an alias of either. A value whose type is
+ * the module's export surface is a module namespace regardless of how
+ * the value itself was declared, and must never classify as a database
+ * handle (issue #116 fix round 5 — the declaration-kind test alone
+ * misses declared/parameter/alias-typed namespaces, whose type still
+ * resolves INTO the embedded closure for vendored modules).
+ */
+function isModuleNamespaceType(ts, checker, node) {
+  const namespaceDeclared = (symbol) => (symbol?.declarations ?? []).some((declaration) =>
+    declaration.kind === ts.SyntaxKind.SourceFile
+    || declaration.kind === ts.SyntaxKind.NamespaceImport);
+  let type;
+  try {
+    type = checker.getTypeAtLocation(node);
+  } catch {
+    return false;
+  }
+  if (type === null || type === undefined) return false;
+  const queue = [];
+  if (type.symbol) queue.push(type.symbol);
+  if (type.aliasSymbol) queue.push(type.aliasSymbol);
+  if (typeof type.isUnion === "function" && type.isUnion()) {
+    for (const part of type.types) {
+      if (part.symbol) queue.push(part.symbol);
+      if (part.aliasSymbol) queue.push(part.aliasSymbol);
+    }
+  }
+  if (queue.some(namespaceDeclared)) return true;
+  // Dynamic-import shape: an ANONYMOUS wrapper type whose `default`
+  // member aliases the module type itself (`await import("...")`).
+  const declarations = type.symbol?.declarations ?? [];
+  if (declarations.length !== 0) return false;
+  let properties = [];
+  try {
+    properties = typeof type.getProperties === "function" ? type.getProperties() : [];
+  } catch {
+    properties = [];
+  }
+  const defaultMember = properties
+    .find((property) => property?.getName() === "default");
+  if (defaultMember === undefined) return false;
+  let defaultType;
+  try {
+    defaultType = checker.getTypeOfSymbolAtLocation(defaultMember, node);
+  } catch {
+    return false;
+  }
+  return namespaceDeclared(defaultType?.symbol);
+}
+
+/**
  * Whether the symbol is a module namespace OBJECT (`import * as ns` or
  * `export * as ns`): its declarations are the module's source file (or
  * the namespace import specifier), never a runtime handle class. A
@@ -2309,7 +2362,8 @@ function extractTransaction(context, sourceFile, callNode, receiverKind, parentT
  * The receiver kind of a chain root: "db" (factory-created database or
  * closure-typed parameter), "tx" (transaction callback parameter via
  * the walk state), "db-alias" (variable initialized from a db chain),
- * "namespace" (a module namespace object — provably NOT a handle),
+ * "namespace" (a module namespace object or module-typed value —
+ * provably NOT a handle),
  * or "unknown".
  */
 function rootIdentityKind(context, root, state) {
@@ -2335,6 +2389,12 @@ function rootIdentityKind(context, root, state) {
     // fabricate evidence from a provably-wrong receiver identity
     // (issue #116 fix round 4).
     if (isModuleNamespaceSymbol(ts, checker, symbol, resolved)) return "namespace";
+    // A module-TYPED value is a namespace too, whatever its
+    // declaration: `declare const ns: typeof import("drizzle-orm")`, a
+    // parameter typed `typeof orm`, or an alias of either carries the
+    // module's export surface — exactly the fabricated-evidence trap
+    // the declaration-kind test cannot see (issue #116 fix round 5).
+    if (isModuleNamespaceType(ts, checker, root)) return "namespace";
     // The proven-receiver memo is keyed by the RESOLVED DECLARATION
     // SYMBOL, never the bare name: two same-named bindings are two
     // different receivers, so a non-Drizzle local named `db` can never
@@ -2371,6 +2431,11 @@ function rootIdentityKind(context, root, state) {
     }
     return "unknown";
   }
+  // Non-identifier roots are module namespaces too when their TYPE is
+  // the module's export surface (`await import("drizzle-orm")`
+  // bindings, namespace-typed call returns) — never db handles
+  // (issue #116 fix round 5).
+  if (isModuleNamespaceType(ts, checker, root)) return "namespace";
   if (typeInClosure(ts, checker, root, context.closurePrefix)) return "db";
   return "unknown";
 }
