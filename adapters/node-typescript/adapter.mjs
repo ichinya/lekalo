@@ -223556,12 +223556,15 @@ function closureCalleeSymbol(context, calleeNode, depth = 0, probe = null) {
     return null;
   }
   const declaration = variableDeclarationOf(symbol);
-  if (declaration === null || declaration === void 0) return null;
+  if (declaration === null || declaration === void 0) {
+    const isParameter = (symbol?.declarations ?? []).length > 0 && symbol.declarations[0]?.kind === context.ts.SyntaxKind.Parameter;
+    return isParameter ? closureTypeSymbolOf(context, calleeNode) : null;
+  }
   const ts2 = context.ts;
   if (declaration.kind === ts2.SyntaxKind.VariableDeclaration) {
     const initializer = declaration.initializer;
     if (initializer?.kind !== ts2.SyntaxKind.Identifier && initializer?.kind !== ts2.SyntaxKind.PropertyAccessExpression) {
-      return null;
+      return closureTypeSymbolOf(context, calleeNode);
     }
     return closureCalleeSymbol(context, initializer, depth + 1, probe);
   }
@@ -223605,6 +223608,88 @@ function calleeRecognizedButUnproven(context, calleeNode, constructs, family) {
   return calleeSpellingNames(context, calleeNode).some((spelling) => constructs.has(spelling));
 }
 var RECOGNITION_FAMILIES = { table: TABLE_FACTORY_NAMES, relations: RELATIONS_FACTORY_NAMES };
+function declaredTypeQuerySpelling(context, calleeNode) {
+  const { ts: ts2, checker } = context;
+  const spellingOf = (typeNode) => {
+    let node = typeNode;
+    while (node?.kind === ts2.SyntaxKind.ParenthesizedType) node = node.type;
+    if (node?.kind === ts2.SyntaxKind.TypeQuery) {
+      const entityName = node.exprName;
+      if (entityName?.kind === ts2.SyntaxKind.QualifiedName) return entityName.right?.text ?? null;
+      if (entityName?.kind === ts2.SyntaxKind.Identifier) return entityName.text ?? null;
+      return null;
+    }
+    if (node?.kind === ts2.SyntaxKind.ImportType) {
+      const qualifier = node.qualifier;
+      if (qualifier?.kind === ts2.SyntaxKind.QualifiedName) return qualifier.right?.text ?? null;
+      if (qualifier?.kind === ts2.SyntaxKind.Identifier) return qualifier.text ?? null;
+      return null;
+    }
+    return null;
+  };
+  let symbol;
+  try {
+    symbol = checker.getSymbolAtLocation(calleeNode);
+  } catch {
+    return null;
+  }
+  const decl = symbol?.declarations?.[0];
+  const direct = spellingOf(symbol?.declarations?.[0]?.type);
+  if (direct !== null) return direct;
+  let type;
+  try {
+    type = checker.getTypeAtLocation(calleeNode);
+  } catch {
+    return null;
+  }
+  return spellingOf(type?.aliasSymbol?.declarations?.[0]?.type);
+}
+function closureModuleExportOf(context, declaration, name) {
+  if (declaration === null || declaration === void 0 || name === null) return null;
+  const moduleSymbol = declaration.getSourceFile?.()?.symbol ?? null;
+  if (moduleSymbol === null || moduleSymbol === void 0) return null;
+  const direct = moduleSymbol.exports?.get(name);
+  if (direct !== void 0 && direct !== null) return direct;
+  try {
+    const exports = context.checker.getExportsOfModule(moduleSymbol) ?? [];
+    return exports.find((entry) => entry?.getName() === name) ?? null;
+  } catch {
+    return null;
+  }
+}
+function closureTypeSymbolOf(context, calleeNode) {
+  const { ts: ts2, checker } = context;
+  let type;
+  try {
+    type = checker.getTypeAtLocation(calleeNode);
+  } catch {
+    return null;
+  }
+  if (type === null || type === void 0) return null;
+  const queue = [];
+  if (type.symbol) queue.push(type.symbol);
+  if (type.aliasSymbol) queue.push(type.aliasSymbol);
+  if (typeof type.isUnion === "function" && type.isUnion()) {
+    for (const part of type.types) {
+      if (part.symbol) queue.push(part.symbol);
+      if (part.aliasSymbol) queue.push(part.aliasSymbol);
+    }
+  }
+  for (const symbol of queue) {
+    if (!symbolInClosure(symbol, context.closurePrefix)) continue;
+    if (RECOGNITION_FAMILIES.table.has(symbol.getName()) || RECOGNITION_FAMILIES.relations.has(symbol.getName())) {
+      return symbol;
+    }
+    const target = closureModuleExportOf(
+      context,
+      symbol.declarations?.[0] ?? null,
+      declaredTypeQuerySpelling(context, calleeNode)
+    );
+    if (target !== null && target !== void 0 && symbolInClosure(target, context.closurePrefix)) return target;
+    return symbol;
+  }
+  return null;
+}
 function closureTypeSymbolNames(context, calleeNode) {
   const { ts: ts2, checker } = context;
   let type;
@@ -223698,6 +223783,43 @@ function typeInClosure(ts2, checker, node, closurePrefix) {
     }
   }
   return false;
+}
+function isModuleNamespaceType(ts2, checker, node) {
+  const namespaceDeclared = (symbol) => (symbol?.declarations ?? []).some((declaration) => declaration.kind === ts2.SyntaxKind.SourceFile || declaration.kind === ts2.SyntaxKind.NamespaceImport);
+  let type;
+  try {
+    type = checker.getTypeAtLocation(node);
+  } catch {
+    return false;
+  }
+  if (type === null || type === void 0) return false;
+  const queue = [];
+  if (type.symbol) queue.push(type.symbol);
+  if (type.aliasSymbol) queue.push(type.aliasSymbol);
+  if (typeof type.isUnion === "function" && type.isUnion()) {
+    for (const part of type.types) {
+      if (part.symbol) queue.push(part.symbol);
+      if (part.aliasSymbol) queue.push(part.aliasSymbol);
+    }
+  }
+  if (queue.some(namespaceDeclared)) return true;
+  const declarations = type.symbol?.declarations ?? [];
+  if (declarations.length !== 0) return false;
+  let properties = [];
+  try {
+    properties = typeof type.getProperties === "function" ? type.getProperties() : [];
+  } catch {
+    properties = [];
+  }
+  const defaultMember = properties.find((property) => property?.getName() === "default");
+  if (defaultMember === void 0) return false;
+  let defaultType;
+  try {
+    defaultType = checker.getTypeOfSymbolAtLocation(defaultMember, node);
+  } catch {
+    return false;
+  }
+  return namespaceDeclared(defaultType?.symbol);
 }
 function isModuleNamespaceSymbol(ts2, checker, symbol, resolved) {
   const namespaceDeclared = (candidate) => (candidate?.declarations ?? []).some((declaration) => declaration.kind === ts2.SyntaxKind.SourceFile || declaration.kind === ts2.SyntaxKind.NamespaceImport || declaration.kind === ts2.SyntaxKind.ExportSpecifier);
@@ -225053,6 +225175,7 @@ function rootIdentityKind(context, root, state) {
     }
     const resolved = resolveAliasSymbol(checker, symbol);
     if (isModuleNamespaceSymbol(ts2, checker, symbol, resolved)) return "namespace";
+    if (isModuleNamespaceType(ts2, checker, root)) return "namespace";
     const memoKey = resolved === void 0 || resolved === null ? null : symbolKey(resolved);
     if (memoKey !== null) {
       const memo = state.dbSymbols.get(memoKey);
@@ -225080,6 +225203,7 @@ function rootIdentityKind(context, root, state) {
     }
     return "unknown";
   }
+  if (isModuleNamespaceType(ts2, checker, root)) return "namespace";
   if (typeInClosure(ts2, checker, root, context.closurePrefix)) return "db";
   return "unknown";
 }

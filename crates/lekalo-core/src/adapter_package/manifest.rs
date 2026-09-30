@@ -1006,12 +1006,12 @@ mod committed_exemplar_tests {
             .expect("the committed adapter manifest must parse");
         assert_eq!(document.adapter_id(), "lekalo-target-node-typescript");
         assert_eq!(document.adapter_version().as_str(), "0.4.0");
-        // Issue #116 fix rounds 2, 3, and 4: the bundle was rebuilt
+        // Issue #116 fix rounds 2 through 5: the bundle was rebuilt
         // with the review fixes and the manifest digest regenerated;
         // the pinned digest moves with the committed bytes it guards.
         assert_eq!(
             document.package_digest().as_str(),
-            "sha256:746777c214d74a37d48580e58c75cabdcd33b2da2244940e1f8a44795eaae63e"
+            "sha256:ae71cdec1a9da2e464b1cb743f5c8ebe9d02ff30cc570b9f2266230832f6f6d4"
         );
     }
 
