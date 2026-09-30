@@ -153,6 +153,11 @@ const LIMITATION_CODES = new Set([
   // attributed to one; it is an explicit uncertainty instead
   // (issue #116 fix round 4)
   "namespace-receiver-unsupported",
+  // an extraction whose callee identity came from a call-result's
+  // declared type rather than the construct value itself — marked so
+  // it is never claimed as direct construct proof
+  // (issue #116 fix round 6)
+  "type-sourced",
   // transactions
   "query-not-tx-bound", "tx-escaped", "rollback", "nested-transaction",
   "tx-callback-shape-unknown",
@@ -496,12 +501,16 @@ function calleeSpellingName(ts, calleeNode) {
  * symbol IS the construct identity and the construct extracts exactly
  * like a spelled import. Function types are matched by symbol
  * identity, never structurally: an inline signature with the same
- * shape has no closure symbol and stays unprovable. Value-carrying
- * declarations (bags, destructures, casts over dynamic data) are
- * deliberately EXCLUDED — their round-3/round-4 explicit flags are
- * settled contracts, and a cast is an assertion over data, not
- * declaration-anchored identity. The fallback never overrides a bound
- * hit — the bounded explicit flag of round 4 stands.
+ * shape has no closure symbol and stays unprovable.
+ * Fix round 6 gating (the anchor is trustworthy exactly when no
+ * initializer value can contradict it): let/var bindings are declined
+ * (reassignment-blind following fabricated evidence for the stale
+ * initializer), and only a call-result initializer still anchors —
+ * marked `type-sourced` on the extracted rows, never claimed as
+ * direct construct proof. Casts and every other initializer form are
+ * assertions over data, not identities: declined and flagged through
+ * the unproven net. The fallback never overrides a bound hit — the
+ * bounded explicit flag of round 4 stands.
  */
 function closureCalleeSymbol(context, calleeNode, depth = 0, probe = null) {
   let symbol;
@@ -529,16 +538,51 @@ function closureCalleeSymbol(context, calleeNode, depth = 0, probe = null) {
   if (declaration === null || declaration === undefined) {
     const isParameter = (symbol?.declarations ?? []).length > 0
       && symbol.declarations[0]?.kind === context.ts.SyntaxKind.Parameter;
-    return isParameter ? closureTypeSymbolOf(context, calleeNode) : null;
+    return isParameter ? closureTypeSymbolOf(context, calleeNode, probe) : null;
   }
   const ts = context.ts;
   if (declaration.kind === ts.SyntaxKind.VariableDeclaration) {
     const initializer = declaration.initializer;
-    if (initializer?.kind !== ts.SyntaxKind.Identifier
-      && initializer?.kind !== ts.SyntaxKind.PropertyAccessExpression) {
-      return closureTypeSymbolOf(context, calleeNode);
+    // Reassignment honesty (fix round 6): a let/var binding's runtime
+    // value can diverge from its initializer before the call — the
+    // round-5 probe verified evidence claimed `relations` while the
+    // program called a local replacement. Following the stale
+    // initializer is fabrication; decline, and the unproven net flags
+    // the call explicitly.
+    const isConst = declaration.parent?.kind === ts.SyntaxKind.VariableDeclarationList
+      && (declaration.parent.flags & ts.NodeFlags.Const) !== 0;
+    if (!isConst) {
+      if (probe !== null) probe.declined = true;
+      return null;
     }
-    return closureCalleeSymbol(context, initializer, depth + 1, probe);
+    // Ambient/declare-const: no initializer exists that could contradict
+    // the declared type, so the type anchor is the identity (fix round 5).
+    if (initializer === undefined || initializer === null) {
+      return closureTypeSymbolOf(context, calleeNode, probe);
+    }
+    if (initializer.kind === ts.SyntaxKind.Identifier
+      || initializer.kind === ts.SyntaxKind.PropertyAccessExpression) {
+      return closureCalleeSymbol(context, initializer, depth + 1, probe);
+    }
+    // A call-result initializer is kept (round-5 residual: defensible)
+    // but MUST be marked type-sourced — the value comes from a call,
+    // not from the construct itself (fix round 6).
+    if (initializer.kind === ts.SyntaxKind.CallExpression
+      || initializer.kind === ts.SyntaxKind.NewExpression) {
+      const anchored = closureTypeSymbolOf(context, calleeNode, probe);
+      if (anchored !== null && probe !== null) probe.typeSourced = true;
+      return anchored;
+    }
+    // Any other initializer (casts over data, sequences, assignments) is
+    // an assertion, not an identity: no anchor. When the type still
+    // names a vendored construct, the call stays explicitly unproven
+    // instead of silently dropping or fabricating (fix round 6 — the
+    // cast-initialized `const r = (null as unknown) as typeof
+    // relations` used to fabricate a row here).
+    if (probe !== null && closureTypeSymbolOf(context, calleeNode) !== null) {
+      probe.declined = true;
+    }
+    return null;
   }
   // Renamed destructuring: `const { relations: rel2 } = orm` (or the
   // shorthand). The local spelling is not identity — the destructured
@@ -615,6 +659,15 @@ function calleeRecognizedButUnproven(context, calleeNode, constructs, family) {
     // The bound is family-disjoint like every other recognition: the
     // construct is recognized only when the callee's vendored type
     // names THIS construct family (issue #116 fix round 4).
+    return closureTypeNames !== null
+      && closureTypeNames.some((name) => RECOGNITION_FAMILIES[family].has(name));
+  }
+  if (probe.declined) {
+    // Reassignment-blind and cast/initializer forms were declined by
+    // the value walk (fix round 6): the identity is unprovable, but the
+    // type still names a vendored construct — keep the call explicitly
+    // unproven, family-disjoint, never a fabricated row, never a
+    // silent drop.
     return closureTypeNames !== null
       && closureTypeNames.some((name) => RECOGNITION_FAMILIES[family].has(name));
   }
@@ -1348,7 +1401,7 @@ function resolveReferencesTarget(context, args) {
  * the context) or null when the constructor is not a recognized
  * dialect factory.
  */
-function extractTable(context, sourceFile, node, exportName) {
+function extractTable(context, sourceFile, node, exportName, probe = null) {
   const { ts } = context;
   const calleeNode = node.expression;
   if (calleeNode.kind !== ts.SyntaxKind.Identifier
@@ -1358,7 +1411,7 @@ function extractTable(context, sourceFile, node, exportName) {
   // Factory identity comes from the resolved declaration symbol, never
   // from the local callee spelling — an aliased `pgTable as pt` is the
   // same vendored declaration (issue #116 fix round).
-  const symbol = closureCalleeSymbol(context, calleeNode);
+  const symbol = closureCalleeSymbol(context, calleeNode, 0, probe);
   if (symbol === null) return null;
   const factoryName = symbol.getName();
   const dialect = factoryName === "pgTable" ? "postgresql"
@@ -1372,6 +1425,7 @@ function extractTable(context, sourceFile, node, exportName) {
     }
     return null;
   }
+  const typeSourced = probe?.typeSourced === true;
   const physicalName = staticString(node.arguments?.[0]);
   const row = {
     native: tableNativeId(modulePath, exportName, physicalName ?? `#${node.getStart(sourceFile)}`),
@@ -1452,6 +1506,14 @@ function extractTable(context, sourceFile, node, exportName) {
   if (row.columns.length >= 2 && fkColumns.length === row.columns.length
     && new Set(fkColumns.map((column) => column.references?.table)).size === 2) {
     row.joinTableCandidate = true;
+  }
+  if (typeSourced) {
+    // The callee identity came from a call-result's declared type, not
+    // from the construct value itself: the row is marked so it is never
+    // claimed as direct construct proof (issue #116 fix round 6).
+    context.limit("type-sourced", modulePath, lineOf(sourceFile, node), exportName);
+    row.limitations.push("type-sourced");
+    row.completeness = "partial";
   }
   // Scope candidate: a tenant-like column exists (declaration-only —
   // column existence alone is never scoping evidence).
@@ -1587,12 +1649,13 @@ function constraintMemberOf(context, node, tableRow) {
  * own limitations: they never prove database enforcement, required
  * participation, or complete neutral relation fields.
  */
-function extractRelations(context, sourceFile, node) {
+function extractRelations(context, sourceFile, node, probe = null) {
   const { ts, checker } = context;
   // The same identity test the walker used: import aliases, namespace
   // property access, and const/let rebinding all resolve (issue #116
   // fix round 3); anything else was never a recognized surface.
-  if (closureCalleeSymbol(context, node.expression) === null) return null;
+  if (closureCalleeSymbol(context, node.expression, 0, probe) === null) return null;
+  const typeSourced = probe?.typeSourced === true;
   // From here the surface is a RECOGNIZED relations declaration: any
   // failure to extract it is a coverage gap for the relations section,
   // never a silent drop (issue #116 fix round). Each failure path
@@ -1714,6 +1777,15 @@ function extractRelations(context, sourceFile, node) {
     // A recognized relations declaration with zero extractable
     // endpoints is a coverage gap, never a clean empty set.
     context.sectionGaps.add("relations");
+  }
+  if (typeSourced) {
+    // The callee identity came from a call-result's declared type, not
+    // from the construct value itself: the rows are marked so they are
+    // never claimed as direct construct proof (issue #116 fix round 6).
+    context.limit("type-sourced", modulePath, lineOf(sourceFile, node), "relations");
+    for (const row of rows) {
+      row.limitations.push("type-sourced");
+    }
   }
   void checker;
   return rows;
@@ -3025,7 +3097,8 @@ export function attachDrizzleEvidence({
         && node.name?.kind === ts.SyntaxKind.Identifier
         && node.initializer?.kind === ts.SyntaxKind.CallExpression) {
         const exportName = node.name.text;
-        const table = extractTable(extract, sourceFile, node.initializer, exportName);
+        const tableProbe = { boundHit: false };
+        const table = extractTable(extract, sourceFile, node.initializer, exportName, tableProbe);
         if (table !== null) {
           if (extract.tables.length < MAX_TABLES) {
             extract.tables.push(table);
@@ -3072,8 +3145,9 @@ export function attachDrizzleEvidence({
           || node.expression?.kind === ts.SyntaxKind.PropertyAccessExpression
           ? closureCalleeSymbol(extract, node.expression)
           : null;
+        const relationsProbe = { boundHit: false };
         if (symbol !== null && symbol.getName() === "relations") {
-          const rows = extractRelations(extract, sourceFile, node);
+          const rows = extractRelations(extract, sourceFile, node, relationsProbe);
           if (rows !== null) {
             for (const row of rows) {
               if (!pushBounded(extract.relations, MAX_RELATIONS, row, extract.overflow)) break;
