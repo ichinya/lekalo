@@ -1,0 +1,7 @@
+{
+  "schema": "lekalo/drizzle-bindings-input/v0.1.0",
+  "entities": [
+    { "entity": "User", "table": "users" },
+    { "entity": "Post", "table": "posts" }
+  ]
+}

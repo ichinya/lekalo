@@ -1,0 +1,7 @@
+{
+  "name": "lekalo-drizzle-fixture-mysql",
+  "private": true,
+  "dependencies": {
+    "drizzle-orm": "0.44.7"
+  }
+}

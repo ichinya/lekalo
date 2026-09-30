@@ -36,6 +36,7 @@ __export(kernel_exports, {
   RequestRefusal: () => RequestRefusal,
   SUPPORTED_VERSIONS: () => SUPPORTED_VERSIONS,
   VERSION: () => VERSION,
+  __attachDrizzleDeclarations: () => __attachDrizzleDeclarations,
   __attachVendoredCompiler: () => __attachVendoredCompiler,
   __setCompilerMetadata: () => __setCompilerMetadata,
   __setLaunchExtensions: () => __setLaunchExtensions,
@@ -50,6 +51,7 @@ __export(kernel_exports, {
   decodeProjectProfileJson: () => decodeProjectProfileJson,
   decodeUtf8Fatal: () => decodeUtf8Fatal,
   describeCapabilities: () => describeCapabilities,
+  embeddedDrizzleDeclarations: () => embeddedDrizzleDeclarations,
   embeddedLibFiles: () => embeddedLibFiles,
   entryDigest: () => entryDigest,
   entryPath: () => entryPath,
@@ -210,6 +212,7 @@ function __setCompilerMetadata(metadata) {
 }
 var vendoredCompiler = null;
 var embeddedLibs = null;
+var drizzleDeclarations = null;
 var launchExtensions = [];
 function __setLaunchExtensions(extensions) {
   if (!Array.isArray(extensions)) {
@@ -232,6 +235,21 @@ function vendoredTs() {
 }
 function embeddedLibFiles() {
   return embeddedLibs;
+}
+function __attachDrizzleDeclarations(files, pin, digest) {
+  if (!(files instanceof Map) || files.size === 0) {
+    throw new RequestRefusal("compiler", "the embedded drizzle declaration map is malformed");
+  }
+  if (typeof pin !== "string" || pin === "" || typeof digest !== "string" || !isSha256Digest(digest)) {
+    throw new RequestRefusal("compiler", "the embedded drizzle declaration identity is malformed");
+  }
+  if (drizzleDeclarations !== null && (drizzleDeclarations.pin !== pin || drizzleDeclarations.digest !== digest)) {
+    throw new RequestRefusal("compiler", "a different drizzle declaration closure is already attached");
+  }
+  drizzleDeclarations = Object.freeze({ files, pin, digest });
+}
+function embeddedDrizzleDeclarations() {
+  return drizzleDeclarations;
 }
 function isSha256Digest(value) {
   return typeof value === "string" && value.length === 71 && value.startsWith("sha256:") && /^[0-9a-f]{64}$/.test(value.slice(7));

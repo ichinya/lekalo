@@ -141,6 +141,10 @@
       "origin": "synthetic"
     },
     {
+      "family": "node-typescript-drizzle",
+      "origin": "synthetic"
+    },
+    {
       "family": "node-typescript-kernel",
       "origin": "synthetic"
     },

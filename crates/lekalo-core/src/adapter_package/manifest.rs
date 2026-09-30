@@ -1006,17 +1006,15 @@ mod committed_exemplar_tests {
             .expect("the committed adapter manifest must parse");
         assert_eq!(document.adapter_id(), "lekalo-target-node-typescript");
         assert_eq!(document.adapter_version().as_str(), "0.4.0");
-        // Issue #115: the Hono framework-provider modules join the
-        // bundle (and the fix rounds for PR #142 revise them — round 5
-        // binds the role reader's unbound TypeScript reference so
-        // inline use() middleware scans instead of aborting, and
-        // threads the scenario clock map through renderWhen), so the
-        // committed artifact bytes (and with them the canonical
-        // package digest) change; the exemplar guard keeps the
-        // manifest bound to the exact committed bytes.
+        // Issues #115 and #116 share this bundle: the merged tree
+        // carries the Hono framework-provider modules and the Drizzle
+        // evidence extraction with all review fixes, so the committed
+        // artifact bytes (and with them the canonical package digest)
+        // change; the exemplar guard keeps the manifest bound to the
+        // exact committed bytes.
         assert_eq!(
             document.package_digest().as_str(),
-            "sha256:e69e3075dcb57c2eefd95af5e727cd72999b72355542d8058b3e42e521b763de"
+            "sha256:0e577009fa09c2e98f1bc2f572c8fb2759704f29d0a293d626ebdc959453e01c"
         );
     }
 

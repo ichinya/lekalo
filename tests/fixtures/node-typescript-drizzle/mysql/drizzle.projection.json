@@ -1,0 +1,14 @@
+{
+  "schema": "lekalo/storage-projection-input/v0.1.0",
+  "tables": [
+    {
+      "table": "users",
+      "dialect": "mysql",
+      "columns": [
+        { "name": "id", "type": "int", "nullable": false, "primaryKey": true },
+        { "name": "email", "type": "varchar(255)", "nullable": false, "primaryKey": false },
+        { "name": "tenant_id", "type": "int", "nullable": false, "primaryKey": false }
+      ]
+    }
+  ]
+}

@@ -220,6 +220,11 @@ export function __setCompilerMetadata(metadata) {
 
 let vendoredCompiler = null;
 let embeddedLibs = null;
+// Issue #116: the embedded upstream drizzle-orm declaration closure
+// (type-context-only). Attached by the generated bundle entry; a
+// deployment without it simply reports Drizzle surfaces as
+// unsupported instead of guessing.
+let drizzleDeclarations = null;
 let launchExtensions = [];
 
 /**
@@ -260,6 +265,34 @@ export function vendoredTs() {
 /** The attached embedded standard-library map (name → text). */
 export function embeddedLibFiles() {
   return embeddedLibs;
+}
+
+/**
+ * Attach the embedded drizzle-orm declaration closure (issue #116).
+ * The map is keyed by `/lekalo/deps/drizzle-orm@<pin>/...` host paths;
+ * identity is the exact pin plus the framed closure digest computed at
+ * build time. Attachment is one-directional: a later call with
+ * different identity refuses rather than silently swapping evidence
+ * identity mid-process.
+ */
+export function __attachDrizzleDeclarations(files, pin, digest) {
+  if (!(files instanceof Map) || files.size === 0) {
+    throw new RequestRefusal("compiler", "the embedded drizzle declaration map is malformed");
+  }
+  if (typeof pin !== "string" || pin === ""
+    || typeof digest !== "string" || !isSha256Digest(digest)) {
+    throw new RequestRefusal("compiler", "the embedded drizzle declaration identity is malformed");
+  }
+  if (drizzleDeclarations !== null
+    && (drizzleDeclarations.pin !== pin || drizzleDeclarations.digest !== digest)) {
+    throw new RequestRefusal("compiler", "a different drizzle declaration closure is already attached");
+  }
+  drizzleDeclarations = Object.freeze({ files, pin, digest });
+}
+
+/** The attached drizzle declaration closure, or null when absent. */
+export function embeddedDrizzleDeclarations() {
+  return drizzleDeclarations;
 }
 
 /** Whether one string is `sha256:` plus exactly 64 lowercase hex digits. */
