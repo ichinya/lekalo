@@ -134,6 +134,10 @@ pub(crate) struct RecoveryReport {
     pub(crate) assertion_set_count: u64,
     pub(crate) rebuilt_index_rows: u64,
     pub(crate) verified_digests: u64,
+    /// Rows whose column identity diverges from the custody body's
+    /// embedded `runId`: digest-verified but never blessed into the
+    /// rebuilt index, and reported separately.
+    pub(crate) quarantined_runs: u64,
 }
 
 /// The open history store.
@@ -795,39 +799,54 @@ impl Store {
                 detail: "run-grammar",
             });
         }
-        let row: Option<(Vec<u8>, Option<String>)> = self
+        let row: Option<(Vec<u8>, String, Option<String>)> = self
             .connection
             .query_row(
-                "SELECT record_bytes, assertion_set_id FROM runs
+                "SELECT record_bytes, record_digest, assertion_set_id FROM runs
                  WHERE tenant_scope_id = ?1 AND run_id = ?2",
                 rusqlite::params![scope_id, run_id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .map(Some)
             .or_else(|error| match error {
                 rusqlite::Error::QueryReturnedNoRows => Ok(None),
                 _ => Err(StoreError::Io),
             })?;
-        let Some((record_bytes, assertion_set_id)) = row else {
+        let Some((record_bytes, record_digest, assertion_set_id)) = row else {
             return Err(StoreError::SourceMissing("run"));
         };
+        // Custody is re-verified on every read, not only at recovery:
+        // the returned bytes must match the stored digest and the
+        // frozen references must be intact. Tampered store bytes are a
+        // corruption refusal, never a valid record.
+        if format!("sha256:{}", sha256_hex(&record_bytes)) != record_digest {
+            return Err(StoreError::Corrupt("record-digest"));
+        }
+        {
+            let value: serde_json::Value =
+                serde_json::from_slice(&record_bytes).map_err(|_| StoreError::Corrupt("record"))?;
+            check_frozen_refs(&value)?;
+        }
         let assertions = match assertion_set_id {
             None => None,
             Some(set_id) => {
-                let bytes: Option<Vec<u8>> = self
+                let bytes: Option<(Vec<u8>, String)> = self
                     .connection
                     .query_row(
-                        "SELECT bytes FROM assertion_sets
+                        "SELECT bytes, digest FROM assertion_sets
                          WHERE tenant_scope_id = ?1 AND set_id = ?2",
                         rusqlite::params![scope_id, set_id],
-                        |row| row.get(0),
+                        |row| Ok((row.get(0)?, row.get(1)?)),
                     )
                     .map(Some)
                     .or_else(|error| match error {
                         rusqlite::Error::QueryReturnedNoRows => Ok(None),
                         _ => Err(StoreError::Io),
                     })?;
-                let bytes = bytes.ok_or(StoreError::Corrupt("assertions"))?;
+                let (bytes, digest) = bytes.ok_or(StoreError::Corrupt("assertions"))?;
+                if format!("sha256:{}", sha256_hex(&bytes)) != digest {
+                    return Err(StoreError::Corrupt("assertions"));
+                }
                 Some(String::from_utf8(bytes).map_err(|_| StoreError::Corrupt("assertions"))?)
             }
         };
@@ -1456,6 +1475,7 @@ impl Store {
             .map_err(|_| StoreError::Corrupt("runs"))?;
         let mut index_rows: Vec<(String, String, String, String, String, i64, i64)> = Vec::new();
         let mut verified = 0u64;
+        let mut quarantined = 0u64;
         for row in rows {
             let (scope_id, run_id, record_bytes, record_digest, payload_bytes, assertion_set_id) =
                 row.map_err(|_| StoreError::Corrupt("runs"))?;
@@ -1465,6 +1485,20 @@ impl Store {
             let value: serde_json::Value =
                 serde_json::from_slice(&record_bytes).map_err(|_| StoreError::Corrupt("record"))?;
             check_frozen_refs(&value)?;
+            verified += 1;
+            // The column identity and the custody body must agree. A
+            // digest-valid record whose embedded `runId` differs from
+            // its column `run_id` is quarantined — excluded from the
+            // rebuilt index and counted — instead of blessed; recovery
+            // never mutates stored rows.
+            let embedded_run_id = value
+                .get("runId")
+                .and_then(serde_json::Value::as_str)
+                .ok_or(StoreError::Corrupt("record"))?;
+            if embedded_run_id != run_id {
+                quarantined += 1;
+                continue;
+            }
             let outcome = value
                 .get("status")
                 .and_then(|status| status.get("outcome"))
@@ -1496,7 +1530,6 @@ impl Store {
                 payload_bytes,
                 has_assertions,
             ));
-            verified += 1;
         }
         let assertion_set_count: i64 = self
             .connection
@@ -1541,6 +1574,7 @@ impl Store {
             assertion_set_count: u64::try_from(assertion_set_count).unwrap_or(u64::MAX),
             rebuilt_index_rows: u64::try_from(index_rows.len()).unwrap_or(u64::MAX),
             verified_digests: verified,
+            quarantined_runs: quarantined,
             document,
         })
     }

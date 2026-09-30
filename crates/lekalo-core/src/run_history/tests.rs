@@ -983,11 +983,12 @@ fn recovery_verifies_digests_and_rejects_tampered_records() {
     assert_eq!(report.run_count, 1);
     assert_eq!(report.verified_digests, 1);
     assert_eq!(report.rebuilt_index_rows, 1);
+    assert_eq!(report.quarantined_runs, 0);
     assert!(store.get(&scope, &receipt.run_id).is_ok());
 
     // Tamper with the raw record bytes behind the store's back: the
-    // next recovery refuses as corruption instead of silently serving
-    // the tampered record.
+    // next read refuses as corruption instead of silently serving the
+    // tampered record.
     {
         let database = root.join(".lekalo/history/store.sqlite");
         let connection = rusqlite::Connection::open(&database).expect("raw open");
@@ -995,8 +996,49 @@ fn recovery_verifies_digests_and_rejects_tampered_records() {
             .execute("UPDATE runs SET record_bytes = ?1", [b"tampered".to_vec()])
             .expect("tamper applied");
     }
+    let error = store
+        .get(&scope, &receipt.run_id)
+        .expect_err("tampered read refused");
+    assert!(matches!(error, StoreError::Corrupt("record-digest")));
     let error = store.recover().expect_err("tampered refused");
     assert!(matches!(error, StoreError::Corrupt("record-digest")));
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn recovery_quarantines_records_whose_column_and_body_ids_diverge() {
+    let root = temp_case("recover-quarantine");
+    let mut store = open(&root, 1_000_000);
+    let scope = scope_of(&mut store);
+    let receipt = append_ok(&mut store, &scope, "dddddddddddddddddddddddddddd00e1");
+
+    // Rewrite the column identity behind the store's back. The bytes
+    // and their digest stay mutually consistent, so the custody check
+    // alone cannot see the divergence; only the body cross-check can.
+    {
+        let database = root.join(".lekalo/history/store.sqlite");
+        let connection = rusqlite::Connection::open(&database).expect("raw open");
+        let changed = connection
+            .execute(
+                "UPDATE runs SET run_id = 'dddddddddddddddddddddddddddd00e2' WHERE run_id = ?1",
+                [&receipt.run_id],
+            )
+            .expect("identity rewrite applied");
+        assert_eq!(changed, 1);
+    }
+    let report = store.recover().expect("recover");
+    // The digest still verifies (the bytes were not touched), but the
+    // identity divergence quarantines the row out of the rebuilt index.
+    assert_eq!(report.verified_digests, 1);
+    assert_eq!(report.quarantined_runs, 1);
+    assert_eq!(report.run_count, 0);
+    assert_eq!(report.rebuilt_index_rows, 0);
+    assert_eq!(report.run_count, 0);
+    assert_eq!(report.rebuilt_index_rows, 0);
+    // The quarantined row is absent from the listing; recovery never
+    // blesses a divergent identity into the index.
+    let (rows, _) = store.list(&scope, 50, None).expect("list");
+    assert!(rows.is_empty());
     let _ = std::fs::remove_dir_all(&root);
 }
 

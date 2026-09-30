@@ -408,6 +408,7 @@ pub fn recover(selection: &LoadSelection) -> DomainResult {
                 "assertionSetCount": report.assertion_set_count,
                 "rebuiltIndexRows": report.rebuilt_index_rows,
                 "verifiedDigests": report.verified_digests,
+                "quarantinedRuns": report.quarantined_runs,
             });
             DomainResult::receipt(
                 render_envelope("history-recover", &envelope),
