@@ -66,6 +66,10 @@ const CONDITIONAL_KINDS = [
 export function collectRegistrations(ctx) {
   const { ts, checker, program } = ctx;
   const events = [];
+  // Fluent-chain links already emitted by an unroll (nodes are visited
+  // once as unroll links and once as plain calls; the set suppresses
+  // the second emission).
+  const fluentEmitted = new WeakSet();
   // Pass 1: the validator vocabulary across all files first, so route
   // events in any module can resolve const-bound validators by node
   // identity regardless of module enumeration order.
@@ -98,9 +102,36 @@ export function collectRegistrations(ctx) {
         ts.forEachChild(node, visit);
         return;
       }
+      if (fluentEmitted.has(node)) {
+        // The node was already emitted as a fluent-chain link.
+        ts.forEachChild(node, visit);
+        return;
+      }
       const instance = ctx.instanceOfExpression(expression.expression, sourceFile);
       if (!instance) {
-        reportNearMissReceiver(ctx, expression, sourceFile, fromModule);
+        // Fluent verb chains: `app.get(p, h).post(p2, h2)` — the outer
+        // link's receiver is the inner registration call, not an
+        // instance. When the chain roots at a resolvable instance,
+        // every statically-known link is its own registration event;
+        // only an unresolvable ROOT stays a near-miss (issue #115 fix
+        // round 2).
+        const chain = fluentChainOf(ctx, node, expression, sourceFile);
+        if (chain === null) {
+          reportNearMissReceiver(ctx, expression, sourceFile, fromModule);
+        } else {
+          for (const link of chain.links) {
+            if (fluentEmitted.has(link.node)) continue;
+            fluentEmitted.add(link.node);
+            events.push(makeEvent(ctx, {
+              kind: classifyMethod(link.method),
+              node: link.node,
+              instance: chain.instance,
+              methodName: link.method,
+              sourceFile,
+              module: fromModule,
+            }));
+          }
+        }
         ts.forEachChild(node, visit);
         return;
       }
@@ -168,6 +199,37 @@ function classifyMethod(methodName) {
   if (methodName === "onError" || methodName === "notFound") return "error";
   if (methodName === "openapi") return "openapi";
   return "other";
+}
+
+/** Methods that return the SAME app inside a fluent registration chain
+ * (route verbs + registration shapers). `basePath` is excluded: it
+ * yields a distinct view instance, which resolves as a receiver on its
+ * own. */
+const FLUENT_LINK_METHODS = new Set([...ROUTE_METHODS, "use", "route", "onError", "notFound", "openapi"]);
+
+/**
+ * Unroll a fluent registration chain rooted at a resolvable instance:
+ * `app.get(p, h).post(p2, h2)` — links innermost-last, every link a
+ * statically-known call with its own method/path/handler arguments.
+ * Null when the root cannot be proven (the near-miss path stays).
+ */
+function fluentChainOf(ctx, node, expression, sourceFile) {
+  const { ts } = ctx;
+  const methodName = expression.name?.text ?? null;
+  if (methodName === null || !FLUENT_LINK_METHODS.has(methodName)) return null;
+  const links = [{ node, method: methodName }];
+  let current = expression.expression;
+  for (let depth = 0; depth < 16; depth += 1) {
+    const instance = ctx.instanceOfExpression(current, sourceFile);
+    if (instance) return { instance, links };
+    if (current.kind !== ts.SyntaxKind.CallExpression
+      || current.expression?.kind !== ts.SyntaxKind.PropertyAccessExpression) return null;
+    const method = current.expression.name?.text ?? null;
+    if (method === null || !FLUENT_LINK_METHODS.has(method)) return null;
+    links.push({ node: current, method });
+    current = current.expression.expression;
+  }
+  return null;
 }
 
 /**

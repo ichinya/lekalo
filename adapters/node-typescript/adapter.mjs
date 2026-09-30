@@ -214452,6 +214452,7 @@ var CONDITIONAL_KINDS = [
 function collectRegistrations(ctx) {
   const { ts: ts3, checker, program } = ctx;
   const events = [];
+  const fluentEmitted = /* @__PURE__ */ new WeakSet();
   precollectValidators(ctx);
   for (const sourceFile of program.getSourceFiles()) {
     if (sourceFile.isDeclarationFile) continue;
@@ -214478,9 +214479,29 @@ function collectRegistrations(ctx) {
         ts3.forEachChild(node, visit);
         return;
       }
+      if (fluentEmitted.has(node)) {
+        ts3.forEachChild(node, visit);
+        return;
+      }
       const instance = ctx.instanceOfExpression(expression.expression, sourceFile);
       if (!instance) {
-        reportNearMissReceiver(ctx, expression, sourceFile, fromModule);
+        const chain = fluentChainOf(ctx, node, expression, sourceFile);
+        if (chain === null) {
+          reportNearMissReceiver(ctx, expression, sourceFile, fromModule);
+        } else {
+          for (const link of chain.links) {
+            if (fluentEmitted.has(link.node)) continue;
+            fluentEmitted.add(link.node);
+            events.push(makeEvent(ctx, {
+              kind: classifyMethod(link.method),
+              node: link.node,
+              instance: chain.instance,
+              methodName: link.method,
+              sourceFile,
+              module: fromModule
+            }));
+          }
+        }
         ts3.forEachChild(node, visit);
         return;
       }
@@ -214532,6 +214553,24 @@ function classifyMethod(methodName) {
   if (methodName === "onError" || methodName === "notFound") return "error";
   if (methodName === "openapi") return "openapi";
   return "other";
+}
+var FLUENT_LINK_METHODS = /* @__PURE__ */ new Set([...ROUTE_METHODS, "use", "route", "onError", "notFound", "openapi"]);
+function fluentChainOf(ctx, node, expression, sourceFile) {
+  const { ts: ts3 } = ctx;
+  const methodName = expression.name?.text ?? null;
+  if (methodName === null || !FLUENT_LINK_METHODS.has(methodName)) return null;
+  const links = [{ node, method: methodName }];
+  let current = expression.expression;
+  for (let depth = 0; depth < 16; depth += 1) {
+    const instance = ctx.instanceOfExpression(current, sourceFile);
+    if (instance) return { instance, links };
+    if (current.kind !== ts3.SyntaxKind.CallExpression || current.expression?.kind !== ts3.SyntaxKind.PropertyAccessExpression) return null;
+    const method = current.expression.name?.text ?? null;
+    if (method === null || !FLUENT_LINK_METHODS.has(method)) return null;
+    links.push({ node: current, method });
+    current = current.expression.expression;
+  }
+  return null;
 }
 function reachabilityOf(ctx, node, sourceFile) {
   const { ts: ts3 } = ctx;

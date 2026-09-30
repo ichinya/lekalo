@@ -396,3 +396,29 @@ test("provider disabled or absent: the generic index is byte-identical", async (
     dispose(enabled.root);
   }
 });
+
+test("fluent verb chains: every statically-known link keeps its record", async () => {
+  const context = await scanHonoFixture("fluent-chains", "fluent");
+  try {
+    assert.equal(context.hono.provider.state, "complete");
+    const routes = recordsOfRelation(context, "route-handler");
+    const byKey = new Map(routes.map((row) => [`${row.method} ${row.path}`, row]));
+    // Each link of app.get(p, h).post(p, h2).put(p, h3) resolves to its
+    // own complete route record with the right handler — no asymmetric
+    // loss into a bare receiver uncertainty.
+    assert.equal(byKey.get("GET /fluent").to.name, "getHandler");
+    assert.equal(byKey.get("POST /fluent").to.name, "postHandler");
+    assert.equal(byKey.get("PUT /fluent").to.name, "putHandler");
+    for (const key of ["GET /fluent", "POST /fluent", "PUT /fluent", "GET /plain"]) {
+      assert.equal(byKey.get(key).status, "complete");
+      assert.deepEqual(byKey.get(key).reasons, []);
+    }
+    // The chain is not a lost receiver: no unsupported-receiver row.
+    assert.equal(
+      context.hono.uncertainty.filter((row) => row.kind === "hono-unsupported-receiver").length,
+      0,
+    );
+  } finally {
+    dispose(context.root);
+  }
+});
