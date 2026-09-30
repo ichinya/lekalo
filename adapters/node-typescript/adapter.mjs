@@ -223638,7 +223638,7 @@ function columnTypeToken(context, factory, callNode) {
       token = precision !== null ? `${factory}(${precision}${scale !== null ? `,${scale}` : ""})` : factory;
     }
   } else if (factory === "datetime" || factory === "timestamp" || factory === "time") {
-    const options = args[0];
+    const options = args[0] !== void 0 && args[0].kind === context.ts.SyntaxKind.ObjectLiteralExpression ? args[0] : args[1];
     if (options !== void 0 && options.kind === context.ts.SyntaxKind.ObjectLiteralExpression) {
       const precision = propertyScalar(context, options, "precision");
       if (precision !== null) token = `${factory}(${precision})`;
@@ -224045,18 +224045,29 @@ var CONSTRAINT_NAMES = /* @__PURE__ */ new Set([
 ]);
 function extractConstraint(context, sourceFile, node, tableRow) {
   const { ts: ts2 } = context;
-  const callee = node.expression;
-  const name = callee?.kind === ts2.SyntaxKind.Identifier ? callee.text : callee?.kind === ts2.SyntaxKind.PropertyAccessExpression ? callee.name.getText() : null;
+  if (node.kind !== ts2.SyntaxKind.CallExpression) return null;
+  const chain = flattenChain(ts2, node);
+  const firstCall = chain.links.find((link) => link.kind === "call");
+  const name = firstCall?.name ?? null;
   if (name === null || !CONSTRAINT_NAMES.has(name)) return null;
   const kind = name === "uniqueIndex" ? "unique-index" : name === "index" ? "index" : name === "primaryKey" ? "primary-key" : name === "unique" ? "unique" : name === "fulltextIndex" ? "fulltext-index" : name === "spatialIndex" ? "spatial-index" : name === "foreignKey" ? "foreign-key" : "check";
-  const constraintName = staticString(node.arguments?.[0]);
-  const chain = flattenChain(ts2, node);
+  const constraintName = staticString(firstCall.node.arguments?.[0]);
+  const first = firstCall.node.arguments?.[0];
+  const objectColumns = first !== void 0 && first.kind === ts2.SyntaxKind.ObjectLiteralExpression ? propertyNode(context, first, "columns") : null;
+  const objectName = first !== void 0 && first.kind === ts2.SyntaxKind.ObjectLiteralExpression ? staticString(propertyNode(context, first, "name")) : null;
   const members = [];
   const memberOverflow = { hit: false };
   const onCall = [...chain.links].reverse().find((link) => link.kind === "call" && link.name === "on");
   if (onCall !== void 0) {
     for (const arg of onCall.node.arguments ?? []) {
       const member = constraintMemberOf(context, arg, tableRow);
+      if (member !== null) {
+        if (!pushBounded(members, MAX_COLUMNS, member, memberOverflow)) break;
+      }
+    }
+  } else if (objectColumns?.kind === ts2.SyntaxKind.ArrayLiteralExpression) {
+    for (const element of objectColumns.elements) {
+      const member = constraintMemberOf(context, element, tableRow);
       if (member !== null) {
         if (!pushBounded(members, MAX_COLUMNS, member, memberOverflow)) break;
       }
@@ -224082,8 +224093,8 @@ function extractConstraint(context, sourceFile, node, tableRow) {
   }
   return {
     kind,
-    name: constraintName ?? null,
-    nameExplicit: constraintName !== null,
+    name: constraintName ?? objectName ?? null,
+    nameExplicit: constraintName !== null || objectName !== null,
     unique: kind === "unique-index" || kind === "unique",
     members: members.map((member) => member.physicalName),
     membersResolved: members.map((member) => member.resolved),
@@ -224365,7 +224376,7 @@ function extractQueryChain(context, sourceFile, { root, links }, receiverKind, t
         query.limitations.push("upsert-alternative");
         let setArg = null;
         if (link.name === "onDuplicateKeyUpdate") {
-          setArg = args[0] ?? null;
+          setArg = args.length >= 2 ? args[1] ?? null : args[0] !== void 0 && args[0].kind === ts2.SyntaxKind.ObjectLiteralExpression ? propertyNode(context, args[0], "set") ?? args[0] : args[0] ?? null;
         } else if (args.length >= 2) {
           setArg = args[1] ?? null;
         } else if (args[0] !== void 0 && args[0].kind === ts2.SyntaxKind.ObjectLiteralExpression) {
@@ -224853,9 +224864,10 @@ function rootIdentityKind(context, root, state) {
     } catch {
       return "unknown";
     }
-    const declaration = variableDeclarationOf(symbol);
+    const resolved = resolveAliasSymbol(checker, symbol);
+    const declaration = variableDeclarationOf(resolved);
     const depth = state.depth ?? 0;
-    if (declaration !== void 0 && declaration !== null && declaration.initializer !== void 0 && depth < MAX_ALIAS_HOPS) {
+    if (declaration !== null && declaration !== void 0 && declaration.initializer !== void 0 && depth < MAX_ALIAS_HOPS) {
       const innerRoot = flattenChain(ts2, declaration.initializer).root;
       const kind = rootIdentityKind(context, innerRoot, {
         txScopes: state.txScopes,
@@ -224863,9 +224875,15 @@ function rootIdentityKind(context, root, state) {
         dbNames: state.dbNames,
         depth: depth + 1
       });
-      if (kind !== "unknown") return kind;
+      if (kind !== "unknown") {
+        if (root.kind === ts2.SyntaxKind.Identifier) state.dbNames.set(root.text, true);
+        return kind;
+      }
     }
-    if (typeInClosure(ts2, checker, root, context.closurePrefix)) return "db";
+    if (typeInClosure(ts2, checker, root, context.closurePrefix)) {
+      if (root.kind === ts2.SyntaxKind.Identifier) state.dbNames.set(root.text, true);
+      return "db";
+    }
     return "unknown";
   }
   if (typeInClosure(ts2, checker, root, context.closurePrefix)) return "db";
@@ -224903,17 +224921,18 @@ function extractMigrations(extract, ts2, manifest, readBytes) {
         } else if (name === "schema") {
           const value = staticString(node.initializer);
           if (value !== null) {
-            row.schemaRefs.push(value);
+            row.schemaRefs.push(normalizeRelativeRef(value));
           } else if (node.initializer?.kind === ts2.SyntaxKind.ArrayLiteralExpression) {
             for (const element of node.initializer.elements) {
               const member = staticString(element);
-              if (member !== null) row.schemaRefs.push(member);
+              if (member !== null) row.schemaRefs.push(normalizeRelativeRef(member));
             }
           } else if (node.initializer !== void 0) {
             context2Limit(extract, "migration-config-invalid", entry.path, lineOf(sourceFile, node), "schema");
           }
         } else if (name === "out") {
-          row.out = staticString(node.initializer);
+          const value = staticString(node.initializer);
+          row.out = value === null ? null : normalizeRelativeRef(value);
         }
       }
       ts2.forEachChild(node, visit);
@@ -224930,7 +224949,11 @@ function extractMigrations(extract, ts2, manifest, readBytes) {
           extract.limit("migration-ref-missing", entry.path, row.span?.start?.line ?? null, row.out);
           row.limitations.push("migration-ref-missing");
         } else {
-          const journal = folderEntries.find((file3) => file3.path === `${prefix}meta/_journal.json`);
+          const journalCandidates = [
+            `${prefix}meta/_journal.json`,
+            `${prefix}meta/journal.json`
+          ];
+          const journal = folderEntries.find((file3) => journalCandidates.includes(file3.path));
           row.layout = journal !== void 0 ? "folders-journal" : "sql-only";
           if (journal === void 0) {
             extract.limit("migration-layout-unknown", entry.path, null, row.out);
@@ -224940,8 +224963,8 @@ function extractMigrations(extract, ts2, manifest, readBytes) {
           for (const file3 of folderEntries.slice(0, MAX_MIGRATION_ENTRIES)) {
             pushBounded(row.entries, MAX_MIGRATION_ENTRIES, {
               path: file3.path,
-              digest: file3.digest,
-              kind: file3.path.endsWith(".sql") ? "sql" : file3.path.endsWith("_journal.json") ? "journal" : file3.path.endsWith("snapshot.json") ? "snapshot" : "meta"
+              digest: "sha256:" + file3.digest,
+              kind: file3.path.endsWith(".sql") ? "sql" : file3.path.endsWith("journal.json") ? "journal" : file3.path.endsWith("snapshot.json") ? "snapshot" : "meta"
             }, entryOverflow);
           }
           if (entryOverflow.hit) {
@@ -224962,6 +224985,9 @@ function extractMigrations(extract, ts2, manifest, readBytes) {
 }
 function context2Limit(extract, code, path, line, detail) {
   extract.limit(code, path, line, detail);
+}
+function normalizeRelativeRef(value) {
+  return value.replace(/^\.\//, "").replace(/\/$/, "");
 }
 function extractScopeRows(context) {
   const rows = [];
@@ -225261,6 +225287,12 @@ function attachDrizzleEvidence({
           const shapePair = links.some((link) => link.kind === "call" && (link.name === "from" || link.name === "values" || link.name === "set" || link.name === "where"));
           if (shapePair) {
             extract.limit("receiver-unknown", modulePath, lineOf(sourceFile, node));
+          }
+        }
+        if (tailName === "execute") {
+          const identity = rootIdentityKind(extract, root, state);
+          if (identity === "db" || identity === "db-alias") {
+            extract.limit("raw-sql", modulePath, lineOf(sourceFile, node));
           }
         }
       }
