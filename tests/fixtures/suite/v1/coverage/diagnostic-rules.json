@@ -1580,21 +1580,21 @@
       "code": "LEK-HST-009",
       "category": "infrastructure",
       "evidence": "interaction-only",
-      "note": "requires byte-level store corruption; the store's recovery owns it"
+      "note": "requires byte-level store corruption on the host disk; the store's recovery owns it"
     },
     {
       "id": "history.cursor-stale",
       "code": "LEK-HST-015",
       "category": "infrastructure",
       "evidence": "interaction-only",
-      "note": "requires interleaved readers; the store owns it"
+      "note": "requires interleaved host readers racing the cursor; the store owns it"
     },
     {
       "id": "history.dependent-invalidated",
       "code": "LEK-HST-014",
       "category": "infrastructure",
       "evidence": "interaction-only",
-      "note": "requires a dependent-retention race; the store owns it"
+      "note": "requires a concurrent host process racing dependent retention; the store owns it"
     },
     {
       "id": "history.input-invalid",
@@ -1648,14 +1648,14 @@
       "code": "LEK-HST-001",
       "category": "security",
       "evidence": "interaction-only",
-      "note": "requires a foreign-tenant store; the store owns it"
+      "note": "requires a store produced under a different host tenant identity; the store owns it"
     },
     {
       "id": "history.source-missing",
       "code": "LEK-HST-012",
       "category": "infrastructure",
       "evidence": "interaction-only",
-      "note": "requires a deleted source between record and read; the store owns it"
+      "note": "requires a host process deleting the source between record and read; the store owns it"
     },
     {
       "id": "history.tracked-store",
