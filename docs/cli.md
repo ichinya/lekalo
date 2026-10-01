@@ -35,6 +35,7 @@ lekalo migrate --to model/TARGET [--dry-run] [--project DIR]
 lekalo migrate --rollback PLAN_ID [--project DIR]
 lekalo compatibility
 lekalo validate [--project DIR] [--module MODULE] [--strict]
+              [--report-file PATH [--report-format json|junit|sarif|md]]
 lekalo expressions validate PATH [--builtin-support FILE]
 lekalo expressions eval PATH --vectors FILE [--builtin-support FILE]
 lekalo expressions render PATH --target node|php|go [--builtin-support FILE]
@@ -69,6 +70,7 @@ lekalo generate [--target TARGET]... [--module MODULE] [--dry-run] [--locked]
               [--allow-permission-expansion] -- PROGRAM [ARGS...] [--project DIR]
 lekalo verify [--target TARGET]... [--module MODULE] [--changed] [--locked]
               [--trace PATH] [-- PROGRAM [ARGS...]] [--project DIR]
+              [--report-file PATH [--report-format json|junit|sarif|md]]
 lekalo inspect SYMBOL [--include SECTIONS] [--project DIR]
 lekalo impact SYMBOL [--depth N] [--relation KIND] [--profile default|strict] [--project DIR]
 lekalo impact --changed [--base REF] [--head REF] [--worktree] [--project DIR]
@@ -83,6 +85,7 @@ lekalo cache status [--project DIR]
 lekalo doctor [--project DIR] [--trace PATH]... [--fix]
 lekalo status [--project DIR]
 lekalo readiness --phase model|implement|generate|verify|release [--project DIR] [--trace PATH]...
+              [--check] [--report-file PATH [--report-format json|junit|sarif|md]]
 ```
 
 `init`, `init --adopt`, `module new`, `--version`, `load`, `lock`, `update`, `migrate`, `compatibility`,
@@ -188,6 +191,11 @@ including a project whose protected effects have no
 never blocks; the closed vocabulary, evaluation semantics, and limits
 are documented in [authorization.md](authorization.md) and
 [ADR-0021](adr/0021-authorization.md).
+
+Issue #103: `validate --report-file PATH [--report-format
+json|junit|sarif|md]` writes the closed CI report
+([ci-reports.md](ci-reports.md)) as a side channel; the envelope and the
+exit class stay exactly as above.
 
 ### `lekalo lock` and `lekalo update`
 
@@ -691,6 +699,12 @@ contract, verdict table, and clean rules are documented in
 [docs/artifact-manifest.md](artifact-manifest.md) and
 [ADR-0015](adr/0015-artifact-ownership-manifest.md).
 
+Issue #103: `--check --report-file PATH` writes the closed CI report
+([ci-reports.md](ci-reports.md)) as a side channel. The check remains
+strictly read-only: only the granted report path may be created, and a
+refused write is the typed `ci.report-write-failed` unavailable result
+that never masks a failing check.
+
 ```sh
 lekalo generate --clean --dry-run
 lekalo generate --clean --confirm sha256:973d6dd3ef84df5e286622a796e542f9dac20974047f21ec0a1a095501949734
@@ -838,6 +852,12 @@ lekalo status
 lekalo readiness --phase generate
 # readiness generate blocked : 13 checks (10 ok, 2 degraded, 1 blocked)
 ```
+
+Issue #103: `readiness --check` is the CI gate — a blocked required
+panel fails the run with the typed `unavailable` envelope (exit 4,
+`ci.required-check-missing`) instead of the informational exit 0; the
+doctor/status projections and the default readiness stay exit-0
+([doctor.md](doctor.md), [ci-reports.md](ci-reports.md)).
 
 ## Contract (contracted mode)
 

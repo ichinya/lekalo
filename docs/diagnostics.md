@@ -162,11 +162,14 @@ the ambient locale.
 
 ## SARIF, adapters, and evidence
 
-SARIF 2.1.0 export, report files, and CI annotations belong to #103. The
-adapter process wire, handshake, and transport belong to #27; the
-executable reference adapter and conformance suite belong to #31; #11
-ships only the in-process, hermetic provider normalization. Durable
-evidence wrapping belongs to #22/#35/#103 and privacy enforcement to #119.
+SARIF 2.1.0 export, report files, and CI annotations belong to #103 and
+are delivered: every CI report projection (including SARIF with
+repository-relative safe paths under `%SRCROOT%`) renders from the
+closed report documented in [ci-reports.md](ci-reports.md). The adapter
+process wire, handshake, and transport belong to #27; the executable
+reference adapter and conformance suite belong to #31; #11 ships only
+the in-process, hermetic provider normalization. Durable evidence
+wrapping belongs to #22/#35/#103 and privacy enforcement to #119.
 
 ## Allocated codes
 
