@@ -178,11 +178,20 @@ function copyConsumer(source, target, skipCounts) {
       // The read-view grammar can only spell portable lowercase
       // segments; an entry it cannot spell (the vitest `__tests__`
       // convention, uppercase-leading names) is unscannable, so the
-      // copy leaves it out and the run counts it. This keeps the scan
-      // alive instead of refusing on an unspellable inventory entry.
+      // copy leaves it out. Skips are classified, never just totaled:
+      // the finding layer may only claim a cause that the identified
+      // evidence supports. (Spellings stay private — kind counts only.)
       const rel = relative(source, src).split("\\").join("/");
       if (rel !== "" && !kernel.isLogicalPath(rel)) {
-        skipCounts.grammar = (skipCounts.grammar ?? 0) + 1;
+        skipCounts.grammar += 1;
+        const offenderSegment = rel.split("/").find((segment) => !kernel.isLogicalPath(segment)) ?? "";
+        const segmentKind = offenderSegment.startsWith("_") ? "underscore-leading"
+          : /^[^a-z]/.test(offenderSegment) ? "non-lowercase-leading"
+          : "other";
+        skipCounts.grammarSegments = { ...(skipCounts.grammarSegments ?? {}), [segmentKind]: (skipCounts.grammarSegments?.[segmentKind] ?? 0) + 1 };
+        if (/\.(test|spec)\.[cm]?tsx?$/i.test(rel) || /(^|\/)__(tests|specs?)(__|\/|$)/i.test(rel)) {
+          skipCounts.grammarTestShaped += 1;
+        }
         return false;
       }
       return true;
@@ -547,7 +556,7 @@ let scanDocPath = null;
 
 if (!args.inPlace) {
   step("copy", () => {
-    const skipCounts = {};
+    const skipCounts = { grammar: 0, grammarTestShaped: 0, grammarSegments: {}, dirs: {} };
     rmSync(workdir, { recursive: true, force: true });
     copyConsumer(consumerRoot, copyRoot, skipCounts);
     const files = inventory(copyRoot);
@@ -694,6 +703,7 @@ step("scan-fallback", () => {
     endpoints: built.document.endpoints.length,
     unboundRoutes: built.unboundRoutes,
     testBindings: built.document.testBindings?.length ?? 0,
+    carrierlessTests: built.carrierlessTests,
     frameworkProviders: providerEvidence,
   };
 });
@@ -1057,9 +1067,19 @@ step("report", () => {
   if (fallback?.detail?.used === true && (fallback.detail.testBindings ?? 0) === 0) {
     const copyStep = steps.find((entry) => entry.step === "copy");
     const grammarSkips = copyStep?.detail?.skippedDirEntries?.grammar ?? 0;
-    findings.push(grammarSkips > 0
-      ? `No native test binding reached the observed index, and ${grammarSkips} tree entries could not be copied at all: the consumer's vitest files live under directory spellings the portable path grammar cannot spell, so the copy cannot carry them and the scan cannot claim their names. The use-case attach step records this as an explicit gap instead of inventing test identities.`
-      : "No native test binding reached the observed index: the scanned test modules expose no top-level symbol to carry the claim (the wire's `t` slot rides a same-module symbol). The use-case attach step binds the flow's tests explicitly instead.");
+    const testShapedSkips = copyStep?.detail?.skippedDirEntries?.grammarTestShaped ?? 0;
+    const carrierless = fallback.detail.carrierlessTests ?? 0;
+    // The branch must match the identified evidence: the grammar
+    // explanation only fires when test-shaped entries were actually
+    // skipped by the copy; otherwise the scan-level carrier rule is
+    // the true cause (a scanned test module with no top-level symbol).
+    if (testShapedSkips > 0) {
+      findings.push(`No native test binding reached the observed index, and ${grammarSkips} tree entries (${testShapedSkips} of them test-shaped) could not be copied at all: the consumer's vitest files live under directory spellings the portable path grammar cannot spell, so the copy cannot carry them and the scan cannot claim their names. The use-case attach step records this as an explicit gap instead of inventing test identities.`);
+    } else if (carrierless > 0) {
+      findings.push(`No native test binding reached the observed index: ${carrierless} scanned test-module claim(s) found no top-level symbol to carry (the wire's \`t\` slot rides a same-module symbol), so the test rows are carrierless by the same rule the wire applies. The use-case attach step binds the flow's tests explicitly instead (attach source: ${steps.find((entry) => entry.step === "attach-native-tests")?.detail?.source ?? "none"}).`);
+    } else {
+      findings.push("No native test binding reached the observed index and no scan-level test claims exist; the use-case attach step is the only native-test evidence path and attached nothing.");
+    }
   }
   const scanDiagnostics = fallback?.detail?.diagnostics ?? 0;
   if (scanDiagnostics > 0) {
