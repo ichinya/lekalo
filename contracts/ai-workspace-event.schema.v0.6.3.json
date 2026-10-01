@@ -1,0 +1,306 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/ai-workspace-event.schema.v0.6.3.json",
+  "title": "Lekalo AI Workspace change-event envelope (issue #37)",
+  "description": "Closed contract of one deterministic public change-event envelope (issue #37): the bounded, privacy-safe projection that the opt-in lekalo-side AI Workspace hook (scripts/ai-workspace-hook.mjs) builds for an approved public contract change and, when explicitly enabled and policy-admitted, sends to the external AI Workspace instance as a service event. The contract version is independent of the Model/IR/protocol contract versions and of the external ai-workspace package version. Every path is a repository-relative public path from the reviewed routing manifest; every role is a neutral reviewed role alias; every digest is sha256:<64 lowercase hex> over its declared domain; the canonical byte form of an envelope serializes every object with recursively lexicographically sorted member names; no field carries an absolute path, URL, credential, private repository name, or upstream numeric project/event/item identity. Upstream stores only a bounded serialized projection of the body; the envelope itself is the public Lekalo-side wire form. The Rust implementation is intentionally absent: this envelope has no Lekalo runtime, so this schema and the dependency-free Node gates are normative for its shape.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "eventKey",
+    "eventKind",
+    "source",
+    "manifest",
+    "artifacts",
+    "impact",
+    "policy"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/ai-workspace-event/v0.6.3"
+    },
+    "identity": {
+      "const": "dev.lekalo.ai-workspace-event@0.6.3"
+    },
+    "eventKey": {
+      "$ref": "#/$defs/sha256"
+    },
+    "eventKind": {
+      "enum": ["protocol-change", "schema-change"]
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "producer",
+        "base",
+        "head",
+        "clean",
+        "producerVersion",
+        "hookVersion"
+      ],
+      "properties": {
+        "producer": {
+          "const": "lekalo-core"
+        },
+        "base": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$",
+          "description": "The resolved public base commit; the canonical key input, never a moving branch name."
+        },
+        "head": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$",
+          "description": "The resolved public head commit; equals base for a same-input repeat."
+        },
+        "clean": {
+          "type": "boolean",
+          "description": "True when the producer worktree was verified clean at emission; false is never emitted (a dirty worktree refuses emission instead)."
+        },
+        "producerVersion": {
+          "$ref": "#/$defs/semver"
+        },
+        "hookVersion": {
+          "$ref": "#/$defs/semver"
+        }
+      }
+    },
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manifestVersion", "digest", "routes"],
+      "properties": {
+        "manifestVersion": {
+          "$ref": "#/$defs/semver"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256",
+          "description": "sha256 over the exact reviewed routing-manifest bytes that produced this envelope."
+        },
+        "routes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 64
+        }
+      }
+ },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/artifact"
+      },
+      "maxItems": 64
+    },
+    "impact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["affectedRoles", "complete", "limitations"],
+      "properties": {
+        "affectedRoles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/affectedRole"
+          },
+          "maxItems": 64
+        },
+        "complete": {
+          "enum": ["declared-only", "unknown"],
+          "description": "declared-only: exactly the reviewed manifest subscriptions were considered. The declared candidate set is never a proof of total impact, and an empty set is never a proof of no impact."
+        },
+        "limitations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/limitation"
+          },
+          "maxItems": 16
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sendAdmitted", "refusalReason", "authorityRef", "privacyPolicyRef"],
+      "properties": {
+        "sendAdmitted": {
+          "type": "boolean"
+        },
+        "refusalReason": {
+          "enum": [
+            "none",
+            "policy-not-admitted",
+            "send-disabled",
+            "flag-forced-off"
+          ]
+        },
+        "authorityRef": {
+          "$ref": "#/$defs/contractRef",
+          "description": "Public-safe reference of the accepted authority artifact the send decision was evaluated against."
+        },
+        "privacyPolicyRef": {
+          "$ref": "#/$defs/contractRef",
+          "description": "Public-safe reference of the accepted privacy policy the destination decision was bound to."
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "publicPath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$",
+      "description": "Repository-relative, forward-slash, no drive letters, no ~, no backslashes, no dot segments, no leading dot segment."
+    },
+    "contractRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contractId", "version", "digest"],
+      "properties": {
+        "contractId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "version": {
+          "$ref": "#/$defs/semver"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "contractIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "state", "digest"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9.-]*$"
+        },
+        "version": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/semver"
+            },
+            {
+              "const": "unknown"
+            }
+          ]
+        },
+        "state": {
+          "enum": ["present", "absent", "unknown"]
+        },
+        "digest": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "const": "unknown"
+            }
+          ]
+        }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "change", "old", "new"],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/publicPath"
+        },
+        "change": {
+          "enum": ["added", "modified", "deleted"]
+        },
+        "old": {
+          "$ref": "#/$defs/contractIdentity"
+        },
+        "new": {
+          "$ref": "#/$defs/contractIdentity"
+        }
+      }
+    },
+    "role": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "description": "A reviewed neutral role alias; never a private checkout name, host, or path."
+    },
+    "affectedRole": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "explanation"],
+      "properties": {
+        "role": {
+          "$ref": "#/$defs/role"
+        },
+        "explanation": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/explanationStep"
+          },
+          "minItems": 1,
+          "maxItems": 128
+        }
+      }
+    },
+    "explanationStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["origin", "detail"],
+      "properties": {
+        "origin": {
+          "enum": [
+            "public-artifact-changed",
+            "declared-service-link",
+            "declared-artifact-dependency",
+            "lekalo-impact"
+          ]
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "sourcePath": {
+          "$ref": "#/$defs/publicPath"
+        },
+        "sourceRole": {
+          "$ref": "#/$defs/role"
+        },
+        "dependencyKind": {
+          "enum": ["depends_on", "related_to", "references", "consumes_api", "documents", "configures"]
+        },
+        "reaction": {
+          "enum": ["inspect", "update", "delete", "remove_reference"]
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "limitation": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "description": "Closed vocabulary: direct-links-only, no-transitive-traversal, no-schema-version-filter, compatibility-unknown, semantic-evidence-absent, codegraph-evidence-absent, upstream-receipt-unavailable."
+    }
+  }
+}

@@ -1,0 +1,129 @@
+{
+  "schemaVersion": "lekalo/ai-workspace-event/v0.6.3",
+  "identity": "dev.lekalo.ai-workspace-event@0.6.3",
+  "eventKey": "sha256:a4df18144b0c6ebbafc918d59ae8000df687c73aaeadeb563a2e821987298fb4",
+  "eventKind": "protocol-change",
+  "source": {
+    "producer": "lekalo-core",
+    "base": "1d1f14a79e99fba5c02a9ad75a1b9be6875cea27",
+    "head": "3d7cfcfb87576147ec0b43dcc2380ddfeb677193",
+    "clean": true,
+    "producerVersion": "0.6.3",
+    "hookVersion": "0.6.3"
+  },
+  "manifest": {
+    "manifestVersion": "0.6.3",
+    "digest": "sha256:81e47b9588ad88efb2d40b1ec6f9f2aef3b9f203af1794a88223dc9a8783c818",
+    "routes": 3
+  },
+  "artifacts": [
+    {
+      "path": "contracts/target-protocol.schema.v0.3.2.json",
+      "change": "modified",
+      "old": {
+        "name": "dev.lekalo.protocol",
+        "version": "0.3.2",
+        "state": "present",
+        "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "new": {
+        "name": "dev.lekalo.protocol",
+        "version": "0.3.2",
+        "state": "present",
+        "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+      }
+    },
+    {
+      "path": "docs/target-protocol.md",
+      "change": "modified",
+      "old": {
+        "name": "lekalo.target-protocol-doc",
+        "version": "unknown",
+        "state": "present",
+        "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "new": {
+        "name": "lekalo.target-protocol-doc",
+        "version": "unknown",
+        "state": "present",
+        "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+      }
+    }
+  ],
+  "impact": {
+    "affectedRoles": [
+      {
+        "role": "brownfield-consumer",
+        "explanation": [
+          {
+            "origin": "public-artifact-changed",
+            "detail": "contracts/target-protocol.schema.v0.3.2.json modified",
+            "sourcePath": "contracts/target-protocol.schema.v0.3.2.json"
+          },
+          {
+            "origin": "declared-service-link",
+            "detail": "consumer subscribes to producer protocol changes",
+            "sourceRole": "lekalo-core",
+            "dependencyKind": "depends_on",
+            "reaction": "inspect"
+          }
+        ]
+      },
+      {
+        "role": "greenfield-consumer",
+        "explanation": [
+          {
+            "origin": "public-artifact-changed",
+            "detail": "contracts/target-protocol.schema.v0.3.2.json modified",
+            "sourcePath": "contracts/target-protocol.schema.v0.3.2.json"
+          },
+          {
+            "origin": "declared-service-link",
+            "detail": "consumer subscribes to producer protocol changes",
+            "sourceRole": "lekalo-core",
+            "dependencyKind": "depends_on",
+            "reaction": "inspect"
+          }
+        ]
+      },
+      {
+        "role": "aifhub-extension",
+        "explanation": [
+          {
+            "origin": "public-artifact-changed",
+            "detail": "docs/target-protocol.md modified",
+            "sourcePath": "docs/target-protocol.md"
+          },
+          {
+            "origin": "declared-service-link",
+            "detail": "consumer subscribes to producer schema changes",
+            "sourceRole": "lekalo-core",
+            "dependencyKind": "depends_on",
+            "reaction": "inspect"
+          }
+        ]
+      }
+    ],
+    "complete": "declared-only",
+    "limitations": [
+      "direct-links-only",
+      "no-transitive-traversal",
+      "compatibility-unknown",
+      "upstream-receipt-unavailable"
+    ]
+  },
+  "policy": {
+    "sendAdmitted": false,
+    "refusalReason": "policy-not-admitted",
+    "authorityRef": {
+      "contractId": "dev.lekalo.authority-matrix",
+      "version": "0.3.2",
+      "digest": "sha256:7ae6454ea20f7b61202d368411ef9bff4e70af96f1f2a408c209d84fe9722f80"
+    },
+    "privacyPolicyRef": {
+      "contractId": "dev.lekalo.privacy-export-policy",
+      "version": "0.3.2",
+      "digest": "sha256:5a80966fa628fd4c9452325d34e7191f40ebb7a9cb49185c91d413861fb18384"
+    }
+  }
+}
