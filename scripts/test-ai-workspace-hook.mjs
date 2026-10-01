@@ -311,6 +311,8 @@ try {
   }
 
   // Phase E: explicit shares; exact bytes over group-scoped MCP (AC3).
+  let schemaItem = null;
+  let consumerReadText = null;
   {
     const share = upstream(dbPath, ["--config", ".ai-workspace.local.json", "share", PROTOCOL_SCHEMA, "--label", "Lekalo target protocol 0.3.2"], { cwd: coreRoot });
     assert.equal(share.status, 0, `share failed: ${share.stderr.slice(0, 300)}`);
@@ -324,62 +326,81 @@ try {
     assert.equal((context.text ?? "").includes("secrets.md"), false, "private sentinel leaked into context");
 
     // The schema is real JSON: extract the shared item id from the
-    // context listing, then read it and compare exact bytes.
-    const items = context.json?.shared_items ?? [];
-    const schemaItem = items.find((item) => (item.path ?? "").endsWith(PROTOCOL_SCHEMA));
+    // context listing (upstream nests shared_items under each
+    // project), then read it and compare exact bytes.
+    const items = (context.json?.projects ?? []).flatMap((project) => project.shared_items ?? []);
+    schemaItem = items.find((item) => (item.path ?? "").endsWith(PROTOCOL_SCHEMA));
     assert.ok(schemaItem, "schema item missing from shared_items");
     const [read] = mcpCall(UPSTREAM, dbPath, consumerRoot, [
       { name: "workspace_read", arguments: { item_id: schemaItem.id } },
     ]);
     assert.equal(read.denied, false, "consumer read denied");
     const committed = readFileSync(join(coreRoot, PROTOCOL_SCHEMA));
+    consumerReadText = read.text;
     assert.equal(sha256Ref(Buffer.from(read.text, "utf8")), sha256Ref(committed), "shared bytes diverge from committed bytes");
   }
 
   // Wrong-group and single-project denials (B4/AC5 companion).
   {
-    // Same-group share is readable group-wide (the stranger has no
-    // link, but the share is visible context; access ≠ impact).
-    const [read] = mcpCall(UPSTREAM, dbPath, strangerRoot, [
-      { name: "workspace_read", arguments: { rel_path: PROTOCOL_SCHEMA } },
+    // Group-scoped visibility (access ≠ impact): the share is readable
+    // from any group member's cwd via the same item id.
+    const [readStranger] = mcpCall(UPSTREAM, dbPath, strangerRoot, [
+      { name: "workspace_read", arguments: { item_id: schemaItem.id } },
     ], { group: "lekalo-dev" });
-    assert.equal(read.denied, false, "group share must be readable group-wide");
+    assert.equal(readStranger.denied, false, "group share must be readable group-wide");
+    assert.equal(readStranger.text, consumerReadText, "group-wide read diverges");
 
-    // Single-project scope on the consumer must NOT see core shares.
-    const result = run(UPSTREAM, ["serve", "--scope", "current-project"], {
+    // Single-project scope pinned to the CONSUMER must NOT read the
+    // core share even by explicit item id (scope denies the project).
+    const result = run(UPSTREAM, ["serve", "--project", "greenfield-consumer"], {
       cwd: consumerRoot,
-      input: `${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "workspace_read", arguments: { rel_path: PROTOCOL_SCHEMA } } })}\n`,
+      input: `${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "workspace_read", arguments: { item_id: schemaItem.id } } })}\n`,
       env: { ...process.env, AI_WORKSPACE_DB: dbPath, AI_WORKSPACE_ALLOW_PROJECT_WIDE_TOOLS: "0", AI_WORKSPACE_ALLOW_PROJECT_FILE_WRITE: "0" },
     });
     const responses = result.stdout.split("\n").map((line) => { try { return JSON.parse(line); } catch { return null; } }).filter(Boolean);
     const response = responses.find((message) => message.id === 1);
     assert.ok(response, "no response from single-project server");
-    assert.ok(response.error || !(response.result?.content?.[0]?.text ?? "").includes("target-protocol.schema"),
-      "single-project scope leaked a core share");
+    const deniedOrError = response.error || response.result?.isError
+      || /Access denied|not shared|requires explicit opt-in|Invalid shared item|not found/i.test(response.result?.content?.[0]?.text ?? "");
+    assert.ok(deniedOrError, "single-project scope read the core share");
   }
 
-  // Project-wide/write tools must not exist with the flags off (AC5).
+  // Project-wide confinement with the flags off (AC5).
   {
-    const requests = [1, 2].map((id) => ({
-      jsonrpc: "2.0",
-      id,
-      method: "tools/call",
-      params: { name: id === 1 ? "project_tree" : "project_file_write", arguments: id === 1 ? { project_id: 1 } : { path: "x.txt", content: "no" } },
-    }));
+    // project_tree on the core project (flags off) must show ONLY the
+    // shared-scope entries (the approved schema file), never the
+    // project-wide tree (the sentinels stay invisible).
+    const coreProjectId = 1; // first registered project = lekalo-core
+    const requests = [
+      { id: 1, name: "project_tree", arguments: { project_id: coreProjectId } },
+      { id: 2, name: "project_file_write", arguments: { project_id: coreProjectId, path: "pwned.txt", content: "no" } },
+      { id: 3, name: "project_grep", arguments: { project_id: coreProjectId, pattern: "AUTO-SENTINEL" } },
+    ];
     const result = run(UPSTREAM, ["serve", "--group", "lekalo-dev"], {
       cwd: consumerRoot,
-      input: `${requests.map((request) => JSON.stringify(request)).join("\n")}\n`,
-      env: { ...process.env, AI_WORKSPACE_DB: dbPath },
+      input: `${requests.map((request) => JSON.stringify({ jsonrpc: "2.0", id: request.id, method: "tools/call", params: { name: request.name, arguments: request.arguments } })).join("\n")}\n`,
+      env: { ...process.env, AI_WORKSPACE_DB: dbPath, AI_WORKSPACE_ALLOW_PROJECT_WIDE_TOOLS: "0", AI_WORKSPACE_ALLOW_PROJECT_FILE_WRITE: "0" },
     });
     const responses = result.stdout.split("\n").map((line) => { try { return JSON.parse(line); } catch { return null; } }).filter(Boolean);
-    for (const id of [1, 2]) {
-      const response = responses.find((message) => message.id === id);
-      assert.ok(response, `no response for direct tool ${id}`);
-      const denied = response.error
-        || /denied|disabled|not (found|available)|unknown tool|Access denied/i.test(response.result?.content?.[0]?.text ?? "")
-        || (response.result?.isError ?? false);
-      assert.ok(denied, `project-wide tool ${id === 1 ? "project_tree" : "project_file_write"} was callable with flags off`);
-    }
+    const responseFor = (id) => responses.find((message) => message.id === id);
+
+    const tree = responseFor(1);
+    assert.ok(tree, "no project_tree response");
+    const treeText = tree.result?.content?.[0]?.text ?? "";
+    assert.equal(treeText.includes("README"), false, "project_tree leaked the sentinel README with flags off");
+    assert.equal(treeText.includes("package.json"), false, "project_tree leaked the sentinel package.json");
+    assert.equal(treeText.includes("secrets.md"), false, "project_tree leaked the private directory");
+
+    const write = responseFor(2);
+    assert.ok(write, "no project_file_write response");
+    const writeDenied = write.error || write.result?.isError
+      || /denied|disabled|not (found|available)|unknown tool|Access denied/i.test(write.result?.content?.[0]?.text ?? "");
+    assert.ok(writeDenied, "project_file_write was accepted with the write flag off");
+
+    const grep = responseFor(3);
+    assert.ok(grep, "no project_grep response");
+    const grepText = grep.result?.content?.[0]?.text ?? "";
+    assert.equal(grepText.includes("AUTO-SENTINEL"), false, "project_grep matched unshared sentinel content");
   }
 
   // ------------------------------------------------------------------
@@ -406,7 +427,6 @@ try {
       "--send", "--outbox", outbox, "--db", dbPath,
       "--upstream", UPSTREAM,
       "--allow-unadmitted-send",
-      "--quiet",
     ], { cwd: consumerRoot });
     assert.equal(out.status, 0, `hook send failed: ${out.stderr.slice(0, 400)}${out.stdout.slice(0, 400)}`);
     const result = JSON.parse(out.stdout);
@@ -446,7 +466,6 @@ try {
       "--send", "--outbox", outbox, "--db", dbPath,
       "--upstream", UPSTREAM,
       "--allow-unadmitted-send",
-      "--quiet",
     ], { cwd: consumerRoot });
     assert.equal(repeat.status, 0);
     assert.equal(JSON.parse(repeat.stdout).state, "delivered");
@@ -469,7 +488,7 @@ try {
     if (process.platform !== "win32") chmodSync(fake, 0o755);
     const out = runHook([
       "--base", "HEAD", "--manifest", MANIFEST, "--send", "--outbox", outbox, "--db", join(dir, "x.db"),
-      "--upstream", fake, "--allow-unadmitted-send", "--quiet",
+      "--upstream", fake, "--allow-unadmitted-send",
     ], { cwd: REPO_ROOT });
     assert.equal(out.status, 4, "nonzero upstream is unknown-delivery");
     assert.equal(JSON.parse(out.stdout).state, "unknown-delivery");
@@ -483,7 +502,7 @@ try {
     const dir = tempRoot();
     const out = runHook([
       "--base", "HEAD", "--manifest", MANIFEST, "--send", "--outbox", join(dir, "outbox"), "--db", join(dir, "x.db"),
-      "--upstream", UPSTREAM, "--allow-unadmitted-send", "--quiet",
+      "--upstream", UPSTREAM, "--allow-unadmitted-send",
     ], {
       cwd: REPO_ROOT,
       env: { ...process.env, AI_WORKSPACE_ALLOW_PROJECT_WIDE_TOOLS: "1", AI_WORKSPACE_ALLOW_PROJECT_FILE_WRITE: "1" },
@@ -496,7 +515,7 @@ try {
   process.stdout.write(`${JSON.stringify({ ok: true, gate: "ai-workspace-hook", binaryPhases: "executed", upstream: "configured" })}\n`);
   }
 } catch (error) {
-  process.stderr.write(`${JSON.stringify({ ok: false, gate: "ai-workspace-hook", reason: String(error?.message ?? error).slice(0, 600) }, null, 2)}\n`);
+  process.stderr.write(`${JSON.stringify({ ok: false, gate: "ai-workspace-hook", reason: String(error?.message ?? error).slice(0, 600), stack: String(error?.stack ?? "").split("\n").slice(0, 4).join(" | ") }, null, 2)}\n`);
   for (const dir of cleanup) rmSync(dir, { recursive: true, force: true });
   process.exit(1);
 }

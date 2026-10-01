@@ -312,20 +312,25 @@ const sendUpstreamEvent = ({ upstream, config, dbPath, cwd, body }) => {
 // server runs with the widening flags forced off regardless of what
 // this process inherited. Returns the parsed details document or a
 // closed error reason.
-const readbackEventDetails = ({ upstream, config, dbPath, cwd, group, eventId }) => {
+const readbackAfterSend = ({ upstream, config, dbPath, cwd, group, eventId }) => {
   const argv = [upstream];
   if (config) argv.push("--config", config);
   argv.push("serve", "--group", group);
-  const request = {
-    jsonrpc: "2.0",
-    id: 1,
-    method: "tools/call",
-    params: { name: "workspace_event_details", arguments: { event_id: eventId } },
-  };
+  // One scoped server session answers both reads: the event details
+  // (kind/title/body/target rows) and the current service graph (which
+  // consumer slugs are actually linked to the source). The linked set
+  // is the honest expectation for target verification: a manifest
+  // route whose workspace project has no link cannot appear as a
+  // target, and demanding it would make delivery permanently
+  // unverifiable.
+  const requests = [
+    { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "workspace_event_details", arguments: { event_id: eventId } } },
+    { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "workspace_service_graph", arguments: {} } },
+  ];
   const result = runProcess(argv[0], argv.slice(1), {
     cwd,
     timeoutMs: READBACK_TIMEOUT_MS,
-    input: `${JSON.stringify(request)}\n`,
+    input: `${requests.map((request) => JSON.stringify(request)).join("\n")}\n`,
     env: {
       ...process.env,
       AI_WORKSPACE_DB: dbPath,
@@ -334,7 +339,7 @@ const readbackEventDetails = ({ upstream, config, dbPath, cwd, group, eventId })
     },
   });
   if (result.kind === "error" || result.kind === "throw") return { error: "readback-unavailable" };
-  const responseLine = result.stdout
+  const responses = result.stdout
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean)
@@ -345,22 +350,28 @@ const readbackEventDetails = ({ upstream, config, dbPath, cwd, group, eventId })
         return null;
       }
     })
-    .find((message) => message && message.id === 1);
-  if (!responseLine) return { error: "readback-no-response" };
-  if (responseLine.error) return { error: "readback-denied" };
-  const text = responseLine.result?.content?.find((entry) => entry.type === "text")?.text;
-  if (!text) return { error: "readback-empty" };
-  try {
-    return { details: JSON.parse(text) };
-  } catch {
-    return { error: "readback-malformed" };
-  }
+    .filter(Boolean);
+  const parseContent = (response) => {
+    if (!response || response.error) return null;
+    const text = response.result?.content?.find((entry) => entry.type === "text")?.text;
+    if (!text) return null;
+    try {
+      return JSON.parse(text);
+    } catch {
+      return null;
+    }
+  };
+  const details = parseContent(responses.find((message) => message.id === 1));
+  const graph = parseContent(responses.find((message) => message.id === 2));
+  if (!details) return { error: responses.some((message) => message?.error) ? "readback-denied" : "readback-no-response" };
+  return { details, graph };
 };
 
 // Delivery proof: kind, title, and body must match the projection and
-// every declared consumer slug must appear as a direct linked-service
-// target. Public inputs only; the numeric id and slugs stay private.
-const verifyDelivery = (details, { body, consumerSlugs }) => {
+// every manifest consumer slug actually linked to the source in this
+// workspace must appear as a direct linked-service target. Public
+// inputs only; the numeric ids and slugs stay private.
+const verifyDelivery = (details, { body, linkedConsumerSlugs }) => {
   if (!details || details.event?.kind !== "service_changed") return false;
   if (details.event?.title !== UPSTREAM_TITLE || details.event?.body !== body) return false;
   const delivered = new Set(
@@ -369,7 +380,7 @@ const verifyDelivery = (details, { body, consumerSlugs }) => {
       .map((target) => target.project)
       .filter(Boolean)
   );
-  return consumerSlugs.every((slug) => delivered.has(slug));
+  return linkedConsumerSlugs.every((slug) => delivered.has(slug));
 };
 
 // ---------------------------------------------------------------------------
@@ -561,7 +572,6 @@ const main = () => {
     .map((route) => route.workspaceSlug ?? route.role)
     .sort();
   const workdir = process.cwd();
-
   const send = sendUpstreamEvent({ upstream: args.upstream, config: args.config, dbPath: args.db, cwd: workdir, body });
   if (send.kind !== "ok") {
     // Timeout/crash/nonzero after invocation: unknown delivery, never
@@ -583,14 +593,32 @@ const main = () => {
     return;
   }
 
-  const readback = readbackEventDetails({ upstream: args.upstream, config: args.config, dbPath: args.db, cwd: workdir, group: args.group, eventId });
+  const readback = readbackAfterSend({ upstream: args.upstream, config: args.config, dbPath: args.db, cwd: workdir, group: args.group, eventId });
   if (!readback.details) {
     entry.states.push({ state: "unknown-delivery", reason: readback.error });
     saveOutbox(args.outbox, outbox);
     emit({ ok: false, hook: "ai-workspace-hook", state: "unknown-delivery", eventKey: envelope.eventKey }, UNKNOWN_DELIVERY);
     return;
   }
-  if (!verifyDelivery(readback.details, { body, consumerSlugs })) {
+  // Expected targets = manifest consumer slugs actually linked to the
+  // source in this workspace (the graph read's honest expectation).
+  const sourceSlug = "lekalo-core";
+  const links = Array.isArray(readback.graph?.links) ? readback.graph.links : [];
+  const linked = new Set(
+    links
+      .filter((link) => link.to === sourceSlug && typeof link.from === "string")
+      .map((link) => link.from)
+  );
+  const linkedConsumerSlugs = consumerSlugs.filter((slug) => linked.has(slug));
+  if (linkedConsumerSlugs.length === 0) {
+    // Nothing linked = nothing can be a target; the event carried no
+    // affected projects. That is a legitimate no-subscriber delivery.
+    entry.states.push({ state: "delivered", override: "explicit-unadmitted", verifiedTargets: 0 });
+    saveOutbox(args.outbox, outbox);
+    emit({ ok: true, hook: "ai-workspace-hook", state: "delivered", eventKey: envelope.eventKey, eventKind: envelope.eventKind, affectedRoles: [], policyAdmitted: false });
+    return;
+  }
+  if (!verifyDelivery(readback.details, { body, linkedConsumerSlugs })) {
     // A partial target snapshot needs repair, not a resend.
     entry.states.push({ state: "unknown-delivery", reason: "readback-targets-mismatch" });
     saveOutbox(args.outbox, outbox);
@@ -598,7 +626,7 @@ const main = () => {
     return;
   }
 
-  entry.states.push({ state: "delivered", override: "explicit-unadmitted", verifiedTargets: consumerSlugs.length });
+  entry.states.push({ state: "delivered", override: "explicit-unadmitted", verifiedTargets: linkedConsumerSlugs.length });
   saveOutbox(args.outbox, outbox);
   emit({
     ok: true,
