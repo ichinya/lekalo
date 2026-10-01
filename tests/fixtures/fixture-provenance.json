@@ -21,6 +21,11 @@
       "origin": "synthetic"
     },
     {
+      "family": "ai-workspace",
+      "origin": "synthetic",
+      "note": "issue #37 ai-workspace integration: the reviewed routing-manifest example and the change-event envelope example are exclusively synthetic, authored in-repo from public contract identities and neutral role aliases; no private checkout content"
+    },
+    {
       "family": "artifacts",
       "origin": "synthetic"
     },
