@@ -1,0 +1,64 @@
+{
+  "schema": "lekalo/ai-workspace-context-benchmark/v0.6.3",
+  "upstreamCommit": "8fdf818fee757d24e723d657fc5d38614995e557",
+  "upstreamPackage": "1.5.0",
+  "baseCommit": "1d1f14a79e99fba5c02a9ad75a1b9be6875cea27",
+  "headCommit": "3d7cfcfb87576147ec0b43dcc2380ddfeb677193",
+  "changeFiles": [
+    "crates/lekalo-core/src/run_history/store.rs",
+    "crates/lekalo-core/src/run_history/tests.rs",
+    "crates/lekalo-core/src/run_history/mod.rs"
+  ],
+  "changeScopeDigest": "sha256:79f5c64acc0844efbf39f33d0cc84b9f087500b90c37a03d6c160be5c79e0b32",
+  "repetitions": 5,
+  "coldReindexMs": {
+    "median": 182,
+    "range": [
+      171,
+      209
+    ]
+  },
+  "warmSyncMs": {
+    "median": 46,
+    "range": [
+      45,
+      176
+    ]
+  },
+  "retrievalBaselineMs": {
+    "median": 2,
+    "range": [
+      1,
+      3
+    ]
+  },
+  "retrievalCodegraphMs": {
+    "median": 43,
+    "range": [
+      42,
+      45
+    ]
+  },
+  "coverageBaseline": [
+    true,
+    true,
+    true
+  ],
+  "coverageCodegraph": [
+    true,
+    true,
+    true
+  ],
+  "stalenessAfterEditSurfaced": true,
+  "stalenessResolvesAfterSync": true,
+  "revokedScopeDenied": {
+    "codegraphSearch": true,
+    "workspaceRead": true
+  },
+  "limitations": [
+    "regex-parser-provenance",
+    "snippet-free-aggregate",
+    "one-machine-one-run",
+    "scratch-copies-only"
+  ]
+}
