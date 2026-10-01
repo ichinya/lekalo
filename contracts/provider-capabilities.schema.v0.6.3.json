@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/provider-capabilities.schema.v0.6.3.json",
+  "title": "Lekalo workflow-provider capabilities manifest",
+  "description": "Closed contract of the issue #34 AIFHub-consumable discovery handshake emitted by `lekalo provider describe --json`: one `status: valid` receipt whose `manifest` object advertises the workflow-provider contract identity, the exact product version, the pinned upstream output contract identities, the closed operation vocabulary, and the workflow bounds. The manifest is deterministic metadata of the producing binary: no host identity, no timestamps, no paths, and no lifecycle operation (`init`, `install`, `update`, `sync`, `cleanup`, `migrate`) is ever advertised. Detection is the manifest plus the installed-tool check the consumer performs; a supported operation never implies a configured project or target. The contract version is the product version of its implementation commit per docs/versioning.md; the upstream pins keep their own independent family versions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status",
+    "manifest"
+  ],
+  "properties": {
+    "status": {
+      "description": "The single valid status of the discovery receipt. Discovery itself never fails closed on a missing project: it has none.",
+      "const": "valid"
+    },
+    "manifest": { "$ref": "#/$defs/manifest" }
+  },
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "schemaDiscriminator": {
+      "description": "The exact `lekalo/<family>/v<version>` wire discriminator of one upstream contract family.",
+      "type": "string",
+      "pattern": "^lekalo/[a-z][a-z0-9-]*/v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "identity": {
+      "description": "The exact `dev.lekalo.<family>@<version>` contract identity.",
+      "type": "string",
+      "pattern": "^dev\\.lekalo\\.[a-z][a-z0-9-]*@(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "operationId": {
+      "description": "The closed operation vocabulary. Detection is not an operation.",
+      "enum": [
+        "context",
+        "doctor",
+        "generate",
+        "impact",
+        "readiness",
+        "status",
+        "trace.export",
+        "validate",
+        "verify"
+      ]
+    },
+    "effectClass": {
+      "description": "read-only operations never write; generated-artifacts operations write only into the governed .lekalo/** generated/lock custody and never into OpenSpec/HLV canonical paths.",
+      "enum": ["read-only", "generated-artifacts"]
+    },
+    "contractPin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion"],
+      "properties": {
+        "schemaVersion": { "$ref": "#/$defs/schemaDiscriminator" },
+        "identity": { "$ref": "#/$defs/identity" }
+      }
+    },
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "effect",
+        "outputSchema",
+        "requiresProject",
+        "requiresAdapter"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/operationId" },
+        "effect": { "$ref": "#/$defs/effectClass" },
+        "outputSchema": { "$ref": "#/$defs/schemaDiscriminator" },
+        "requiresProject": { "type": "boolean" },
+        "requiresAdapter": { "type": "boolean" }
+      }
+    },
+    "bounds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recommendedContextBudgetTokens",
+        "maxContextBudgetTokens",
+        "maxExportBytes"
+      ],
+      "properties": {
+        "recommendedContextBudgetTokens": {
+          "description": "The recommended `lekalo context` budget inside a workflow run; strictly below the hard bound.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 999999
+        },
+        "maxContextBudgetTokens": {
+          "description": "The hard core budget bound (context.MAX_BUDGET_TOKENS).",
+          "const": 1000000
+        },
+        "maxExportBytes": {
+          "description": "The exact maximum canonical impact/trace export bytes.",
+          "const": 33554432
+        }
+      }
+    },
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "identity",
+        "productVersion",
+        "discoveryCommand",
+        "targetProtocolIdentity",
+        "schemaPins",
+        "operations",
+        "bounds",
+        "manifestDigest"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "description": "The exact wire discriminator of this workflow-provider contract.",
+          "const": "lekalo/workflow-provider/v0.6.3"
+        },
+        "identity": {
+          "description": "The exact contract identity of this workflow-provider contract.",
+          "const": "dev.lekalo.workflow-provider@0.6.3"
+        },
+        "productVersion": {
+          "description": "The exact product version of the producing binary.",
+          "const": "0.6.3"
+        },
+        "discoveryCommand": {
+          "description": "The discovery command in presentation form.",
+          "const": "lekalo provider describe"
+        },
+        "targetProtocolIdentity": {
+          "description": "The exact target-protocol identity: a supported workflow operation never implies a configured target, and generation additionally requires an installed adapter program.",
+          "const": "dev.lekalo.target-protocol@0.3.2"
+        },
+        "schemaPins": {
+          "description": "The pinned upstream output contract identities, sorted by schemaVersion, unique, and covering exactly the seven families referenced by operations plus the diagnostic envelope.",
+          "type": "array",
+          "minItems": 7,
+          "maxItems": 7,
+          "items": { "$ref": "#/$defs/contractPin" }
+        },
+        "operations": {
+          "description": "The advertised operations in canonical (sorted) order, unique ids.",
+          "type": "array",
+          "minItems": 9,
+          "maxItems": 9,
+          "items": { "$ref": "#/$defs/operation" }
+        },
+        "bounds": { "$ref": "#/$defs/bounds" },
+        "manifestDigest": {
+          "description": "sha256 over the canonical JSON (sorted keys, no whitespace) of the manifest with this field removed. Integrity metadata, not a signature.",
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    }
+  }
+}
