@@ -267,6 +267,7 @@ walk(join(REPO_ROOT, SUITE_V1));
 for (const file of orphans) {
   if (file.endsWith("fixture.json")) continue;
   if (file.startsWith(`${SUITE_V1}/catalog.json`)) continue;
+  if (file === `${SUITE_V1}/run-manifest.json`) continue;
   if (file.startsWith(`${SUITE_V1}/coverage/`)) continue;
   if (file.startsWith(`${SUITE_ROOT}/schema/`)) continue;
   if (file.startsWith(`${SUITE_V1}/checksums/`)) continue;
