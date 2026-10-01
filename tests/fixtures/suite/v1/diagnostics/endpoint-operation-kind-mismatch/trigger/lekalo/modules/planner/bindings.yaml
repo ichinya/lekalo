@@ -1,0 +1,13 @@
+{
+  "schema_version": "0.2.16",
+  "definitions": [
+    {
+      "id": "planner.endpoint_touch",
+      "kind": "endpoint",
+      "version": 1,
+      "invokes": "planner.text",
+      "method": "POST",
+      "path": "/text"
+    }
+  ]
+}

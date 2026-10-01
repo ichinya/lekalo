@@ -1,0 +1,4 @@
+{
+  "rule": "semantic.effect-resource-kind-mismatch",
+  "pair": "effect-resource-kind-mismatch.pair"
+}

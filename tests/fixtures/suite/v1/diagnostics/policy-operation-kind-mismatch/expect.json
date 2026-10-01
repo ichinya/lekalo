@@ -1,0 +1,4 @@
+{
+  "rule": "semantic.policy-operation-kind-mismatch",
+  "pair": "policy-operation-kind-mismatch.pair"
+}

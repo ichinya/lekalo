@@ -1,0 +1,13 @@
+{
+  "schema_version": "0.2.16",
+  "definitions": [
+    {
+      "id": "planner.endpoint_create",
+      "kind": "endpoint",
+      "version": 1,
+      "invokes": "planner.create_task",
+      "method": "POST",
+      "path": "/tasks"
+    }
+  ]
+}

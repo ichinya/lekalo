@@ -1,0 +1,33 @@
+{
+  "schema_version": "0.2.16",
+  "definitions": [
+    {
+      "id": "planner.loop_a",
+      "kind": "value-object",
+      "version": 1,
+      "fields": [
+        {
+          "name": "other",
+          "type": {
+            "ref": "planner.loop_b"
+          },
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "planner.loop_b",
+      "kind": "value-object",
+      "version": 1,
+      "fields": [
+        {
+          "name": "back",
+          "type": {
+            "ref": "planner.loop_a"
+          },
+          "required": true
+        }
+      ]
+    }
+  ]
+}

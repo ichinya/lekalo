@@ -1,0 +1,29 @@
+{
+  "schema_version": "0.2.16",
+  "definitions": [
+    {
+      "id": "audit.log",
+      "kind": "entity",
+      "version": 1,
+      "fields": [
+        {
+          "name": "line",
+          "type": {
+            "ref": "audit.entry"
+          },
+          "required": true
+        }
+      ],
+      "identity": [
+        "line"
+      ],
+      "visibility": "module"
+    },
+    {
+      "id": "audit.entry",
+      "kind": "scalar",
+      "version": 1,
+      "base": "string"
+    }
+  ]
+}

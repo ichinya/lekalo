@@ -1,0 +1,19 @@
+{
+  "schema_version": "0.2.16",
+  "definitions": [
+    {
+      "id": "planner.create_task",
+      "kind": "command",
+      "version": 1,
+      "input": [
+        {
+          "name": "title",
+          "type": {
+            "ref": "planner.text"
+          },
+          "required": true
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+{
+  "rule": "semantic.type-ref-unresolved",
+  "pair": "type-ref-unresolved.pair"
+}

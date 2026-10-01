@@ -1,0 +1,4 @@
+{
+  "rule": "semantic.public-output-private-type",
+  "pair": "public-output-private-type.pair"
+}

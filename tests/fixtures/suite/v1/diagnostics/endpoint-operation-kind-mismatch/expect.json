@@ -1,0 +1,4 @@
+{
+  "rule": "semantic.endpoint-operation-kind-mismatch",
+  "pair": "endpoint-operation-kind-mismatch.pair"
+}

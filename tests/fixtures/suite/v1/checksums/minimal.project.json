@@ -1,0 +1,15 @@
+{
+  "caseId": "minimal.project",
+  "revision": 1,
+  "algorithm": "sha256",
+  "files": [
+    { "path": "lekalo/project.yaml", "sha256": "PLACEHOLDER" },
+    { "path": "lekalo/modules/solo/module.yaml", "sha256": "PLACEHOLDER" },
+    { "path": "lekalo/modules/solo/entities.yaml", "sha256": "PLACEHOLDER" },
+    { "path": "expected/load-envelope.json", "sha256": "PLACEHOLDER" },
+    { "path": "expected/ir-envelope.json", "sha256": "PLACEHOLDER" },
+    { "path": "expected/validate-strict-envelope.json", "sha256": "PLACEHOLDER" },
+    { "path": "expected/graph-envelope.json", "sha256": "PLACEHOLDER" },
+    { "path": "fixture.json", "sha256": "PLACEHOLDER" }
+  ]
+}

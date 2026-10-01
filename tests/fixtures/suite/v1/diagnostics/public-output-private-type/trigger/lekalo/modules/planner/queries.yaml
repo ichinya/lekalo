@@ -1,0 +1,16 @@
+{
+  "schema_version": "0.2.16",
+  "definitions": [
+    {
+      "id": "planner.get_log",
+      "kind": "query",
+      "version": 1,
+      "reads": [
+        "planner.task"
+      ],
+      "returns": {
+        "ref": "audit.log"
+      }
+    }
+  ]
+}
