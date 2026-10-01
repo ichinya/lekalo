@@ -90,6 +90,7 @@ const deriveEventKey = (envelope) =>
 
 const runProcess = (command, argv, options = {}) => {
   let result;
+  const useShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(command);
   try {
     result = spawnSync(command, argv, {
       encoding: "utf8",
@@ -98,6 +99,8 @@ const runProcess = (command, argv, options = {}) => {
       cwd: options.cwd,
       env: options.env,
       windowsHide: true,
+      windowsVerbatimArguments: useShell ? false : undefined,
+      shell: useShell,
     });
   } catch (error) {
     return { kind: "throw", code: error?.code ?? "spawn-throw", stdout: "", stderr: "", status: null };
@@ -538,7 +541,9 @@ const main = () => {
     refuse("policy-not-admitted", { eventKey: envelope.eventKey, envelope, outbox: "recorded" });
   }
 
-  // Upstream availability probe (non-destructive).
+  // Upstream availability probe (non-destructive). The probe and the
+  // send share one execution path: a binary that cannot even be
+  // probed cannot be sent through.
   const probe = runProcess(args.upstream, ["--version"], { timeoutMs: 15_000 });
   if (probe.kind === "error" || probe.kind === "throw") {
     entry.states.push({ state: "unavailable" });
