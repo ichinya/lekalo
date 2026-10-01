@@ -8,6 +8,50 @@ bounded context capsule, proved staleness detection on a controlled
 change, and emitted only privacy-safe aggregate evidence. Companion
 research (CLI surface map, plumbing findings): `docs/m6/issue-118-research.md`.
 
+## Fix round 1 (PR #144 review + Windows CI)
+
+Each finding is its own commit with its own verification.
+
+- **F0 — Windows CI adopt refusal (`structure.selection-short-name`).**
+  The GitHub Windows runners expose `%TEMP%` through the `RUNNER~1` 8.3
+  alias; the core refuses any project path whose spelling contains a
+  `~<digit>` segment, so both adopt steps denied (exit 3) and fourteen
+  gate steps cascaded. The harness now canonicalizes every path that
+  can reach the CLI (consumer, output directory, working directory —
+  hence the copy root — and the lekalo binary) through
+  `fs.realpathSync.native` (the resolver that actually expands the
+  aliases; the JS fallback can keep them verbatim), and refuses up
+  front with a clear reason when a short-name segment survives.
+  Verified by passing a genuine 8.3 alias as the working-directory
+  parent (`C:/DOWNLO~1/…`): the run canonicalized to the long name,
+  adopt succeeded, and the copy was created at the canonical location;
+  a literal `~`-digit path that canonicalization cannot resolve fails
+  the run up front with the reason instead of cascading.
+- **F1 — finding attribution keyed on identified evidence.** The
+  native-test finding fired its "vitest files cannot be copied" branch
+  from the aggregate grammar-skip count, which on the fixture is the
+  uppercase `README.md` — a factually false claim for an
+  honest-evidence deliverable. The copy now classifies skipped entries
+  (test-shaped vs not, plus the unspellable segment kinds; spellings
+  stay private) and the fallback records its carrierless-claim count;
+  the finding branch fires only when test-shaped skips exist, and on
+  the fixture path it now states the true cause (scanned test-module
+  claims with no top-level symbol to carry them, attach source
+  recorded).
+- **m1** — the recorded wire refusal now extracts `data.code`, so the
+  local-development refusal reads
+  `target.operation-failed/adapter-error-partial` in the artifact
+  (matching this document's claim).
+- **m2/m3/m4** — the gate closes the metrics schema per step (each
+  step record may carry only its allowlisted detail members, and the
+  recorded sequence must match the closed list), extends the identical
+  leak-probe set to `report.md`, and emits typed
+  `{ok:false, gate, reason}` JSON on every assertion failure.
+- **m5** — `--bind` is required (the operator owns the use-case
+  choice); no misleading default target.
+- **m6** — the controlled-change revert is proven byte-identical by
+  sha256 (Buffer round trip), asserted by the gate.
+
 ## Delivered surface
 
 - `scripts/pilot-brownfield-ts.mjs` — the dependency-free pilot
@@ -27,8 +71,11 @@ research (CLI surface map, plumbing findings): `docs/m6/issue-118-research.md`.
   harness end to end over the fixture (building the binary when
   missing) and asserts adopt dry-run purity, the honest wire refusal
   plus fallback completion, binding recorded + confirmed + promoted,
-  projections, staleness firing and cleaning on revert, and the closed
-  metrics schema (member set, digest spellings, leak probes).
+  projections, staleness firing and cleaning on revert (byte-identity
+  by digest), and the closed metrics schema: top-level member set,
+  closed per-step detail allowlists, the recorded step sequence,
+  leak probes over BOTH emitted artifacts, and typed reason JSON on
+  any assertion failure.
 - `.github/workflows/ci.yml` — the gate registered in the build-test
   job next to the other pilot/gate steps (10-minute timeout).
 - `C:/Users/User/orca/m6-issue-118-pilot-out/` (outside the
@@ -43,14 +90,14 @@ canonical path); the private repository keeps its own bindings.
 
 | Metric | Value |
 | --- | --- |
-| Run steps ok / failed | 20 / 0 (total 36.6 s) |
-| Copy | 6,466 files; skipped: `node_modules` ×8, `.git` ×1, `dist` ×7, `coverage` ×7, grammar-unspellable entries ×415 |
+| Run steps ok / failed | 20 / 0 (total 48.2 s) |
+| Copy | 6,466 files; skipped: `node_modules` ×8, `.git` ×1, `dist` ×7, `coverage` ×7, grammar-unspellable entries ×415 (18 test-shaped; segments: 244 non-lowercase-leading, 11 underscore-leading, 160 other) |
 | Adopt dry-run purity | intact (planned writes 2, zero bytes changed) |
 | Adoption writes | `lekalo/project.yaml`, `lekalo/targets/node-typescript.yaml` only |
 | Profile | 23 read roots, 7 packages, 0 exclusions |
 | Wire-path scan | refused twice (manifested: `adapter.manifest-mismatch/capabilities.readScopes`; local-development: `target.operation-failed/adapter-error-partial`) |
-| Cold scan | 2,970 ms |
-| Incremental (warm) scan | 2,173 ms, byte-identical index |
+| Cold scan | 2,542 ms |
+| Incremental (warm) scan | 2,250 ms, byte-identical index |
 | Scanned symbols / exported scan entries | 6,040 / 1,494 |
 | Honest uncertainty rows / compiler diagnostics | 4,375 / 1,498 |
 | Endpoints derived / routes without an indexed handler | 0 / 0 (provider degraded over the node_modules-free copy — finding F3) |
@@ -61,7 +108,7 @@ canonical path); the private repository keeps its own bindings.
 | Context capsule | 12 tokens (budget 4,096; fits), 1 section, 6 declared gaps — versus a 6,040-symbol broad scan |
 | Impact projection | 1,494 recorded symbols, 0 stale, 83 unknown edges, completeness `incomplete` (honest) |
 | Binding registry | 1,494 bindings (2 confirmed, 1,492 inferred, 1,411 current, 83 unknown, 0 stale) |
-| Controlled change | signature-detail mutation → `bindings audit` invalid with 213 `observed.stale-binding` diagnostics, `observe check` refused; revert → audit clean |
+| Controlled change | signature-detail mutation → `bindings audit` invalid with 213 `observed.stale-binding` diagnostics, `observe check` refused; revert proven byte-identical by sha256 → audit clean |
 | Doctor verdict over the copy | `blocked` (no Git custody inside a disposable copy — expected, recorded) |
 
 The capsule headline: **12 tokens** to brief an agent on the bound use
@@ -144,12 +191,17 @@ the issue, measured.
   --disposition public-fixture --out <temp>` — green end to end
   (20/0 steps).
 - `node scripts/test-pilot-brownfield-ts.mjs` — green
-  (`{"ok":true,"gate":"pilot-brownfield-ts"}`).
+  (`{"ok":true,"gate":"pilot-brownfield-ts"}`), over the closed
+  step-detail schema and both-artifact leak probes.
+- Windows-path repro (fix round 1): the harness run with the working
+  directory under a genuine 8.3 alias (`C:/DOWNLO~1/…`) succeeds — the
+  canonicalized long path passes the adopt gate; a literal
+  `~<digit>`-segment path refuses up front with a recorded reason.
 - Real consumer run — green (20/0 steps), metrics + report emitted to
-  the private output directory; failures, had any step refused, would
-  have been captured as findings with the report still emitted (the
-  harness records per-step failures and exits non-zero while writing
-  the artifacts).
+  the private output directory and refreshed after the fix round;
+  failures, had any step refused, would have been captured as findings
+  with the report still emitted (the harness records per-step failures
+  and exits non-zero while writing the artifacts).
 - `cargo fmt`, `cargo clippy -p lekalo-cli -- -D warnings`,
   `cargo test -p lekalo-cli`, `node
   scripts/test-fixture-provenance.mjs` — green; no Rust or golden
