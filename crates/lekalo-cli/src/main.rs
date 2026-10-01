@@ -30,6 +30,15 @@ const PROGRAM_NAME: &str = "lekalo";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const OUTPUT_FAILURE: u8 = 1;
 
+/// The `provider` subcommands: the issue #34 discovery surface. Only
+/// `describe` exists: no `init`, `install`, `update`, `sync`, or
+/// cleanup operation is reachable here, ever.
+#[derive(Debug, Subcommand)]
+enum ProviderCommands {
+    /// Emit the workflow-provider manifest (capability discovery).
+    Describe,
+}
+
 /// The `impact` argument surface: one symbol root or the typed
 /// `--changed` selector family, plus the bounded filters.
 #[derive(Debug, Args)]
@@ -133,6 +142,14 @@ enum Commands {
     },
     /// Print the embedded contract version registry.
     Compatibility,
+    /// Emit the issue #34 workflow-provider discovery manifest for
+    /// AIFHub `/aif-*` consumers: a closed, deterministic receipt that
+    /// works outside any project, reads nothing, launches nothing, and
+    /// writes nothing.
+    Provider {
+        #[command(subcommand)]
+        command: ProviderCommands,
+    },
     /// Inspect one semantic symbol: identity, contract, effects,
     /// relations, and bounded projections in one deterministic view.
     Inspect {
@@ -2261,6 +2278,7 @@ fn runtime() -> u8 {
                 strict,
             } => run_validate(project, module, strict, cli.no_cache),
             Commands::Compatibility => run_compatibility(),
+            Commands::Provider { command } => run_provider(command),
             Commands::Inspect {
                 symbol,
                 include,
@@ -4485,6 +4503,21 @@ fn run_compatibility() -> DomainResult {
             )
         }
         Err(_) => DomainResult::from(&VersioningFailure::RegistryInvalid),
+    }
+}
+
+/// Run `lekalo provider describe`: project the compiled issue #34
+/// workflow-provider manifest as a valid receipt. Pure metadata: this
+/// never touches the filesystem, the environment (beyond argv), a
+/// project selection, or a child process, so it is safe inside any
+/// consumer discovery probe with a hostile or absent working
+/// directory.
+fn run_provider(command: ProviderCommands) -> DomainResult {
+    match command {
+        ProviderCommands::Describe => {
+            let manifest = lekalo_core::provider::ProviderManifest::describe();
+            DomainResult::receipt(manifest.to_receipt_json(), manifest.to_human_summary())
+        }
     }
 }
 
