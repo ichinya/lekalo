@@ -20,10 +20,12 @@
 //! it can be selected only by an explicit caller-supplied policy handle.
 
 pub mod closure;
+pub mod compare;
 pub mod diagnostic;
 pub mod estimate;
 pub mod facts;
 pub mod metrics;
+pub mod policy;
 pub mod profile;
 pub mod request;
 #[cfg(test)]
@@ -99,7 +101,7 @@ pub struct Simulation {
 }
 
 /// One subject row of the report.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SubjectReport {
     /// The kind-qualified subject id.
     pub id: String,
@@ -121,7 +123,7 @@ pub struct SubjectReport {
 }
 
 /// The summary over all subject rows.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ReportSummary {
     pub subjects: u64,
     pub over_budget_subjects: u64,
@@ -132,7 +134,7 @@ pub struct ReportSummary {
 
 /// One finished context-budget report: the normalized product both the
 /// JSON and human projections render.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct BudgetReport {
     pub scope: Scope,
     pub profile: Profile,
