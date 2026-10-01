@@ -620,7 +620,10 @@ step("scan-wire", () => {
     return {
       used: false,
       reason: diagnostic?.id ?? `exit-${wire.exitCode}`,
-      detail: diagnostic?.data?.detail ?? diagnostic?.data?.field ?? null,
+      // The wire's refusal code rides `data.code` on
+      // target.operation-failed; `detail`/`field` cover the other
+      // diagnostic families.
+      detail: diagnostic?.data?.code ?? diagnostic?.data?.detail ?? diagnostic?.data?.field ?? null,
     };
   };
   // Attempt one: the committed adapter in place (the manifested wire
