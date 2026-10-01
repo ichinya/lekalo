@@ -600,6 +600,44 @@ for (const pair of pairs) {
     join(dir, "expect.json"),
     `${JSON.stringify({ rule: pair.rule, pair: `${pair.slug}.pair` }, null, 2)}\n`,
   );
+  writeFileSync(
+    join(dir, "fixture.json"),
+    `${JSON.stringify({
+      fixtureSchema: "dev.lekalo.fixture@1.0.0",
+      caseId: `diagnostic.${pair.slug}.pair`,
+      revision: 1,
+      class: "diagnostic-pair",
+      origin: "synthetic",
+      issue: "90",
+      purpose: `F06 paired witness for ${pair.rule}: trigger names the rule, non-trigger validates clean.`,
+      runner: "cli-validate",
+      contractPins: [
+        { identity: "dev.lekalo.model@0.2.16", role: "model contract" },
+        { identity: "dev.lekalo.diagnostic-registry@0.4.0", role: "diagnostics registry" },
+      ],
+      inputs: [
+        { role: "project", path: `tests/fixtures/suite/v1/diagnostics/${pair.slug}/trigger` },
+        { role: "project", path: `tests/fixtures/suite/v1/diagnostics/${pair.slug}/non-trigger` },
+      ],
+      expectation: {
+        status: "invalid",
+        exit: 1,
+        reasonCodes: [pair.rule],
+        witnessRule: pair.rule,
+        witnessPolarity: "trigger",
+      },
+      timeoutMs: 60000,
+      determinism: {
+        clockPolicy: "not-applicable-read-only",
+        idPolicy: "not-applicable-read-only",
+        locale: "C",
+        newlineMode: "lf-only",
+        pathMode: "logical-repository-relative",
+      },
+      limits: { maxOutputBytes: 65536, maxFiles: 32 },
+      updateRecipe: "update-golden-case",
+    }, null, 2)}\n`,
+  );
   written += 1;
 }
 

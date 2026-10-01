@@ -1,0 +1,369 @@
+{
+  "manifestId": "dev.lekalo.fixture-run-manifest",
+  "fixtureSchema": "dev.lekalo.fixture@1.0.0",
+  "startedAtPolicy": "deterministic-logical-lane",
+  "platformPolicy": {
+    "normalizePaths": "logical-repository-relative",
+    "normalizeNewlines": "lf-only"
+  },
+  "runs": [
+    {
+      "lane": "cold-1",
+      "rootPolicy": "independent-sandbox",
+      "outcomes": [
+        {
+          "caseId": "diagnostic.command-effect-kind-mismatch.pair",
+          "revision": 1,
+          "status": "invalid",
+          "exit": 1,
+          "outputDigest": "sha256:5cbea9bc67870f67af40daf7632180c57b74c1a0714b540df188a6c311205062",
+          "reasonCodes": [
+            "semantic.command-effect-kind-mismatch"
+          ]
+        },
+        {
+          "caseId": "diagnostic.command-effect-kind-mismatch.pair",
+          "revision": 1,
+          "status": "valid",
+          "exit": 0,
+          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "reasonCodes": []
+        },
+        {
+          "caseId": "diagnostic.command-effect-unresolved.pair",
+          "revision": 1,
+          "status": "invalid",
+          "exit": 1,
+          "outputDigest": "sha256:769da3f50b0ce04021c8ee74cdc14f42d5e574c1b604e563dc0559d22f618c4f",
+          "reasonCodes": [
+            "semantic.command-effect-unresolved"
+          ]
+        },
+        {
+          "caseId": "diagnostic.command-effect-unresolved.pair",
+          "revision": 1,
+          "status": "valid",
+          "exit": 0,
+          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "reasonCodes": []
+        },
+        {
+          "caseId": "diagnostic.effect-emits-kind-mismatch.pair",
+          "revision": 1,
+          "status": "invalid",
+          "exit": 1,
+          "outputDigest": "sha256:2848f6fde9aba6d9e2c0f80f6cee042ff2c96693578f7d9785ecc76063f03ab3",
+          "reasonCodes": [
+            "semantic.effect-emits-kind-mismatch"
+          ]
+        },
+        {
+          "caseId": "diagnostic.effect-emits-kind-mismatch.pair",
+          "revision": 1,
+          "status": "valid",
+          "exit": 0,
+          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "reasonCodes": []
+        },
+        {
+          "caseId": "diagnostic.effect-emits-unresolved.pair",
+          "revision": 1,
+          "status": "invalid",
+          "exit": 1,
+          "outputDigest": "sha256:8879e2103ebba4883755b0689eae055cff47dc50d9ca8f49b9665acc893b1013",
+          "reasonCodes": [
+            "semantic.effect-emits-unresolved"
+          ]
+        },
+        {
+          "caseId": "diagnostic.effect-emits-unresolved.pair",
+          "revision": 1,
+          "status": "valid",
+          "exit": 0,
+          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "reasonCodes": []
+        },
+        {
+          "caseId": "diagnostic.effect-resource-kind-mismatch.pair",
+          "revision": 1,
+          "status": "invalid",
+          "exit": 1,
+          "outputDigest": "sha256:6fa6b33dc14a55a14a6d7a2b90f8ae647c6c50564184d3d0b9370df96a8f2796",
+          "reasonCodes": [
+            "semantic.effect-resource-kind-mismatch"
+          ]
+        },
+        {
+          "caseId": "diagnostic.effect-resource-kind-mismatch.pair",
+          "revision": 1,
+          "status": "valid",
+          "exit": 0,
+          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "reasonCodes": []
+        },
+        {
+          "caseId": "diagnostic.effect-resource-unresolved.pair",
+          "revision": 1,
+          "status": "invalid",
+          "exit": 1,
+          "outputDigest": "sha256:0c447abc26ef609cce8972ee5723aaa3bf3ad5b27dacaa13d88e9727ba689b13",
+          "reasonCodes": [
+            "semantic.effect-resource-unresolved"
+          ]
+        },
+        {
+          "caseId": "diagnostic.effect-resource-unresolved.pair",
+          "revision": 1,
+          "status": "valid",
+          "exit": 0,
+          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "reasonCodes": []
+        },
+        {
+          "caseId": "diagnostic.endpoint-operation-kind-mismatch.pair",
+          "revision": 1,
+          "status": "invalid",
+          "exit": 1,
+          "outputDigest": "sha256:a9a62c663c79842362e12a39afa5c58ca6001d6c9e67644100550e3d8890cba0",
+          "reasonCodes": [
+            "semantic.endpoint-operation-kind-mismatch"
+          ]
+        },
+        {
+          "caseId": "diagnostic.endpoint-operation-kind-mismatch.pair",
+          "revision": 1,
+          "status": "valid",
+          "exit": 0,
+          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "reasonCodes": []
+        },
+        {
+          "caseId": "diagnostic.endpoint-operation-unresolved.pair",
+          "revision": 1,
+          "status": "invalid",
+          "exit": 1,
+          "outputDigest": "sha256:4df681c4f74af5d6487cbbab9f8a42a78e43f6e17e0c9772b8b59fad1c40619a",
+          "reasonCodes": [
+            "semantic.endpoint-operation-unresolved"
+          ]
+        },
+        {
+          "caseId": "diagnostic.endpoint-operation-unresolved.pair",
+          "revision": 1,
+          "status": "valid",
+          "exit": 0,
+          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "reasonCodes": []
+        },
+        {
+          "caseId": "diagnostic.entity-identity-field-missing.pair",
+          "revision": 1,
+          "status": "invalid",
+          "exit": 1,
+          "outputDigest": "sha256:a7aa7c96308892361be9d8ae5b7c37df765a025b79ebd6d691831474098ffdb4",
+          "reasonCodes": [
+            "semantic.entity-identity-field-missing"
+          ]
+        },
+        {
+          "caseId": "diagnostic.entity-identity-field-missing.pair",
+          "revision": 1,
+          "status": "valid",
+          "exit": 0,
+          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "reasonCodes": []
+        },
+        {
+          "caseId": "diagnostic.policy-operation-kind-mismatch.pair",
+          "revision": 1,
+          "status": "invalid",
+          "exit": 1,
+          "outputDigest": "sha256:8c532c0a2749ab470e2f99152d308b42b19eb4d1cc2755bbfdb0faa5a799e331",
+          "reasonCodes": [
+            "semantic.policy-operation-kind-mismatch"
+          ]
+        },
+        {
+          "caseId": "diagnostic.policy-operation-kind-mismatch.pair",
+          "revision": 1,
+          "status": "valid",
+          "exit": 0,
+          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "reasonCodes": []
+        },
+        {
+          "caseId": "diagnostic.policy-operation-unresolved.pair",
+          "revision": 1,
+          "status": "invalid",
+          "exit": 1,
+          "outputDigest": "sha256:964c9a8e6d16ce4a04312a0faf57d8f7abe12405867238d96719f840e4953cb1",
+          "reasonCodes": [
+            "semantic.policy-operation-unresolved"
+          ]
+        },
+        {
+          "caseId": "diagnostic.policy-operation-unresolved.pair",
+          "revision": 1,
+          "status": "valid",
+          "exit": 0,
+          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "reasonCodes": []
+        },
+        {
+          "caseId": "diagnostic.public-output-private-type.pair",
+          "revision": 1,
+          "status": "invalid",
+          "exit": 1,
+          "outputDigest": "sha256:dccb8302f6033c332ac47497e423575b33af8df21a4c4a9a8523c40de7ff99ab",
+          "reasonCodes": [
+            "semantic.public-output-private-type",
+            "semantic.visibility-boundary-violation"
+          ]
+        },
+        {
+          "caseId": "diagnostic.public-output-private-type.pair",
+          "revision": 1,
+          "status": "valid",
+          "exit": 0,
+          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "reasonCodes": []
+        },
+        {
+          "caseId": "diagnostic.query-read-kind-mismatch.pair",
+          "revision": 1,
+          "status": "invalid",
+          "exit": 1,
+          "outputDigest": "sha256:51ecf95f35559a42b19f06badda27f51cc159cd74225ad3f5de487e8c8cdca31",
+          "reasonCodes": [
+            "semantic.query-read-kind-mismatch"
+          ]
+        },
+        {
+          "caseId": "diagnostic.query-read-kind-mismatch.pair",
+          "revision": 1,
+          "status": "valid",
+          "exit": 0,
+          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "reasonCodes": []
+        },
+        {
+          "caseId": "diagnostic.query-read-unresolved.pair",
+          "revision": 1,
+          "status": "invalid",
+          "exit": 1,
+          "outputDigest": "sha256:03dab16684fee093d296e152b4117909c632dc17fdd4e1b3068a607312bff0a8",
+          "reasonCodes": [
+            "semantic.query-read-unresolved",
+            "semantic.type-ref-unresolved"
+          ]
+        },
+        {
+          "caseId": "diagnostic.query-read-unresolved.pair",
+          "revision": 1,
+          "status": "valid",
+          "exit": 0,
+          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "reasonCodes": []
+        },
+        {
+          "caseId": "diagnostic.scenario-operation-unresolved.pair",
+          "revision": 1,
+          "status": "invalid",
+          "exit": 1,
+          "outputDigest": "sha256:c36647f6e98092fbe450fcee9e36aa69c37b629c8b79856c2eb32578d31c3ee0",
+          "reasonCodes": [
+            "semantic.scenario-operation-unresolved"
+          ]
+        },
+        {
+          "caseId": "diagnostic.scenario-operation-unresolved.pair",
+          "revision": 1,
+          "status": "valid",
+          "exit": 0,
+          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "reasonCodes": []
+        },
+        {
+          "caseId": "diagnostic.type-recursion.pair",
+          "revision": 1,
+          "status": "invalid",
+          "exit": 1,
+          "outputDigest": "sha256:5c9dbf8843523bf2033bb3a1cb888bcd5ad965e7184c27384557f7013addb909",
+          "reasonCodes": [
+            "semantic.type-recursion"
+          ]
+        },
+        {
+          "caseId": "diagnostic.type-recursion.pair",
+          "revision": 1,
+          "status": "valid",
+          "exit": 0,
+          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "reasonCodes": []
+        },
+        {
+          "caseId": "diagnostic.type-ref-kind-mismatch.pair",
+          "revision": 1,
+          "status": "invalid",
+          "exit": 1,
+          "outputDigest": "sha256:1e89175ac9d33cc42e57bc381f6b546f8d53714780d4f5b3f7d51a1d0dfdc701",
+          "reasonCodes": [
+            "semantic.type-ref-kind-mismatch"
+          ]
+        },
+        {
+          "caseId": "diagnostic.type-ref-kind-mismatch.pair",
+          "revision": 1,
+          "status": "valid",
+          "exit": 0,
+          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "reasonCodes": []
+        },
+        {
+          "caseId": "diagnostic.type-ref-unresolved.pair",
+          "revision": 1,
+          "status": "invalid",
+          "exit": 1,
+          "outputDigest": "sha256:c14ca638053d714eaa991dbc3cc8d659a37d7893db5bf600442a491877606cc1",
+          "reasonCodes": [
+            "semantic.type-ref-unresolved"
+          ]
+        },
+        {
+          "caseId": "diagnostic.type-ref-unresolved.pair",
+          "revision": 1,
+          "status": "valid",
+          "exit": 0,
+          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "reasonCodes": []
+        },
+        {
+          "caseId": "diagnostic.visibility-boundary-violation.pair",
+          "revision": 1,
+          "status": "invalid",
+          "exit": 1,
+          "outputDigest": "sha256:d4f03358b1eb4d8484825559b6ff115336f7ea874f33d83cffa0975d2d353bc0",
+          "reasonCodes": [
+            "semantic.visibility-boundary-violation"
+          ]
+        },
+        {
+          "caseId": "diagnostic.visibility-boundary-violation.pair",
+          "revision": 1,
+          "status": "valid",
+          "exit": 0,
+          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "reasonCodes": []
+        },
+        {
+          "caseId": "minimal.project",
+          "revision": 1,
+          "status": "valid",
+          "exit": 0,
+          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "reasonCodes": []
+        }
+      ]
+    }
+  ]
+}

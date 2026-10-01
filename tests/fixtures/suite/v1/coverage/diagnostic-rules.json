@@ -1,0 +1,5276 @@
+{
+  "coverageId": "dev.lekalo.fixture-coverage.diagnostic-rules",
+  "fixtureSchema": "dev.lekalo.fixture@1.0.0",
+  "registryIdentity": "dev.lekalo.diagnostic-registry@0.4.0",
+  "registryDigest": "sha256:d10787cb47d5d40485a57a877aeba07bcd708ad24d2aa64e05dd9416961d1d6a",
+  "generatedBy": {
+    "script": "scripts/gen-suite-coverage.mjs",
+    "reviewed": true
+  },
+  "rules": [
+    {
+      "id": "adapter.check-failed",
+      "code": "LEK-ADP-002",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core adapter_conformance",
+          "note": "the failing-check exchange asserts the rule id"
+        }
+      ]
+    },
+    {
+      "id": "adapter.checksum-mismatch",
+      "code": "LEK-ADP-007",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core adapter_package",
+          "note": "tampered package bytes assert the rule"
+        }
+      ]
+    },
+    {
+      "id": "adapter.diagnostic-invalid",
+      "code": "LEK-ADP-001",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core diagnostics",
+          "note": "registry-backed constructor refuses hand-assembled wire"
+        }
+      ]
+    },
+    {
+      "id": "adapter.hooks-declared",
+      "code": "LEK-ADP-015",
+      "category": "adapter",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "adapter-manifest",
+          "path": "tests/fixtures/adapter-manifest/invalid/non-empty-hooks.json"
+        }
+      ]
+    },
+    {
+      "id": "adapter.incompatible",
+      "code": "LEK-ADP-011",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core adapter_package",
+          "note": "incompatible adapter version asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "adapter.install-conflict",
+      "code": "LEK-ADP-019",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-cli main adapter install",
+          "note": "conflicting install asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "adapter.install-plan-required",
+      "code": "LEK-ADP-017",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-cli main adapter install",
+          "note": "unconfirmed install asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "adapter.manifest-invalid",
+      "code": "LEK-ADP-006",
+      "category": "adapter",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "adapter-manifest",
+          "path": "tests/fixtures/adapter-manifest/invalid/wrong-schema-version.json"
+        }
+      ]
+    },
+    {
+      "id": "adapter.manifest-mismatch",
+      "code": "LEK-ADP-008",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core adapter_package",
+          "note": "manifest identity drift asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "adapter.permission-escalated",
+      "code": "LEK-ADP-021",
+      "category": "adapter",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "adapter-manifest",
+          "path": "tests/fixtures/adapter-manifest/invalid/required-policy-without-signature.json"
+        }
+      ]
+    },
+    {
+      "id": "adapter.process-failure",
+      "code": "LEK-ADP-003",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core adapter_conformance",
+          "note": "the crashing-adapter exchange asserts the rule id"
+        }
+      ]
+    },
+    {
+      "id": "adapter.protocol-failure",
+      "code": "LEK-ADP-004",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "UNMAPPED — acceptance gap, see docs/m7/issue-90-implementation.md",
+          "note": "no dedicated evidence recorded yet; adding evidence is tracked backlog"
+        }
+      ]
+    },
+    {
+      "id": "adapter.quarantined",
+      "code": "LEK-ADP-013",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core adapter_package",
+          "note": "quarantine flow asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "adapter.recovery-required",
+      "code": "LEK-ADP-020",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core adapter_package",
+          "note": "interrupted install asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "adapter.revoked",
+      "code": "LEK-ADP-012",
+      "category": "adapter",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "adapter-manifest",
+          "path": "tests/fixtures/adapter-manifest/invalid/revoked-without-revocation.json"
+        }
+      ]
+    },
+    {
+      "id": "adapter.security-failure",
+      "code": "LEK-ADP-005",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core target_protocol_security",
+          "note": "hostile adapter asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "adapter.signature-unverified",
+      "code": "LEK-ADP-009",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core adapter_package",
+          "note": "unsigned manifest asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "adapter.source-changed",
+      "code": "LEK-ADP-018",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core adapter_package",
+          "note": "source drift asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "adapter.source-unavailable",
+      "code": "LEK-ADP-016",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core adapter_package",
+          "note": "missing source asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "adapter.trust-insufficient",
+      "code": "LEK-ADP-014",
+      "category": "adapter",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "adapter-manifest",
+          "path": "tests/fixtures/adapter-manifest/invalid/traversal-adapter-id.json"
+        }
+      ]
+    },
+    {
+      "id": "authorization.actor-invalid",
+      "code": "LEK-AUTH-002",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core authorization",
+          "note": "malformed actor asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "authorization.composition-invalid",
+      "code": "LEK-AUTH-007",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core authorization",
+          "note": "invalid composition asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "authorization.document-invalid",
+      "code": "LEK-AUTH-001",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core authorization",
+          "note": "malformed document asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "authorization.effect-unprotected",
+      "code": "LEK-AUTH-009",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core authorization",
+          "note": "unprotected effect asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "authorization.error-ref-unresolved",
+      "code": "LEK-AUTH-006",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core authorization",
+          "note": "dangling error ref asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "authorization.field-uncovered",
+      "code": "LEK-AUTH-008",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core authorization",
+          "note": "uncovered field asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "authorization.limit-exceeded",
+      "code": "LEK-AUTH-011",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core authorization",
+          "note": "over-limit policy asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "authorization.mapping-stale",
+      "code": "LEK-AUTH-010",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core authorization",
+          "note": "stale mapping asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "authorization.policy-invalid",
+      "code": "LEK-AUTH-004",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core authorization",
+          "note": "invalid policy asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "authorization.profile-invalid",
+      "code": "LEK-AUTH-012",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core authorization",
+          "note": "invalid profile asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "authorization.ref-unresolved",
+      "code": "LEK-AUTH-005",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core authorization",
+          "note": "dangling reference asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "authorization.scope-invalid",
+      "code": "LEK-AUTH-003",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core authorization",
+          "note": "invalid scope asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "bindings.ambiguous",
+      "code": "LEK-BND-002",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core bindings",
+          "note": "ambiguous proposal asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "bindings.plan-mismatch",
+      "code": "LEK-BND-003",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core bindings",
+          "note": "plan mismatch asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "bindings.proposal-unknown",
+      "code": "LEK-BND-001",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core bindings",
+          "note": "unknown proposal asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "cache.contract-invalid",
+      "code": "LEK-XE-005",
+      "category": "compatibility",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "extended-effects",
+          "path": "tests/fixtures/extended-effects/invalid/cache-operation-kind-mismatch.expect.json"
+        }
+      ]
+    },
+    {
+      "id": "call.contract-invalid",
+      "code": "LEK-XE-004",
+      "category": "compatibility",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "extended-effects",
+          "path": "tests/fixtures/extended-effects/invalid/call-missing-compensation.expect.json"
+        }
+      ]
+    },
+    {
+      "id": "case.case-invalid",
+      "code": "LEK-XE-009",
+      "category": "compatibility",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "extended-effects",
+          "path": "tests/fixtures/extended-effects/invalid/cyclic-schedule.expect.json"
+        }
+      ]
+    },
+    {
+      "id": "classification.conflicting-kind",
+      "code": "LEK-CLS-004",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core classification",
+          "note": "conflicting kind asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "classification.custody-ir",
+      "code": "LEK-CLS-015",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core classification",
+          "note": "IR custody digest drift asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "classification.custody-model",
+      "code": "LEK-CLS-014",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core classification",
+          "note": "model custody digest drift asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "classification.custody-project",
+      "code": "LEK-CLS-013",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core classification",
+          "note": "project custody digest drift asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "classification.duplicate-subject",
+      "code": "LEK-CLS-003",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core classification",
+          "note": "duplicate subject asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "classification.expired-declassification",
+      "code": "LEK-CLS-007",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core classification",
+          "note": "expired declassification asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "classification.invalid-declassification",
+      "code": "LEK-CLS-005",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core classification",
+          "note": "invalid declassification asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "classification.kind-rule-missing",
+      "code": "LEK-CLS-010",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core classification",
+          "note": "missing kind rule asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "classification.malformed-review-ref",
+      "code": "LEK-CLS-016",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core classification",
+          "note": "malformed review ref asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "classification.missing-approval",
+      "code": "LEK-CLS-006",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core classification",
+          "note": "missing approval asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "classification.policy-missing",
+      "code": "LEK-CLS-009",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core classification",
+          "note": "missing policy asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "classification.self-approved",
+      "code": "LEK-CLS-008",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core classification",
+          "note": "self-approved review asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "classification.sink-ceiling-exceeded",
+      "code": "LEK-CLS-011",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core classification",
+          "note": "sink ceiling asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "classification.unclassified-sensitive-sink",
+      "code": "LEK-CLS-012",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "classification",
+          "path": "tests/fixtures/classification/invalid/secret-in-sink/classification.json"
+        }
+      ]
+    },
+    {
+      "id": "classification.unknown-kind",
+      "code": "LEK-CLS-001",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core classification",
+          "note": "unknown kind asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "classification.unknown-subject",
+      "code": "LEK-CLS-002",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "classification",
+          "path": "tests/fixtures/classification/invalid/unknown-subject/classification.json"
+        }
+      ]
+    },
+    {
+      "id": "cli.usage",
+      "code": "LEK-CLI-001",
+      "category": "infrastructure",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "diagnostics",
+          "path": "tests/fixtures/diagnostics/usage-envelope.json"
+        }
+      ]
+    },
+    {
+      "id": "client.consumer-invalid",
+      "code": "LEK-SDK-007",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core client_sdk",
+          "note": "invalid consumer asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "client.contract-invalid",
+      "code": "LEK-SDK-002",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core client_sdk",
+          "note": "contract drift asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "client.drift",
+      "code": "LEK-SDK-006",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core client_sdk",
+          "note": "generated drift asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "client.input-invalid",
+      "code": "LEK-SDK-001",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core client_sdk",
+          "note": "invalid input asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "client.limit-exceeded",
+      "code": "LEK-SDK-008",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core client_sdk",
+          "note": "over-limit input asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "client.mapping-unsupported",
+      "code": "LEK-SDK-004",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core client_sdk",
+          "note": "unsupported mapping asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "client.retry-unsafe",
+      "code": "LEK-SDK-005",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core client_sdk",
+          "note": "unsafe retry asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "client.symbol-unresolved",
+      "code": "LEK-SDK-003",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core client_sdk",
+          "note": "unknown symbol asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "concurrency.capability-missing",
+      "code": "LEK-TC-009",
+      "category": "compatibility",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "transaction-concurrency",
+          "path": "tests/fixtures/transaction-concurrency/invalid"
+        }
+      ]
+    },
+    {
+      "id": "concurrency.case-invalid",
+      "code": "LEK-TC-008",
+      "category": "compatibility",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "transaction-concurrency",
+          "path": "tests/fixtures/transaction-concurrency/invalid"
+        }
+      ]
+    },
+    {
+      "id": "concurrency.invariant-invalid",
+      "code": "LEK-TC-007",
+      "category": "compatibility",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "transaction-concurrency",
+          "path": "tests/fixtures/transaction-concurrency/invalid"
+        }
+      ]
+    },
+    {
+      "id": "concurrency.precondition-invalid",
+      "code": "LEK-TC-006",
+      "category": "compatibility",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "transaction-concurrency",
+          "path": "tests/fixtures/transaction-concurrency/invalid"
+        }
+      ]
+    },
+    {
+      "id": "concurrency.retry-conflict",
+      "code": "LEK-TC-010",
+      "category": "compatibility",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "transaction-concurrency",
+          "path": "tests/fixtures/transaction-concurrency/invalid"
+        }
+      ]
+    },
+    {
+      "id": "contract.capability-missing",
+      "code": "LEK-XE-007",
+      "category": "compatibility",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "extended-effects",
+          "path": "tests/fixtures/extended-effects/invalid/call-missing-capability.expect.json"
+        }
+      ]
+    },
+    {
+      "id": "contract.gate-required",
+      "code": "LEK-XE-010",
+      "category": "compatibility",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "extended-effects",
+          "path": "tests/fixtures/extended-effects/invalid/sensitive-without-gate.expect.json"
+        }
+      ]
+    },
+    {
+      "id": "contract.retry-conflict",
+      "code": "LEK-XE-008",
+      "category": "compatibility",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "extended-effects",
+          "path": "tests/fixtures/extended-effects/invalid/job-retry-idempotency-conflict.expect.json"
+        }
+      ]
+    },
+    {
+      "id": "contracted.binding-drift",
+      "code": "LEK-CNT-006",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core contracted",
+          "note": "binding drift asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "contracted.coverage-missing",
+      "code": "LEK-CNT-008",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core contracted",
+          "note": "missing coverage asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "contracted.declaration-invalid",
+      "code": "LEK-CNT-001",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core contracted",
+          "note": "invalid declaration asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "contracted.declaration-limit",
+      "code": "LEK-CNT-002",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core contracted",
+          "note": "over-limit declarations assert the rule"
+        }
+      ]
+    },
+    {
+      "id": "contracted.registry-io",
+      "code": "LEK-CNT-005",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core contracted",
+          "note": "registry I/O failure asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "contracted.stale-artifact",
+      "code": "LEK-CNT-007",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core contracted",
+          "note": "stale artifact asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "contracted.unknown-module",
+      "code": "LEK-CNT-003",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core contracted",
+          "note": "unknown module asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "contracted.unknown-symbol",
+      "code": "LEK-CNT-004",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core contracted",
+          "note": "unknown symbol asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "core.capability-unavailable",
+      "code": "LEK-DIAG-001",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core lib",
+          "note": "capability seam refusal asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "dataflow.adapter-metadata-loss",
+      "code": "LEK-DFL-008",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core dataflow",
+          "note": "metadata loss asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "dataflow.destination-forbidden",
+      "code": "LEK-DFL-007",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core dataflow",
+          "note": "forbidden destination asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "dataflow.exposed-private-field",
+      "code": "LEK-DFL-001",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core dataflow",
+          "note": "exposed private field asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "dataflow.low-confidence-sensitive",
+      "code": "LEK-DFL-004",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core dataflow",
+          "note": "low-confidence sensitive flow asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "dataflow.missing-approval",
+      "code": "LEK-DFL-006",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core dataflow",
+          "note": "missing approval asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "dataflow.missing-destination",
+      "code": "LEK-DFL-005",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core dataflow",
+          "note": "missing destination asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "dataflow.observed-incomplete",
+      "code": "LEK-DFL-009",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core dataflow",
+          "note": "incomplete observed graph asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "dataflow.tenant-crossing",
+      "code": "LEK-DFL-002",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "classification",
+          "path": "tests/fixtures/classification/invalid/tenant-crossing/classification.json"
+        }
+      ]
+    },
+    {
+      "id": "dataflow.unknown-flow",
+      "code": "LEK-DFL-003",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core dataflow",
+          "note": "unknown flow asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "diagnostics.registry-invalid",
+      "code": "LEK-DIAG-002",
+      "category": "infrastructure",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "diagnostics",
+          "path": "tests/fixtures/diagnostics/loader-failure-envelope.json"
+        }
+      ]
+    },
+    {
+      "id": "diff.adapter-invalid",
+      "code": "LEK-DIFF-001",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core diff",
+          "note": "invalid adapter section asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "diff.change-limit",
+      "code": "LEK-DIFF-002",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core diff",
+          "note": "over-limit change set asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "diff.export-limit",
+      "code": "LEK-DIFF-003",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core diff",
+          "note": "over-limit export asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "diff.history-invalid",
+      "code": "LEK-DIFF-004",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core diff",
+          "note": "invalid rename history asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "diff.input-invalid",
+      "code": "LEK-DIFF-005",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core diff",
+          "note": "invalid input asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "diff.profile-invalid",
+      "code": "LEK-DIFF-006",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "node:scripts/test-semantic-diff-contracts.mjs",
+          "note": "unknown profile name asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "diff.seed-limit",
+      "code": "LEK-DIFF-007",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core diff",
+          "note": "over-limit seeds assert the rule"
+        }
+      ]
+    },
+    {
+      "id": "diff.subject-limit",
+      "code": "LEK-DIFF-008",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core diff",
+          "note": "over-limit subjects assert the rule"
+        }
+      ]
+    },
+    {
+      "id": "error.binding-invalid",
+      "code": "LEK-ERR-002",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core error_contract",
+          "note": "invalid binding asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "error.code-reused",
+      "code": "LEK-ERR-005",
+      "category": "compatibility",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "error-contract",
+          "path": "tests/fixtures/error-contract/invalid/tombstoned-code-reused.registry.json"
+        }
+      ]
+    },
+    {
+      "id": "error.contract-invalid",
+      "code": "LEK-ERR-001",
+      "category": "compatibility",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "error-contract",
+          "path": "tests/fixtures/error-contract/invalid/unknown-category.registry.json"
+        }
+      ]
+    },
+    {
+      "id": "error.coverage-invalid",
+      "code": "LEK-ERR-007",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core error_contract",
+          "note": "invalid coverage asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "error.diff-invalid",
+      "code": "LEK-ERR-010",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core error_contract",
+          "note": "invalid diff asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "error.limit-exceeded",
+      "code": "LEK-ERR-011",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core error_contract",
+          "note": "over-limit registry asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "error.mapping-invalid",
+      "code": "LEK-ERR-009",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core error_contract",
+          "note": "invalid mapping asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "error.mapping-missing",
+      "code": "LEK-ERR-008",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core error_contract",
+          "note": "missing mapping asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "error.payload-invalid",
+      "code": "LEK-ERR-003",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core error_contract",
+          "note": "invalid payload asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "error.registry-invalid",
+      "code": "LEK-ERR-012",
+      "category": "compatibility",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "error-contract",
+          "path": "tests/fixtures/error-contract/invalid/unknown-top-field.registry.json"
+        }
+      ]
+    },
+    {
+      "id": "error.retry-idempotency-conflict",
+      "code": "LEK-ERR-006",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core error_contract",
+          "note": "retry/idempotency conflict asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "error.unreachable",
+      "code": "LEK-ERR-004",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core error_contract",
+          "note": "unreachable error asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "event.contract-invalid",
+      "code": "LEK-XE-002",
+      "category": "compatibility",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "extended-effects",
+          "path": "tests/fixtures/extended-effects/invalid/event-dedup-key-missing.expect.json"
+        }
+      ]
+    },
+    {
+      "id": "expression.binding-invalid",
+      "code": "LEK-EXPR-007",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "UNMAPPED — acceptance gap, see docs/m7/issue-90-implementation.md",
+          "note": "no dedicated evidence recorded yet; adding evidence is tracked backlog"
+        }
+      ]
+    },
+    {
+      "id": "expression.builtin-unsupported",
+      "code": "LEK-EXPR-005",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core expressions",
+          "note": "unsupported builtin asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "expression.complexity-limit",
+      "code": "LEK-EXPR-004",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "expressions",
+          "path": "tests/fixtures/expressions/invalid/depth-exceeded.json"
+        }
+      ]
+    },
+    {
+      "id": "expression.contract-invalid",
+      "code": "LEK-EXPR-002",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "expressions",
+          "path": "tests/fixtures/expressions/invalid/bad-expression-id.json"
+        }
+      ]
+    },
+    {
+      "id": "expression.diff-invalid",
+      "code": "LEK-EXPR-008",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "UNMAPPED — acceptance gap, see docs/m7/issue-90-implementation.md",
+          "note": "no dedicated evidence recorded yet; adding evidence is tracked backlog"
+        }
+      ]
+    },
+    {
+      "id": "expression.eval-invalid",
+      "code": "LEK-EXPR-006",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core expressions",
+          "note": "evaluation failure vectors assert the rule"
+        }
+      ]
+    },
+    {
+      "id": "expression.export-limit",
+      "code": "LEK-EXPR-009",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core expressions",
+          "note": "over-limit export asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "expression.input-invalid",
+      "code": "LEK-EXPR-001",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "expressions",
+          "path": "tests/fixtures/expressions/invalid/unknown-top-field.json"
+        }
+      ]
+    },
+    {
+      "id": "expression.type-invalid",
+      "code": "LEK-EXPR-003",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "expressions",
+          "path": "tests/fixtures/expressions/invalid/arithmetic-type.json"
+        }
+      ]
+    },
+    {
+      "id": "extended.export-limit",
+      "code": "LEK-XE-011",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core extended_effects",
+          "note": "over-limit export asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "extended.input-invalid",
+      "code": "LEK-XE-001",
+      "category": "compatibility",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "extended-effects",
+          "path": "tests/fixtures/extended-effects/invalid/unknown-top-field.expect.json"
+        }
+      ]
+    },
+    {
+      "id": "graph.cycle-forbidden",
+      "code": "LEK-GRAPH-001",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core graph",
+          "note": "requires-cycle asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "graph.export-limit",
+      "code": "LEK-GRAPH-002",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core graph",
+          "note": "over-limit export asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "graph.input-invalid",
+      "code": "LEK-GRAPH-003",
+      "category": "infrastructure",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "scenario",
+          "path": "tests/fixtures/scenario/invalid/bad-digest.expect.json"
+        }
+      ]
+    },
+    {
+      "id": "graph.path-not-found",
+      "code": "LEK-GRAPH-004",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "node:CLI graph path",
+          "note": "disconnected pair asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "graph.provenance-incomplete",
+      "code": "LEK-GRAPH-005",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core graph",
+          "note": "incomplete provenance asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "graph.traversal-limit",
+      "code": "LEK-GRAPH-006",
+      "category": "infrastructure",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "scenario",
+          "path": "tests/fixtures/scenario/invalid/duplicate-step-id.expect.json"
+        }
+      ]
+    },
+    {
+      "id": "graph.unknown-node",
+      "code": "LEK-GRAPH-007",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "node:CLI graph show/impact/context",
+          "note": "unknown symbol asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "graph.unknown-relation",
+      "code": "LEK-GRAPH-008",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core graph",
+          "note": "unknown relation asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "history.busy",
+      "code": "LEK-HST-007",
+      "category": "infrastructure",
+      "evidence": "interaction-only",
+      "note": "requires a concurrent history writer on the host; the SQLite store owns it"
+    },
+    {
+      "id": "history.corrupt",
+      "code": "LEK-HST-009",
+      "category": "infrastructure",
+      "evidence": "interaction-only",
+      "note": "requires byte-level store corruption; the store's recovery owns it"
+    },
+    {
+      "id": "history.cursor-stale",
+      "code": "LEK-HST-015",
+      "category": "infrastructure",
+      "evidence": "interaction-only",
+      "note": "requires interleaved readers; the store owns it"
+    },
+    {
+      "id": "history.dependent-invalidated",
+      "code": "LEK-HST-014",
+      "category": "infrastructure",
+      "evidence": "interaction-only",
+      "note": "requires a dependent-retention race; the store owns it"
+    },
+    {
+      "id": "history.input-invalid",
+      "code": "LEK-HST-002",
+      "category": "infrastructure",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "run-history",
+          "path": "tests/fixtures/run-history/invalid/missing-required.json"
+        }
+      ]
+    },
+    {
+      "id": "history.io",
+      "code": "LEK-HST-008",
+      "category": "infrastructure",
+      "evidence": "interaction-only",
+      "note": "requires host I/O failure under the history home; the store owns it"
+    },
+    {
+      "id": "history.path-denied",
+      "code": "LEK-HST-005",
+      "category": "security",
+      "evidence": "interaction-only",
+      "note": "requires OS path denial under the history home; the store owns it"
+    },
+    {
+      "id": "history.policy-mismatch",
+      "code": "LEK-HST-003",
+      "category": "security",
+      "evidence": "interaction-only",
+      "note": "requires a policy-divergent store produced by another host; the store owns it"
+    },
+    {
+      "id": "history.retention-limit",
+      "code": "LEK-HST-016",
+      "category": "infrastructure",
+      "evidence": "interaction-only",
+      "note": "requires a retention sweep under host size limits; the store owns it"
+    },
+    {
+      "id": "history.run-conflict",
+      "code": "LEK-HST-011",
+      "category": "infrastructure",
+      "evidence": "interaction-only",
+      "note": "requires concurrent run writes; the store owns it"
+    },
+    {
+      "id": "history.scope-mismatch",
+      "code": "LEK-HST-001",
+      "category": "security",
+      "evidence": "interaction-only",
+      "note": "requires a foreign-tenant store; the store owns it"
+    },
+    {
+      "id": "history.source-missing",
+      "code": "LEK-HST-012",
+      "category": "infrastructure",
+      "evidence": "interaction-only",
+      "note": "requires a deleted source between record and read; the store owns it"
+    },
+    {
+      "id": "history.tracked-store",
+      "code": "LEK-HST-006",
+      "category": "security",
+      "evidence": "interaction-only",
+      "note": "requires a store placed under VCS by the host; the store owns it"
+    },
+    {
+      "id": "history.unsafe-field",
+      "code": "LEK-HST-004",
+      "category": "security",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "run-history",
+          "path": "tests/fixtures/run-history/invalid/absolute-path-token.json"
+        }
+      ]
+    },
+    {
+      "id": "history.version-unsupported",
+      "code": "LEK-HST-010",
+      "category": "compatibility",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "run-history",
+          "path": "tests/fixtures/run-history/invalid/wrong-identity.json"
+        }
+      ]
+    },
+    {
+      "id": "impact.changed-input-incomplete",
+      "code": "LEK-IMPACT-003",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-cli impact",
+          "note": "incomplete changed input asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "impact.changed-input-invalid",
+      "code": "LEK-IMPACT-002",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-cli impact",
+          "note": "invalid changed input asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "impact.effect-stale",
+      "code": "LEK-IMPACT-005",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-cli impact",
+          "note": "stale effect evidence asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "impact.evidence-unknown",
+      "code": "LEK-IMPACT-006",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-cli impact",
+          "note": "unknown evidence asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "impact.gate-blocked",
+      "code": "LEK-IMPACT-010",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-cli impact",
+          "note": "blocked gate asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "impact.output-limit",
+      "code": "LEK-IMPACT-009",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-cli impact",
+          "note": "over-limit output asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "impact.public-impact-incomplete",
+      "code": "LEK-IMPACT-007",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-cli impact",
+          "note": "incomplete public impact asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "impact.selector-invalid",
+      "code": "LEK-IMPACT-001",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "node:CLI impact",
+          "note": "malformed selector asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "impact.symbol-unknown",
+      "code": "LEK-IMPACT-004",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "node:CLI impact",
+          "note": "unknown symbol asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "impact.traversal-limit",
+      "code": "LEK-IMPACT-008",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-cli impact",
+          "note": "over-depth traversal asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "implementation.document-invalid",
+      "code": "LEK-IMPL-001",
+      "category": "model",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "implementation",
+          "path": "tests/fixtures/implementation/semantic/ir-pin.expect.json"
+        }
+      ]
+    },
+    {
+      "id": "implementation.effect-mismatch",
+      "code": "LEK-IMPL-002",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "implementation",
+          "path": "tests/fixtures/implementation/semantic/effect-mismatch.expect.json"
+        }
+      ]
+    },
+    {
+      "id": "implementation.reference-unresolved",
+      "code": "LEK-IMPL-003",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "implementation",
+          "path": "tests/fixtures/implementation/semantic/reference-unresolved.expect.json"
+        }
+      ]
+    },
+    {
+      "id": "implementation.selection-ambiguous",
+      "code": "LEK-IMPL-004",
+      "category": "compatibility",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "implementation",
+          "path": "tests/fixtures/implementation/semantic/selection-ambiguous.expect.json"
+        }
+      ]
+    },
+    {
+      "id": "implementation.selection-unknown",
+      "code": "LEK-IMPL-005",
+      "category": "compatibility",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "implementation",
+          "path": "tests/fixtures/implementation/semantic/selection-unknown.expect.json"
+        }
+      ]
+    },
+    {
+      "id": "implementation.symbol-invalid",
+      "code": "LEK-IMPL-006",
+      "category": "security",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "implementation",
+          "path": "tests/fixtures/implementation/semantic/symbol-scheme.expect.json"
+        }
+      ]
+    },
+    {
+      "id": "implementation.target-missing",
+      "code": "LEK-IMPL-007",
+      "category": "compatibility",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "implementation",
+          "path": "tests/fixtures/implementation/semantic/target-missing.expect.json"
+        }
+      ]
+    },
+    {
+      "id": "init.adopt-ambiguous-root",
+      "code": "LEK-INIT-002",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core init_adopt_boundary",
+          "note": "ambiguous adopt root asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "init.adopt-conflict",
+      "code": "LEK-INIT-001",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core init_adopt_boundary",
+          "note": "adopt conflict asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "init.adopt-id-required",
+      "code": "LEK-INIT-003",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core init_adopt_boundary",
+          "note": "missing adopt id asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "init.adopt-recovery-required",
+      "code": "LEK-INIT-005",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core init_adopt_boundary",
+          "note": "interrupted adopt asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "init.adopt-write-failed",
+      "code": "LEK-INIT-004",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core init_adopt_boundary",
+          "note": "refused adopt write asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "init.bootstrap-conflict",
+      "code": "LEK-INIT-006",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-cli bootstrap",
+          "note": "bootstrap conflict asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "init.bootstrap-id-required",
+      "code": "LEK-INIT-007",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-cli bootstrap",
+          "note": "missing bootstrap id asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "init.bootstrap-recovery-required",
+      "code": "LEK-INIT-009",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-cli bootstrap",
+          "note": "interrupted bootstrap asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "init.bootstrap-write-failed",
+      "code": "LEK-INIT-008",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-cli bootstrap",
+          "note": "refused bootstrap write asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "inspect.output-limit",
+      "code": "LEK-INS-004",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-cli inspect",
+          "note": "over-limit output asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "inspect.short-name-ambiguous",
+      "code": "LEK-INS-003",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-cli inspect",
+          "note": "ambiguous short name asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "inspect.short-name-unknown",
+      "code": "LEK-INS-002",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-cli inspect",
+          "note": "unknown short name asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "inspect.symbol-unknown",
+      "code": "LEK-INS-001",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "node:CLI inspect",
+          "note": "unknown symbol asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "invariant.contract-invalid",
+      "code": "LEK-INV-007",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "invariant-transition",
+          "path": "tests/fixtures/invariant-transition/invalid"
+        }
+      ]
+    },
+    {
+      "id": "invariant.export-limit",
+      "code": "LEK-INV-006",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core invariant_transition",
+          "note": "over-limit export asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "invariant.graph-invalid",
+      "code": "LEK-INV-005",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "invariant-transition",
+          "path": "tests/fixtures/invariant-transition/invalid"
+        }
+      ]
+    },
+    {
+      "id": "invariant.input-invalid",
+      "code": "LEK-INV-001",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "invariant-transition",
+          "path": "tests/fixtures/invariant-transition/invalid"
+        }
+      ]
+    },
+    {
+      "id": "invariant.mapping-invalid",
+      "code": "LEK-INV-004",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "invariant-transition",
+          "path": "tests/fixtures/invariant-transition/invalid"
+        }
+      ]
+    },
+    {
+      "id": "invariant.state-invalid",
+      "code": "LEK-INV-002",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "invariant-transition",
+          "path": "tests/fixtures/invariant-transition/invalid"
+        }
+      ]
+    },
+    {
+      "id": "invariant.transition-invalid",
+      "code": "LEK-INV-003",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "invariant-transition",
+          "path": "tests/fixtures/invariant-transition/invalid"
+        }
+      ]
+    },
+    {
+      "id": "ir.duplicate-member",
+      "code": "LEK-IR-001",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "ir",
+          "path": "tests/fixtures/ir/invalid-duplicate-set-member"
+        }
+      ]
+    },
+    {
+      "id": "ir.kind-placement",
+      "code": "LEK-IR-002",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "ir",
+          "path": "tests/fixtures/ir/invalid-kind-placement"
+        }
+      ]
+    },
+    {
+      "id": "ir.kind-unknown",
+      "code": "LEK-IR-003",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "ir",
+          "path": "tests/fixtures/ir/invalid-operation-unknown"
+        },
+        {
+          "family": "ir",
+          "path": "tests/fixtures/ir/invalid-decision-unknown"
+        }
+      ]
+    },
+    {
+      "id": "ir.missing-field",
+      "code": "LEK-IR-004",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "ir",
+          "path": "tests/fixtures/ir/invalid-missing-field"
+        },
+        {
+          "family": "ir",
+          "path": "tests/fixtures/ir/invalid-empty-identity"
+        }
+      ]
+    },
+    {
+      "id": "ir.unknown-field",
+      "code": "LEK-IR-005",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "ir",
+          "path": "tests/fixtures/ir/invalid-unknown-field"
+        }
+      ]
+    },
+    {
+      "id": "ir.value-invalid",
+      "code": "LEK-IR-006",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "ir",
+          "path": "tests/fixtures/ir/invalid-id-syntax"
+        }
+      ]
+    },
+    {
+      "id": "job.contract-invalid",
+      "code": "LEK-XE-003",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "node:scripts/test-extended-effects-contracts.mjs",
+          "note": "job contract vectors"
+        }
+      ]
+    },
+    {
+      "id": "loader.ambiguous-short-reference",
+      "code": "LEK-LOAD-001",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "loader",
+          "path": "tests/fixtures/loader/invalid-ambiguous-short-reference"
+        }
+      ]
+    },
+    {
+      "id": "loader.conflicting-declaration",
+      "code": "LEK-LOAD-002",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "loader",
+          "path": "tests/fixtures/loader/invalid-conflicting-declaration"
+        }
+      ]
+    },
+    {
+      "id": "loader.document-shape",
+      "code": "LEK-LOAD-003",
+      "category": "model",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "loader",
+          "path": "tests/fixtures/loader/invalid-structure-module-yaml-missing/expect.json"
+        },
+        {
+          "family": "loader",
+          "path": "tests/fixtures/loader/invalid-structure-unexpected-entry"
+        }
+      ]
+    },
+    {
+      "id": "loader.duplicate-definition",
+      "code": "LEK-LOAD-004",
+      "category": "model",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "loader",
+          "path": "tests/fixtures/loader/invalid-duplicate-definition"
+        }
+      ]
+    },
+    {
+      "id": "loader.duplicate-key",
+      "code": "LEK-LOAD-005",
+      "category": "model",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "UNMAPPED — acceptance gap, see docs/m7/issue-90-implementation.md",
+          "note": "no dedicated evidence recorded yet; adding evidence is tracked backlog"
+        }
+      ]
+    },
+    {
+      "id": "loader.duplicate-module-id",
+      "code": "LEK-LOAD-006",
+      "category": "model",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "loader",
+          "path": "tests/fixtures/loader/invalid-duplicate-module-id"
+        }
+      ]
+    },
+    {
+      "id": "loader.encoding",
+      "code": "LEK-LOAD-007",
+      "category": "infrastructure",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "loader",
+          "path": "tests/fixtures/loader/invalid-encoding-bom"
+        }
+      ]
+    },
+    {
+      "id": "loader.import-cycle",
+      "code": "LEK-LOAD-008",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "loader",
+          "path": "tests/fixtures/loader/invalid-import-cycle"
+        }
+      ]
+    },
+    {
+      "id": "loader.import-invalid",
+      "code": "LEK-LOAD-009",
+      "category": "model",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "loader",
+          "path": "tests/fixtures/loader/invalid-import-grammar"
+        }
+      ]
+    },
+    {
+      "id": "loader.import-missing",
+      "code": "LEK-LOAD-010",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "loader",
+          "path": "tests/fixtures/loader/invalid-import-missing"
+        }
+      ]
+    },
+    {
+      "id": "loader.io",
+      "code": "LEK-LOAD-011",
+      "category": "infrastructure",
+      "evidence": "interaction-only",
+      "note": "requires a host I/O failure (unreadable file) injected at the OS layer; the read pipeline owns it"
+    },
+    {
+      "id": "loader.json-parse",
+      "code": "LEK-LOAD-012",
+      "category": "model",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "loader",
+          "path": "tests/fixtures/loader/invalid-json-trailing-comma"
+        },
+        {
+          "family": "loader",
+          "path": "tests/fixtures/loader/invalid-json-comment"
+        }
+      ]
+    },
+    {
+      "id": "loader.limit-exceeded",
+      "code": "LEK-LOAD-013",
+      "category": "infrastructure",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "loader",
+          "path": "tests/fixtures/loader/invalid-type-depth"
+        }
+      ]
+    },
+    {
+      "id": "loader.path-escape",
+      "code": "LEK-LOAD-014",
+      "category": "security",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "loader",
+          "path": "tests/fixtures/loader/invalid-import-path-escape"
+        }
+      ]
+    },
+    {
+      "id": "loader.reference-without-import",
+      "code": "LEK-LOAD-015",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "loader",
+          "path": "tests/fixtures/loader/invalid-reference-without-import"
+        }
+      ]
+    },
+    {
+      "id": "loader.short-reference-unresolved",
+      "code": "LEK-LOAD-016",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "loader",
+          "path": "tests/fixtures/loader/invalid-short-reference-unresolved"
+        }
+      ]
+    },
+    {
+      "id": "loader.type-depth",
+      "code": "LEK-LOAD-017",
+      "category": "model",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "loader",
+          "path": "tests/fixtures/loader/invalid-type-depth"
+        }
+      ]
+    },
+    {
+      "id": "loader.type-syntax",
+      "code": "LEK-LOAD-018",
+      "category": "model",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "loader",
+          "path": "tests/fixtures/loader/invalid-type-syntax"
+        }
+      ]
+    },
+    {
+      "id": "loader.yaml-parse",
+      "code": "LEK-LOAD-019",
+      "category": "model",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "loader",
+          "path": "tests/fixtures/loader/invalid-yaml-parse"
+        }
+      ]
+    },
+    {
+      "id": "loader.yaml-unsupported",
+      "code": "LEK-LOAD-020",
+      "category": "model",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "loader",
+          "path": "tests/fixtures/loader/invalid-yaml-flow"
+        },
+        {
+          "family": "loader",
+          "path": "tests/fixtures/loader/invalid-yaml-alias"
+        }
+      ]
+    },
+    {
+      "id": "lock.catalog-unavailable",
+      "code": "LEK-LOCK-001",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core lockfile",
+          "note": "unavailable catalog asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "lock.commit-failed",
+      "code": "LEK-LOCK-002",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core lockfile",
+          "note": "failed commit asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "lock.component-unavailable",
+      "code": "LEK-LOCK-003",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core lockfile",
+          "note": "unavailable component asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "lock.component-version-unsupported",
+      "code": "LEK-LOCK-004",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core lockfile",
+          "note": "unsupported component version asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "lock.digest-mismatch",
+      "code": "LEK-LOCK-005",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-cli lock",
+          "note": "tampered lock asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "lock.missing",
+      "code": "LEK-LOCK-006",
+      "category": "model",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-cli lock --check",
+          "note": "missing lock asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "lock.noncanonical",
+      "code": "LEK-LOCK-007",
+      "category": "model",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "lockfile",
+          "path": "tests/fixtures/lockfile/invalid/bad-version-v-prefix.lock.json"
+        }
+      ]
+    },
+    {
+      "id": "lock.path-denied",
+      "code": "LEK-LOCK-008",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core lockfile",
+          "note": "denied path asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "lock.platform-unavailable",
+      "code": "LEK-LOCK-009",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core lockfile",
+          "note": "unavailable platform asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "lock.preview-required",
+      "code": "LEK-LOCK-010",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-cli lock",
+          "note": "missing preview asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "lock.private-data-forbidden",
+      "code": "LEK-LOCK-011",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core lockfile",
+          "note": "private data asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "lock.profile-unversioned",
+      "code": "LEK-LOCK-012",
+      "category": "model",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core lockfile",
+          "note": "unversioned profile asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "lock.recovery-required",
+      "code": "LEK-LOCK-013",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core lockfile",
+          "note": "interrupted lock asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "lock.reference-invalid",
+      "code": "LEK-LOCK-014",
+      "category": "model",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core lockfile",
+          "note": "invalid reference asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "lock.resolution-ambiguous",
+      "code": "LEK-LOCK-015",
+      "category": "model",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core lockfile",
+          "note": "ambiguous resolution asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "lock.resolution-provider-unavailable",
+      "code": "LEK-LOCK-016",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core lockfile",
+          "note": "unavailable provider asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "lock.schema-invalid",
+      "code": "LEK-LOCK-017",
+      "category": "model",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "lockfile",
+          "path": "tests/fixtures/lockfile/invalid/missing-required.lock.json"
+        }
+      ]
+    },
+    {
+      "id": "lock.source-changed",
+      "code": "LEK-LOCK-018",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core lockfile",
+          "note": "changed source asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "lock.stale",
+      "code": "LEK-LOCK-019",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-cli lock",
+          "note": "stale lock asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "lock.unsupported-schema-version",
+      "code": "LEK-LOCK-020",
+      "category": "compatibility",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "lockfile",
+          "path": "tests/fixtures/lockfile/invalid/unsupported-schema-version.lock.json"
+        }
+      ]
+    },
+    {
+      "id": "lock.update-in-progress",
+      "code": "LEK-LOCK-021",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core lockfile",
+          "note": "concurrent update asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "native-gate.approval-missing",
+      "code": "LEK-NGT-005",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core native_gate",
+          "note": "unapproved script asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "native-gate.capability-missing",
+      "code": "LEK-NGT-008",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core native_gate",
+          "note": "missing capability asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "native-gate.env-denied",
+      "code": "LEK-NGT-012",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core native_gate",
+          "note": "denied env asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "native-gate.manager-unsupported",
+      "code": "LEK-NGT-007",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core native_gate",
+          "note": "unsupported manager asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "native-gate.output-withheld",
+      "code": "LEK-NGT-014",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core native_gate",
+          "note": "withheld output asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "native-gate.plan-invalid",
+      "code": "LEK-NGT-003",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "node:scripts/test-native-gate-contracts.mjs",
+          "note": "invalid plan vectors"
+        }
+      ]
+    },
+    {
+      "id": "native-gate.plan-stale",
+      "code": "LEK-NGT-004",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core native_gate",
+          "note": "stale plan asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "native-gate.policy-invalid",
+      "code": "LEK-NGT-001",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "node:scripts/test-native-gate-contracts.mjs",
+          "note": "invalid policy vectors"
+        }
+      ]
+    },
+    {
+      "id": "native-gate.run-failed",
+      "code": "LEK-NGT-009",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core native_gate",
+          "note": "failing gate asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "native-gate.run-infrastructure",
+      "code": "LEK-NGT-010",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core native_gate",
+          "note": "infrastructure failure asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "native-gate.script-unconfirmed",
+      "code": "LEK-NGT-002",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core native_gate",
+          "note": "unconfirmed script asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "native-gate.security-violation",
+      "code": "LEK-NGT-011",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core native_gate",
+          "note": "security violation asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "native-gate.trust-insufficient",
+      "code": "LEK-NGT-006",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core native_gate",
+          "note": "insufficient trust asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "native-gate.workspace-invalid",
+      "code": "LEK-NGT-013",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core native_gate",
+          "note": "invalid workspace asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "nfr.capability-unsatisfied",
+      "code": "LEK-NFR-006",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core nfr",
+          "note": "unsatisfied capability asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "nfr.constraint-invalid",
+      "code": "LEK-NFR-002",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core nfr",
+          "note": "invalid constraint asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "nfr.diff-invalid",
+      "code": "LEK-NFR-011",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "nfr",
+          "path": "tests/fixtures/nfr/diff/unknown-constraint-evidence.json"
+        }
+      ]
+    },
+    {
+      "id": "nfr.document-invalid",
+      "code": "LEK-NFR-001",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "nfr",
+          "path": "tests/fixtures/nfr/invalid/bad-schema-version.json"
+        }
+      ]
+    },
+    {
+      "id": "nfr.environment-incompatible",
+      "code": "LEK-NFR-007",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core nfr",
+          "note": "incompatible environment asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "nfr.evidence-invalid",
+      "code": "LEK-NFR-005",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "nfr",
+          "path": "tests/fixtures/nfr/invalid/e-bad-schema-version.json"
+        }
+      ]
+    },
+    {
+      "id": "nfr.evidence-stale",
+      "code": "LEK-NFR-008",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core nfr",
+          "note": "stale evidence asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "nfr.evidence-unavailable",
+      "code": "LEK-NFR-013",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core nfr",
+          "note": "unavailable evidence asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "nfr.export-limit",
+      "code": "LEK-NFR-010",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core nfr",
+          "note": "over-limit export asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "nfr.gate-denied",
+      "code": "LEK-NFR-009",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core nfr",
+          "note": "denied gate asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "nfr.model-ref-mismatch",
+      "code": "LEK-NFR-004",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core nfr",
+          "note": "model ref mismatch asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "nfr.projection-empty",
+      "code": "LEK-NFR-012",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core nfr",
+          "note": "empty projection asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "nfr.scope-unknown",
+      "code": "LEK-NFR-003",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core nfr",
+          "note": "unknown scope asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "observed.confirm-refused",
+      "code": "LEK-OBS-007",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core observed",
+          "note": "refused confirm asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "observed.incomplete-graph",
+      "code": "LEK-OBS-009",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core observed",
+          "note": "incomplete graph asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "observed.index-io",
+      "code": "LEK-OBS-005",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core observed",
+          "note": "index I/O failure asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "observed.index-missing",
+      "code": "LEK-OBS-004",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "orchestration",
+          "path": "tests/fixtures/orchestration/invalid/verify-missing-required.json"
+        }
+      ]
+    },
+    {
+      "id": "observed.promotion-plan-mismatch",
+      "code": "LEK-OBS-011",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core observed",
+          "note": "promotion plan mismatch asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "observed.promotion-refused",
+      "code": "LEK-OBS-010",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core observed",
+          "note": "refused promotion asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "observed.scan-invalid",
+      "code": "LEK-OBS-001",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core observed",
+          "note": "invalid scan asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "observed.scan-limit",
+      "code": "LEK-OBS-002",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core observed",
+          "note": "over-limit scan asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "observed.stale-binding",
+      "code": "LEK-OBS-008",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core observed",
+          "note": "stale binding asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "observed.unknown-module",
+      "code": "LEK-OBS-003",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core observed",
+          "note": "unknown module asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "observed.unknown-symbol",
+      "code": "LEK-OBS-006",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core observed",
+          "note": "unknown symbol asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "openapi.binding-unresolved",
+      "code": "LEK-OAPI-006",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core openapi_render",
+          "note": "unresolved binding asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "openapi.drift",
+      "code": "LEK-OAPI-007",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core openapi_render",
+          "note": "declared drift asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "openapi.export-limit",
+      "code": "LEK-OAPI-008",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core openapi_render",
+          "note": "over-limit export asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "openapi.input-invalid",
+      "code": "LEK-OAPI-001",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core openapi_render",
+          "note": "invalid input asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "openapi.merge-conflict",
+      "code": "LEK-OAPI-005",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core openapi_render",
+          "note": "merge conflict asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "openapi.projection-partial",
+      "code": "LEK-OAPI-002",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core openapi_render",
+          "note": "partial projection asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "openapi.schema-invalid",
+      "code": "LEK-OAPI-004",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "node:scripts/test-openapi-contracts.mjs",
+          "note": "schema-invalid vectors"
+        }
+      ]
+    },
+    {
+      "id": "openapi.version-unsupported",
+      "code": "LEK-OAPI-003",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "openapi",
+          "path": "tests/fixtures/openapi/invalid/wrong-openapi-version.json"
+        }
+      ]
+    },
+    {
+      "id": "php-operations.join-invalid",
+      "code": "LEK-OPS-001",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "node:scripts/test-php-operations-contracts.mjs",
+          "note": "invalid join vectors"
+        }
+      ]
+    },
+    {
+      "id": "php-routes.join-invalid",
+      "code": "LEK-RTE-001",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "node:scripts/test-php-routes-contracts.mjs",
+          "note": "invalid join vectors"
+        }
+      ]
+    },
+    {
+      "id": "publication.consent-missing",
+      "code": "LEK-XE-006",
+      "category": "compatibility",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "extended-effects",
+          "path": "tests/fixtures/extended-effects/invalid/approval-without-approver.expect.json"
+        }
+      ]
+    },
+    {
+      "id": "query.contract-invalid",
+      "code": "LEK-QRY-002",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-cli query_model",
+          "note": "contract drift asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "query.export-limit",
+      "code": "LEK-QRY-010",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-cli query_model",
+          "note": "over-limit export asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "query.filter-invalid",
+      "code": "LEK-QRY-004",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-cli query_model",
+          "note": "invalid filter asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "query.input-invalid",
+      "code": "LEK-QRY-001",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "query-model",
+          "path": "tests/fixtures/query-model/invalid/filter-type-mismatch.json"
+        }
+      ]
+    },
+    {
+      "id": "query.pagination-invalid",
+      "code": "LEK-QRY-006",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-cli query_model",
+          "note": "invalid pagination asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "query.reference-invalid",
+      "code": "LEK-QRY-009",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-cli query_model",
+          "note": "invalid reference asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "query.sort-invalid",
+      "code": "LEK-QRY-005",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-cli query_model",
+          "note": "invalid sort asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "query.source-invalid",
+      "code": "LEK-QRY-003",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-cli query_model",
+          "note": "invalid source asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "query.tenant-filter-missing",
+      "code": "LEK-QRY-007",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "UNMAPPED — acceptance gap, see docs/m7/issue-90-implementation.md",
+          "note": "no dedicated evidence recorded yet; adding evidence is tracked backlog"
+        }
+      ]
+    },
+    {
+      "id": "query.visibility-boundary",
+      "code": "LEK-QRY-008",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-cli query_model",
+          "note": "visibility boundary asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "requirements.document-invalid",
+      "code": "LEK-REQ-001",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "requirements",
+          "path": "tests/fixtures/requirements/invalid/bad-schema-version.json"
+        }
+      ]
+    },
+    {
+      "id": "requirements.export-limit",
+      "code": "LEK-REQ-009",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core requirements",
+          "note": "over-limit export asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "requirements.model-ref-mismatch",
+      "code": "LEK-REQ-004",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core requirements",
+          "note": "model ref mismatch asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "requirements.projection-empty",
+      "code": "LEK-REQ-010",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core requirements",
+          "note": "empty projection asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "requirements.provider-invalid",
+      "code": "LEK-REQ-002",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "requirements",
+          "path": "tests/fixtures/requirements/invalid/bad-provider-kind.json"
+        }
+      ]
+    },
+    {
+      "id": "requirements.provider-unavailable",
+      "code": "LEK-REQ-008",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core requirements",
+          "note": "unavailable provider asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "requirements.ref-unknown",
+      "code": "LEK-REQ-003",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core requirements",
+          "note": "unknown reference asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "requirements.requirement-conflict",
+      "code": "LEK-REQ-007",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core requirements",
+          "note": "conflicting requirements assert the rule"
+        }
+      ]
+    },
+    {
+      "id": "requirements.requirement-missing",
+      "code": "LEK-REQ-005",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core requirements",
+          "note": "missing requirement asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "requirements.requirement-stale",
+      "code": "LEK-REQ-006",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core requirements",
+          "note": "stale requirement asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "scenario.assertion-failed",
+      "code": "LEK-SCN-001",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "node:scripts/test-node-scenario-tests.mjs",
+          "note": "failing assertion rows record the outcome"
+        }
+      ]
+    },
+    {
+      "id": "scenario.binding-ambiguous",
+      "code": "LEK-SCN-002",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core scenario",
+          "note": "ambiguous binding asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "scenario.binding-mismatch",
+      "code": "LEK-SCN-004",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core scenario",
+          "note": "binding mismatch asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "scenario.binding-missing",
+      "code": "LEK-SCN-003",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core scenario",
+          "note": "missing binding asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "scenario.drift",
+      "code": "LEK-SCN-013",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core scenario",
+          "note": "drifted scenario asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "scenario.infrastructure",
+      "code": "LEK-SCN-005",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "node:scripts/test-node-scenario-tests.mjs",
+          "note": "infrastructure rows record the outcome"
+        }
+      ]
+    },
+    {
+      "id": "scenario.ir-ref-mismatch",
+      "code": "LEK-SCN-012",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core scenario",
+          "note": "IR ref mismatch asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "scenario.operation-unresolved",
+      "code": "LEK-SCN-006",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core scenario",
+          "note": "unresolved operation asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "scenario.port-missing",
+      "code": "LEK-SCN-007",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core scenario",
+          "note": "missing port asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "scenario.port-shape",
+      "code": "LEK-SCN-008",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core scenario",
+          "note": "malformed port asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "scenario.run-record-invalid",
+      "code": "LEK-SCN-009",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core scenario",
+          "note": "invalid run record asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "scenario.runner-unknown",
+      "code": "LEK-SCN-010",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core scenario",
+          "note": "unknown runner asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "scenario.stale-evidence",
+      "code": "LEK-SCN-014",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core scenario",
+          "note": "stale evidence asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "scenario.unsupported-capability",
+      "code": "LEK-SCN-011",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "node:scripts/test-node-scenario-tests.mjs",
+          "note": "the concurrency case records unsupported rows only"
+        }
+      ]
+    },
+    {
+      "id": "semantic.command-effect-kind-mismatch",
+      "code": "LEK-SEM-001",
+      "category": "semantic",
+      "evidence": "suite-pair",
+      "suitePair": "diagnostic.command-effect-kind-mismatch.pair"
+    },
+    {
+      "id": "semantic.command-effect-unresolved",
+      "code": "LEK-SEM-002",
+      "category": "semantic",
+      "evidence": "suite-pair",
+      "suitePair": "diagnostic.command-effect-unresolved.pair"
+    },
+    {
+      "id": "semantic.effect-emits-kind-mismatch",
+      "code": "LEK-SEM-003",
+      "category": "semantic",
+      "evidence": "suite-pair",
+      "suitePair": "diagnostic.effect-emits-kind-mismatch.pair"
+    },
+    {
+      "id": "semantic.effect-emits-unresolved",
+      "code": "LEK-SEM-004",
+      "category": "semantic",
+      "evidence": "suite-pair",
+      "suitePair": "diagnostic.effect-emits-unresolved.pair"
+    },
+    {
+      "id": "semantic.effect-resource-kind-mismatch",
+      "code": "LEK-SEM-005",
+      "category": "semantic",
+      "evidence": "suite-pair",
+      "suitePair": "diagnostic.effect-resource-kind-mismatch.pair"
+    },
+    {
+      "id": "semantic.effect-resource-unresolved",
+      "code": "LEK-SEM-006",
+      "category": "semantic",
+      "evidence": "suite-pair",
+      "suitePair": "diagnostic.effect-resource-unresolved.pair"
+    },
+    {
+      "id": "semantic.endpoint-operation-kind-mismatch",
+      "code": "LEK-SEM-007",
+      "category": "semantic",
+      "evidence": "suite-pair",
+      "suitePair": "diagnostic.endpoint-operation-kind-mismatch.pair"
+    },
+    {
+      "id": "semantic.endpoint-operation-unresolved",
+      "code": "LEK-SEM-008",
+      "category": "semantic",
+      "evidence": "suite-pair",
+      "suitePair": "diagnostic.endpoint-operation-unresolved.pair"
+    },
+    {
+      "id": "semantic.entity-identity-field-missing",
+      "code": "LEK-SEM-009",
+      "category": "semantic",
+      "evidence": "suite-pair",
+      "suitePair": "diagnostic.entity-identity-field-missing.pair"
+    },
+    {
+      "id": "semantic.policy-operation-kind-mismatch",
+      "code": "LEK-SEM-010",
+      "category": "semantic",
+      "evidence": "suite-pair",
+      "suitePair": "diagnostic.policy-operation-kind-mismatch.pair"
+    },
+    {
+      "id": "semantic.policy-operation-unresolved",
+      "code": "LEK-SEM-011",
+      "category": "semantic",
+      "evidence": "suite-pair",
+      "suitePair": "diagnostic.policy-operation-unresolved.pair"
+    },
+    {
+      "id": "semantic.portable-target-reference",
+      "code": "LEK-SEM-012",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "UNMAPPED — acceptance gap, see docs/m7/issue-90-implementation.md",
+          "note": "no dedicated evidence recorded yet; adding evidence is tracked backlog"
+        }
+      ]
+    },
+    {
+      "id": "semantic.public-output-private-type",
+      "code": "LEK-SEM-013",
+      "category": "security",
+      "evidence": "suite-pair",
+      "suitePair": "diagnostic.public-output-private-type.pair"
+    },
+    {
+      "id": "semantic.query-read-kind-mismatch",
+      "code": "LEK-SEM-014",
+      "category": "semantic",
+      "evidence": "suite-pair",
+      "suitePair": "diagnostic.query-read-kind-mismatch.pair"
+    },
+    {
+      "id": "semantic.query-read-unresolved",
+      "code": "LEK-SEM-015",
+      "category": "semantic",
+      "evidence": "suite-pair",
+      "suitePair": "diagnostic.query-read-unresolved.pair"
+    },
+    {
+      "id": "semantic.scenario-operation-unresolved",
+      "code": "LEK-SEM-016",
+      "category": "semantic",
+      "evidence": "suite-pair",
+      "suitePair": "diagnostic.scenario-operation-unresolved.pair"
+    },
+    {
+      "id": "semantic.type-recursion",
+      "code": "LEK-SEM-017",
+      "category": "semantic",
+      "evidence": "suite-pair",
+      "suitePair": "diagnostic.type-recursion.pair"
+    },
+    {
+      "id": "semantic.type-ref-kind-mismatch",
+      "code": "LEK-SEM-018",
+      "category": "semantic",
+      "evidence": "suite-pair",
+      "suitePair": "diagnostic.type-ref-kind-mismatch.pair"
+    },
+    {
+      "id": "semantic.type-ref-unresolved",
+      "code": "LEK-SEM-019",
+      "category": "semantic",
+      "evidence": "suite-pair",
+      "suitePair": "diagnostic.type-ref-unresolved.pair"
+    },
+    {
+      "id": "semantic.visibility-boundary-violation",
+      "code": "LEK-SEM-020",
+      "category": "security",
+      "evidence": "suite-pair",
+      "suitePair": "diagnostic.visibility-boundary-violation.pair"
+    },
+    {
+      "id": "storage-engine.capability-missing",
+      "code": "LEK-SEN-010",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core storage_engine",
+          "note": "missing capability asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "storage-engine.conformance-failed",
+      "code": "LEK-SEN-013",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core storage_engine",
+          "note": "failed conformance asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "storage-engine.drift-invalid",
+      "code": "LEK-SEN-007",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core storage_engine",
+          "note": "invalid drift asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "storage-engine.export-limit",
+      "code": "LEK-SEN-014",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core storage_engine",
+          "note": "over-limit export asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "storage-engine.extension-unsupported",
+      "code": "LEK-SEN-012",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core storage_engine",
+          "note": "unsupported extension asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "storage-engine.input-invalid",
+      "code": "LEK-SEN-001",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "node:scripts/test-storage-engine-contracts.mjs",
+          "note": "invalid input vectors"
+        }
+      ]
+    },
+    {
+      "id": "storage-engine.introspection-invalid",
+      "code": "LEK-SEN-006",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core storage_engine",
+          "note": "invalid introspection asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "storage-engine.lifecycle-invalid",
+      "code": "LEK-SEN-011",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core storage_engine",
+          "note": "invalid lifecycle asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "storage-engine.mapping-invalid",
+      "code": "LEK-SEN-004",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core storage_engine",
+          "note": "invalid mapping asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "storage-engine.migration-gated",
+      "code": "LEK-SEN-009",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core storage_engine",
+          "note": "gated migration asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "storage-engine.migration-invalid",
+      "code": "LEK-SEN-008",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core storage_engine",
+          "note": "invalid migration asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "storage-engine.profile-invalid",
+      "code": "LEK-SEN-002",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "node:scripts/test-storage-engine-profile-contracts.mjs",
+          "note": "invalid profile vectors"
+        }
+      ]
+    },
+    {
+      "id": "storage-engine.render-unsupported",
+      "code": "LEK-SEN-005",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core storage_engine",
+          "note": "unsupported render asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "storage-engine.version-unsupported",
+      "code": "LEK-SEN-003",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core storage_engine",
+          "note": "unsupported version asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "storage.diff-invalid",
+      "code": "LEK-STO-006",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core storage_projection",
+          "note": "invalid diff asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "storage.domain-invalid",
+      "code": "LEK-STO-002",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "storage-projection",
+          "path": "tests/fixtures/storage-projection/invalid/aggregate-both.expect.json"
+        }
+      ]
+    },
+    {
+      "id": "storage.export-limit",
+      "code": "LEK-STO-007",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core storage_projection",
+          "note": "over-limit export asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "storage.input-invalid",
+      "code": "LEK-STO-001",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "storage-projection",
+          "path": "tests/fixtures/storage-projection/invalid/bad-attachment-revision.expect.json"
+        }
+      ]
+    },
+    {
+      "id": "storage.introspection-diff-invalid",
+      "code": "LEK-SEP-005",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core storage_introspection",
+          "note": "invalid introspection diff asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "storage.introspection-invalid",
+      "code": "LEK-SEP-004",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "storage-introspection",
+          "path": "tests/fixtures/storage-introspection/invalid/credential-member.expect.json"
+        }
+      ]
+    },
+    {
+      "id": "storage.mapping-invalid",
+      "code": "LEK-STO-005",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "storage-projection",
+          "path": "tests/fixtures/storage-projection/invalid/collation-charset-mismatch.expect.json"
+        }
+      ]
+    },
+    {
+      "id": "storage.profile-diff-invalid",
+      "code": "LEK-SEP-003",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core storage_engine_profile",
+          "note": "invalid profile diff asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "storage.profile-invalid",
+      "code": "LEK-SEP-001",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core storage_engine_profile",
+          "note": "invalid profile asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "storage.profile-limit",
+      "code": "LEK-SEP-002",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core storage_engine_profile",
+          "note": "over-limit profile asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "storage.projection-invalid",
+      "code": "LEK-STO-004",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "storage-projection",
+          "path": "tests/fixtures/storage-projection/invalid/blob-key-without-prefix.expect.json"
+        }
+      ]
+    },
+    {
+      "id": "storage.relation-invalid",
+      "code": "LEK-STO-003",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "storage-projection",
+          "path": "tests/fixtures/storage-projection/invalid/aggregate-child-detach.expect.json"
+        }
+      ]
+    },
+    {
+      "id": "structure.canonical-unexpected-entry",
+      "code": "LEK-STR-001",
+      "category": "model",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "structure",
+          "path": "tests/fixtures/structure/invalid-denied-extra-kind-file/expect.json"
+        },
+        {
+          "family": "structure",
+          "path": "tests/fixtures/structure/invalid-denied-runtime-in-canonical/expect.json"
+        }
+      ]
+    },
+    {
+      "id": "structure.directory-required",
+      "code": "LEK-STR-002",
+      "category": "model",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core project_fs_directory",
+          "note": "required directory asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "structure.directory-unreadable",
+      "code": "LEK-STR-003",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core project_fs_directory",
+          "note": "unreadable directory asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "structure.document-missing",
+      "code": "LEK-STR-004",
+      "category": "model",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "structure",
+          "path": "tests/fixtures/structure/invalid-malformed-module-manifest-missing/expect.json"
+        },
+        {
+          "family": "loader",
+          "path": "tests/fixtures/loader/invalid-structure-module-yaml-missing/expect.json"
+        }
+      ]
+    },
+    {
+      "id": "structure.lock-not-file",
+      "code": "LEK-STR-005",
+      "category": "model",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core project_fs_directory",
+          "note": "lock-not-file asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "structure.module-subdirectory",
+      "code": "LEK-STR-006",
+      "category": "model",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "structure",
+          "path": "tests/fixtures/structure/invalid-denied-module-subdirectory/expect.json"
+        }
+      ]
+    },
+    {
+      "id": "structure.nested-root",
+      "code": "LEK-STR-007",
+      "category": "model",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "structure",
+          "path": "tests/fixtures/structure/invalid-denied-nested-root/expect.json"
+        }
+      ]
+    },
+    {
+      "id": "structure.path-absolute",
+      "code": "LEK-STR-008",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core project_fs_directory",
+          "note": "absolute path asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "structure.path-case",
+      "code": "LEK-STR-009",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core project_fs_directory",
+          "note": "case-collision path asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "structure.path-device",
+      "code": "LEK-STR-010",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core project_fs_directory",
+          "note": "device path asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "structure.path-empty",
+      "code": "LEK-STR-011",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core project_fs_directory",
+          "note": "empty path asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "structure.path-escape",
+      "code": "LEK-STR-012",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core project_fs_directory",
+          "note": "escape path asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "structure.path-link",
+      "code": "LEK-STR-013",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core project_fs_directory",
+          "note": "symlink path asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "structure.path-not-nfc",
+      "code": "LEK-STR-014",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core project_fs_directory",
+          "note": "non-NFC path asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "structure.path-segment",
+      "code": "LEK-STR-015",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core project_fs_directory",
+          "note": "invalid segment asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "structure.path-short-name",
+      "code": "LEK-STR-016",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core project_fs_directory",
+          "note": "8.3 alias path asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "structure.path-special",
+      "code": "LEK-STR-017",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core project_fs_directory",
+          "note": "special-name path asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "structure.path-traversal",
+      "code": "LEK-STR-018",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core project_fs_directory",
+          "note": "traversal path asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "structure.project-not-directory",
+      "code": "LEK-STR-019",
+      "category": "model",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core project_fs_directory",
+          "note": "file-as-root asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "structure.root-not-found",
+      "code": "LEK-STR-020",
+      "category": "model",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core project_fs_directory",
+          "note": "missing root asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "structure.root-unreadable",
+      "code": "LEK-STR-021",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core project_fs_directory",
+          "note": "unreadable root asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "structure.runtime-unexpected-entry",
+      "code": "LEK-STR-022",
+      "category": "model",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "structure",
+          "path": "tests/fixtures/structure/invalid-denied-canonical-in-runtime/expect.json"
+        },
+        {
+          "family": "structure",
+          "path": "tests/fixtures/structure/invalid-denied-runtime-entry/expect.json"
+        }
+      ]
+    },
+    {
+      "id": "structure.scan-limit",
+      "code": "LEK-STR-023",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core project_fs_directory",
+          "note": "over-limit scan asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "structure.selection-absolute",
+      "code": "LEK-STR-024",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core project_fs_directory",
+          "note": "absolute selection asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "structure.selection-alias",
+      "code": "LEK-STR-025",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core project_fs_directory",
+          "note": "alias selection asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "structure.selection-device",
+      "code": "LEK-STR-026",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core project_fs_directory",
+          "note": "device selection asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "structure.selection-empty",
+      "code": "LEK-STR-027",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core project_fs_directory",
+          "note": "empty selection asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "structure.selection-escape",
+      "code": "LEK-STR-028",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core project_fs_directory",
+          "note": "escape selection asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "structure.selection-segment",
+      "code": "LEK-STR-029",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core project_fs_directory",
+          "note": "invalid selection segment asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "structure.selection-short-name",
+      "code": "LEK-STR-030",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core project_fs_directory",
+          "note": "8.3 alias selection asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "structure.selection-traversal",
+      "code": "LEK-STR-031",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core project_fs_directory",
+          "note": "traversal selection asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "structure.selection-unreadable",
+      "code": "LEK-STR-032",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core project_fs_directory",
+          "note": "unreadable selection asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "target-profile.capability-unsatisfied",
+      "code": "LEK-TPF-001",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "node:scripts/test-target-profile-contracts.mjs",
+          "note": "unsatisfied capability vectors"
+        }
+      ]
+    },
+    {
+      "id": "target-profile.combination-incompatible",
+      "code": "LEK-TPF-002",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "node:scripts/test-target-profile-contracts.mjs",
+          "note": "incompatible combination vectors"
+        }
+      ]
+    },
+    {
+      "id": "target-profile.component-unknown",
+      "code": "LEK-TPF-003",
+      "category": "model",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "node:scripts/test-target-profile-contracts.mjs",
+          "note": "unknown component vectors"
+        }
+      ]
+    },
+    {
+      "id": "target-profile.document-invalid",
+      "code": "LEK-TPF-004",
+      "category": "model",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "node:scripts/test-target-profile-contracts.mjs",
+          "note": "invalid document vectors"
+        }
+      ]
+    },
+    {
+      "id": "target-profile.inheritance-weakening",
+      "code": "LEK-TPF-005",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "node:scripts/test-target-profile-contracts.mjs",
+          "note": "weakening inheritance vectors"
+        }
+      ]
+    },
+    {
+      "id": "target-profile.reference-invalid",
+      "code": "LEK-TPF-006",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "node:scripts/test-target-profile-contracts.mjs",
+          "note": "invalid reference vectors"
+        }
+      ]
+    },
+    {
+      "id": "target.cancelled",
+      "code": "LEK-TGT-015",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core target_protocol",
+          "note": "cancelled exchange asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "target.capability-unsupported",
+      "code": "LEK-TGT-004",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core target_protocol",
+          "note": "unsupported capability asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "target.crash",
+      "code": "LEK-TGT-013",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core target_protocol",
+          "note": "crashing adapter asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "target.dry-run-mutation",
+      "code": "LEK-TGT-007",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core target_protocol",
+          "note": "mutating dry-run asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "target.handshake-required",
+      "code": "LEK-TGT-002",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core target_protocol",
+          "note": "skipped handshake asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "target.ir-unsupported",
+      "code": "LEK-TGT-016",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core target_protocol",
+          "note": "unsupported IR asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "target.operation-failed",
+      "code": "LEK-TGT-009",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core target_protocol",
+          "note": "failed operation asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "target.output-limit",
+      "code": "LEK-TGT-014",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core target_protocol",
+          "note": "over-limit output asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "target.plan-mismatch",
+      "code": "LEK-TGT-008",
+      "category": "adapter",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "target-protocol",
+          "path": "tests/fixtures/target-protocol/invalid/dry-run-request-with-plan-id.expect.json"
+        }
+      ]
+    },
+    {
+      "id": "target.protected-path",
+      "code": "LEK-TGT-006",
+      "category": "adapter",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "target-protocol",
+          "path": "tests/fixtures/target-protocol/invalid/traversal-ir-path.expect.json"
+        }
+      ]
+    },
+    {
+      "id": "target.protocol-mismatch",
+      "code": "LEK-TGT-003",
+      "category": "adapter",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "target-protocol",
+          "path": "tests/fixtures/target-protocol/invalid/request-id-malformed.expect.json"
+        }
+      ]
+    },
+    {
+      "id": "target.request-invalid",
+      "code": "LEK-TGT-001",
+      "category": "adapter",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "target-protocol",
+          "path": "tests/fixtures/target-protocol/invalid/absolute-ir-path.expect.json"
+        }
+      ]
+    },
+    {
+      "id": "target.response-invalid",
+      "code": "LEK-TGT-010",
+      "category": "infrastructure",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "target-protocol",
+          "path": "tests/fixtures/target-protocol/invalid/response-missing-evidence.expect.json"
+        }
+      ]
+    },
+    {
+      "id": "target.scope-violation",
+      "code": "LEK-TGT-005",
+      "category": "adapter",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "target-protocol",
+          "path": "tests/fixtures/target-protocol/invalid/duplicate-write-path.expect.json"
+        }
+      ]
+    },
+    {
+      "id": "target.timeout",
+      "code": "LEK-TGT-012",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core target_protocol",
+          "note": "timed-out exchange asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "target.transport-failed",
+      "code": "LEK-TGT-011",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core target_protocol",
+          "note": "failed transport asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "transaction.export-limit",
+      "code": "LEK-TC-011",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core transaction_concurrency",
+          "note": "over-limit export asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "transaction.external-atomic",
+      "code": "LEK-TC-004",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core transaction_concurrency",
+          "note": "external atomicity asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "transaction.group-missing",
+      "code": "LEK-TC-002",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "UNMAPPED — acceptance gap, see docs/m7/issue-90-implementation.md",
+          "note": "no dedicated evidence recorded yet; adding evidence is tracked backlog"
+        }
+      ]
+    },
+    {
+      "id": "transaction.group-overlap",
+      "code": "LEK-TC-003",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "UNMAPPED — acceptance gap, see docs/m7/issue-90-implementation.md",
+          "note": "no dedicated evidence recorded yet; adding evidence is tracked backlog"
+        }
+      ]
+    },
+    {
+      "id": "transaction.input-invalid",
+      "code": "LEK-TC-001",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "UNMAPPED — acceptance gap, see docs/m7/issue-90-implementation.md",
+          "note": "no dedicated evidence recorded yet; adding evidence is tracked backlog"
+        }
+      ]
+    },
+    {
+      "id": "transaction.partial-unacknowledged",
+      "code": "LEK-TC-005",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "UNMAPPED — acceptance gap, see docs/m7/issue-90-implementation.md",
+          "note": "no dedicated evidence recorded yet; adding evidence is tracked backlog"
+        }
+      ]
+    },
+    {
+      "id": "transport.capability-unsatisfied",
+      "code": "LEK-TRN-007",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "node:scripts/test-transport-contracts.mjs",
+          "note": "unsatisfied capability vectors"
+        }
+      ]
+    },
+    {
+      "id": "transport.contract-invalid",
+      "code": "LEK-TRN-002",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "transport-http",
+          "path": "tests/fixtures/transport-http/invalid/capability-unsatisfied.json"
+        }
+      ]
+    },
+    {
+      "id": "transport.endpoint-unresolved",
+      "code": "LEK-TRN-003",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "transport-http",
+          "path": "tests/fixtures/transport-http/invalid/public-with-scheme.json"
+        }
+      ]
+    },
+    {
+      "id": "transport.export-limit",
+      "code": "LEK-TRN-009",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core transport_http",
+          "note": "over-limit export asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "transport.input-invalid",
+      "code": "LEK-TRN-001",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "transport-http",
+          "path": "tests/fixtures/transport-http/invalid/union-member-unmapped.json"
+        }
+      ]
+    },
+    {
+      "id": "transport.mapping-missing",
+      "code": "LEK-TRN-005",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "transport-http",
+          "path": "tests/fixtures/transport-http/invalid/endpoint-kind.json"
+        }
+      ]
+    },
+    {
+      "id": "transport.pagination-invalid",
+      "code": "LEK-TRN-008",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core transport_http",
+          "note": "invalid pagination asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "transport.param-invalid",
+      "code": "LEK-TRN-004",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core transport_http",
+          "note": "invalid param asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "transport.security-invalid",
+      "code": "LEK-TRN-006",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core transport_http",
+          "note": "invalid security asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "validate.module-unresolved",
+      "code": "LEK-VAL-001",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "node:CLI validate --module",
+          "note": "unknown module scope asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "validate.profile-invalid",
+      "code": "LEK-VAL-002",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "node:scripts/test-validation-contracts.mjs",
+          "note": "profile identity checks"
+        }
+      ]
+    },
+    {
+      "id": "validate.span-unavailable",
+      "code": "LEK-VAL-003",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core validator",
+          "note": "unavailable span asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "versioning.adapter-incompatible",
+      "code": "LEK-VER-001",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core versioning",
+          "note": "incompatible adapter asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "versioning.adapter-manifest-invalid",
+      "code": "LEK-VER-002",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core versioning",
+          "note": "invalid manifest asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "versioning.backup-failed",
+      "code": "LEK-VER-003",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core versioning",
+          "note": "failed backup asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "versioning.commit-failed",
+      "code": "LEK-VER-004",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core versioning",
+          "note": "failed commit asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "versioning.extension-incompatible",
+      "code": "LEK-VER-005",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core versioning",
+          "note": "incompatible extension asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "versioning.invalid-version",
+      "code": "LEK-VER-006",
+      "category": "compatibility",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "loader",
+          "path": "tests/fixtures/loader/invalid-version-nonstring"
+        }
+      ]
+    },
+    {
+      "id": "versioning.migration-in-progress",
+      "code": "LEK-VER-007",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core versioning",
+          "note": "concurrent migration asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "versioning.migration-precondition",
+      "code": "LEK-VER-008",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core versioning",
+          "note": "unmet precondition asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "versioning.mixed-versions",
+      "code": "LEK-VER-009",
+      "category": "compatibility",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "loader",
+          "path": "tests/fixtures/loader/invalid-version-mixed"
+        }
+      ]
+    },
+    {
+      "id": "versioning.no-migration-path",
+      "code": "LEK-VER-010",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core versioning",
+          "note": "missing path asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "versioning.not-file-migratable",
+      "code": "LEK-VER-011",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core versioning",
+          "note": "unmigratable file asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "versioning.protocol-unpublished",
+      "code": "LEK-VER-012",
+      "category": "compatibility",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "versioning",
+          "path": "tests/fixtures/versioning/protocol-unpublished.family.json"
+        }
+      ]
+    },
+    {
+      "id": "versioning.recovery-required",
+      "code": "LEK-VER-013",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core versioning",
+          "note": "interrupted migration asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "versioning.registry-invalid",
+      "code": "LEK-VER-014",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core versioning",
+          "note": "invalid registry asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "versioning.rollback-conflict",
+      "code": "LEK-VER-015",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core versioning",
+          "note": "rollback conflict asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "versioning.rollback-failed",
+      "code": "LEK-VER-016",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core versioning",
+          "note": "failed rollback asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "versioning.source-changed",
+      "code": "LEK-VER-017",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "cargo:test lekalo-core versioning",
+          "note": "changed source asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "versioning.unsupported-version",
+      "code": "LEK-VER-018",
+      "category": "compatibility",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "loader",
+          "path": "tests/fixtures/loader/invalid-version-unsupported"
+        },
+        {
+          "family": "loader",
+          "path": "tests/fixtures/loader/invalid-version-mixed"
+        }
+      ]
+    }
+  ]
+}
