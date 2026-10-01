@@ -317,6 +317,13 @@ jobs:
         run: node scripts/test-node-hono-readonly.mjs
       - name: Run the Drizzle evidence suite (issue #116)
         run: node scripts/test-node-drizzle.mjs
+      - name: Run the brownfield TypeScript pilot gate (issue #118)
+        # The observed-mode pilot path end to end over the committed
+        # synthetic consumer fixture: adopt dry-run purity, scan +
+        # binding + projections, staleness on a controlled change, and
+        # the closed privacy-safe metrics schema.
+        timeout-minutes: 10
+        run: node scripts/test-pilot-brownfield-ts.mjs
       - name: Run the Zod generator suite (issue #45)
         run: node scripts/test-node-zod-gen.mjs
       - name: Verify the generation artifact against the conformance battery (issue #45)

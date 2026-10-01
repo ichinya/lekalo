@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@brownfield-ts/data": ["../data/src/index.ts"],
+      "hono": ["./types/hono.d.ts"],
+      "vitest": ["./types/vitest.d.ts"]
+    }
+  },
+  "include": ["src", "types"]
+}
