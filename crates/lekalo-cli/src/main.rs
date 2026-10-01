@@ -9219,6 +9219,7 @@ fn verify_reported(
                 Some("scenario.run-record-invalid") => FailureClass::EvidenceInvalid,
                 Some("scenario.stale-evidence") => FailureClass::EvidenceInvalid,
                 Some("scenario.unsupported-capability") => FailureClass::MissingComponent,
+                Some("core.capability-unavailable") => FailureClass::MissingComponent,
                 _ => FailureClass::None,
             };
             suites.push(SuiteDraft {

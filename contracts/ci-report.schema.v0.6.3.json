@@ -143,7 +143,7 @@
           "properties": {
             "state": { "const": "known" },
             "value": {
-              "oneOf": [
+              "anyOf": [
                 { "$ref": "#/$defs/hexRevision" },
                 { "type": "boolean" },
                 { "$ref": "#/$defs/sha256" },

@@ -365,6 +365,7 @@ impl FailureClass {
 /// observed, before any policy translation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
+#[allow(clippy::enum_variant_names)]
 pub enum SourceOutcome {
     /// The check ran and passed.
     Pass,
@@ -380,7 +381,8 @@ pub enum SourceOutcome {
     Denied,
     /// The run was cancelled before a terminal outcome.
     Cancelled,
-    /// Planned but never reached.
+    /// Planned but never reached (the wire spelling is `not-run`).
+    #[serde(rename = "not-run")]
     NotRun,
 }
 
