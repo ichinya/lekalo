@@ -30,7 +30,10 @@ use crate::diagnostics::DiagnosticSet;
 use crate::ir::Compilation;
 use crate::result::Status;
 
-pub use profile::{ProfileError, RuleSelection, ValidationProfile};
+pub use profile::{
+    ProfileError, RuleSelection, ValidationProfile, DEFAULT_PROFILE_BYTES, PROFILE_VERSION,
+    STRICT_PROFILE_BYTES,
+};
 pub use report::{SeverityCounts, ValidationReport};
 
 /// The maximum number of diagnostics one run collects.
