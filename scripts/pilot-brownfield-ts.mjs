@@ -146,7 +146,17 @@ function copyConsumer(source, target, skipCounts) {
     filter: (src) => {
       const name = src.split(/[\\/]/).pop();
       if (SKIP_DIRS.has(name) && statSync(src).isDirectory()) {
-        skipCounts[name] = (skipCounts[name] ?? 0) + 1;
+        skipCounts.dirs = { ...(skipCounts.dirs ?? {}), [name]: (skipCounts.dirs?.[name] ?? 0) + 1 };
+        return false;
+      }
+      // The read-view grammar can only spell portable lowercase
+      // segments; an entry it cannot spell (the vitest `__tests__`
+      // convention, uppercase-leading names) is unscannable, so the
+      // copy leaves it out and the run counts it. This keeps the scan
+      // alive instead of refusing on an unspellable inventory entry.
+      const rel = relative(source, src).split("\\").join("/");
+      if (rel !== "" && !kernel.isLogicalPath(rel)) {
+        skipCounts.grammar = (skipCounts.grammar ?? 0) + 1;
         return false;
       }
       return true;
@@ -259,44 +269,8 @@ function buildProfile(copyRoot) {
     declareFile(`${pkg}/package.json`);
     declareFile(`${pkg}/tsconfig.json`);
   }
-  // The read-view grammar refuses entries the portable path grammar
-  // cannot spell (uppercase- or underscore-leading segments, e.g. the
-  // vitest `__tests__` convention). Excluding them keeps the scan
-  // alive; the count is honest pilot data.
-  const grammarExcluded = [];
-  const coveredByRoot = (relativePath) => readRoots.some((root) => {
-    if (root.kind !== "tree") return false;
-    const scope = `${root.path}/**`;
-    return kernel.scopeCovers(scope, relativePath) || root.path === relativePath;
-  });
-  const walk = (dir, prefix) => {
-    for (const entry of readdirSync(dir).sort()) {
-      const relativePath = prefix === "" ? entry : `${prefix}/${entry}`;
-      const absolute = join(dir, entry);
-      const metadata = statSync(absolute);
-      if (metadata.isSymbolicLink()) continue;
-      if (metadata.isDirectory()) {
-        if (!kernel.isLogicalPath(relativePath) || !coveredByRoot(relativePath)) {
-          if (coveredByRoot(relativePath)) {
-            grammarExcluded.push(relativePath);
-            readRoots.push({ kind: "file", path: relativePath });
-          }
-          continue;
-        }
-        walk(absolute, relativePath);
-      } else if (metadata.isFile() && /\.(ts|tsx|mts|cts|json)$/.test(entry)) {
-        if (coveredByRoot(relativePath) && !kernel.isLogicalPath(relativePath)) {
-          grammarExcluded.push(relativePath);
-          readRoots.push({ kind: "file", path: relativePath });
-        }
-      }
-    }
-  };
-  walk(copyRoot, "");
-  // Exact-entry exclusions: a declared file root that fails the
-  // portable grammar reads as an exclusion of that entry (the walk
-  // refuses to spell it), keeping the rest of the tree scannable.
-  const exclusions = grammarExcluded;
+  // Unspellable entries never reach the copy (see copyConsumer), so no
+  // grammar exclusions are needed here; the count rides the copy step.
   const seen = new Set();
   const roots = readRoots.filter((root) => {
     const key = `${root.kind}:${root.path}`;
@@ -311,15 +285,14 @@ function buildProfile(copyRoot) {
       mode: "observed",
       target: "node-typescript",
       readRoots: roots,
-      exclusions,
+      exclusions: [],
       provenance: {
         origin: "declared",
-        revision: `pilot-${sha256Hex(Buffer.from(`${exclusions.length}`)).slice(0, 12)}`,
+        revision: `pilot-${sha256Hex(Buffer.from(String(roots.length))).slice(0, 12)}`,
         disposition: args.disposition,
       },
     },
     packages,
-    grammarExcludedCount: grammarExcluded.length,
   };
 }
 
@@ -581,7 +554,6 @@ step("profile", () => {
     readRoots: profileBundle.profile.readRoots.length,
     exclusions: profileBundle.profile.exclusions.length,
     packages: profileBundle.packages.length,
-    grammarExcludedEntries: profileBundle.grammarExcludedCount,
   };
 });
 
@@ -660,6 +632,14 @@ step("scan-fallback", () => {
   const index = cold.index;
   if (index.state !== "complete") throw new Error(`scan state ${index.state}`);
   const warmByteIdentical = canonicalText(cold.index) === canonicalText(warm.index);
+  const providerEvidence = Object.fromEntries(policyFrameworks.map((id) => {
+    const family = index.frameworks?.[id];
+    const records = family?.records ?? [];
+    return [id, {
+      providerState: family?.provider?.state ?? null,
+      routeRecords: records.filter((row) => row.relation === `dev.lekalo.${id}/route-handler`).length,
+    }];
+  }));
   const built = buildScanDocument({
     index, identity: adapter.__lekaloAdapterIdentity, project: adopt.projectId,
     rename: bindTarget,
@@ -680,6 +660,7 @@ step("scan-fallback", () => {
     endpoints: built.document.endpoints.length,
     unboundRoutes: built.unboundRoutes,
     testBindings: built.document.testBindings?.length ?? 0,
+    frameworkProviders: providerEvidence,
   };
 });
 
@@ -1033,6 +1014,18 @@ step("report", () => {
   const fallback = steps.find((entry) => entry.step === "scan-fallback");
   if (fallback?.detail?.used === true && fallback.detail.uncertaintyRows > 0) {
     findings.push(`The scan carries ${fallback.detail.uncertaintyRows} honest uncertainty rows (unresolved imports and unknown surfaces — expected when the copy has no node_modules and when the consumer imports dialect subpaths the adapter's embedded declaration closure does not map). Unknown edges are data, never guesses.`);
+  }
+  const providers = fallback?.detail?.frameworkProviders ?? {};
+  const degraded = Object.entries(providers).filter(([, evidence]) => evidence.providerState !== "complete");
+  if (fallback?.detail?.used === true && Object.keys(providers).length > 0 && degraded.length === Object.keys(providers).length) {
+    findings.push("Every enabled framework provider degraded over the copy: with node_modules absent the framework specifier resolves to no declaration, so the provider recognizes no app instances and extracts no routes. Route extraction over a node_modules-free copy needs a spellable declaration surface for the framework specifier (the committed fixture convention) or an equivalent embed.");
+  }
+  if (fallback?.detail?.used === true && (fallback.detail.testBindings ?? 0) === 0) {
+    const copyStep = steps.find((entry) => entry.step === "copy");
+    const grammarSkips = copyStep?.detail?.skippedDirEntries?.grammar ?? 0;
+    findings.push(grammarSkips > 0
+      ? `No native test binding reached the observed index, and ${grammarSkips} tree entries could not be copied at all: the consumer's vitest files live under directory spellings the portable path grammar cannot spell, so the copy cannot carry them and the scan cannot claim their names. The use-case attach step records this as an explicit gap instead of inventing test identities.`
+      : "No native test binding reached the observed index: the scanned test modules expose no top-level symbol to carry the claim (the wire's `t` slot rides a same-module symbol). The use-case attach step binds the flow's tests explicitly instead.");
   }
   const scanDiagnostics = fallback?.detail?.diagnostics ?? 0;
   if (scanDiagnostics > 0) {
