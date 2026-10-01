@@ -1,0 +1,461 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/context-budget-report.schema.v0.6.3.json",
+  "title": "Lekalo context-budget report",
+  "description": "Closed derived read-only report contract projecting the context-budget and local-understandability metrics of one symbol, module, or project (issue #75). One report measures the selected dependency closure before any budget selection, the required semantic fact ledger separated from supporting facts and optional source, cross-module hops, the explainable over-budget breakdown, advisory extraction suggestions, and the opt-in capsule simulation, all under one pinned estimator and one digest-bound budget profile. Every metric leaf carries the closed four-state wrapper: only `known` carries a value; `unknown`, `withheld`, and `unsupported` are state-only spellings and a value under them is invalid. The report is metadata-only: it never carries raw source text, file bytes, physical or absolute paths, provider transcripts, timestamps, random ids, or locale formatting, and repeated runs over identical inputs are byte-identical. The report is advisory: no threshold is universal and no assessment alone denies an exit. The contract is independent of the product release, of the Model/IR/graph/effect contract versions, and of the diagnostic registry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "metricVersion",
+    "scope",
+    "profile",
+    "estimator",
+    "complete",
+    "subjects",
+    "summary"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/context-budget-report/v0.6.3"
+    },
+    "identity": {
+      "const": "dev.lekalo.context-budget-report@0.6.3"
+    },
+    "metricVersion": {
+      "const": "context-budget-semantics/1"
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": {
+          "enum": ["symbol", "module", "project"]
+        },
+        "id": {
+          "$ref": "#/$defs/semanticId"
+        }
+      }
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "digest",
+        "availableContentTokens",
+        "framingTokens",
+        "sourceContext"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/boundedName" },
+        "version": { "$ref": "#/$defs/boundedName" },
+        "digest": { "$ref": "#/$defs/sha256Digest" },
+        "availableContentTokens": { "$ref": "#/$defs/count" },
+        "framingTokens": { "$ref": "#/$defs/count" },
+        "sourceContext": {
+          "enum": ["none", "mapped-files"]
+        }
+      }
+    },
+    "estimator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["identity", "version", "digest"],
+      "properties": {
+        "identity": {
+          "const": "dev.lekalo.estimator.chars-4@0.2.16"
+        },
+        "version": {
+          "const": "0.2.16"
+        },
+        "digest": { "$ref": "#/$defs/sha256Digest" }
+      }
+    },
+    "complete": {
+      "description": "False when any subject's closure or evidence was bounded; a reduced completeness never silently shrinks a metric.",
+      "type": "boolean"
+    },
+    "subjects": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/subject"
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subjects",
+        "overBudgetSubjects",
+        "indeterminateSubjects",
+        "unionRequiredTokens"
+      ],
+      "properties": {
+        "subjects": { "$ref": "#/$defs/count" },
+        "overBudgetSubjects": { "$ref": "#/$defs/count" },
+        "indeterminateSubjects": { "$ref": "#/$defs/count" },
+        "unionRequiredTokens": { "$ref": "#/$defs/stateU64" }
+      }
+    }
+  },
+  "$defs": {
+    "count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "boundedName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+    },
+    "sha256Digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "semanticId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.:-]*$"
+    },
+    "factId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.:#>/-]*$"
+    },
+    "stateU64": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "value"],
+          "properties": {
+            "state": { "const": "known" },
+            "value": { "$ref": "#/$defs/count" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state"],
+          "properties": {
+            "state": { "enum": ["unknown", "withheld", "unsupported"] }
+          }
+        }
+      ]
+    },
+    "fact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "class", "tokens"],
+      "properties": {
+        "id": { "$ref": "#/$defs/factId" },
+        "class": {
+          "enum": ["required-semantic", "supporting-semantic", "optional-source"]
+        },
+        "reason": {
+          "enum": [
+            "subject-contract",
+            "referenced-contract",
+            "policy-applicability",
+            "operation-effect",
+            "scenario-coverage"
+          ]
+        },
+        "module": {
+          "oneOf": [{ "$ref": "#/$defs/semanticId" }, { "type": "null" }]
+        },
+        "tokens": { "$ref": "#/$defs/count" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "class": { "const": "required-semantic" } }
+          },
+          "then": {
+            "properties": {
+              "reason": {
+                "enum": [
+                  "subject-contract",
+                  "referenced-contract",
+                  "policy-applicability",
+                  "operation-effect",
+                  "scenario-coverage"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "breakdownRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dependency",
+        "exclusiveRequiredTokens",
+        "sharedRequiredTokens"
+      ],
+      "properties": {
+        "dependency": { "$ref": "#/$defs/factId" },
+        "module": {
+          "oneOf": [{ "$ref": "#/$defs/semanticId" }, { "type": "null" }]
+        },
+        "hops": {
+          "oneOf": [{ "$ref": "#/$defs/count" }, { "type": "null" }]
+        },
+        "exclusiveRequiredTokens": { "$ref": "#/$defs/count" },
+        "sharedRequiredTokens": { "$ref": "#/$defs/count" }
+      }
+    },
+    "suggestion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "boundaryId",
+        "cutDependencies",
+        "preservedFacts",
+        "beforeTokens",
+        "afterTokens"
+      ],
+      "properties": {
+        "boundaryId": { "$ref": "#/$defs/semanticId" },
+        "cutDependencies": {
+          "type": "array",
+          "maxItems": 2000,
+          "items": { "$ref": "#/$defs/factId" }
+        },
+        "preservedFacts": {
+          "type": "array",
+          "maxItems": 2000,
+          "items": { "$ref": "#/$defs/factId" }
+        },
+        "beforeTokens": { "$ref": "#/$defs/count" },
+        "afterTokens": { "$ref": "#/$defs/count" },
+        "blocker": {
+          "oneOf": [{ "$ref": "#/$defs/boundedName" }, { "type": "null" }]
+        }
+      }
+    },
+    "simulation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidateFacts",
+        "includedFacts",
+        "requiredFacts",
+        "includedRequiredFacts",
+        "estimatedTokens",
+        "requiredFits",
+        "allCandidatesFit",
+        "missingRequiredIds",
+        "legacyMinimumRequired",
+        "legacyEstimated",
+        "legacyFits"
+      ],
+      "properties": {
+        "candidateFacts": { "$ref": "#/$defs/count" },
+        "includedFacts": { "$ref": "#/$defs/count" },
+        "requiredFacts": { "$ref": "#/$defs/count" },
+        "includedRequiredFacts": { "$ref": "#/$defs/count" },
+        "estimatedTokens": { "$ref": "#/$defs/count" },
+        "requiredFits": { "type": "boolean" },
+        "allCandidatesFit": { "type": "boolean" },
+        "missingRequiredIds": {
+          "type": "array",
+          "maxItems": 50000,
+          "items": { "$ref": "#/$defs/factId" }
+        },
+        "legacyMinimumRequired": { "$ref": "#/$defs/count" },
+        "legacyEstimated": { "$ref": "#/$defs/count" },
+        "legacyFits": { "type": "boolean" }
+      }
+    },
+    "stateMetric": {
+      "$ref": "#/$defs/stateU64"
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "assessment",
+        "overByTokens",
+        "metrics",
+        "breakdown",
+        "breakdownTruncated",
+        "requiredFacts",
+        "supportingFacts",
+        "gaps"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/factId" },
+        "module": {
+          "oneOf": [{ "$ref": "#/$defs/semanticId" }, { "type": "null" }]
+        },
+        "assessment": {
+          "enum": ["within-budget", "over-budget", "indeterminate"]
+        },
+        "overByTokens": { "$ref": "#/$defs/stateU64" },
+        "metrics": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "directDependencies",
+            "transitiveDependencies",
+            "indirectOnlyDependencies",
+            "requiredModules",
+            "contextClosureEstimatedTokens",
+            "minimumRequiredSemanticTokens",
+            "supportingSemanticTokens",
+            "optionalSourceTokens",
+            "modelFiles",
+            "sourceFiles",
+            "targetFiles",
+            "maxCrossModuleHops",
+            "unresolvedEdges",
+            "ambiguousEdges",
+            "declaredEffects",
+            "detectedEffects",
+            "policies",
+            "scenarios",
+            "largestRequiredArtifact",
+            "duplicateSupportingTokens",
+            "generatedMaintainedRatio",
+            "minimumSafeContextEstimate",
+            "empiricallySafeContextTokens"
+          ],
+          "properties": {
+            "directDependencies": { "$ref": "#/$defs/stateU64" },
+            "transitiveDependencies": { "$ref": "#/$defs/stateU64" },
+            "indirectOnlyDependencies": { "$ref": "#/$defs/stateU64" },
+            "requiredModules": { "$ref": "#/$defs/stateU64" },
+            "contextClosureEstimatedTokens": { "$ref": "#/$defs/stateU64" },
+            "minimumRequiredSemanticTokens": { "$ref": "#/$defs/stateU64" },
+            "supportingSemanticTokens": { "$ref": "#/$defs/stateU64" },
+            "optionalSourceTokens": { "$ref": "#/$defs/stateU64" },
+            "modelFiles": { "$ref": "#/$defs/stateU64" },
+            "sourceFiles": { "$ref": "#/$defs/stateU64" },
+            "targetFiles": { "$ref": "#/$defs/stateU64" },
+            "maxCrossModuleHops": { "$ref": "#/$defs/stateU64" },
+            "unresolvedEdges": { "$ref": "#/$defs/stateU64" },
+            "ambiguousEdges": { "$ref": "#/$defs/stateU64" },
+            "declaredEffects": { "$ref": "#/$defs/stateU64" },
+            "detectedEffects": { "$ref": "#/$defs/stateU64" },
+            "policies": { "$ref": "#/$defs/stateU64" },
+            "scenarios": { "$ref": "#/$defs/stateU64" },
+            "largestRequiredArtifact": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["artifactId", "role", "estimatedTokens", "bytes"],
+                  "properties": {
+                    "artifactId": { "$ref": "#/$defs/factId" },
+                    "role": { "enum": ["model", "source", "target"] },
+                    "bytes": {
+                      "oneOf": [{ "$ref": "#/$defs/count" }, { "type": "null" }]
+                    },
+                    "estimatedTokens": { "$ref": "#/$defs/count" }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["state"],
+                  "properties": {
+                    "state": { "enum": ["unknown", "withheld", "unsupported"] }
+                  }
+                }
+              ]
+            },
+            "duplicateSupportingTokens": { "$ref": "#/$defs/stateU64" },
+            "generatedMaintainedRatio": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "generatedFiles",
+                    "maintainedFiles",
+                    "externalFiles",
+                    "unclassifiedFiles",
+                    "numerator",
+                    "denominator",
+                    "state"
+                  ],
+                  "properties": {
+                    "generatedFiles": { "$ref": "#/$defs/count" },
+                    "maintainedFiles": { "$ref": "#/$defs/count" },
+                    "externalFiles": { "$ref": "#/$defs/count" },
+                    "unclassifiedFiles": { "$ref": "#/$defs/count" },
+                    "numerator": { "$ref": "#/$defs/count" },
+                    "denominator": { "$ref": "#/$defs/count" },
+                    "state": { "const": "known" }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["state"],
+                  "properties": {
+                    "state": { "enum": ["unknown", "withheld", "unsupported"] }
+                  }
+                }
+              ]
+            },
+            "minimumSafeContextEstimate": { "$ref": "#/$defs/stateU64" },
+            "empiricallySafeContextTokens": { "$ref": "#/$defs/stateU64" }
+          }
+        },
+        "breakdown": {
+          "type": "array",
+          "maxItems": 2000,
+          "items": { "$ref": "#/$defs/breakdownRow" }
+        },
+        "breakdownTruncated": { "type": "boolean" },
+        "requiredFacts": {
+          "type": "array",
+          "maxItems": 50000,
+          "items": { "$ref": "#/$defs/fact" }
+        },
+        "supportingFacts": {
+          "type": "array",
+          "maxItems": 50000,
+          "items": { "$ref": "#/$defs/fact" }
+        },
+        "gaps": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "enum": [
+              "closure-bounded",
+              "detected-effects-absent",
+              "error-contracts-unrepresentable"
+            ]
+          }
+        },
+        "suggestions": {
+          "type": "array",
+          "maxItems": 16,
+          "items": { "$ref": "#/$defs/suggestion" }
+        },
+        "simulation": {
+          "oneOf": [
+            { "$ref": "#/$defs/simulation" },
+            { "type": "null" }
+          ]
+        }
+      }
+    }
+  }
+}

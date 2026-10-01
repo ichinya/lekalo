@@ -74,7 +74,10 @@ fn over_budget_is_advisory_valid_exit_zero_with_explainable_breakdown() {
     let document = document(&output);
     assert_eq!(document["status"], "valid");
     let report = &document["contextBudget"];
-    assert_eq!(report["schemaVersion"], "lekalo/context-budget-report/v0.6.3");
+    assert_eq!(
+        report["schemaVersion"],
+        "lekalo/context-budget-report/v0.6.3"
+    );
     assert_eq!(report["identity"], "dev.lekalo.context-budget-report@0.6.3");
     let subject = &report["subjects"][0];
     assert_eq!(subject["assessment"], "over-budget");
@@ -83,7 +86,9 @@ fn over_budget_is_advisory_valid_exit_zero_with_explainable_breakdown() {
     let required = subject["metrics"]["minimumRequiredSemanticTokens"]["value"]
         .as_u64()
         .expect("required known");
-    let over_by = subject["overByTokens"]["value"].as_u64().expect("over known");
+    let over_by = subject["overByTokens"]["value"]
+        .as_u64()
+        .expect("over known");
     assert_eq!(over_by, required - 200);
     // The advisory warning rides the valid envelope.
     let warnings = document["diagnostics"].as_array().expect("diagnostics");
@@ -123,8 +128,8 @@ fn exact_budget_boundary_passes_one_below_is_over() {
             "1000000",
         ],
     ));
-    let required = full["contextBudget"]["subjects"][0]["metrics"]
-        ["minimumRequiredSemanticTokens"]["value"]
+    let required = full["contextBudget"]["subjects"][0]["metrics"]["minimumRequiredSemanticTokens"]
+        ["value"]
         .as_u64()
         .expect("required known");
     let boundary_run = lekalo_in(
@@ -233,11 +238,7 @@ fn module_scope_reconciles_union() {
 fn malformed_invocations_refuse_closed() {
     let project = fixture_path();
     let cases: Vec<Vec<&str>> = vec![
-        vec![
-            "context-budget",
-            "--symbol",
-            "planner.focus_task",
-        ],
+        vec!["context-budget", "--symbol", "planner.focus_task"],
         vec!["context-budget", "--budget", "1000"],
         vec![
             "context-budget",
@@ -416,7 +417,9 @@ fn tiny_budget_simulation_exposes_missing_required() {
     ));
     let simulation = &output["contextBudget"]["subjects"][0]["simulation"];
     assert_eq!(simulation["requiredFits"], false);
-    let missing = simulation["missingRequiredIds"].as_array().expect("missing");
+    let missing = simulation["missingRequiredIds"]
+        .as_array()
+        .expect("missing");
     assert!(!missing.is_empty());
     assert_eq!(simulation["legacyFits"], false);
 }
