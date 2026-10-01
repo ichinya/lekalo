@@ -96,7 +96,7 @@ for (const [id, before] of predEntries) {
 }
 if (
   registry.entries.length !==
-  predEntries.size + 16 + 9 + 13 + 1 + 9 + 5 + 14 + 8 + 14 + 15 + 8 + 1
+  predEntries.size + 16 + 9 + 13 + 1 + 9 + 5 + 14 + 8 + 14 + 15 + 8 + 1 + 15
 ) {
   // The increments over the v0.3.2 predecessor, one per family that
   // joined the shared registry after it: classification (#87) +16,
@@ -106,7 +106,10 @@ if (
   // +14 (#69), openapi +8 (#46), scenario +14 (#47), adapter-package
   // +15 (#32, ported from the predecessor registry where the branch
   // had registered them before v0.4.0 existed), client-SDK +8 (#72,
-  // LEK-SDK-001..008), and the PHP routes family +1 (#60, LEK-RTE-001).
+  // LEK-SDK-001..008), the PHP routes family +1 (#60, LEK-RTE-001),
+  // and run history +15 (#121, LEK-HST-001..016 — the LEK-HST-013
+  // slot stays unassigned by design; registry and codes.rs agree on
+  // the same fifteen ids).
   fail("entry-count", registry.entries.length);
 }
 

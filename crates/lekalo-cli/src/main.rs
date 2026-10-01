@@ -443,6 +443,15 @@ enum Commands {
         #[command(subcommand)]
         command: Box<CacheCommands>,
     },
+    /// Record, inspect, and retain the local-only run history and
+    /// metrics recorder (issue #121). Fully offline, repository/tenant
+    /// isolated under `.lekalo/history/`, atomic with recovery, and
+    /// with no export surface: public payloads are built only by the
+    /// aggregate consumer, never here.
+    History {
+        #[command(subcommand)]
+        command: Box<HistoryCommands>,
+    },
     /// Diagnose project, model, adapters, artifacts, and integrations in
     /// one read-only readiness report.
     Doctor {
@@ -1813,6 +1822,209 @@ enum CacheCommands {
     },
 }
 
+/// The `history` subcommands (issue #121). Every operation is local
+/// only: no account, no network, no provider, no export surface.
+#[derive(Debug, Subcommand)]
+enum HistoryCommands {
+    /// Create the governed history home (`.lekalo/history/`) with its
+    /// generated ignore protection and verified untracked custody.
+    Init {
+        /// The #120 repository-role label of this store (the default
+        /// is `local-workspace`).
+        #[arg(long, value_name = "ROLE")]
+        role: Option<String>,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Mint one random local tenant scope token. No tenant name or
+    /// host identity is accepted or derivable.
+    #[command(name = "scope")]
+    Scope {
+        #[command(subcommand)]
+        command: HistoryScopeCommands,
+    },
+    /// Validate and atomically append one bounded typed harness
+    /// observation from stdin (`--input -`). The recorder exit proves
+    /// ingestion only: a recorded operation whose own status is `fail`
+    /// still ingests validly.
+    Record {
+        /// The observation input; only `-` (stdin) is accepted, and the
+        /// input bytes are never persisted.
+        #[arg(long, value_name = "SOURCE")]
+        input: String,
+        /// The tenant scope token minted by `history scope create`.
+        #[arg(long, value_name = "TOKEN")]
+        scope: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// The bounded, sorted, same-scope-only list page.
+    List {
+        /// The tenant scope token.
+        #[arg(long, value_name = "TOKEN")]
+        scope: String,
+        /// The page size (1..=200).
+        #[arg(long, value_name = "N", default_value_t = 50)]
+        limit: usize,
+        /// The opaque cursor from the previous page.
+        #[arg(long, value_name = "TOKEN")]
+        cursor: Option<String>,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Show one sanitized record and its separately stored assertion
+    /// set, named apart for the local operator.
+    Show {
+        /// The run id.
+        run_id: String,
+        /// The tenant scope token.
+        #[arg(long, value_name = "TOKEN")]
+        scope: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Configure the store-wide retention bounds; the strictest
+    /// applicable bound is enforced per tenant scope.
+    Retention {
+        /// The tenant scope token.
+        #[arg(long, value_name = "TOKEN")]
+        scope: String,
+        /// The maximum record age in days (1..=3650; default 30).
+        #[arg(long, value_name = "DAYS", default_value_t = 30)]
+        max_age_days: u32,
+        /// The maximum record count per scope (1..=1000000; default 10000).
+        #[arg(long, value_name = "N", default_value_t = 10_000)]
+        max_records: u32,
+        /// The maximum logical payload bytes per scope (default 64 MiB).
+        #[arg(long, value_name = "BYTES", default_value_t = 67_108_864)]
+        max_bytes: u64,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Delete one raw record; deletion transactionally invalidates
+    /// every dependent index/claim reference.
+    Delete {
+        /// The run id.
+        run_id: String,
+        /// The tenant scope token.
+        #[arg(long, value_name = "TOKEN")]
+        scope: String,
+        /// Report the transitively invalidated dependents; write nothing.
+        #[arg(long)]
+        dry_run: bool,
+        /// Apply the deletion.
+        #[arg(long)]
+        apply: bool,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Enforce retention for one scope; dry-run lists the victims,
+    /// `--apply` deletes them with dependent invalidation atomically.
+    Prune {
+        /// The tenant scope token.
+        #[arg(long, value_name = "TOKEN")]
+        scope: String,
+        /// Report the retention victims; write nothing.
+        #[arg(long)]
+        dry_run: bool,
+        /// Apply the retention deletion.
+        #[arg(long)]
+        apply: bool,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Clear one whole scope through the same transactional
+    /// delete/invalidation path.
+    Clear {
+        /// The tenant scope token.
+        #[arg(long, value_name = "TOKEN")]
+        scope: String,
+        /// Required explicit confirmation; the CI-safe invocation form.
+        #[arg(long)]
+        apply: bool,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Verify integrity, foreign keys, identity, and every record
+    /// digest, then rebuild the secondary index from validated
+    /// surviving records only.
+    Recover {
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Compact the store with `VACUUM` after deletes have committed; a
+    /// failure is reported separately and never undoes a deletion.
+    Compact {
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// The typed local dependent-reference seam for the evidence
+    /// consumers (indexes, claims, aggregate inputs).
+    Dependents {
+        #[command(subcommand)]
+        command: HistoryDependentsCommands,
+    },
+}
+
+/// The `history scope` subcommands.
+#[derive(Debug, Subcommand)]
+enum HistoryScopeCommands {
+    /// Mint one random local tenant scope token.
+    Create {
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+}
+
+/// The `history dependents` subcommands.
+#[derive(Debug, Subcommand)]
+enum HistoryDependentsCommands {
+    /// Bind one local dependent reference to live source records; a
+    /// registration that would create a dependency cycle refuses.
+    Register {
+        /// The opaque dependent id (a safe bounded token).
+        dependent_id: String,
+        /// The dependent kind: `index`, `claim`, or `aggregate-input`.
+        #[arg(long, value_name = "KIND")]
+        kind: String,
+        /// A bound source run id (repeatable).
+        #[arg(long = "run", value_name = "RUN_ID")]
+        runs: Vec<String>,
+        /// A bound source dependent id (repeatable).
+        #[arg(long = "depends-on", value_name = "DEPENDENT_ID")]
+        depends_on: Vec<String>,
+        /// The tenant scope token.
+        #[arg(long, value_name = "TOKEN")]
+        scope: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Live revalidation of one dependent reference: every bound
+    /// digest must resolve to live same-scope bytes right now.
+    Resolve {
+        /// The dependent id.
+        dependent_id: String,
+        /// The tenant scope token.
+        #[arg(long, value_name = "TOKEN")]
+        scope: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+}
+
 /// The `contract` subcommands: the contracted-mode surface (issue #40).
 /// The core owns every decision — declaration validation, conformance
 /// classification, attachment custody, and support-artifact ownership;
@@ -2135,6 +2347,7 @@ fn runtime() -> u8 {
                 traces,
             } => run_readiness(phase.phase(), project, traces),
             Commands::Cache { command } => run_cache(*command),
+            Commands::History { command } => run_history(*command),
             Commands::Scan {
                 target,
                 profile,
@@ -4362,6 +4575,142 @@ fn run_cache(command: CacheCommands) -> DomainResult {
             }
             lekalo_core::cache::clear(&selection_for(&project))
         }
+    }
+}
+
+/// The `history` command family (issue #121): a thin selection/render
+/// edge over the core recorder. Git/build provenance capture stays
+/// with the harness observation; this binary adds no provenance of its
+/// own and never launches a network, account, provider, or shell
+/// process for history.
+fn run_history(command: HistoryCommands) -> DomainResult {
+    match command {
+        HistoryCommands::Init { role, project } => {
+            lekalo_core::run_history::init(&selection_for(&project), role.as_deref())
+        }
+        HistoryCommands::Scope { command } => match command {
+            HistoryScopeCommands::Create { project } => {
+                lekalo_core::run_history::scope_create(&selection_for(&project))
+            }
+        },
+        HistoryCommands::Record {
+            input,
+            scope,
+            project,
+        } => {
+            if input != "-" {
+                // Only the stdin handoff exists: no observation ever
+                // enters through a caller-selected file path.
+                return DomainResult::usage_error();
+            }
+            let mut bytes = Vec::new();
+            use std::io::Read as _;
+            if std::io::stdin().lock().read_to_end(&mut bytes).is_err() {
+                return DomainResult::usage_error();
+            }
+            lekalo_core::run_history::record(&selection_for(&project), &scope, &bytes)
+        }
+        HistoryCommands::List {
+            scope,
+            limit,
+            cursor,
+            project,
+        } => lekalo_core::run_history::list(
+            &selection_for(&project),
+            &scope,
+            limit,
+            cursor.as_deref(),
+        ),
+        HistoryCommands::Show {
+            run_id,
+            scope,
+            project,
+        } => lekalo_core::run_history::show(&selection_for(&project), &scope, &run_id),
+        HistoryCommands::Retention {
+            scope,
+            max_age_days,
+            max_records,
+            max_bytes,
+            project,
+        } => lekalo_core::run_history::retention(
+            &selection_for(&project),
+            &scope,
+            max_age_days,
+            max_records,
+            max_bytes,
+        ),
+        HistoryCommands::Delete {
+            run_id,
+            scope,
+            dry_run,
+            apply,
+            project,
+        } => {
+            if dry_run == apply {
+                // Exactly one of --dry-run / --apply is required.
+                return DomainResult::usage_error();
+            }
+            lekalo_core::run_history::delete(
+                &selection_for(&project),
+                &scope,
+                &run_id,
+                dry_run,
+                apply,
+            )
+        }
+        HistoryCommands::Prune {
+            scope,
+            dry_run,
+            apply,
+            project,
+        } => {
+            if dry_run == apply {
+                return DomainResult::usage_error();
+            }
+            lekalo_core::run_history::prune(&selection_for(&project), &scope, dry_run, apply)
+        }
+        HistoryCommands::Clear {
+            scope,
+            apply,
+            project,
+        } => {
+            if !apply {
+                return DomainResult::usage_error();
+            }
+            lekalo_core::run_history::clear(&selection_for(&project), &scope, apply)
+        }
+        HistoryCommands::Recover { project } => {
+            lekalo_core::run_history::recover(&selection_for(&project))
+        }
+        HistoryCommands::Compact { project } => {
+            lekalo_core::run_history::compact(&selection_for(&project))
+        }
+        HistoryCommands::Dependents { command } => match command {
+            HistoryDependentsCommands::Register {
+                dependent_id,
+                kind,
+                runs,
+                depends_on,
+                scope,
+                project,
+            } => lekalo_core::run_history::dependent_register(
+                &selection_for(&project),
+                &scope,
+                &dependent_id,
+                &kind,
+                &runs,
+                &depends_on,
+            ),
+            HistoryDependentsCommands::Resolve {
+                dependent_id,
+                scope,
+                project,
+            } => lekalo_core::run_history::dependent_resolve(
+                &selection_for(&project),
+                &scope,
+                &dependent_id,
+            ),
+        },
     }
 }
 

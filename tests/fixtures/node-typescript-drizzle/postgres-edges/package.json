@@ -1,0 +1,7 @@
+{
+  "name": "lekalo-drizzle-fixture-postgres-edges",
+  "private": true,
+  "dependencies": {
+    "drizzle-orm": "0.44.7"
+  }
+}

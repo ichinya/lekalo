@@ -1,0 +1,17 @@
+{
+  "name": "@brownfield-ts/api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@brownfield-ts/data": "*",
+    "hono": "^4.0.0"
+  },
+  "devDependencies": {
+    "vitest": "^2.0.0"
+  }
+}

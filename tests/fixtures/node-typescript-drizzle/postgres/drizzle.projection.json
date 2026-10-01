@@ -1,0 +1,16 @@
+{
+  "schema": "lekalo/storage-projection-input/v0.1.0",
+  "tables": [
+    {
+      "table": "users",
+      "dialect": "postgresql",
+      "columns": [
+        { "name": "id", "type": "uuid", "nullable": false, "primaryKey": true },
+        { "name": "email", "type": "varchar(255)", "nullable": false, "primaryKey": false },
+        { "name": "tenant_id", "type": "uuid", "nullable": false, "primaryKey": false },
+        { "name": "is_active", "type": "boolean", "nullable": false, "primaryKey": false },
+        { "name": "legacy_flag", "type": "boolean", "nullable": true, "primaryKey": false }
+      ]
+    }
+  ]
+}

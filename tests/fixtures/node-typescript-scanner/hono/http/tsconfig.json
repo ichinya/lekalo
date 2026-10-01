@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "strict": true, "noEmit": true, "skipLibCheck": true, "target": "es2022",
+    "module": "esnext", "moduleResolution": "bundler",
+    "paths": {
+      "hono": ["./types/hono.d.ts"],
+      "zod": ["./types/zod.d.ts"],
+      "hono/validator": ["./types/hono-validator.d.ts"],
+      "hono/http-exception": ["./types/hono-http-exception.d.ts"],
+      "@hono/zod-validator": ["./types/zod-validator.d.ts"],
+      "@hono/zod-openapi": ["./types/zod-openapi.d.ts"]
+    }
+  },
+  "include": ["src", "types"]
+}

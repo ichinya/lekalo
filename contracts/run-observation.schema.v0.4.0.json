@@ -1,0 +1,1064 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.run-observation-schema@0.4.0",
+  "title": "Lekalo run observation v0.4.0",
+  "description": "Closed wire shape of one bounded typed harness observation consumed by `lekalo history record --input -` (issue #121). Every provenance and metric leaf is optional: an absent leaf is normalized to the unknown value state before persistence - never to zero, null, or an empty string. Assertions are inline rows stored separately by the recorder. The scope and the exact #120 policy/authority references are store-selected and cannot be overridden here. No raw prompts, source snippets, secrets, absolute paths, or free-form text fields exist in this shape.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "identity",
+    "pilot",
+    "operation",
+    "timestamp",
+    "provenance",
+    "metrics",
+    "measurementSources",
+    "testGateSummaries",
+    "diagnostics",
+    "assertions",
+    "repeatParentRunId",
+    "status",
+    "dataSensitivity"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "lekalo/run-observation/v0.4.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.run-observation@0.4.0"
+    },
+    "runId": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/hexToken32"
+        }
+      ],
+      "description": "Optional caller-supplied run id for exactly-once retry; absent means the store generates a fresh opaque id."
+    },
+    "pilot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "scopeState"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "greenfield",
+            "brownfield"
+          ]
+        },
+        "scopeState": {
+          "enum": [
+            "observed",
+            "contracted",
+            "hybrid"
+          ]
+        }
+      }
+    },
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "affectedSemanticIds"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "scan",
+            "verify",
+            "context",
+            "generate",
+            "nfr",
+            "scenario",
+            "gate",
+            "evaluation"
+          ]
+        },
+        "affectedSemanticIds": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          }
+        }
+      }
+    },
+    "timestamp": {
+      "$ref": "#/$defs/timestampUtc"
+    },
+    "provenance": {
+      "$ref": "#/$defs/provenanceInput"
+    },
+    "metrics": {
+      "$ref": "#/$defs/metricsInput"
+    },
+    "measurementSources": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/measurementSource"
+      }
+    },
+    "testGateSummaries": {
+      "type": "array",
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/testGateSummaryInput"
+      }
+    },
+    "diagnostics": {
+      "type": "array",
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/diagnosticEntry"
+      }
+    },
+    "assertions": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "rows"
+          ],
+          "properties": {
+            "rows": {
+              "type": "array",
+              "maxItems": 4096,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/assertionRow"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "repeatParentRunId": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/hexToken32"
+        }
+      ]
+    },
+    "status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outcome",
+        "coverageState"
+      ],
+      "properties": {
+        "outcome": {
+          "enum": [
+            "pass",
+            "warn",
+            "fail",
+            "unsupported",
+            "infrastructure"
+          ]
+        },
+        "coverageState": {
+          "enum": [
+            "complete",
+            "incomplete",
+            "unknown"
+          ]
+        }
+      }
+    },
+    "dataSensitivity": {
+      "enum": [
+        "public",
+        "internal",
+        "confidential",
+        "personal-pii",
+        "credential-secret",
+        "financial",
+        "health-special-category",
+        "tenant-scoped",
+        "retention-limited"
+      ]
+    }
+  },
+  "$defs": {
+    "hexToken32": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$",
+      "maxLength": 32
+    },
+    "timestampUtc": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$",
+      "maxLength": 40
+    },
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$",
+      "maxLength": 64
+    },
+    "gitCommit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
+      "maxLength": 64
+    },
+    "boundedToken": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+      "maxLength": 128
+    },
+    "semanticId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+$",
+      "maxLength": 256
+    },
+    "decimalString": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]{1,12})?$",
+      "maxLength": 40
+    },
+    "ratioString": {
+      "type": "string",
+      "pattern": "^(0(\\.[0-9]{1,12})?|1(\\.0{1,12})?)$",
+      "maxLength": 14
+    },
+    "vsU64": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "value"
+          ],
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "unknown",
+                "withheld",
+                "unsupported"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "vsBoolState": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "value"
+          ],
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "unknown",
+                "withheld",
+                "unsupported"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "vsGitCommit": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "value"
+          ],
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "$ref": "#/$defs/gitCommit"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "unknown",
+                "withheld",
+                "unsupported"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "vsSha256": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "value"
+          ],
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "maxLength": 71
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "unknown",
+                "withheld",
+                "unsupported"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "vsToken": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "value"
+          ],
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "$ref": "#/$defs/boundedToken"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "unknown",
+                "withheld",
+                "unsupported"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "vsSemver": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "value"
+          ],
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "$ref": "#/$defs/semver"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "unknown",
+                "withheld",
+                "unsupported"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "vsDecimal": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "value"
+          ],
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "$ref": "#/$defs/decimalString"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "unknown",
+                "withheld",
+                "unsupported"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "vsRatio": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "value"
+          ],
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "$ref": "#/$defs/ratioString"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "unknown",
+                "withheld",
+                "unsupported"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "vsRepresentation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "value"
+          ],
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "enum": [
+                "json",
+                "markdown"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "unknown",
+                "withheld",
+                "unsupported"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "vsCostBasis": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "value"
+          ],
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "enum": [
+                "reported",
+                "estimated"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "unknown",
+                "withheld",
+                "unsupported"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "provenanceInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "git",
+        "model",
+        "lock",
+        "core",
+        "adapters",
+        "profile",
+        "harness"
+      ],
+      "properties": {
+        "git": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "commit": {
+              "$ref": "#/$defs/vsGitCommit"
+            },
+            "dirty": {
+              "$ref": "#/$defs/vsBoolState"
+            },
+            "workingSetDigest": {
+              "$ref": "#/$defs/vsSha256"
+            }
+          }
+        },
+        "model": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "revision": {
+              "$ref": "#/$defs/vsToken"
+            },
+            "digest": {
+              "$ref": "#/$defs/vsSha256"
+            },
+            "irDigest": {
+              "$ref": "#/$defs/vsSha256"
+            }
+          }
+        },
+        "lock": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "version": {
+              "$ref": "#/$defs/vsSemver"
+            },
+            "digest": {
+              "$ref": "#/$defs/vsSha256"
+            }
+          }
+        },
+        "core": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "version": {
+              "$ref": "#/$defs/vsSemver"
+            },
+            "buildRevision": {
+              "$ref": "#/$defs/vsToken"
+            },
+            "buildDigest": {
+              "$ref": "#/$defs/vsSha256"
+            }
+          }
+        },
+        "adapters": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "version",
+              "manifestDigest",
+              "bundleDigest"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/boundedToken"
+              },
+              "version": {
+                "$ref": "#/$defs/vsSemver"
+              },
+              "manifestDigest": {
+                "$ref": "#/$defs/vsSha256"
+              },
+              "bundleDigest": {
+                "$ref": "#/$defs/vsSha256"
+              }
+            }
+          }
+        },
+        "profile": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/vsToken"
+            },
+            "version": {
+              "$ref": "#/$defs/vsSemver"
+            },
+            "digest": {
+              "$ref": "#/$defs/vsSha256"
+            }
+          }
+        },
+        "harness": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/vsToken"
+            },
+            "version": {
+              "$ref": "#/$defs/vsSemver"
+            },
+            "modelId": {
+              "$ref": "#/$defs/vsToken"
+            },
+            "modelRevision": {
+              "$ref": "#/$defs/vsToken"
+            }
+          }
+        }
+      }
+    },
+    "metricsInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "durationMs": {
+          "$ref": "#/$defs/vsU64"
+        },
+        "filesRead": {
+          "$ref": "#/$defs/vsU64"
+        },
+        "filesChanged": {
+          "$ref": "#/$defs/vsU64"
+        },
+        "toolCalls": {
+          "$ref": "#/$defs/vsU64"
+        },
+        "retryCount": {
+          "$ref": "#/$defs/vsU64"
+        },
+        "replanCount": {
+          "$ref": "#/$defs/vsU64"
+        },
+        "tokens": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "input": {
+              "$ref": "#/$defs/vsU64"
+            },
+            "output": {
+              "$ref": "#/$defs/vsU64"
+            },
+            "reasoning": {
+              "$ref": "#/$defs/vsU64"
+            },
+            "total": {
+              "$ref": "#/$defs/vsU64"
+            }
+          }
+        },
+        "cost": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "amount": {
+              "$ref": "#/$defs/vsDecimal"
+            },
+            "currency": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "state",
+                    "value"
+                  ],
+                  "properties": {
+                    "state": {
+                      "const": "known"
+                    },
+                    "value": {
+                      "type": "string",
+                      "pattern": "^[A-Z]{3}$",
+                      "maxLength": 3
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "state"
+                  ],
+                  "properties": {
+                    "state": {
+                      "enum": [
+                        "unknown",
+                        "withheld",
+                        "unsupported"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "basis": {
+              "$ref": "#/$defs/vsCostBasis"
+            }
+          }
+        },
+        "context": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "$ref": "#/$defs/vsU64"
+            },
+            "estimatedTokens": {
+              "$ref": "#/$defs/vsU64"
+            },
+            "includedFacts": {
+              "$ref": "#/$defs/vsU64"
+            },
+            "candidateFacts": {
+              "$ref": "#/$defs/vsU64"
+            },
+            "coverageRatio": {
+              "$ref": "#/$defs/vsRatio"
+            },
+            "representation": {
+              "$ref": "#/$defs/vsRepresentation"
+            },
+            "estimatorVersion": {
+              "$ref": "#/$defs/vsToken"
+            }
+          }
+        }
+      }
+    },
+    "measurementSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "field",
+        "sourceKind",
+        "sourceId",
+        "sourceVersion"
+      ],
+      "properties": {
+        "field": {
+          "enum": [
+            "metrics.durationMs",
+            "metrics.filesRead",
+            "metrics.filesChanged",
+            "metrics.toolCalls",
+            "metrics.retryCount",
+            "metrics.replanCount",
+            "metrics.tokens.input",
+            "metrics.tokens.output",
+            "metrics.tokens.reasoning",
+            "metrics.tokens.total",
+            "metrics.cost.amount",
+            "metrics.context.bytes",
+            "metrics.context.estimatedTokens",
+            "metrics.context.includedFacts",
+            "metrics.context.candidateFacts",
+            "metrics.context.coverageRatio"
+          ]
+        },
+        "sourceKind": {
+          "enum": [
+            "core",
+            "adapter",
+            "harness",
+            "derived"
+          ]
+        },
+        "sourceId": {
+          "$ref": "#/$defs/boundedToken"
+        },
+        "sourceVersion": {
+          "$ref": "#/$defs/vsSemver"
+        }
+      }
+    },
+    "testGateSummaryInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "sourceOutcome",
+        "passed",
+        "failed",
+        "unsupported",
+        "infrastructure",
+        "coverageState",
+        "evidenceRef"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/boundedToken"
+        },
+        "kind": {
+          "enum": [
+            "test",
+            "gate",
+            "nfr"
+          ]
+        },
+        "sourceOutcome": {
+          "enum": [
+            "passed",
+            "failed",
+            "degraded",
+            "blocked",
+            "security",
+            "missing",
+            "unsupported",
+            "infrastructure"
+          ]
+        },
+        "passed": {
+          "$ref": "#/$defs/vsU64"
+        },
+        "failed": {
+          "$ref": "#/$defs/vsU64"
+        },
+        "unsupported": {
+          "$ref": "#/$defs/vsU64"
+        },
+        "infrastructure": {
+          "$ref": "#/$defs/vsU64"
+        },
+        "coverageState": {
+          "enum": [
+            "complete",
+            "incomplete",
+            "unknown"
+          ]
+        },
+        "evidenceRef": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/hexToken32"
+            }
+          ]
+        }
+      }
+    },
+    "diagnosticEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "severity",
+        "count"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
+          "maxLength": 128
+        },
+        "severity": {
+          "enum": [
+            "info",
+            "warning",
+            "error"
+          ]
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        }
+      }
+    },
+    "assertionRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assertionId",
+        "subjectSemanticId",
+        "kind",
+        "outcome",
+        "evidenceRef"
+      ],
+      "properties": {
+        "assertionId": {
+          "$ref": "#/$defs/boundedToken"
+        },
+        "subjectSemanticId": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/semanticId"
+            }
+          ]
+        },
+        "kind": {
+          "enum": [
+            "behavior",
+            "contract",
+            "invariant",
+            "scenario",
+            "gate",
+            "custom"
+          ]
+        },
+        "outcome": {
+          "enum": [
+            "pass",
+            "fail",
+            "unsupported",
+            "infrastructure",
+            "degraded"
+          ]
+        },
+        "evidenceRef": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/hexToken32"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

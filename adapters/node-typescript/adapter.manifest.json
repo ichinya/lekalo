@@ -89,12 +89,12 @@
     "any"
   ],
   "integrity": {
-    "packageDigest": "sha256:21f973190220f47caae317085403aca76b452d1133b4523115b25beafa12690c",
+    "packageDigest": "sha256:0e577009fa09c2e98f1bc2f572c8fb2759704f29d0a293d626ebdc959453e01c",
     "files": [
       {
         "path": "adapter.mjs",
-        "digest": "sha256:ecf4b7b7d402feb6fe83209d2dd41aaf3acec699ebb562bc5d1d228d8bec2524",
-        "bytes": 13546897
+        "digest": "sha256:252bcaf2087e91cf79502110efc4b07710f4db1fe5e8fff5bd16ead389f0db8b",
+        "bytes": 14751664
       }
     ],
     "signaturePolicy": "unsigned",

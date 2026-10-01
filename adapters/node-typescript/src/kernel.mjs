@@ -220,6 +220,11 @@ export function __setCompilerMetadata(metadata) {
 
 let vendoredCompiler = null;
 let embeddedLibs = null;
+// Issue #116: the embedded upstream drizzle-orm declaration closure
+// (type-context-only). Attached by the generated bundle entry; a
+// deployment without it simply reports Drizzle surfaces as
+// unsupported instead of guessing.
+let drizzleDeclarations = null;
 let launchExtensions = [];
 
 /**
@@ -260,6 +265,34 @@ export function vendoredTs() {
 /** The attached embedded standard-library map (name → text). */
 export function embeddedLibFiles() {
   return embeddedLibs;
+}
+
+/**
+ * Attach the embedded drizzle-orm declaration closure (issue #116).
+ * The map is keyed by `/lekalo/deps/drizzle-orm@<pin>/...` host paths;
+ * identity is the exact pin plus the framed closure digest computed at
+ * build time. Attachment is one-directional: a later call with
+ * different identity refuses rather than silently swapping evidence
+ * identity mid-process.
+ */
+export function __attachDrizzleDeclarations(files, pin, digest) {
+  if (!(files instanceof Map) || files.size === 0) {
+    throw new RequestRefusal("compiler", "the embedded drizzle declaration map is malformed");
+  }
+  if (typeof pin !== "string" || pin === ""
+    || typeof digest !== "string" || !isSha256Digest(digest)) {
+    throw new RequestRefusal("compiler", "the embedded drizzle declaration identity is malformed");
+  }
+  if (drizzleDeclarations !== null
+    && (drizzleDeclarations.pin !== pin || drizzleDeclarations.digest !== digest)) {
+    throw new RequestRefusal("compiler", "a different drizzle declaration closure is already attached");
+  }
+  drizzleDeclarations = Object.freeze({ files, pin, digest });
+}
+
+/** The attached drizzle declaration closure, or null when absent. */
+export function embeddedDrizzleDeclarations() {
+  return drizzleDeclarations;
 }
 
 /** Whether one string is `sha256:` plus exactly 64 lowercase hex digits. */
@@ -1039,6 +1072,85 @@ const ERROR_CODES = Object.freeze({
 });
 
 export { ERROR_CODES };
+
+/** The closed bound of the `--lekalo-framework-policy-json` input. */
+export const MAX_FRAMEWORK_POLICY_JSON_BYTES = 8 * 1024;
+
+/**
+ * The trusted framework policy (issue #115): the closed projection of
+ * one `--lekalo-framework-policy-json` launch input after strict
+ * decoding. Generic vocabulary — the kernel never names a framework;
+ * the scanner owns its provider ids. Shape:
+ * `{schema, version, providers: [{id, state: enabled|disabled}]}`.
+ * Unknown members, other states, out-of-bound ids, or non-array
+ * providers are launch refusals. The decoded value carries the exact
+ * canonical digest so evidence can bind the policy identity.
+ */
+export function decodeFrameworkPolicyJson(text) {
+  if (typeof text !== "string") {
+    throw new RequestRefusal("framework-policy", "the framework policy must be one JSON text");
+  }
+  const bytes = Buffer.from(text, "utf8");
+  if (bytes.length === 0 || bytes.length > MAX_FRAMEWORK_POLICY_JSON_BYTES) {
+    throw new RequestRefusal("framework-policy", "the framework policy exceeds the closed input bound");
+  }
+  const document = decodeJsonDocument(bytes, { maxBytes: MAX_FRAMEWORK_POLICY_JSON_BYTES });
+  if (document.schema !== "lekalo/framework-policy") {
+    throw new RequestRefusal("framework-policy", "unknown framework policy schema");
+  }
+  if (document.version !== 1) {
+    throw new RequestRefusal("framework-policy", "unknown framework policy version");
+  }
+  if (!Array.isArray(document.providers) || document.providers.length > 16) {
+    throw new RequestRefusal("framework-policy", "providers must be a bounded array");
+  }
+  const seen = new Set();
+  const providers = document.providers.map((entry) => {
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+      throw new RequestRefusal("framework-policy", "provider must be an object");
+    }
+    const keys = Object.keys(entry);
+    if (keys.length !== 2 || !keys.includes("id") || !keys.includes("state")) {
+      throw new RequestRefusal("framework-policy", "provider shape is closed (id, state)");
+    }
+    const { id, state } = entry;
+    if (typeof id !== "string" || id.length === 0 || id.length > 64
+      || !/^[a-z][a-z0-9-]*$/.test(id)) {
+      throw new RequestRefusal("framework-policy", "provider id out of bounds");
+    }
+    if (state !== "enabled" && state !== "disabled") {
+      throw new RequestRefusal("framework-policy", "provider state must be enabled or disabled");
+    }
+    if (seen.has(id)) {
+      throw new RequestRefusal("framework-policy", "duplicate provider id");
+    }
+    seen.add(id);
+    return { id, state };
+  });
+  const canonical = { providers };
+  const digest = `sha256:${createHash("sha256").update(canonicalJson(canonical), "utf8").digest("hex")}`;
+  return deepFreeze({ schema: document.schema, version: 1, providers, digest });
+}
+
+/**
+ * Extract the exactly-positioned framework policy launch value (the
+ * policy JSON must directly follow its marker, like the profile).
+ */
+export function extractFrameworkPolicyJson(argv = process.argv.slice(2)) {
+  const markers = argv.filter((argument) => argument === "--lekalo-framework-policy-json");
+  if (markers.length > 1) {
+    throw new RequestRefusal("framework-policy", "ambiguous framework policy inputs");
+  }
+  const marker = argv.indexOf("--lekalo-framework-policy-json");
+  if (marker === -1) {
+    return undefined;
+  }
+  const value = argv[marker + 1];
+  if (value === undefined || value === "") {
+    throw new RequestRefusal("framework-policy", "missing framework policy value");
+  }
+  return value;
+}
 
 /**
  * The trusted launch profile: the closed projection of one
@@ -1841,6 +1953,9 @@ export function createKernel(options = {}) {
                   ? { localReference: structuredClone(profile.localReference) } : {}),
               } : null,
               extensions: [...extensions.keys()],
+              ...(trustedExecutionContext?.frameworkPolicy
+                ? { frameworkPolicy: { digest: trustedExecutionContext.frameworkPolicy.digest } }
+                : {}),
             },
           },
         };
@@ -1968,6 +2083,9 @@ export function createKernel(options = {}) {
           profile,
           readView,
           ...(writeView !== null ? { writeView } : {}),
+          ...(trustedExecutionContext.frameworkPolicy
+            ? { frameworkPolicy: trustedExecutionContext.frameworkPolicy }
+            : {}),
           cancellation: trustedExecutionContext.cancellation ?? null,
           limits: trustedExecutionContext.limits ?? { files: 4096, bytes: 4 * 1024 * 1024 },
         }));
@@ -2685,10 +2803,20 @@ export async function main() {
       });
       options.kernel = kernel;
     }
+    // Issue #115: the framework policy is the second trusted launch
+    // input; absent means every framework provider stays disabled.
+    let frameworkPolicy = null;
+    const policyJson = extractFrameworkPolicyJson();
+    if (policyJson !== undefined) {
+      frameworkPolicy = decodeFrameworkPolicyJson(policyJson);
+    }
     const document = decodeJsonDocument(requestBytes);
     const request = validateRequestObject(document);
     const kernel = options.kernel ?? createKernel();
-    const dispatched = kernel.dispatch(request, { permittedProjectRoot: process.cwd() });
+    const dispatched = kernel.dispatch(request, {
+      permittedProjectRoot: process.cwd(),
+      ...(frameworkPolicy !== null ? { frameworkPolicy } : {}),
+    });
     process.stdout.write(canonicalJson(dispatched.response));
   } catch (error) {
     // No valid echo identity may be fabricated for a malformed request:

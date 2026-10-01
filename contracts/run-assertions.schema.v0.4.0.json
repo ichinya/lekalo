@@ -1,0 +1,193 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.run-assertions-schema@0.4.0",
+  "title": "Lekalo run assertion set v0.4.0",
+  "description": "Closed wire shape of one durable local-only assertion set (issue #121). Assertion evidence is stored separately from metrics: one document per run, digest-bound from the run record. Rows carry only identity, subject, kind, and outcome - never expected/actual values, expressions, failure prose, source excerpts, or metric fields. Canonical form is compact JSON with byte-sorted keys and one trailing LF.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "identity",
+    "artifactKind",
+    "setId",
+    "runId",
+    "scope",
+    "policyRef",
+    "authorityRef",
+    "dataSensitivity",
+    "exportDisposition",
+    "rows"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "lekalo/run-assertions/v0.4.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.run-assertions@0.4.0"
+    },
+    "artifactKind": {
+      "const": "history.assertion-set"
+    },
+    "setId": {
+      "$ref": "#/$defs/hexToken32"
+    },
+    "runId": {
+      "$ref": "#/$defs/hexToken32"
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repositoryId",
+        "tenantScopeId"
+      ],
+      "properties": {
+        "repositoryId": {
+          "$ref": "#/$defs/hexToken32"
+        },
+        "tenantScopeId": {
+          "$ref": "#/$defs/hexToken32"
+        }
+      }
+    },
+    "policyRef": {
+      "$ref": "#/$defs/policyRef"
+    },
+    "authorityRef": {
+      "$ref": "#/$defs/authorityRef"
+    },
+    "dataSensitivity": {
+      "enum": [
+        "public",
+        "internal",
+        "confidential",
+        "personal-pii",
+        "credential-secret",
+        "financial",
+        "health-special-category",
+        "tenant-scoped",
+        "retention-limited"
+      ]
+    },
+    "exportDisposition": {
+      "const": "local-private"
+    },
+    "rows": {
+      "type": "array",
+      "maxItems": 4096,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "assertionId",
+          "subjectSemanticId",
+          "kind",
+          "outcome",
+          "evidenceRef"
+        ],
+        "properties": {
+          "assertionId": {
+            "$ref": "#/$defs/boundedToken"
+          },
+          "subjectSemanticId": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/$defs/semanticId"
+              }
+            ]
+          },
+          "kind": {
+            "enum": [
+              "behavior",
+              "contract",
+              "invariant",
+              "scenario",
+              "gate",
+              "custom"
+            ]
+          },
+          "outcome": {
+            "enum": [
+              "pass",
+              "fail",
+              "unsupported",
+              "infrastructure",
+              "degraded"
+            ]
+          },
+          "evidenceRef": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/$defs/hexToken32"
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "hexToken32": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$",
+      "maxLength": 32
+    },
+    "boundedToken": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+      "maxLength": 128
+    },
+    "semanticId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+$",
+      "maxLength": 256
+    },
+    "policyRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policyId",
+        "version",
+        "digest"
+      ],
+      "properties": {
+        "policyId": {
+          "const": "dev.lekalo.privacy-export-policy"
+        },
+        "version": {
+          "const": "0.3.2"
+        },
+        "digest": {
+          "const": "sha256:5a80966fa628fd4c9452325d34e7191f40ebb7a9cb49185c91d413861fb18384"
+        }
+      }
+    },
+    "authorityRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractId",
+        "version",
+        "digest"
+      ],
+      "properties": {
+        "contractId": {
+          "const": "dev.lekalo.authority-matrix"
+        },
+        "version": {
+          "const": "0.3.2"
+        },
+        "digest": {
+          "const": "sha256:7ae6454ea20f7b61202d368411ef9bff4e70af96f1f2a408c209d84fe9722f80"
+        }
+      }
+    }
+  }
+}

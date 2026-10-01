@@ -1,0 +1,6 @@
+{
+  "name": "hono-middleware-fixture",
+  "private": true,
+  "type": "module",
+  "dependencies": { "hono": "^4.0.0" }
+}

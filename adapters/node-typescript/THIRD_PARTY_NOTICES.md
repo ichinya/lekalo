@@ -105,6 +105,35 @@ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
+## drizzle-orm 0.44.7
+
+- Source: <https://github.com/drizzle-team/drizzle-orm/tree/0.44.7>
+- npm package: `drizzle-orm@0.44.7`
+- License: Apache-2.0, Copyright (c) Drizzle Team
+- Embedded content: the declaration closure (`**/*.d.ts`) of exactly
+  this release, embedded as type-context-only data by `build.mjs`
+  (issue #116). The declarations are served to the restricted compiler
+  host under `/lekalo/deps/**`; they are never executed, never emitted
+  as project symbols, and grant no runtime capability.
+
+```
+                                 Apache License
+                           Version 2.0, January 2004
+                        http://www.apache.org/licenses/
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+```
+
 ## Pinning and custody
 
 The exact versions above are enforced by

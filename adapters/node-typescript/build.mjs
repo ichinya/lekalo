@@ -63,9 +63,38 @@ const openapiPolicyPath = join(adapterRoot, "src", "openapi-policy.mjs");
 const scenarioGenPath = join(adapterRoot, "src", "scenario-gen.mjs");
 const scenarioMapPath = join(adapterRoot, "src", "scenario-map.mjs");
 const scenarioEmitPath = join(adapterRoot, "src", "scenario-emit.mjs");
+const drizzleEvidencePath = join(adapterRoot, "src", "drizzle-evidence.mjs");
+const honoEvidencePath = join(adapterRoot, "src", "hono-evidence.mjs");
+const honoContextPath = join(adapterRoot, "src", "hono-context.mjs");
+const honoScannerPath = join(adapterRoot, "src", "hono-scanner.mjs");
+const honoRoutesPath = join(adapterRoot, "src", "hono-routes.mjs");
+const honoMiddlewarePath = join(adapterRoot, "src", "hono-middleware.mjs");
+const honoHttpPath = join(adapterRoot, "src", "hono-http.mjs");
+const honoTestsPath = join(adapterRoot, "src", "hono-tests.mjs");
+const honoBindingsPath = join(adapterRoot, "src", "hono-bindings.mjs");
 const libsPath = join(adapterRoot, "src", "libs.mjs");
+const drizzleLibsPath = join(adapterRoot, "src", "drizzle-libs.mjs");
 const scratchRoot = join(adapterRoot, ".build");
 const zodScratchRoot = join(adapterRoot, ".build-zod");
+
+// Issue #116: the exact vendored Drizzle ORM release whose declaration
+// closure is embedded for type-context-only resolution. The pin is a
+// build assertion: provisioning installs `drizzle-orm` with this exact
+// version and the collector refuses any drift.
+const DRIZZLE_PACKAGE = "drizzle-orm";
+const DRIZZLE_VERSION_PIN = "0.44.7";
+/** The public subpaths whose declaration closure is embedded. Exact,
+ * bounded surface: any other subpath stays unresolved and therefore
+ * unsupported, never guessed. */
+const DRIZZLE_ENTRY_SUBPATHS = [
+  "index.d.ts",
+  "pg-core/index.d.ts",
+  "mysql-core/index.d.ts",
+  "relations.d.ts",
+  "sql/index.d.ts",
+  "node-postgres/index.d.ts",
+  "mysql2/index.d.ts",
+];
 
 const require = createRequire(import.meta.url);
 const esbuildPackageJson = require("esbuild/package.json");
@@ -108,6 +137,111 @@ function esbuildBinaryPath() {
   process.exit(1);
 }
 
+/**
+ * The installed upstream Drizzle package directory (build-time custody
+ * only, exactly like the pinned compiler). Never resolved at runtime.
+ */
+function drizzlePackageDir() {
+  const dir = join(adapterRoot, "node_modules", DRIZZLE_PACKAGE);
+  if (!existsSync(join(dir, "package.json"))) {
+    process.stderr.write(
+      `${DRIZZLE_PACKAGE} is missing; run ` +
+        "`npm ci --prefix adapters/node-typescript --ignore-scripts --no-audit --no-fund`\n",
+    );
+    process.exit(1);
+  }
+  const document = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
+  if (document.version !== DRIZZLE_VERSION_PIN) {
+    process.stderr.write(
+      `drizzle-orm pin violation: expected ${DRIZZLE_VERSION_PIN}, found ${document.version}\n`,
+    );
+    process.exit(1);
+  }
+  return dir;
+}
+
+/**
+ * The deterministic relative-import closure of the pinned upstream
+ * declaration entry files (issue #116). Only intra-package relative
+ * specifiers are followed — external type dependencies stay unresolved
+ * and therefore cannot leak driver packages into the artifact. The
+ * walk is a fixed-order BFS and the output map is sorted by host path,
+ * so the embedding is byte-stable.
+ */
+function collectDrizzleFiles() {
+  const dir = drizzlePackageDir();
+  const relativeImport = /(?:\bfrom\s*|\bimport\s*\(\s*)['"](\.[^'"]+)['"]/g;
+  const toDeclaration = (specifier) => specifier.replace(/\.js$/, ".d.ts");
+  const toHostPath = (relPath) =>
+    `/lekalo/deps/${DRIZZLE_PACKAGE}@${DRIZZLE_VERSION_PIN}/${relPath.split("\\").join("/")}`;
+  const seen = new Set();
+  const files = [];
+  // Queue entries carry the importing file's package-relative directory
+  // so `./x.js` resolves against the importer, not the package root.
+  const queue = DRIZZLE_ENTRY_SUBPATHS.map((entry) => ({
+    path: entry,
+    dir: entry.includes("/") ? entry.slice(0, entry.lastIndexOf("/")) : "",
+  }));
+  while (queue.length > 0) {
+    const item = queue.shift();
+    if (seen.has(item.path)) continue;
+    seen.add(item.path);
+    const fullPath = join(dir, item.path);
+    if (!existsSync(fullPath)) {
+      process.stderr.write(`drizzle declaration entry missing: ${item.path}\n`);
+      process.exit(1);
+    }
+    const text = readFileSync(fullPath, "utf8");
+    files.push({ hostPath: toHostPath(item.path), text });
+    let match;
+    relativeImport.lastIndex = 0;
+    while ((match = relativeImport.exec(text)) !== null) {
+      const specifier = toDeclaration(match[1]);
+      // Resolve "./a/b.js" or "../a/b.js" against the importer dir.
+      const segments = (item.dir === "" ? [] : item.dir.split("/"));
+      for (const segment of specifier.split("/")) {
+        if (segment === ".") continue;
+        else if (segment === "..") segments.pop();
+        else segments.push(segment);
+      }
+      const target = segments.join("/");
+      if (!seen.has(target)) queue.push({ path: target, dir: target.includes("/") ? target.slice(0, target.lastIndexOf("/")) : "" });
+    }
+  }
+  files.sort((left, right) => (left.hostPath < right.hostPath ? -1 : left.hostPath > right.hostPath ? 1 : 0));
+  const digest = createHash("sha256");
+  for (const file of files) {
+    digest.update(file.hostPath, "utf8");
+    digest.update(Buffer.from([0]));
+    digest.update(Buffer.from(String(Buffer.byteLength(file.text, "utf8")).padStart(10, "0"), "utf8"));
+    digest.update(Buffer.from([0]));
+    digest.update(file.text, "utf8");
+  }
+  return {
+    pin: DRIZZLE_VERSION_PIN,
+    entries: [...DRIZZLE_ENTRY_SUBPATHS],
+    files: files.map(({ hostPath, text }) => ({ path: hostPath, text })),
+    digest: "sha256:" + digest.digest("hex"),
+  };
+}
+
+/**
+ * The generated virtual module with the embedded Drizzle declarations
+ * (issue #116) — served type-context-only under /lekalo/deps/**, never
+ * project symbols and never executed.
+ */
+function drizzleLibsModuleText(drizzle) {
+  const entries = drizzle.files.map(
+    ({ path, text }) => `[${JSON.stringify(path)},${JSON.stringify(text)}]`,
+  );
+  return `// Generated by build.mjs — embedded drizzle-orm@${drizzle.pin} declaration closure (sorted).\n` +
+    `// Type-context-only vendored upstream declarations (Apache-2.0, (c) Drizzle Team); see THIRD_PARTY_NOTICES.md.\n` +
+    `export const DRIZZLE_FILES = new Map([${entries.join(",")}]);\n` +
+    `export const DRIZZLE_PIN = ${JSON.stringify(drizzle.pin)};\n` +
+    `export const DRIZZLE_DIGEST = ${JSON.stringify(drizzle.digest)};\n` +
+    `export const DRIZZLE_ENTRY_SUBPATHS = ${JSON.stringify(drizzle.entries)};\n`;
+}
+
 /** Every standard-library declaration file of the exact compiler pin. */
 function collectLibFiles() {
   const libDir = dirname(require.resolve("typescript/package.json"));
@@ -136,6 +270,7 @@ function libsModuleText(libFiles) {
 /** The public bundle entry of the artifact. */
 const entryText = `// Generated by build.mjs — the entry wires the vendored compiler to the kernel.
 import { LIB_FILES } from "./libs.mjs";
+import { DRIZZLE_FILES, DRIZZLE_PIN, DRIZZLE_DIGEST } from "./drizzle-libs.mjs";
 import * as ts from "typescript";
 import * as kernel from "./kernel.mjs";
 import * as scanner from "./scanner.mjs";
@@ -153,6 +288,7 @@ kernel.__setCompilerMetadata({
   esbuild: ${JSON.stringify(ESBUILD_VERSION)},
 });
 kernel.__attachVendoredCompiler(ts, LIB_FILES);
+kernel.__attachDrizzleDeclarations(DRIZZLE_FILES, DRIZZLE_PIN, DRIZZLE_DIGEST);
 nativeGate.setLaunchPolicy(nativePolicy);
 kernel.__setLaunchExtensions([
   {
@@ -205,9 +341,12 @@ const banner = `#!/usr/bin/env node
  * This artifact embeds the TypeScript ${TYPESCRIPT_VERSION} compiler API and its
  * standard-library declarations (Apache-2.0, (c) Microsoft Corporation)
  * bundled by esbuild ${ESBUILD_VERSION} (MIT, (c) Evan Wallace); see
- * THIRD_PARTY_NOTICES.md. It resolves no package at runtime: the compiler,
- * its declarations, and the kernel live in this one physical file, so the
- * confined core runtime can copy the executable plus exactly this script.
+ * THIRD_PARTY_NOTICES.md. It also embeds the drizzle-orm ${DRIZZLE_VERSION_PIN}
+ * declaration closure (Apache-2.0, (c) Drizzle Team) for type-context-only
+ * resolution of Drizzle schema/query surfaces (issue #116). It resolves no
+ * package at runtime: the compiler, its declarations, and the kernel live in
+ * this one physical file, so the confined core runtime can copy the
+ * executable plus exactly this script.
  */
 
 `;
@@ -288,6 +427,9 @@ async function buildArtifact() {
   const libFiles = collectLibFiles();
   writeFileSync(libsPath, libsModuleText(libFiles));
   writeFileSync(join(scratchRoot, "src", "libs.mjs"), libsModuleText(libFiles));
+  const drizzle = collectDrizzleFiles();
+  writeFileSync(drizzleLibsPath, drizzleLibsModuleText(drizzle));
+  writeFileSync(join(scratchRoot, "src", "drizzle-libs.mjs"), drizzleLibsModuleText(drizzle));
   const kernelSource = readFileSync(kernelPath, "utf8").replace(/^#![^\n]*\n/, "");
   writeFileSync(join(scratchRoot, "src", "kernel.mjs"), kernelSource);
   const scannerSource = readFileSync(scannerPath, "utf8").replace(stripShebang, "");
@@ -310,6 +452,16 @@ async function buildArtifact() {
   writeFileSync(join(scratchRoot, "src", "scenario-gen.mjs"), readFileSync(scenarioGenPath, "utf8").replace(stripShebang, ""));
   writeFileSync(join(scratchRoot, "src", "scenario-map.mjs"), readFileSync(scenarioMapPath, "utf8").replace(stripShebang, ""));
   writeFileSync(join(scratchRoot, "src", "scenario-emit.mjs"), readFileSync(scenarioEmitPath, "utf8").replace(stripShebang, ""));
+  writeFileSync(join(scratchRoot, "src", "drizzle-evidence.mjs"), readFileSync(drizzleEvidencePath, "utf8").replace(stripShebang, ""));
+  // Issue #115: the Hono framework provider rides the same bundle.
+  writeFileSync(join(scratchRoot, "src", "hono-evidence.mjs"), readFileSync(honoEvidencePath, "utf8").replace(stripShebang, ""));
+  writeFileSync(join(scratchRoot, "src", "hono-context.mjs"), readFileSync(honoContextPath, "utf8").replace(stripShebang, ""));
+  writeFileSync(join(scratchRoot, "src", "hono-scanner.mjs"), readFileSync(honoScannerPath, "utf8").replace(stripShebang, ""));
+  writeFileSync(join(scratchRoot, "src", "hono-routes.mjs"), readFileSync(honoRoutesPath, "utf8").replace(stripShebang, ""));
+  writeFileSync(join(scratchRoot, "src", "hono-middleware.mjs"), readFileSync(honoMiddlewarePath, "utf8").replace(stripShebang, ""));
+  writeFileSync(join(scratchRoot, "src", "hono-http.mjs"), readFileSync(honoHttpPath, "utf8").replace(stripShebang, ""));
+  writeFileSync(join(scratchRoot, "src", "hono-tests.mjs"), readFileSync(honoTestsPath, "utf8").replace(stripShebang, ""));
+  writeFileSync(join(scratchRoot, "src", "hono-bindings.mjs"), readFileSync(honoBindingsPath, "utf8").replace(stripShebang, ""));
   writeFileSync(join(scratchRoot, "src", "main.mjs"), entryText);
   // The exact compiler pin must resolve from the adapter's own provisioning.
   const tsPackageDir = dirname(require.resolve("typescript/package.json"));

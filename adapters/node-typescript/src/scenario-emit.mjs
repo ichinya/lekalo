@@ -672,7 +672,7 @@ function renderBody(model) {
       continue;
     }
     groups.push({
-      lines: [`    // when ${step.stepId} (${step.operation.kind} ${step.operation.id})`, ...renderWhen(step, stepVars)],
+      lines: [`    // when ${step.stepId} (${step.operation.kind} ${step.operation.id})`, ...renderWhen(step, stepVars, clockIsos)],
       stepId: null,
     });
   }
@@ -738,7 +738,7 @@ function objectLiteral(fieldEntries, stepVars) {
   return object;
 }
 
-function renderWhen(step, stepVars) {
+function renderWhen(step, stepVars, clockIsos) {
   const variable = `step_${identifierOf(step.stepId)}`;
   stepVars.set(step.stepId, variable);
   const input = {};

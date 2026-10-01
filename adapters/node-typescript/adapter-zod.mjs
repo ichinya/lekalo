@@ -23,6 +23,7 @@ __export(kernel_exports, {
   ADAPTER_VERSION: () => ADAPTER_VERSION,
   ERROR_CODES: () => ERROR_CODES,
   MAX_FILE_BYTES: () => MAX_FILE_BYTES,
+  MAX_FRAMEWORK_POLICY_JSON_BYTES: () => MAX_FRAMEWORK_POLICY_JSON_BYTES,
   MAX_JSON_DEPTH: () => MAX_JSON_DEPTH,
   MAX_PROFILE_JSON_BYTES: () => MAX_PROFILE_JSON_BYTES,
   MAX_REQUEST_BYTES: () => MAX_REQUEST_BYTES,
@@ -35,6 +36,7 @@ __export(kernel_exports, {
   RequestRefusal: () => RequestRefusal,
   SUPPORTED_VERSIONS: () => SUPPORTED_VERSIONS,
   VERSION: () => VERSION,
+  __attachDrizzleDeclarations: () => __attachDrizzleDeclarations,
   __attachVendoredCompiler: () => __attachVendoredCompiler,
   __setCompilerMetadata: () => __setCompilerMetadata,
   __setLaunchExtensions: () => __setLaunchExtensions,
@@ -44,13 +46,16 @@ __export(kernel_exports, {
   createKernel: () => createKernel,
   createReadView: () => createReadView,
   createWriteView: () => createWriteView,
+  decodeFrameworkPolicyJson: () => decodeFrameworkPolicyJson,
   decodeJsonDocument: () => decodeJsonDocument,
   decodeProjectProfileJson: () => decodeProjectProfileJson,
   decodeUtf8Fatal: () => decodeUtf8Fatal,
   describeCapabilities: () => describeCapabilities,
+  embeddedDrizzleDeclarations: () => embeddedDrizzleDeclarations,
   embeddedLibFiles: () => embeddedLibFiles,
   entryDigest: () => entryDigest,
   entryPath: () => entryPath,
+  extractFrameworkPolicyJson: () => extractFrameworkPolicyJson,
   extractProjectProfileJson: () => extractProjectProfileJson,
   isCapabilityId: () => isCapabilityId,
   isContractVersion: () => isContractVersion,
@@ -207,6 +212,7 @@ function __setCompilerMetadata(metadata) {
 }
 var vendoredCompiler = null;
 var embeddedLibs = null;
+var drizzleDeclarations = null;
 var launchExtensions = [];
 function __setLaunchExtensions(extensions) {
   if (!Array.isArray(extensions)) {
@@ -229,6 +235,21 @@ function vendoredTs() {
 }
 function embeddedLibFiles() {
   return embeddedLibs;
+}
+function __attachDrizzleDeclarations(files, pin, digest) {
+  if (!(files instanceof Map) || files.size === 0) {
+    throw new RequestRefusal("compiler", "the embedded drizzle declaration map is malformed");
+  }
+  if (typeof pin !== "string" || pin === "" || typeof digest !== "string" || !isSha256Digest(digest)) {
+    throw new RequestRefusal("compiler", "the embedded drizzle declaration identity is malformed");
+  }
+  if (drizzleDeclarations !== null && (drizzleDeclarations.pin !== pin || drizzleDeclarations.digest !== digest)) {
+    throw new RequestRefusal("compiler", "a different drizzle declaration closure is already attached");
+  }
+  drizzleDeclarations = Object.freeze({ files, pin, digest });
+}
+function embeddedDrizzleDeclarations() {
+  return drizzleDeclarations;
 }
 function isSha256Digest(value) {
   return typeof value === "string" && value.length === 71 && value.startsWith("sha256:") && /^[0-9a-f]{64}$/.test(value.slice(7));
@@ -926,6 +947,66 @@ var ERROR_CODES = Object.freeze({
     message: "the registered extension failed inside the dispatch boundary"
   })
 });
+var MAX_FRAMEWORK_POLICY_JSON_BYTES = 8 * 1024;
+function decodeFrameworkPolicyJson(text) {
+  if (typeof text !== "string") {
+    throw new RequestRefusal("framework-policy", "the framework policy must be one JSON text");
+  }
+  const bytes = Buffer.from(text, "utf8");
+  if (bytes.length === 0 || bytes.length > MAX_FRAMEWORK_POLICY_JSON_BYTES) {
+    throw new RequestRefusal("framework-policy", "the framework policy exceeds the closed input bound");
+  }
+  const document = decodeJsonDocument(bytes, { maxBytes: MAX_FRAMEWORK_POLICY_JSON_BYTES });
+  if (document.schema !== "lekalo/framework-policy") {
+    throw new RequestRefusal("framework-policy", "unknown framework policy schema");
+  }
+  if (document.version !== 1) {
+    throw new RequestRefusal("framework-policy", "unknown framework policy version");
+  }
+  if (!Array.isArray(document.providers) || document.providers.length > 16) {
+    throw new RequestRefusal("framework-policy", "providers must be a bounded array");
+  }
+  const seen = /* @__PURE__ */ new Set();
+  const providers = document.providers.map((entry) => {
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+      throw new RequestRefusal("framework-policy", "provider must be an object");
+    }
+    const keys = Object.keys(entry);
+    if (keys.length !== 2 || !keys.includes("id") || !keys.includes("state")) {
+      throw new RequestRefusal("framework-policy", "provider shape is closed (id, state)");
+    }
+    const { id, state } = entry;
+    if (typeof id !== "string" || id.length === 0 || id.length > 64 || !/^[a-z][a-z0-9-]*$/.test(id)) {
+      throw new RequestRefusal("framework-policy", "provider id out of bounds");
+    }
+    if (state !== "enabled" && state !== "disabled") {
+      throw new RequestRefusal("framework-policy", "provider state must be enabled or disabled");
+    }
+    if (seen.has(id)) {
+      throw new RequestRefusal("framework-policy", "duplicate provider id");
+    }
+    seen.add(id);
+    return { id, state };
+  });
+  const canonical = { providers };
+  const digest = `sha256:${createHash("sha256").update(canonicalJson(canonical), "utf8").digest("hex")}`;
+  return deepFreeze({ schema: document.schema, version: 1, providers, digest });
+}
+function extractFrameworkPolicyJson(argv = process.argv.slice(2)) {
+  const markers = argv.filter((argument) => argument === "--lekalo-framework-policy-json");
+  if (markers.length > 1) {
+    throw new RequestRefusal("framework-policy", "ambiguous framework policy inputs");
+  }
+  const marker = argv.indexOf("--lekalo-framework-policy-json");
+  if (marker === -1) {
+    return void 0;
+  }
+  const value = argv[marker + 1];
+  if (value === void 0 || value === "") {
+    throw new RequestRefusal("framework-policy", "missing framework policy value");
+  }
+  return value;
+}
 function decodeProjectProfileJson(text) {
   if (typeof text !== "string") {
     throw new RequestRefusal("profile-input", "the launch profile must be one JSON text");
@@ -1533,7 +1614,8 @@ function createKernel(options = {}) {
                 provenance: { ...profile.provenance },
                 ...profile.localReference !== void 0 ? { localReference: structuredClone(profile.localReference) } : {}
               } : null,
-              extensions: [...extensions.keys()]
+              extensions: [...extensions.keys()],
+              ...trustedExecutionContext?.frameworkPolicy ? { frameworkPolicy: { digest: trustedExecutionContext.frameworkPolicy.digest } } : {}
             }
           }
         };
@@ -1648,6 +1730,7 @@ function createKernel(options = {}) {
           profile,
           readView,
           ...writeView !== null ? { writeView } : {},
+          ...trustedExecutionContext.frameworkPolicy ? { frameworkPolicy: trustedExecutionContext.frameworkPolicy } : {},
           cancellation: trustedExecutionContext.cancellation ?? null,
           limits: trustedExecutionContext.limits ?? { files: 4096, bytes: 4 * 1024 * 1024 }
         }));
@@ -2197,10 +2280,18 @@ async function main() {
       });
       options.kernel = kernel2;
     }
+    let frameworkPolicy = null;
+    const policyJson = extractFrameworkPolicyJson();
+    if (policyJson !== void 0) {
+      frameworkPolicy = decodeFrameworkPolicyJson(policyJson);
+    }
     const document = decodeJsonDocument(requestBytes);
     const request = validateRequestObject(document);
     const kernel = options.kernel ?? createKernel();
-    const dispatched = kernel.dispatch(request, { permittedProjectRoot: process.cwd() });
+    const dispatched = kernel.dispatch(request, {
+      permittedProjectRoot: process.cwd(),
+      ...frameworkPolicy !== null ? { frameworkPolicy } : {}
+    });
     process.stdout.write(canonicalJson(dispatched.response));
   } catch (error) {
     process.stderr.write(stderrDiagnostic(error?.code ?? "invalid") + "\n");
