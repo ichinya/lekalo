@@ -10,11 +10,14 @@
  * a findings report.
  *
  *   node scripts/pilot-brownfield-ts.mjs --consumer <abs-path> \
+ *     --bind <file>:<export>[:<semanticId>] \
  *     [--workdir <dir>] [--lekalo <binary>] [--out <report-dir>] \
- *     [--keep] [--in-place] [--bind <file>:<export>[:<semanticId>]] \
- *     [--budget <tokens>] [--disposition public-fixture|unconfirmed]
+ *     [--keep] [--in-place] [--budget <tokens>] \
+ *     [--disposition public-fixture|unconfirmed]
  *
- * Dependency-free; run from the repo root.
+ * Dependency-free; run from the repo root. The `--bind` target is the
+ * operator's use-case choice and is required: the harness never
+ * guesses which submission flow to bind.
  *
  * Privacy contract of the emitted artifacts (`metrics.json`,
  * `report.md`): counts, sizes, durations, digests, and statuses only.
@@ -66,10 +69,10 @@ function parseArgs(argv) {
     else fail(`unknown argument ${arg}`);
   }
   if (args.consumer === null) fail("--consumer <abs-path> is required");
+  if (args.bind === null) fail("--bind <file>:<export>[:<semanticId>] is required (the operator owns the use-case choice)");
   if (args.disposition !== "public-fixture" && args.disposition !== "unconfirmed") {
     fail("--disposition must be public-fixture or unconfirmed");
   }
-  args.bind ??= "packages/api/src/repositories/tasks.ts:createTask:task.submit";
   return args;
 }
 
