@@ -940,7 +940,10 @@ step("status-doctor", () => {
 
 step("controlled-change", () => {
   const boundFile = join(copyRoot, boundLocation.path);
-  const original = readFileSync(boundFile, "utf8");
+  // Byte truth, not utf8 round-trip: the revert is proven by digest.
+  const originalBytes = readFileSync(boundFile);
+  const originalDigest = sha256Hex(originalBytes);
+  const original = originalBytes.toString("utf8");
   const name = bindTarget.exportName;
   let mutated = original.replace(
     new RegExp(`((?:export\\s+)?(?:async\\s+)?function\\s+${name}\\s*\\()`),
@@ -958,23 +961,27 @@ step("controlled-change", () => {
     mutated = `${original}\n// pilot controlled-change probe\n`;
     strategy = "append-marker";
   }
-  writeFileSync(boundFile, mutated);
+  writeFileSync(boundFile, Buffer.from(mutated, "utf8"));
   const audit = runLekalo(copyRoot, ["bindings", "audit", "--project", "."]);
   const staleDuring = audit.envelope?.status === "invalid"
     && (audit.envelope.diagnostics ?? []).some((diagnostic) => diagnostic.id === "observed.stale-binding");
   const check = runLekalo(copyRoot, ["observe", "check", "--project", "."]);
   const checkFailed = check.exitCode !== 0 || check.envelope?.status === "invalid";
-  writeFileSync(boundFile, original);
+  writeFileSync(boundFile, originalBytes);
+  const revertedBytes = readFileSync(boundFile);
+  const revertByteIdentical = sha256Hex(revertedBytes) === originalDigest;
   const reverted = runLekalo(copyRoot, ["bindings", "audit", "--project", "."]);
   const cleanAfter = reverted.exitCode === 0 && reverted.envelope?.status === "valid";
   if (!staleDuring) throw new Error(`staleness did not fire (strategy ${strategy})`);
   if (!checkFailed) throw new Error("the staleness gate passed over a stale binding");
+  if (!revertByteIdentical) throw new Error("the revert did not restore the original bytes");
   if (!cleanAfter) throw new Error("the audit stayed stale after revert");
   return {
     strategy,
     staleDiagnostics: (audit.envelope.diagnostics ?? [])
       .filter((diagnostic) => diagnostic.id === "observed.stale-binding").length,
     checkFailed: true,
+    revertByteIdentical: true,
     cleanAfterRevert: cleanAfter,
   };
 });

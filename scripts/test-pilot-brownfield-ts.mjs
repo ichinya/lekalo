@@ -79,7 +79,7 @@ const DETAIL_ALLOWLIST = {
     "current", "stale", "unknown",
   ],
   "status-doctor": ["statusOk", "doctorVerdict"],
-  "controlled-change": ["strategy", "staleDiagnostics", "checkFailed", "cleanAfterRevert"],
+  "controlled-change": ["strategy", "staleDiagnostics", "checkFailed", "revertByteIdentical", "cleanAfterRevert"],
   report: ["reportBytes", "metricsBytes"],
 };
 
@@ -117,6 +117,7 @@ try {
   const mutation = step("controlled-change");
   assert.equal(mutation.staleDiagnostics >= 1, true);
   assert.equal(mutation.checkFailed, true);
+  assert.equal(mutation.revertByteIdentical, true);
   assert.equal(mutation.cleanAfterRevert, true);
 
   // The metrics schema is closed: exactly the declared top-level
