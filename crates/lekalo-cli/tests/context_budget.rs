@@ -449,3 +449,178 @@ fn write_profiles_with_estimator(project: &Path, estimator: &str) -> PathBuf {
     std::fs::write(&path, document).expect("write profiles");
     path
 }
+
+/// AC3: a mandatory policy denies with exit 3 over the exact profile
+/// pin, and the report still rides the denied envelope; the passing
+/// side keeps exit 0. `suggestions_never_write`: no file appears.
+#[test]
+fn mandatory_policy_denies_and_passes_on_the_pin() {
+    let project = fixture_path();
+    // Pin the policy to the effective profile of a passing report.
+    let passing = lekalo_in(
+        &project,
+        &[
+            "--json",
+            "context-budget",
+            "--symbol",
+            "planner.focus_task",
+            "--budget",
+            "1000000",
+        ],
+    );
+    assert_eq!(exit_code(&passing), 0);
+    let report = document(&passing);
+    let profile = &report["contextBudget"]["profile"];
+    let policy = format!(
+        r#"{{"schemaVersion":"lekalo/context-budget-policy/v0.6.3","identity":"dev.lekalo.context-budget-policy@0.6.3","mode":"mandatory","profileRef":{{"id":"{}","version":"{}","digest":"{}"}},"failOn":["over-budget"],"regressionLimits":[]}}"#,
+        profile["id"].as_str().expect("id"),
+        profile["version"].as_str().expect("version"),
+        profile["digest"].as_str().expect("digest"),
+    );
+    let policy_path = project.join("context-budget-policy-pin.json");
+    std::fs::write(&policy_path, policy).expect("write policy");
+    let pass = lekalo_in(
+        &project,
+        &[
+            "--json",
+            "context-budget",
+            "--symbol",
+            "planner.focus_task",
+            "--budget",
+            "1000000",
+            "--policy",
+            policy_path.to_str().expect("utf8 policy"),
+        ],
+    );
+    assert_eq!(exit_code(&pass), 0, "the passing side exits 0");
+    let deny = lekalo_in(
+        &project,
+        &[
+            "--json",
+            "context-budget",
+            "--symbol",
+            "planner.focus_task",
+            "--budget",
+            "200",
+            "--policy",
+            policy_path.to_str().expect("utf8 policy"),
+        ],
+    );
+    assert_eq!(exit_code(&deny), 3, "the mandatory policy denies with 3");
+    // The denial keeps its stdout envelope with the mirrored evidence:
+    // denied writes stdout (exit 3), never stderr.
+    let stdout = String::from_utf8(deny.stdout.clone()).expect("stdout utf8");
+    let document: serde_json::Value = serde_json::from_str(&stdout).expect("denial envelope");
+    assert_eq!(document["status"], "denied");
+    assert_eq!(document["reasonCodes"][0], "context.policy-denied");
+    let _ = std::fs::remove_file(&policy_path);
+}
+
+/// A policy pinned to a different profile digest denies before any
+/// metric evaluation (`policy_cannot_be_weakened_by_override`).
+#[test]
+fn policy_pin_mismatch_denies() {
+    let project = fixture_path();
+    let policy = r#"{"schemaVersion":"lekalo/context-budget-policy/v0.6.3","identity":"dev.lekalo.context-budget-policy@0.6.3","mode":"mandatory","profileRef":{"id":"local-12k","version":"1","digest":"sha256:1111111111111111111111111111111111111111111111111111111111111111"},"failOn":["over-budget"],"regressionLimits":[]}"#;
+    let policy_path = project.join("context-budget-policy-mismatch.json");
+    std::fs::write(&policy_path, policy).expect("write policy");
+    let denied = lekalo_in(
+        &project,
+        &[
+            "--json",
+            "context-budget",
+            "--symbol",
+            "planner.focus_task",
+            "--budget",
+            "1000000",
+            "--policy",
+            policy_path.to_str().expect("utf8 policy"),
+        ],
+    );
+    assert_eq!(exit_code(&denied), 3);
+    let _ = std::fs::remove_file(&policy_path);
+}
+
+/// AC5: a comparable baseline produces no regression warning; a
+/// changed-profile baseline is an explicit incomparable row.
+#[test]
+fn baseline_comparison_records_verdicts() {
+    let project = fixture_path();
+    let baseline_run = lekalo_in(
+        &project,
+        &[
+            "--json",
+            "context-budget",
+            "--symbol",
+            "planner.focus_task",
+            "--budget",
+            "1000000",
+        ],
+    );
+    assert_eq!(exit_code(&baseline_run), 0);
+    let baseline = document(&baseline_run);
+    let baseline_path = project.join("context-budget-baseline.json");
+    std::fs::write(
+        &baseline_path,
+        serde_json::to_string(&baseline["contextBudget"]).expect("serialize baseline"),
+    )
+    .expect("write baseline");
+    // The identical rerun is comparable: no baseline warning appears.
+    let same_run = lekalo_in(
+        &project,
+        &[
+            "--json",
+            "context-budget",
+            "--symbol",
+            "planner.focus_task",
+            "--budget",
+            "1000000",
+            "--baseline",
+            baseline_path.to_str().expect("utf8 baseline"),
+        ],
+    );
+    assert_eq!(exit_code(&same_run), 0);
+    let same = document(&same_run);
+    let warnings = same["diagnostics"].as_array().cloned().unwrap_or_default();
+    assert!(!warnings
+        .iter()
+        .any(|diagnostic| diagnostic["id"] == "context.baseline-incomparable"));
+    // A changed budget changes the profile digest: incomparable.
+    let changed = document(&lekalo_in(
+        &project,
+        &[
+            "--json",
+            "context-budget",
+            "--symbol",
+            "planner.focus_task",
+            "--budget",
+            "200",
+            "--baseline",
+            baseline_path.to_str().expect("utf8 baseline"),
+        ],
+    ));
+    let changed_warnings = changed["diagnostics"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(changed_warnings
+        .iter()
+        .any(|diagnostic| diagnostic["id"] == "context.baseline-incomparable"));
+    // A malformed baseline is invalid, never incomparable.
+    std::fs::write(&baseline_path, b"{ broken").expect("corrupt baseline");
+    let malformed = lekalo_in(
+        &project,
+        &[
+            "--json",
+            "context-budget",
+            "--symbol",
+            "planner.focus_task",
+            "--budget",
+            "1000000",
+            "--baseline",
+            baseline_path.to_str().expect("utf8 baseline"),
+        ],
+    );
+    assert_eq!(exit_code(&malformed), 1);
+    let _ = std::fs::remove_file(&baseline_path);
+}
