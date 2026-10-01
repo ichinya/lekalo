@@ -1,7 +1,7 @@
 {
-  "schema_version": "lekalo/diagnostic-registry/v0.4.0",
-  "identity": "dev.lekalo.diagnostic-registry@0.4.0",
-  "registry_version": "0.4.0",
+  "schema_version": "lekalo/diagnostic-registry/v0.6.3",
+  "identity": "dev.lekalo.diagnostic-registry@0.6.3",
+  "registry_version": "0.6.3",
   "closed": true,
   "entries": [
     {
@@ -859,6 +859,50 @@
       "lifecycle": "active"
     },
     {
+      "id": "ci.report-write-failed",
+      "code": "LEK-CI-001",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unavailable"
+      ],
+      "message_id": "ci.report-write-failed",
+      "default_message": "The CI report could not be written to the granted output location.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "ci.required-check-missing",
+      "code": "LEK-CI-002",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unavailable"
+      ],
+      "message_id": "ci.required-check-missing",
+      "default_message": "A check the policy requires never reached a terminal evaluation.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "check",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "classification.conflicting-kind",
       "code": "LEK-CLS-004",
       "category": "semantic",
@@ -1522,6 +1566,198 @@
       "data_fields": [
         {
           "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "context.artifact-evidence-incomplete",
+      "code": "LEK-CONTEXT-004",
+      "category": "semantic",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid"
+      ],
+      "message_id": "context.artifact-evidence-incomplete",
+      "default_message": "Artifact evidence for the requested source recipe is missing, stale, or unmeasurable; dependent metrics stay unknown.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "context.baseline-incomparable",
+      "code": "LEK-CONTEXT-005",
+      "category": "compatibility",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid"
+      ],
+      "message_id": "context.baseline-incomparable",
+      "default_message": "The baseline report is incomparable: pins, profile, metric version, or identity mapping differ; no regression verdict is issued.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "context.baseline-regression",
+      "code": "LEK-CONTEXT-007",
+      "category": "semantic",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid"
+      ],
+      "message_id": "context.baseline-regression",
+      "default_message": "A comparable context-budget metric exceeds the configured baseline regression allowance.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "context.budget-exceeded",
+      "code": "LEK-CONTEXT-006",
+      "category": "semantic",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid"
+      ],
+      "message_id": "context.budget-exceeded",
+      "default_message": "The required semantic context of the subject exceeds the effective content budget; the breakdown explains the cost.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "context.closure-incomplete",
+      "code": "LEK-CONTEXT-003",
+      "category": "semantic",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid"
+      ],
+      "message_id": "context.closure-incomplete",
+      "default_message": "The context-budget closure is incomplete: a bound, unresolved required edge, stale evidence, or unrepresentable attachment stopped it.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "context.input-invalid",
+      "code": "LEK-CONTEXT-001",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "context.input-invalid",
+      "default_message": "The context-budget request, selector, profile, policy, baseline, or evidence input is malformed or unsupported.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "context.policy-denied",
+      "code": "LEK-CONTEXT-008",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "context.policy-denied",
+      "default_message": "The mandatory context-budget policy denied the result: a configured budget, regression, or completeness requirement failed.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "context.profile-unsupported",
+      "code": "LEK-CONTEXT-002",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unsupported-version"
+      ],
+      "message_id": "context.profile-unsupported",
+      "default_message": "The budget profile, estimator, or contract version is outside the accepted registry; no fallback is applied.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
           "type": "token"
         }
       ],
