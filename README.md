@@ -596,6 +596,9 @@ profiles are blockers with a next action. See
 [ADR-0032](docs/adr/0032-doctor-readiness.md), and the pinned fixtures
 under `tests/fixtures/doctor/`.
 
+See [Работа с HLV и без него](docs/hlv.md) for the comparison, optional trace
+evidence in `doctor`, and project-specific HLV acceptance gates.
+
 ## Observed mode for existing code
 
 Issue #39 lets Lekalo index, bind, and analyze existing code without

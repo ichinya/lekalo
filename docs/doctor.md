@@ -102,6 +102,10 @@ validator, and the check reports `evidence-current`, degraded gaps, or
 blocked wire refusals with the preserved rule ids. Unsupplied evidence
 degrades — it is never a core failure.
 
+For a practical comparison of development with and without HLV, the role
+of trace evidence, and when a project workflow can require HLV gates, see
+[Working with and without HLV](hlv.md).
+
 ## Safe-fix recipes
 
 `--fix` renders the closed recipe preview (advice only, with a
