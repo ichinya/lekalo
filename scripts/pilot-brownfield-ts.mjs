@@ -78,6 +78,32 @@ function fail(message) {
   process.exit(2);
 }
 
+/** Resolve a path to its long-path spelling and refuse when an 8.3
+ * short-name segment survives (the core's project-path rule would
+ * refuse every operation inside it). The native realpath is preferred:
+ * it expands `~<digit>` aliases to the long names (the JS fallback can
+ * keep them verbatim). `create` makes the directory first
+ * (output/working directories); existing-path callers must not pass
+ * it, so a mistyped consumer path stays a hard failure. */
+function canonicalPath(path, { create = false } = {}) {
+  let real = path;
+  try {
+    if (create) mkdirSync(path, { recursive: true });
+    try {
+      real = realpathSync.native(path);
+    } catch {
+      real = realpathSync(path);
+    }
+  } catch (error) {
+    fail(`cannot canonicalize ${path}: ${String(error?.message ?? error).slice(0, 200)}`);
+  }
+  const offender = real.split(/[\\/]/).find((segment) => /~[0-9]/.test(segment));
+  if (offender !== undefined) {
+    fail(`the path contains an 8.3 short-name segment (${offender}) that canonicalization could not resolve`);
+  }
+  return real;
+}
+
 const args = parseArgs(process.argv.slice(2));
 const bindTarget = (() => {
   const [file = "", exportName = "", semanticId = "task.submit"] = args.bind.split(":");
@@ -169,7 +195,7 @@ function copyConsumer(source, target, skipCounts) {
 // ---------------------------------------------------------------------------
 
 function lekaloBinary() {
-  if (args.lekalo !== null) return resolve(args.lekalo);
+  if (args.lekalo !== null) return canonicalPath(resolve(args.lekalo));
   const exe = process.platform === "win32" ? "lekalo.exe" : "lekalo";
   const candidate = join(repoRoot, "target", "debug", exe);
   if (!existsSync(candidate)) {
@@ -180,7 +206,7 @@ function lekaloBinary() {
       fail(`no lekalo binary at target/debug and cargo build failed: ${build.stderr?.slice(-400)}`);
     }
   }
-  return candidate;
+  return canonicalPath(candidate);
 }
 
 const lekalo = lekaloBinary();
@@ -483,10 +509,18 @@ function step(name, fn, { required = true } = {}) {
   return record;
 }
 
-const consumerRoot = realpathSync(resolve(args.consumer));
+const consumerRoot = canonicalPath(resolve(args.consumer));
 const consumerPathDigest = sha(Buffer.from(consumerRoot.split("\\").join("/")));
-const outDir = resolve(args.out ?? join(realpathSync(tmpdir()), "lekalo-pilot-brownfield-ts"));
-const workdir = resolve(args.workdir ?? join(outDir, "work"));
+// Every path that can reach the CLI (working directory, copy root,
+// consumer, output directory) is canonicalized: Windows aliases long
+// path segments as 8.3 short names (`C:\Users\RUNNER~1\...`), and the
+// core refuses any project path whose spelling contains a `~<digit>`
+// segment (`structure.selection-short-name`). `fs.realpathSync`
+// resolves the aliases to the long names; when a short-name segment
+// survives anyway, the run refuses here with a clear reason instead of
+// cascading through every step.
+const outDir = canonicalPath(resolve(args.out ?? join(tmpdir(), "lekalo-pilot-brownfield-ts")), { create: true });
+const workdir = canonicalPath(resolve(args.workdir ?? join(outDir, "work")), { create: true });
 const copyRoot = args.inPlace ? consumerRoot : join(workdir, "consumer-copy");
 
 const metrics = {
