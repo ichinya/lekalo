@@ -12,6 +12,18 @@ discriminator wire-формата, встроенные константы и с
 Хеши пересчитываются по указанному контрактом алгоритму. Версия
 неизменённого контракта при выпуске новой версии продукта сохраняется.
 
+Issue #34 adds the workflow-provider discovery family
+(`dev.lekalo.workflow-provider`): the AIFHub-consumable
+`lekalo provider describe` handshake emitted as
+`lekalo/workflow-provider/v0.6.3`. Like doctor, it is an independent
+family — separate from the `lekalo.target/v1` adapter protocol, from
+every Model/IR/graph/effect/lock contract, and from the diagnostic
+registry — but unlike the per-command contracts it takes the product
+version of its implementation commit rather than a family-local
+version, and its successor therefore follows the product-version rule
+above. The manifest pins the exact upstream contract versions it
+carries; those pins never drift with a product release.
+
 Проверка `node scripts/check-contract-versions.mjs` сравнивает рабочее дерево
 с HEAD. В CI используется `--base HEAD^`: изменённый контракт должен иметь
 текущую версию продукта. Проверки схем и runtime отдельно контролируют
