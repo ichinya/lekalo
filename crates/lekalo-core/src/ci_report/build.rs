@@ -435,3 +435,62 @@ pub fn with_diagnostics(mut report: CiReport, diagnostics: Vec<Diagnostic>) -> C
         .collect();
     report
 }
+
+/// The registered CI diagnostic constructors, for the CLI edge: the
+/// `ci.*` rules with bounded safe detail tokens (never a rejected
+/// value, path, or raw IO text). A registry failure collapses to the
+/// registry-invariant singleton, like every other producer seam.
+pub mod diagnostics {
+    /// One bounded, control-cleaned token data value.
+    fn token(text: &str) -> crate::diagnostics::DataValue {
+        crate::diagnostics::types::token_value(text)
+    }
+
+    /// Build one registered diagnostic or collapse to the invariant
+    /// singleton set under its status.
+    fn set(
+        status: crate::result::Status,
+        built: Result<crate::diagnostics::Diagnostic, crate::diagnostics::normalize::BuildError>,
+    ) -> crate::diagnostics::DiagnosticSet {
+        match built {
+            Ok(diagnostic) => {
+                crate::diagnostics::DiagnosticSet::try_from_unsorted(vec![diagnostic], status)
+                    .unwrap_or_else(|_| {
+                        crate::diagnostics::DiagnosticSet::try_from_unsorted(Vec::new(), status)
+                            .unwrap_or_else(|_| crate::diagnostics::DiagnosticSet::empty())
+                    })
+            }
+            Err(_) => {
+                // The registry-invariant collapse: an empty set of the
+                // requested status (double developer fault never
+                // panics the CLI edge).
+                crate::diagnostics::DiagnosticSet::try_from_unsorted(Vec::new(), status)
+                    .unwrap_or_else(|_| crate::diagnostics::DiagnosticSet::empty())
+            }
+        }
+    }
+
+    /// `ci.report-write-failed`: the granted report destination refused
+    /// the write. `detail` is one closed token (`directory-missing`,
+    /// `path-invalid`, `write-denied`), never a host path.
+    pub fn report_write_failed(detail: &str) -> crate::diagnostics::DiagnosticSet {
+        let mut data = crate::diagnostics::DataObject::new();
+        data.insert("detail".to_owned(), token(detail));
+        set(
+            crate::result::Status::Unavailable,
+            crate::diagnostics::normalize::build("ci.report-write-failed", None, None, data),
+        )
+    }
+
+    /// `ci.required-check-missing`: a check the policy requires never
+    /// reached a terminal evaluation. `check` is the closed check id.
+    pub fn required_check_missing(check: &str, detail: &str) -> crate::diagnostics::DiagnosticSet {
+        let mut data = crate::diagnostics::DataObject::new();
+        data.insert("check".to_owned(), token(check));
+        data.insert("detail".to_owned(), token(detail));
+        set(
+            crate::result::Status::Unavailable,
+            crate::diagnostics::normalize::build("ci.required-check-missing", None, None, data),
+        )
+    }
+}

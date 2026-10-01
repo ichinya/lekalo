@@ -110,6 +110,74 @@ pub fn verify(request: VerifyRequest<'_>) -> DomainResult {
     }
 }
 
+/// The CI evidence seam (issue #103): run the pipeline and hand back
+/// both the terminal domain result and every assembled component row.
+/// The blocked verdict no longer discards the receipt: the components
+/// ride alongside the aggregate envelope, so a CI report can project
+/// the failure classes without re-running anything. The terminal
+/// result is identical to [`verify`].
+pub struct Verified {
+    /// The terminal domain result (the exact `verify` projection).
+    pub result: DomainResult,
+    /// One component row per executed or declared-absent component, in
+    /// fixed id order; empty when the pipeline failed before assembly.
+    pub components: Vec<ComponentReceipt>,
+    /// The verdict the receipt derived, when assembled.
+    pub verdict: Option<Verdict>,
+}
+
+/// Run the verify pipeline retaining the typed evidence (issue #103).
+pub fn verify_with_components(request: VerifyRequest<'_>) -> Verified {
+    match run(request) {
+        Ok(outcome) => {
+            // A receipt-bearing success carries its components; the
+            // degraded `UnsupportedOperation` path loses them today,
+            // and the CI report records the declared absences instead.
+            if let DomainResult::Valid { .. } = outcome {
+                // The receipt bytes are re-derived by the report layer
+                // through the declared component ids; the success
+                // projection carries only the envelope.
+            }
+            Verified {
+                result: outcome,
+                components: components_of_last_run().unwrap_or_default(),
+                verdict: verdict_of_last_run(),
+            }
+        }
+        Err(result) => Verified {
+            result,
+            components: components_of_last_run().unwrap_or_default(),
+            verdict: verdict_of_last_run(),
+        },
+    }
+}
+
+// The assembled components of the most recent `run` in this thread.
+// The pipeline is single-threaded per invocation; the handoff is the
+// bounded evidence seam between the runner and the CI layer.
+thread_local! {
+    static LAST_COMPONENTS: std::cell::RefCell<Option<(Vec<ComponentReceipt>, Option<Verdict>)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+fn record_components(components: Vec<ComponentReceipt>, verdict: Option<Verdict>) {
+    LAST_COMPONENTS.with(|slot| {
+        *slot.borrow_mut() = Some((components, verdict));
+    });
+}
+
+fn components_of_last_run() -> Option<Vec<ComponentReceipt>> {
+    LAST_COMPONENTS.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .map(|(components, _)| components.clone())
+    })
+}
+
+fn verdict_of_last_run() -> Option<Verdict> {
+    LAST_COMPONENTS.with(|slot| slot.borrow().as_ref().and_then(|(_, verdict)| *verdict))
+}
+
 /// `lekalo trace collect` (issue #56, plan S5): the one write command of
 /// the trace surface. The scenario → test → gate manifest is rebuilt
 /// from the adjudicated ingest home through the production rollup and
@@ -358,6 +426,9 @@ fn run(request: VerifyRequest<'_>) -> Result<DomainResult, DomainResult> {
         components: components.iter().map(|c| c.receipt.clone()).collect(),
         verdict,
     };
+    // Issue #103: the CI evidence seam captures the assembled rows
+    // before any envelope aggregation discards them.
+    record_components(receipt.components.clone(), Some(receipt.verdict));
     if verdict == Verdict::Blocked {
         // The aggregate failure envelope preserves every component
         // failure; the exit class follows the deterministic precedence.
