@@ -23,7 +23,9 @@
  *     workspace change-event kind (explicit operator override flag for
  *     a designated installation), refuse when the workspace's actual
  *     recipient set is not exactly the reviewed one, spawn the upstream
- *     `event create` as an argv array (never a shell) with the widening
+ *     `event create` with a bounded argv (only a Windows `.cmd`/`.bat`
+ *     upstream path takes the shell branch, per its extension — see
+ *     runProcess) with the widening
  *     flags forced off in the child, then reconcile by readback over
  *     the group-scoped MCP tools before recording `delivered`. Any
  *     spawn failure, timeout, unparseable receipt, readback gap, or
@@ -154,7 +156,7 @@ const runProcess = (command, argv, options = {}) => {
 };
 
 // ---------------------------------------------------------------------------
-// git inputs (argv only; never a shell)
+// git inputs (argv only; always shell-free — git is a known binary)
 // ---------------------------------------------------------------------------
 
 const git = (argv) => runProcess("git", argv, { cwd: REPO_ROOT, timeoutMs: GIT_TIMEOUT_MS });
@@ -172,13 +174,19 @@ const committedBytes = (revision, repoPath) => {
 };
 
 const worktreeIsClean = () => {
-  // "Clean" means: no tracked working-tree modification relative to
-  // the head revision whose bytes the envelope digests. Staged-new
-  // files, untracked local files (operator config, outbox) and index
-  // state never taint committed digests; a tracked file whose
-  // worktree bytes differ from HEAD does.
-  const result = git(["diff", "--quiet"]);
-  return result.status === 0 || result.status === 1 ? result.status === 0 : false;
+  // "Clean" means: no working-tree AND no staged modification relative
+  // to the head revision whose bytes the envelope digests. A staged
+  // edit to an approved path is exactly as tainting as an unstaged one
+  // (the committed digest would no longer describe the visible bytes),
+  // so the check covers both; untracked local files (operator config,
+  // outbox) never taint committed digests. Each diff exits 0 clean,
+  // 1 dirty, other codes only on real failure.
+  for (const argv of [["diff", "--quiet"], ["diff", "--cached", "--quiet"]]) {
+    const result = git(argv);
+    if (!(result.status === 0 || result.status === 1)) return false;
+    if (result.status !== 0) return false;
+  }
+  return true;
 };
 
 // ---------------------------------------------------------------------------
@@ -493,7 +501,9 @@ const buildUpstreamBody = (envelope) => {
 const UPSTREAM_TITLE = "Lekalo target contract change";
 
 // The one event the pipeline sends: an existing upstream kind, warning
-// severity, bounded projection body. argv array; never a shell.
+// severity, bounded projection body. Bounded argv; no shell for an
+// ordinary executable path (only a Windows .cmd/.bat upstream takes
+// the shell branch in runProcess, per its extension).
 const sendUpstreamEvent = ({ upstream, config, dbPath, cwd, body }) => {
   const argv = [upstream];
   if (config) argv.push("--config", config);
@@ -647,8 +657,12 @@ const main = () => {
   // Closed usage errors: the offending argument NAME is part of the
   // public CLI surface; values are never reflected.
   const bad = (argName) => {
+    // Only known-shape flag names are echoed (they are part of the CLI
+    // surface); a stray positional or value-looking token is reduced to
+    // a bounded marker — no arbitrary argument reflection.
+    const detail = typeof argName === "string" && argName.startsWith("--") ? argName : "unexpected-positional";
     writeResult(args.quiet ?? false, {
-      ok: false, hook: "ai-workspace-hook", state: "refused", reason: "usage", detail: argName,
+      ok: false, hook: "ai-workspace-hook", state: "refused", reason: "usage", detail,
     });
     process.exit(USAGE);
   };
@@ -804,12 +818,15 @@ const main = () => {
 
   // Upstream availability probe (non-destructive). The probe and the
   // send share one execution path: a binary that cannot be probed to a
-  // clean zero exit cannot be sent through.
+  // clean zero exit cannot be sent through. The precise failure reason
+  // (spawn failure vs nonzero exit) is one closed code used by both the
+  // private outbox record and the emitted public result.
   const probe = runProcess(args.upstream, ["--version"], { timeoutMs: 15_000 });
   if (probe.kind !== "ok") {
-    entry.states.push({ state: "unavailable", reason: probe.kind === "nonzero" ? "upstream-probe-nonzero" : `upstream-${probe.code ?? "failed"}` });
+    const probeReason = probe.kind === "nonzero" ? "upstream-probe-nonzero" : "upstream-binary-missing";
+    entry.states.push({ state: "unavailable", reason: probeReason });
     saveOutbox(args.outbox, outbox);
-    emit({ ok: true, hook: "ai-workspace-hook", state: "unavailable", reason: "upstream-binary-missing", eventKey: envelope.eventKey });
+    emit({ ok: true, hook: "ai-workspace-hook", state: "unavailable", reason: probeReason, eventKey: envelope.eventKey });
     return;
   }
 
@@ -913,7 +930,6 @@ const main = () => {
 // Shared delivery resolution: honest verification against the actual
 // linked set, with missing declared routes surfaced explicitly.
 const resolveDelivery = ({ readback, envelope, body, consumerSlugs, entry, outboxDir }) => {
-  const save = () => saveOutbox(outboxDir, entry ? { version: OUTBOX_VERSION, entries: [entry] } : null);
   if (!readback || !readback.details) {
     const reason = readback?.error ?? readback?.detailsError ?? "readback-unavailable";
     if (entry) {

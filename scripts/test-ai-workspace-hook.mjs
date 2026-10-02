@@ -253,6 +253,63 @@ try {
     const recorded2 = JSON.parse(readFileSync(join(outbox2, "outbox.json"), "utf8"));
     const entry2 = recorded2.entries.find((candidate) => candidate.eventKey === unavailable.eventKey);
     assert.ok(entry2.states.some((state) => state.state === "unavailable"), "unavailable recorded in the outbox");
+
+    // A PRESENT-but-unhealthy upstream (probe exits nonzero) reports
+    // the precise `upstream-probe-nonzero` reason on the PUBLIC result —
+    // not the collapsed missing-binary literal (round-2 M7).
+    const outbox3 = join(dir, "outbox3");
+    const unhealthyJs = join(dir, "unhealthy-fake.js");
+    writeFileSync(unhealthyJs, "process.exit(7);\n");
+    const unhealthyLauncher = process.platform === "win32" ? join(dir, "unhealthy.cmd") : join(dir, "unhealthy.sh");
+    const exePath = process.execPath.split("\\").join("/");
+    const jsPath = unhealthyJs.split("\\").join("/");
+    writeFileSync(unhealthyLauncher, process.platform === "win32"
+      ? `@"${exePath}" "${jsPath}" %*\r\n`
+      : `#!/bin/sh\nexec "${exePath}" "${jsPath}" "$@"\n`);
+    if (process.platform !== "win32") chmodSync(unhealthyLauncher, 0o755);
+    const unhealthy = runHookObserved(["--base", "4a084aab~1", "--head", "4a084aab", "--manifest", MANIFEST, "--send", "--outbox", outbox3, "--db", db, "--upstream", unhealthyLauncher, "--allow-unadmitted-send"], { cwd: REPO_ROOT });
+    assert.equal(unhealthy.status, 0, "unhealthy upstream is unavailable, not a crash");
+    const probeNonzero = JSON.parse(unhealthy.stdout);
+    assert.equal(probeNonzero.state, "unavailable");
+    assert.equal(probeNonzero.reason, "upstream-probe-nonzero", "emitted reason must distinguish a nonzero probe from a missing binary");
+    const recorded3 = JSON.parse(readFileSync(join(outbox3, "outbox.json"), "utf8"));
+    const entry3 = recorded3.entries.find((candidate) => candidate.eventKey === probeNonzero.eventKey);
+    assert.ok(entry3.states.some((state) => state.state === "unavailable" && state.reason === "upstream-probe-nonzero"), "outbox records the same precise reason");
+    assert.equal(unavailable.reason === probeNonzero.reason, false, "the two failure shapes must stay distinguishable on the wire");
+
+    // Staged (index) modifications to a tracked file taint the digest
+    // just like unstaged ones: the hook must refuse worktree-dirty
+    // (round-2 devin minor 1).
+    const dirtyStaged = runHookObserved(["--base", "4a084aab~1", "--head", "4a084aab", "--manifest", MANIFEST], { cwd: REPO_ROOT });
+    // (control first: the tree is clean at this point in the gate)
+    assert.equal(dirtyStaged.status, 0);
+    const sentinelDoc = join(REPO_ROOT, "docs/target-protocol.md");
+    const originalDoc = readFileSync(sentinelDoc, "utf8");
+    try {
+      writeFileSync(sentinelDoc, `${originalDoc}\n<!-- staged-taint probe -->\n`);
+      const stagedAdd = run("git", ["add", "docs/target-protocol.md"], { cwd: REPO_ROOT });
+      assert.equal(stagedAdd.status, 0);
+      const stagedTaint = runHookObserved(["--base", "4a084aab~1", "--head", "4a084aab", "--manifest", MANIFEST], { cwd: REPO_ROOT });
+      assert.equal(stagedTaint.status, 3, "a staged modification of a tracked file must refuse worktree-dirty");
+      assert.equal(JSON.parse(stagedTaint.stdout).reason, "worktree-dirty");
+    } finally {
+      writeFileSync(sentinelDoc, originalDoc);
+      run("git", ["reset", "--quiet", "--", "docs/target-protocol.md"], { cwd: REPO_ROOT });
+      // The worktree byte content is restored; if the gate itself is
+      // mid-run on a dirty tree the earlier control already handled it.
+    }
+    const recovered = runHookObserved(["--base", "4a084aab~1", "--head", "4a084aab", "--manifest", MANIFEST], { cwd: REPO_ROOT });
+    assert.equal(recovered.status, 0, "restoring the staged file must restore the clean state");
+
+    // Usage errors never reflect arbitrary non-flag tokens
+    // (round-2 devin minor 2): a stray positional is reduced to a
+    // bounded marker.
+    const stray = runHookObserved(["C:\\Users\\alice\\topsecret-positional"], { cwd: REPO_ROOT });
+    assert.equal(stray.status, 2, "a stray positional is a usage error");
+    const strayResult = JSON.parse(stray.stdout);
+    assert.equal(strayResult.reason, "usage");
+    assert.equal(strayResult.detail, "unexpected-positional", "a stray positional must not be echoed");
+    assert.equal(stray.stdout.includes("alice"), false, "the positional value leaked into usage output");
   }
 
   // ------------------------------------------------------------------

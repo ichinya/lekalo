@@ -155,7 +155,14 @@ const LEAKS = [
 const flatStrings = [];
 const walk = (value, path) => {
   if (Array.isArray(value)) {
-    value.forEach((entry, index) => walk(entry, `${path}[${index}]`));
+    value.forEach((entry, index) => {
+      // Primitive array entries are themselves emitted strings — probe
+      // them too (the tail of codex F7).
+      if (entry === null || typeof entry !== "object") {
+        flatStrings.push([`${path}[${index}]`, String(entry)]);
+      }
+      walk(entry, `${path}[${index}]`);
+    });
   } else if (value && typeof value === "object") {
     for (const [key, member] of Object.entries(value)) {
       flatStrings.push([`${path}.${key}`, key], [`${path}.${key}`, String(member && typeof member === "object" ? "" : member)]);
