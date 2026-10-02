@@ -189,16 +189,22 @@ if (envelope.manifest.digest !== routingDigest) {
   fail("manifest-digest", `example pins ${envelope.manifest.digest}, fixture bytes hash ${routingDigest}`);
 }
 
-// 9. The limitation vocabulary is closed in the schema and the example
-//    uses only declared limitations.
-const declaredLimitations = new Set(
-  (schema.$defs.limitation.description.match(/[a-z][a-z0-9-]*[a-z0-9]/gu) ?? [])
-    .filter((word) => word.includes("-"))
-);
+// 9. The limitation vocabulary is an enum in the schema (closed set)
+//    and the example uses only declared limitations; an unknown token
+//    must fail validation through the validator itself.
+const LIMITATION_ENUM = schema.$defs.limitation.enum;
+if (!Array.isArray(LIMITATION_ENUM) || LIMITATION_ENUM.length === 0) {
+  fail("limitation-enum-missing", "schema.$defs.limitation.enum");
+}
 for (const limitation of envelope.impact.limitations) {
-  if (!declaredLimitations.has(limitation)) {
+  if (!LIMITATION_ENUM.includes(limitation)) {
     fail("limitation-vocabulary", limitation);
   }
+}
+const mutantLimitation = structuredClone(envelope);
+mutantLimitation.impact.limitations = [...mutantLimitation.impact.limitations, "private-payroll-sentinel"];
+if (validateEnvelope(mutantLimitation) !== false) {
+  fail("limitation-not-closed", "undeclared limitation token accepted by the schema");
 }
 
 process.stdout.write(

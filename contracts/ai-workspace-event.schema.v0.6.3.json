@@ -84,7 +84,7 @@
           "maximum": 64
         }
       }
- },
+    },
     "artifacts": {
       "type": "array",
       "items": {
@@ -296,11 +296,17 @@
       }
     },
     "limitation": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 200,
-      "pattern": "^[a-z][a-z0-9-]*$",
-      "description": "Closed vocabulary: direct-links-only, no-transitive-traversal, no-schema-version-filter, compatibility-unknown, semantic-evidence-absent, codegraph-evidence-absent, upstream-receipt-unavailable."
+      "enum": [
+        "direct-links-only",
+        "no-transitive-traversal",
+        "no-schema-version-filter",
+        "compatibility-unknown",
+        "semantic-evidence-absent",
+        "codegraph-evidence-absent",
+        "upstream-receipt-unavailable",
+        "no-declared-subscribers"
+      ],
+      "description": "Closed vocabulary of impact-completion limitations; the enumerated tokens are the entire accepted set."
     }
   }
 }
