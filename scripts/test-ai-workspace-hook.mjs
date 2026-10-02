@@ -77,6 +77,27 @@ const run = (command, argv, options = {}) => {
 
 const runHook = (argv, options = {}) => run(process.execPath, [HOOK, ...argv], options);
 
+// Closed hook state vocabulary (issue-37-implementation.md): every
+// `state` the hook prints must be a member. Observed states are
+// collected across the gate and asserted at the end.
+const HOOK_STATES = new Set([
+  "planned", "delivered", "unknown-delivery", "refused", "disabled", "unavailable", "no-change",
+]);
+const observedHookStates = new Set();
+const observeStates = (output) => {
+  try {
+    const parsed = JSON.parse(output);
+    if (parsed && typeof parsed.state === "string") observedHookStates.add(parsed.state);
+  } catch {
+    // Non-JSON output (quiet mode); the state asserts already checked it.
+  }
+};
+const runHookObserved = (argv, options = {}) => {
+  const out = runHook(argv, options);
+  observeStates(out.stdout);
+  return out;
+};
+
 const mcpCall = (upstream, dbPath, cwd, calls, options = {}) => {
   const requests = calls.map((call, index) => ({
     jsonrpc: "2.0",
@@ -191,14 +212,14 @@ try {
     // A no-op range closes as `no-change` — a real upstream is never
     // invoked for an event with nothing to announce (T3 unrelated-
     // file/identical-range cases).
-    const noop = runHook(["--base", "HEAD", "--manifest", MANIFEST], { cwd: REPO_ROOT });
+    const noop = runHookObserved(["--base", "HEAD", "--manifest", MANIFEST], { cwd: REPO_ROOT });
     assert.equal(noop.status, 0, "hook no-change plan must not fail");
     const noChange = JSON.parse(noop.stdout);
     assert.equal(noChange.state, "no-change");
     assert.equal(noChange.reason, "no-approved-artifact-changed");
 
     // A range with an approved-path change produces a planned envelope.
-    const out = runHook(["--base", "4a084aab~1", "--head", "4a084aab", "--manifest", MANIFEST], { cwd: REPO_ROOT });
+    const out = runHookObserved(["--base", "4a084aab~1", "--head", "4a084aab", "--manifest", MANIFEST], { cwd: REPO_ROOT });
     assert.equal(out.status, 0, "hook plan must not fail without upstream");
     const planned = JSON.parse(out.stdout);
     assert.equal(planned.state, "planned");
@@ -210,7 +231,7 @@ try {
     // private outbox records the attempt.
     const outbox = join(dir, "outbox");
     const db = join(dir, "unused.db");
-    const refused = runHook(["--base", "4a084aab~1", "--head", "4a084aab", "--manifest", MANIFEST, "--send", "--outbox", outbox, "--db", db, "--upstream", join(dir, "definitely-not-here.exe")], { cwd: REPO_ROOT });
+    const refused = runHookObserved(["--base", "4a084aab~1", "--head", "4a084aab", "--manifest", MANIFEST, "--send", "--outbox", outbox, "--db", db, "--upstream", join(dir, "definitely-not-here.exe")], { cwd: REPO_ROOT });
     assert.equal(refused.status, 3, "unadmitted send must refuse");
     const refusal = JSON.parse(refused.stdout);
     assert.equal(refusal.state, "refused");
@@ -224,7 +245,7 @@ try {
     // With the explicit override, a missing upstream reports
     // `unavailable` accurately — no crash, no partial delivery.
     const outbox2 = join(dir, "outbox2");
-    const missing = runHook(["--base", "4a084aab~1", "--head", "4a084aab", "--manifest", MANIFEST, "--send", "--outbox", outbox2, "--db", db, "--upstream", join(dir, "definitely-not-here.exe"), "--allow-unadmitted-send"], { cwd: REPO_ROOT });
+    const missing = runHookObserved(["--base", "4a084aab~1", "--head", "4a084aab", "--manifest", MANIFEST, "--send", "--outbox", outbox2, "--db", db, "--upstream", join(dir, "definitely-not-here.exe"), "--allow-unadmitted-send"], { cwd: REPO_ROOT });
     assert.equal(missing.status, 0, "missing upstream is unavailable, not a crash");
     const unavailable = JSON.parse(missing.stdout);
     assert.equal(unavailable.state, "unavailable");
@@ -291,7 +312,7 @@ process.exit(1);
         { from: "brownfield-consumer", to: "lekalo-core" },
       ],
     };
-    const out = runHook([
+    const out = runHookObserved([
       "--base", "4a084aab~1", "--head", "4a084aab", "--manifest", MANIFEST, "--send", "--outbox", outbox, "--db", join(dir, "x.db"),
       "--upstream", fake, "--allow-unadmitted-send",
     ], { cwd: REPO_ROOT, env: { ...process.env, LEKALO_FAKE_GRAPH: JSON.stringify(linkedGraph) } });
@@ -311,6 +332,9 @@ process.exit(1);
 
   // Dependency-free phases are complete; the binary phases need the
   // pinned upstream executable.
+  for (const state of observedHookStates) {
+    assert.ok(HOOK_STATES.has(state), `hook printed an undocumented state: ${state}`);
+  }
   if (!UPSTREAM || !existsSync(UPSTREAM)) {
     const reason = UPSTREAM ? "upstream-binary-path-missing" : "upstream-binary-not-configured (set AI_WORKSPACE_BIN to run the full proof)";
     process.stdout.write(`${JSON.stringify({ ok: true, gate: "ai-workspace-hook", binaryPhases: "skipped", reason })}\n`);
@@ -505,7 +529,7 @@ process.exit(1);
     // the script's own repository root, not the cwd); the upstream
     // spawn runs from a registered project directory.
     const outbox = join(root, "outbox");
-    const out = runHook([
+    const out = runHookObserved([
       "--base", "4a084aab~1", "--head", "4a084aab",
       "--manifest", MANIFEST,
       "--send", "--outbox", outbox, "--db", dbPath,
@@ -544,7 +568,7 @@ process.exit(1);
 
     // Repeat after verified delivery is a no-op (no second event).
     const before = list.length;
-    const repeat = runHook([
+    const repeat = runHookObserved([
       "--base", "4a084aab~1", "--head", "4a084aab",
       "--manifest", MANIFEST,
       "--send", "--outbox", outbox, "--db", dbPath,
@@ -607,7 +631,7 @@ process.exit(3);
       ],
     };
     const fakeEnv = { ...process.env, LEKALO_FAKE_GRAPH: JSON.stringify(linkedGraph) };
-    const out = runHook([
+    const out = runHookObserved([
       "--base", "4a084aab~1", "--head", "4a084aab", "--manifest", MANIFEST, "--send", "--outbox", outbox, "--db", join(dir, "x.db"),
       "--upstream", fake, "--allow-unadmitted-send",
     ], { cwd: REPO_ROOT, env: fakeEnv });
@@ -624,7 +648,7 @@ process.exit(3);
     const before = JSON.parse(readFileSync(join(outbox, "outbox.json"), "utf8"));
     const firstEntry = before.entries.find((candidate) => candidate.eventKey === failed.eventKey);
     const statesBefore = firstEntry.states.length;
-    const repeat = runHook([
+    const repeat = runHookObserved([
       "--base", "4a084aab~1", "--head", "4a084aab", "--manifest", MANIFEST, "--send", "--outbox", outbox, "--db", join(dir, "x.db"),
       "--upstream", fake, "--allow-unadmitted-send",
     ], { cwd: REPO_ROOT, env: fakeEnv });
@@ -643,7 +667,7 @@ process.exit(3);
   // ------------------------------------------------------------------
   {
     const dir = tempRoot();
-    const out = runHook([
+    const out = runHookObserved([
       "--base", "4a084aab~1", "--head", "4a084aab", "--manifest", MANIFEST, "--send", "--outbox", join(dir, "outbox"), "--db", join(dir, "x.db"),
       "--upstream", UPSTREAM, "--allow-unadmitted-send",
     ], {
@@ -654,8 +678,11 @@ process.exit(3);
     assert.equal(JSON.parse(out.stdout).reason, "widening-flags-enabled");
   }
 
+  for (const state of observedHookStates) {
+    assert.ok(HOOK_STATES.has(state), `hook printed an undocumented state: ${state}`);
+  }
   for (const dir of cleanup) rmSync(dir, { recursive: true, force: true });
-  process.stdout.write(`${JSON.stringify({ ok: true, gate: "ai-workspace-hook", binaryPhases: "executed", upstream: "configured" })}\n`);
+  process.stdout.write(`${JSON.stringify({ ok: true, gate: "ai-workspace-hook", binaryPhases: "executed", upstream: "configured", hookStates: [...observedHookStates].sort() })}\n`);
   }
 } catch (error) {
   process.stderr.write(`${JSON.stringify({ ok: false, gate: "ai-workspace-hook", reason: String(error?.message ?? error).slice(0, 600), stack: String(error?.stack ?? "").split("\n").slice(0, 4).join(" | ") }, null, 2)}\n`);
