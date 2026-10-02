@@ -105,7 +105,7 @@ order):
 | `impact` | `lekalo impact --changed (--base REF [--head REF] \| --worktree) [--project DIR]` | read-only | `lekalo/impact/v0.2.16` | project |
 | `context` | `lekalo context --changed SYMBOLS --budget TOKENS [--project DIR]` | read-only | `lekalo/context/v0.2.16` | project |
 | `validate` | `lekalo validate --no-cache [--project DIR] [--module MODULE] [--strict]` | read-only | `lekalo/validation-report/v0.6.3` | project |
-| `drift` | `lekalo generate --check [--locked] [--project DIR]` | read-only | `lekalo/generate-check/v0.6.3` | project (lock for `--locked`) |
+| `drift` | `lekalo generate --check [--locked] [--project DIR]` | read-only | `lekalo/generate-check/v0.6.3` | project + lock (unconditional: a missing `lekalo.lock` fails with `lock.missing`; `--locked` only adds the freshness check) |
 | `generate` | `lekalo generate --target TARGET [--dry-run] [--locked] [--project DIR] -- PROGRAM [ARGS...]` | generated-artifacts | `lekalo/orchestration/v0.2.16` | project + adapter |
 | `verify` | `lekalo verify [--target TARGET]... [--module MODULE] [--changed] [--locked] [--trace PATH] [--project DIR]` | read-only | `lekalo/orchestration/v0.2.16` | project |
 | `readiness` | `lekalo readiness --phase implement\|generate\|verify\|release\|done [--project DIR] [--trace PATH]...` | read-only | `lekalo/doctor/v0.3.2` | project |

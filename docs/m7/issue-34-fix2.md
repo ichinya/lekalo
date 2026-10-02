@@ -1,13 +1,14 @@
 # Issue #34 fix round 2
 
 The devin round-2 review (`issue-34-review2-devin.md`: 2 major,
-1 minor) returned ISSUES. No `issue-34-review2-cline.md` exists (and
-none appeared by the end of this round), so there was nothing further
-to disposition. Every finding was reproduced against the real binary
-before fixing. Dispositions: all **fixed**; none rebutted. No gate,
-test, or schema was weakened — both receipt schemas became strictly
-more truthful (they now accept reachable shapes they previously
-rejected and still reject everything else).
+1 minor) returned ISSUES, and the cline round-2 review
+(`issue-34-review2-cline.md`: 0 blocker, 2 major, 1 minor — delivered
+mid-round) confirmed both devin majors independently and added one
+new minor. Every finding was reproduced against the real binary before
+fixing. Dispositions: all **fixed**; none rebutted. No gate, test, or
+schema was weakened — both receipt schemas became strictly more
+truthful (they now accept reachable shapes they previously rejected
+and still reject everything else).
 
 ## M1 (MAJOR) — `validation-report` schema rejects warning/info-bearing success receipts — FIXED
 
@@ -82,6 +83,35 @@ to the two classes every operation uses, and the schema's
 `effectClass` enum shrinks to `["read-only","generated-artifacts"]`
 accordingly.
 
+## Cline findings — cross-disposition
+
+### Cline-1 (MAJOR, confirms devin-1) — `validation-report` rejects warning/info receipts — FIXED
+
+Same defect, fixed by the same M1 correction above. Cline's gate-gap
+observation (the gate never exercised a non-empty receipt) is also
+addressed: the gate now runs the warning fixture as a first-class
+vector and fails on both a missing `diagnostics` member and a schema
+violation.
+
+### Cline-2 (MAJOR, confirms devin-2) — `generate-check` finding enums — FIXED
+
+Same defect, fixed by the same M2 correction above. Cline's sharpening
+is adopted in the wording: the round-1 description did not merely
+misstate — it encoded a blocking model the implementation contradicts
+while simultaneously counting `manualDrift` in its own `counts`. The
+corrected descriptions state the code's rule. The gate-gap observation
+is likewise addressed via the captured `verdict:"reported"` receipt
+vector, which exercises the `finding` subschema end to end.
+
+### Cline-3 (MINOR, new) — `drift` requirement understates the unconditional lock — FIXED
+
+Reproduced: with `lekalo.lock` deleted and **no** `--locked`, a valid
+project fails `generate --check` with exit 1, `lock.missing` —
+`Prepared::prepare` refuses an absent lock unconditionally
+(`check.rs:57-60`). The contract's operation table now states
+`project + lock (unconditional: a missing lekalo.lock fails with
+lock.missing; --locked only adds the freshness check)`.
+
 ## Round-1 disposition re-check
 
 All seven round-1 findings remain fixed (write-scope text, pin
@@ -119,5 +149,7 @@ origin.
 
 ## Rebuttals
 
-None. Both majors reproduced exactly as reported; the minor was
-verified by inspection.
+None. Both devin majors reproduced exactly as reported; the devin
+minor was verified by inspection; the cline review confirmed both
+majors independently and its new minor reproduced verbatim
+(`lock.missing` exit 1 without `--locked`).
