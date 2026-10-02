@@ -59,11 +59,15 @@ Workspace state.
    change-event kind — explicit operator override flag for a designated
    installation; spawn upstream `event create` as an argv array with
    the widening flags forced off in the child; reconcile by keyed MCP
-   readback verifying kind/title/body and the linked consumer targets
-   read from the live service graph; `unknown-delivery` on any spawn
-   failure, unparseable receipt, or target mismatch; verified-delivery
-   repeats are no-ops). Closed states:
-   `planned|delivered|unknown-delivery|refused|disabled|unavailable`.
+   readback verifying kind/title/body/key and the exact target set (no
+   unreviewed recipients, every reviewed linked consumer present) —
+   with a mandatory recipient preflight before any create;
+   `unknown-delivery` on any spawn failure, unparseable receipt, or
+   target mismatch, with keyed reconciliation before any re-send;
+   verified-delivery repeats are no-ops; a no-op diff range closes as
+   `no-change`). Closed states:
+   `planned|delivered|unknown-delivery|refused|disabled|unavailable|
+   no-change`.
 5. **Integration gate** — `scripts/test-ai-workspace-hook.mjs`, two
    tiers: always-on phases (contracts re-run; optionality and outbox
    accuracy; poisoned-stderr quarantine — a hostile fake upstream's
@@ -150,7 +154,7 @@ All recorded in the integration guide; the load-bearing ones:
 | Criterion | Status | Evidence |
 | --- | --- | --- |
 | AC1 recommended group/setup with role aliases | **lekalo-side verifiable — verified** | guide §setup; gate binary phases executed config-first registration |
-| AC2 protocol change → explainable affected-project event | **lekalo-side verifiable — verified** | hook envelope with typed chains; gate delivered a real event for `4a084aab` and verified readback targets + digests |
+| AC2 protocol change → explainable affected-project event | **lekalo-side verifiable — verified** | hook envelope with typed chains; gate delivered a real event for `4a084aab` and verified the exact readback target set (no unreviewed recipients); the event body carries contract identities with old/new digests |
 | AC3 consumer agent reads shared schemas | **lekalo-side verifiable — verified** | gate: group-scoped MCP from consumer reads exact committed bytes; single-project scope denies |
 | AC4 fully functional without AI Workspace | **lekalo-side verifiable — verified** | no Rust dependency (zero Rust diff); gate optionality phases; hook `disabled`/`unavailable` accuracy |
 | AC5 MCP scope/sensitive policy never silently widened | **lekalo-side verifiable — verified** | gate: forced-off flags override hostile inherited `=1`; tree/grep confined to shares; write tool refuses |
