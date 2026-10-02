@@ -566,14 +566,16 @@ const readbackAfterSend = ({ upstream, config, dbPath, cwd, group, eventId }) =>
   };
   const details = parseContent(responses.find((message) => message.id === 1));
   // A missing or errored graph read is a hard verification gap, never
-  // an implicit empty recipient set (fail closed).
+  // an implicit empty recipient set (fail closed). The details read is
+  // optional at this boundary: the recipient preflight needs only the
+  // graph and event list; post-send verification demands details too.
   const graphResponse = responses.find((message) => message.id === 2);
   const graph = parseContent(graphResponse);
-  if (!details) return { error: responses.some((message) => message?.error) ? "readback-denied" : "readback-no-response" };
   if (!graph || !Array.isArray(graph.links)) return { error: "readback-graph-unavailable" };
   const events = parseContent(responses.find((message) => message.id === 3));
   if (!Array.isArray(events)) return { error: "readback-events-unavailable" };
-  return { details, graph, events };
+  const detailsError = details ? null : (responses.find((message) => message.id === 1)?.error ? "readback-denied" : "readback-no-response");
+  return { details, detailsError, graph, events };
 };
 
 // Delivery proof: kind, title, body, and event key must match the
@@ -820,22 +822,20 @@ const main = () => {
   // same key may have inserted an event whose receipt we never saw.
   // Search by key through the group-scoped read surface.
   if (hasUnverifiedAttempt) {
-    const preflight = readbackAfterSend({ upstream: args.upstream, config: args.config, dbPath: args.db, cwd: workdir, group: args.group, eventId: 0 });
-    if (preflight.details === undefined && preflight.error === "readback-denied") {
+    const reconciliation = readbackAfterSend({ upstream: args.upstream, config: args.config, dbPath: args.db, cwd: workdir, group: args.group, eventId: 0 });
+    if (reconciliation.error) {
       entry.states.push({ state: "unknown-delivery", reason: "reconciliation-readback-denied" });
       saveOutbox(args.outbox, outbox);
       emit({ ok: false, hook: "ai-workspace-hook", state: "unknown-delivery", eventKey: envelope.eventKey, reason: "reconciliation-readback-denied" }, UNKNOWN_DELIVERY);
       return;
     }
-    if (Array.isArray(preflight.events)) {
-      const existingId = reconcileByKey(preflight.events, envelope.eventKey);
-      if (existingId !== null) {
-        // The earlier attempt landed; verify it instead of re-sending.
-        const readback = readbackAfterSend({ upstream: args.upstream, config: args.config, dbPath: args.db, cwd: workdir, group: args.group, eventId: existingId });
-        const resolution = resolveDelivery({ readback, envelope, body, consumerSlugs: manifestLoaded.manifest.routes.map((route) => route.workspaceSlug ?? route.role), entry, outboxDir: args.outbox });
-        emit(resolution.result, resolution.code);
-        return;
-      }
+    const existingId = reconcileByKey(reconciliation.events, envelope.eventKey);
+    if (existingId !== null) {
+      // The earlier attempt landed; verify it instead of re-sending.
+      const readback = readbackAfterSend({ upstream: args.upstream, config: args.config, dbPath: args.db, cwd: workdir, group: args.group, eventId: existingId });
+      const resolution = resolveDelivery({ readback, envelope, body, consumerSlugs: manifestLoaded.manifest.routes.map((route) => route.workspaceSlug ?? route.role), entry, outboxDir: args.outbox });
+      emit(resolution.result, resolution.code);
+      return;
     }
     // Nothing found under this key: the earlier attempt can be
     // re-attempted (its outbox record shows what happened).
@@ -915,7 +915,7 @@ const main = () => {
 const resolveDelivery = ({ readback, envelope, body, consumerSlugs, entry, outboxDir }) => {
   const save = () => saveOutbox(outboxDir, entry ? { version: OUTBOX_VERSION, entries: [entry] } : null);
   if (!readback || !readback.details) {
-    const reason = readback?.error ?? "readback-unavailable";
+    const reason = readback?.error ?? readback?.detailsError ?? "readback-unavailable";
     if (entry) {
       entry.states.push({ state: "unknown-delivery", reason });
       saveOutbox(outboxDir, reconstructOutbox(entry, outboxDir));

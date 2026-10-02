@@ -188,7 +188,17 @@ try {
   // ------------------------------------------------------------------
   {
     const dir = tempRoot();
-    const out = runHook(["--base", "HEAD", "--manifest", MANIFEST], { cwd: REPO_ROOT });
+    // A no-op range closes as `no-change` — a real upstream is never
+    // invoked for an event with nothing to announce (T3 unrelated-
+    // file/identical-range cases).
+    const noop = runHook(["--base", "HEAD", "--manifest", MANIFEST], { cwd: REPO_ROOT });
+    assert.equal(noop.status, 0, "hook no-change plan must not fail");
+    const noChange = JSON.parse(noop.stdout);
+    assert.equal(noChange.state, "no-change");
+    assert.equal(noChange.reason, "no-approved-artifact-changed");
+
+    // A range with an approved-path change produces a planned envelope.
+    const out = runHook(["--base", "4a084aab~1", "--head", "4a084aab", "--manifest", MANIFEST], { cwd: REPO_ROOT });
     assert.equal(out.status, 0, "hook plan must not fail without upstream");
     const planned = JSON.parse(out.stdout);
     assert.equal(planned.state, "planned");
@@ -200,7 +210,7 @@ try {
     // private outbox records the attempt.
     const outbox = join(dir, "outbox");
     const db = join(dir, "unused.db");
-    const refused = runHook(["--base", "HEAD", "--manifest", MANIFEST, "--send", "--outbox", outbox, "--db", db, "--upstream", join(dir, "definitely-not-here.exe")], { cwd: REPO_ROOT });
+    const refused = runHook(["--base", "4a084aab~1", "--head", "4a084aab", "--manifest", MANIFEST, "--send", "--outbox", outbox, "--db", db, "--upstream", join(dir, "definitely-not-here.exe")], { cwd: REPO_ROOT });
     assert.equal(refused.status, 3, "unadmitted send must refuse");
     const refusal = JSON.parse(refused.stdout);
     assert.equal(refusal.state, "refused");
@@ -214,7 +224,7 @@ try {
     // With the explicit override, a missing upstream reports
     // `unavailable` accurately — no crash, no partial delivery.
     const outbox2 = join(dir, "outbox2");
-    const missing = runHook(["--base", "HEAD", "--manifest", MANIFEST, "--send", "--outbox", outbox2, "--db", db, "--upstream", join(dir, "definitely-not-here.exe"), "--allow-unadmitted-send"], { cwd: REPO_ROOT });
+    const missing = runHook(["--base", "4a084aab~1", "--head", "4a084aab", "--manifest", MANIFEST, "--send", "--outbox", outbox2, "--db", db, "--upstream", join(dir, "definitely-not-here.exe"), "--allow-unadmitted-send"], { cwd: REPO_ROOT });
     assert.equal(missing.status, 0, "missing upstream is unavailable, not a crash");
     const unavailable = JSON.parse(missing.stdout);
     assert.equal(unavailable.state, "unavailable");
@@ -226,25 +236,69 @@ try {
 
   // ------------------------------------------------------------------
   // Phase C: leaked-output quarantine (dependency-free). A hostile
-  // upstream whose stderr carries private markers must not have any of
-  // them re-enter the hook result.
+  // upstream whose create fails with private-marker stderr — while its
+  // version probe succeeds — must not have any of those markers
+  // re-enter the hook result.
   // ------------------------------------------------------------------
   {
     const dir = tempRoot();
     const poison = "C:\\Users\\alice\\topsecret\\consumer-checkout token=hunter2";
-    const poisonSh = `#!/bin/sh\necho "${poison}" >&2\nexit 1\n`;
-    const poisonCmd = `@echo ${poison} >&2\r\n@exit /b 1\r\n`;
-    const fake = process.platform === "win32" ? join(dir, "poison.cmd") : join(dir, "poison.sh");
-    writeFileSync(fake, process.platform === "win32" ? poisonCmd : poisonSh);
+    // Cross-platform fake upstream: probe exits 0; MCP reads (serve
+    // with stdin JSON-RPC) get valid empty responses; the create fails
+    // with poisoned stderr. The hook invokes it as `[node] fake.js ...`
+    // by pointing --upstream at a launcher (the hook execs one binary),
+    // so on Windows a .cmd launcher forwards to node.
+    const fakeJs = join(dir, "poison-fake.js");
+    writeFileSync(fakeJs, `const poison = ${JSON.stringify(poison)};
+const argv = process.argv.slice(2);
+if (argv[0] === "--version") { console.log("ai-workspace 1.5.0"); process.exit(0); }
+if (argv[0] === "serve") {
+  let input = "";
+  process.stdin.setEncoding("utf8");
+  process.stdin.on("data", (chunk) => { input += chunk; });
+  process.stdin.on("end", () => {
+    // The graph shape is injected by the gate through the inherited
+    // LEKALO_FAKE_GRAPH environment variable (the hook passes its
+    // environment through to children unchanged).
+    let injected = { links: [] };
+    try { injected = JSON.parse(process.env.LEKALO_FAKE_GRAPH ?? ""); } catch {}
+    for (const line of input.split("\\n").filter(Boolean)) {
+      let id = null;
+      let name = "";
+      try { const parsed = JSON.parse(line); id = parsed.id; name = parsed.params?.name ?? ""; } catch {}
+      const payload = name === "workspace_events" ? (process.env.LEKALO_FAKE_EVENTS ? JSON.parse(process.env.LEKALO_FAKE_EVENTS) : []) : injected;
+      process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text: JSON.stringify(payload) }] } }) + "\\n");
+    }
+  });
+  return;
+}
+process.stderr.write(poison + "\\n");
+process.exit(1);
+`);
+    const launcher = process.platform === "win32" ? join(dir, "poison.cmd") : join(dir, "poison.sh");
+    writeFileSync(launcher, process.platform === "win32"
+      ? `@"${process.execPath}" "${fakeJs}" %*
+`
+      : `#!/bin/sh\nexec "${process.execPath}" "${fakeJs}" "$@"\n`);
+    const fake = launcher;
     if (process.platform !== "win32") chmodSync(fake, 0o755);
     const outbox = join(dir, "outbox");
+    // The fake graph links exactly the two declared consumers, so the
+    // recipient preflight passes and the poisoned create is reached.
+    const linkedGraph = {
+      links: [
+        { from: "greenfield-consumer", to: "lekalo-core" },
+        { from: "brownfield-consumer", to: "lekalo-core" },
+      ],
+    };
     const out = runHook([
-      "--base", "HEAD", "--manifest", MANIFEST, "--send", "--outbox", outbox, "--db", join(dir, "x.db"),
+      "--base", "4a084aab~1", "--head", "4a084aab", "--manifest", MANIFEST, "--send", "--outbox", outbox, "--db", join(dir, "x.db"),
       "--upstream", fake, "--allow-unadmitted-send",
-    ], { cwd: REPO_ROOT });
+    ], { cwd: REPO_ROOT, env: { ...process.env, LEKALO_FAKE_GRAPH: JSON.stringify(linkedGraph) } });
     assert.equal(out.status, 4, "failed send is unknown-delivery");
     const result = JSON.parse(out.stdout);
     assert.equal(result.state, "unknown-delivery");
+    assert.equal(result.reason, "upstream-nonzero", "closed reason present");
     const flat = `${out.stdout}${out.stderr}`.toLowerCase();
     for (const marker of ["alice", "topsecret", "hunter2", "consumer-checkout"]) {
       assert.equal(flat.includes(marker), false, `poison leaked: ${marker}`);
@@ -252,6 +306,7 @@ try {
     const recorded = JSON.parse(readFileSync(join(outbox, "outbox.json"), "utf8"));
     const entry = recorded.entries.find((candidate) => candidate.eventKey === result.eventKey);
     assert.ok(entry.states.some((state) => state.state === "unknown-delivery"));
+    assert.equal(result.reason, "upstream-nonzero", "closed failure reason present on unknown-delivery");
   }
 
   // Dependency-free phases are complete; the binary phases need the
@@ -367,14 +422,21 @@ try {
 
   // Project-wide confinement with the flags off (AC5).
   {
-    // project_tree on the core project (flags off) must show ONLY the
-    // shared-scope entries (the approved schema file), never the
-    // project-wide tree (the sentinels stay invisible).
-    const coreProjectId = 1; // first registered project = lekalo-core
+    // Resolve the core project id from the workspace listing instead
+    // of assuming registration order.
+    const [contextForIds] = mcpCall(UPSTREAM, dbPath, consumerRoot, [
+      { name: "workspace_context" },
+    ]);
+    const coreProjectId = (contextForIds.json?.projects ?? []).find((project) => project.slug === "lekalo-core")?.id;
+    assert.ok(Number.isInteger(coreProjectId), "core project id unresolved");
+    // Positive control: the tree/grep tools work over the shared scope
+    // (the approved schema path is visible) — an empty/denied response
+    // must not pass the confinement assertions below.
     const requests = [
       { id: 1, name: "project_tree", arguments: { project_id: coreProjectId } },
       { id: 2, name: "project_file_write", arguments: { project_id: coreProjectId, path: "pwned.txt", content: "no" } },
-      { id: 3, name: "project_grep", arguments: { project_id: coreProjectId, pattern: "AUTO-SENTINEL" } },
+      { id: 3, name: "project_grep", arguments: { project_id: coreProjectId, pattern: "lekalo/target" } },
+      { id: 4, name: "project_grep", arguments: { project_id: coreProjectId, pattern: "AUTO-SENTINEL" } },
     ];
     const result = run(UPSTREAM, ["serve", "--group", "lekalo-dev"], {
       cwd: consumerRoot,
@@ -387,6 +449,8 @@ try {
     const tree = responseFor(1);
     assert.ok(tree, "no project_tree response");
     const treeText = tree.result?.content?.[0]?.text ?? "";
+    assert.equal(Boolean(tree.error || tree.result?.isError), false, "project_tree denied (positive control failed)");
+    assert.ok(treeText.includes("target-protocol.schema"), "project_tree positive control failed: shared schema not in tree");
     assert.equal(treeText.includes("README"), false, "project_tree leaked the sentinel README with flags off");
     assert.equal(treeText.includes("package.json"), false, "project_tree leaked the sentinel package.json");
     assert.equal(treeText.includes("secrets.md"), false, "project_tree leaked the private directory");
@@ -397,10 +461,30 @@ try {
       || /denied|disabled|not (found|available)|unknown tool|Access denied/i.test(write.result?.content?.[0]?.text ?? "");
     assert.ok(writeDenied, "project_file_write was accepted with the write flag off");
 
-    const grep = responseFor(3);
+    const grepPositive = responseFor(3);
+    assert.ok(grepPositive, "no project_grep positive response");
+    const grepPositiveText = grepPositive.result?.content?.[0]?.text ?? "";
+    assert.equal(Boolean(grepPositive.error || grepPositive.result?.isError), false, "project_grep denied over shared scope (positive control failed)");
+    assert.ok(grepPositiveText.length > 0, "project_grep positive control returned nothing over the shared scope");
+
+    const grep = responseFor(4);
     assert.ok(grep, "no project_grep response");
     const grepText = grep.result?.content?.[0]?.text ?? "";
     assert.equal(grepText.includes("AUTO-SENTINEL"), false, "project_grep matched unshared sentinel content");
+  }
+
+  // Genuine wrong-group denial (B4/AC5): a project in a different
+  // group cannot read the core share even by explicit item id.
+  {
+    const outsideRoot = roleCheckout(root, "outside-project");
+    const outsideInit = upstream(dbPath, ["--config", ".ai-workspace.local.json", "init", "--name", "outside-project", "--slug", "outside-project", "--group", "other-dev"], { cwd: outsideRoot });
+    assert.equal(outsideInit.status, 0, `outside init failed: ${outsideInit.stderr.slice(0, 200)}`);
+    const [outsideRead] = mcpCall(UPSTREAM, dbPath, outsideRoot, [
+      { name: "workspace_read", arguments: { item_id: schemaItem.id } },
+    ], { group: "other-dev" });
+    const outsideDenied = outsideRead.denied || outsideRead.text === ""
+      || /Access denied|not shared|requires explicit opt-in|Invalid shared item|not found/i.test(outsideRead.text ?? "");
+    assert.ok(outsideDenied, "wrong-group project read the core share");
   }
 
   // ------------------------------------------------------------------
@@ -483,16 +567,75 @@ try {
     const dir = tempRoot();
     const outbox = join(dir, "outbox");
     const poison = "PRIVATE-MARKER-α";
-    const fake = process.platform === "win32" ? join(dir, "fail.cmd") : join(dir, "fail.sh");
-    writeFileSync(fake, process.platform === "win32" ? `@echo ${poison} >&2\r\n@exit /b 3\r\n` : `#!/bin/sh\necho "${poison}" >&2\nexit 3\n`);
+    // Same cross-platform JS fake as phase C: probe OK, reads OK (the
+    // graph links the declared consumers), create fails with poison.
+    const fakeJs = join(dir, "fail-fake.js");
+    writeFileSync(fakeJs, `const poison = ${JSON.stringify(poison)};
+const argv = process.argv.slice(2);
+if (argv[0] === "--version") { console.log("ai-workspace 1.5.0"); process.exit(0); }
+if (argv[0] === "serve") {
+  let input = "";
+  process.stdin.setEncoding("utf8");
+  process.stdin.on("data", (chunk) => { input += chunk; });
+  process.stdin.on("end", () => {
+    let injected = { links: [] };
+    try { injected = JSON.parse(process.env.LEKALO_FAKE_GRAPH ?? ""); } catch {}
+    for (const line of input.split("\\n").filter(Boolean)) {
+      let id = null;
+      let name = "";
+      try { const parsed = JSON.parse(line); id = parsed.id; name = parsed.params?.name ?? ""; } catch {}
+      const payload = name === "workspace_events" ? [] : injected;
+      process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text: JSON.stringify(payload) }] } }) + "\\n");
+    }
+  });
+  return;
+}
+process.stderr.write(poison + "\\n");
+process.exit(3);
+`);
+    const launcher = process.platform === "win32" ? join(dir, "fail.cmd") : join(dir, "fail.sh");
+    writeFileSync(launcher, process.platform === "win32"
+      ? `@"${process.execPath}" "${fakeJs}" %*
+`
+      : `#!/bin/sh\nexec "${process.execPath}" "${fakeJs}" "$@"\n`);
+    const fake = launcher;
     if (process.platform !== "win32") chmodSync(fake, 0o755);
+    const linkedGraph = {
+      links: [
+        { from: "greenfield-consumer", to: "lekalo-core" },
+        { from: "brownfield-consumer", to: "lekalo-core" },
+      ],
+    };
+    const fakeEnv = { ...process.env, LEKALO_FAKE_GRAPH: JSON.stringify(linkedGraph) };
     const out = runHook([
-      "--base", "HEAD", "--manifest", MANIFEST, "--send", "--outbox", outbox, "--db", join(dir, "x.db"),
+      "--base", "4a084aab~1", "--head", "4a084aab", "--manifest", MANIFEST, "--send", "--outbox", outbox, "--db", join(dir, "x.db"),
       "--upstream", fake, "--allow-unadmitted-send",
-    ], { cwd: REPO_ROOT });
+    ], { cwd: REPO_ROOT, env: fakeEnv });
     assert.equal(out.status, 4, "nonzero upstream is unknown-delivery");
-    assert.equal(JSON.parse(out.stdout).state, "unknown-delivery");
+    const failed = JSON.parse(out.stdout);
+    assert.equal(failed.state, "unknown-delivery");
+    assert.equal(failed.reason, "upstream-nonzero", "closed reason on the result");
     assert.equal(out.stdout.includes(poison), false, "poison reached the result");
+
+    // Reconciliation: a repeat under the same key must reconcile by
+    // key through the read surface BEFORE any second create. With the
+    // failing fake (create always fails, never creates), the readback
+    // finds nothing and the hook records the reconciled checkpoint.
+    const before = JSON.parse(readFileSync(join(outbox, "outbox.json"), "utf8"));
+    const firstEntry = before.entries.find((candidate) => candidate.eventKey === failed.eventKey);
+    const statesBefore = firstEntry.states.length;
+    const repeat = runHook([
+      "--base", "4a084aab~1", "--head", "4a084aab", "--manifest", MANIFEST, "--send", "--outbox", outbox, "--db", join(dir, "x.db"),
+      "--upstream", fake, "--allow-unadmitted-send",
+    ], { cwd: REPO_ROOT, env: fakeEnv });
+    assert.equal(repeat.status, 4, "repeat over an unverified attempt is still unknown-delivery");
+    const after = JSON.parse(readFileSync(join(outbox, "outbox.json"), "utf8"));
+    const entryAfter = after.entries.find((candidate) => candidate.eventKey === failed.eventKey);
+    assert.ok(
+      entryAfter.states.some((state, index) => index >= statesBefore && state.state === "reconciled" && state.outcome === "not-found"),
+      "the repeat recorded the keyed reconciliation checkpoint",
+    );
+    assert.ok(entryAfter.states.slice(0, statesBefore).every((state) => state.state !== "delivered"), "no silent delivery appeared");
   }
 
   // ------------------------------------------------------------------
@@ -501,7 +644,7 @@ try {
   {
     const dir = tempRoot();
     const out = runHook([
-      "--base", "HEAD", "--manifest", MANIFEST, "--send", "--outbox", join(dir, "outbox"), "--db", join(dir, "x.db"),
+      "--base", "4a084aab~1", "--head", "4a084aab", "--manifest", MANIFEST, "--send", "--outbox", join(dir, "outbox"), "--db", join(dir, "x.db"),
       "--upstream", UPSTREAM, "--allow-unadmitted-send",
     ], {
       cwd: REPO_ROOT,
