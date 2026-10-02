@@ -183,11 +183,15 @@ jobs:
         # Dogfood the closed report surface on every OS: validate over a
         # fixture with all four report formats, the blocked readiness
         # gate, and the drift side-channel guarantee. The report bytes
-        # are uploaded with the job artifacts (below).
+        # are uploaded with the job artifacts (below). The report
+        # directory is exported through the step env (never a plain
+        # shell variable) so the Node assertions always see it, and the
+        # upload names explicit finalized files guarded on existence.
         timeout-minutes: 5
+        env:
+          REPORTS: ${{ runner.temp }}/lekalo-ci-reports
         run: |
           set -euo pipefail
-          REPORTS="$RUNNER_TEMP/lekalo-ci-reports"
           mkdir -p "$REPORTS"
           rm -rf target/ci-report-smoke
           cp -r tests/fixtures/loader/valid-direct-visibility target/ci-report-smoke
@@ -217,7 +221,16 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: lekalo-ci-reports-${{ matrix.os }}-${{ github.run_attempt }}
-          path: ${{ env.REPORTS_DIR }}/*
+          # Explicit finalized filenames from the confined report
+          # directory: never a broad glob over the runner root, and a
+          # missing destination fails the upload instead of widening.
+          path: |
+            ${{ runner.temp }}/lekalo-ci-reports/validate.json
+            ${{ runner.temp }}/lekalo-ci-reports/validate.sarif
+            ${{ runner.temp }}/lekalo-ci-reports/validate.junit.xml
+            ${{ runner.temp }}/lekalo-ci-reports/validate.md
+            ${{ runner.temp }}/lekalo-ci-reports/readiness.json
+            ${{ runner.temp }}/lekalo-ci-reports/readiness-envelope.txt
           if-no-files-found: error
           retention-days: 7
       - name: Run the local run-history end-to-end gate (issue #121)

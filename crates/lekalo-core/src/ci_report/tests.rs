@@ -4,11 +4,12 @@
 //! cross-field invariants the schema cannot express.
 
 use crate::ci_report::build::{
-    apply_check_policy, build, CaseDraft, CheckDraft, CiPolicy, CommandOutcome, SuiteDraft,
+    apply_case_policy, apply_check_policy, build, CaseDraft, CheckDraft, CiPolicy, CommandOutcome,
+    SuiteDraft,
 };
 use crate::ci_report::model::{
-    CaseRow, CiReport, CommandName, Coverage, EffectiveOutcome, FailureClass, SourceOutcome,
-    SuiteKind, UnknownReason, ValueState,
+    CiReport, CommandName, Coverage, EffectiveOutcome, FailureClass, SourceOutcome, SuiteKind,
+    UnknownReason, ValueState,
 };
 use crate::ci_report::{junit, markdown, sarif};
 use crate::diagnostics::normalize::build as diagnostic_build;
@@ -141,7 +142,7 @@ fn ready_run_exit_zero_and_deterministic_bytes() {
     let second = build(passing_outcome(), CiPolicy::Default).to_json_string();
     assert_eq!(first, second, "bytes are deterministic");
     assert!(first.ends_with('\n') && !first.ends_with("\n\n"));
-    assert!(first.starts_with("{\"schema_version\":\"lekalo/ci-report/v0.6.3\""));
+    assert!(first.starts_with("{\"checks\":"));
 }
 
 #[test]
@@ -283,8 +284,8 @@ fn unknown_provenance_carries_no_fabricated_values() {
     };
     let report = build(outcome, CiPolicy::Default);
     let json = report.to_json_string();
-    assert!(json.contains("\"state\":\"unknown\",\"reason\":\"not-a-repository\""));
-    assert!(json.contains("\"state\":\"unknown\",\"reason\":\"absent\""));
+    assert!(json.contains("\"reason\":\"not-a-repository\",\"state\":\"unknown\""));
+    assert!(json.contains("\"reason\":\"absent\",\"state\":\"unknown\""));
 }
 
 #[test]
@@ -534,20 +535,26 @@ fn check_rows_apply_policy_without_touching_source_outcome() {
 
 #[test]
 fn case_row_effective_outcome_follows_the_exit_policy() {
-    let case = |required, outcome, class| CaseRow {
-        id: "case".to_owned(),
-        required,
-        source_outcome: outcome,
-        failure_class: class,
-        diagnostic_indexes: Vec::new(),
-        detail: String::new(),
+    let case = |required, outcome, class| {
+        let row = apply_case_policy(
+            crate::ci_report::CaseDraft {
+                id: "case".to_owned(),
+                required,
+                source_outcome: outcome,
+                failure_class: class,
+                diagnostic_indexes: Vec::new(),
+                detail: String::new(),
+            },
+            CiPolicy::Default,
+        );
+        row.effective_outcome
     };
     assert_eq!(
-        case(true, SourceOutcome::Pass, FailureClass::None).effective_outcome(),
+        case(true, SourceOutcome::Pass, FailureClass::None),
         EffectiveOutcome::Pass
     );
     assert_eq!(
-        case(false, SourceOutcome::Fail, FailureClass::Assertion).effective_outcome(),
+        case(false, SourceOutcome::Fail, FailureClass::Assertion),
         EffectiveOutcome::Fail
     );
     assert_eq!(
@@ -555,8 +562,7 @@ fn case_row_effective_outcome_follows_the_exit_policy() {
             false,
             SourceOutcome::Unavailable,
             FailureClass::MissingComponent
-        )
-        .effective_outcome(),
+        ),
         EffectiveOutcome::Warn
     );
     assert_eq!(
@@ -564,8 +570,7 @@ fn case_row_effective_outcome_follows_the_exit_policy() {
             true,
             SourceOutcome::Unavailable,
             FailureClass::MissingComponent
-        )
-        .effective_outcome(),
+        ),
         EffectiveOutcome::Error
     );
 }

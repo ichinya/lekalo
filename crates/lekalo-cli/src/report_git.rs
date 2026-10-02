@@ -8,7 +8,20 @@ use lekalo_core::ci_report::model::{Provenance, UnknownReason, ValueState};
 use lekalo_core::ci_report::provenance::GitSnapshot;
 use lekalo_core::loader::LoadSelection;
 
+use std::time::Duration;
+
 use crate::doctor_git;
+
+/// The bounded wait for one `git ls-files` invocation; a hung Git is
+/// killed at the deadline (review F8/F13) instead of stalling the
+/// reported command.
+const LS_FILES_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// The poll interval of the bounded wait.
+const POLL_INTERVAL: Duration = Duration::from_millis(20);
+
+/// The aggregate byte cap of the working-set content reads.
+const WORKING_SET_BYTE_CAP: u64 = 8 << 20;
 
 /// The Git snapshot of one selection through the accepted adapter.
 pub fn git_snapshot(selection: &LoadSelection) -> GitSnapshot {
@@ -42,25 +55,68 @@ pub fn git_snapshot(selection: &LoadSelection) -> GitSnapshot {
 /// hostile trees leave the pin unknown instead of guessing. Bounded:
 /// `git ls-files` output caps at 1 MiB and the deadline applies.
 fn bounded_working_set(root: &std::path::Path) -> Option<String> {
+    use std::io::Read;
     use std::process::{Command, Stdio};
-    use std::time::Duration;
+    use std::time::Instant;
     let start = std::time::Instant::now();
-    let output = Command::new("git")
+    let mut child = Command::new("git")
         .current_dir(root)
         .args(["ls-files", "-z"])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
-        .output()
+        .spawn()
         .ok()?;
-    if !output.status.success() || start.elapsed() > Duration::from_secs(10) {
-        return None;
-    }
-    if output.stdout.len() > (1 << 20) {
+    // Bounded wait: kill and reap at the deadline (review F13); the
+    // 1 MiB name cap applies during collection.
+    let deadline = start + LS_FILES_TIMEOUT;
+    let mut stdout = Vec::new();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Some(status),
+            Ok(None) => {
+                if Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return None;
+                }
+                // Drain incrementally so a chatty child cannot fill
+                // the pipe and deadlock; the cap still applies.
+                if let Some(pipe) = child.stdout.as_mut() {
+                    let mut chunk = [0u8; 8192];
+                    match pipe.read(&mut chunk) {
+                        Ok(0) => {}
+                        Ok(read) => {
+                            stdout.extend_from_slice(&chunk[..read]);
+                            if stdout.len() > (1 << 20) {
+                                let _ = child.kill();
+                                let _ = child.wait();
+                                return None;
+                            }
+                        }
+                        Err(_) => {
+                            let _ = child.kill();
+                            let _ = child.wait();
+                            return None;
+                        }
+                    }
+                }
+                std::thread::sleep(POLL_INTERVAL);
+            }
+            Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+        }
+    };
+    let status = status?;
+    if !status.success() || start.elapsed() > LS_FILES_TIMEOUT {
         return None;
     }
     let mut entries: Vec<(String, String)> = Vec::new();
-    for name in output.stdout.split(|byte| *byte == 0) {
+    let mut budget = WORKING_SET_BYTE_CAP;
+    for name in stdout.split(|byte| *byte == 0) {
         if name.is_empty() {
             continue;
         }
@@ -75,7 +131,20 @@ fn bounded_working_set(root: &std::path::Path) -> Option<String> {
         {
             return None;
         }
-        let bytes = std::fs::read(root.join(text)).ok()?;
+        let path = root.join(text);
+        // Bounded content read: a metadata cap first, then a capped
+        // read with the shared deadline checked between files.
+        let Ok(metadata) = std::fs::metadata(&path) else {
+            return None;
+        };
+        if !metadata.is_file() || metadata.len() > budget {
+            return None;
+        }
+        budget -= metadata.len();
+        if Instant::now() >= deadline {
+            return None;
+        }
+        let bytes = std::fs::read(&path).ok()?;
         entries.push((text.to_owned(), lekalo_core::digest::sha256_hex(&bytes)));
     }
     entries.sort();
@@ -92,8 +161,6 @@ fn bounded_working_set(root: &std::path::Path) -> Option<String> {
     ))
 }
 
-/// An empty provenance block (unit-test helper): every leaf unknown.
-#[cfg(test)]
 /// An empty provenance block (unit-test helper): every leaf unknown.
 #[cfg(test)]
 pub(crate) fn empty_provenance() -> lekalo_core::ci_report::model::Provenance {

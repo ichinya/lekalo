@@ -79,13 +79,13 @@ pub fn render(report: &CiReport) -> String {
         .suites
         .iter()
         .flat_map(|suite| suite.cases.iter())
-        .map(|case: &CaseRow| usize::from(case.effective_outcome() == EffectiveOutcome::Fail))
+        .map(|case: &CaseRow| usize::from(case.effective_outcome == EffectiveOutcome::Fail))
         .sum();
     let suite_errors: usize = report
         .suites
         .iter()
         .flat_map(|suite| suite.cases.iter())
-        .map(|case: &CaseRow| usize::from(case.effective_outcome() == EffectiveOutcome::Error))
+        .map(|case: &CaseRow| usize::from(case.effective_outcome == EffectiveOutcome::Error))
         .sum();
     lines.push(format!(
         "- suites: {} ({} cases, {} failures, {} errors)",

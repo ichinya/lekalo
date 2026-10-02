@@ -74,12 +74,15 @@ pub fn git_block(snapshot: &GitSnapshot) -> GitProvenance {
 }
 
 /// Read the committed lock pin of one root: `unknown/absent` when the
-/// lock is missing, exact version/digest when present.
+/// lock is missing, exact version/digest when present. The digest is
+/// the canonical lock payload digest (`Lockfile::digest`, the same
+/// binding verify's receipt and the manifest check pin) — never the
+/// resolver request digest.
 pub fn lock_block(root: &Path) -> InputProvenance {
     match LockService::read_state_at(root) {
         Ok(LockState::Present(lock)) => InputProvenance {
             version: ValueState::known_version(lock.core_version().clone()),
-            digest: ValueState::known_digest(lock.request_digest().as_str()),
+            digest: ValueState::known_digest(lock.digest().as_str()),
         },
         Ok(LockState::Absent) => InputProvenance {
             version: ValueState::unknown(UnknownReason::Absent),
@@ -127,32 +130,78 @@ pub fn adapters_block(root: &Path) -> Vec<AdapterProvenance> {
     }
 }
 
-/// The full provenance block of one selection: the loader's accepted
-/// pins or explicit unknown states, never a guessed value.
+/// The full provenance block of one selection: every pin is read from
+/// its actual owner independently of unrelated preparation failures
+/// (review F3/F10). A valid model is bound even without a lock —
+/// `validate` is deliberately lock-free; an unreadable model is
+/// `unknown/invalid`, never a fabricated digest.
 pub fn provenance_block(
     selection: &LoadSelection,
     git: &GitSnapshot,
     strict: bool,
 ) -> Result<Provenance, crate::artifacts::ArtifactFailure> {
-    let inputs = crate::artifacts::GenerateService::inputs(selection)?;
     let root = crate::orchestration::project_root(selection).map_err(|_| {
         crate::artifacts::ArtifactFailure::Structure {
             code: "structure.root-not-found",
             denied: false,
         }
     })?;
+    // Model/IR pins: computed directly through the accepted loader/IR
+    // owners, never gated on the lock or the artifact manifest.
+    let (model, ir) = input_pins(selection);
     Ok(Provenance {
         git: git_block(git),
-        model: InputProvenance {
-            version: ValueState::known_version(inputs.model_version),
-            digest: ValueState::known_digest(inputs.model_digest),
-        },
-        ir: InputProvenance {
-            version: ValueState::known_version(inputs.ir_version),
-            digest: ValueState::known_digest(inputs.ir_digest),
-        },
+        model,
+        ir,
         lock: lock_block(&root),
         profiles: profiles_block(strict),
         adapters: adapters_block(&root),
     })
+}
+
+/// The exact model/IR pins of one selection through the accepted
+/// loader/IR owners: `unknown/invalid` when the loader or compiler
+/// refused (never a guessed digest), exact canonical payload pins
+/// otherwise.
+fn input_pins(selection: &LoadSelection) -> (InputProvenance, InputProvenance) {
+    let unknown = InputProvenance {
+        version: ValueState::unknown(UnknownReason::Invalid),
+        digest: ValueState::unknown(UnknownReason::Invalid),
+    };
+    let model = match crate::loader::normalize_model(selection) {
+        Ok(model) => model,
+        Err(_) => return (unknown.clone(), unknown),
+    };
+    let model_version = model.model_version.as_str().to_owned();
+    let model_json = crate::loader::canonical_model_bytes(&model);
+    let compilation = match crate::ir::compile(&model) {
+        Ok(compilation) => compilation,
+        Err(_) => {
+            let model = InputProvenance {
+                version: ValueState::known_version(model_version),
+                digest: ValueState::known_digest(format!(
+                    "sha256:{}",
+                    crate::digest::sha256_hex(model_json.as_bytes())
+                )),
+            };
+            return (model, unknown);
+        }
+    };
+    let ir_json = compilation.project.to_canonical_json();
+    (
+        InputProvenance {
+            version: ValueState::known_version(model_version),
+            digest: ValueState::known_digest(format!(
+                "sha256:{}",
+                crate::digest::sha256_hex(model_json.as_bytes())
+            )),
+        },
+        InputProvenance {
+            version: ValueState::known_version(crate::ir::version::VERSION),
+            digest: ValueState::known_digest(format!(
+                "sha256:{}",
+                crate::digest::sha256_hex(ir_json.as_bytes())
+            )),
+        },
+    )
 }

@@ -9,6 +9,7 @@
 //! raw child output ever enters a projection.
 
 pub mod build;
+pub mod build_policy;
 pub mod junit;
 pub mod markdown;
 pub mod model;

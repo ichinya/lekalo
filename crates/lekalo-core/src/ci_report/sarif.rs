@@ -55,6 +55,7 @@ struct SarifDriver<'a> {
     name: &'static str,
     #[serde(rename = "semanticVersion")]
     semantic_version: &'a str,
+    #[serde(rename = "informationUri")]
     information_uri: &'static str,
     rules: Vec<SarifRule<'a>>,
 }
@@ -225,19 +226,24 @@ pub fn render(report: &CiReport) -> String {
             .as_object()
             .and_then(|source| {
                 source["path"].as_str().map(|path| {
-                    let range = source["range"].as_object();
+                    // A path-only source (no range) is a legal closed
+                    // shape: the region is simply omitted.
+                    let range = source.get("range").and_then(|range| range.as_object());
                     SarifLocation {
                         physical_location: SarifPhysicalLocation {
                             artifact_location: SarifArtifactLocation {
                                 uri: path.to_owned(),
                                 uri_base_id: "%SRCROOT%",
                             },
-                            region: range.map(|range| SarifRegion {
-                                start_line: range["start"]["line"].as_u64().unwrap_or(1) as usize,
-                                start_column: range["start"]["column"].as_u64().unwrap_or(1)
-                                    as usize,
-                                end_line: range["end"]["line"].as_u64().unwrap_or(1) as usize,
-                                end_column: range["end"]["column"].as_u64().unwrap_or(1) as usize,
+                            region: range.and_then(|range| {
+                                let start = range.get("start")?.as_object()?;
+                                let end = range.get("end")?.as_object()?;
+                                Some(SarifRegion {
+                                    start_line: start.get("line")?.as_u64()? as usize,
+                                    start_column: start.get("column")?.as_u64()? as usize,
+                                    end_line: end.get("line")?.as_u64()? as usize,
+                                    end_column: end.get("column")?.as_u64()? as usize,
+                                })
                             }),
                         },
                     }

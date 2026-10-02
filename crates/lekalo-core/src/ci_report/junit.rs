@@ -39,7 +39,7 @@ enum Row<'a> {
 
 /// Classify one case row into its JUnit child element.
 fn row_of(case: &CaseRow) -> Row<'_> {
-    match case.effective_outcome() {
+    match case.effective_outcome {
         EffectiveOutcome::Pass => Row::Pass,
         EffectiveOutcome::Warn | EffectiveOutcome::Skip => {
             Row::Skipped(match case.source_outcome {
@@ -68,7 +68,7 @@ fn row_of(case: &CaseRow) -> Row<'_> {
 /// blocking rows carry `<failure>`/`<error>` children; counts derive
 /// from the emitted cases (`errors` separately from `failures`).
 pub fn render(report: &CiReport) -> String {
-    let mut suites: Vec<(String, usize, usize, usize, String)> = Vec::new();
+    let mut suites: Vec<(String, usize, usize, usize, usize, String)> = Vec::new();
     // The synthetic gate suite: one testcase per check row, grouped by
     // the report command so distinct command scopes never merge.
     let gate_id = format!("lekalo.{}", report.invocation.command.as_str());
@@ -76,8 +76,11 @@ pub fn render(report: &CiReport) -> String {
         let tests = report.checks.len();
         let mut failures = 0usize;
         let mut errors = 0usize;
+        let mut skipped = 0usize;
         let mut body = String::new();
         for check in &report.checks {
+            // The check row's evaluated outcome is authoritative: the
+            // JUnit row is a pure projection of it (review F7).
             let case = CaseRow {
                 id: check.id.clone(),
                 required: check.required,
@@ -85,6 +88,7 @@ pub fn render(report: &CiReport) -> String {
                 failure_class: check.failure_class,
                 diagnostic_indexes: check.diagnostic_indexes.clone(),
                 detail: check.detail.clone(),
+                effective_outcome: check.effective_outcome,
             };
             let child = match row_of(&case) {
                 Row::Pass => String::new(),
@@ -105,6 +109,7 @@ pub fn render(report: &CiReport) -> String {
                     )
                 }
                 Row::Skipped(reason) => {
+                    skipped += 1;
                     format!("    <skipped message=\"{}\"/>\n", xml_attr(reason))
                 }
             };
@@ -116,13 +121,14 @@ pub fn render(report: &CiReport) -> String {
             ));
         }
         if tests > 0 {
-            suites.push((gate_id, tests, failures, errors, body));
+            suites.push((gate_id, tests, failures, errors, skipped, body));
         }
     }
     for suite in &report.suites {
         let tests = suite.cases.len();
         let mut failures = 0usize;
         let mut errors = 0usize;
+        let mut skipped = 0usize;
         let mut body = String::new();
         let classbase = format!("lekalo.{}.{}", report.invocation.command.as_str(), suite.id);
         for case in &suite.cases {
@@ -145,6 +151,7 @@ pub fn render(report: &CiReport) -> String {
                     )
                 }
                 Row::Skipped(reason) => {
+                    skipped += 1;
                     format!("    <skipped message=\"{}\"/>\n", xml_attr(reason))
                 }
             };
@@ -155,18 +162,21 @@ pub fn render(report: &CiReport) -> String {
                 child,
             ));
         }
-        suites.push((suite.id.clone(), tests, failures, errors, body));
+        suites.push((suite.id.clone(), tests, failures, errors, skipped, body));
     }
-    let total_tests: usize = suites.iter().map(|(_, tests, _, _, _)| *tests).sum();
-    let total_failures: usize = suites.iter().map(|(_, _, failures, _, _)| *failures).sum();
-    let total_errors: usize = suites.iter().map(|(_, _, _, errors, _)| *errors).sum();
+    let total_tests: usize = suites.iter().map(|(_, tests, _, _, _, _)| *tests).sum();
+    let total_failures: usize = suites
+        .iter()
+        .map(|(_, _, failures, _, _, _)| *failures)
+        .sum();
+    let total_errors: usize = suites.iter().map(|(_, _, _, errors, _, _)| *errors).sum();
+    let total_skipped: usize = suites.iter().map(|(_, _, _, _, skipped, _)| *skipped).sum();
     let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
     out.push_str(&format!(
-        "<testsuites name=\"lekalo ci report\" tests=\"{}\" failures=\"{}\" errors=\"{}\">\n",
-        total_tests, total_failures, total_errors,
+        "<testsuites name=\"lekalo ci report\" tests=\"{}\" failures=\"{}\" errors=\"{}\" skipped=\"{}\">\n",
+        total_tests, total_failures, total_errors, total_skipped,
     ));
-    for (id, tests, failures, errors, body) in &suites {
-        let skipped = tests - failures - errors;
+    for (id, tests, failures, errors, skipped, body) in &suites {
         out.push_str(&format!(
             "<testsuite name=\"{}\" tests=\"{}\" failures=\"{}\" errors=\"{}\" skipped=\"{}\">\n",
             xml_attr(id),

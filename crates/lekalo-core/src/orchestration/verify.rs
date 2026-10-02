@@ -70,6 +70,9 @@ pub struct VerifyRequest<'a> {
 struct Component {
     receipt: ComponentReceipt,
     failure: Option<DomainResult>,
+    /// The assertion-level scenario evidence rows (issue #103 fix
+    /// round 1); empty for every non-scenario component.
+    scenario_rows: Vec<ScenarioEvidenceRow>,
 }
 
 impl Component {
@@ -79,6 +82,7 @@ impl Component {
 
     fn state(id: &str, required: bool, state: ComponentState, reason_code: Option<&str>) -> Self {
         Self {
+            scenario_rows: Vec::new(),
             receipt: ComponentReceipt {
                 id: id.to_owned(),
                 required,
@@ -124,58 +128,102 @@ pub struct Verified {
     pub components: Vec<ComponentReceipt>,
     /// The verdict the receipt derived, when assembled.
     pub verdict: Option<Verdict>,
+    /// The assertion-level scenario evidence rows retained before
+    /// aggregation (issue #103 fix round 1); empty when the pipeline
+    /// failed before the scenario evidence was read.
+    pub scenario_rows: Vec<ScenarioEvidenceRow>,
 }
 
 /// Run the verify pipeline retaining the typed evidence (issue #103).
 pub fn verify_with_components(request: VerifyRequest<'_>) -> Verified {
+    // Per-run evidence custody (review F14): clear any previous
+    // invocation's rows at entry, so an early failure can never bind
+    // the previous run's components to this result.
+    clear_components();
     match run(request) {
         Ok(outcome) => {
-            // A receipt-bearing success carries its components; the
-            // degraded `UnsupportedOperation` path loses them today,
-            // and the CI report records the declared absences instead.
-            if let DomainResult::Valid { .. } = outcome {
-                // The receipt bytes are re-derived by the report layer
-                // through the declared component ids; the success
-                // projection carries only the envelope.
-            }
+            let components = take_components().unwrap_or_default();
+            let scenario_rows = take_scenario_rows();
+            let verdict = take_verdict();
             Verified {
                 result: outcome,
-                components: components_of_last_run().unwrap_or_default(),
-                verdict: verdict_of_last_run(),
+                components,
+                verdict,
+                scenario_rows,
             }
         }
-        Err(result) => Verified {
-            result,
-            components: components_of_last_run().unwrap_or_default(),
-            verdict: verdict_of_last_run(),
-        },
+        Err(result) => {
+            let components = take_components().unwrap_or_default();
+            let scenario_rows = take_scenario_rows();
+            let verdict = take_verdict();
+            Verified {
+                result,
+                components,
+                verdict,
+                scenario_rows,
+            }
+        }
     }
 }
 
 // The assembled components of the most recent `run` in this thread.
 // The pipeline is single-threaded per invocation; the handoff is the
 // bounded evidence seam between the runner and the CI layer.
+/// The per-run evidence payload of the CI seam.
+type EvidenceHandoff = (
+    Vec<ComponentReceipt>,
+    Option<Verdict>,
+    Vec<ScenarioEvidenceRow>,
+);
+
 thread_local! {
-    static LAST_COMPONENTS: std::cell::RefCell<Option<(Vec<ComponentReceipt>, Option<Verdict>)>> =
+    static LAST_COMPONENTS: std::cell::RefCell<Option<EvidenceHandoff>> =
         const { std::cell::RefCell::new(None) };
 }
 
-fn record_components(components: Vec<ComponentReceipt>, verdict: Option<Verdict>) {
+fn record_components(
+    components: Vec<ComponentReceipt>,
+    verdict: Option<Verdict>,
+    scenario_rows: Vec<ScenarioEvidenceRow>,
+) {
     LAST_COMPONENTS.with(|slot| {
-        *slot.borrow_mut() = Some((components, verdict));
+        *slot.borrow_mut() = Some((components, verdict, scenario_rows));
     });
 }
 
-fn components_of_last_run() -> Option<Vec<ComponentReceipt>> {
+/// Clear any rows from a previous invocation at entry (per-run custody).
+fn clear_components() {
     LAST_COMPONENTS.with(|slot| {
-        slot.borrow()
-            .as_ref()
-            .map(|(components, _)| components.clone())
+        *slot.borrow_mut() = None;
+    });
+}
+
+/// Take (and consume) this run's assembled rows.
+fn take_components() -> Option<Vec<ComponentReceipt>> {
+    LAST_COMPONENTS.with(|slot| {
+        slot.borrow_mut()
+            .as_mut()
+            .map(|(components, _, _)| std::mem::take(components))
     })
 }
 
-fn verdict_of_last_run() -> Option<Verdict> {
-    LAST_COMPONENTS.with(|slot| slot.borrow().as_ref().and_then(|(_, verdict)| *verdict))
+/// Take (and consume) this run's assertion-level scenario rows.
+fn take_scenario_rows() -> Vec<ScenarioEvidenceRow> {
+    LAST_COMPONENTS.with(|slot| {
+        slot.borrow_mut()
+            .as_mut()
+            .map(|(_, _, rows)| std::mem::take(rows))
+            .unwrap_or_default()
+    })
+}
+
+/// Take (and consume) this run's verdict.
+fn take_verdict() -> Option<Verdict> {
+    LAST_COMPONENTS.with(|slot| {
+        slot.borrow_mut()
+            .as_mut()
+            .and_then(|(_, verdict, _)| *verdict)
+    })
 }
 
 /// `lekalo trace collect` (issue #56, plan S5): the one write command of
@@ -427,8 +475,16 @@ fn run(request: VerifyRequest<'_>) -> Result<DomainResult, DomainResult> {
         verdict,
     };
     // Issue #103: the CI evidence seam captures the assembled rows
-    // before any envelope aggregation discards them.
-    record_components(receipt.components.clone(), Some(receipt.verdict));
+    // before any envelope aggregation discards them — including the
+    // assertion-level scenario rows (fix round 1).
+    record_components(
+        receipt.components.clone(),
+        Some(receipt.verdict),
+        components
+            .iter()
+            .flat_map(|component| component.scenario_rows.iter().cloned())
+            .collect(),
+    );
     if verdict == Verdict::Blocked {
         // The aggregate failure envelope preserves every component
         // failure; the exit class follows the deterministic precedence.
@@ -796,6 +852,9 @@ fn scenarios_execution_component(prepared: &Prepared, project_id: &str) -> Compo
         ComponentState::Pass
     };
     let mut component = Component::state(SCENARIOS_EXECUTION, false, state, rollup_reason(&rollup));
+    // Issue #103 fix round 1: the assertion-level rows ride the
+    // component so the CI evidence seam retains them.
+    component.scenario_rows = rollup.scenario_rows;
     // The blocked verdict discards the receipt: the classed envelope is
     // what carries the assertion/infrastructure distinction to the user.
     component.failure = rollup.failure;
@@ -981,6 +1040,12 @@ pub(crate) struct ExecutionRollup {
     pub stale: usize,
     /// The count of parsed records the manifest covers.
     pub records: usize,
+    /// The assertion-level typed rows of every non-passing record
+    /// (issue #103 fix round 1): stable scenario/step identity plus the
+    /// closed outcome, retained before aggregation so the CI report's
+    /// JUnit projection can carry one testcase per assertion without
+    /// re-reading any evidence.
+    pub scenario_rows: Vec<ScenarioEvidenceRow>,
     pub trace: Option<TraceSummary>,
     /// The canonical bytes of the validated exported manifest — the
     /// durable document `lekalo trace collect` persists.
@@ -989,6 +1054,24 @@ pub(crate) struct ExecutionRollup {
     /// classification is observable in the emitted diagnostics, never
     /// only inside the receipt.
     pub failure: Option<DomainResult>,
+}
+
+/// One assertion-level scenario evidence row (issue #103 fix round 1).
+#[derive(Clone, Debug, PartialEq)]
+pub struct ScenarioEvidenceRow {
+    /// The stable scenario identity.
+    pub scenario_id: String,
+    /// The observed step (or the scenario-level spelling).
+    pub step_id: String,
+    /// The closed assertion kind.
+    pub kind: String,
+    /// The closed outcome (`fail`, `infrastructure`, `unsupported`,
+    /// `degraded`; passing rows are not retained — the rollup counts
+    /// cover them).
+    pub outcome: String,
+    /// The run-occurrence ordinal of this row inside its record (stable
+    /// disambiguation for repeated assertions on one step).
+    pub ordinal: usize,
 }
 
 /// Roll one ingest home up over the validated root capability.
@@ -1058,6 +1141,21 @@ pub(crate) fn scenarios_execution_rollup(
         // failure are different findings with different reasons. The
         // first offender of each class is kept so the blocked envelope
         // names a real scenario, never a vague suite token.
+        // Issue #103 fix round 1: retain the assertion-level typed
+        // rows (fail/infrastructure/unsupported/degraded) before
+        // aggregation, so the CI report projects one testcase per
+        // non-passing assertion with stable scenario/step identity.
+        for (ordinal, row) in record.assertions.iter().enumerate() {
+            if row.outcome != "pass" {
+                rollup.scenario_rows.push(ScenarioEvidenceRow {
+                    scenario_id: record.scenario_id.clone(),
+                    step_id: row.step_id.clone().unwrap_or_else(|| "run".to_owned()),
+                    kind: row.kind.clone(),
+                    outcome: row.outcome.clone(),
+                    ordinal,
+                });
+            }
+        }
         if summary.failed > 0 {
             rollup.assertion += 1;
             if first_assertion.is_none() {
@@ -1542,5 +1640,52 @@ mod tests {
         assert_eq!(rollup.blocking, 1);
         assert_eq!(rollup.records, 0, "nothing parsed");
         assert_eq!(rollup_reason(&rollup), Some("scenario.run-record-invalid"));
+    }
+
+    /// Issue #103 fix round 1 (review F6/F11): the rollup retains the
+    /// assertion-level typed rows of every non-passing outcome with
+    /// stable scenario/step/ordinal identity, so the CI report projects
+    /// one testcase per failing assertion instead of one opaque rollup.
+    #[test]
+    fn execution_rollup_retains_assertion_level_rows_for_the_ci_report() {
+        let temp = TempDir::new().expect("temp dir");
+        let ingest = temp.path().join(".lekalo/import/scenario-runs");
+        fs::create_dir_all(&ingest).expect("ingest home");
+        let mut record = valid_run_record();
+        record["assertions"] = json!([
+            { "kind": "result", "observes": "run", "outcome": "pass", "step_id": "output" },
+            { "kind": "result", "observes": "run", "outcome": "fail", "step_id": "output" },
+            { "kind": "entity_state", "observes": "run", "outcome": "fail", "step_id": "state" },
+            { "kind": "side_effect", "observes": "run", "outcome": "infrastructure", "step_id": "effects" },
+        ]);
+        fs::write(
+            ingest.join("run.json"),
+            serde_json::to_vec_pretty(&record).expect("record serializes"),
+        )
+        .expect("record written");
+        let fs_cap = Fs::open(temp.path()).expect("validated root");
+
+        let rollup = scenarios_execution_rollup(&fs_cap, &context(), &fixture_ir(), &no_expected());
+
+        assert!(rollup.present);
+        assert_eq!(rollup.assertion, 1, "one record carries failing rows");
+        assert_eq!(
+            rollup.infrastructure, 1,
+            "the infrastructure row is retained"
+        );
+        // Three non-passing rows: two assertion failures plus one
+        // infrastructure outcome, each with its stable identity.
+        assert_eq!(
+            rollup.scenario_rows.len(),
+            3,
+            "one row per non-passing assertion"
+        );
+        assert_eq!(rollup.scenario_rows[0].step_id, "output");
+        assert_eq!(rollup.scenario_rows[0].outcome, "fail");
+        assert_eq!(rollup.scenario_rows[0].ordinal, 1);
+        assert_eq!(rollup.scenario_rows[1].step_id, "state");
+        assert_eq!(rollup.scenario_rows[1].ordinal, 2);
+        assert_eq!(rollup.scenario_rows[2].outcome, "infrastructure");
+        assert_eq!(rollup.scenario_rows[2].step_id, "effects");
     }
 }

@@ -2581,6 +2581,7 @@ fn run_validate_reported(
         return run_validate(project, module.clone(), strict, no_cache);
     }
     let selection = selection_for(&project);
+    let project_root = lekalo_core::orchestration::project_root(&selection).ok();
     let git = crate::report_git::git_snapshot(&selection);
     let result = run_validate(project, module.clone(), strict, no_cache);
     let provenance =
@@ -2642,7 +2643,7 @@ fn run_validate_reported(
         );
         return crate::report_output::compose(result, Err(failure));
     }
-    let reported = crate::report_output::write_report(&report, request);
+    let reported = crate::report_output::write_report(&report, request, project_root.as_deref());
     crate::report_output::compose(result, reported)
 }
 
@@ -4976,6 +4977,7 @@ fn run_readiness(
     request: &crate::report_output::ReportRequest,
 ) -> DomainResult {
     let selection = selection_for(&project);
+    let project_root = lekalo_core::orchestration::project_root(&selection).ok();
     let git = doctor_git_facts(&selection);
     let evidence = doctor_traces(&traces);
     let options = lekalo_core::doctor::Options {
@@ -5070,11 +5072,10 @@ fn run_readiness(
     checks.sort_by(|left, right| left.id.cmp(&right.id));
     let snapshot = crate::report_git::git_snapshot(&selection);
     let provenance = crate::report_git::provenance_for_readiness(&selection, &snapshot);
-    let verdict = document
-        .get("verdict")
-        .and_then(|verdict| verdict.as_str())
-        .unwrap_or("unknown");
-    let command_status = result.status();
+    // the shared evaluator derives the report evaluation from the same
+    // authority the gate uses: the JSON/report verdict and the process
+    // exit can never disagree inside one artifact (review F4).
+    let gated_result = gate(result.clone());
     let outcome = lekalo_core::ci_report::CommandOutcome {
         command: lekalo_core::ci_report::CommandName::Readiness,
         mode: phase.as_str().to_owned(),
@@ -5084,24 +5085,18 @@ fn run_readiness(
         provenance,
         checks,
         suites: Vec::new(),
-        result: result.clone(),
+        result: gated_result.clone(),
         as_of: None,
     };
-    let mut report =
-        lekalo_core::ci_report::build(outcome, lekalo_core::ci_report::CiPolicy::Default);
-    // The doctor verdict is the authority for readiness gating: a
-    // blocked verdict blocks the evaluation regardless of the
-    // informational command status.
-    if verdict == "blocked" && report.evaluation.verdict != lekalo_core::ci_report::Verdict::Blocked
-    {
-        report.evaluation.verdict = lekalo_core::ci_report::Verdict::Blocked;
-        report.evaluation.status = "unavailable";
-        report.evaluation.exit_code = 4;
-        report.evaluation.complete = false;
+    let report = lekalo_core::ci_report::build(outcome, lekalo_core::ci_report::CiPolicy::Default);
+    if let Err(_invariant) = report.validate() {
+        let failure = DomainResult::unavailable(
+            lekalo_core::ci_report::build::diagnostics::report_write_failed("invariant"),
+        );
+        return crate::report_output::compose(gated_result, Err(failure));
     }
-    let _ = command_status;
-    let reported = crate::report_output::write_report(&report, request);
-    crate::report_output::compose(gate(result), reported)
+    let reported = crate::report_output::write_report(&report, request, project_root.as_deref());
+    crate::report_output::compose(gated_result, reported)
 }
 
 /// Load and compile the selected project, build the effect graph, and run
@@ -9021,7 +9016,10 @@ fn run_generate(
             // The `--locked` drift gate refuses an inventory that does
             // not carry every locked component before reading bytes.
             if let Err(result) = lekalo_core::orchestration::locked_check(&selection) {
-                return result;
+                // The locked preflight refusal still finalizes the
+                // requested report (review F8): a blocking, incomplete
+                // evaluation, never a silent missing artifact.
+                return generate_check_reported(&selection, result, locked, request);
             }
         }
         let result = match GenerateService::check(&selection) {
@@ -9112,11 +9110,15 @@ fn run_verify(
     if changed {
         let root = match lekalo_core::orchestration::project_root(&selection) {
             Ok(root) => root,
-            Err(result) => return result,
+            Err(result) => {
+                return early_verify_report(&selection, result, locked, targets, module, request)
+            }
         };
         let compilation = match compile_selection(&selection) {
             Ok(compilation) => compilation,
-            Err(result) => return result,
+            Err(result) => {
+                return early_verify_report(&selection, result, locked, targets, module, request)
+            }
         };
         let set = match git_input::changed_input_set(
             &root,
@@ -9126,7 +9128,16 @@ fn run_verify(
             &source_paths_of(&compilation),
         ) {
             Ok(set) => set,
-            Err(failure) => return DomainResult::invalid(failure.diagnostic_set()),
+            Err(failure) => {
+                return early_verify_report(
+                    &selection,
+                    DomainResult::invalid(failure.diagnostic_set()),
+                    locked,
+                    targets,
+                    module,
+                    request,
+                )
+            }
         };
         for entry in set.entries() {
             for symbol in entry.symbol_ids() {
@@ -9156,6 +9167,10 @@ fn run_verify(
         }
         None => None,
     };
+    // The invocation scope rides the typed evidence (review F5/F10):
+    // the report must state what was actually evaluated.
+    let scope_targets = targets.clone();
+    let scope_modules: Vec<String> = module.iter().cloned().collect();
     let verified = lekalo_core::orchestration::verify_with_components(
         lekalo_core::orchestration::VerifyRequest {
             selection: &selection,
@@ -9171,9 +9186,51 @@ fn run_verify(
     if !request.is_requested() {
         return verified.result;
     }
-    verify_reported(&selection, verified, locked, request)
+    let scope_mode = if changed { "changed" } else { "full" };
+    verify_reported(
+        &selection,
+        verified,
+        locked,
+        scope_mode,
+        &scope_targets,
+        &scope_modules,
+        request,
+    )
 }
 
+/// A verify preflight refusal (loader, changed-input, or supply) still
+/// finalizes the requested report (review F8): the failure is a
+/// blocking, incomplete evaluation with zero rows, never a silent
+/// missing artifact.
+#[allow(clippy::too_many_arguments)]
+fn early_verify_report(
+    selection: &LoadSelection,
+    result: DomainResult,
+    locked: bool,
+    targets: Vec<String>,
+    module: Option<String>,
+    request: &crate::report_output::ReportRequest,
+) -> DomainResult {
+    if !request.is_requested() {
+        return result;
+    }
+    let verified = lekalo_core::orchestration::Verified {
+        result: result.clone(),
+        components: Vec::new(),
+        verdict: None,
+        scenario_rows: Vec::new(),
+    };
+    let scope_mode = "full";
+    verify_reported(
+        selection,
+        verified,
+        locked,
+        scope_mode,
+        &targets,
+        &module.iter().cloned().collect::<Vec<String>>(),
+        request,
+    )
+}
 /// The CI report projection of one verify run (issue #103): the typed
 /// component rows captured before envelope aggregation become the
 /// check rows, the scenario execution rollup becomes the scenario
@@ -9183,6 +9240,9 @@ fn verify_reported(
     selection: &LoadSelection,
     verified: lekalo_core::orchestration::Verified,
     locked: bool,
+    mode: &str,
+    targets: &[String],
+    modules: &[String],
     request: &crate::report_output::ReportRequest,
 ) -> DomainResult {
     use lekalo_core::ci_report::{
@@ -9190,6 +9250,7 @@ fn verify_reported(
         SuiteDraft, SuiteKind,
     };
     let result = verified.result;
+    let project_root = lekalo_core::orchestration::project_root(selection).ok();
     let git = crate::report_git::git_snapshot(selection);
     let provenance =
         match lekalo_core::ci_report::provenance::provenance_block(selection, &git, false) {
@@ -9200,40 +9261,72 @@ fn verify_reported(
     let mut suites: Vec<SuiteDraft> = Vec::new();
     for component in &verified.components {
         if component.id == "scenarios.execution" {
-            // The scenario suite: one aggregated row per failure class
-            // observed in the durable run records (the component's
-            // findings count and reason carry the detail; the failure
-            // envelope's diagnostics ride the report).
-            let outcome = match component.state {
-                lekalo_core::orchestration::ComponentState::Pass => SourceOutcome::Pass,
-                lekalo_core::orchestration::ComponentState::Fail => SourceOutcome::Fail,
-                lekalo_core::orchestration::ComponentState::Degraded => SourceOutcome::Degraded,
-                lekalo_core::orchestration::ComponentState::Unsupported => {
-                    SourceOutcome::Unsupported
-                }
-                lekalo_core::orchestration::ComponentState::Absent => SourceOutcome::NotRun,
-            };
-            let failure_class = match component.reason_code.as_deref() {
-                Some("scenario.assertion-failed") => FailureClass::Assertion,
-                Some("scenario.infrastructure") => FailureClass::Infrastructure,
-                Some("scenario.run-record-invalid") => FailureClass::EvidenceInvalid,
-                Some("scenario.stale-evidence") => FailureClass::EvidenceInvalid,
-                Some("scenario.unsupported-capability") => FailureClass::MissingComponent,
-                Some("core.capability-unavailable") => FailureClass::MissingComponent,
-                _ => FailureClass::None,
-            };
-            suites.push(SuiteDraft {
-                id: "scenarios.execution".to_owned(),
-                kind: SuiteKind::Scenario,
-                target: None,
-                cases: vec![CaseDraft {
+            // The scenario suite: one testcase per non-passing assertion
+            // retained from the durable run records (fix round 1), with
+            // stable scenario/step/ordinal identity and the closed
+            // outcome. A suite with no retained rows carries the
+            // component-level rollup row so a declared absence stays
+            // visible.
+            let cases: Vec<CaseDraft> = if verified.scenario_rows.is_empty() {
+                let outcome = match component.state {
+                    lekalo_core::orchestration::ComponentState::Pass => SourceOutcome::Pass,
+                    lekalo_core::orchestration::ComponentState::Fail => SourceOutcome::Fail,
+                    lekalo_core::orchestration::ComponentState::Degraded => SourceOutcome::Degraded,
+                    lekalo_core::orchestration::ComponentState::Unsupported => {
+                        SourceOutcome::Unsupported
+                    }
+                    lekalo_core::orchestration::ComponentState::Absent => SourceOutcome::NotRun,
+                };
+                let failure_class = match component.reason_code.as_deref() {
+                    Some("scenario.assertion-failed") => FailureClass::Assertion,
+                    Some("scenario.infrastructure") => FailureClass::Infrastructure,
+                    Some("scenario.run-record-invalid") => FailureClass::EvidenceInvalid,
+                    Some("scenario.stale-evidence") => FailureClass::EvidenceInvalid,
+                    Some("scenario.unsupported-capability") => FailureClass::MissingComponent,
+                    Some("core.capability-unavailable") => FailureClass::MissingComponent,
+                    _ => FailureClass::None,
+                };
+                vec![CaseDraft {
                     id: "scenarios.execution/rollup".to_owned(),
                     required: component.required,
                     source_outcome: outcome,
                     failure_class,
                     diagnostic_indexes: Vec::new(),
                     detail: component.reason_code.clone().unwrap_or_default(),
-                }],
+                }]
+            } else {
+                verified
+                    .scenario_rows
+                    .iter()
+                    .map(|row| {
+                        let (outcome, failure_class) = match row.outcome.as_str() {
+                            "fail" => (SourceOutcome::Fail, FailureClass::Assertion),
+                            "infrastructure" => (SourceOutcome::Fail, FailureClass::Infrastructure),
+                            "unsupported" => {
+                                (SourceOutcome::Unsupported, FailureClass::MissingComponent)
+                            }
+                            "degraded" => (SourceOutcome::Degraded, FailureClass::None),
+                            _ => (SourceOutcome::Fail, FailureClass::Assertion),
+                        };
+                        CaseDraft {
+                            id: format!(
+                                "scenarios.execution/{}/{}[{}]",
+                                row.scenario_id, row.step_id, row.ordinal
+                            ),
+                            required: true,
+                            source_outcome: outcome,
+                            failure_class,
+                            diagnostic_indexes: Vec::new(),
+                            detail: format!("scenario.{}", row.outcome),
+                        }
+                    })
+                    .collect()
+            };
+            suites.push(SuiteDraft {
+                id: "scenarios.execution".to_owned(),
+                kind: SuiteKind::Scenario,
+                target: None,
+                cases,
             });
             continue;
         }
@@ -9269,9 +9362,9 @@ fn verify_reported(
     let diagnostics = result.diagnostics().to_vec();
     let outcome = CommandOutcome {
         command: CommandName::Verify,
-        mode: "full".to_owned(),
-        targets: Vec::new(),
-        modules: Vec::new(),
+        mode: mode.to_owned(),
+        targets: targets.to_vec(),
+        modules: modules.to_vec(),
         locked,
         provenance,
         checks,
@@ -9287,7 +9380,7 @@ fn verify_reported(
         );
         return crate::report_output::compose(result, Err(failure));
     }
-    let reported = crate::report_output::write_report(&report, request);
+    let reported = crate::report_output::write_report(&report, request, project_root.as_deref());
     crate::report_output::compose(result, reported)
 }
 
@@ -9305,6 +9398,7 @@ fn generate_check_reported(
     use lekalo_core::ci_report::{
         CheckDraft, CommandName, CommandOutcome, FailureClass, SourceOutcome,
     };
+    let project_root = lekalo_core::orchestration::project_root(selection).ok();
     let git = crate::report_git::git_snapshot(selection);
     let provenance =
         match lekalo_core::ci_report::provenance::provenance_block(selection, &git, false) {
@@ -9352,7 +9446,7 @@ fn generate_check_reported(
         );
         return crate::report_output::compose(result, Err(failure));
     }
-    let reported = crate::report_output::write_report(&report, request);
+    let reported = crate::report_output::write_report(&report, request, project_root.as_deref());
     crate::report_output::compose(result, reported)
 }
 

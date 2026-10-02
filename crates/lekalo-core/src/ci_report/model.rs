@@ -480,38 +480,60 @@ pub struct CaseRow {
     /// The closed detail token (`expectation-mismatch`, a safe code), or
     /// empty.
     pub detail: String,
+    /// The policy-effective outcome, computed once by the builder and
+    /// serialized so every consumer (JSON, JUnit, Markdown) projects the
+    /// same decision. Never recomputed downstream.
+    #[serde(rename = "effectiveOutcome")]
+    pub effective_outcome: EffectiveOutcome,
 }
 
-impl CaseRow {
-    /// The policy-effective outcome of this case: required failures,
-    /// denials, and cancellations block; optional assertion failures
-    /// still block (formatting never downgrades an observed failure);
-    /// optional absences warn; required absences error.
-    pub fn effective_outcome(&self) -> EffectiveOutcome {
-        match self.source_outcome {
-            SourceOutcome::Pass => EffectiveOutcome::Pass,
-            SourceOutcome::Fail | SourceOutcome::Denied | SourceOutcome::Cancelled => {
+/// The shared policy table: one effective outcome per (required,
+/// source outcome, failure class) under one policy. Both check rows and
+/// case rows evaluate through this single function so the JSON, the
+/// evaluation verdict, and the JUnit projection can never disagree.
+pub(crate) fn evaluate_outcome(
+    required: bool,
+    source_outcome: SourceOutcome,
+    failure_class: FailureClass,
+    policy: super::build_policy::CiPolicyTable,
+) -> EffectiveOutcome {
+    use super::build_policy::AbsenceRule;
+    match source_outcome {
+        SourceOutcome::Pass => EffectiveOutcome::Pass,
+        SourceOutcome::Fail => EffectiveOutcome::Fail,
+        SourceOutcome::Denied => EffectiveOutcome::Fail,
+        SourceOutcome::Cancelled => EffectiveOutcome::Fail,
+        SourceOutcome::Degraded => {
+            if required {
+                EffectiveOutcome::Error
+            } else {
+                EffectiveOutcome::Warn
+            }
+        }
+        SourceOutcome::Unsupported => {
+            if failure_class == FailureClass::MissingComponent && !required {
+                match policy.optional_absence {
+                    AbsenceRule::Warn => EffectiveOutcome::Warn,
+                    AbsenceRule::Error => EffectiveOutcome::Error,
+                    AbsenceRule::Skip => EffectiveOutcome::Skip,
+                }
+            } else {
+                EffectiveOutcome::Error
+            }
+        }
+        SourceOutcome::Unavailable | SourceOutcome::NotRun => {
+            if required {
+                EffectiveOutcome::Error
+            } else if failure_class == FailureClass::Infrastructure {
+                // A provider/runner infrastructure failure is a
+                // distinguishable failure, never an optional absence:
+                // it blocks under every policy.
                 EffectiveOutcome::Fail
-            }
-            SourceOutcome::Degraded => {
-                if self.required {
-                    EffectiveOutcome::Error
-                } else {
-                    EffectiveOutcome::Warn
-                }
-            }
-            SourceOutcome::Unsupported => {
-                if self.failure_class == FailureClass::MissingComponent && !self.required {
-                    EffectiveOutcome::Warn
-                } else {
-                    EffectiveOutcome::Error
-                }
-            }
-            SourceOutcome::Unavailable | SourceOutcome::NotRun => {
-                if self.required {
-                    EffectiveOutcome::Error
-                } else {
-                    EffectiveOutcome::Warn
+            } else {
+                match policy.optional_absence {
+                    AbsenceRule::Warn => EffectiveOutcome::Warn,
+                    AbsenceRule::Error => EffectiveOutcome::Error,
+                    AbsenceRule::Skip => EffectiveOutcome::Skip,
                 }
             }
         }
@@ -648,7 +670,9 @@ impl CiReport {
     /// fields in declaration order and BTreeMap entries in key order;
     /// the model sorts every free-form map before construction.
     pub fn to_json_string(&self) -> String {
-        let mut bytes = serde_json::to_string(&self).expect("the ci report serializes");
+        let value = serde_json::to_value(self).expect("the ci report serializes");
+        let sorted = sort_json_keys(value);
+        let mut bytes = serde_json::to_string(&sorted).expect("sorted value serializes");
         bytes.push('\n');
         bytes
     }
@@ -701,7 +725,7 @@ impl CiReport {
                 self.suites
                     .iter()
                     .flat_map(|suite| suite.cases.iter())
-                    .map(|case| case.effective_outcome()),
+                    .map(|case| case.effective_outcome),
             )
             .any(|outcome| matches!(outcome, EffectiveOutcome::Fail | EffectiveOutcome::Error));
         if blocking != (self.evaluation.verdict == Verdict::Blocked) {
@@ -733,3 +757,28 @@ impl CiReport {
 /// the typed `DataObject` is already closed and bounded; it serializes
 /// through the diagnostic itself.
 pub type DiagnosticData = BTreeMap<String, serde_json::Value>;
+
+/// Recursively byte-sort every object's keys: the canonical wire form
+/// (review F16) is byte-sorted JSON, independent of the model's field
+/// declaration order. Arrays keep their order (assertion execution
+/// order and cause chains are semantic).
+fn sort_json_keys(value: serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Object(map) => {
+            let mut entries: Vec<(String, serde_json::Value)> = map
+                .into_iter()
+                .map(|(key, value)| (key, sort_json_keys(value)))
+                .collect();
+            entries.sort_by(|left, right| left.0.as_bytes().cmp(right.0.as_bytes()));
+            let mut sorted = serde_json::Map::new();
+            for (key, value) in entries {
+                sorted.insert(key, value);
+            }
+            serde_json::Value::Object(sorted)
+        }
+        serde_json::Value::Array(items) => {
+            serde_json::Value::Array(items.into_iter().map(sort_json_keys).collect())
+        }
+        other => other,
+    }
+}

@@ -84,31 +84,114 @@ fn write_failure(detail: &'static str) -> DomainResult {
     DomainResult::unavailable(ci_report::build::diagnostics::report_write_failed(detail))
 }
 
-/// Validate the destination before any work: the parent must be an
-/// existing directory and the target must be absent or a regular,
-/// non-link file. The path is never canonicalized into the report.
-fn validate_destination(path: &Path) -> Result<(), DomainResult> {
+/// The protected project-relative homes a report must never overlap:
+/// model sources, the lock, the ownership manifests, generated artifacts,
+/// history, caches, and the adjudicated imports (research line 228:
+/// reject destinations overlapping source/model/locks/baselines/history).
+const PROTECTED_PREFIXES: &[&str] = &["lekalo/", ".lekalo/", "apps/"];
+
+/// Whether one path component chain resolves to, through, or beside a
+/// symbolic link. Every existing ancestor is no-follow checked so a
+/// linked parent cannot redirect the write out of the granted tree.
+fn parent_chain_has_links(path: &Path) -> bool {
+    let mut prefix = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::Normal(name) => {
+                prefix.push(name);
+                let Ok(metadata) = std::fs::symlink_metadata(&prefix) else {
+                    return false; // missing parts cannot link
+                };
+                if metadata.file_type().is_symlink() {
+                    return true;
+                }
+            }
+            _ => prefix.push(component.as_os_str()),
+        }
+    }
+    false
+}
+
+/// Validate the destination before any work. The destination must be
+/// absent (the writer creates it) or a pre-created empty regular file;
+/// an existing non-empty file is refused outright, so a report can
+/// never truncate a source, the lock, a baseline, or any other
+/// analyzed input. The parent must be an existing directory, every
+/// existing ancestor must be link-free, and the destination must not
+/// sit inside a protected project home. The path is never
+/// canonicalized into the report.
+fn validate_destination(path: &Path, project_root: Option<&Path>) -> Result<(), DomainResult> {
+    use std::io::Read;
     let Some(parent) = path.parent() else {
         return Err(write_failure("path-invalid"));
     };
-    let metadata = match std::fs::metadata(parent) {
+    let metadata = match std::fs::symlink_metadata(parent) {
         Ok(metadata) => metadata,
         Err(_) => return Err(write_failure("directory-missing")),
     };
-    if !metadata.is_dir() {
+    if metadata.is_symlink() || !metadata.is_dir() {
         return Err(write_failure("directory-missing"));
+    }
+    if parent_chain_has_links(path) {
+        return Err(write_failure("path-invalid"));
+    }
+    // Protected-home overlap: reject destination paths inside the
+    // project's model/lock/manifest/generated/history/cache homes. The
+    // destination may be relative to the invocation directory while the
+    // root is absolute: compare the canonicalized spellings when both
+    // resolve (an unresolvable destination falls through to the
+    // existence checks below).
+    if let Some(root) = project_root {
+        let destination_absolute = if path.is_absolute() {
+            Some(path.to_path_buf())
+        } else {
+            std::env::current_dir().ok().map(|cwd| cwd.join(path))
+        };
+        if let Some(absolute) = destination_absolute {
+            if let Ok(relative) = absolute.strip_prefix(root) {
+                let text = relative.to_string_lossy().replace('\\', "/");
+                if PROTECTED_PREFIXES
+                    .iter()
+                    .any(|prefix| text.starts_with(prefix))
+                {
+                    return Err(write_failure("protected-path"));
+                }
+            }
+        }
     }
     match std::fs::symlink_metadata(path) {
         Ok(metadata) if metadata.file_type().is_symlink() => Err(write_failure("path-invalid")),
         Ok(metadata) if !metadata.is_file() => Err(write_failure("path-invalid")),
-        Ok(_) => Ok(()),
+        Ok(metadata) => {
+            // Pre-created regular file: only an exactly-empty one is
+            // acceptable (the atomic-create pattern below then fills
+            // it). Any existing content means a real file was named;
+            // truncating analyzed inputs is never permitted.
+            if metadata.len() == 0 {
+                Ok(())
+            } else {
+                // Belt and braces: refuse anything non-empty even if a
+                // race emptied it between stat and open.
+                let empty = std::fs::File::open(path)
+                    .and_then(|mut file| file.read_to_end(&mut Vec::new()).map(|_| Vec::new()))
+                    .map(|bytes: Vec<u8>| bytes.is_empty())
+                    .unwrap_or(false);
+                if empty {
+                    Ok(())
+                } else {
+                    Err(write_failure("file-exists"))
+                }
+            }
+        }
         Err(_) => Ok(()),
     }
 }
 
-/// The exact projection bytes of one report.
-fn projection(report: &CiReport, format: ReportFormat) -> String {
-    match format {
+/// The exact projection bytes of one report, or the typed secret
+/// refusal when the pre-publication scan finds secret material in the
+/// rendered bytes (issue #103: admission runs before every sink).
+fn projection(report: &CiReport, format: ReportFormat) -> Result<String, DomainResult> {
+    let rendered = match format {
         ReportFormat::Json => report.to_json_string(),
         ReportFormat::Junit => ci_report::junit::render(report),
         ReportFormat::Sarif => {
@@ -117,24 +200,54 @@ fn projection(report: &CiReport, format: ReportFormat) -> String {
             bytes
         }
         ReportFormat::Md => ci_report::markdown::render(report),
+    };
+    if let Some(refusal) = ci_report::build::scan_rendered(&rendered) {
+        return Err(write_failure(refusal.as_str()));
     }
+    Ok(rendered)
 }
 
-/// Write one report to its granted destination. Returns the typed
-/// write failure on any refusal; the caller composes it with the
-/// command result (a report failure never masks a check failure and a
-/// check failure is never overwritten by a report success).
-pub fn write_report(report: &CiReport, request: &ReportRequest) -> Result<(), DomainResult> {
+/// Write one report to its granted destination. The destination is
+/// re-validated with the project root (protected-home overlap), then
+/// created through `create_new` (an atomic fail-if-exists open) or
+/// opened write-only on an exactly-empty pre-created file — never
+/// through a truncating create. Returns the typed write failure on any
+/// refusal; the caller composes it with the command result (a report
+/// failure never masks a check failure and a check failure is never
+/// overwritten by a report success).
+pub fn write_report(
+    report: &CiReport,
+    request: &ReportRequest,
+    project_root: Option<&Path>,
+) -> Result<(), DomainResult> {
     let Some(file) = request.file.as_deref() else {
         return Ok(());
     };
     let path = PathBuf::from(file);
-    validate_destination(&path)?;
-    let bytes = projection(report, request.resolved_format());
-    let write = std::fs::File::create(&path).and_then(|mut file| {
-        use std::io::Write;
-        file.write_all(bytes.as_bytes()).and_then(|()| file.flush())
-    });
+    validate_destination(&path, project_root)?;
+    let bytes = projection(report, request.resolved_format())?;
+    let write = match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+    {
+        Ok(mut file) => {
+            use std::io::Write;
+            file.write_all(bytes.as_bytes()).and_then(|()| file.flush())
+        }
+        Err(_) if path.is_file() => {
+            // The exactly-empty pre-created file admitted by validation
+            // (e.g. a touch-created CI artifact placeholder): open
+            // without truncation and overwrite the zero bytes.
+            use std::io::Write;
+            std::fs::OpenOptions::new()
+                .write(true)
+                .truncate(false)
+                .open(&path)
+                .and_then(|mut file| file.write_all(bytes.as_bytes()).and_then(|()| file.flush()))
+        }
+        Err(_) => Err(std::io::Error::other("refused")),
+    };
     match write {
         Ok(()) => Ok(()),
         Err(_) => Err(write_failure("write-denied")),
@@ -144,16 +257,44 @@ pub fn write_report(report: &CiReport, request: &ReportRequest) -> Result<(), Do
 /// Compose the terminal domain result of a reporting run: the command
 /// result wins unless the report itself failed; a report failure after
 /// a successful command becomes the typed unavailable result, and a
-/// report failure after a failed command keeps the command's exit
-/// class on the status-owned stream (both facts stay visible in the
-/// process exit set).
-pub fn compose(command: DomainResult, report_outcome: Result<(), DomainResult>) -> DomainResult {
+/// report failure after a failed command **joins** the failed
+/// command's diagnostics (review F10): the write-refusal fact is
+/// appended to the returned envelope so it is never silently dropped,
+/// while the command's exit class stays authoritative.
+pub fn compose(
+    mut command: DomainResult,
+    report_outcome: Result<(), DomainResult>,
+) -> DomainResult {
     match report_outcome {
         Ok(()) => command,
         Err(write_failure) => {
             if command.exit_code() == 0 {
                 write_failure
             } else {
+                // Preserve the command's class; the report-refusal
+                // diagnostics ride along so the fact is observable.
+                let mut joined: Vec<lekalo_core::diagnostics::Diagnostic> =
+                    command.diagnostics().to_vec();
+                joined.extend(write_failure.diagnostics().iter().cloned());
+                if let Ok(set) = lekalo_core::diagnostics::DiagnosticSet::try_from_unsorted(
+                    joined,
+                    command.status(),
+                ) {
+                    command = match command.status() {
+                        lekalo_core::result::Status::Invalid => DomainResult::invalid(set),
+                        lekalo_core::result::Status::Denied => DomainResult::denied(set),
+                        lekalo_core::result::Status::Unavailable => DomainResult::unavailable(set),
+                        lekalo_core::result::Status::UnsupportedVersion => {
+                            DomainResult::unsupported_version(set)
+                        }
+                        // The Valid and Unsupported classes carry no
+                        // report-refusal composition (a successful or
+                        // negotiated-unsupported command never reaches
+                        // this branch with a failing write).
+                        lekalo_core::result::Status::Valid
+                        | lekalo_core::result::Status::Unsupported => command,
+                    };
+                }
                 command
             }
         }
@@ -226,7 +367,7 @@ mod tests {
             file: Some("definitely/missing/dir/report.json".to_owned()),
             format: None,
         };
-        let outcome = write_report(&report, &request);
+        let outcome = write_report(&report, &request, None);
         assert_eq!(outcome.unwrap_err().exit_code(), 4);
     }
 }

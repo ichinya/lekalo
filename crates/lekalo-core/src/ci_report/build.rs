@@ -152,87 +152,38 @@ pub struct SuiteDraft {
     pub cases: Vec<CaseDraft>,
 }
 
-/// Translate one check draft under the policy: required non-pass rows
-/// fail (with the security/denied and cancellation classes preserved);
-/// optional absences follow the policy level.
-fn effective_outcome(
-    required: bool,
-    source_outcome: SourceOutcome,
-    failure_class: FailureClass,
-    policy: CiPolicy,
-) -> EffectiveOutcome {
-    match source_outcome {
-        SourceOutcome::Pass => EffectiveOutcome::Pass,
-        SourceOutcome::Fail => {
-            if required {
-                EffectiveOutcome::Fail
-            } else {
-                // A genuine optional assertion failure is still a
-                // failure: formatting never downgrades an observed
-                // failure. Only *absence* is policy-eligible.
-                EffectiveOutcome::Fail
-            }
-        }
-        SourceOutcome::Denied => EffectiveOutcome::Fail,
-        SourceOutcome::Cancelled => EffectiveOutcome::Fail,
-        SourceOutcome::Degraded => {
-            if required {
-                EffectiveOutcome::Error
-            } else {
-                EffectiveOutcome::Warn
-            }
-        }
-        SourceOutcome::Unsupported => {
-            if failure_class == FailureClass::MissingComponent && !required {
-                match policy {
-                    CiPolicy::Default => EffectiveOutcome::Warn,
-                    CiPolicy::Strict => EffectiveOutcome::Error,
-                    CiPolicy::Lenient => EffectiveOutcome::Skip,
-                }
-            } else if required {
-                EffectiveOutcome::Error
-            } else {
-                EffectiveOutcome::Warn
-            }
-        }
-        SourceOutcome::Unavailable | SourceOutcome::NotRun => {
-            if required {
-                // A required component that never ran is an error, never
-                // an optional skip.
-                EffectiveOutcome::Error
-            } else {
-                match policy {
-                    CiPolicy::Default => EffectiveOutcome::Warn,
-                    CiPolicy::Strict => EffectiveOutcome::Error,
-                    CiPolicy::Lenient => EffectiveOutcome::Skip,
-                }
-            }
-        }
-    }
-}
-
-/// Apply the policy to one check draft.
+/// Apply the shared policy table to one check draft.
 pub fn apply_check_policy(draft: CheckDraft, policy: CiPolicy) -> CheckRow {
-    let effective = effective_outcome(
-        draft.required,
-        draft.source_outcome,
-        draft.failure_class,
-        policy,
-    );
+    let table = super::build_policy::CiPolicyTable::of(policy);
     CheckRow {
+        effective_outcome: super::model::evaluate_outcome(
+            draft.required,
+            draft.source_outcome,
+            draft.failure_class,
+            table,
+        ),
         id: draft.id,
         required: draft.required,
         source_outcome: draft.source_outcome,
         failure_class: draft.failure_class,
-        effective_outcome: effective,
         diagnostic_indexes: draft.diagnostic_indexes,
         detail: draft.detail,
     }
 }
 
-/// Apply the policy to one case draft.
-pub fn apply_case_policy(draft: CaseDraft, _policy: CiPolicy) -> CaseRow {
+/// Apply the same shared policy table to one case draft: the evaluated
+/// outcome is computed once here and serialized on the row, so the
+/// JUnit projection and the evaluation verdict can never disagree
+/// (review F7).
+pub fn apply_case_policy(draft: CaseDraft, policy: CiPolicy) -> CaseRow {
+    let table = super::build_policy::CiPolicyTable::of(policy);
     CaseRow {
+        effective_outcome: super::model::evaluate_outcome(
+            draft.required,
+            draft.source_outcome,
+            draft.failure_class,
+            table,
+        ),
         id: draft.id,
         required: draft.required,
         source_outcome: draft.source_outcome,
@@ -251,16 +202,22 @@ fn evaluate(
     suites: &[Suite],
     _policy: CiPolicy,
 ) -> Evaluation {
-    let blocking = checks
-        .iter()
-        .map(|row| row.effective_outcome)
-        .chain(suites.iter().flat_map(|suite| {
-            suite
-                .cases
-                .iter()
-                .map(|case: &CaseRow| case.effective_outcome())
-        }))
-        .any(|outcome| !outcome.is_exit_neutral());
+    // The command's own failure is terminal evidence even when the rows
+    // are empty (review F8): a preflight refusal (missing lock, loader
+    // refusal, usage) is a blocking, incomplete evaluation — never a
+    // false-ready verdict.
+    let command_failed = command_result.exit_code() != 0;
+    let blocking = command_failed
+        || checks
+            .iter()
+            .map(|row| row.effective_outcome)
+            .chain(suites.iter().flat_map(|suite| {
+                suite
+                    .cases
+                    .iter()
+                    .map(|case: &CaseRow| case.effective_outcome)
+            }))
+            .any(|outcome| !outcome.is_exit_neutral());
     let degraded_only = checks
         .iter()
         .map(|row| row.effective_outcome)
@@ -268,25 +225,13 @@ fn evaluate(
             suite
                 .cases
                 .iter()
-                .map(|case: &CaseRow| case.effective_outcome())
+                .map(|case: &CaseRow| case.effective_outcome)
         }))
         .any(|outcome| matches!(outcome, EffectiveOutcome::Warn | EffectiveOutcome::Skip));
-    let complete = !checks.iter().any(|row| {
-        matches!(
-            (row.source_outcome, row.effective_outcome),
-            (SourceOutcome::NotRun, _)
-                | (SourceOutcome::Unavailable, EffectiveOutcome::Skip)
-                | (SourceOutcome::Unavailable, EffectiveOutcome::Warn)
-                | (SourceOutcome::Unsupported, EffectiveOutcome::Skip)
-                | (SourceOutcome::Unsupported, EffectiveOutcome::Warn)
-                | (SourceOutcome::Cancelled, _)
-        )
-    }) && !suites
-        .iter()
-        .flat_map(|suite| suite.cases.iter())
-        .any(|case| {
+    let complete = !command_failed
+        && !checks.iter().any(|row| {
             matches!(
-                (case.source_outcome, case.effective_outcome()),
+                (row.source_outcome, row.effective_outcome),
                 (SourceOutcome::NotRun, _)
                     | (SourceOutcome::Unavailable, EffectiveOutcome::Skip)
                     | (SourceOutcome::Unavailable, EffectiveOutcome::Warn)
@@ -294,7 +239,21 @@ fn evaluate(
                     | (SourceOutcome::Unsupported, EffectiveOutcome::Warn)
                     | (SourceOutcome::Cancelled, _)
             )
-        });
+        })
+        && !suites
+            .iter()
+            .flat_map(|suite| suite.cases.iter())
+            .any(|case| {
+                matches!(
+                    (case.source_outcome, case.effective_outcome),
+                    (SourceOutcome::NotRun, _)
+                        | (SourceOutcome::Unavailable, EffectiveOutcome::Skip)
+                        | (SourceOutcome::Unavailable, EffectiveOutcome::Warn)
+                        | (SourceOutcome::Unsupported, EffectiveOutcome::Skip)
+                        | (SourceOutcome::Unsupported, EffectiveOutcome::Warn)
+                        | (SourceOutcome::Cancelled, _)
+                )
+            });
     let coverage = if complete {
         Coverage::Complete
     } else if !checks.is_empty() || !suites.is_empty() {
@@ -333,7 +292,7 @@ fn evaluate(
             || suites
                 .iter()
                 .flat_map(|suite| suite.cases.iter())
-                .any(|case| case.effective_outcome() == super::model::EffectiveOutcome::Error);
+                .any(|case| case.effective_outcome == super::model::EffectiveOutcome::Error);
         if any_denied {
             (crate::result::Status::Denied, 3u8)
         } else if command_status == crate::result::Status::Valid {
@@ -493,4 +452,38 @@ pub mod diagnostics {
             crate::diagnostics::normalize::build("ci.required-check-missing", None, None, data),
         )
     }
+}
+
+/// The closed secret-refusal vocabulary: what the pre-publication scan
+/// found in the rendered report.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SecretRefusal {
+    /// A secret-shaped token survived into the rendered bytes.
+    SecretToken,
+}
+
+impl SecretRefusal {
+    /// The stable detail spelling (the closed refusal reason).
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::SecretToken => "secret-token",
+        }
+    }
+}
+
+/// Scan one rendered report projection for secret material before it
+/// may be written or published (issue #103 privacy rule: redaction and
+/// admission run before every sink). The accepted #119 leak scanner is
+/// the authority; a `secret-token` finding refuses the sink. Returns
+/// the class of the first blocking finding, or `None` when the bytes
+/// carry no secret material.
+pub fn scan_rendered(rendered: &str) -> Option<SecretRefusal> {
+    let findings = crate::privacy::redact::scan(rendered);
+    if findings
+        .iter()
+        .any(|finding| finding.kind() == crate::privacy::redact::LeakKind::SecretToken)
+    {
+        return Some(SecretRefusal::SecretToken);
+    }
+    None
 }

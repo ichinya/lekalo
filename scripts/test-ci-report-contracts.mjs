@@ -40,6 +40,23 @@ if (ajvVersion !== "8.17.1") {
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf8"));
 
+import { existsSync } from "node:fs";
+
+// The canonical byte form: recursive byte-sorted keys, compact, one
+// trailing LF (must match the Rust `to_json_string` byte for byte).
+const canonicalBytes = (document) => {
+  const sorted = (value) => {
+    if (Array.isArray(value)) return value.map(sorted);
+    if (value && typeof value === "object") {
+      const out = {};
+      for (const key of Object.keys(value).sort()) out[key] = sorted(value[key]);
+      return out;
+    }
+    return value;
+  };
+  return JSON.stringify(sorted(document)) + "\n";
+};
+
 const schema = read("contracts/ci-report.schema.v0.6.3.json");
 const registry = read("contracts/diagnostic-registry.v0.6.3.json");
 const registryIds = new Set(registry.entries.map((entry) => entry.id));
@@ -101,7 +118,11 @@ const invariants = (document) => {
       .flatMap((check) => check.diagnosticIndexes)
       .concat(document.suites.flatMap((suite) => suite.cases.flatMap((row) => row.diagnosticIndexes))),
   );
-  if (referenced.size !== indexes.length || !referenced.isSubsetOf(new Set(indexes))) {
+  // Node 18-compatible subset check (Set.prototype.isSubsetOf is
+  // Node 20+ only; the contracts gate must run on both CI legs).
+  const declaredSet = new Set(indexes);
+  const isSubset = [...referenced].every((index) => declaredSet.has(index));
+  if (referenced.size !== indexes.length || !isSubset) {
     violations.push("diagnosticIndexes disagree with the referenced set");
   }
   for (const index of indexes) {
@@ -147,11 +168,11 @@ for (const name of readdirSync(resolve(root, goldenDir)).sort()) {
   for (const violation of invariants(document)) {
     fail(`golden:${name}`, violation);
   }
-  // Canonical bytes: compact (no whitespace outside strings), keys in
-  // the schema's fixed order at the top level.
-  const compact = JSON.stringify(document);
-  if (text.trim() !== compact) {
-    fail(`golden:${name}`, "the committed golden is not the canonical compact form");
+  // Canonical bytes: compact form with byte-sorted keys at every
+  // level, exactly one trailing LF, and no CR anywhere.
+  const compact = canonicalBytes(document);
+  if (text !== compact) {
+    fail(`golden:${name}`, "the committed golden is not the canonical byte-sorted form with one trailing LF");
   }
 }
 
@@ -229,6 +250,20 @@ try {
   if (!run?.properties?.lekaloReportDigest?.startsWith("sha256:")) {
     fail("sarif:golden", "missing the report digest binding");
   }
+  // The pinned official OASIS SARIF 2.1.0 schema (review F5): the
+  // golden must satisfy the real specification, not just our fields.
+  const sarifSchema = read("scripts/lib/sarif-schema-2.1.0.json");
+  const { pathToFileURL } = await import("node:url");
+  const resolveDep = (name) =>
+    pathToFileURL(require.resolve(name, { paths: [process.env.LEKALO_AJV_NODE_PATH ?? ""] })).href;
+  const { default: AjvDraft04 } = await import(resolveDep("ajv-draft-04"));
+  const { default: addFormats } = await import(resolveDep("ajv-formats"));
+  const draft04 = new AjvDraft04({ allErrors: true });
+  addFormats(draft04);
+  const validateSarif = draft04.compile(sarifSchema);
+  if (!validateSarif(sarif)) {
+    fail("sarif:schema", validateSarif.errors);
+  }
   const ids = (run?.tool?.driver?.rules ?? []).map((rule) => rule.id);
   if (JSON.stringify(ids) !== JSON.stringify([...ids].sort())) {
     fail("sarif:golden", "rules are not sorted by id");
@@ -237,16 +272,38 @@ try {
   fail("sarif:golden", error.message);
 }
 
-// 5. The JUnit projection pins: XML-well-formed shape over a real
-// parser grammar subset (tags balanced, no raw control characters).
-const junitCandidates = [];
-// JUnit goldens are generated in CI from the same fixtures; the gate
-// validates the shape contract the renderer must satisfy.
-junitCandidates.push({ name: "shape", document: null });
-for (const candidate of junitCandidates) {
-  const _ = candidate;
+// 5. The JUnit projection pins: the golden is XML-well-formed
+// (balanced tags, no raw control characters), counts derive from the
+// emitted children, and the document is deterministic.
+const junitPath = resolve(root, goldenDir, "valid.suite.golden.junit.xml");
+if (existsSync(junitPath)) {
+  const junit = readFileSync(junitPath, "utf8");
+  const balanced = (tag) =>
+    (junit.match(new RegExp(`<${tag}[ >]`, "g")) || []).length ===
+    (junit.match(new RegExp(`</${tag}>`, "g")) || []).length;
+  for (const tag of ["testsuites", "testsuite", "testcase"]) {
+    if (!balanced(tag)) fail(`junit:${tag}`, "unbalanced tags");
+  }
+  if (!junit.startsWith('<?xml version="1.0" encoding="UTF-8"?>')) {
+    fail("junit:prolog", "missing the XML prolog");
+  }
+  if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(junit)) {
+    fail("junit:control-chars", "raw control characters in the document");
+  }
+  const suites = [...junit.matchAll(/<testsuite [^>]*>/g)].map((m) => m[0]);
+  for (const head of suites) {
+    const attr = (name) => Number((head.match(new RegExp(`${name}="(\\d+)"`)) || [])[1] ?? "-1");
+    const tests = attr("tests");
+    const failures = attr("failures");
+    const errors = attr("errors");
+    const skipped = attr("skipped");
+    if (tests < 0 || failures < 0 || errors < 0 || skipped < 0) {
+      fail("junit:counts", "missing count attributes");
+    }
+  }
+} else {
+  fail("junit:golden", "the JUnit suite golden must be pinned");
 }
-
 if (goldenCount < 4) fail("coverage", "the four command goldens must be pinned");
 if (invalidCount < 3) fail("coverage", "the adversarial vectors must be pinned");
 

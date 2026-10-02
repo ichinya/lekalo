@@ -517,3 +517,68 @@ fn verify_blocked_scenario_failure_is_a_junit_error_with_nonzero_evaluation() {
     let summary = std::fs::read_to_string(dir.join("out/verify.md")).expect("summary");
     assert!(summary.contains("## Lekalo verify"));
 }
+
+#[test]
+fn a_report_is_refused_when_the_rendered_bytes_carry_secret_material() {
+    // Canary (review codex F2): a secret-shaped token that survives into
+    // a diagnostic's data must refuse the report sink — the report is
+    // never written, and the command result stays authoritative.
+    let dir = fixture_copy("secret-refusal");
+    let entities = dir.join("lekalo/modules/beta/entities.yaml");
+    let original = std::fs::read_to_string(&entities).expect("fixture");
+    let planted = original.replace(
+        "type: alpha.widget",
+        "type: beta.ghp_abcdefghijklmnopqrstuvwxyz0123456789abcd",
+    );
+    assert_ne!(original, planted, "the canary must actually be planted");
+    std::fs::write(&entities, planted).expect("plant canary");
+    std::fs::create_dir_all(dir.join("out")).expect("report dir");
+    let output = lekalo_in(
+        &dir,
+        &[
+            "--json",
+            "validate",
+            "--report-file",
+            "out/report.json",
+            "--project",
+            ".",
+        ],
+    );
+    // The analysis itself failed (the canary is an unresolved
+    // reference); the report sink refused on top — the JSON report is
+    // absent and no byte of it carries the canary.
+    let report_path = dir.join("out/report.json");
+    assert!(
+        !report_path.exists(),
+        "the report sink refused the secret-bearing bytes"
+    );
+    let _ = exit_code(&output);
+}
+
+#[test]
+fn a_report_destination_over_an_existing_file_is_refused() {
+    // Destination confinement (review F1/F2): the writer never
+    // truncates an existing non-empty file — naming a model source or
+    // the lock as the report destination is the typed refusal, and the
+    // file's bytes stay intact.
+    let dir = fixture_copy("destination-confinement");
+    let model = dir.join("lekalo/modules/beta/entities.yaml");
+    let before = std::fs::read_to_string(&model).expect("model bytes");
+    let output = lekalo_in(
+        &dir,
+        &[
+            "--json",
+            "validate",
+            "--report-file",
+            "lekalo/modules/beta/entities.yaml",
+            "--project",
+            ".",
+        ],
+    );
+    assert_eq!(exit_code(&output), 4, "the protected destination refuses");
+    let after = std::fs::read_to_string(&model).expect("model bytes after");
+    assert_eq!(before, after, "the analyzed input was never overwritten");
+    let envelope: serde_json::Value =
+        serde_json::from_str(stdout_text(&output).trim()).expect("envelope parses");
+    assert_eq!(envelope["reasonCodes"][0], "ci.report-write-failed");
+}

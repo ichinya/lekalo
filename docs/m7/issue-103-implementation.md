@@ -33,7 +33,9 @@ Commits, in order:
   is merged here because the successor rule forces one version per
   commit): two new `ci.*` rules, `ci.report-write-failed` (LEK-CI-001)
   and `ci.required-check-missing` (LEK-CI-002), both `unavailable`. The
-  frozen 0.4.0 bytes stay byte-identical; the validation-profile family
+  superseded 0.4.0 instance is removed per the versioning convention
+  (its entries carry into the successor unchanged); the
+  validation-profile family
   follows with its registry pin (`#75` successor precedent). Every
   consumer and touched gate updated together
   (`test-diagnostic/validation/classification/expressions-contracts.mjs`).

@@ -1,18 +1,18 @@
-## Lekalo verify — blocked (exit 4)
+## Lekalo verify — degraded (exit 0)
 
-- command result: `valid` (exit 0); evaluation: `unavailable` (exit 4), coverage `incomplete`, complete: false
+- command result: `valid` (exit 0); evaluation: `valid` (exit 0), coverage `incomplete`, complete: false
 - required failures: 0; optional unavailable/supported-absent: 1
-- suites: 1 (1 cases, 0 failures, 1 errors)
+- suites: 1 (1 cases, 0 failures, 0 errors)
 
 ### Revisions
 
 | pin | value |
 | --- | --- |
-| git commit | `7d9336c8d478fa72ab7b81bf8ee5f724f85b0078` |
+| git commit | `27f7b957db8066c5b6daab37472718020da19e2d` |
 | git dirty | `true` |
 | model | `0.2.16` |
 | ir | `0.2.16` |
-| lock | `sha256:8f194d076379133e399f4a99a3157dc58e5453b2c827e0a59e0ba04d86f8a7f9` |
+| lock | `sha256:bbe9c51d3a4a579cd10f3b6794090af14acb9e2dea2bceede83a7f5440334baa` |
 | profile validation-profile.default | `sha256:2d09f1d36c02240629b5631d0d5247b600ae6b363483c485bf8f7123241faa24` |
 
-report digest: `sha256:c205f3c0973d1ed32b3d83073c6e4f29689d7f3feabe83bd5fabbf00b4ec6743`
+report digest: `sha256:f00babc917c6127bd8f03032ab1164ce7f58fcfa4fb40478f6f8a7f9aefc5971`

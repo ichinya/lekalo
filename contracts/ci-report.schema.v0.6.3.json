@@ -173,14 +173,116 @@
         }
       ]
     },
-    "gitProvenance": {
+    "revisionState": {
+  "description": "A provenance leaf whose known value is exactly a 40/64 lowercase-hex revision.",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "value"],
+      "properties": {
+        "state": { "const": "known" },
+        "value": { "$ref": "#/$defs/hexRevision" }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "reason"],
+      "properties": {
+        "state": { "const": "unknown" },
+        "reason": { "$ref": "#/$defs/unknownReason" }
+      }
+    }
+  ]
+},
+"flagState": {
+  "description": "A provenance leaf whose known value is a boolean fact.",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "value"],
+      "properties": {
+        "state": { "const": "known" },
+        "value": { "type": "boolean" }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "reason"],
+      "properties": {
+        "state": { "const": "unknown" },
+        "reason": { "$ref": "#/$defs/unknownReason" }
+      }
+    }
+  ]
+},
+"digestState": {
+  "description": "A provenance leaf whose known value is exactly a sha256 spelling.",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "value"],
+      "properties": {
+        "state": { "const": "known" },
+        "value": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "reason"],
+      "properties": {
+        "state": { "const": "unknown" },
+        "reason": { "$ref": "#/$defs/unknownReason" }
+      }
+    }
+  ]
+},
+"versionState": {
+  "description": "A provenance leaf whose known value is exactly a semver spelling.",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "value"],
+      "properties": {
+        "state": { "const": "known" },
+        "value": { "$ref": "#/$defs/semVer" }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "reason"],
+      "properties": {
+        "state": { "const": "unknown" },
+        "reason": { "$ref": "#/$defs/unknownReason" }
+      }
+    }
+  ]
+},
+"unknownReason": {
+  "enum": [
+    "not-a-repository",
+    "git-unavailable",
+    "unreadable",
+    "invalid",
+    "absent",
+    "not-applicable"
+  ]
+},
+"gitProvenance": {
       "type": "object",
       "additionalProperties": false,
       "required": ["commit", "dirty", "workingSetDigest"],
       "properties": {
-        "commit": { "$ref": "#/$defs/valueState" },
-        "dirty": { "$ref": "#/$defs/valueState" },
-        "workingSetDigest": { "$ref": "#/$defs/valueState" }
+        "commit": { "$ref": "#/$defs/revisionState" },
+        "dirty": { "$ref": "#/$defs/flagState" },
+        "workingSetDigest": { "$ref": "#/$defs/digestState" }
       }
     },
     "inputProvenance": {
@@ -188,8 +290,8 @@
       "additionalProperties": false,
       "required": ["version", "digest"],
       "properties": {
-        "version": { "$ref": "#/$defs/valueState" },
-        "digest": { "$ref": "#/$defs/valueState" }
+        "version": { "$ref": "#/$defs/versionState" },
+        "digest": { "$ref": "#/$defs/digestState" }
       }
     },
     "profileProvenance": {
@@ -198,8 +300,8 @@
       "required": ["id", "version", "digest"],
       "properties": {
         "id": { "$ref": "#/$defs/boundedToken" },
-        "version": { "$ref": "#/$defs/valueState" },
-        "digest": { "$ref": "#/$defs/valueState" }
+        "version": { "$ref": "#/$defs/versionState" },
+        "digest": { "$ref": "#/$defs/digestState" }
       }
     },
     "adapterProvenance": {
@@ -208,8 +310,8 @@
       "required": ["id", "version", "digest"],
       "properties": {
         "id": { "$ref": "#/$defs/boundedToken" },
-        "version": { "$ref": "#/$defs/valueState" },
-        "digest": { "$ref": "#/$defs/valueState" }
+        "version": { "$ref": "#/$defs/versionState" },
+        "digest": { "$ref": "#/$defs/digestState" }
       }
     },
     "provenance": {
@@ -348,7 +450,8 @@
         "sourceOutcome",
         "failureClass",
         "diagnosticIndexes",
-        "detail"
+        "detail",
+        "effectiveOutcome"
       ],
       "properties": {
         "id": { "$ref": "#/$defs/boundedToken" },
@@ -374,8 +477,15 @@
         "detail": {
           "type": "string",
           "maxLength": 256
+        },
+        "effectiveOutcome": {
+          "description": "The policy-effective outcome computed once at build time; the JUnit projection is a pure function of it.",
+          "$ref": "#/$defs/effectiveOutcome"
         }
       }
+    },
+    "effectiveOutcome": {
+      "enum": ["pass", "fail", "warn", "skip", "error"]
     },
     "suite": {
       "type": "object",
@@ -482,23 +592,189 @@
           ]
         },
         "data": {
-          "type": "object",
-          "maxProperties": 16
+          "description": "The closed diagnostic data payload: registry-declared keys with typed scalar/nested values only (the lekalo/diagnostic dataObject surface; arbitrary nested payloads are not representable).",
+          "$ref": "#/$defs/diagnosticDataObject"
         },
         "related_locations": {
           "type": "array",
-          "maxItems": 32
+          "maxItems": 32,
+          "items": { "$ref": "#/$defs/relatedLocation" }
         },
         "causes": {
           "type": "array",
-          "maxItems": 8
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/cause" }
         },
         "fixes": {
           "type": "array",
-          "maxItems": 16
+          "maxItems": 16,
+          "items": { "$ref": "#/$defs/fix" }
         },
         "metadata": {
-          "type": "object"
+          "description": "Provider metadata: a key-sorted map of namespaces to namespaced original codes only.",
+          "type": "object",
+          "maxProperties": 8,
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9-]{1,31}$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "maxProperties": 8,
+            "propertyNames": {
+              "pattern": "^[A-Za-z][A-Za-z0-9]{0,31}$"
+            },
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 128
+            }
+          }
+        }
+      }
+    },
+    "diagnosticDataObject": {
+      "type": "object",
+      "maxProperties": 16,
+      "propertyNames": {
+        "pattern": "^[A-Za-z][A-Za-z0-9]{0,31}$"
+      },
+      "additionalProperties": { "$ref": "#/$defs/diagnosticDataValue" }
+    },
+    "diagnosticDataValue": {
+      "oneOf": [
+        { "$ref": "#/$defs/diagnosticScalar" },
+        {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/diagnosticScalar" }
+        },
+        {
+          "type": "object",
+          "maxProperties": 16,
+          "propertyNames": {
+            "pattern": "^[A-Za-z][A-Za-z0-9]{0,31}$"
+          },
+          "additionalProperties": { "$ref": "#/$defs/diagnosticNestedValue" }
+        }
+      ]
+    },
+    "diagnosticNestedValue": {
+      "oneOf": [
+        { "$ref": "#/$defs/diagnosticScalar" },
+        {
+          "type": "object",
+          "maxProperties": 16,
+          "propertyNames": {
+            "pattern": "^[A-Za-z][A-Za-z0-9]{0,31}$"
+          },
+          "additionalProperties": { "$ref": "#/$defs/diagnosticScalar" }
+        }
+      ]
+    },
+    "diagnosticScalar": {
+      "oneOf": [
+        {
+          "type": "string",
+          "maxLength": 256
+        },
+        {
+          "type": "integer",
+          "minimum": 0
+        },
+        { "type": "boolean" }
+      ]
+    },
+    "relatedLocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relation", "message_id", "location"],
+      "properties": {
+        "relation": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
+          "maxLength": 128
+        },
+        "message_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
+          "maxLength": 128
+        },
+        "location": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "path": { "$ref": "#/$defs/safePath" },
+            "range": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["start", "end"],
+              "properties": {
+                "start": { "$ref": "#/$defs/position" },
+                "end": { "$ref": "#/$defs/position" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "cause": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "code",
+        "message_id",
+        "message",
+        "data"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
+          "maxLength": 128
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^LEK-[A-Z][A-Z0-9]{1,11}-[0-9]{3}$"
+        },
+        "message_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
+          "maxLength": 128
+        },
+        "message": { "$ref": "#/$defs/boundedToken" },
+        "data": { "$ref": "#/$defs/diagnosticDataObject" }
+      }
+    },
+    "fix": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fix_id", "applicability", "message"],
+      "properties": {
+        "fix_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
+          "maxLength": 128
+        },
+        "applicability": { "enum": ["safe", "unsafe", "breaking"] },
+        "message": { "$ref": "#/$defs/boundedToken" },
+        "target": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "path": { "$ref": "#/$defs/safePath" },
+            "range": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["start", "end"],
+              "properties": {
+                "start": { "$ref": "#/$defs/position" },
+                "end": { "$ref": "#/$defs/position" }
+              }
+            }
+          }
         }
       }
     },
