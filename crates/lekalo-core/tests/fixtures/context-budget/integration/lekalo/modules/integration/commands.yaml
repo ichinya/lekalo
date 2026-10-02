@@ -1,0 +1,20 @@
+schema_version: "0.2.16"
+definitions:
+  - id: integration.sync_external_objects
+    kind: command
+    version: 1
+    description: "Synchronizes accepted tasks to the external system"
+    derived_from:
+      - "INTEG-REQ-001"
+    input:
+      - name: task_id
+        type: "tasks.task_id"
+        required: true
+      - name: credential
+        type: "auth.credential"
+        required: true
+      - name: window
+        type: "delivery.window"
+        required: true
+    effects:
+      - "delivery.deliver"

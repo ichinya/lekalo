@@ -45,15 +45,14 @@ pub fn minimum_safe_estimate(
     if margin_denominator == 0 {
         return Err(diagnostic::input_invalid("profile-margin-denominator"));
     }
-    let scaled = (i128::from(required_tokens) * i128::from(margin_numerator))
+    // ceil(required × numerator / denominator), computed without floats:
+    // ceil(a/b) = (a + b − 1) / b for positive a.
+    let scaled = (i128::from(required_tokens) * i128::from(margin_numerator)
+        + i128::from(margin_denominator)
+        - 1)
         .checked_div(i128::from(margin_denominator))
         .ok_or_else(|| diagnostic::input_invalid("profile-margin-overflow"))?;
-    if scaled <= 0 && required_tokens > 0 {
-        // A positive required sum scaled to zero means the margin rounds
-        // below one token; the estimate keeps a one-token floor.
-        return u64::try_from(1i128.saturating_add(i128::from(framing_tokens)))
-            .map_err(|_| diagnostic::input_invalid("profile-framing-overflow"));
-    }
+    let scaled = scaled.max(0);
     let total = scaled.saturating_add(i128::from(framing_tokens));
     u64::try_from(total).map_err(|_| diagnostic::input_invalid("profile-estimate-overflow"))
 }
@@ -90,9 +89,15 @@ mod tests {
     #[test]
     fn minimum_safe_scales_and_frames() {
         assert_eq!(minimum_safe_estimate(100, 1, 1, 0).unwrap(), 100);
+        // ceil(100 × 11/10) = 110, + 5 framing = 115.
         assert_eq!(minimum_safe_estimate(100, 11, 10, 5).unwrap(), 115);
         assert_eq!(minimum_safe_estimate(0, 2, 1, 7).unwrap(), 7);
+        // ceil(3/100) = 1: the ceiling never rounds a positive sum to zero.
         assert_eq!(minimum_safe_estimate(3, 1, 100, 0).unwrap(), 1);
+        // ceil(101 × 11/10) = ceil(111.1) = 112, + 0 = 112 (the M3 vector).
+        assert_eq!(minimum_safe_estimate(101, 11, 10, 0).unwrap(), 112);
+        // ceil(355 × 2/3) = 237, + 100 = 337 (the codex #7 vector).
+        assert_eq!(minimum_safe_estimate(355, 2, 3, 100).unwrap(), 337);
         assert!(minimum_safe_estimate(u64::MAX, 2, 1, 0).is_err());
         assert!(minimum_safe_estimate(10, 1, 0, 0).is_err());
     }

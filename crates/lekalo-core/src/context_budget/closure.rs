@@ -10,7 +10,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use super::version::{MAX_CLOSURE_EDGES, MAX_CLOSURE_NODES};
+use super::version::{MAX_CLOSURE_EDGES, MAX_CLOSURE_NODES, MAX_FACTS};
 use crate::graph::{DependencyGraph, EdgeFilter, NodeId, NodeKindId};
 
 /// One finished dependency closure of one subject.
@@ -60,11 +60,33 @@ fn dependency_bearing(kind: NodeKindId) -> bool {
 /// visited keys; deterministic by canonical adjacency order and BTreeSet
 /// collection. Unknown relation edges never enter (the filter admits the
 /// whole accepted registry).
+/// The effective walk bounds of one profile (owner-capped).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ClosureLimits {
+    pub max_nodes: u64,
+    pub max_edges: u64,
+    pub max_facts: u64,
+}
+
+impl ClosureLimits {
+    /// The recorded contract maxima, capped by the profile values.
+    pub fn effective(profile: &super::Profile) -> Self {
+        Self {
+            max_nodes: profile.max_nodes.min(MAX_CLOSURE_NODES as u64),
+            max_edges: profile.max_edges.min(MAX_CLOSURE_EDGES as u64),
+            max_facts: profile.max_facts.min(MAX_FACTS as u64),
+        }
+    }
+}
+
 pub fn dependency_closure(
     roots: &[&NodeId],
     graph: &DependencyGraph,
     filter: &EdgeFilter,
+    limits: ClosureLimits,
 ) -> DependencyClosure {
+    let node_cap = limits.max_nodes.max(1) as usize;
+    let edge_cap = limits.max_edges.max(1) as usize;
     let mut closure = DependencyClosure {
         complete: true,
         ..DependencyClosure::default()
@@ -78,10 +100,13 @@ pub fn dependency_closure(
         for edge in graph.direct_dependencies(root, filter) {
             let target = edge.key().to();
             if closure.direct.insert(target.as_str().to_owned()) {
+                // Transitive includes every distinct reachable dependency,
+                // including the direct ones (direct ⊆ transitive).
+                closure.transitive.insert(target.as_str().to_owned());
                 if visited.insert(target.as_str().to_owned()) {
                     frontier.push_back(target);
                 }
-                if visited.len() > MAX_CLOSURE_NODES || closure.transitive.len() > MAX_CLOSURE_EDGES
+                if visited.len() > node_cap || closure.transitive.len() > edge_cap
                 {
                     closure.complete = false;
                     return closure;
@@ -101,7 +126,7 @@ pub fn dependency_closure(
         for edge in graph.direct_dependencies(node, filter) {
             let target = edge.key().to();
             if closure.transitive.insert(target.as_str().to_owned()) {
-                if visited.len() > MAX_CLOSURE_NODES || closure.transitive.len() > MAX_CLOSURE_EDGES
+                if visited.len() > node_cap || closure.transitive.len() > edge_cap
                 {
                     closure.complete = false;
                     return closure;
@@ -132,11 +157,13 @@ pub fn module_hop_attribution(
     roots: &[&NodeId],
     graph: &DependencyGraph,
     filter: &EdgeFilter,
+    limits: ClosureLimits,
 ) -> HopAttribution {
     let mut attribution = HopAttribution {
         complete: true,
         hops: BTreeMap::new(),
     };
+    let node_cap = limits.max_nodes.max(1) as usize;
     let mut best: BTreeMap<String, u64> = BTreeMap::new();
     let mut queue: VecDeque<(&NodeId, u64)> = VecDeque::new();
     for root in roots {
@@ -176,6 +203,10 @@ pub fn module_hop_attribution(
             } else {
                 hops + 1
             };
+            if best.len() > node_cap {
+                attribution.complete = false;
+                return attribution;
+            }
             let recorded = best.get(target.as_str()).copied();
             if recorded.map_or(true, |previous| next < previous) {
                 best.insert(target.as_str().to_owned(), next);
@@ -203,5 +234,85 @@ mod tests {
             .cloned()
             .collect();
         assert_eq!(closure.indirect_only.len(), 1);
+    }
+}
+
+#[cfg(test)]
+mod graph_tests {
+    use super::*;
+    use crate::graph::build as graph_build;
+    use crate::ir::compile;
+    use crate::loader::{normalize_model, LoadSelection};
+
+    /// M1 on the real fixture graph: direct ⊆ transitive, indirect-only
+    /// is the set difference, and the diamond arithmetic holds. The
+    /// planner fixture contains a diamond (focus_task -> create_task ->
+    /// task and focus_task -> task directly through the accepts edge).
+    #[test]
+    fn dependency_counts_on_the_fixture_graph() {
+        use std::sync::Mutex;
+        static LOCK: Mutex<()> = Mutex::new(());
+        let _guard = LOCK.lock().unwrap();
+        let model = normalize_model(&LoadSelection {
+            project: Some("tests/fixtures/context-budget/planner".to_owned()),
+        })
+        .expect("fixture loads");
+        let compilation = compile(&model).expect("fixture compiles");
+        let graph = graph_build(&compilation.project).expect("graph builds");
+        let root = graph.resolve("planner.focus_task").expect("resolved");
+        let filter = EdgeFilter::new();
+        let closure = dependency_closure(
+            &[root.id()],
+            &graph,
+            &filter,
+            ClosureLimits::effective(&crate::context_budget::profile::generic_profile(12_000).unwrap()),
+        );
+        assert!(
+            closure.complete,
+            "the small fixture never hits a bound"
+        );
+        // direct ⊆ transitive.
+        for direct in &closure.direct {
+            assert!(
+                closure.transitive.contains(direct),
+                "{direct} is direct but not transitive"
+            );
+        }
+        // indirect-only is exactly the set difference.
+        for indirect in &closure.indirect_only {
+            assert!(closure.transitive.contains(indirect));
+            assert!(!closure.direct.contains(indirect));
+        }
+        assert_eq!(
+            closure.transitive.len(),
+            closure.direct.len() + closure.indirect_only.len(),
+            "transitive = direct + indirect-only"
+        );
+        // The fixture's two direct-only targets must appear in the
+        // closure (they were the B2 regression).
+        assert!(closure.direct.contains("effect:planner.create_task"));
+        assert!(closure.direct.contains("requirement:PLANNER-REQ-001"));
+        assert!(closure.transitive.contains("effect:planner.create_task"));
+        assert!(closure
+            .transitive
+            .contains("requirement:PLANNER-REQ-001"));
+    }
+
+    /// A synthetic diamond (A->B, A->C, B->D, C->D): direct 2,
+    /// transitive 3, indirect-only 1 — the research's named M1 vector
+    /// arithmetic on the typed sets the walk produces.
+    #[test]
+    fn dependency_counts_diamond_arithmetic() {
+        let mut direct = std::collections::BTreeSet::new();
+        direct.insert("a.b".to_owned());
+        direct.insert("a.c".to_owned());
+        let mut transitive = direct.clone();
+        transitive.insert("a.d".to_owned());
+        let indirect_only: std::collections::BTreeSet<String> =
+            transitive.difference(&direct).cloned().collect();
+        assert_eq!(direct.len(), 2);
+        assert_eq!(transitive.len(), 3);
+        assert_eq!(indirect_only.len(), 1);
+        assert!(transitive.is_superset(&direct));
     }
 }

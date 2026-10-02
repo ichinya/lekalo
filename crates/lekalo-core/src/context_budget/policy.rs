@@ -158,7 +158,11 @@ impl Policy {
             match baseline_regression {
                 Some(BaselineVerdict::Regressed) => return Some("baseline-regression"),
                 Some(BaselineVerdict::Incomparable) => return Some("baseline-incomparable"),
-                Some(BaselineVerdict::Comparable) | None => {}
+                // A mandatory regression check without its baseline input
+                // cannot silently skip the gate: the needed evidence is
+                // missing, which is its own denial reason.
+                None => return Some("baseline-required"),
+                Some(BaselineVerdict::Comparable) => {}
             }
         }
         None
@@ -231,6 +235,34 @@ mod tests {
             policy.evaluate(false, false, None),
             Some("required-incomplete")
         );
+        // This policy does not select the regression arm.
         assert_eq!(policy.evaluate(false, true, None), None);
+    }
+
+    /// A mandatory regression gate without its baseline input denies with
+    /// the dedicated reason instead of silently passing (#15).
+    #[test]
+    fn regression_gate_requires_the_baseline() {
+        let document = format!(
+            r#"{{"schemaVersion":"{SCHEMA_VERSION}","identity":"{IDENTITY}","mode":"mandatory","profileRef":{{"id":"local-12k","version":"1","digest":"sha256:1111111111111111111111111111111111111111111111111111111111111111"}},"failOn":["baseline-regression"],"regressionLimits":[]}}"#
+        );
+        let policy = parse(document.as_bytes()).expect("parses");
+        assert_eq!(
+            policy.evaluate(false, true, None),
+            Some("baseline-required")
+        );
+        use super::BaselineVerdict;
+        assert_eq!(
+            policy.evaluate(false, true, Some(&BaselineVerdict::Comparable)),
+            None
+        );
+        assert_eq!(
+            policy.evaluate(false, true, Some(&BaselineVerdict::Regressed)),
+            Some("baseline-regression")
+        );
+        assert_eq!(
+            policy.evaluate(false, true, Some(&BaselineVerdict::Incomparable)),
+            Some("baseline-incomparable")
+        );
     }
 }

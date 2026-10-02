@@ -287,7 +287,7 @@ fn malformed_invocations_refuse_closed() {
 /// unknown profile id closed.
 #[test]
 fn named_profile_resolves_and_refuses_unknown() {
-    let project = fixture_path();
+    let project = fixture_copy("profiles");
     let profiles = write_profiles(&project);
     let good_run = lekalo_in(
         &project,
@@ -331,7 +331,7 @@ fn named_profile_resolves_and_refuses_unknown() {
 /// closed `unsupported-version` exit 5 (no silent fallback).
 #[test]
 fn unsupported_estimator_is_unsupported_version() {
-    let project = fixture_path();
+    let project = fixture_copy("estimator");
     let profiles = write_profiles_with_estimator(&project, "dev.lekalo.estimator.claude-3");
     let output = lekalo_in(
         &project,
@@ -424,6 +424,33 @@ fn tiny_budget_simulation_exposes_missing_required() {
     assert_eq!(simulation["legacyFits"], false);
 }
 
+/// A private temp copy of the committed fixture project: generated
+/// profile/policy/baseline documents land here, so the tracked fixture
+/// tree stays byte-identical after any test run.
+fn fixture_copy(tag: &str) -> PathBuf {
+    let temp = tempfile::tempdir().expect("temp dir").into_path();
+    let target = temp.join("project");
+    copy_dir(&fixture_path(), &target);
+    std::mem::forget(temp);
+    let mut marker = target.clone();
+    marker.push(format!(".{tag}-used"));
+    std::fs::write(&marker, b"").expect("marker");
+    target
+}
+
+fn copy_dir(source: &Path, target: &Path) {
+    std::fs::create_dir_all(target).expect("create target dir");
+    for entry in std::fs::read_dir(source).expect("read source") {
+        let entry = entry.expect("entry");
+        let target_path = target.join(entry.file_name());
+        if entry.file_type().expect("type").is_dir() {
+            copy_dir(&entry.path(), &target_path);
+        } else {
+            std::fs::copy(entry.path(), target_path).expect("copy file");
+        }
+    }
+}
+
 fn write_profiles(project: &Path) -> PathBuf {
     write_profiles_with_estimator(project, "dev.lekalo.estimator.chars-4@0.2.16")
 }
@@ -455,7 +482,7 @@ fn write_profiles_with_estimator(project: &Path, estimator: &str) -> PathBuf {
 /// side keeps exit 0. `suggestions_never_write`: no file appears.
 #[test]
 fn mandatory_policy_denies_and_passes_on_the_pin() {
-    let project = fixture_path();
+    let project = fixture_copy("policy");
     // Pin the policy to the effective profile of a passing report.
     let passing = lekalo_in(
         &project,
@@ -520,7 +547,7 @@ fn mandatory_policy_denies_and_passes_on_the_pin() {
 /// metric evaluation (`policy_cannot_be_weakened_by_override`).
 #[test]
 fn policy_pin_mismatch_denies() {
-    let project = fixture_path();
+    let project = fixture_copy("pin");
     let policy = r#"{"schemaVersion":"lekalo/context-budget-policy/v0.6.3","identity":"dev.lekalo.context-budget-policy@0.6.3","mode":"mandatory","profileRef":{"id":"local-12k","version":"1","digest":"sha256:1111111111111111111111111111111111111111111111111111111111111111"},"failOn":["over-budget"],"regressionLimits":[]}"#;
     let policy_path = project.join("context-budget-policy-mismatch.json");
     std::fs::write(&policy_path, policy).expect("write policy");
@@ -545,7 +572,7 @@ fn policy_pin_mismatch_denies() {
 /// changed-profile baseline is an explicit incomparable row.
 #[test]
 fn baseline_comparison_records_verdicts() {
-    let project = fixture_path();
+    let project = fixture_copy("baseline");
     let baseline_run = lekalo_in(
         &project,
         &[
@@ -623,4 +650,64 @@ fn baseline_comparison_records_verdicts() {
     );
     assert_eq!(exit_code(&malformed), 1);
     let _ = std::fs::remove_file(&baseline_path);
+}
+
+
+/// AC6: the paired fixture comparison through the CLI — the integration
+/// workload spans more modules, more hops, and costs more than the
+/// planner reference under the identical pinned profile (both sides
+/// resolved from the same checkout).
+#[test]
+fn integration_workload_is_broader_than_planner_reference() {
+    let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../");
+    let planner = alias_free_path(&workspace.join("tests/fixtures/context-budget/planner"));
+    let integration = alias_free_path(&workspace.join("tests/fixtures/context-budget/integration"));
+    let selection = ["--json", "context-budget", "--budget", "1000000"];
+    let planner_report = document(&lekalo_in(
+        &planner,
+        &[
+            selection[0],
+            selection[1],
+            "--symbol",
+            "planner.focus_task",
+            selection[2],
+            selection[3],
+        ],
+    ));
+    let integration_report = document(&lekalo_in(
+        &integration,
+        &[
+            selection[0],
+            selection[1],
+            "--symbol",
+            "integration.sync_external_objects",
+            selection[2],
+            selection[3],
+        ],
+    ));
+    let value = |report: &serde_json::Value, metric: &str| {
+        report["contextBudget"]["subjects"][0]["metrics"][metric]["value"]
+            .as_u64()
+            .unwrap_or(0)
+    };
+    assert!(
+        value(&integration_report, "minimumRequiredSemanticTokens")
+            > value(&planner_report, "minimumRequiredSemanticTokens"),
+        "the integration workload costs more"
+    );
+    assert!(
+        value(&integration_report, "requiredModules")
+            > value(&planner_report, "requiredModules"),
+        "the integration workload spans more modules"
+    );
+    assert!(
+        value(&integration_report, "maxCrossModuleHops")
+            > value(&planner_report, "maxCrossModuleHops"),
+        "the integration workload crosses boundaries"
+    );
+    // Identical pinned profile on both sides of the comparison.
+    assert_eq!(
+        planner_report["contextBudget"]["profile"]["digest"],
+        integration_report["contextBudget"]["profile"]["digest"]
+    );
 }

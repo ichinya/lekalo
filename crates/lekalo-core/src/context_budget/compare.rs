@@ -65,6 +65,15 @@ pub struct Comparison {
     pub subjects: Vec<SubjectComparison>,
 }
 
+impl Comparison {
+    /// The canonical compact JSON bytes of the comparison (byte-sorted
+    /// keys via serde_json Value ordering of the derived Serialize form).
+    pub fn to_canonical_json(&self) -> String {
+        let value = serde_json::to_value(self).expect("comparison serializes");
+        serde_json::to_string(&value).expect("canonical comparison bytes")
+    }
+}
+
 /// Compare a baseline (base) against a candidate report. Subjects are
 /// matched by exact kind-qualified id; added or removed subjects are
 /// explicit rows, never compared against zero.
@@ -318,7 +327,6 @@ mod tests {
         let model = normalize_model(&LoadSelection {
             project: Some("tests/fixtures/context-budget/planner".to_owned()),
         })
-        .ok()
         .expect("fixture loads");
         compile(&model).expect("fixture compiles")
     }

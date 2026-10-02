@@ -9,6 +9,7 @@
     "schemaVersion",
     "identity",
     "metricVersion",
+    "provenance",
     "scope",
     "profile",
     "estimator",
@@ -25,6 +26,43 @@
     },
     "metricVersion": {
       "const": "context-budget-semantics/1"
+    },
+    "provenance": {
+      "description": "The input provenance tuple: the exact pins binding this report to what it measured. The policy pin carries the mandatory-policy digest when one was selected; the baseline pin records that a baseline was consumed. A pin without evidence is an explicit non-known state, never absent.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["modelVersion", "irDigest", "graphIdentity", "effectIdentity", "policy", "baseline"],
+      "properties": {
+        "modelVersion": {
+          "description": "The exact source Model version the measured projections were built from.",
+          "const": "0.2.16"
+        },
+        "irDigest": { "$ref": "#/$defs/sha256Digest" },
+        "graphIdentity": { "$ref": "#/$defs/contractIdentity" },
+        "effectIdentity": { "$ref": "#/$defs/contractIdentity" },
+        "policy": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "digest"],
+              "properties": {
+                "state": { "const": "known" },
+                "digest": { "$ref": "#/$defs/sha256Digest" }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state"],
+              "properties": {
+                "state": { "enum": ["unknown", "withheld", "unsupported"] }
+              }
+            }
+          ]
+        },
+        "baseline": { "enum": ["known", "unknown", "withheld", "unsupported"] }
+      }
     },
     "scope": {
       "type": "object",
@@ -109,6 +147,12 @@
       "type": "integer",
       "minimum": 0,
       "maximum": 9007199254740991
+    },
+    "contractIdentity": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z][a-z0-9.-]*@[0-9]+\\.[0-9]+\\.[0-9]+$"
     },
     "boundedName": {
       "type": "string",
@@ -329,6 +373,7 @@
             "policies",
             "scenarios",
             "largestRequiredArtifact",
+            "largestRequiredSemanticFact",
             "duplicateSupportingTokens",
             "generatedMaintainedRatio",
             "minimumSafeContextEstimate",
@@ -346,6 +391,31 @@
             "modelFiles": { "$ref": "#/$defs/stateU64" },
             "sourceFiles": { "$ref": "#/$defs/stateU64" },
             "targetFiles": { "$ref": "#/$defs/stateU64" },
+            "largestRequiredSemanticFact": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["artifactId", "role", "estimatedTokens", "bytes"],
+                  "properties": {
+                    "artifactId": { "$ref": "#/$defs/factId" },
+                    "role": { "const": "model" },
+                    "bytes": {
+                      "oneOf": [{ "$ref": "#/$defs/count" }, { "type": "null" }]
+                    },
+                    "estimatedTokens": { "$ref": "#/$defs/count" }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["state"],
+                  "properties": {
+                    "state": { "enum": ["unknown", "withheld", "unsupported"] }
+                  }
+                }
+              ]
+            },
             "maxCrossModuleHops": { "$ref": "#/$defs/stateU64" },
             "unresolvedEdges": { "$ref": "#/$defs/stateU64" },
             "ambiguousEdges": { "$ref": "#/$defs/stateU64" },

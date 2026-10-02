@@ -1,0 +1,10 @@
+schema_version: "0.2.16"
+definitions:
+  - id: delivery
+    kind: module
+    version: 1
+    description: "Outbound delivery to the external system"
+    imports:
+      - tasks
+      - events
+      - auth

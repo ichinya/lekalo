@@ -19,6 +19,7 @@
 //! default: a mandatory budget policy is the only path to `denied`, and
 //! it can be selected only by an explicit caller-supplied policy handle.
 
+pub mod baseline;
 pub mod closure;
 pub mod compare;
 pub mod diagnostic;
@@ -33,7 +34,7 @@ mod tests;
 pub mod value;
 pub mod version;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::diagnostics::DiagnosticSet;
 use crate::effects::EffectGraph;
@@ -132,11 +133,33 @@ pub struct ReportSummary {
     pub union_required_tokens: StateValue<u64>,
 }
 
+/// The input provenance tuple of one report: the exact pins a consumer
+/// needs to bind a report to what it measured (AC1/AC7). Digests bind
+/// the accepted projections; a missing pin is an explicit unknown state,
+/// never an absent field.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Provenance {
+    /// The exact source Model version.
+    pub model_version: String,
+    /// The sha256 of the canonical IR the accepted projections built from.
+    pub ir_digest: String,
+    /// The graph contract identity.
+    pub graph_identity: String,
+    /// The effect-graph contract identity.
+    pub effect_identity: String,
+    /// The policy document pin: digest + verdict when a mandatory policy
+    /// was selected (an advisory run records the advisory mode).
+    pub policy: StateValue<String>,
+    /// The baseline file pin: the candidate comparison was computed.
+    pub baseline: StateValue<String>,
+}
+
 /// One finished context-budget report: the normalized product both the
 /// JSON and human projections render.
 #[derive(Clone, Debug, PartialEq)]
 pub struct BudgetReport {
     pub scope: Scope,
+    pub provenance: Provenance,
     pub profile: Profile,
     pub subjects: Vec<SubjectReport>,
     pub summary: ReportSummary,
@@ -146,10 +169,27 @@ pub struct BudgetReport {
 }
 
 impl BudgetReport {
+    /// Record the caller-selected policy and baseline pins into the
+    /// provenance block (the CLI layer owns those file reads; core stays
+    /// filesystem-free). The policy pin carries the policy digest.
+    pub fn with_pins(
+        mut self,
+        policy_pin: StateValue<String>,
+        baseline_pin: StateValue<String>,
+    ) -> Self {
+        self.provenance.policy = policy_pin;
+        self.provenance.baseline = baseline_pin;
+        self
+    }
+
     /// The canonical JSON payload bytes (without the envelope wrapper
     /// and without a trailing newline).
-    pub fn to_canonical_json(&self) -> String {
-        wire::report_json(self)
+    pub fn to_canonical_json(&self) -> Result<String, DiagnosticSet> {
+        let bytes = wire::report_json(self);
+        if bytes.len() > version::MAX_REPORT_BYTES {
+            return Err(diagnostic::input_invalid("report-bytes-limit"));
+        }
+        Ok(bytes)
     }
 
     /// The deterministic Markdown document (the human projection).
@@ -224,6 +264,14 @@ pub fn plan(
         return Err(diagnostic::input_invalid("subject-limit-exceeded"));
     }
 
+    let provenance = Provenance {
+        model_version: graph.model_version().as_str().to_owned(),
+        ir_digest: effects.ir_digest().to_owned(),
+        graph_identity: graph.identity().to_owned(),
+        effect_identity: crate::effects::version::IDENTITY.to_owned(),
+        policy: StateValue::Unknown,
+        baseline: StateValue::Unknown,
+    };
     let mut rows: Vec<SubjectReport> = Vec::with_capacity(subjects.len());
     let mut union_required: BTreeMap<String, u64> = BTreeMap::new();
     let mut over_budget = 0u64;
@@ -236,9 +284,12 @@ pub fn plan(
         let root_nodes: Vec<&crate::graph::GraphNode> =
             vec![graph.node(node_id).expect("resolved subject")];
         let root_ids: Vec<&NodeId> = root_nodes.iter().map(|node| node.id()).collect();
-        let selection_facts = facts::collect_facts(&root_nodes, &graph, &effects, &context);
-        let closure = closure::dependency_closure(&root_ids, &graph, &EdgeFilter::new());
-        let hops = closure::module_hop_attribution(&root_ids, &graph, &EdgeFilter::new());
+        let limits = closure::ClosureLimits::effective(&profile);
+        let selection_facts =
+            facts::collect_facts(&root_nodes, &graph, &effects, &context, limits);
+        let closure =
+            closure::dependency_closure(&root_ids, &graph, &EdgeFilter::new(), limits);
+        let hops = closure::module_hop_attribution(&root_ids, &graph, &EdgeFilter::new(), limits);
 
         let complete = selection_facts.complete && closure.complete && hops.complete;
         let required_tokens = selection_facts.required_tokens();
@@ -250,8 +301,19 @@ pub fn plan(
             union_required.insert(id, tokens);
         }
 
+        // The profile-scoped minimum-safe estimate carries the declared
+        // margin/framing; assessment and over-by compare that effective
+        // cost against the available content budget, so a profile with
+        // framing cannot slip its own overhead past the gate.
+        let effective_required = metrics::minimum_safe(
+            &profile,
+            StateValue::Known(required_tokens),
+        )
+        .value()
+        .copied()
+        .unwrap_or(required_tokens);
         let (assessment, over_by) =
-            metrics::assess(complete, required_tokens, profile.available_content_tokens);
+            metrics::assess(complete, effective_required, profile.available_content_tokens);
         match assessment {
             Assessment::OverBudget => {
                 over_budget += 1;
@@ -264,17 +326,41 @@ pub fn plan(
             bounded_subjects.push(node_id.as_str().to_owned());
         }
 
-        // The per-dependency attribution: exclusive tokens first, shared
-        // tokens to the canonically first owner.
-        let mut attribution: BTreeMap<String, (u64, u64)> = BTreeMap::new();
+        // The per-dependency attribution: each required fact is billed
+        // once to its owning dependency (the fact's own node when the
+        // fact is that node's contract; effect-edge facts bill to the
+        // operation that declares them). A fact whose owner is not a
+        // closure dependency (the subject itself, or a synthesized fact
+        // of the subject) is shared cost of the subject row and is
+        // attributed to the canonically first dependency so that the
+        // exclusive + shared sums always reconcile to F.
+        let subject_id = node_id.as_str().to_owned();
+        let mut attribution: BTreeMap<String, u64> = BTreeMap::new();
+        let mut shared_total: u64 = 0;
         for fact in &selection_facts.required {
-            let module_of = fact.module.clone();
-            let Some(module_name) = module_of else {
-                continue;
+            let owner: String = match fact.id.rfind("->") {
+                // Synthesized effect-edge fact: bill the declaring
+                // operation (the text between the first ':' and the
+                // first "->").
+                Some(split) => {
+                    let head = &fact.id[..split];
+                    match head.split_once(':') {
+                        Some((_, operation)) => operation.to_owned(),
+                        None => subject_id.clone(),
+                    }
+                }
+                None => fact.id.clone(),
             };
-            let entry = attribution.entry(module_name).or_insert((0, 0));
-            entry.0 = entry.0.saturating_add(fact.tokens);
+            if owner == subject_id || !closure.transitive.contains(&owner) {
+                shared_total = shared_total.saturating_add(fact.tokens);
+                continue;
+            }
+            let entry = attribution.entry(owner).or_insert(0);
+            *entry = entry.saturating_add(fact.tokens);
         }
+        // Shared cost lands on the canonically first dependency so the
+        // additive reconciliation (exclusive + shared = required) holds.
+        let first_dependency = closure.transitive.iter().next().cloned();
         let mut breakdown: Vec<BreakdownRow> = Vec::new();
         let mut breakdown_truncated = false;
         for dependency in &closure.transitive {
@@ -287,9 +373,11 @@ pub fn plan(
                 .and_then(|node| node.module())
                 .map(str::to_owned);
             let hop = hops.hops.get(dependency).copied();
-            let (exclusive, shared) = match &module {
-                Some(module_name) => attribution.get(module_name).cloned().unwrap_or((0, 0)),
-                None => (0, 0),
+            let exclusive = attribution.get(dependency).copied().unwrap_or(0);
+            let shared = if first_dependency.as_deref() == Some(dependency.as_str()) {
+                shared_total
+            } else {
+                0
             };
             breakdown.push(BreakdownRow {
                 dependency: dependency.clone(),
@@ -301,11 +389,15 @@ pub fn plan(
         }
         breakdown.sort_by(|left, right| {
             (
-                std::cmp::Reverse(right.exclusive_required_tokens),
+                std::cmp::Reverse(
+                    right.exclusive_required_tokens + right.shared_required_tokens,
+                ),
                 left.dependency.clone(),
             )
                 .cmp(&(
-                    std::cmp::Reverse(left.exclusive_required_tokens),
+                    std::cmp::Reverse(
+                        left.exclusive_required_tokens + left.shared_required_tokens,
+                    ),
                     right.dependency.clone(),
                 ))
         });
@@ -314,11 +406,18 @@ pub fn plan(
         // module candidate, ranked by its exclusive token weight.
         let mut suggestions: Vec<Suggestion> = Vec::new();
         if request.suggest {
-            let mut candidates: Vec<(String, u64)> = attribution
-                .iter()
-                .filter(|(boundary, _)| Some(boundary.as_str()) != module.as_deref())
-                .map(|(module, (exclusive, _))| (module.clone(), *exclusive))
-                .collect();
+            // Crossing-module candidate weights: the exclusive cost of
+            // the dependencies behind each non-subject module boundary.
+            let mut module_weights: BTreeMap<String, u64> = BTreeMap::new();
+            for row in &breakdown {
+                if let Some(row_module) = &row.module {
+                    if row_module != module.as_deref().unwrap_or(&String::new()) {
+                        *module_weights.entry(row_module.clone()).or_insert(0) +=
+                            row.exclusive_required_tokens;
+                    }
+                }
+            }
+            let mut candidates: Vec<(String, u64)> = module_weights.into_iter().collect();
             candidates
                 .sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
             for (boundary_id, weight) in candidates.into_iter().take(version::MAX_SUGGESTIONS) {
@@ -360,30 +459,37 @@ pub fn plan(
             match crate::context::plan(&scope, profile.available_content_tokens, false, compilation)
             {
                 Ok(capsule) => {
-                    let missing: Vec<String> = if required_tokens > profile.available_content_tokens
-                    {
-                        selection_facts
-                            .required
-                            .iter()
-                            .map(|fact| fact.id.clone())
-                            .collect()
-                    } else {
-                        Vec::new()
-                    };
-                    let included_required = selection_facts
-                        .required
-                        .iter()
-                        .filter(|fact| fact.tokens <= profile.available_content_tokens)
-                        .count() as u64;
+                    // One deterministic greedy selection over the required
+                    // facts in canonical order: a fact joins only when it
+                    // still fits cumulatively. Inclusion and the missing
+                    // set derive from that selection, never from an
+                    // "individually cheaper than the whole budget" test.
+                    let mut included: Vec<&facts::LedgerFact> = Vec::new();
+                    let mut missing: Vec<String> = Vec::new();
+                    let mut used: u64 = 0;
+                    for fact in &selection_facts.required {
+                        if used + fact.tokens <= profile.available_content_tokens {
+                            used += fact.tokens;
+                            included.push(fact);
+                        } else {
+                            missing.push(fact.id.clone());
+                        }
+                    }
                     Some(Simulation {
                         candidate_facts: capsule.candidate_count() as u64,
                         included_facts: capsule.included_count() as u64,
                         required_facts: selection_facts.required.len() as u64,
-                        included_required_facts: included_required,
+                        included_required_facts: included.len() as u64,
                         estimated_tokens: capsule.estimated_tokens(),
-                        required_fits: required_tokens <= profile.available_content_tokens,
+                        // Required facts are atomic as a sufficiency set:
+                        // F fits only when the whole set fits and the
+                        // selection was complete.
+                        required_fits: complete
+                            && required_tokens <= profile.available_content_tokens,
                         all_candidates_fit: capsule.fits(),
                         missing_required_ids: missing,
+                        // The legacy capsule measures its own different
+                        // fact set; both stay explicit, never merged.
                         legacy_minimum_required: capsule.minimum_required_tokens(),
                         legacy_estimated: capsule.estimated_tokens(),
                         legacy_fits: capsule.fits(),
@@ -397,7 +503,7 @@ pub fn plan(
 
         let (policies_count, scenarios_count, effects_count) =
             semantic_counts_of(&selection_facts, &effects);
-        let hops_max = hop_maximum(&hops, complete);
+        let hops_max = hop_maximum(&hops);
         rows.push(SubjectReport {
             id: node_id.as_str().to_owned(),
             module: module.clone(),
@@ -409,10 +515,11 @@ pub fn plan(
                 } else {
                     StateValue::Unknown
                 },
-                required_modules: metrics::required_module_count(
-                    &selection_facts,
-                    &[(module.clone().unwrap_or_default())],
-                ),
+                required_modules: {
+                    let mut subject_modules: Vec<String> = module.clone().into_iter().collect();
+                    subject_modules.extend(selection_facts.required.iter().filter_map(|fact| fact.module.clone()));
+                    metrics::required_module_count(&selection_facts, &subject_modules)
+                },
                 context_closure_estimated_tokens: StateValue::Known(
                     required_tokens.saturating_add(selection_facts.supporting_tokens()),
                 ),
@@ -431,16 +538,25 @@ pub fn plan(
                 ambiguous_edges: StateValue::Known(0),
                 declared_effects: effects_count,
                 detected_effects: if effects.envelope_count() == 0 {
+                    // No detection evidence was contributed: the metric is
+                    // unknown, never an optimistic zero.
                     StateValue::Unknown
                 } else {
-                    StateValue::Known(0)
+                    // Evidence exists: count the distinct detected edge
+                    // identities that were attached (a confirmed empty set
+                    // is a known zero, never silently optimistic).
+                    StateValue::Known(effects.detected().len() as u64)
                 },
                 policies: policies_count,
                 scenarios: scenarios_count,
-                largest_required_artifact: largest_required_fact(&selection_facts),
+                // No artifact-evidence adapter is wired, so the file
+                // metric is honestly unknown; the largest semantic fact
+                // is reported in its own field (never labeled a file).
+                largest_required_artifact: StateValue::Unknown,
+                largest_required_semantic_fact: largest_required_fact(&selection_facts),
                 duplicate_supporting_tokens: metrics::duplicate_supporting_tokens(
                     &selection_facts.supporting,
-                    &supporting_requests(&closure),
+                    &supporting_requests(&root_ids, &graph, &EdgeFilter::new()),
                 ),
                 generated_maintained_ratio: StateValue::Unknown,
                 minimum_safe_context_estimate: metrics::minimum_safe(
@@ -482,6 +598,7 @@ pub fn plan(
     };
     Ok(BudgetReport {
         scope: request.scope.clone(),
+        provenance,
         profile,
         subjects: rows,
         summary,
@@ -511,8 +628,8 @@ fn semantic_counts_of(
     )
 }
 
-fn hop_maximum(hops: &closure::HopAttribution, complete: bool) -> StateValue<u64> {
-    if !complete {
+fn hop_maximum(hops: &closure::HopAttribution) -> StateValue<u64> {
+    if !hops.complete {
         return StateValue::Unknown;
     }
     StateValue::Known(hops.hops.values().copied().max().unwrap_or(0))
@@ -558,15 +675,35 @@ fn largest_required_fact(selection: &facts::FactSelection) -> StateValue<metrics
     }
 }
 
-/// The supporting-request multiplicity: every direct dependency of the
-/// closure that is also requested from another parent counts twice.
-fn supporting_requests(closure: &closure::DependencyClosure) -> BTreeMap<String, u64> {
+/// The bounded request provenance of the closure: count every edge
+/// occurrence that requested a node during the walk (before dedup), so
+/// a node reached through several parents records one request per
+/// incoming edge — the M8 duplicate-supporting input. Request pairs are
+/// (root, referring-edge) bounded by the recorded edge bound.
+fn supporting_requests(
+    roots: &[&NodeId],
+    graph: &DependencyGraph,
+    filter: &EdgeFilter,
+) -> BTreeMap<String, u64> {
     let mut requests: BTreeMap<String, u64> = BTreeMap::new();
-    for dependency in &closure.direct {
-        *requests.entry(dependency.clone()).or_insert(0) += 1;
+    let mut visited: BTreeSet<String> = BTreeSet::new();
+    let mut queue: VecDeque<&NodeId> = VecDeque::new();
+    for root in roots {
+        visited.insert(root.as_str().to_owned());
+        queue.push_back(root);
     }
-    for dependency in &closure.indirect_only {
-        *requests.entry(dependency.clone()).or_insert(0) += 1;
+    while let Some(node) = queue.pop_front() {
+        if requests.len() > version::MAX_COMPARISON_ROWS {
+            break;
+        }
+        for edge in graph.direct_dependencies(node, filter) {
+            let target = edge.key().to();
+            // One request per incoming edge occurrence of the target.
+            *requests.entry(target.as_str().to_owned()).or_insert(0) += 1;
+            if visited.insert(target.as_str().to_owned()) {
+                queue.push_back(target);
+            }
+        }
     }
     requests
 }
@@ -693,6 +830,35 @@ mod wire {
                             },
                         ));
                         crate::context::canonical::object(fields)
+                    }
+                    state => crate::context::canonical::object(vec![(
+                        "state",
+                        crate::context::canonical::string(state.state()),
+                    )]),
+                },
+            ),
+            (
+                "largestRequiredSemanticFact",
+                match &metrics.largest_required_semantic_fact {
+                    StateValue::Known(artifact) => {
+                        crate::context::canonical::object(vec![
+                            (
+                                "artifactId",
+                                crate::context::canonical::string(&artifact.artifact_id),
+                            ),
+                            (
+                                "estimatedTokens",
+                                crate::context::canonical::number(artifact.estimated_tokens),
+                            ),
+                            ("role", crate::context::canonical::string(artifact.role)),
+                            (
+                                "bytes",
+                                match artifact.bytes {
+                                    Some(bytes) => crate::context::canonical::number(bytes),
+                                    None => "null".to_owned(),
+                                },
+                            ),
+                        ])
                     }
                     state => crate::context::canonical::object(vec![(
                         "state",
@@ -1012,6 +1178,43 @@ mod wire {
                     (
                         "version",
                         crate::context::canonical::string(&report.profile.version),
+                    ),
+                ]),
+            ),
+            (
+                "provenance",
+                crate::context::canonical::object(vec![
+                    (
+                        "baseline",
+                        crate::context::canonical::string(report.provenance.baseline.state()),
+                    ),
+                    (
+                        "effectIdentity",
+                        crate::context::canonical::string(&report.provenance.effect_identity),
+                    ),
+                    (
+                        "graphIdentity",
+                        crate::context::canonical::string(&report.provenance.graph_identity),
+                    ),
+                    ("irDigest", crate::context::canonical::string(&report.provenance.ir_digest)),
+                    (
+                        "modelVersion",
+                        crate::context::canonical::string(&report.provenance.model_version),
+                    ),
+                    (
+                        "policy",
+                        match &report.provenance.policy {
+                            StateValue::Known(digest) => {
+                                crate::context::canonical::object(vec![
+                                    ("digest", crate::context::canonical::string(digest)),
+                                    ("state", crate::context::canonical::string("known")),
+                                ])
+                            }
+                            state => crate::context::canonical::object(vec![(
+                                "state",
+                                crate::context::canonical::string(state.state()),
+                            )]),
+                        },
                     ),
                 ]),
             ),

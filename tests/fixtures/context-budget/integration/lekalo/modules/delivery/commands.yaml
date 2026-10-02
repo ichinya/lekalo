@@ -1,0 +1,10 @@
+schema_version: "0.2.16"
+definitions:
+  - id: delivery.deliver
+    kind: effect
+    version: 1
+    description: "Delivers the payload outward"
+    operation: update
+    entity: "delivery.attempt"
+    emits:
+      - "events.delivery_confirmed"

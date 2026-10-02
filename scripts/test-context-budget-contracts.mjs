@@ -42,6 +42,7 @@ if (ajvVersion !== "8.17.1") {
 }
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const fixturePath = "tests/fixtures/context-budget/golden/planner.over-budget.json";
 const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf8"));
 
 const reportSchema = read("contracts/context-budget-report.schema.v0.6.3.json");
@@ -118,9 +119,12 @@ for (const constant of [
 //    binary has not been built.
 const binary = resolve(root, "target/debug/lekalo.exe");
 const binaryPosix = resolve(root, "target/debug/lekalo");
-const lekalo = existsSync(binary) ? binary : existsSync(binaryPosix) ? binaryPosix : null;
+if (!existsSync(binary) && !existsSync(binaryPosix)) {
+  fail("binary-missing", "build target/debug/lekalo before this gate; the live checks are mandatory");
+}
+const lekalo = existsSync(binary) ? binary : binaryPosix;
 let liveChecked = false;
-if (lekalo) {
+{
   const project = resolve(root, "tests/fixtures/context-budget/planner");
   const projectArg = project;
   const run = (args) =>
@@ -176,13 +180,19 @@ if (lekalo) {
     ["--json", "context-budget", "--symbol", "planner.focus_task", "--budget", "200"],
     { encoding: "utf8", cwd: project });
   if (again !== first) fail("determinism", "repeated runs differ");
+  // The live canonical bytes equal the committed golden byte for byte.
+  const goldenRaw = readFileSync(resolve(root, fixturePath), "utf8");
+  const livePayload = JSON.parse(again).contextBudget;
+  const liveCanonical = JSON.stringify(livePayload);
+  if (liveCanonical !== JSON.stringify(JSON.parse(goldenRaw))) {
+    fail("golden-drift", "live report bytes differ from the committed golden; regenerate the golden with the implementation commit");
+  }
   for (const forbidden of ["timestamp", "C:/", "C:\\\\", "target/debug"]) {
     if (again.includes(forbidden)) fail("privacy", forbidden);
   }
 }
 
 // 4. The canonical fixture golden: the pinned over-budget report bytes.
-const fixturePath = "tests/fixtures/context-budget/golden/planner.over-budget.json";
 const fixtureBytes = readFileSync(resolve(root, fixturePath), "utf8");
 const fixture = JSON.parse(fixtureBytes);
 if (fixture.schemaVersion !== "lekalo/context-budget-report/v0.6.3") {

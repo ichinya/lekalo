@@ -20,6 +20,22 @@ use crate::context::version::MAX_BUDGET_TOKENS as LEGACY_MAX_BUDGET;
 use crate::diagnostics::DiagnosticSet;
 use crate::digest::sha256_hex;
 
+/// The one accepted fact-selection recipe version.
+pub const SELECTION_VERSION_REQUIRED: &str = "required-semantic-facts/1";
+
+/// Whether `text` is a bounded wire identifier (1..=64 bytes, safe
+/// grammar): hostile caller strings can never violate the profile
+/// schema bounds.
+fn is_bounded_identifier(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    !text.is_empty()
+        && text.len() <= 64
+        && bytes[0].is_ascii_alphanumeric()
+        && bytes[1..]
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(*byte, b'.' | b'_' | b'/' | b':' | b'-'))
+}
+
 /// The exact wire discriminator of the profile contract.
 pub const SCHEMA_VERSION: &str = "lekalo/context-budget-profile/v0.6.3";
 /// The exact profile contract identity.
@@ -133,7 +149,7 @@ pub struct SelectionWire {
 impl Default for SelectionWire {
     fn default() -> Self {
         Self {
-            version: "required-semantic-facts/1".to_owned(),
+            version: SELECTION_VERSION_REQUIRED.to_owned(),
             source_context: SourceContextIn::None,
         }
     }
@@ -153,6 +169,9 @@ pub enum SourceContextIn {
 pub struct Profile {
     pub id: String,
     pub version: String,
+    /// The fact-selection recipe version; only the pinned vocabulary is
+    /// accepted, so the digest binds the exact selection semantics.
+    pub selection_version: String,
     pub estimator_identity: String,
     pub estimator_version: String,
     pub estimator_digest: String,
@@ -196,8 +215,17 @@ impl ProfileDocument {
         }
         let mut profiles = BTreeMap::new();
         for entry in wire.profiles {
-            if entry.id.is_empty() || entry.id.len() > 64 {
+            if !is_bounded_identifier(&entry.id) {
                 return Err(diagnostic::input_invalid("profile-id-bounds"));
+            }
+            if !is_bounded_identifier(&entry.version) {
+                return Err(diagnostic::input_invalid("profile-version-bounds"));
+            }
+            if entry.selection.version != SELECTION_VERSION_REQUIRED {
+                return Err(diagnostic::profile_unsupported(
+                    "selection-version",
+                    Some(&entry.id),
+                ));
             }
             let key = (entry.id.clone(), entry.version.clone());
             if profiles.contains_key(&key) {
@@ -228,6 +256,7 @@ pub fn generic_profile(budget: u64) -> Result<Profile, DiagnosticSet> {
     let mut profile = Profile {
         id: "chars-4-generic".to_owned(),
         version: "1".to_owned(),
+        selection_version: SELECTION_VERSION_REQUIRED.to_owned(),
         estimator_identity: estimate::CHARS4_IDENTITY.to_owned(),
         estimator_version: estimate::CHARS4_VERSION.to_owned(),
         estimator_digest: estimate::chars4_digest(),
@@ -280,6 +309,7 @@ fn effective_profile(entry: ProfileEntryWire) -> Result<Profile, DiagnosticSet> 
     let mut profile = Profile {
         id: entry.id,
         version: entry.version,
+        selection_version: entry.selection.version,
         estimator_identity: entry.estimator.id,
         estimator_version: entry.estimator.version,
         estimator_digest: entry.estimator.spec_digest,
@@ -303,9 +333,10 @@ fn effective_profile(entry: ProfileEntryWire) -> Result<Profile, DiagnosticSet> 
 /// declared document ordering).
 fn profile_digest(profile: &Profile) -> String {
     let canonical = format!(
-        "id={}|version={}|estimator={}|estimator-version={}|estimator-digest={}|tokens={}|framing={}|margin={}/{}|source={}|nodes={}|edges={}|facts={}|subjects={}",
+        "id={}|version={}|selection={}|estimator={}|estimator-version={}|estimator-digest={}|tokens={}|framing={}|margin={}/{}|source={}|nodes={}|edges={}|facts={}|subjects={}",
         profile.id,
         profile.version,
+        profile.selection_version,
         profile.estimator_identity,
         profile.estimator_version,
         profile.estimator_digest,

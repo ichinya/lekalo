@@ -17,7 +17,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use super::version::{MAX_FACTS, MAX_GAPS};
+use super::version::MAX_GAPS;
 use crate::context::estimate;
 use crate::effects::EffectGraph;
 use crate::graph::{DependencyGraph, EdgeFilter, GraphNode, NodeKindId};
@@ -313,11 +313,15 @@ pub(crate) fn collect_facts(
     graph: &DependencyGraph,
     effects: &EffectGraph,
     context: &FactContext<'_>,
+    limits: super::closure::ClosureLimits,
 ) -> FactSelection {
     let mut selection = FactSelection::new();
     let mut required_ids: BTreeMap<String, InclusionReason> = BTreeMap::new();
     let mut supporting_ids: BTreeSet<String> = BTreeSet::new();
     let mut frontier: VecDeque<(String, InclusionReason)> = VecDeque::new();
+    // Nodes discovered as incoming applicability whose own forward edges
+    // must not expand into F (their other covered subjects are peers).
+    let mut no_expand: BTreeSet<String> = BTreeSet::new();
 
     // Seed: subject contracts.
     for node in root_nodes {
@@ -332,7 +336,7 @@ pub(crate) fn collect_facts(
     // contracts; incoming policies, effects, and scenarios attach with
     // their own reasons.
     while let Some((semantic, reason)) = frontier.pop_front() {
-        if required_ids.len() > MAX_FACTS || supporting_ids.len() > MAX_FACTS {
+        if required_ids.len() as u64 > limits.max_facts || supporting_ids.len() as u64 > limits.max_facts {
             selection.complete = false;
             selection.gaps.push(FactGap::ClosureBounded);
             break;
@@ -340,7 +344,11 @@ pub(crate) fn collect_facts(
         let Some(node) = graph.resolve(&semantic) else {
             continue;
         };
-        // Referenced contracts of this node.
+        // Referenced contracts of this node; applicability-only nodes
+        // (policies/scenarios reached as required facts) do not expand.
+        if no_expand.contains(&semantic) {
+            continue;
+        }
         for edge in graph.direct_dependencies(node.id(), &context.filter) {
             let target = edge.key().to();
             let target_id = target.as_str().to_owned();
@@ -361,7 +369,13 @@ pub(crate) fn collect_facts(
             frontier.push_back((target_id, reason));
         }
 
-        // Incoming policy applicability.
+        // Incoming policy applicability and scenario coverage: the
+        // policy/scenario fact itself is required, but its *other*
+        // covered subjects are peer context, not contracts needed to
+        // interpret this subject — they never enter F, and the
+        // policy/scenario node is not re-expanded through its forward
+        // applicability edges (its own payload fields still arrive
+        // through the contract card content).
         for edge in graph.reverse_dependencies(node.id(), &context.filter) {
             let source = edge.key().from();
             let source_id = source.as_str().to_owned();
@@ -374,7 +388,9 @@ pub(crate) fn collect_facts(
                         .insert(source_id.clone(), InclusionReason::PolicyApplicability)
                         .is_none()
                     {
-                        frontier.push_back((source_id, InclusionReason::ReferencedContract));
+                        // Mark expansion so the frontier walk skips this
+                        // node's forward applicability edges.
+                        no_expand.insert(source_id.clone());
                     }
                 }
                 NodeKindId::SCENARIO => {
@@ -382,7 +398,7 @@ pub(crate) fn collect_facts(
                         .insert(source_id.clone(), InclusionReason::ScenarioCoverage)
                         .is_none()
                     {
-                        frontier.push_back((source_id, InclusionReason::ReferencedContract));
+                        no_expand.insert(source_id.clone());
                     }
                 }
                 NodeKindId::OPERATION | NodeKindId::ENDPOINT => {
@@ -395,20 +411,25 @@ pub(crate) fn collect_facts(
             }
         }
 
-        // Declared and detected effects of applicable operations.
+        // Declared and detected effects of applicable operations. Only
+        // operations with at least one admitted effect edge are counted;
+        // an operation the model declares without effects never inflates
+        // the count, and the count is of distinct effect facts.
         if node.kind() == NodeKindId::OPERATION {
             if let Some(operation) =
                 crate::effects::OperationId::from_semantic(node.id().semantic_id())
             {
-                if !selection
-                    .counted_operations
-                    .contains(&operation.as_str().to_owned())
+                let edges = effects.operation_edges(&operation);
+                if !edges.is_empty()
+                    && !selection
+                        .counted_operations
+                        .contains(&operation.as_str().to_owned())
                 {
                     selection
                         .counted_operations
                         .push(operation.as_str().to_owned());
-                    for edge in effects.operation_edges(&operation) {
-                        if required_ids.len() >= MAX_FACTS {
+                    for edge in edges {
+                        if required_ids.len() as u64 >= limits.max_facts {
                             selection.complete = false;
                             selection.gaps.push(FactGap::ClosureBounded);
                             break;
@@ -470,7 +491,7 @@ pub(crate) fn collect_facts(
         }
     }
     for id in &supporting_ids {
-        if selection.required.len() + selection.supporting.len() >= MAX_FACTS {
+        if (selection.required.len() + selection.supporting.len()) as u64 >= limits.max_facts {
             selection.complete = false;
             selection.gaps.push(FactGap::ClosureBounded);
             break;
@@ -494,8 +515,27 @@ pub(crate) fn collect_facts(
         });
     }
 
-    // The closed confidence gaps.
-    selection.gaps.push(FactGap::ErrorContractsUnrepresentable);
+    // The closed confidence gaps. The unrepresentable-error gap applies
+    // only when the bound error registry actually carries a binding for
+    // one of the selected operations: those contracts are applicable
+    // required context this fact grammar cannot express, so the required
+    // selection is explicitly incomplete — never a silently reduced F
+    // (research: missing applicable attachment facts make the
+    // minimum-safe estimate unknown).
+    let unrepresentable = selection.counted_operations.iter().any(|operation| {
+        crate::error_contract::ErrorRegistry::embedded()
+            .map(|registry| {
+                registry
+                    .bindings()
+                    .iter()
+                    .any(|binding| binding.operation().as_str() == operation)
+            })
+            .unwrap_or(false)
+    });
+    if unrepresentable {
+        selection.gaps.push(FactGap::ErrorContractsUnrepresentable);
+        selection.complete = false;
+    }
     if effects.envelope_count() == 0 {
         selection.gaps.push(FactGap::DetectedEffectsAbsent);
     }

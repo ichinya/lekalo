@@ -60,14 +60,14 @@ fn same_pins_same_bytes() {
         &compilation,
     )
     .expect("report plans")
-    .to_canonical_json();
+    .to_canonical_json().expect("report bytes");
     let second = plan(
         &symbol_request("planner.focus_task"),
         &selection,
         &compilation,
     )
     .expect("report plans")
-    .to_canonical_json();
+    .to_canonical_json().expect("report bytes");
     assert_eq!(first, second, "identical inputs are byte-identical");
     assert!(!first.contains("timestamp"));
     // No absolute path ever enters the bytes (Windows and POSIX spellings).
@@ -320,4 +320,70 @@ fn markdown_projection_is_deterministic_and_bounded() {
     let markdown = report.to_markdown();
     assert!(markdown.starts_with("# context-budget report"));
     assert_eq!(markdown, report.to_markdown());
+}
+
+/// AC6, the real narrow-vs-broad comparison: the planner reference
+/// symbol under the identical profile measures strictly smaller than the
+/// integration workload's cross-module sync command — more modules, more
+/// hops, higher required cost, and a wider closure. This is the paired
+/// fixture comparison the research mandates, not a scope subset check.
+#[test]
+fn planner_reference_is_narrower_than_integration_workload() {
+    const INTEGRATION: &str = "tests/fixtures/context-budget/integration";
+    let planner_compilation = {
+        let model = normalize_model(&LoadSelection {
+            project: Some(crate::context_budget::tests::PLANNER_NAME.to_owned()),
+        })
+        .expect("planner loads");
+        compile(&model).expect("planner compiles")
+    };
+    let integration_compilation = {
+        let model = normalize_model(&LoadSelection {
+            project: Some(INTEGRATION.to_owned()),
+        })
+        .expect("integration loads");
+        compile(&model).expect("integration compiles")
+    };
+    let selection = BudgetSelection::Generic(1_000_000);
+    let planner_report = plan(
+        &symbol_request("planner.focus_task"),
+        &selection,
+        &planner_compilation,
+    )
+    .expect("planner plans");
+    let integration_report = plan(
+        &symbol_request("integration.sync_external_objects"),
+        &selection,
+        &integration_compilation,
+    )
+    .expect("integration plans");
+    let planner = &planner_report.subjects[0].metrics;
+    let integration = &integration_report.subjects[0].metrics;
+    let known = |value: &StateValue<u64>| value.value().copied().unwrap_or(0);
+    // The cross-module workload is strictly wider on every structural
+    // axis the research tabulates (M1/M4/module count/cost).
+    assert!(
+        known(&integration.minimum_required_semantic_tokens)
+            > known(&planner.minimum_required_semantic_tokens),
+        "the integration workload costs more than the planner reference"
+    );
+    assert!(
+        known(&integration.required_modules) > known(&planner.required_modules),
+        "the integration workload spans more modules"
+    );
+    assert!(
+        known(&integration.max_cross_module_hops)
+            > known(&planner.max_cross_module_hops),
+        "the integration workload crosses module boundaries; the planner does not"
+    );
+    assert!(
+        known(&integration.transitive_dependencies)
+            >= known(&planner.transitive_dependencies),
+        "the integration closure is at least as wide"
+    );
+    // The paired fixture runs at the identical pinned budget profile.
+    assert_eq!(
+        planner_report.profile.digest, integration_report.profile.digest,
+        "identical pins for both sides of the comparison"
+    );
 }

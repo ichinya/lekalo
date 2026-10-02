@@ -1,0 +1,30 @@
+schema_version: "0.2.16"
+definitions:
+  - id: delivery.attempt
+    kind: entity
+    version: 1
+    description: "One delivery attempt at the boundary"
+    fields:
+      - name: task_id
+        type: "tasks.task_id"
+        required: true
+      - name: credential
+        type: "auth.credential"
+        required: true
+      - name: scheduled_at
+        type: "events.timestamp"
+        required: true
+    identity:
+      - task_id
+
+  - id: delivery.window
+    kind: value-object
+    version: 1
+    description: "The delivery window"
+    fields:
+      - name: from
+        type: "events.timestamp"
+        required: true
+      - name: to
+        type: "events.timestamp"
+        required: true

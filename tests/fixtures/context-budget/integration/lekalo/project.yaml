@@ -1,0 +1,8 @@
+schema_version: "0.2.16"
+definitions:
+  - id: integration
+    kind: project
+    version: 1
+    description: "Cross-module integration workload fixture (issue #75 AC6)"
+    derived_from:
+      - "INTEG-REQ-001"

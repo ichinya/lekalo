@@ -1,0 +1,10 @@
+schema_version: "0.2.16"
+definitions:
+  - id: tasks.acceptance_status
+    kind: query
+    version: 1
+    description: "Acceptance status of one task"
+    reads:
+      - "tasks.task"
+    returns:
+      ref: "tasks.state"

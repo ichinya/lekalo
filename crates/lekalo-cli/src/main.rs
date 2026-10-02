@@ -5251,6 +5251,12 @@ fn run_context_budget(args: ContextBudgetInvocation) -> DomainResult {
     } = args;
     let profile_version = profile_version.as_str();
     let source_context = source_context.as_str();
+    // The source recipe is validated once for both budget handles: a
+    // bogus recipe is a usage error, never a silent none.
+    if source_context != "none" && source_context != "mapped-files" {
+        return DomainResult::usage_error();
+    }
+    let source_context_requested = source_context == "mapped-files";
     // The budget selection: an explicit generic budget or one named
     // profile inside an explicit profile document; never both, never
     // neither (no universal threshold exists).
@@ -5270,9 +5276,6 @@ fn run_context_budget(args: ContextBudgetInvocation) -> DomainResult {
             let Some(profiles_path) = profiles.as_deref() else {
                 return DomainResult::usage_error();
             };
-            if source_context != "none" && source_context != "mapped-files" {
-                return DomainResult::usage_error();
-            }
             let bytes = match std::fs::read(profiles_path) {
                 Ok(bytes) => bytes,
                 Err(error) => {
@@ -5313,7 +5316,7 @@ fn run_context_budget(args: ContextBudgetInvocation) -> DomainResult {
         all,
         simulate_capsule,
         suggest,
-        source_context == "mapped-files",
+        source_context_requested,
     ) {
         Ok(request) => request,
         Err(_) => return DomainResult::usage_error(),
@@ -5344,12 +5347,29 @@ fn run_context_budget(args: ContextBudgetInvocation) -> DomainResult {
             }
         }
         Ok(report) => {
-            let json = format!(
-                "{{\"status\":\"valid\",\"contextBudget\":{}}}",
-                report.to_canonical_json()
-            );
+            let canonical = match report.to_canonical_json() {
+                Ok(bytes) => bytes,
+                Err(set) => return DomainResult::invalid(set),
+            };
+            let mut comparison_json: Option<String> = None;
+            let build_envelope = |comparison_json: &Option<String>| {
+                if let Some(comparison_json) = comparison_json {
+                    format!(
+                        "{{\"status\":\"valid\",\"contextBudget\":{},\"contextBudgetComparison\":{}}}",
+                        canonical,
+                        comparison_json
+                    )
+                } else {
+                    format!(
+                        "{{\"status\":\"valid\",\"contextBudget\":{}}}",
+                        canonical
+                    )
+                }
+            };
             let human = report.to_markdown();
             let mut diagnostics = report.warnings.clone();
+            let mut policy_digest_pin: lekalo_core::context_budget::StateValue<String> =
+                lekalo_core::context_budget::StateValue::Unknown;
 
             // The baseline comparison is opt-in evidence, never a gate:
             // an incomparable pair records its reason and the report
@@ -5374,6 +5394,10 @@ fn run_context_budget(args: ContextBudgetInvocation) -> DomainResult {
                     };
                     let comparison =
                         lekalo_core::context_budget::compare::compare(&base_report, &report);
+                    // The deltas always reach the output: the envelope
+                    // carries the versioned comparison block whether or
+                    // not a policy turns it into a verdict (AC5).
+                    comparison_json = Some(comparison.to_canonical_json());
                     let limits: Option<
                         Vec<lekalo_core::context_budget::policy::RegressionLimitWire>,
                     > = std::fs::read(policy.as_deref().unwrap_or(""))
@@ -5417,6 +5441,47 @@ fn run_context_budget(args: ContextBudgetInvocation) -> DomainResult {
                     Some(verdict)
                 }
                 None => None,
+            };
+            // The provenance pins ride with the report: the selected
+            // policy digest (when one parsed) and the consumed baseline.
+            let report = match policy.as_deref() {
+                Some(policy_path) => {
+                    match std::fs::read(policy_path) {
+                        Ok(bytes) => {
+                            match lekalo_core::context_budget::policy::parse(&bytes) {
+                                Ok(parsed) => {
+                                    let digest = format!(
+                                        "sha256:{}",
+                                        lekalo_core::digest::sha256_hex(&bytes)
+                                    );
+                                    policy_digest_pin =
+                                        lekalo_core::context_budget::StateValue::Known(
+                                            digest,
+                                        );
+                                }
+                                Err(_) => {}
+                            }
+                        }
+                        Err(_) => {}
+                    }
+                    let baseline_pin =
+                        match baseline_verdict {
+                            Some(_) => lekalo_core::context_budget::StateValue::Known(
+                                baseline.clone().unwrap_or_default(),
+                            ),
+                            None => lekalo_core::context_budget::StateValue::Unknown,
+                        };
+                    report.with_pins(policy_digest_pin.clone(), baseline_pin)
+                }
+                None => {
+                    let baseline_pin = match baseline_verdict {
+                        Some(_) => lekalo_core::context_budget::StateValue::Known(
+                            baseline.clone().unwrap_or_default(),
+                        ),
+                        None => lekalo_core::context_budget::StateValue::Unknown,
+                    };
+                    report.with_pins(policy_digest_pin.clone(), baseline_pin)
+                }
             };
 
             // The mandatory policy is the only denied path, and it pins
@@ -5463,304 +5528,26 @@ fn run_context_budget(args: ContextBudgetInvocation) -> DomainResult {
                 {
                     let denial =
                         lekalo_core::context_budget::diagnostic::policy_denied("*", reason);
-                    return DomainResult::denied_json(json, human, denial);
+                    return DomainResult::denied_json(build_envelope(&comparison_json), human, denial);
                 }
             }
 
             // The advisory budget-exceeded warning keeps the valid
             // envelope; without a mandatory policy the exit stays 0.
-            DomainResult::graph(json, human, diagnostics)
+            DomainResult::graph(build_envelope(&comparison_json), human, diagnostics)
         }
     }
 }
-
-/// Parse one immutable baseline report (the exact closed payload, never
-/// an envelope). A malformed baseline is invalid, never incomparable.
-fn parse_baseline(bytes: &[u8]) -> Result<lekalo_core::context_budget::BudgetReport, DomainResult> {
-    use lekalo_core::context_budget::{
-        facts::LedgerFact, metrics::LargestArtifact, Assessment, BudgetReport, Profile,
-        ReportSummary, Scope, Simulation, StateValue, SubjectMetrics, SubjectReport,
-    };
-    let value: Json = serde_json::from_slice(bytes).map_err(|_| {
-        DomainResult::invalid(lekalo_core::context_budget::diagnostic::input_invalid(
-            "baseline-malformed",
-        ))
-    })?;
-    let object = value.as_object().ok_or_else(|| {
-        DomainResult::invalid(lekalo_core::context_budget::diagnostic::input_invalid(
-            "baseline-malformed",
-        ))
-    })?;
-    if object.get("schemaVersion").and_then(Json::as_str)
-        != Some(lekalo_core::context_budget::version::SCHEMA_VERSION)
-    {
-        return Err(DomainResult::invalid(
-            lekalo_core::context_budget::diagnostic::input_invalid("baseline-schema-version"),
-        ));
-    }
-    let parse_state_u64 = |value: Option<&Json>| -> StateValue<u64> {
-        let Some(value) = value else {
-            return StateValue::Unknown;
-        };
-        let state = value
-            .get("state")
-            .and_then(Json::as_str)
-            .unwrap_or("unknown");
-        match state {
-            "known" => StateValue::Known(value.get("value").and_then(Json::as_u64).unwrap_or(0)),
-            "withheld" => StateValue::Withheld,
-            "unsupported" => StateValue::Unsupported,
-            _ => StateValue::Unknown,
-        }
-    };
-    let profile_json = object.get("profile").cloned().unwrap_or(Json::Null);
-    let estimator_identity = object
-        .get("estimator")
-        .and_then(|estimator| estimator.get("identity"))
-        .and_then(Json::as_str)
-        .unwrap_or_default()
-        .to_owned();
-    let profile = Profile {
-        id: profile_json
-            .get("id")
-            .and_then(Json::as_str)
-            .unwrap_or_default()
-            .to_owned(),
-        version: profile_json
-            .get("version")
-            .and_then(Json::as_str)
-            .unwrap_or_default()
-            .to_owned(),
-        estimator_identity,
-        estimator_version: String::new(),
-        estimator_digest: String::new(),
-        available_content_tokens: profile_json
-            .get("availableContentTokens")
-            .and_then(Json::as_u64)
-            .unwrap_or(0),
-        framing_tokens: profile_json
-            .get("framingTokens")
-            .and_then(Json::as_u64)
-            .unwrap_or(0),
-        margin_numerator: 1,
-        margin_denominator: 1,
-        source_context: lekalo_core::context_budget::profile::SourceContext::None,
-        max_nodes: 0,
-        max_edges: 0,
-        max_facts: 0,
-        max_subjects: 0,
-        digest: profile_json
-            .get("digest")
-            .and_then(Json::as_str)
-            .unwrap_or_default()
-            .to_owned(),
-    };
-    let scope_json = object.get("scope").cloned().unwrap_or(Json::Null);
-    let scope = match scope_json.get("kind").and_then(Json::as_str) {
-        Some("module") => Scope::Module(
-            scope_json
-                .get("id")
-                .and_then(Json::as_str)
-                .unwrap_or_default()
-                .to_owned(),
-        ),
-        Some("project") => Scope::All,
-        _ => Scope::Symbol(
-            scope_json
-                .get("id")
-                .and_then(Json::as_str)
-                .unwrap_or_default()
-                .to_owned(),
-        ),
-    };
-    let mut subjects = Vec::new();
-    for subject_json in object
-        .get("subjects")
-        .and_then(Json::as_array)
-        .cloned()
-        .unwrap_or_default()
-    {
-        let metrics_json = subject_json.get("metrics").cloned().unwrap_or(Json::Null);
-        let metric = |name: &str| parse_state_u64(metrics_json.get(name));
-        let largest = match metrics_json.get("largestRequiredArtifact") {
-            Some(value) if value.get("artifactId").is_some() => {
-                StateValue::Known(LargestArtifact {
-                    artifact_id: value
-                        .get("artifactId")
-                        .and_then(Json::as_str)
-                        .unwrap_or_default()
-                        .to_owned(),
-                    role: "model",
-                    bytes: value.get("bytes").and_then(Json::as_u64),
-                    estimated_tokens: value
-                        .get("estimatedTokens")
-                        .and_then(Json::as_u64)
-                        .unwrap_or(0),
-                })
-            }
-            _ => StateValue::Unknown,
-        };
-        let required_facts: Vec<LedgerFact> = subject_json
-            .get("requiredFacts")
-            .and_then(Json::as_array)
-            .cloned()
-            .unwrap_or_default()
-            .iter()
-            .map(|fact| LedgerFact {
-                id: fact
-                    .get("id")
-                    .and_then(Json::as_str)
-                    .unwrap_or_default()
-                    .to_owned(),
-                class: lekalo_core::context_budget::facts::FactClass::RequiredSemantic,
-                reason: None,
-                module: fact.get("module").and_then(Json::as_str).map(str::to_owned),
-                tokens: fact.get("tokens").and_then(Json::as_u64).unwrap_or(0),
-            })
-            .collect();
-        let supporting_facts: Vec<LedgerFact> = subject_json
-            .get("supportingFacts")
-            .and_then(Json::as_array)
-            .cloned()
-            .unwrap_or_default()
-            .iter()
-            .map(|fact| LedgerFact {
-                id: fact
-                    .get("id")
-                    .and_then(Json::as_str)
-                    .unwrap_or_default()
-                    .to_owned(),
-                class: lekalo_core::context_budget::facts::FactClass::SupportingSemantic,
-                reason: None,
-                module: fact.get("module").and_then(Json::as_str).map(str::to_owned),
-                tokens: fact.get("tokens").and_then(Json::as_u64).unwrap_or(0),
-            })
-            .collect();
-        subjects.push(SubjectReport {
-            id: subject_json
-                .get("id")
-                .and_then(Json::as_str)
-                .unwrap_or_default()
-                .to_owned(),
-            module: subject_json
-                .get("module")
-                .and_then(Json::as_str)
-                .map(str::to_owned),
-            metrics: SubjectMetrics {
-                direct_dependencies: metric("directDependencies"),
-                transitive_dependencies: metric("transitiveDependencies"),
-                indirect_only_dependencies: metric("indirectOnlyDependencies"),
-                required_modules: metric("requiredModules"),
-                context_closure_estimated_tokens: metric("contextClosureEstimatedTokens"),
-                minimum_required_semantic_tokens: metric("minimumRequiredSemanticTokens"),
-                supporting_semantic_tokens: metric("supportingSemanticTokens"),
-                optional_source_tokens: metric("optionalSourceTokens"),
-                model_files: metric("modelFiles"),
-                source_files: metric("sourceFiles"),
-                target_files: metric("targetFiles"),
-                max_cross_module_hops: metric("maxCrossModuleHops"),
-                unresolved_edges: metric("unresolvedEdges"),
-                ambiguous_edges: metric("ambiguousEdges"),
-                declared_effects: metric("declaredEffects"),
-                detected_effects: metric("detectedEffects"),
-                policies: metric("policies"),
-                scenarios: metric("scenarios"),
-                largest_required_artifact: largest,
-                duplicate_supporting_tokens: metric("duplicateSupportingTokens"),
-                generated_maintained_ratio: StateValue::Unknown,
-                minimum_safe_context_estimate: metric("minimumSafeContextEstimate"),
-                empirically_safe_context_tokens: metric("empiricallySafeContextTokens"),
-            },
-            assessment: match subject_json.get("assessment").and_then(Json::as_str) {
-                Some("within-budget") => Assessment::WithinBudget,
-                Some("over-budget") => Assessment::OverBudget,
-                _ => Assessment::Indeterminate,
-            },
-            over_by_tokens: parse_state_u64(subject_json.get("overByTokens")),
-            breakdown: Vec::new(),
-            breakdown_truncated: false,
-            required_facts,
-            supporting_facts,
-            gaps: Vec::new(),
-            suggestions: Vec::new(),
-            simulation: subject_json.get("simulation").map(|simulation| Simulation {
-                candidate_facts: simulation
-                    .get("candidateFacts")
-                    .and_then(Json::as_u64)
-                    .unwrap_or(0),
-                included_facts: simulation
-                    .get("includedFacts")
-                    .and_then(Json::as_u64)
-                    .unwrap_or(0),
-                required_facts: simulation
-                    .get("requiredFacts")
-                    .and_then(Json::as_u64)
-                    .unwrap_or(0),
-                included_required_facts: simulation
-                    .get("includedRequiredFacts")
-                    .and_then(Json::as_u64)
-                    .unwrap_or(0),
-                estimated_tokens: simulation
-                    .get("estimatedTokens")
-                    .and_then(Json::as_u64)
-                    .unwrap_or(0),
-                required_fits: simulation
-                    .get("requiredFits")
-                    .and_then(Json::as_bool)
-                    .unwrap_or(false),
-                all_candidates_fit: simulation
-                    .get("allCandidatesFit")
-                    .and_then(Json::as_bool)
-                    .unwrap_or(false),
-                missing_required_ids: simulation
-                    .get("missingRequiredIds")
-                    .and_then(Json::as_array)
-                    .cloned()
-                    .unwrap_or_default()
-                    .iter()
-                    .filter_map(|id| id.as_str().map(str::to_owned))
-                    .collect(),
-                legacy_minimum_required: simulation
-                    .get("legacyMinimumRequired")
-                    .and_then(Json::as_u64)
-                    .unwrap_or(0),
-                legacy_estimated: simulation
-                    .get("legacyEstimated")
-                    .and_then(Json::as_u64)
-                    .unwrap_or(0),
-                legacy_fits: simulation
-                    .get("legacyFits")
-                    .and_then(Json::as_bool)
-                    .unwrap_or(false),
-            }),
-        });
-    }
-    let summary_json = object.get("summary").cloned().unwrap_or(Json::Null);
-    Ok(BudgetReport {
-        scope,
-        profile,
-        subjects,
-        summary: ReportSummary {
-            subjects: summary_json
-                .get("subjects")
-                .and_then(Json::as_u64)
-                .unwrap_or(0),
-            over_budget_subjects: summary_json
-                .get("overBudgetSubjects")
-                .and_then(Json::as_u64)
-                .unwrap_or(0),
-            indeterminate_subjects: summary_json
-                .get("indeterminateSubjects")
-                .and_then(Json::as_u64)
-                .unwrap_or(0),
-            union_required_tokens: parse_state_u64(summary_json.get("unionRequiredTokens")),
-        },
-        complete: object
-            .get("complete")
-            .and_then(Json::as_bool)
-            .unwrap_or(false),
-        warnings: Vec::new(),
-    })
+/// Parse one immutable baseline report through the closed typed decoder
+/// (context_budget::baseline::parse). Malformed input is invalid, never
+/// incomparable; the decoder enforces the exact state shapes, closed
+/// field sets, identity/metric-version/estimator pins, and arithmetic.
+fn parse_baseline(
+    bytes: &[u8],
+) -> Result<lekalo_core::context_budget::BudgetReport, DomainResult> {
+    lekalo_core::context_budget::baseline::parse(bytes)
+        .map_err(DomainResult::invalid)
+        .map(|decoded| decoded.report)
 }
 
 /// Run one `graph` subcommand: load and compile the project, hand the IR

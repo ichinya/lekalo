@@ -62,6 +62,9 @@ pub struct SubjectMetrics {
     pub policies: StateValue<u64>,
     pub scenarios: StateValue<u64>,
     pub largest_required_artifact: StateValue<LargestArtifact>,
+    /// The largest single required semantic fact; never presented as a
+    /// file or artifact.
+    pub largest_required_semantic_fact: StateValue<LargestArtifact>,
     pub duplicate_supporting_tokens: StateValue<u64>,
     pub generated_maintained_ratio: StateValue<OwnershipRatio>,
     pub minimum_safe_context_estimate: StateValue<u64>,
@@ -90,6 +93,7 @@ impl Default for SubjectMetrics {
             policies: StateValue::Unknown,
             scenarios: StateValue::Unknown,
             largest_required_artifact: StateValue::Unknown,
+            largest_required_semantic_fact: StateValue::Unknown,
             duplicate_supporting_tokens: StateValue::Unknown,
             generated_maintained_ratio: StateValue::Unknown,
             minimum_safe_context_estimate: StateValue::Unknown,
@@ -276,7 +280,7 @@ pub fn dependency_counts(
 }
 
 /// The closed wire key of every metric (schema order).
-pub const METRIC_KEYS: [&str; 23] = [
+pub const METRIC_KEYS: [&str; 24] = [
     "directDependencies",
     "transitiveDependencies",
     "indirectOnlyDependencies",
@@ -297,6 +301,7 @@ pub const METRIC_KEYS: [&str; 23] = [
     "policies",
     "scenarios",
     "largestRequiredArtifact",
+    "largestRequiredSemanticFact",
     "duplicateSupportingTokens",
     "generatedMaintainedRatio",
     "minimumSafeContextEstimate",
@@ -387,5 +392,39 @@ mod tests {
         assert!(METRIC_KEYS
             .iter()
             .all(|key| key.as_bytes()[0].is_ascii_lowercase()));
+    }
+}
+
+#[cfg(test)]
+mod request_tests {
+    use super::*;
+
+    /// M8 through the real collector shape: a shared supporting node
+    /// requested through B and C (a diamond) is deduplicated in the
+    /// closure but records two requests, so the duplicate cost is its
+    /// token price once.
+    #[test]
+    fn supporting_diamond_dedup_records_duplicates() {
+        let supporting = vec![LedgerFact {
+            id: "entity:d".to_owned(),
+            class: super::super::facts::FactClass::SupportingSemantic,
+            reason: None,
+            module: None,
+            tokens: 10,
+        }];
+        // B and C both reference D: two incoming edges, one unique fact.
+        let mut multiplicity = BTreeMap::new();
+        multiplicity.insert("entity:d".to_owned(), 2);
+        assert_eq!(
+            duplicate_supporting_tokens(&supporting, &multiplicity),
+            StateValue::Known(10)
+        );
+        // A node with three requesters costs twice duplicated.
+        let mut triple = BTreeMap::new();
+        triple.insert("entity:d".to_owned(), 3);
+        assert_eq!(
+            duplicate_supporting_tokens(&supporting, &triple),
+            StateValue::Known(20)
+        );
     }
 }
