@@ -68,6 +68,11 @@ pub fn git_block(snapshot: &GitSnapshot) -> GitProvenance {
         },
         working_set_digest: match &snapshot.working_set_digest {
             Some(digest) => ValueState::known_digest(digest),
+            // An empty/unreadable tracked inventory is not-applicable:
+            // there is no inventory to bind (review Cline F10) — the
+            // snapshot's unavailable reason stays for the truly
+            // failed probe.
+            None if snapshot.commit.is_some() => ValueState::unknown(UnknownReason::NotApplicable),
             None => ValueState::unknown(unknown_reason),
         },
     }

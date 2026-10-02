@@ -309,7 +309,7 @@ pub fn render(report: &CiReport) -> String {
             .collect(),
             automation_details: SarifAutomation {
                 id: format!(
-                    "lekalo/{}/{}/",
+                    "lekalo/{}/{}",
                     report.invocation.command.as_str(),
                     report.evaluation.verdict.as_str()
                 ),

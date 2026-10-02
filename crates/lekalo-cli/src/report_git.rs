@@ -148,6 +148,12 @@ fn bounded_working_set(root: &std::path::Path) -> Option<String> {
         entries.push((text.to_owned(), lekalo_core::digest::sha256_hex(&bytes)));
     }
     entries.sort();
+    // An empty tracked inventory binds nothing: reporting the digest of
+    // the empty string as `known` would be a fabricated pin (review
+    // Cline F10), so an empty inventory leaves the leaf unknown.
+    if entries.is_empty() {
+        return None;
+    }
     let mut canonical = String::new();
     for (path, digest) in &entries {
         canonical.push_str(path);

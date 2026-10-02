@@ -120,6 +120,9 @@ enum Commands {
         /// The CI report projection (requires --report-file).
         #[arg(long, value_enum, value_name = "FORMAT")]
         report_format: Option<crate::report_output::ReportFormat>,
+        /// The CI policy level: default, strict, or lenient.
+        #[arg(long, value_enum, value_name = "POLICY")]
+        ci_policy: Option<crate::report_output::CiPolicyArg>,
     },
     /// Load YAML/JSON sources, resolve imports, and emit the canonical model.
     Load {
@@ -376,6 +379,9 @@ enum Commands {
         /// The CI report projection (requires --report-file).
         #[arg(long, value_enum, value_name = "FORMAT")]
         report_format: Option<crate::report_output::ReportFormat>,
+        /// The CI policy level: default, strict, or lenient.
+        #[arg(long, value_enum, value_name = "POLICY")]
+        ci_policy: Option<crate::report_output::CiPolicyArg>,
     },
     /// Run the read-only verification pipeline over a validated project:
     /// core validation, drift, per-target adapter validation, portable
@@ -414,6 +420,9 @@ enum Commands {
         /// The CI report projection (requires --report-file).
         #[arg(long, value_enum, value_name = "FORMAT")]
         report_format: Option<crate::report_output::ReportFormat>,
+        /// The CI policy level: default, strict, or lenient.
+        #[arg(long, value_enum, value_name = "POLICY")]
+        ci_policy: Option<crate::report_output::CiPolicyArg>,
     },
     /// Bootstrap a new greenfield Lekalo project in the invocation
     /// directory (issue #97), or adopt an existing repository with
@@ -521,6 +530,9 @@ enum Commands {
         /// The CI report projection (requires --report-file).
         #[arg(long, value_enum, value_name = "FORMAT")]
         report_format: Option<crate::report_output::ReportFormat>,
+        /// The CI policy level: default, strict, or lenient.
+        #[arg(long, value_enum, value_name = "POLICY")]
+        ci_policy: Option<crate::report_output::CiPolicyArg>,
     },
     /// Record, bind, verify, and promote existing code in observed mode
     /// (issue #39). The core owns every decision; this binary only
@@ -2295,10 +2307,14 @@ fn runtime() -> u8 {
                 strict,
                 report_file,
                 report_format,
+                ci_policy,
             } => {
                 let request = crate::report_output::ReportRequest {
                     file: report_file,
                     format: report_format,
+                    policy: ci_policy
+                        .map(|p| p.policy())
+                        .unwrap_or(lekalo_core::ci_report::build::CiPolicy::Default),
                 };
                 if let Err(result) = request.validate() {
                     return emit(result, json_requested);
@@ -2350,10 +2366,14 @@ fn runtime() -> u8 {
                 timeout_ms,
                 report_file,
                 report_format,
+                ci_policy,
             } => {
                 let request = crate::report_output::ReportRequest {
                     file: report_file,
                     format: report_format,
+                    policy: ci_policy
+                        .map(|p| p.policy())
+                        .unwrap_or(lekalo_core::ci_report::build::CiPolicy::Default),
                 };
                 if let Err(result) = request.validate() {
                     return emit(result, json_requested);
@@ -2384,10 +2404,14 @@ fn runtime() -> u8 {
                 timeout_ms,
                 report_file,
                 report_format,
+                ci_policy,
             } => {
                 let request = crate::report_output::ReportRequest {
                     file: report_file,
                     format: report_format,
+                    policy: ci_policy
+                        .map(|p| p.policy())
+                        .unwrap_or(lekalo_core::ci_report::build::CiPolicy::Default),
                 };
                 if let Err(result) = request.validate() {
                     return emit(result, json_requested);
@@ -2417,10 +2441,14 @@ fn runtime() -> u8 {
                 check,
                 report_file,
                 report_format,
+                ci_policy,
             } => {
                 let request = crate::report_output::ReportRequest {
                     file: report_file,
                     format: report_format,
+                    policy: ci_policy
+                        .map(|p| p.policy())
+                        .unwrap_or(lekalo_core::ci_report::build::CiPolicy::Default),
                 };
                 if let Err(result) = request.validate() {
                     return emit(result, json_requested);
@@ -2575,7 +2603,7 @@ fn run_validate_reported(
     request: &crate::report_output::ReportRequest,
 ) -> DomainResult {
     use lekalo_core::ci_report::{
-        CheckDraft, CiPolicy, CommandName, CommandOutcome, FailureClass, SourceOutcome,
+        CheckDraft, CommandName, CommandOutcome, FailureClass, SourceOutcome,
     };
     if !request.is_requested() {
         return run_validate(project, module.clone(), strict, no_cache);
@@ -2632,7 +2660,7 @@ fn run_validate_reported(
         result: result.clone(),
         as_of: None,
     };
-    let report = lekalo_core::ci_report::build(outcome, CiPolicy::Default);
+    let report = lekalo_core::ci_report::build(outcome, request.policy);
     let report = lekalo_core::ci_report::build::with_diagnostics(report, diagnostics);
     if let Err(invariant) = report.validate() {
         // An invariant violation is a developer fault: the typed
@@ -5088,7 +5116,7 @@ fn run_readiness(
         result: gated_result.clone(),
         as_of: None,
     };
-    let report = lekalo_core::ci_report::build(outcome, lekalo_core::ci_report::CiPolicy::Default);
+    let report = lekalo_core::ci_report::build(outcome, request.policy);
     if let Err(_invariant) = report.validate() {
         let failure = DomainResult::unavailable(
             lekalo_core::ci_report::build::diagnostics::report_write_failed("invariant"),
@@ -9372,7 +9400,7 @@ fn verify_reported(
         result: result.clone(),
         as_of: None,
     };
-    let report = lekalo_core::ci_report::build(outcome, lekalo_core::ci_report::CiPolicy::Default);
+    let report = lekalo_core::ci_report::build(outcome, request.policy);
     let report = lekalo_core::ci_report::build::with_diagnostics(report, diagnostics);
     if let Err(_invariant) = report.validate() {
         let failure = DomainResult::unavailable(
@@ -9438,7 +9466,7 @@ fn generate_check_reported(
         result: result.clone(),
         as_of: None,
     };
-    let report = lekalo_core::ci_report::build(outcome, lekalo_core::ci_report::CiPolicy::Default);
+    let report = lekalo_core::ci_report::build(outcome, request.policy);
     let report = lekalo_core::ci_report::build::with_diagnostics(report, diagnostics);
     if let Err(_invariant) = report.validate() {
         let failure = DomainResult::unavailable(

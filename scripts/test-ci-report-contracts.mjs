@@ -261,6 +261,20 @@ try {
   const draft04 = new AjvDraft04({ allErrors: true });
   addFormats(draft04);
   const validateSarif = draft04.compile(sarifSchema);
+  // The golden must exercise the inline-diagnostic path (AC1): at
+  // least one derived rule and one result with a safe location.
+  if ((run.tool.driver.rules ?? []).length === 0) {
+    fail("sarif:inline", "the golden carries no derived rules");
+  }
+  if ((run.results ?? []).length === 0) {
+    fail("sarif:inline", "the golden carries no results");
+  }
+  const withLocation = (run.results ?? []).filter(
+    (r) => r.locations?.[0]?.physicalLocation?.artifactLocation?.uri,
+  );
+  if (withLocation.length === 0) {
+    fail("sarif:inline", "no result carries a repository-relative location");
+  }
   if (!validateSarif(sarif)) {
     fail("sarif:schema", validateSarif.errors);
   }

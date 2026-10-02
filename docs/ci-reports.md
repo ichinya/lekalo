@@ -41,10 +41,10 @@ child output are representable. The document binds:
 ## Commands and flags
 
 ```sh
-lekalo validate [--strict] --report-file out/report.json [--report-format json|junit|sarif|md]
-lekalo generate --check [--locked] --report-file out/drift.json
-lekalo verify --locked --report-file out/verify.json
-lekalo readiness --phase release --check --report-file out/readiness.json
+lekalo validate [--strict] --report-file out/report.json [--report-format json|junit|sarif|md] [--ci-policy default|strict|lenient]
+lekalo generate --check [--locked] --report-file out/drift.json [--ci-policy POLICY]
+lekalo verify --locked --report-file out/verify.json [--ci-policy POLICY]
+lekalo readiness --phase release --check --report-file out/readiness.json [--ci-policy POLICY]
 ```
 
 `--report-file PATH` requests the side channel; `--report-format` selects
@@ -65,9 +65,10 @@ the legacy envelope:
 - required failure (or a genuine optional failure, or a denial, or a
   cancellation) → the classified nonzero domain status;
 - optional unavailable/unsupported rows are policy-driven — under the
-  default policy they warn (exit 0, incomplete coverage); a future
-  versioned CI policy may promote them (`strict`) or skip them
-  (`lenient`);
+  default policy they warn (exit 0, incomplete coverage); `--ci-policy
+  strict` promotes them to the unavailable class (exit 4) and
+  `--ci-policy lenient` skips them (exit 0); a future versioned
+  CI policy file may replace the closed three-level built-in;
 - the underlying command result is preserved in `commandResult` so no
   consumer ever loses the original observation.
 

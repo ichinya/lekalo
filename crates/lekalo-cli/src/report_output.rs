@@ -18,6 +18,7 @@
 use std::path::{Path, PathBuf};
 
 use lekalo_core::ci_report;
+use lekalo_core::ci_report::build::CiPolicy;
 use lekalo_core::ci_report::CiReport;
 use lekalo_core::DomainResult;
 
@@ -34,6 +35,28 @@ pub enum ReportFormat {
     Md,
 }
 
+/// The clap surface of the closed CI policy vocabulary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum CiPolicyArg {
+    /// Optional absences warn (exit 0, incomplete coverage).
+    Default,
+    /// Optional absences promote to the unavailable class (exit 4).
+    Strict,
+    /// Optional absences are skipped (exit 0).
+    Lenient,
+}
+
+impl CiPolicyArg {
+    /// The closed policy this argument selects.
+    pub const fn policy(self) -> ci_report::build::CiPolicy {
+        match self {
+            Self::Default => ci_report::build::CiPolicy::Default,
+            Self::Strict => ci_report::build::CiPolicy::Strict,
+            Self::Lenient => ci_report::build::CiPolicy::Lenient,
+        }
+    }
+}
+
 #[allow(dead_code)] // the stable spelling is used by docs/tests and the future action seam
 impl ReportFormat {
     /// The stable spelling used in errors and docs.
@@ -48,13 +71,27 @@ impl ReportFormat {
 }
 
 /// The report output request gathered from the CLI flags.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct ReportRequest {
     /// The destination path (`--report-file`), when requested.
     pub file: Option<String>,
     /// The selected projection (defaults to JSON with a file, and must
     /// not be named without one).
     pub format: Option<ReportFormat>,
+    /// The closed CI policy level (`--ci-policy`): how optional
+    /// absences translate into the gated exit. `default` warns,
+    /// `strict` promotes to the unavailable class, `lenient` skips.
+    pub policy: CiPolicy,
+}
+
+impl Default for ReportRequest {
+    fn default() -> Self {
+        Self {
+            file: None,
+            format: None,
+            policy: CiPolicy::Default,
+        }
+    }
 }
 
 impl ReportRequest {
@@ -310,6 +347,7 @@ mod tests {
         let request = ReportRequest {
             file: None,
             format: Some(ReportFormat::Sarif),
+            ..ReportRequest::default()
         };
         assert!(request.validate().is_err());
         assert!(request.is_requested());
@@ -320,6 +358,7 @@ mod tests {
         let request = ReportRequest {
             file: Some("report.json".to_owned()),
             format: None,
+            ..ReportRequest::default()
         };
         assert!(request.validate().is_ok());
         assert_eq!(request.resolved_format(), ReportFormat::Json);
@@ -365,7 +404,7 @@ mod tests {
         };
         let request = ReportRequest {
             file: Some("definitely/missing/dir/report.json".to_owned()),
-            format: None,
+            ..ReportRequest::default()
         };
         let outcome = write_report(&report, &request, None);
         assert_eq!(outcome.unwrap_err().exit_code(), 4);
