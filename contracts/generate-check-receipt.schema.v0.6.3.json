@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/generate-check-receipt.schema.v0.6.3.json",
+  "title": "Lekalo generate --check drift receipt",
+  "description": "Closed contract of the `lekalo generate --check` receipt (issue #34 provider boundary, fix round 1; the workflow `drift` operation). The command embeds no `schemaVersion` member in its payload; this describing schema is the exact output negotiation target advertised as `lekalo/generate-check/v0.6.3` by the workflow-provider manifest. A clean or findings-only check is exit 0 stdout; any blocking drift finding (stale, manual-drift, missing, orphan) fails the run `invalid` (exit 1, stderr) with the typed diagnostic (`lock.stale`, `lock.source-changed`, `structure.document-missing`, `structure.runtime-unexpected-entry`) — those failures are outside this success receipt. This is a read-only drift check: it never applies generation and never needs an adapter program.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status",
+    "operation",
+    "mode",
+    "lockDigest",
+    "verdict",
+    "counts",
+    "findings"
+  ],
+  "properties": {
+    "status": {
+      "description": "Always valid on this success stream.",
+      "const": "valid"
+    },
+    "operation": {
+      "description": "Always the generate operation.",
+      "const": "generate"
+    },
+    "mode": {
+      "description": "Always the read-only check mode.",
+      "const": "check"
+    },
+    "manifestDigest": {
+      "description": "The verified ownership-manifest digest; null for the vacuous no-manifest check.",
+      "oneOf": [
+        { "type": "null" },
+        { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      ]
+    },
+    "lockDigest": {
+      "description": "The exact lock digest the check bound to; the consumer's revision-binding anchor for this observation.",
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "verdict": {
+      "description": "clean when nothing was reported; reported when only non-blocking findings exist.",
+      "enum": ["clean", "reported"]
+    },
+    "counts": { "$ref": "#/$defs/counts" },
+    "findings": {
+      "description": "The sorted non-blocking findings; empty exactly when verdict is clean.",
+      "type": "array",
+      "maxItems": 1024,
+      "items": { "$ref": "#/$defs/finding" }
+    }
+  },
+  "$defs": {
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifacts",
+        "clean",
+        "stale",
+        "manualDrift",
+        "missing",
+        "orphan",
+        "reported"
+      ],
+      "properties": {
+        "artifacts": { "type": "integer", "minimum": 0 },
+        "clean": { "type": "integer", "minimum": 0 },
+        "stale": { "type": "integer", "minimum": 0 },
+        "manualDrift": { "type": "integer", "minimum": 0 },
+        "missing": { "type": "integer", "minimum": 0 },
+        "orphan": { "type": "integer", "minimum": 0 },
+        "reported": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "verdict"],
+      "properties": {
+        "path": {
+          "description": "The project-relative logical path of the artifact or orphan.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "owner": {
+          "description": "The semantic owner, when the finding came from a manifest entry.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "kind": {
+          "description": "The artifact kind, when known.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "lifecycle": {
+          "description": "The artifact lifecycle, when known (generated or scaffolded).",
+          "type": "string",
+          "enum": ["generated", "scaffolded"]
+        },
+        "verdict": {
+          "description": "The closed non-blocking verdict (only `orphan` may appear as reported-only; stale/manual-drift/missing block).",
+          "enum": ["orphan", "clean", "reported"]
+        }
+      }
+    }
+  }
+}

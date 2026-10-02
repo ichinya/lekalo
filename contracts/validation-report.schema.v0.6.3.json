@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/validation-report.schema.v0.6.3.json",
+  "title": "Lekalo validation success receipt",
+  "description": "Closed contract of the `lekalo validate` success receipt (issue #34 provider boundary, fix round 1). The command embeds no `schemaVersion` member in its payload; this describing schema is the exact output negotiation target advertised as `lekalo/validation-report/v0.6.3` by the workflow-provider manifest. The envelope is the standard status-first projection: exit 0, stdout. Warning/info validation findings ride the envelope's `diagnostics` array (closed `lekalo/diagnostic/v0.2.16` items); error findings make the run `invalid` (exit 1, stderr) which is a semantic result, not a provider crash. `lekalo/validation-profile/v0.4.0` remains the separate profile *configuration* schema and is pinned alongside this contract.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status",
+    "modelVersion",
+    "validation"
+  ],
+  "properties": {
+    "status": {
+      "description": "Always valid on this success stream; the projection of a completed validation run carrying only warning/info diagnostics.",
+      "const": "valid"
+    },
+    "modelVersion": {
+      "description": "The exact canonical Model contract version that was validated.",
+      "const": "0.2.16"
+    },
+    "validation": { "$ref": "#/$defs/report" }
+  },
+  "$defs": {
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["error", "warning", "info"],
+      "properties": {
+        "error": { "type": "integer", "minimum": 0 },
+        "warning": { "type": "integer", "minimum": 0 },
+        "info": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "report": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "profileVersion",
+        "registryVersion",
+        "rulesEnabled",
+        "counts"
+      ],
+      "properties": {
+        "profile": {
+          "description": "The closed built-in profile id that ran (`default` or `strict`).",
+          "type": "string",
+          "enum": ["default", "strict"]
+        },
+        "profileVersion": {
+          "description": "The exact profile document version that ran.",
+          "const": "0.4.0"
+        },
+        "registryVersion": {
+          "description": "The exact diagnostic registry version the findings resolve against.",
+          "const": "0.4.0"
+        },
+        "moduleScope": {
+          "description": "Present only for a `--module`-scoped run; the module semantic id scope.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "rulesEnabled": {
+          "description": "The number of rules the profile enabled.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4096
+        },
+        "counts": { "$ref": "#/$defs/counts" }
+      }
+    }
+  }
+}

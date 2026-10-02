@@ -9,9 +9,9 @@ pub mod manifest;
 pub mod operations;
 pub mod version;
 
-pub use manifest::{Bounds, ContractPin, ProviderManifest};
+pub use manifest::{Bounds, ContractPin, OperationRef, ProviderManifest};
 pub use operations::{EffectClass, Operation, OPERATIONS};
 pub use version::{
-    DIGEST_ALGORITHM, DISCOVERY_COMMAND, FAMILY, IDENTITY, OPERATION_COUNT,
-    RECOMMENDED_BUDGET_TOKENS, SCHEMA_VERSION, VERSION,
+    DIGEST_ALGORITHM, DISCOVERY_COMMAND, FAMILY, GENERATE_CHECK_SCHEMA, IDENTITY, OPERATION_COUNT,
+    PRODUCT_VERSION, RECOMMENDED_BUDGET_TOKENS, SCHEMA_VERSION, VALIDATION_REPORT_SCHEMA, VERSION,
 };

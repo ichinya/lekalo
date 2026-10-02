@@ -50,9 +50,13 @@ const fail = (reason, detail) => {
 const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf8"));
 
 const schema = read("contracts/provider-capabilities.schema.v0.6.3.json");
+const validationReportSchema = read("contracts/validation-report.schema.v0.6.3.json");
+const generateCheckSchema = read("contracts/generate-check-receipt.schema.v0.6.3.json");
 const golden = read("tests/fixtures/provider/describe.golden.json");
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const validateManifestReceipt = ajv.compile(schema);
+const validateValidationReport = ajv.compile(validationReportSchema);
+const validateGenerateCheck = ajv.compile(generateCheckSchema);
 
 let checks = 0;
 
@@ -79,7 +83,7 @@ checks += 1;
 // classes. Detection is not an operation and no lifecycle operation is
 // ever advertised.
 const expectedOperations = [
-  "context", "doctor", "generate", "impact", "readiness", "status",
+  "context", "doctor", "drift", "generate", "impact", "readiness", "status",
   "trace.export", "validate", "verify",
 ];
 const operationIds = manifest.operations.map((operation) => operation.id);
@@ -101,7 +105,8 @@ for (const operation of manifest.operations) {
 checks += 1;
 
 // 4. One pinned output schema per operation, matching the CLI's own
-// Rust contract tests.
+// Rust contract tests. The receipt-shaped payloads without embedded
+// discriminators pin this contract series' describing schemas.
 const schemaOf = (id) =>
   manifest.operations.find((operation) => operation.id === id)?.outputSchema;
 const expectedSchemas = new Map([
@@ -110,7 +115,8 @@ const expectedSchemas = new Map([
   ["readiness", "lekalo/doctor/v0.3.2"],
   ["impact", "lekalo/impact/v0.2.16"],
   ["context", "lekalo/context/v0.2.16"],
-  ["validate", "lekalo/validation-profile/v0.4.0"],
+  ["validate", "lekalo/validation-report/v0.6.3"],
+  ["drift", "lekalo/generate-check/v0.6.3"],
   ["verify", "lekalo/orchestration/v0.2.16"],
   ["generate", "lekalo/orchestration/v0.2.16"],
   ["trace.export", "lekalo/trace-manifest/v0.2.16"],
@@ -120,15 +126,19 @@ for (const [id, expected] of expectedSchemas) {
 }
 checks += 1;
 
-// 5. The schema pins cover exactly the seven referenced families.
+// 5. The schema pins cover exactly the nine output families (the seven
+// wire-discriminated families plus the two describing schemas of this
+// contract series).
 const expectedPins = [
   "lekalo/context/v0.2.16",
   "lekalo/diagnostic/v0.2.16",
   "lekalo/doctor/v0.3.2",
+  "lekalo/generate-check/v0.6.3",
   "lekalo/impact/v0.2.16",
   "lekalo/orchestration/v0.2.16",
   "lekalo/trace-manifest/v0.2.16",
   "lekalo/validation-profile/v0.4.0",
+  "lekalo/validation-report/v0.6.3",
 ];
 const pinned = manifest.schemaPins.map((pin) => pin.schemaVersion).sort();
 if (JSON.stringify(pinned) !== JSON.stringify(expectedPins)) {
@@ -183,7 +193,7 @@ try {
 }
 if (binaryAvailable) {
   const workRoot = join(root, "target", "provider-describe-probe");
-  const { mkdirSync, rmSync, readdirSync } = await import("node:fs");
+  const { mkdirSync, rmSync, readdirSync, cpSync } = await import("node:fs");
   rmSync(workRoot, { recursive: true, force: true });
   mkdirSync(workRoot, { recursive: true });
   const probe = join(workRoot, "empty");
@@ -204,6 +214,55 @@ if (binaryAvailable) {
   if (afterEntries.length !== before) {
     fail("live-side-effect", JSON.stringify(afterEntries));
   }
+  rmSync(workRoot, { recursive: true, force: true });
+  checks += 2;
+
+  // 9. The two receipt-shaped operations validate against their own
+  // published describing schemas at the process boundary, and the
+  // prescribed read-only argv materializes no cache home.
+  const validationFixture = resolve(root, "tests/fixtures/validation/valid/base");
+  const validationWork = join(workRoot, "validation");
+  mkdirSync(validationWork, { recursive: true });
+  cpSync(validationFixture, join(validationWork, "base"), { recursive: true });
+  const validateRun = spawnSync(
+    binary,
+    ["validate", "--no-cache", "--json", "--project", "base"],
+    { cwd: validationWork, encoding: "utf8", windowsHide: true },
+  );
+  if (validateRun.status !== 0) fail("validate-exit", String(validateRun.status));
+  const validateReceipt = JSON.parse(validateRun.stdout.trim());
+  if (!validateValidationReport(validateReceipt)) {
+    fail(
+      "validate-receipt-schema",
+      JSON.stringify(validateValidationReport.errors, null, 1),
+    );
+  }
+  if (existsSync(join(validationWork, "base", ".lekalo"))) {
+    fail("validate-side-effect", "the prescribed argv materialized .lekalo");
+  }
+  rmSync(workRoot, { recursive: true, force: true });
+
+  const orchestrationFixture = resolve(root, "tests/fixtures/orchestration/project");
+  const driftWork = join(workRoot, "drift");
+  mkdirSync(driftWork, { recursive: true });
+  cpSync(orchestrationFixture, join(driftWork, "project"), { recursive: true });
+  const lockRun = spawnSync(binary, ["lock", "--json", "--project", "project"], {
+    cwd: driftWork,
+    encoding: "utf8",
+    windowsHide: true,
+  });
+  if (lockRun.status !== 0) fail("drift-lock-exit", String(lockRun.status));
+  const driftRun = spawnSync(
+    binary,
+    ["generate", "--check", "--json", "--project", "project"],
+    { cwd: driftWork, encoding: "utf8", windowsHide: true },
+  );
+  if (driftRun.status !== 0) fail("drift-exit", String(driftRun.status));
+  const driftReceipt = JSON.parse(driftRun.stdout.trim());
+  if (!validateGenerateCheck(driftReceipt)) {
+    fail("drift-receipt-schema", JSON.stringify(validateGenerateCheck.errors, null, 1));
+  }
+  if (driftReceipt.verdict !== "clean") fail("drift-verdict", driftReceipt.verdict);
   rmSync(workRoot, { recursive: true, force: true });
   checks += 2;
 } else if (!existsSync(binary)) {

@@ -13,7 +13,7 @@ use serde_json::Value as Json;
 
 use crate::provider::operations::{EffectClass, Operation, OPERATIONS};
 use crate::provider::version::{
-    DISCOVERY_COMMAND, IDENTITY, RECOMMENDED_BUDGET_TOKENS, SCHEMA_VERSION,
+    DISCOVERY_COMMAND, IDENTITY, PRODUCT_VERSION, RECOMMENDED_BUDGET_TOKENS, SCHEMA_VERSION,
 };
 
 /// One pinned upstream contract identity, advertised so a consumer can
@@ -78,7 +78,9 @@ pub struct ProviderManifest {
     schemaVersion: &'static str,
     /// The exact contract identity.
     identity: &'static str,
-    /// The exact producing product version (`CARGO_PKG_VERSION`).
+    /// The exact producing contract's product generation (`0.6.3`, the
+    /// implementation commit's product version; may trail a later
+    /// binary's `--version`).
     productVersion: &'static str,
     /// The discovery command (presentation form).
     discoveryCommand: &'static str,
@@ -167,6 +169,10 @@ impl ProviderManifest {
                 identity: Some(crate::doctor::version::IDENTITY),
             },
             ContractPin {
+                schemaVersion: crate::provider::version::GENERATE_CHECK_SCHEMA,
+                identity: None,
+            },
+            ContractPin {
                 schemaVersion: crate::impact::SCHEMA_VERSION,
                 identity: Some(crate::impact::IDENTITY),
             },
@@ -182,12 +188,16 @@ impl ProviderManifest {
                 schemaVersion: crate::validator::profile::PROFILE_SCHEMA_VERSION,
                 identity: Some(crate::validator::profile::PROFILE_IDENTITY),
             },
+            ContractPin {
+                schemaVersion: crate::provider::version::VALIDATION_REPORT_SCHEMA,
+                identity: None,
+            },
         ];
         let operations = OPERATIONS.iter().map(OperationRef::from).collect();
         let mut manifest = Self {
             schemaVersion: SCHEMA_VERSION,
             identity: IDENTITY,
-            productVersion: crate::provider::version::PRODUCT_VERSION,
+            productVersion: PRODUCT_VERSION,
             discoveryCommand: DISCOVERY_COMMAND,
             targetProtocolIdentity: crate::target_protocol::version::IDENTITY,
             schemaPins: pins,
@@ -350,7 +360,7 @@ mod tests {
     }
 
     #[test]
-    fn pins_cover_exactly_the_seven_output_families() {
+    fn pins_cover_exactly_the_nine_output_families() {
         let manifest = ProviderManifest::describe();
         let schemas: Vec<_> = manifest
             .schemaPins
@@ -363,10 +373,12 @@ mod tests {
                 "lekalo/context/v0.2.16",
                 "lekalo/diagnostic/v0.2.16",
                 "lekalo/doctor/v0.3.2",
+                "lekalo/generate-check/v0.6.3",
                 "lekalo/impact/v0.2.16",
                 "lekalo/orchestration/v0.2.16",
                 "lekalo/trace-manifest/v0.2.16",
                 "lekalo/validation-profile/v0.4.0",
+                "lekalo/validation-report/v0.6.3",
             ]
         );
     }

@@ -145,6 +145,7 @@ fn describe_never_declares_hidden_lifecycle_operations() {
         vec![
             "context",
             "doctor",
+            "drift",
             "generate",
             "impact",
             "readiness",
@@ -197,21 +198,32 @@ fn describe_pins_one_output_schema_per_operation_and_the_shared_families() {
     assert_eq!(schema_of("readiness"), "lekalo/doctor/v0.3.2");
     assert_eq!(schema_of("impact"), "lekalo/impact/v0.2.16");
     assert_eq!(schema_of("context"), "lekalo/context/v0.2.16");
-    assert_eq!(schema_of("validate"), "lekalo/validation-profile/v0.4.0");
+    assert_eq!(schema_of("validate"), "lekalo/validation-report/v0.6.3");
+    assert_eq!(schema_of("drift"), "lekalo/generate-check/v0.6.3");
     assert_eq!(schema_of("verify"), "lekalo/orchestration/v0.2.16");
     assert_eq!(schema_of("generate"), "lekalo/orchestration/v0.2.16");
     assert_eq!(schema_of("trace.export"), "lekalo/trace-manifest/v0.2.16");
-    // The pins cover the same families exactly.
+    // The pins cover the describing schemas for the receipt-shaped
+    // payloads without embedded discriminators, the wire-discriminated
+    // families, and the diagnostic envelope.
     let pins: Vec<&str> = document["manifest"]["schemaPins"]
         .as_array()
         .expect("pins")
         .iter()
         .map(|pin| pin["schemaVersion"].as_str().expect("pin"))
         .collect();
-    assert_eq!(pins.len(), 7);
+    assert_eq!(pins.len(), 9);
     assert!(
         pins.contains(&"lekalo/diagnostic/v0.2.16"),
         "diagnostics are pinned"
+    );
+    assert!(
+        pins.contains(&"lekalo/validation-report/v0.6.3"),
+        "the validate result contract is pinned"
+    );
+    assert!(
+        pins.contains(&"lekalo/generate-check/v0.6.3"),
+        "the drift receipt contract is pinned"
     );
 }
 
@@ -294,7 +306,7 @@ fn human_projection_is_one_stable_summary_line() {
     assert_eq!(
         stdout_text(&output),
         "provider dev.lekalo.workflow-provider@0.6.3 product 0.6.3 operations \
-         context,doctor,generate,impact,readiness,status,trace.export,validate,verify\n"
+         context,doctor,drift,generate,impact,readiness,status,trace.export,validate,verify\n"
     );
 }
 
@@ -384,4 +396,112 @@ fn sha256_helper_matches_the_known_vectors() {
         sha256_hex(b"abc"),
         "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
     );
+}
+
+/// The prescribed provider argv for `validate` carries `--no-cache`: the
+/// default cached pipeline materializes `.lekalo/cache/cache.sqlite`, so
+/// a read-only provider phase must use the bypass (fix-round finding:
+/// undeclared mutation under a read-only effect).
+#[test]
+fn prescribed_validate_argv_with_no_cache_writes_nothing() {
+    let fixtures = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/fixtures/validation"
+    );
+    let work = temp_dir("validate-no-cache");
+    let project = work.join("base");
+    fs_extra_copy_dir(
+        &std::path::PathBuf::from(fixtures).join("valid/base"),
+        &project,
+    );
+    let before = count_entries(&project);
+    let output = lekalo_in(
+        &work,
+        &["validate", "--no-cache", "--json", "--project", "base"],
+    );
+    let after = count_entries(&project);
+    let _ = fs::remove_dir_all(&work);
+    assert_eq!(output.status.code(), Some(0), "{:?}", output.status);
+    let document: serde_json::Value =
+        serde_json::from_str(stdout_text(&output).trim()).expect("envelope");
+    assert_eq!(document["status"], "valid");
+    assert_eq!(document["validation"]["profile"], "default");
+    assert!(
+        !project.join(".lekalo").exists(),
+        "the prescribed argv materializes no cache home"
+    );
+    assert_eq!(before, after, "no filesystem entries added");
+}
+
+/// The `drift` operation (generate --check) is negotiated through its own
+/// published receipt contract, never through the orchestration schema,
+/// and a clean check writes nothing.
+#[test]
+fn drift_check_clean_receipt_writes_nothing() {
+    let fixtures = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/fixtures/orchestration"
+    );
+    let work = temp_dir("drift-clean");
+    let project = work.join("project");
+    fs_extra_copy_dir(
+        &std::path::PathBuf::from(fixtures).join("project"),
+        &project,
+    );
+    // A clean drift check needs the lock the ownership manifest verifies
+    // against (an explicit, documented consumer step).
+    let lock = lekalo_in(&work, &["lock", "--json", "--project", "project"]);
+    assert_eq!(lock.status.code(), Some(0), "{lock:?}");
+    let before = count_entries(&project);
+    let output = lekalo_in(
+        &work,
+        &["generate", "--check", "--json", "--project", "project"],
+    );
+    let after = count_entries(&project);
+    let _ = fs::remove_dir_all(&work);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    let document: serde_json::Value =
+        serde_json::from_str(stdout_text(&output).trim()).expect("envelope");
+    assert_eq!(document["status"], "valid");
+    assert_eq!(document["operation"], "generate");
+    assert_eq!(document["mode"], "check");
+    assert_eq!(document["verdict"], "clean");
+    // The receipt is bound to the exact lock digest the check verified.
+    assert!(document["lockDigest"]
+        .as_str()
+        .expect("lockDigest")
+        .starts_with("sha256:"));
+    assert_eq!(before, after, "a clean drift check adds no files");
+}
+
+/// Copy a directory tree recursively (test helper; std has no stable
+/// dir copy).
+fn fs_extra_copy_dir(from: &std::path::Path, to: &std::path::Path) {
+    fs::create_dir_all(to).expect("create target");
+    for entry in fs::read_dir(from).expect("read source") {
+        let entry = entry.expect("entry");
+        let target = to.join(entry.file_name());
+        if entry.file_type().expect("type").is_dir() {
+            fs_extra_copy_dir(&entry.path(), &target);
+        } else {
+            fs::copy(entry.path(), &target).expect("copy file");
+        }
+    }
+}
+
+fn count_entries(root: &std::path::Path) -> usize {
+    fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        for entry in fs::read_dir(dir).expect("read dir") {
+            let entry = entry.expect("entry");
+            out.push(entry.path());
+            if entry.file_type().expect("type").is_dir() {
+                walk(&entry.path(), out);
+            }
+        }
+    }
+    let mut paths = Vec::new();
+    walk(root, &mut paths);
+    paths.sort();
+    // Count content identities, not metadata churn.
+    paths.len()
 }

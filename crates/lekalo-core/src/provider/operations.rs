@@ -3,22 +3,42 @@
 //! One variant per AIFHub `/aif-*` provider operation. Detection is not
 //! an operation: it is the manifest plus the installed-tool check the
 //! consumer performs. Every operation carries its effect class, its
-//! output schema identity, and its bounded option set, so a consumer
-//! can negotiate and construct argv without ever executing
-//! provider-returned command text.
+//! output schema identity, and its prerequisite flags, so a consumer
+//! can negotiate and construct argv from `docs/provider-contract.md`
+//! without ever executing provider-returned command text.
+//!
+//! Effect classes state the boundary-relevant truth:
+//!
+//! - `read-only` operations never write **when invoked through the
+//!   prescribed provider argv** in `docs/provider-contract.md`. For
+//!   `validate` that argv carries `--no-cache`, because the default
+//!   cached pipeline materializes `.lekalo/cache/cache.sqlite`.
+//! - `generated-artifacts` (only the mutating `generate` form) writes
+//!   into the adapter-declared managed write scopes verified against
+//!   the ownership plan, plus Lekalo's own `.lekalo/generated/**`
+//!   metadata. The protected homes (`openspec/**`, `lekalo/**`,
+//!   `lekalo.lock`, `.lekalo/{ir,cache,import,privacy,consumer}/**`)
+//!   are refused as `target.protected-path` (exit 3).
+//! - `read-or-check` marks the read-only drift check variant of
+//!   generation: it never writes and never needs an adapter.
+
 #![allow(non_snake_case)] // wire field names are the published contract
 
 use serde::Serialize;
 
-/// The closed effect classes. `read-only` operations never write; a
-/// violation is a conformance defect, not a policy decision.
-/// `generated-artifacts` operations write only into the governed
-/// `.lekalo/**` generated/lock custody and never into OpenSpec/HLV
-/// canonical paths.
+/// The closed effect classes. They describe the write surface of the
+/// operation **as invoked through the prescribed provider argv**.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum EffectClass {
+    /// Never writes under the prescribed argv.
     ReadOnly,
+    /// Writes Lekalo runtime metadata under the governed `.lekalo/**`
+    /// custody (caches, generated-intermediate metadata).
+    RuntimeMetadata,
+    /// The mutating generation form: adapter-declared managed write
+    /// scopes verified against the ownership plan, plus `.lekalo/**`
+    /// metadata. Protected homes are refused.
     GeneratedArtifacts,
 }
 
@@ -27,6 +47,7 @@ impl EffectClass {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::ReadOnly => "read-only",
+            Self::RuntimeMetadata => "runtime-metadata",
             Self::GeneratedArtifacts => "generated-artifacts",
         }
     }
@@ -37,18 +58,19 @@ impl EffectClass {
 pub struct Operation {
     /// The stable operation id the consumer selects.
     id: &'static str,
-    /// The effect class of the underlying command.
+    /// The effect class of the underlying command under the prescribed
+    /// argv.
     effect: EffectClass,
-    /// The output schema identity of the success payload: the exact
-    /// `lekalo/.../v<version>` discriminator on the wire.
+    /// The output schema identity of the success payload: either the
+    /// exact `lekalo/.../v<version>` discriminator embedded on the
+    /// wire, or — when the payload carries no discriminator — the
+    /// published closed describing schema of this contract series.
     outputSchema: &'static str,
-    /// The recognized native command (presentation form, operands in
-    /// `docs/provider-contract.md`).
-    command: &'static str,
     /// Whether the command requires a validated project selection.
     requiresProject: bool,
-    /// Whether the command requires an explicit target adapter
-    /// program.
+    /// Whether the mutating form requires an explicit target adapter
+    /// program. `generate`'s read-only `--check` form needs none (see
+    /// the `drift` companion operation).
     requiresAdapter: bool,
 }
 
@@ -66,11 +88,6 @@ impl Operation {
     /// The output schema identity.
     pub const fn output_schema(&self) -> &'static str {
         self.outputSchema
-    }
-
-    /// The recognized native command.
-    pub const fn command(&self) -> &'static str {
-        self.command
     }
 
     /// Whether a validated project selection is required.
@@ -91,7 +108,6 @@ pub const OPERATIONS: [Operation; crate::provider::version::OPERATION_COUNT] = [
         id: "context",
         effect: EffectClass::ReadOnly,
         outputSchema: crate::context::version::SCHEMA_VERSION,
-        command: "lekalo context --changed SYMBOLS --budget TOKENS",
         requiresProject: true,
         requiresAdapter: false,
     },
@@ -99,7 +115,13 @@ pub const OPERATIONS: [Operation; crate::provider::version::OPERATION_COUNT] = [
         id: "doctor",
         effect: EffectClass::ReadOnly,
         outputSchema: crate::doctor::version::SCHEMA_VERSION,
-        command: "lekalo doctor [--trace PATH]...",
+        requiresProject: true,
+        requiresAdapter: false,
+    },
+    Operation {
+        id: "drift",
+        effect: EffectClass::ReadOnly,
+        outputSchema: crate::provider::version::GENERATE_CHECK_SCHEMA,
         requiresProject: true,
         requiresAdapter: false,
     },
@@ -107,7 +129,6 @@ pub const OPERATIONS: [Operation; crate::provider::version::OPERATION_COUNT] = [
         id: "generate",
         effect: EffectClass::GeneratedArtifacts,
         outputSchema: crate::orchestration::SCHEMA_VERSION,
-        command: "lekalo generate --target TARGET [--dry-run] [--locked] -- PROGRAM [ARGS...]",
         requiresProject: true,
         requiresAdapter: true,
     },
@@ -115,7 +136,6 @@ pub const OPERATIONS: [Operation; crate::provider::version::OPERATION_COUNT] = [
         id: "impact",
         effect: EffectClass::ReadOnly,
         outputSchema: crate::impact::SCHEMA_VERSION,
-        command: "lekalo impact --changed --base REF [--head REF] | --worktree",
         requiresProject: true,
         requiresAdapter: false,
     },
@@ -123,7 +143,6 @@ pub const OPERATIONS: [Operation; crate::provider::version::OPERATION_COUNT] = [
         id: "readiness",
         effect: EffectClass::ReadOnly,
         outputSchema: crate::doctor::version::SCHEMA_VERSION,
-        command: "lekalo readiness --phase implement|generate|verify|release|done",
         requiresProject: true,
         requiresAdapter: false,
     },
@@ -131,7 +150,6 @@ pub const OPERATIONS: [Operation; crate::provider::version::OPERATION_COUNT] = [
         id: "status",
         effect: EffectClass::ReadOnly,
         outputSchema: crate::doctor::version::SCHEMA_VERSION,
-        command: "lekalo status",
         requiresProject: true,
         requiresAdapter: false,
     },
@@ -139,15 +157,13 @@ pub const OPERATIONS: [Operation; crate::provider::version::OPERATION_COUNT] = [
         id: "trace.export",
         effect: EffectClass::ReadOnly,
         outputSchema: crate::trace::version::SCHEMA_VERSION,
-        command: "lekalo trace export PATH",
         requiresProject: false,
         requiresAdapter: false,
     },
     Operation {
         id: "validate",
         effect: EffectClass::ReadOnly,
-        outputSchema: crate::validator::profile::PROFILE_SCHEMA_VERSION,
-        command: "lekalo validate [--module MODULE] [--strict]",
+        outputSchema: crate::provider::version::VALIDATION_REPORT_SCHEMA,
         requiresProject: true,
         requiresAdapter: false,
     },
@@ -155,7 +171,6 @@ pub const OPERATIONS: [Operation; crate::provider::version::OPERATION_COUNT] = [
         id: "verify",
         effect: EffectClass::ReadOnly,
         outputSchema: crate::orchestration::SCHEMA_VERSION,
-        command: "lekalo verify [--target TARGET]... [--changed] [--locked] [--trace PATH]",
         requiresProject: true,
         requiresAdapter: false,
     },
@@ -166,13 +181,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn vocabulary_is_closed_sorted_and_exactly_nine() {
+    fn vocabulary_is_closed_sorted_and_exactly_ten() {
         let ids: Vec<&str> = OPERATIONS.iter().map(|operation| operation.id()).collect();
         assert_eq!(
             ids,
             vec![
                 "context",
                 "doctor",
+                "drift",
                 "generate",
                 "impact",
                 "readiness",
@@ -215,51 +231,39 @@ mod tests {
                     "operation {} must be read-only",
                     operation.id()
                 );
+                assert!(
+                    !operation.requires_adapter(),
+                    "read-only operation {} needs no adapter",
+                    operation.id()
+                );
             }
         }
     }
 
     #[test]
-    fn schema_identities_are_pinned_to_current_contract_families() {
-        assert_eq!(
+    fn schema_identities_are_pinned_per_operation() {
+        let schema_of = |id: &str| {
             OPERATIONS
                 .iter()
-                .find(|operation| operation.id() == "context")
-                .expect("context")
-                .output_schema(),
-            "lekalo/context/v0.2.16"
+                .find(|operation| operation.id() == id)
+                .expect("operation")
+                .output_schema()
+        };
+        assert_eq!(schema_of("context"), "lekalo/context/v0.2.16");
+        assert_eq!(schema_of("impact"), "lekalo/impact/v0.2.16");
+        assert_eq!(schema_of("doctor"), "lekalo/doctor/v0.3.2");
+        assert_eq!(schema_of("status"), "lekalo/doctor/v0.3.2");
+        assert_eq!(schema_of("readiness"), "lekalo/doctor/v0.3.2");
+        assert_eq!(schema_of("verify"), "lekalo/orchestration/v0.2.16");
+        assert_eq!(schema_of("generate"), "lekalo/orchestration/v0.2.16");
+        assert_eq!(schema_of("trace.export"), "lekalo/trace-manifest/v0.2.16");
+        assert_eq!(
+            schema_of("validate"),
+            crate::provider::version::VALIDATION_REPORT_SCHEMA
         );
         assert_eq!(
-            OPERATIONS
-                .iter()
-                .find(|operation| operation.id() == "impact")
-                .expect("impact")
-                .output_schema(),
-            "lekalo/impact/v0.2.16"
-        );
-        assert_eq!(
-            OPERATIONS
-                .iter()
-                .find(|operation| operation.id() == "validate")
-                .expect("validate")
-                .output_schema(),
-            "lekalo/validation-profile/v0.4.0"
-        );
-        assert_eq!(
-            OPERATIONS
-                .iter()
-                .find(|operation| operation.id() == "verify")
-                .expect("verify")
-                .output_schema(),
-            "lekalo/orchestration/v0.2.16"
-        );
-        assert_eq!(
-            OPERATIONS
-                .iter()
-                .find(|operation| operation.id() == "generate")
-                .expect("generate")
-                .output_schema(),
-            "lekalo/orchestration/v0.2.16"
+            schema_of("drift"),
+            crate::provider::version::GENERATE_CHECK_SCHEMA
         );
         for operation in &OPERATIONS {
             assert!(

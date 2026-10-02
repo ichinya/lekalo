@@ -19,6 +19,9 @@
       "identity": "dev.lekalo.doctor@0.3.2"
     },
     {
+      "schemaVersion": "lekalo/generate-check/v0.6.3"
+    },
+    {
       "schemaVersion": "lekalo/impact/v0.2.16",
       "identity": "dev.lekalo.impact@0.2.16"
     },
@@ -33,6 +36,9 @@
     {
       "schemaVersion": "lekalo/validation-profile/v0.4.0",
       "identity": "dev.lekalo.validation-profile@0.4.0"
+    },
+    {
+      "schemaVersion": "lekalo/validation-report/v0.6.3"
     }
   ],
   "operations": [
@@ -47,6 +53,13 @@
       "id": "doctor",
       "effect": "read-only",
       "outputSchema": "lekalo/doctor/v0.3.2",
+      "requiresProject": true,
+      "requiresAdapter": false
+    },
+    {
+      "id": "drift",
+      "effect": "read-only",
+      "outputSchema": "lekalo/generate-check/v0.6.3",
       "requiresProject": true,
       "requiresAdapter": false
     },
@@ -88,7 +101,7 @@
     {
       "id": "validate",
       "effect": "read-only",
-      "outputSchema": "lekalo/validation-profile/v0.4.0",
+      "outputSchema": "lekalo/validation-report/v0.6.3",
       "requiresProject": true,
       "requiresAdapter": false
     },
@@ -105,6 +118,6 @@
     "maxContextBudgetTokens": 1000000,
     "maxExportBytes": 33554432
   },
-  "manifestDigest": "sha256:c2d7574cb14b1ba0f902d2f3ce0418b202b28f71ae17ff56da26e43a9b0159e9"
+  "manifestDigest": "sha256:1c6fd4ee49a78cf9630698866facde1706a7127fefe1dbeab96ab4779062e2b3"
 }
 }
