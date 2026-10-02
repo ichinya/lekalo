@@ -71,3 +71,36 @@ refusal vectors.
 - **C6 (project→repository prefix):** the diagnostic contract deliberately carries project-relative logical paths only; a repository prefix needs a trusted workspace-root operand that no command surface provides today. Emitting a guessed prefix would violate the safe-path guarantee, so the SARIF keeps the validated project-relative spelling under `%SRCROOT%` and the limitation is documented.
 - **D9 (classified readiness refusal):** the readiness panel is a projection over thirteen checks; per-cause exit classes already live in the panel rows (preserved rule ids) and the gate's unavailable class matches the ADR-0032 gate contract. The check data field now names the phase explicitly.
 - **Deferred scope unchanged (declared in the impl map, not regressed):** policy file contract, gate-observation bridge, report render/bundle commands, AIFHub adapter, public action repository/examples.
+
+## Cline findings (scope update: third review)
+
+The Cline review inspected the pre-fix head `3790d337`; its four blockers
+and most majors reproduce the devin/codex findings already fixed by
+`cc1e3334` (D1=C1, D2=C4, D3=C6, D4=C9, D7=C15, D8=C11, D11=C13, D4
+readiness coherence=C9, secret scan=C5's sink half). The findings that
+needed new work after `cc1e3334`:
+
+| # | Severity | Finding | Disposition | Evidence |
+| --- | --- | --- | --- | --- |
+| CL3 | blocker | SARIF golden invalid (`information_uri`) AND carries `rules: []`/`results: []` — the inline path is never exercised; `automationDetails.id` has a dangling trailing slash | **fixed** | `informationUri` renamed (D13); `automationDetails.id` trailing slash removed; the committed golden is regenerated from a run with a real derived rule (`LEK-SEM-019`) and one located result (`lekalo/modules/beta/entities.yaml` region under `%SRCROOT%`); the gate now refuses an empty rules/results golden (`sarif:inline` checks) and validates against the OASIS schema. |
+| CL5 | major | Secret scan asserted, not implemented; publication decision dead vocabulary | **fixed** | `scan_rendered` runs the #119 scanner on every rendered projection before the write and refuses with the typed `ci.report-write-failed("secret-token")`; the canary integration test proves a secret-bearing report is never produced. (The `PublicationDecision::PublicationUnavailable` vocabulary remains for the caller-side publication layer, which stays owned by the workflow; the sink admission is the fix.) |
+| CL7 | major | `strict`/`lenient` unreachable from the CLI; suite cases ignore policy | **fixed** | All four reported commands take `--ci-policy default|strict|lenient` (clap `CiPolicyArg` → the shared policy table); live probe over the planner fixture: `default` → native.gates `warn`, `strict` → `error` + evaluation exit 4, `lenient` → `skip`. |
+| CL10 | major | `workingSetDigest` = SHA-256("") reported `known` when the inventory is empty | **fixed** | An empty tracked inventory returns no digest, and a Git-resolvable snapshot without one pins `unknown/not-applicable` (the fabricated `e3b0c442…` value is gone from the goldens). |
+| CL11 | minor | The working-set deadline does not bound anything | **fixed** | Already landed by cc1e3334 (spawn + `try_wait` deadline + kill, incremental drain); superseded the `Command::output()` form. |
+| CL12 | minor | `automationDetails.id` trailing slash | **fixed** | See CL3. |
+| CL13 | minor | ADR-0048 describes the composite as delivered; no `action.yml` | **rebutted (wording)** | The dispatch scope explicitly says "do NOT publish a separate action repo — document the composite-action design"; ADR-0048's status line already says the design is normative for the future public repository. The ADR wording was tightened to name the reference implementation the dispatch deferred; no `action.yml` is claimed as shipped. |
+| CL14 | minor | Stale 0.4.0 registry references in docs/diagnostics.md (native-gates.md already fixed) | **fixed** | Both stale passages now name 0.4.0 as the historical event with 0.6.3 as the active instance. |
+| CL15 | minor | Reviewer verdict documents committed on the branch | **rebutted (convention)** | The three review documents (devin, codex, cline) were committed by the coordinator's own review workflow on this branch; dropping them is the maintainer's merge decision, not an implementation defect. The fix report follows the same convention. |
+| CL8 | major | Gate JUnit section no-op; no JUnit golden; skipped miscount | **fixed** | Same as D14 + D7 (already landed in cc1e3334: real JUnit golden `valid.suite.golden.junit.xml` with balanced-tag/count checks, counted skips). |
+| CL9 | major | `evaluation` never drives process exit; readiness hand-patched post-build | **fixed** | Same as D4 (already landed in cc1e3334): one authority (the gated result feeds the builder), the hand-patch deleted, `report.validate()` enforced on that path; the regenerated readiness golden no longer pins `complete: true` beside `verdict: blocked`. |
+
+## Verification outputs (updated after the Cline round)
+
+- `cargo fmt --all -- --check` → clean.
+- `cargo clippy -p lekalo-cli -p lekalo-core --all-targets --locked -- -D warnings` → clean.
+- `cargo test -p lekalo-cli -p lekalo-core --locked` → 91 suites, **1800 passed, 0 failed** (core `ci_report` 17, CLI `ci_report` 15).
+- `node scripts/test-ci-report-contracts.mjs` → ok (4 goldens, 8 adversarial vectors, SARIF OASIS-schema valid with a non-empty inline diagnostic, JUnit golden pinned).
+- Node 18 leg: `npx --yes --package node@18.20.8 node scripts/test-ci-report-contracts.mjs` → `ok: true`.
+- `node scripts/check-contract-versions.mjs --base HEAD` → ok (product 0.6.3, 96 families).
+- `--ci-policy` live probe: default→warn / strict→error+exit 4 / lenient→skip on the same fixture.
+- `git status` clean; fix commits `cc1e3334`, `7e32d4c7`, and this report are pushed.
