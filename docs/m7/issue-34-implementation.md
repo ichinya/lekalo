@@ -13,7 +13,12 @@ repository and the adapter/lifecycle/evidence work to
 aifhub-extension. This implementation delivers the complete
 lekalo-side split and nothing else: a published, versioned discovery
 contract over the existing CLI, the closed schema for it, a normative
-contract document, and boundary conformance tests. The evidence-file
+contract document, and boundary conformance tests. Fix round 1
+([issue-34-fix1.md](issue-34-fix1.md)) corrected the published
+declarations after independent review: the `validate` output schema
+pin, the drift-check negotiation, the `--no-cache` read-only argv,
+the truthful generation write-scope statement, and a tightened
+manifest schema with per-operation const tuples. The evidence-file
 schema (`.ai-factory/qa/<change-id>/providers/lekalo.json`), policy
 normalization, the provider-specific phase schedules, and evidence
 custody are extension-owned upstream dependencies (see below); the

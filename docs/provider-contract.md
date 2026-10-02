@@ -10,7 +10,12 @@ describes and constrains them.
 
 The contract identity is **`dev.lekalo.workflow-provider@0.6.3`**, wire
 discriminator **`lekalo/workflow-provider/v0.6.3`**, schema
-`contracts/provider-capabilities.schema.v0.6.3.json`. Per
+`contracts/provider-capabilities.schema.v0.6.3.json` — updated in fix
+round 1 (see [issue-34-fix1.md](issue-34-fix1.md)): the operation
+vocabulary is ten operations (the read-only `drift` check joined), the
+`validate`/`drift` receipts have their own published describing
+schemas, the prescribed `validate` argv carries `--no-cache`, and the
+schema enforces per-operation const tuples. Per
 [versioning.md](versioning.md), this contract takes the product version
 of its implementation commit; the upstream contracts it pins keep
 their own independent family versions.
