@@ -174,6 +174,8 @@ struct MetricsWire {
     largest_required_artifact: Option<ArtifactWire>,
     #[serde(rename = "largestRequiredSemanticFact", default)]
     largest_required_semantic_fact: Option<ArtifactWire>,
+    #[serde(rename = "edgeOccurrences", default)]
+    edge_occurrences: Option<StateU64>,
     #[serde(rename = "duplicateSupportingTokens")]
     duplicate_supporting_tokens: StateU64,
     #[serde(rename = "generatedMaintainedRatio", default)]
@@ -196,7 +198,9 @@ enum ArtifactWire {
         #[serde(rename = "estimatedTokens", default)]
         estimated_tokens: u64,
     },
-    StateOnly { state: String },
+    StateOnly {
+        state: String,
+    },
 }
 
 #[derive(Deserialize)]
@@ -219,6 +223,7 @@ struct RatioWire {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(dead_code)]
 struct SubjectWire {
     id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -245,6 +250,7 @@ struct SubjectWire {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(dead_code)]
 struct ProvenanceWire {
     #[serde(rename = "modelVersion", default)]
     model_version: String,
@@ -262,6 +268,7 @@ struct ProvenanceWire {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(dead_code)]
 struct PolicyPinWire {
     state: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -282,6 +289,7 @@ struct SummaryWire {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(dead_code)]
 struct BaselineWire {
     #[serde(rename = "schemaVersion")]
     schema_version: String,
@@ -388,7 +396,8 @@ pub fn parse(bytes: &[u8]) -> Result<DecodedBaseline, DiagnosticSet> {
         subjects,
         warnings: Vec::new(),
     };
-    Ok(DecodedBaseline { report,
+    Ok(DecodedBaseline {
+        report,
         metric_version: wire.metric_version,
         estimator_identity: wire.estimator.identity,
         estimator_version: wire.estimator.version,
@@ -461,39 +470,37 @@ fn decode_subject(subject: SubjectWire) -> Result<SubjectReport, DiagnosticSet> 
             return Err(diagnostic::input_invalid("baseline-ledger-sum"));
         }
     }
-    let decode_artifact = |artifact: Option<ArtifactWire>| -> Result<
-        StateValue<LargestArtifact>,
-        DiagnosticSet,
-    > {
-        match artifact {
-            Some(ArtifactWire::Known {
-                artifact_id,
-                role,
-                bytes,
-                estimated_tokens,
-            }) => {
-                if role != "model" && role != "source" && role != "target" {
-                    return Err(diagnostic::input_invalid("baseline-artifact-role"));
-                }
-                Ok(StateValue::Known(LargestArtifact {
+    let decode_artifact =
+        |artifact: Option<ArtifactWire>| -> Result<StateValue<LargestArtifact>, DiagnosticSet> {
+            match artifact {
+                Some(ArtifactWire::Known {
                     artifact_id,
-                    role: match role.as_str() {
-                        "source" => "source",
-                        "target" => "target",
-                        _ => "model",
-                    },
+                    role,
                     bytes,
                     estimated_tokens,
-                }))
+                }) => {
+                    if role != "model" && role != "source" && role != "target" {
+                        return Err(diagnostic::input_invalid("baseline-artifact-role"));
+                    }
+                    Ok(StateValue::Known(LargestArtifact {
+                        artifact_id,
+                        role: match role.as_str() {
+                            "source" => "source",
+                            "target" => "target",
+                            _ => "model",
+                        },
+                        bytes,
+                        estimated_tokens,
+                    }))
+                }
+                Some(ArtifactWire::StateOnly { state }) => match state.as_str() {
+                    "withheld" => Ok(StateValue::Withheld),
+                    "unsupported" => Ok(StateValue::Unsupported),
+                    _ => Ok(StateValue::Unknown),
+                },
+                None => Ok(StateValue::Unknown),
             }
-            Some(ArtifactWire::StateOnly { state }) => match state.as_str() {
-                "withheld" => Ok(StateValue::Withheld),
-                "unsupported" => Ok(StateValue::Unsupported),
-                _ => Ok(StateValue::Unknown),
-            },
-            None => Ok(StateValue::Unknown),
-        }
-    };
+        };
     Ok(SubjectReport {
         id: subject.id,
         module: subject.module,
@@ -502,9 +509,7 @@ fn decode_subject(subject: SubjectWire) -> Result<SubjectReport, DiagnosticSet> 
             transitive_dependencies: metrics.transitive_dependencies.decode()?,
             indirect_only_dependencies: metrics.indirect_only_dependencies.decode()?,
             required_modules: metrics.required_modules.decode()?,
-            context_closure_estimated_tokens: metrics
-                .context_closure_estimated_tokens
-                .decode()?,
+            context_closure_estimated_tokens: metrics.context_closure_estimated_tokens.decode()?,
             minimum_required_semantic_tokens: minimum_required,
             supporting_semantic_tokens: supporting,
             optional_source_tokens: metrics.optional_source_tokens.decode()?,
@@ -522,6 +527,10 @@ fn decode_subject(subject: SubjectWire) -> Result<SubjectReport, DiagnosticSet> 
             largest_required_semantic_fact: decode_artifact(
                 metrics.largest_required_semantic_fact,
             )?,
+            edge_occurrences: match metrics.edge_occurrences {
+                Some(state) => state.decode()?,
+                None => StateValue::Unknown,
+            },
             duplicate_supporting_tokens: metrics.duplicate_supporting_tokens.decode()?,
             generated_maintained_ratio: match metrics.generated_maintained_ratio {
                 Some(ratio) if ratio.state == "known" => {
@@ -542,9 +551,7 @@ fn decode_subject(subject: SubjectWire) -> Result<SubjectReport, DiagnosticSet> 
                 None => StateValue::Unknown,
             },
             minimum_safe_context_estimate: metrics.minimum_safe_context_estimate.decode()?,
-            empirically_safe_context_tokens: metrics
-                .empirically_safe_context_tokens
-                .decode()?,
+            empirically_safe_context_tokens: metrics.empirically_safe_context_tokens.decode()?,
         },
         assessment,
         over_by_tokens: subject.over_by_tokens.decode()?,

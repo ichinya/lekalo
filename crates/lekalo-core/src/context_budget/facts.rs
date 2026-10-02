@@ -336,7 +336,9 @@ pub(crate) fn collect_facts(
     // contracts; incoming policies, effects, and scenarios attach with
     // their own reasons.
     while let Some((semantic, reason)) = frontier.pop_front() {
-        if required_ids.len() as u64 > limits.max_facts || supporting_ids.len() as u64 > limits.max_facts {
+        if required_ids.len() as u64 > limits.max_facts
+            || supporting_ids.len() as u64 > limits.max_facts
+        {
             selection.complete = false;
             selection.gaps.push(FactGap::ClosureBounded);
             break;

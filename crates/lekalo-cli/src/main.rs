@@ -12,7 +12,6 @@ use lekalo_core::versioning::compatibility::CompatibilityReport;
 use lekalo_core::versioning::migration::{MigrationReceipt, MigrationService, VersioningFailure};
 use lekalo_core::versioning::{ModelTarget, TargetMalformation, VersionRegistry};
 use lekalo_core::DomainResult;
-use serde_json::Value as Json;
 use std::ffi::OsStr;
 use std::io::{self, Write};
 use std::process::ExitCode;
@@ -5276,17 +5275,9 @@ fn run_context_budget(args: ContextBudgetInvocation) -> DomainResult {
             let Some(profiles_path) = profiles.as_deref() else {
                 return DomainResult::usage_error();
             };
-            let bytes = match std::fs::read(profiles_path) {
+            let bytes = match read_bounded(profiles_path, "profile-file") {
                 Ok(bytes) => bytes,
-                Err(error) => {
-                    let detail = match error.kind() {
-                        io::ErrorKind::NotFound => "profile-file-missing",
-                        _ => "profile-file-unreadable",
-                    };
-                    return DomainResult::invalid(
-                        lekalo_core::context_budget::diagnostic::input_invalid(detail),
-                    );
-                }
+                Err(result) => return result,
             };
             let document = match lekalo_core::context_budget::ProfileDocument::parse(&bytes) {
                 Err(set) => {
@@ -5360,10 +5351,7 @@ fn run_context_budget(args: ContextBudgetInvocation) -> DomainResult {
                         comparison_json
                     )
                 } else {
-                    format!(
-                        "{{\"status\":\"valid\",\"contextBudget\":{}}}",
-                        canonical
-                    )
+                    format!("{{\"status\":\"valid\",\"contextBudget\":{}}}", canonical)
                 }
             };
             let human = report.to_markdown();
@@ -5376,17 +5364,9 @@ fn run_context_budget(args: ContextBudgetInvocation) -> DomainResult {
             // stays advisory unless the policy makes regression a denial.
             let baseline_verdict = match baseline.as_deref() {
                 Some(baseline_path) => {
-                    let bytes = match std::fs::read(baseline_path) {
+                    let bytes = match read_bounded(baseline_path, "baseline-file") {
                         Ok(bytes) => bytes,
-                        Err(error) => {
-                            let detail = match error.kind() {
-                                io::ErrorKind::NotFound => "baseline-file-missing",
-                                _ => "baseline-file-unreadable",
-                            };
-                            return DomainResult::invalid(
-                                lekalo_core::context_budget::diagnostic::input_invalid(detail),
-                            );
-                        }
+                        Err(result) => return result,
                     };
                     let base_report = match parse_baseline(&bytes) {
                         Ok(report) => report,
@@ -5444,61 +5424,28 @@ fn run_context_budget(args: ContextBudgetInvocation) -> DomainResult {
             };
             // The provenance pins ride with the report: the selected
             // policy digest (when one parsed) and the consumed baseline.
-            let report = match policy.as_deref() {
-                Some(policy_path) => {
-                    match std::fs::read(policy_path) {
-                        Ok(bytes) => {
-                            match lekalo_core::context_budget::policy::parse(&bytes) {
-                                Ok(parsed) => {
-                                    let digest = format!(
-                                        "sha256:{}",
-                                        lekalo_core::digest::sha256_hex(&bytes)
-                                    );
-                                    policy_digest_pin =
-                                        lekalo_core::context_budget::StateValue::Known(
-                                            digest,
-                                        );
-                                }
-                                Err(_) => {}
-                            }
-                        }
-                        Err(_) => {}
+            if let Some(policy_path) = policy.as_deref() {
+                if let Ok(bytes) = std::fs::read(policy_path) {
+                    if lekalo_core::context_budget::policy::parse(&bytes).is_ok() {
+                        let digest = format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes));
+                        policy_digest_pin = lekalo_core::context_budget::StateValue::Known(digest);
                     }
-                    let baseline_pin =
-                        match baseline_verdict {
-                            Some(_) => lekalo_core::context_budget::StateValue::Known(
-                                baseline.clone().unwrap_or_default(),
-                            ),
-                            None => lekalo_core::context_budget::StateValue::Unknown,
-                        };
-                    report.with_pins(policy_digest_pin.clone(), baseline_pin)
                 }
-                None => {
-                    let baseline_pin = match baseline_verdict {
-                        Some(_) => lekalo_core::context_budget::StateValue::Known(
-                            baseline.clone().unwrap_or_default(),
-                        ),
-                        None => lekalo_core::context_budget::StateValue::Unknown,
-                    };
-                    report.with_pins(policy_digest_pin.clone(), baseline_pin)
-                }
+            }
+            let baseline_pin = if baseline_verdict.is_some() {
+                lekalo_core::context_budget::StateValue::Known(baseline.clone().unwrap_or_default())
+            } else {
+                lekalo_core::context_budget::StateValue::Unknown
             };
+            let report = report.with_pins(policy_digest_pin.clone(), baseline_pin);
 
             // The mandatory policy is the only denied path, and it pins
             // the exact effective profile digest before any metric is
             // evaluated. The report always rides the envelope.
             if let Some(policy_path) = policy.as_deref() {
-                let bytes = match std::fs::read(policy_path) {
+                let bytes = match read_bounded(policy_path, "policy-file") {
                     Ok(bytes) => bytes,
-                    Err(error) => {
-                        let detail = match error.kind() {
-                            io::ErrorKind::NotFound => "policy-file-missing",
-                            _ => "policy-file-unreadable",
-                        };
-                        return DomainResult::invalid(
-                            lekalo_core::context_budget::diagnostic::input_invalid(detail),
-                        );
-                    }
+                    Err(result) => return result,
                 };
                 let policy = match lekalo_core::context_budget::policy::parse(&bytes) {
                     Err(set) => {
@@ -5528,7 +5475,11 @@ fn run_context_budget(args: ContextBudgetInvocation) -> DomainResult {
                 {
                     let denial =
                         lekalo_core::context_budget::diagnostic::policy_denied("*", reason);
-                    return DomainResult::denied_json(build_envelope(&comparison_json), human, denial);
+                    return DomainResult::denied_json(
+                        build_envelope(&comparison_json),
+                        human,
+                        denial,
+                    );
                 }
             }
 
@@ -5542,9 +5493,30 @@ fn run_context_budget(args: ContextBudgetInvocation) -> DomainResult {
 /// (context_budget::baseline::parse). Malformed input is invalid, never
 /// incomparable; the decoder enforces the exact state shapes, closed
 /// field sets, identity/metric-version/estimator pins, and arithmetic.
-fn parse_baseline(
-    bytes: &[u8],
-) -> Result<lekalo_core::context_budget::BudgetReport, DomainResult> {
+/// One bounded caller-input read: refuses oversized documents instead of
+/// buffering attacker- or accident-sized files (devin minor 5).
+fn read_bounded(path: &str, detail: &str) -> Result<Vec<u8>, DomainResult> {
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let kind = match error.kind() {
+                io::ErrorKind::NotFound => "file-missing",
+                _ => "file-unreadable",
+            };
+            return Err(DomainResult::invalid(
+                lekalo_core::context_budget::diagnostic::input_invalid(&format!("{detail}-{kind}")),
+            ));
+        }
+    };
+    if bytes.len() as u64 > lekalo_core::context_budget::version::MAX_INPUT_BYTES {
+        return Err(DomainResult::invalid(
+            lekalo_core::context_budget::diagnostic::input_invalid(&format!("{detail}-oversized")),
+        ));
+    }
+    Ok(bytes)
+}
+
+fn parse_baseline(bytes: &[u8]) -> Result<lekalo_core::context_budget::BudgetReport, DomainResult> {
     lekalo_core::context_budget::baseline::parse(bytes)
         .map_err(DomainResult::invalid)
         .map(|decoded| decoded.report)

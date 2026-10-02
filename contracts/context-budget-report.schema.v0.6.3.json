@@ -226,6 +226,7 @@
             "properties": { "class": { "const": "required-semantic" } }
           },
           "then": {
+            "required": ["reason"],
             "properties": {
               "reason": {
                 "enum": [
@@ -238,6 +239,18 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": { "class": { "const": "supporting-semantic" } }
+          },
+          "then": { "not": { "required": ["reason"] } }
+        },
+        {
+          "if": {
+            "properties": { "class": { "const": "optional-source" } }
+          },
+          "then": { "not": { "required": ["reason"] } }
         }
       ]
     },
@@ -374,6 +387,7 @@
             "scenarios",
             "largestRequiredArtifact",
             "largestRequiredSemanticFact",
+            "edgeOccurrences",
             "duplicateSupportingTokens",
             "generatedMaintainedRatio",
             "minimumSafeContextEstimate",
@@ -448,6 +462,7 @@
                 }
               ]
             },
+            "edgeOccurrences": { "$ref": "#/$defs/stateU64" },
             "duplicateSupportingTokens": { "$ref": "#/$defs/stateU64" },
             "generatedMaintainedRatio": {
               "oneOf": [

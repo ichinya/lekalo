@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/context-budget-policy.schema.v0.6.3.json",
+  "title": "Lekalo context-budget policy",
+  "description": "Closed contract of one caller-selected mandatory context-budget policy (issue #75). A policy upgrades specific advisory findings of one exactly pinned profile into gate denials: over-budget subjects, reduced required completeness, or baseline regressions with either-bound allowances (deny when either the absolute or the relative bound is exceeded; equality passes; the relative bound skips a zero base). The policy pins the effective-profile digest and id before any metric evaluation, so an advisory-local invocation can never be represented as passing a mandatory QA policy. A denied report still renders in full. Advisory by default: no policy means no denied path. The contract is independent of the product release, of the Model/IR/graph/effect contract versions, and of the diagnostic registry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "identity", "mode", "profileRef", "failOn"],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/context-budget-policy/v0.6.3"
+    },
+    "identity": {
+      "const": "dev.lekalo.context-budget-policy@0.6.3"
+    },
+    "mode": {
+      "description": "The closed policy-mode vocabulary; mandatory is the only selectable mode in this generation.",
+      "const": "mandatory"
+    },
+    "profileRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "digest"],
+      "properties": {
+        "id": { "$ref": "#/$defs/boundedIdentifier" },
+        "version": { "$ref": "#/$defs/boundedIdentifier" },
+        "digest": { "$ref": "#/$defs/sha256Digest" }
+      }
+    },
+    "failOn": {
+      "description": "The advisory findings the mandatory gate turns into denials; at least one.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": {
+        "enum": ["over-budget", "required-incomplete", "baseline-regression"]
+      }
+    },
+    "regressionLimits": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "$ref": "#/$defs/regressionLimit"
+      }
+    }
+  },
+  "$defs": {
+    "boundedIdentifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+    },
+    "sha256Digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "regressionLimit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["metric", "absoluteIncrease", "relativeIncrease"],
+      "properties": {
+        "metric": {
+          "enum": [
+            "minimumRequiredSemanticTokens",
+            "contextClosureEstimatedTokens"
+          ]
+        },
+        "absoluteIncrease": {
+          "description": "The absolute token growth that denies; equality passes.",
+          "$ref": "#/$defs/count"
+        },
+        "relativeIncrease": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["numerator", "denominator"],
+          "properties": {
+            "numerator": { "$ref": "#/$defs/count" },
+            "denominator": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          }
+        }
+      }
+    }
+  }
+}

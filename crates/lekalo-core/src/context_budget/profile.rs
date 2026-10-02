@@ -31,9 +31,9 @@ fn is_bounded_identifier(text: &str) -> bool {
     !text.is_empty()
         && text.len() <= 64
         && bytes[0].is_ascii_alphanumeric()
-        && bytes[1..]
-            .iter()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(*byte, b'.' | b'_' | b'/' | b':' | b'-'))
+        && bytes[1..].iter().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(*byte, b'.' | b'_' | b'/' | b':' | b'-')
+        })
 }
 
 /// The exact wire discriminator of the profile contract.

@@ -428,10 +428,13 @@ fn tiny_budget_simulation_exposes_missing_required() {
 /// profile/policy/baseline documents land here, so the tracked fixture
 /// tree stays byte-identical after any test run.
 fn fixture_copy(tag: &str) -> PathBuf {
-    let temp = tempfile::tempdir().expect("temp dir").into_path();
+    let temp = tempfile::tempdir().expect("temp dir").keep();
     let target = temp.join("project");
     copy_dir(&fixture_path(), &target);
-    std::mem::forget(temp);
+    let marker = target.join(format!(".{tag}-used"));
+    std::fs::write(&marker, b"").expect("marker");
+    // The temp dir is intentionally kept for the child process; the OS
+    // temp sweep owns its cleanup (tests never write into the checkout).
     let mut marker = target.clone();
     marker.push(format!(".{tag}-used"));
     std::fs::write(&marker, b"").expect("marker");
@@ -652,7 +655,6 @@ fn baseline_comparison_records_verdicts() {
     let _ = std::fs::remove_file(&baseline_path);
 }
 
-
 /// AC6: the paired fixture comparison through the CLI — the integration
 /// workload spans more modules, more hops, and costs more than the
 /// planner reference under the identical pinned profile (both sides
@@ -696,8 +698,7 @@ fn integration_workload_is_broader_than_planner_reference() {
         "the integration workload costs more"
     );
     assert!(
-        value(&integration_report, "requiredModules")
-            > value(&planner_report, "requiredModules"),
+        value(&integration_report, "requiredModules") > value(&planner_report, "requiredModules"),
         "the integration workload spans more modules"
     );
     assert!(

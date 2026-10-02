@@ -106,8 +106,7 @@ pub fn dependency_closure(
                 if visited.insert(target.as_str().to_owned()) {
                     frontier.push_back(target);
                 }
-                if visited.len() > node_cap || closure.transitive.len() > edge_cap
-                {
+                if visited.len() > node_cap || closure.transitive.len() > edge_cap {
                     closure.complete = false;
                     return closure;
                 }
@@ -126,8 +125,7 @@ pub fn dependency_closure(
         for edge in graph.direct_dependencies(node, filter) {
             let target = edge.key().to();
             if closure.transitive.insert(target.as_str().to_owned()) {
-                if visited.len() > node_cap || closure.transitive.len() > edge_cap
-                {
+                if visited.len() > node_cap || closure.transitive.len() > edge_cap {
                     closure.complete = false;
                     return closure;
                 }
@@ -265,12 +263,11 @@ mod graph_tests {
             &[root.id()],
             &graph,
             &filter,
-            ClosureLimits::effective(&crate::context_budget::profile::generic_profile(12_000).unwrap()),
+            ClosureLimits::effective(
+                &crate::context_budget::profile::generic_profile(12_000).unwrap(),
+            ),
         );
-        assert!(
-            closure.complete,
-            "the small fixture never hits a bound"
-        );
+        assert!(closure.complete, "the small fixture never hits a bound");
         // direct ⊆ transitive.
         for direct in &closure.direct {
             assert!(
@@ -293,9 +290,7 @@ mod graph_tests {
         assert!(closure.direct.contains("effect:planner.create_task"));
         assert!(closure.direct.contains("requirement:PLANNER-REQ-001"));
         assert!(closure.transitive.contains("effect:planner.create_task"));
-        assert!(closure
-            .transitive
-            .contains("requirement:PLANNER-REQ-001"));
+        assert!(closure.transitive.contains("requirement:PLANNER-REQ-001"));
     }
 
     /// A synthetic diamond (A->B, A->C, B->D, C->D): direct 2,

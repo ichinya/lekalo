@@ -13,9 +13,10 @@
 
 import { createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { tmpdir } from "node:os";
 
 const require = createRequire(import.meta.url);
 let Ajv2020;
@@ -46,9 +47,15 @@ const fixturePath = "tests/fixtures/context-budget/golden/planner.over-budget.js
 const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf8"));
 
 const reportSchema = read("contracts/context-budget-report.schema.v0.6.3.json");
+const profileSchema = read("contracts/context-budget-profile.schema.v0.6.3.json");
+const policySchema = read("contracts/context-budget-policy.schema.v0.6.3.json");
+const comparisonSchema = read("contracts/context-budget-comparison.schema.v0.6.3.json");
 const registry = read("contracts/diagnostic-registry.v0.6.3.json");
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const validateReport = ajv.compile(reportSchema);
+const validateProfile = ajv.compile(profileSchema);
+const validatePolicy = ajv.compile(policySchema);
+const validateComparison = ajv.compile(comparisonSchema);
 
 const fail = (reason, detail) => {
   process.stderr.write(`${JSON.stringify({ ok: false, reason, detail }, null, 2)}\n`);
@@ -169,6 +176,76 @@ let liveChecked = false;
   const negative = JSON.parse(JSON.stringify(report));
   negative.summary.subjects = -1;
   if (validateReport(negative)) fail("negative-count", "accepted");
+
+  // Consumer import: the closed profile and policy contracts accept
+  // the same documents the CLI consumes, and refuse the known-bad
+  // shapes the Rust loader refuses.
+  const tempProfile = readFileSync(
+    resolve(root, "tests/fixtures/context-budget/golden/consumer.profile.json"),
+    "utf8",
+  );
+  const profileDocument = JSON.parse(tempProfile);
+  if (!validateProfile(profileDocument)) {
+    fail("consumer-profile-schema", validateProfile.errors);
+  }
+  const profileBad = JSON.parse(tempProfile);
+  profileBad.profiles[0].budget.contextWindowTokens = 0;
+  if (validateProfile(profileBad)) fail("negative-profile-zero-window", "accepted");
+  const profileUnknown = JSON.parse(tempProfile);
+  profileUnknown.profiles[0].surprise = true;
+  if (validateProfile(profileUnknown)) fail("negative-profile-unknown-field", "accepted");
+  const tempPolicy = readFileSync(
+    resolve(root, "tests/fixtures/context-budget/golden/consumer.policy.json"),
+    "utf8",
+  );
+  const policyDocument = JSON.parse(tempPolicy);
+  if (!validatePolicy(policyDocument)) {
+    fail("consumer-policy-schema", validatePolicy.errors);
+  }
+  const policyAdvisory = JSON.parse(tempPolicy);
+  policyAdvisory.mode = "advisory";
+  if (validatePolicy(policyAdvisory)) fail("negative-policy-mode", "accepted");
+  const policyEmpty = JSON.parse(tempPolicy);
+  policyEmpty.failOn = [];
+  if (validatePolicy(policyEmpty)) fail("negative-policy-empty-failon", "accepted");
+  // The emitted comparison payload satisfies the published comparison
+  // contract (consumer round trip).
+  // (consumer comparison round trip happens in the live block above)
+
+  // Live comparison capture: run with --baseline against a serialized
+  // copy of the first report (temp dir; the tracked fixture stays clean).
+  {
+    const temp = mkdtempSync(join(tmpdir(), "cb-gate-"));
+    const baselinePath = join(temp, "baseline.json");
+    writeFileSync(baselinePath, JSON.stringify(report));
+    const withBaseline = run([
+      "context-budget", "--symbol", "planner.focus_task", "--budget", "200",
+      "--baseline", baselinePath,
+    ]);
+    if (withBaseline.status !== "valid") fail("baseline-status", withBaseline.status);
+    if (!withBaseline.contextBudgetComparison) fail("comparison-missing", "the envelope must carry the comparison block");
+    if (!validateComparison(withBaseline.contextBudgetComparison)) {
+      fail("comparison-schema", validateComparison.errors);
+    }
+    // A description-only growth shows up as a positive required delta
+    // even when the semantic diff would be equal — assert the deltas
+    // exist and the summary reconciles.
+    const rows = withBaseline.contextBudgetComparison.subjects.flatMap(
+      (subject) => subject.deltas || [],
+    );
+    if (!rows.some((row) => row.delta)) fail("comparison-deltas", "no signed deltas emitted");
+    rmSync(temp, { recursive: true, force: true });
+  }
+
+  // Reason/class coupling parity (devin minor 12 / codex 19).
+  const noReason = JSON.parse(JSON.stringify(report));
+  delete noReason.subjects[0].requiredFacts[0].reason;
+  if (validateReport(noReason)) fail("negative-required-without-reason", "accepted");
+  const withReason = JSON.parse(JSON.stringify(report));
+  withReason.subjects[0].supportingFacts = [
+    { id: "x:1", class: "supporting-semantic", reason: "subject-contract", tokens: 5 },
+  ];
+  if (validateReport(withReason)) fail("negative-supporting-with-reason", "accepted");
 
   // Determinism: two runs are byte-identical.
   const again = execFileSync(

@@ -32,8 +32,9 @@ version per `docs/versioning.md` and `scripts/check-contract-versions.mjs`.
 The active registry advances `0.4.0 → 0.6.3` with the eight registered
 `context.*` rules (`LEK-CONTEXT-001..008`), wire shape frozen. The
 validation-profile contract follows with its registry pin advanced and no
-rule-content change (the #69 successor precedent). The frozen `0.4.0`
-generation stays byte-identical and accepted. Positive and negative
+rule-content change (the #69 successor precedent). The predecessor files are renamed away per
+docs/versioning.md's no-old-data policy; the frozen 0.4.0 bytes remain recoverable
+from Git history. Positive and negative
 status vectors live in the Rust diagnostic tests, the core
 `context_budget::diagnostic` tests, and the Node gate.
 

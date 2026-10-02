@@ -285,10 +285,8 @@ pub fn plan(
             vec![graph.node(node_id).expect("resolved subject")];
         let root_ids: Vec<&NodeId> = root_nodes.iter().map(|node| node.id()).collect();
         let limits = closure::ClosureLimits::effective(&profile);
-        let selection_facts =
-            facts::collect_facts(&root_nodes, &graph, &effects, &context, limits);
-        let closure =
-            closure::dependency_closure(&root_ids, &graph, &EdgeFilter::new(), limits);
+        let selection_facts = facts::collect_facts(&root_nodes, &graph, &effects, &context, limits);
+        let closure = closure::dependency_closure(&root_ids, &graph, &EdgeFilter::new(), limits);
         let hops = closure::module_hop_attribution(&root_ids, &graph, &EdgeFilter::new(), limits);
 
         let complete = selection_facts.complete && closure.complete && hops.complete;
@@ -305,15 +303,16 @@ pub fn plan(
         // margin/framing; assessment and over-by compare that effective
         // cost against the available content budget, so a profile with
         // framing cannot slip its own overhead past the gate.
-        let effective_required = metrics::minimum_safe(
-            &profile,
-            StateValue::Known(required_tokens),
-        )
-        .value()
-        .copied()
-        .unwrap_or(required_tokens);
-        let (assessment, over_by) =
-            metrics::assess(complete, effective_required, profile.available_content_tokens);
+        let effective_required =
+            metrics::minimum_safe(&profile, StateValue::Known(required_tokens))
+                .value()
+                .copied()
+                .unwrap_or(required_tokens);
+        let (assessment, over_by) = metrics::assess(
+            complete,
+            effective_required,
+            profile.available_content_tokens,
+        );
         match assessment {
             Assessment::OverBudget => {
                 over_budget += 1;
@@ -389,15 +388,11 @@ pub fn plan(
         }
         breakdown.sort_by(|left, right| {
             (
-                std::cmp::Reverse(
-                    right.exclusive_required_tokens + right.shared_required_tokens,
-                ),
+                std::cmp::Reverse(right.exclusive_required_tokens + right.shared_required_tokens),
                 left.dependency.clone(),
             )
                 .cmp(&(
-                    std::cmp::Reverse(
-                        left.exclusive_required_tokens + left.shared_required_tokens,
-                    ),
+                    std::cmp::Reverse(left.exclusive_required_tokens + left.shared_required_tokens),
                     right.dependency.clone(),
                 ))
         });
@@ -411,7 +406,7 @@ pub fn plan(
             let mut module_weights: BTreeMap<String, u64> = BTreeMap::new();
             for row in &breakdown {
                 if let Some(row_module) = &row.module {
-                    if row_module != module.as_deref().unwrap_or(&String::new()) {
+                    if row_module != module.as_deref().unwrap_or("") {
                         *module_weights.entry(row_module.clone()).or_insert(0) +=
                             row.exclusive_required_tokens;
                     }
@@ -501,6 +496,35 @@ pub fn plan(
             None
         };
 
+        let edge_occurrences = {
+            // Distinct admitted edge occurrences over the closure walk:
+            // every outgoing edge of the subject set and its reached
+            // dependency-bearing nodes, counted once per canonical edge.
+            let mut edges: BTreeSet<(String, String, String, u32)> = BTreeSet::new();
+            let filter = EdgeFilter::new();
+            let mut queue: std::collections::VecDeque<&NodeId> = VecDeque::new();
+            let mut seen: BTreeSet<String> =
+                root_ids.iter().map(|id| id.as_str().to_owned()).collect();
+            for root in &root_ids {
+                queue.push_back(root);
+            }
+            while let Some(node) = queue.pop_front() {
+                for edge in graph.direct_dependencies(node, &filter) {
+                    let key = edge.key();
+                    edges.insert((
+                        key.from().as_str().to_owned(),
+                        key.relation().key().to_owned(),
+                        key.to().as_str().to_owned(),
+                        key.occurrence().get(),
+                    ));
+                    let target = key.to();
+                    if seen.insert(target.as_str().to_owned()) {
+                        queue.push_back(target);
+                    }
+                }
+            }
+            StateValue::Known(edges.len() as u64)
+        };
         let (policies_count, scenarios_count, effects_count) =
             semantic_counts_of(&selection_facts, &effects);
         let hops_max = hop_maximum(&hops);
@@ -517,7 +541,12 @@ pub fn plan(
                 },
                 required_modules: {
                     let mut subject_modules: Vec<String> = module.clone().into_iter().collect();
-                    subject_modules.extend(selection_facts.required.iter().filter_map(|fact| fact.module.clone()));
+                    subject_modules.extend(
+                        selection_facts
+                            .required
+                            .iter()
+                            .filter_map(|fact| fact.module.clone()),
+                    );
                     metrics::required_module_count(&selection_facts, &subject_modules)
                 },
                 context_closure_estimated_tokens: StateValue::Known(
@@ -526,6 +555,9 @@ pub fn plan(
                 minimum_required_semantic_tokens: StateValue::Known(required_tokens),
                 supporting_semantic_tokens: StateValue::Known(selection_facts.supporting_tokens()),
                 optional_source_tokens: if request.source_context {
+                    // The mapped-files recipe is declared but the artifact
+                    // evidence adapter is not wired in this generation:
+                    // honestly unsupported, with the registered warning.
                     StateValue::Unsupported
                 } else {
                     StateValue::Unknown
@@ -554,6 +586,7 @@ pub fn plan(
                 // is reported in its own field (never labeled a file).
                 largest_required_artifact: StateValue::Unknown,
                 largest_required_semantic_fact: largest_required_fact(&selection_facts),
+                edge_occurrences,
                 duplicate_supporting_tokens: metrics::duplicate_supporting_tokens(
                     &selection_facts.supporting,
                     &supporting_requests(&root_ids, &graph, &EdgeFilter::new()),
@@ -838,28 +871,30 @@ mod wire {
                 },
             ),
             (
+                "edgeOccurrences",
+                state_value_u64(&metrics.edge_occurrences),
+            ),
+            (
                 "largestRequiredSemanticFact",
                 match &metrics.largest_required_semantic_fact {
-                    StateValue::Known(artifact) => {
-                        crate::context::canonical::object(vec![
-                            (
-                                "artifactId",
-                                crate::context::canonical::string(&artifact.artifact_id),
-                            ),
-                            (
-                                "estimatedTokens",
-                                crate::context::canonical::number(artifact.estimated_tokens),
-                            ),
-                            ("role", crate::context::canonical::string(artifact.role)),
-                            (
-                                "bytes",
-                                match artifact.bytes {
-                                    Some(bytes) => crate::context::canonical::number(bytes),
-                                    None => "null".to_owned(),
-                                },
-                            ),
-                        ])
-                    }
+                    StateValue::Known(artifact) => crate::context::canonical::object(vec![
+                        (
+                            "artifactId",
+                            crate::context::canonical::string(&artifact.artifact_id),
+                        ),
+                        (
+                            "estimatedTokens",
+                            crate::context::canonical::number(artifact.estimated_tokens),
+                        ),
+                        ("role", crate::context::canonical::string(artifact.role)),
+                        (
+                            "bytes",
+                            match artifact.bytes {
+                                Some(bytes) => crate::context::canonical::number(bytes),
+                                None => "null".to_owned(),
+                            },
+                        ),
+                    ]),
                     state => crate::context::canonical::object(vec![(
                         "state",
                         crate::context::canonical::string(state.state()),
@@ -1196,7 +1231,10 @@ mod wire {
                         "graphIdentity",
                         crate::context::canonical::string(&report.provenance.graph_identity),
                     ),
-                    ("irDigest", crate::context::canonical::string(&report.provenance.ir_digest)),
+                    (
+                        "irDigest",
+                        crate::context::canonical::string(&report.provenance.ir_digest),
+                    ),
                     (
                         "modelVersion",
                         crate::context::canonical::string(&report.provenance.model_version),
@@ -1204,12 +1242,10 @@ mod wire {
                     (
                         "policy",
                         match &report.provenance.policy {
-                            StateValue::Known(digest) => {
-                                crate::context::canonical::object(vec![
-                                    ("digest", crate::context::canonical::string(digest)),
-                                    ("state", crate::context::canonical::string("known")),
-                                ])
-                            }
+                            StateValue::Known(digest) => crate::context::canonical::object(vec![
+                                ("digest", crate::context::canonical::string(digest)),
+                                ("state", crate::context::canonical::string("known")),
+                            ]),
                             state => crate::context::canonical::object(vec![(
                                 "state",
                                 crate::context::canonical::string(state.state()),

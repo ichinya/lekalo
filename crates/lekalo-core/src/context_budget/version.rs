@@ -53,6 +53,11 @@ pub const MAX_GAPS: usize = 256;
 /// The maximum size in bytes of one canonical report payload.
 pub const MAX_REPORT_BYTES: usize = 32 * 1024 * 1024;
 
+/// The maximum size in bytes of one caller-selected input document
+/// (profile, policy, baseline); bounded reads refuse oversized input
+/// instead of buffering it.
+pub const MAX_INPUT_BYTES: u64 = 16 * 1024 * 1024;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -75,5 +80,6 @@ mod tests {
         assert_eq!(MAX_COMPARISON_ROWS, 20_000);
         assert_eq!(MAX_GAPS, 256);
         assert_eq!(MAX_REPORT_BYTES, 32 * 1024 * 1024);
+        assert_eq!(MAX_INPUT_BYTES, 16 * 1024 * 1024);
     }
 }

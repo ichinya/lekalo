@@ -50,8 +50,8 @@ pub fn minimum_safe_estimate(
     let scaled = (i128::from(required_tokens) * i128::from(margin_numerator)
         + i128::from(margin_denominator)
         - 1)
-        .checked_div(i128::from(margin_denominator))
-        .ok_or_else(|| diagnostic::input_invalid("profile-margin-overflow"))?;
+    .checked_div(i128::from(margin_denominator))
+    .ok_or_else(|| diagnostic::input_invalid("profile-margin-overflow"))?;
     let scaled = scaled.max(0);
     let total = scaled.saturating_add(i128::from(framing_tokens));
     u64::try_from(total).map_err(|_| diagnostic::input_invalid("profile-estimate-overflow"))

@@ -65,6 +65,10 @@ pub struct SubjectMetrics {
     /// The largest single required semantic fact; never presented as a
     /// file or artifact.
     pub largest_required_semantic_fact: StateValue<LargestArtifact>,
+    /// The distinct admitted dependency-edge occurrences of the closure
+    /// (M1 edge series; occurrences dedup per (from, relation, to,
+    /// occurrence) in the accepted graph).
+    pub edge_occurrences: StateValue<u64>,
     pub duplicate_supporting_tokens: StateValue<u64>,
     pub generated_maintained_ratio: StateValue<OwnershipRatio>,
     pub minimum_safe_context_estimate: StateValue<u64>,
@@ -94,6 +98,7 @@ impl Default for SubjectMetrics {
             scenarios: StateValue::Unknown,
             largest_required_artifact: StateValue::Unknown,
             largest_required_semantic_fact: StateValue::Unknown,
+            edge_occurrences: StateValue::Unknown,
             duplicate_supporting_tokens: StateValue::Unknown,
             generated_maintained_ratio: StateValue::Unknown,
             minimum_safe_context_estimate: StateValue::Unknown,
