@@ -8,7 +8,7 @@
  * (AI_WORKSPACE_BIN or --upstream); run from the repo root.
  *
  * The binary is intentionally NOT built or downloaded by this gate:
- * CI runs the dependency-free phases only (AI_WORKSPACE_BIN unset and
+ * CI runs the dependency-free phases (AI_WORKSPACE_BIN unset and
  * upstream absent skips the binary phases with an explicit recorded
  * reason — never a silent pass), while a developer with the pinned
  * checkout built (cargo build) runs the full proof locally.

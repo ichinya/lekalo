@@ -280,39 +280,59 @@ What the hook guarantees:
 2. **Typed explanations.** Each affected role carries an ordered,
    origin-tagged chain — `public artifact changed → core service →
    declared subscription → affected role` — with origins
-   `declared-service-link`, `declared-artifact-dependency`, and (when
-   explicitly supplied and reviewed) `lekalo-impact`. "No declared
+   `declared-service-link` and `declared-artifact-dependency`. The
+   `lekalo-impact` origin is reserved for a future reviewed impact
+   input (not implemented — see the provenance rules). "No declared
    subscribers" is stated as such; it never proves "no impact".
-3. **Honest delivery.** Upstream `event create` is neither transactional
+3. **Validated inputs and outputs.** The routing manifest is validated
+   closed before use (path/role/version grammars, route enums, bounded
+   counts), the emitted envelope is validated against its contract
+   shape before it is printed or sent, and the public digest/event key
+   binds only the neutral public routing projection — private local
+   bindings are outside the hash domain.
+4. **Honest delivery.** Upstream `event create` is neither transactional
    (separate inserts for groups/targets/artifacts, verified at the pin)
    nor idempotent, and has no machine-readable receipt. Therefore: the
    event key (a `sha256` over the canonical public identity: producer,
-   base/head, artifact changes, manifest digest) is recorded in a
-   single-writer local outbox **before** sending; any spawn failure,
-   timeout, or nonzero exit is recorded `unknown-delivery` and retried
-   only after keyed reconciliation; ordinary repeats after verified
-   delivery are no-ops. This is at-most-moderate confidence, not
+   base/head, artifact changes, public routing projection) is recorded
+   in a single-writer local outbox **before** sending; any spawn
+   failure, timeout, or nonzero exit is recorded `unknown-delivery`
+   and a later attempt reconciles by key through the read surface
+   before re-sending; ordinary repeats after verified delivery are
+   no-ops. Before any create, a recipient preflight requires the
+   workspace's actual linked dependents to be exactly the reviewed
+   consumer set — an unreviewed linked project refuses the send, and a
+   readback verifies the exact target set (no unreviewed recipients,
+   every reviewed linked consumer present) plus the projected
+   kind/title/body/key. This is at-most-moderate confidence, not
    exactly-once.
-4. **Closed results.** The hook prints one closed JSON result (states
+5. **No-op ranges are not events.** A revision range with no approved-
+   path change closes as `no-change` and never reaches upstream.
+6. **Closed results.** The hook prints one closed JSON result (states
    `planned|sending|delivered|unknown-delivery|refused|disabled|
-   unavailable`) and never echoes upstream stdout/stderr, which can
-   contain real paths and names. Capture upstream output privately, if at
-   all.
-5. **No silent scope growth.** The hook refuses to send when the widening
+   unavailable|no-change`) and never echoes upstream stdout/stderr,
+   which can contain real paths and names; every failure path — usage,
+   filesystem, unexpected exception — emits a bounded safe code instead
+   of a stack or reflected value. Capture upstream output privately,
+   if at all.
+7. **No silent scope growth.** The hook refuses to send when the widening
    environment flags are enabled, when the upstream binary is missing
    (`unavailable`), or when the routing manifest has not declared the send
    policy admitted. Production emission additionally requires the privacy
    authority admission of the workspace change-event artifact kind — an
    open, documented prerequisite (see [Upstream and authority gaps](#upstream-and-authority-gaps)).
 
-Upstream receives only a bounded serialized projection of the envelope as
+Upstream receives a bounded serialized projection of the envelope as
 `--title`/`--body` (never a raw diff, private filename, or free user
-prose; transport-safe length bound enforced). Upstream snapshots all
-direct source dependents into the event's target rows; the hook reads the
-event back through the group-scoped MCP tools and verifies the expected
-targets before recording `delivered`. Upstream's affected-set is the
-conservative declared candidate set — it is presentation, not a proof of
-total impact.
+prose; transport-safe length bound enforced) — carrying the event key,
+contract identities with old/new digests, affected roles, and the
+accepted authority reference, so a consumer can verify what it received
+against the envelope schema. Upstream snapshots all direct source
+dependents into the event's target rows; the hook verifies the exact
+target set (no unreviewed recipients, every reviewed linked consumer
+present) through the group-scoped MCP tools before recording
+`delivered`. Upstream's affected-set is the conservative declared
+candidate set — it is presentation, not a proof of total impact.
 
 ## Provenance rules
 
@@ -343,11 +363,12 @@ total impact.
   an explicit pending/stale result; regex-derived edges never satisfy
   semantic or trace confirmation gates.
 - **Semantic evidence (optional family).** `lekalo --json impact`
-  output may augment explanations only after explicit review; the hook
-  embeds only reason ids, confidence, and completeness from a
-  closed-subset extraction — never raw impact JSON, which can name
-  private targets. An unresolved protocol file is never reinterpreted as
-  zero semantic impact.
+  output may augment explanations only after explicit review. **Not yet
+  implemented:** the hook has no impact input or decoder today; when
+  one is added it must embed only reason ids, confidence, and
+  completeness from a closed-subset extraction — never raw impact JSON,
+  which can name private targets. An unresolved protocol file is never
+  reinterpreted as zero semantic impact.
 - **Workspace notes.** At most a short pointer to a committed schema/ADR
   plus provenance. Never authoritative entity definitions, compiled IR,
   copied semantic graphs, or a second editable model (B1; gate-checked
@@ -355,17 +376,17 @@ total impact.
 
 ## Privacy boundary enforcement
 
-Every boundary has a concrete enforcement and a gate that fails the build
-when violated:
+Every boundary has a concrete enforcement; the proofs named below are
+exactly the committed gates (no overstated test names):
 
 | Boundary | Enforcement | Proven by |
 | --- | --- | --- |
-| B1 not canonical storage | Share allowlist excludes model/IR paths; notes are pointers only | hook gate inventory + deletion test |
-| B2 committed schemas win | Digest binding to public revision; DB bytes never a schema source | hook gate digest-mismatch test |
-| B3 opt-in sharing | Config-before-init; sentinel files stay unshared | hook gate sentinel test |
-| B4 no project-wide access | Forced-off env flags; sentinel unshared path unreadable even with hostile inherited env | hook gate (upstream denial verified at pin) |
+| B1 not canonical storage | Share allowlist excludes model/IR paths; notes are pointers only; zero Rust integration | gate share inventory (fixture manifests declare `share: []` before init; only the approved schema is shared); the external database is disposable by construction — no Lekalo source depends on it (zero `crates/` diff) |
+| B2 committed schemas win | Digest binding to public revision; DB bytes never a schema source | hook gate exact-byte read: the group-scoped read must equal the committed bytes by sha256 (a divergent share fails the gate); the DB itself is never read as a schema source |
+| B3 opt-in sharing | Config-before-init; sentinel files stay unshared | hook gate sentinel test (config-first registration; README/package/private sentinels invisible) |
+| B4 no project-wide access | Forced-off env flags; wrong-group and single-project denials; project-wide tools confined to shares | hook gate: wrong-group read denied, single-project read denied, tree/grep confined with positive controls, write tool refuses, hostile inherited flags refuse the send |
 | B5 no private identity out | Closed envelope schema; closed result; leak probes over every public channel, including failure paths | hook gate probes + `test-ai-workspace-contracts.mjs` |
-| B6 CodeGraph provenance | Provenance wrapper; stale/refused evidence states | benchmark protocol + doc rules |
+| B6 CodeGraph provenance | Provenance wrapper; stale/refused evidence states | benchmark protocol (asserted staleness + revocation gates) + doc rules |
 
 The leak-probe discipline follows the #118 pattern
 (`scripts/test-pilot-brownfield-ts.mjs`): closed member allowlists, the
@@ -418,7 +439,7 @@ database directly or by widening scopes:
 | Criterion | Status | Where proven |
 | --- | --- | --- |
 | AC1 recommended group/setup with role aliases | **Lekalo-side verified** — documented here; executed against the pinned binary by the integration gate (config-first registration, group scope) | this doc + `scripts/test-ai-workspace-hook.mjs` |
-| AC2 protocol change → explainable affected-project event | **Lekalo-side verified** — hook builds the envelope with typed role reasons; gate delivers a real upstream event and verifies readback targets and old/new digests | hook gate phase E2E |
+| AC2 protocol change → explainable affected-project event | **Lekalo-side verified** — hook builds the envelope with typed role reasons; gate delivers a real upstream event, verifies the exact readback target set (no unreviewed recipients), and the event body carries the contract identities with old/new digests for consumer verification | hook gate phase F |
 | AC3 consumer agent reads shared schemas | **Lekalo-side verified** — group-scoped MCP from a consumer root reads exact approved schema bytes; wrong-group and single-project denials proven | hook gate |
 | AC4 fully functional without AI Workspace | **Lekalo-side verified** — no Rust dependency; hook reports `disabled`/`unavailable` without mutating Lekalo behavior | hook gate optionality phase |
 | AC5 MCP scope/sensitive policy never silently widened | **Lekalo-side verified** — forced-off flags, direct-call denial, sentinel unreadable, project-wide/write tools absent from tool list | hook gate |
