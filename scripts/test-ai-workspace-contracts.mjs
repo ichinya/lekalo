@@ -184,9 +184,37 @@ for (const artifactPath of routing.approvedPaths) {
   probe.path = artifactPath;
   if (!validateEnvelope({ ...envelope, artifacts: [probe] })) fail("routing-path-grammar", artifactPath);
 }
-const routingDigest = sha256Ref(readText(ROUTING));
+// The envelope's manifest digest binds the NEUTRAL PUBLIC ROUTING
+// PROJECTION (sorted approved paths and public route members only),
+// not the raw fixture bytes — installation-local bindings and unknown
+// extra members must stay outside the public hash domain. Derived
+// independently here from the fixture, exactly as the schema
+// description declares.
+const canonicalOf = (value) => {
+  if (Array.isArray(value)) return `[${value.map(canonicalOf).join(",")}]`;
+  if (value && typeof value === "object") {
+    const keys = Object.keys(value).sort();
+    return `{${keys.map((key) => `${JSON.stringify(key)}:${canonicalOf(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+};
+const projection = {
+  manifestKind: routing.manifestKind,
+  manifestVersion: routing.manifestVersion,
+  approvedPaths: [...routing.approvedPaths].sort(),
+  routes: [...routing.routes]
+    .map((route) => ({
+      role: route.role,
+      origin: route.origin,
+      dependencyKind: route.dependencyKind,
+      reaction: route.reaction,
+      watches: [...(route.watches ?? ["protocol", "schema"])].sort(),
+    }))
+    .sort((left, right) => left.role.localeCompare(right.role)),
+};
+const routingDigest = sha256Ref(Buffer.from(canonicalOf(projection), "utf8"));
 if (envelope.manifest.digest !== routingDigest) {
-  fail("manifest-digest", `example pins ${envelope.manifest.digest}, fixture bytes hash ${routingDigest}`);
+  fail("manifest-digest", `example pins ${envelope.manifest.digest}, projection digest ${routingDigest}`);
 }
 
 // 9. The limitation vocabulary is an enum in the schema (closed set)

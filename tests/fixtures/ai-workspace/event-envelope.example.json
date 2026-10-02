@@ -1,52 +1,35 @@
 {
   "schemaVersion": "lekalo/ai-workspace-event/v0.6.3",
   "identity": "dev.lekalo.ai-workspace-event@0.6.3",
-  "eventKey": "sha256:a4df18144b0c6ebbafc918d59ae8000df687c73aaeadeb563a2e821987298fb4",
   "eventKind": "protocol-change",
   "source": {
     "producer": "lekalo-core",
-    "base": "1d1f14a79e99fba5c02a9ad75a1b9be6875cea27",
-    "head": "3d7cfcfb87576147ec0b43dcc2380ddfeb677193",
+    "base": "99b3ce026cac0f81b7b32eb58670630291e145b0",
+    "head": "4a084aab03376452b42f37427a146043537d2c99",
     "clean": true,
     "producerVersion": "0.6.3",
     "hookVersion": "0.6.3"
   },
   "manifest": {
     "manifestVersion": "0.6.3",
-    "digest": "sha256:81e47b9588ad88efb2d40b1ec6f9f2aef3b9f203af1794a88223dc9a8783c818",
+    "digest": "sha256:57194f2e110ba3d7276a7df176421ff4af5e3ffaa3e891f156286ce9d545047d",
     "routes": 3
   },
   "artifacts": [
     {
-      "path": "contracts/target-protocol.schema.v0.3.2.json",
-      "change": "modified",
-      "old": {
-        "name": "dev.lekalo.protocol",
-        "version": "0.3.2",
-        "state": "present",
-        "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
-      },
-      "new": {
-        "name": "dev.lekalo.protocol",
-        "version": "0.3.2",
-        "state": "present",
-        "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
-      }
-    },
-    {
       "path": "docs/target-protocol.md",
       "change": "modified",
       "old": {
-        "name": "lekalo.target-protocol-doc",
+        "name": "lekalo.target-protocol-md",
         "version": "unknown",
         "state": "present",
-        "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+        "digest": "sha256:167b9ce72f79ddbfeeace6a3f9ee5fa650f84ef967a1149266d62a84f2f0e929"
       },
       "new": {
-        "name": "lekalo.target-protocol-doc",
+        "name": "lekalo.target-protocol-md",
         "version": "unknown",
         "state": "present",
-        "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+        "digest": "sha256:55cb011402e755b8977075f15441afc2699caa572720a530a38b5763927dd6ba"
       }
     }
   ],
@@ -57,12 +40,12 @@
         "explanation": [
           {
             "origin": "public-artifact-changed",
-            "detail": "contracts/target-protocol.schema.v0.3.2.json modified",
-            "sourcePath": "contracts/target-protocol.schema.v0.3.2.json"
+            "detail": "docs/target-protocol.md modified",
+            "sourcePath": "docs/target-protocol.md"
           },
           {
             "origin": "declared-service-link",
-            "detail": "consumer subscribes to producer protocol changes",
+            "detail": "brownfield-consumer subscribes to lekalo-core protocol/schema changes",
             "sourceRole": "lekalo-core",
             "dependencyKind": "depends_on",
             "reaction": "inspect"
@@ -74,29 +57,12 @@
         "explanation": [
           {
             "origin": "public-artifact-changed",
-            "detail": "contracts/target-protocol.schema.v0.3.2.json modified",
-            "sourcePath": "contracts/target-protocol.schema.v0.3.2.json"
-          },
-          {
-            "origin": "declared-service-link",
-            "detail": "consumer subscribes to producer protocol changes",
-            "sourceRole": "lekalo-core",
-            "dependencyKind": "depends_on",
-            "reaction": "inspect"
-          }
-        ]
-      },
-      {
-        "role": "aifhub-extension",
-        "explanation": [
-          {
-            "origin": "public-artifact-changed",
             "detail": "docs/target-protocol.md modified",
             "sourcePath": "docs/target-protocol.md"
           },
           {
             "origin": "declared-service-link",
-            "detail": "consumer subscribes to producer schema changes",
+            "detail": "greenfield-consumer subscribes to lekalo-core protocol/schema changes",
             "sourceRole": "lekalo-core",
             "dependencyKind": "depends_on",
             "reaction": "inspect"
@@ -108,6 +74,7 @@
     "limitations": [
       "direct-links-only",
       "no-transitive-traversal",
+      "no-schema-version-filter",
       "compatibility-unknown",
       "upstream-receipt-unavailable"
     ]
@@ -125,5 +92,6 @@
       "version": "0.3.2",
       "digest": "sha256:5a80966fa628fd4c9452325d34e7191f40ebb7a9cb49185c91d413861fb18384"
     }
-  }
+  },
+  "eventKey": "sha256:8f981ac4edb6e7a9de80aa95c6cb78a2836240fe693f8e258e7e13a43e99df38"
 }

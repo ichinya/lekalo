@@ -256,7 +256,7 @@ const loadManifest = (manifestArg) => {
   }
   const roles = parsed.routes.map((route) => route.role);
   if (new Set(roles).size !== roles.length) return { error: "manifest-duplicate-roles" };
-  return { manifest: parsed, projection: publicRoutingProjection(parsed), digest: sha256Ref(Buffer.from(JSON.stringify(publicRoutingProjection(parsed)), "utf8")) };
+  return { manifest: parsed, projection: publicRoutingProjection(parsed), digest: sha256Ref(Buffer.from(canonicalize(publicRoutingProjection(parsed)), "utf8")) };
 };
 
 // ---------------------------------------------------------------------------
