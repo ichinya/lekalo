@@ -26,8 +26,8 @@ tests/fixtures/suite/
     run-manifest.schema.v1.0.0.json  repeat-run manifest
     golden-update.schema.v1.0.0.json update plan
   v1/
-    catalog.json                     exact case inventory (20 cases) + imported evidence
-    run-manifest.json                pinned cold-1 execution manifest (39 rows)
+    catalog.json                     exact case inventory (21 cases) + imported evidence
+    run-manifest.json                pinned two-lane execution manifest (cold-1 + cold-2, 41 rows each)
     coverage/diagnostic-rules.json   all 449 active registry rules with evidence state
     coverage/kinds.json              all 12 definition kinds with witnesses
     minimal/project/                 F01 minimal project + 4 golden envelopes
@@ -133,7 +133,7 @@ node scripts/run-golden.mjs --case <id> --verify
 
 | AC | Verification |
 | --- | --- |
-| AC1 byte-stable repeat runs | `node scripts/test-golden-determinism.mjs`: 3 lanes x 20 cases (39 rows), full manifest equality incl. envelope digests, pollution detection, committed `run-manifest.json` cross-check |
+| AC1 byte-stable repeat runs | `node scripts/test-golden-determinism.mjs`: 3 lanes x 21 cases (41 rows), full manifest equality incl. per-stream digests, pollution detection, committed two-lane `run-manifest.json` cross-check |
 | AC2 path/newline normalization | `node scripts/test-golden-normalization.mjs` (LF-only bytes, path policy, UTF-8/order and case-fold controls) + the same gates wired into `build-test` on ubuntu/windows/macos; descriptors are repo-relative so producer bytes are OS-independent |
 | AC3 positive AND negative per rule | `node scripts/test-golden-diagnostic-coverage.mjs`: every one of the 449 active rules has an evidence row; all 19 suite pairs execute both polarities freshly; family-fixture paths proven present; negative controls (drop a row, corrupt a pair) fail the gate |
 | AC4 adapter conformance reuses shared fixtures | `node scripts/test-golden-adapter-shared.mjs`: shared IR/scenario/trace digests pinned across `fixture.rs` includes, catalog evidence, and goldens; unregistered copies rejected |
@@ -151,7 +151,7 @@ Linux, Windows, and macOS.
 - `node scripts/test-golden-catalog.mjs` — ok (Ajv 8.17.1)
 - `node scripts/test-golden-normalization.mjs` — ok (214+ files)
 - `node scripts/test-golden-hygiene.mjs` — ok
-- `node scripts/run-golden.mjs --verify` — ok (39 rows)
+- `node scripts/run-golden.mjs --verify` — ok (41 rows, 4 byte-identical golden roles)
 - `node scripts/test-golden-determinism.mjs` — ok (3 lanes)
 - `node scripts/test-golden-diagnostic-coverage.mjs` — ok (449 rules)
 - `node scripts/test-golden-adapter-shared.mjs` — ok

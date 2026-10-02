@@ -99,15 +99,15 @@ jobs:
           node scripts/test-privacy-authorization-subject.mjs
           node scripts/test-fixture-provenance.mjs
       - name: Run the golden fixture suite catalog gates (issue #90)
-        # Catalog/normalization/hygiene/adapter-shared are Node-only.
-        # The update-policy rehearsal needs the cargo-built CLI, so it
-        # runs in build-test with the other binary-dependent gates.
+        # Catalog/hygiene/adapter-shared are Node-only. The
+        # normalization gate's newline/separator vectors execute the
+        # cargo-built CLI, so it runs in build-test with the other
+        # binary-dependent gates (the update-policy rehearsal too).
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
         run: |
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-golden-catalog.mjs
-          node scripts/test-golden-normalization.mjs
           node scripts/test-golden-hygiene.mjs
           node scripts/test-golden-adapter-shared.mjs
           node scripts/check-structure.mjs
@@ -234,13 +234,16 @@ jobs:
       - name: Run the golden fixture suite gates (issue #90)
         # The suite runs on every OS: byte-stable determinism lanes,
         # per-rule paired coverage with fresh execution receipts, the
-        # P0 planner chain, and the digest-bound update-flow rehearsal
-        # all execute the cargo-built binary in external sandboxes.
+        # P0 planner chain, the newline/separator normalization vectors
+        # (they execute the CLI), and the digest-bound update-flow
+        # rehearsal — all in external sandboxes against the binary
+        # built above.
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
         timeout-minutes: 20
         run: |
           node scripts/run-golden.mjs --verify
+          node scripts/test-golden-normalization.mjs
           node scripts/test-golden-determinism.mjs
           node scripts/test-golden-diagnostic-coverage.mjs
           node scripts/test-golden-planner-e2e.mjs

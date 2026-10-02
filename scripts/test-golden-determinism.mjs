@@ -54,7 +54,7 @@ function suiteTreeDigests() {
 }
 
 const before = suiteTreeDigests();
-const root = realpathSync(mkdtempSync(join(tmpdir(), "lekalo-golden-det-")));
+const root = realpathSync.native(mkdtempSync(join(tmpdir(), "lekalo-golden-det-")));
 const LANES = ["cold-1", "cold-2", "warm-cache"];
 
 /** Execute one case in one lane; return the outcome row(s). */

@@ -10,9 +10,13 @@
 //      the SAME sandbox project, symbol chosen from its own IR bytes
 //   3. semantic diff of that project against a real mutation of itself
 //      (equal-formatting shared control; seeds must name the mutation)
-//   4. scenario corpus compiled via the node-scenario-runner lane
-//      (dry-run/apply/verify exchanges, run records, rerun stability)
-//   5. final trace manifest validates and carries the chain revisions
+//   4. the committed six-scenario corpus runs through the real
+//      dry-run/apply/verify adapter lane (documented residual: the
+//      corpus is the catalog-registered shared input, not bytes
+//      produced by stages 1-3)
+//   5. the canonical trace golden validates and exports stably
+//      (documented residual: a chain-built trace needs the G05
+//      producer work recorded in the research)
 //
 // Every stage writes only into a fresh external sandbox. Any missing
 // stage, digest mismatch, or canned substitution fails the gate.
@@ -36,7 +40,7 @@ const {
 const binary = join(repoRoot, "target", "debug", process.platform === "win32" ? "lekalo.exe" : "lekalo");
 if (!existsSync(binary)) failGate("golden-planner-e2e", [{ reason: "binary-missing", hint: "cargo build -p lekalo-cli --locked" }]);
 
-const root = realpathSync(mkdtempSync(join(tmpdir(), "lekalo-golden-e2e-")));
+const root = realpathSync.native(mkdtempSync(join(tmpdir(), "lekalo-golden-e2e-")));
 const stages = [];
 const step = (name, body) => {
   try {
@@ -187,6 +191,9 @@ try {
   passGate("golden-planner-e2e", {
     stages: stages.length,
     stageNames: stages.map((row) => row.stage),
+    // Per-stage digest details are part of the receipt, not only the
+    // failure path.
+    stageDetails: stages.map((row) => ({ stage: row.stage, ok: row.ok, detail: row.detail })),
   });
 } finally {
   rmSync(root, { recursive: true, force: true });

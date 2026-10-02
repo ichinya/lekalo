@@ -13,7 +13,7 @@
 // checkout's catalog and restores everything it touches.
 
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, readdirSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -68,7 +68,10 @@ for (const kind of kinds) {
 // 3. End-to-end flow against the real tool: plan -> wrong digest
 //    refused -> correct digest applies into a scratch checkout copy.
 const beforeTree = suiteTreeDigests();
-const scratch = mkdtempSync(join(tmpdir(), "lekalo-golden-policy-"));
+// Native realpath expands the Windows 8.3 temp alias (RUNNER~1) that
+// the production selection policy denies; the plain JS realpath keeps
+// an 8.3-spelled input as written.
+const scratch = realpathSync.native(mkdtempSync(join(tmpdir(), "lekalo-golden-policy-")));
 try {
   // Copy the minimum tree the tool reads: catalog, descriptors, inputs,
   // expected, and the built binary path resolution root markers.

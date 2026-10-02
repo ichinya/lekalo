@@ -56,7 +56,7 @@ if (mode === "plan") {
     ?? join(repoRoot, "target", "debug", process.platform === "win32" ? "lekalo.exe" : "lekalo");
   if (!existsSync(binary)) failGate("golden-update-plan", [{ reason: "binary-missing" }]);
 
-  const sandboxBase = outDir ? resolve(outDir) : realpathSync(mkdtempSync(join(tmpdir(), "lekalo-golden-plan-")));
+  const sandboxBase = outDir ? resolve(outDir) : realpathSync.native(mkdtempSync(join(tmpdir(), "lekalo-golden-plan-")));
   mkdirSync(sandboxBase, { recursive: true });
 
   // Role producers: each declared expected role names its own runner.
@@ -368,13 +368,40 @@ if (mode === "apply") {
     }
     preflight.push({ declaredPath, bytes });
   }
-  // All reads succeeded; publish atomically in one pass.
+  // All reads succeeded; publish atomically in one pass, then refresh
+  // the case's checksum sidecar so the reviewed write is self-contained
+  // (the catalog gate verifies the sidecar against the tracked bytes,
+  // so a stale sidecar would fail the gate immediately after apply).
   let applied = 0;
   for (const { declaredPath, bytes } of preflight) {
     writeFileSync(join(repoRoot, declaredPath), bytes);
     applied += 1;
   }
-  process.stdout.write(`${JSON.stringify({ ok: true, phase: "apply", caseId: plan.caseId, applied }, null, 2)}\n`);
+  {
+    const caseDir = entry.path.split("/").slice(0, -1).join("/");
+    const { readdirSync: caseReaddir, statSync: caseStat } = await import("node:fs");
+    const files = [];
+    const walkCase = (current, logical) => {
+      for (const child of caseReaddir(current).sort()) {
+        const full = join(current, child);
+        const childLogical = `${logical}/${child}`;
+        if (caseStat(full).isDirectory()) walkCase(full, childLogical);
+        else files.push({ path: childLogical, sha256: sha256(readFileSync(full)) });
+      }
+    };
+    walkCase(join(repoRoot, caseDir), caseDir);
+    const sidecar = {
+      caseId: entry.id,
+      revision: entry.revision,
+      algorithm: "sha256",
+      files,
+    };
+    writeFileSync(
+      join(repoRoot, SUITE_V1, "checksums", `${entry.id}.json`),
+      `${JSON.stringify(sidecar, null, 2)}\n`,
+    );
+  }
+  process.stdout.write(`${JSON.stringify({ ok: true, phase: "apply", caseId: plan.caseId, applied, checksumsRefreshed: true }, null, 2)}\n`);
   process.exit(0);
 }
 

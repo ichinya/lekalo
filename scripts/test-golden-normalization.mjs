@@ -127,14 +127,15 @@ for (const [dir, names] of byDir) {
 //    (newline-variant inputs accepted, canonical wire output). Requires
 //    the cargo-built binary; the gate fails closed when it is absent
 //    (CI runs this gate only after the build).
-const binary = join(REPO_ROOT, "target", "debug", process.platform === "win32" ? "lekalo.exe" : "lekalo");
+const binary = process.env.LEKALO_BIN
+  ?? join(REPO_ROOT, "target", "debug", process.platform === "win32" ? "lekalo.exe" : "lekalo");
 if (!existsSync(binary)) {
   errors.push("normalization-producer-missing: cargo build -p lekalo-cli --locked first");
 } else {
   const { spawnSync } = await import("node:child_process");
   const { cpSync, mkdtempSync, rmSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
-  const sandbox = realpathSync(mkdtempSync(join(tmpdir(), "lekalo-norm-")));
+  const sandbox = realpathSync.native(mkdtempSync(join(tmpdir(), "lekalo-norm-")));
   try {
     const runLoader = (projectDir) => {
       const result = spawnSync(binary, ["--no-cache", "load", "--json", "--project", projectDir], {

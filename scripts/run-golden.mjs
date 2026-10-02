@@ -81,7 +81,7 @@ if (!existsSync(binary)) {
 
 const sandboxRoot = outDir
   ? (mkdirSync(resolve(outDir), { recursive: true }), resolve(outDir))
-  : realpathSync(mkdtempSync(join(tmpdir(), "lekalo-golden-run-")));
+  : realpathSync.native(mkdtempSync(join(tmpdir(), "lekalo-golden-run-")));
 
 const cleanCopy = (sourceAbsolute, targetAbsolute) => {
   const stat = statSync(sourceAbsolute);
