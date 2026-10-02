@@ -1,0 +1,39 @@
+{
+  "caseId": "diagnostic.type-recursion.pair",
+  "revision": 1,
+  "algorithm": "sha256",
+  "files": [
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/type-recursion/expect.json",
+      "sha256": "sha256:943fa72ef968f62c5e17813d66baa645b4c038b3132dbd887e3f84ccac1b20b3"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/type-recursion/fixture.json",
+      "sha256": "sha256:76d7aff83155ba3fa2ab676f513a66be2edd5ad87cbb7132ed9ac1aaaadc82f1"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/type-recursion/non-trigger/lekalo/modules/planner/entities.yaml",
+      "sha256": "sha256:1229229936ed294b7c664c74e8a5994ad5bc1c1183b69addcb4f48644073d350"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/type-recursion/non-trigger/lekalo/modules/planner/module.yaml",
+      "sha256": "sha256:8da58fa762763f2b89cfa6475d6672bf2dc8ccb9def407dc51c89a76d252352a"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/type-recursion/non-trigger/lekalo/project.yaml",
+      "sha256": "sha256:2ed52b260e7da8bb56ea5d4f5cb1fa85fef0f886df792fc4ec41e296ec3f60de"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/type-recursion/trigger/lekalo/modules/planner/entities.yaml",
+      "sha256": "sha256:72a307aabde833da22d801a4d26c340f928d9e878cdabfb8b0922e47f636e512"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/type-recursion/trigger/lekalo/modules/planner/module.yaml",
+      "sha256": "sha256:8da58fa762763f2b89cfa6475d6672bf2dc8ccb9def407dc51c89a76d252352a"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/type-recursion/trigger/lekalo/project.yaml",
+      "sha256": "sha256:2ed52b260e7da8bb56ea5d4f5cb1fa85fef0f886df792fc4ec41e296ec3f60de"
+    }
+  ]
+}

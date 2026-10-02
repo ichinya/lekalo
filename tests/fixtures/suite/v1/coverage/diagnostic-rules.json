@@ -15,7 +15,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core adapter_conformance",
+          "gate": "crates/lekalo-core/tests",
           "note": "the failing-check exchange asserts the rule id"
         }
       ]
@@ -27,7 +27,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core adapter_package",
+          "gate": "crates/lekalo-core/tests",
           "note": "tampered package bytes assert the rule"
         }
       ]
@@ -39,7 +39,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core diagnostics",
+          "gate": "crates/lekalo-core/tests",
           "note": "registry-backed constructor refuses hand-assembled wire"
         }
       ]
@@ -63,7 +63,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core adapter_package",
+          "gate": "crates/lekalo-core/tests",
           "note": "incompatible adapter version asserts the rule"
         }
       ]
@@ -75,7 +75,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-cli main adapter install",
+          "gate": "crates/lekalo-cli/tests",
           "note": "conflicting install asserts the rule"
         }
       ]
@@ -87,7 +87,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-cli main adapter install",
+          "gate": "crates/lekalo-cli/tests",
           "note": "unconfirmed install asserts the rule"
         }
       ]
@@ -111,7 +111,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core adapter_package",
+          "gate": "crates/lekalo-core/tests",
           "note": "manifest identity drift asserts the rule"
         }
       ]
@@ -135,7 +135,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core adapter_conformance",
+          "gate": "crates/lekalo-core/tests",
           "note": "the crashing-adapter exchange asserts the rule id"
         }
       ]
@@ -147,8 +147,8 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "UNMAPPED — acceptance gap, see docs/m7/issue-90-implementation.md",
-          "note": "no dedicated evidence recorded yet; adding evidence is tracked backlog"
+          "gate": "crates/lekalo-core/tests/adapter_conformance.rs",
+          "note": "a_protocol_mismatch_is_an_uncompensated_unsupported_verdict: a failing protocol-class check resolves to adapter.protocol-failure via CheckClass::Protocol"
         }
       ]
     },
@@ -159,7 +159,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core adapter_package",
+          "gate": "crates/lekalo-core/tests",
           "note": "quarantine flow asserts the rule"
         }
       ]
@@ -171,7 +171,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core adapter_package",
+          "gate": "crates/lekalo-core/tests",
           "note": "interrupted install asserts the rule"
         }
       ]
@@ -195,7 +195,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core target_protocol_security",
+          "gate": "crates/lekalo-core/tests",
           "note": "hostile adapter asserts the rule"
         }
       ]
@@ -207,7 +207,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core adapter_package",
+          "gate": "crates/lekalo-core/tests",
           "note": "unsigned manifest asserts the rule"
         }
       ]
@@ -219,7 +219,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core adapter_package",
+          "gate": "crates/lekalo-core/tests",
           "note": "source drift asserts the rule"
         }
       ]
@@ -231,7 +231,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core adapter_package",
+          "gate": "crates/lekalo-core/tests",
           "note": "missing source asserts the rule"
         }
       ]
@@ -255,7 +255,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core authorization",
+          "gate": "crates/lekalo-core/tests",
           "note": "malformed actor asserts the rule"
         }
       ]
@@ -267,7 +267,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core authorization",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid composition asserts the rule"
         }
       ]
@@ -279,7 +279,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core authorization",
+          "gate": "crates/lekalo-core/tests",
           "note": "malformed document asserts the rule"
         }
       ]
@@ -291,7 +291,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core authorization",
+          "gate": "crates/lekalo-core/tests",
           "note": "unprotected effect asserts the rule"
         }
       ]
@@ -303,7 +303,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core authorization",
+          "gate": "crates/lekalo-core/tests",
           "note": "dangling error ref asserts the rule"
         }
       ]
@@ -315,7 +315,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core authorization",
+          "gate": "crates/lekalo-core/tests",
           "note": "uncovered field asserts the rule"
         }
       ]
@@ -327,7 +327,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core authorization",
+          "gate": "crates/lekalo-core/tests",
           "note": "over-limit policy asserts the rule"
         }
       ]
@@ -339,7 +339,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core authorization",
+          "gate": "crates/lekalo-core/tests",
           "note": "stale mapping asserts the rule"
         }
       ]
@@ -351,7 +351,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core authorization",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid policy asserts the rule"
         }
       ]
@@ -363,7 +363,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core authorization",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid profile asserts the rule"
         }
       ]
@@ -375,7 +375,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core authorization",
+          "gate": "crates/lekalo-core/tests",
           "note": "dangling reference asserts the rule"
         }
       ]
@@ -387,7 +387,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core authorization",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid scope asserts the rule"
         }
       ]
@@ -399,7 +399,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core bindings",
+          "gate": "crates/lekalo-core/tests",
           "note": "ambiguous proposal asserts the rule"
         }
       ]
@@ -411,7 +411,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core bindings",
+          "gate": "crates/lekalo-core/tests",
           "note": "plan mismatch asserts the rule"
         }
       ]
@@ -423,7 +423,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core bindings",
+          "gate": "crates/lekalo-core/tests",
           "note": "unknown proposal asserts the rule"
         }
       ]
@@ -471,7 +471,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core classification",
+          "gate": "crates/lekalo-core/tests",
           "note": "conflicting kind asserts the rule"
         }
       ]
@@ -483,7 +483,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core classification",
+          "gate": "crates/lekalo-core/tests",
           "note": "IR custody digest drift asserts the rule"
         }
       ]
@@ -495,7 +495,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core classification",
+          "gate": "crates/lekalo-core/tests",
           "note": "model custody digest drift asserts the rule"
         }
       ]
@@ -507,7 +507,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core classification",
+          "gate": "crates/lekalo-core/tests",
           "note": "project custody digest drift asserts the rule"
         }
       ]
@@ -519,7 +519,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core classification",
+          "gate": "crates/lekalo-core/tests",
           "note": "duplicate subject asserts the rule"
         }
       ]
@@ -531,7 +531,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core classification",
+          "gate": "crates/lekalo-core/tests",
           "note": "expired declassification asserts the rule"
         }
       ]
@@ -543,7 +543,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core classification",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid declassification asserts the rule"
         }
       ]
@@ -555,7 +555,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core classification",
+          "gate": "crates/lekalo-core/tests",
           "note": "missing kind rule asserts the rule"
         }
       ]
@@ -567,7 +567,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core classification",
+          "gate": "crates/lekalo-core/tests",
           "note": "malformed review ref asserts the rule"
         }
       ]
@@ -579,7 +579,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core classification",
+          "gate": "crates/lekalo-core/tests",
           "note": "missing approval asserts the rule"
         }
       ]
@@ -591,7 +591,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core classification",
+          "gate": "crates/lekalo-core/tests",
           "note": "missing policy asserts the rule"
         }
       ]
@@ -603,7 +603,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core classification",
+          "gate": "crates/lekalo-core/tests",
           "note": "self-approved review asserts the rule"
         }
       ]
@@ -615,7 +615,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core classification",
+          "gate": "crates/lekalo-core/tests",
           "note": "sink ceiling asserts the rule"
         }
       ]
@@ -639,7 +639,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core classification",
+          "gate": "crates/lekalo-core/tests",
           "note": "unknown kind asserts the rule"
         }
       ]
@@ -675,7 +675,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core client_sdk",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid consumer asserts the rule"
         }
       ]
@@ -687,7 +687,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core client_sdk",
+          "gate": "crates/lekalo-core/tests",
           "note": "contract drift asserts the rule"
         }
       ]
@@ -699,7 +699,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core client_sdk",
+          "gate": "crates/lekalo-core/tests",
           "note": "generated drift asserts the rule"
         }
       ]
@@ -711,7 +711,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core client_sdk",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid input asserts the rule"
         }
       ]
@@ -723,7 +723,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core client_sdk",
+          "gate": "crates/lekalo-core/tests",
           "note": "over-limit input asserts the rule"
         }
       ]
@@ -735,7 +735,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core client_sdk",
+          "gate": "crates/lekalo-core/tests",
           "note": "unsupported mapping asserts the rule"
         }
       ]
@@ -747,7 +747,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core client_sdk",
+          "gate": "crates/lekalo-core/tests",
           "note": "unsafe retry asserts the rule"
         }
       ]
@@ -759,7 +759,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core client_sdk",
+          "gate": "crates/lekalo-core/tests",
           "note": "unknown symbol asserts the rule"
         }
       ]
@@ -867,7 +867,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core contracted",
+          "gate": "crates/lekalo-core/tests",
           "note": "binding drift asserts the rule"
         }
       ]
@@ -879,7 +879,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core contracted",
+          "gate": "crates/lekalo-core/tests",
           "note": "missing coverage asserts the rule"
         }
       ]
@@ -891,7 +891,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core contracted",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid declaration asserts the rule"
         }
       ]
@@ -903,7 +903,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core contracted",
+          "gate": "crates/lekalo-core/tests",
           "note": "over-limit declarations assert the rule"
         }
       ]
@@ -915,7 +915,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core contracted",
+          "gate": "crates/lekalo-core/tests",
           "note": "registry I/O failure asserts the rule"
         }
       ]
@@ -927,7 +927,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core contracted",
+          "gate": "crates/lekalo-core/tests",
           "note": "stale artifact asserts the rule"
         }
       ]
@@ -939,7 +939,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core contracted",
+          "gate": "crates/lekalo-core/tests",
           "note": "unknown module asserts the rule"
         }
       ]
@@ -951,7 +951,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core contracted",
+          "gate": "crates/lekalo-core/tests",
           "note": "unknown symbol asserts the rule"
         }
       ]
@@ -963,7 +963,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core lib",
+          "gate": "crates/lekalo-core/tests",
           "note": "capability seam refusal asserts the rule"
         }
       ]
@@ -975,7 +975,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core dataflow",
+          "gate": "crates/lekalo-core/tests",
           "note": "metadata loss asserts the rule"
         }
       ]
@@ -987,7 +987,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core dataflow",
+          "gate": "crates/lekalo-core/tests",
           "note": "forbidden destination asserts the rule"
         }
       ]
@@ -999,7 +999,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core dataflow",
+          "gate": "crates/lekalo-core/tests",
           "note": "exposed private field asserts the rule"
         }
       ]
@@ -1011,7 +1011,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core dataflow",
+          "gate": "crates/lekalo-core/tests",
           "note": "low-confidence sensitive flow asserts the rule"
         }
       ]
@@ -1023,7 +1023,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core dataflow",
+          "gate": "crates/lekalo-core/tests",
           "note": "missing approval asserts the rule"
         }
       ]
@@ -1035,7 +1035,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core dataflow",
+          "gate": "crates/lekalo-core/tests",
           "note": "missing destination asserts the rule"
         }
       ]
@@ -1047,7 +1047,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core dataflow",
+          "gate": "crates/lekalo-core/tests",
           "note": "incomplete observed graph asserts the rule"
         }
       ]
@@ -1071,7 +1071,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core dataflow",
+          "gate": "crates/lekalo-core/tests",
           "note": "unknown flow asserts the rule"
         }
       ]
@@ -1095,7 +1095,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core diff",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid adapter section asserts the rule"
         }
       ]
@@ -1107,7 +1107,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core diff",
+          "gate": "crates/lekalo-core/tests",
           "note": "over-limit change set asserts the rule"
         }
       ]
@@ -1119,7 +1119,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core diff",
+          "gate": "crates/lekalo-core/tests",
           "note": "over-limit export asserts the rule"
         }
       ]
@@ -1131,7 +1131,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core diff",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid rename history asserts the rule"
         }
       ]
@@ -1143,7 +1143,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core diff",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid input asserts the rule"
         }
       ]
@@ -1155,7 +1155,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "node:scripts/test-semantic-diff-contracts.mjs",
+          "gate": "scripts/test-semantic-diff-contracts.mjs",
           "note": "unknown profile name asserts the rule"
         }
       ]
@@ -1167,7 +1167,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core diff",
+          "gate": "crates/lekalo-core/tests",
           "note": "over-limit seeds assert the rule"
         }
       ]
@@ -1179,7 +1179,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core diff",
+          "gate": "crates/lekalo-core/tests",
           "note": "over-limit subjects assert the rule"
         }
       ]
@@ -1191,7 +1191,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core error_contract",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid binding asserts the rule"
         }
       ]
@@ -1227,7 +1227,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core error_contract",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid coverage asserts the rule"
         }
       ]
@@ -1239,7 +1239,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core error_contract",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid diff asserts the rule"
         }
       ]
@@ -1251,7 +1251,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core error_contract",
+          "gate": "crates/lekalo-core/tests",
           "note": "over-limit registry asserts the rule"
         }
       ]
@@ -1263,7 +1263,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core error_contract",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid mapping asserts the rule"
         }
       ]
@@ -1275,7 +1275,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core error_contract",
+          "gate": "crates/lekalo-core/tests",
           "note": "missing mapping asserts the rule"
         }
       ]
@@ -1287,7 +1287,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core error_contract",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid payload asserts the rule"
         }
       ]
@@ -1311,7 +1311,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core error_contract",
+          "gate": "crates/lekalo-core/tests",
           "note": "retry/idempotency conflict asserts the rule"
         }
       ]
@@ -1323,7 +1323,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core error_contract",
+          "gate": "crates/lekalo-core/tests",
           "note": "unreachable error asserts the rule"
         }
       ]
@@ -1347,8 +1347,8 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "UNMAPPED — acceptance gap, see docs/m7/issue-90-implementation.md",
-          "note": "no dedicated evidence recorded yet; adding evidence is tracked backlog"
+          "gate": "crates/lekalo-core/src/expressions/eval.rs",
+          "note": "Bindings::from_json rejection unit tests (missing/mistyped/unknown/nulled) assert the rule"
         }
       ]
     },
@@ -1359,7 +1359,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core expressions",
+          "gate": "crates/lekalo-core/tests",
           "note": "unsupported builtin asserts the rule"
         }
       ]
@@ -1395,8 +1395,8 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "UNMAPPED — acceptance gap, see docs/m7/issue-90-implementation.md",
-          "note": "no dedicated evidence recorded yet; adding evidence is tracked backlog"
+          "gate": "crates/lekalo-core/src/expressions/diff.rs",
+          "note": "compare asserts the rule id on malformed diff input (test at diff.rs:299)"
         }
       ]
     },
@@ -1407,7 +1407,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core expressions",
+          "gate": "crates/lekalo-core/tests",
           "note": "evaluation failure vectors assert the rule"
         }
       ]
@@ -1419,7 +1419,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core expressions",
+          "gate": "crates/lekalo-core/tests",
           "note": "over-limit export asserts the rule"
         }
       ]
@@ -1455,7 +1455,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core extended_effects",
+          "gate": "crates/lekalo-core/tests",
           "note": "over-limit export asserts the rule"
         }
       ]
@@ -1479,7 +1479,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core graph",
+          "gate": "crates/lekalo-core/tests",
           "note": "requires-cycle asserts the rule"
         }
       ]
@@ -1491,7 +1491,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core graph",
+          "gate": "crates/lekalo-core/tests",
           "note": "over-limit export asserts the rule"
         }
       ]
@@ -1515,7 +1515,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "node:CLI graph path",
+          "gate": "crates/lekalo-cli/src/main.rs",
           "note": "disconnected pair asserts the rule"
         }
       ]
@@ -1527,7 +1527,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core graph",
+          "gate": "crates/lekalo-core/tests",
           "note": "incomplete provenance asserts the rule"
         }
       ]
@@ -1551,7 +1551,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "node:CLI graph show/impact/context",
+          "gate": "crates/lekalo-cli/src/main.rs",
           "note": "unknown symbol asserts the rule"
         }
       ]
@@ -1563,7 +1563,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core graph",
+          "gate": "crates/lekalo-core/tests",
           "note": "unknown relation asserts the rule"
         }
       ]
@@ -1695,7 +1695,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-cli impact",
+          "gate": "crates/lekalo-cli/tests",
           "note": "incomplete changed input asserts the rule"
         }
       ]
@@ -1707,7 +1707,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-cli impact",
+          "gate": "crates/lekalo-cli/tests",
           "note": "invalid changed input asserts the rule"
         }
       ]
@@ -1719,7 +1719,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-cli impact",
+          "gate": "crates/lekalo-cli/tests",
           "note": "stale effect evidence asserts the rule"
         }
       ]
@@ -1731,7 +1731,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-cli impact",
+          "gate": "crates/lekalo-cli/tests",
           "note": "unknown evidence asserts the rule"
         }
       ]
@@ -1743,7 +1743,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-cli impact",
+          "gate": "crates/lekalo-cli/tests",
           "note": "blocked gate asserts the rule"
         }
       ]
@@ -1755,7 +1755,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-cli impact",
+          "gate": "crates/lekalo-cli/tests",
           "note": "over-limit output asserts the rule"
         }
       ]
@@ -1767,7 +1767,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-cli impact",
+          "gate": "crates/lekalo-cli/tests",
           "note": "incomplete public impact asserts the rule"
         }
       ]
@@ -1779,7 +1779,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "node:CLI impact",
+          "gate": "crates/lekalo-cli/src/main.rs",
           "note": "malformed selector asserts the rule"
         }
       ]
@@ -1791,7 +1791,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "node:CLI impact",
+          "gate": "crates/lekalo-cli/src/main.rs",
           "note": "unknown symbol asserts the rule"
         }
       ]
@@ -1803,7 +1803,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-cli impact",
+          "gate": "crates/lekalo-cli/tests",
           "note": "over-depth traversal asserts the rule"
         }
       ]
@@ -1899,7 +1899,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core init_adopt_boundary",
+          "gate": "crates/lekalo-core/tests",
           "note": "ambiguous adopt root asserts the rule"
         }
       ]
@@ -1911,7 +1911,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core init_adopt_boundary",
+          "gate": "crates/lekalo-core/tests",
           "note": "adopt conflict asserts the rule"
         }
       ]
@@ -1923,7 +1923,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core init_adopt_boundary",
+          "gate": "crates/lekalo-core/tests",
           "note": "missing adopt id asserts the rule"
         }
       ]
@@ -1935,7 +1935,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core init_adopt_boundary",
+          "gate": "crates/lekalo-core/tests",
           "note": "interrupted adopt asserts the rule"
         }
       ]
@@ -1947,7 +1947,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core init_adopt_boundary",
+          "gate": "crates/lekalo-core/tests",
           "note": "refused adopt write asserts the rule"
         }
       ]
@@ -1959,7 +1959,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-cli bootstrap",
+          "gate": "crates/lekalo-cli/tests",
           "note": "bootstrap conflict asserts the rule"
         }
       ]
@@ -1971,7 +1971,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-cli bootstrap",
+          "gate": "crates/lekalo-cli/tests",
           "note": "missing bootstrap id asserts the rule"
         }
       ]
@@ -1983,7 +1983,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-cli bootstrap",
+          "gate": "crates/lekalo-cli/tests",
           "note": "interrupted bootstrap asserts the rule"
         }
       ]
@@ -1995,7 +1995,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-cli bootstrap",
+          "gate": "crates/lekalo-cli/tests",
           "note": "refused bootstrap write asserts the rule"
         }
       ]
@@ -2007,7 +2007,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-cli inspect",
+          "gate": "crates/lekalo-cli/tests",
           "note": "over-limit output asserts the rule"
         }
       ]
@@ -2019,7 +2019,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-cli inspect",
+          "gate": "crates/lekalo-cli/tests",
           "note": "ambiguous short name asserts the rule"
         }
       ]
@@ -2031,7 +2031,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-cli inspect",
+          "gate": "crates/lekalo-cli/tests",
           "note": "unknown short name asserts the rule"
         }
       ]
@@ -2043,7 +2043,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "node:CLI inspect",
+          "gate": "crates/lekalo-cli/src/main.rs",
           "note": "unknown symbol asserts the rule"
         }
       ]
@@ -2067,7 +2067,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core invariant_transition",
+          "gate": "crates/lekalo-core/tests",
           "note": "over-limit export asserts the rule"
         }
       ]
@@ -2219,7 +2219,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "node:scripts/test-extended-effects-contracts.mjs",
+          "gate": "scripts/test-extended-effects-contracts.mjs",
           "note": "job contract vectors"
         }
       ]
@@ -2280,11 +2280,15 @@
       "id": "loader.duplicate-key",
       "code": "LEK-LOAD-005",
       "category": "model",
-      "evidence": "test-witness",
-      "testWitness": [
+      "evidence": "family-fixture",
+      "familyFixture": [
         {
-          "gate": "UNMAPPED — acceptance gap, see docs/m7/issue-90-implementation.md",
-          "note": "no dedicated evidence recorded yet; adding evidence is tracked backlog"
+          "family": "loader",
+          "path": "tests/fixtures/loader/invalid-json-duplicate-key/expect.json"
+        },
+        {
+          "family": "loader",
+          "path": "tests/fixtures/loader/invalid-yaml-duplicate-key/expect.json"
         }
       ]
     },
@@ -2478,7 +2482,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core lockfile",
+          "gate": "crates/lekalo-core/tests",
           "note": "unavailable catalog asserts the rule"
         }
       ]
@@ -2490,7 +2494,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core lockfile",
+          "gate": "crates/lekalo-core/tests",
           "note": "failed commit asserts the rule"
         }
       ]
@@ -2502,7 +2506,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core lockfile",
+          "gate": "crates/lekalo-core/tests",
           "note": "unavailable component asserts the rule"
         }
       ]
@@ -2514,7 +2518,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core lockfile",
+          "gate": "crates/lekalo-core/tests",
           "note": "unsupported component version asserts the rule"
         }
       ]
@@ -2526,7 +2530,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-cli lock",
+          "gate": "crates/lekalo-cli/tests",
           "note": "tampered lock asserts the rule"
         }
       ]
@@ -2538,7 +2542,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-cli lock --check",
+          "gate": "crates/lekalo-cli/tests",
           "note": "missing lock asserts the rule"
         }
       ]
@@ -2562,7 +2566,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core lockfile",
+          "gate": "crates/lekalo-core/tests",
           "note": "denied path asserts the rule"
         }
       ]
@@ -2574,7 +2578,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core lockfile",
+          "gate": "crates/lekalo-core/tests",
           "note": "unavailable platform asserts the rule"
         }
       ]
@@ -2586,7 +2590,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-cli lock",
+          "gate": "crates/lekalo-cli/tests",
           "note": "missing preview asserts the rule"
         }
       ]
@@ -2598,7 +2602,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core lockfile",
+          "gate": "crates/lekalo-core/tests",
           "note": "private data asserts the rule"
         }
       ]
@@ -2610,7 +2614,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core lockfile",
+          "gate": "crates/lekalo-core/tests",
           "note": "unversioned profile asserts the rule"
         }
       ]
@@ -2622,7 +2626,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core lockfile",
+          "gate": "crates/lekalo-core/tests",
           "note": "interrupted lock asserts the rule"
         }
       ]
@@ -2634,7 +2638,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core lockfile",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid reference asserts the rule"
         }
       ]
@@ -2646,7 +2650,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core lockfile",
+          "gate": "crates/lekalo-core/tests",
           "note": "ambiguous resolution asserts the rule"
         }
       ]
@@ -2658,7 +2662,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core lockfile",
+          "gate": "crates/lekalo-core/tests",
           "note": "unavailable provider asserts the rule"
         }
       ]
@@ -2682,7 +2686,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core lockfile",
+          "gate": "crates/lekalo-core/tests",
           "note": "changed source asserts the rule"
         }
       ]
@@ -2694,7 +2698,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-cli lock",
+          "gate": "crates/lekalo-cli/tests",
           "note": "stale lock asserts the rule"
         }
       ]
@@ -2718,7 +2722,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core lockfile",
+          "gate": "crates/lekalo-core/tests",
           "note": "concurrent update asserts the rule"
         }
       ]
@@ -2730,7 +2734,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core native_gate",
+          "gate": "crates/lekalo-core/tests",
           "note": "unapproved script asserts the rule"
         }
       ]
@@ -2742,7 +2746,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core native_gate",
+          "gate": "crates/lekalo-core/tests",
           "note": "missing capability asserts the rule"
         }
       ]
@@ -2754,7 +2758,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core native_gate",
+          "gate": "crates/lekalo-core/tests",
           "note": "denied env asserts the rule"
         }
       ]
@@ -2766,7 +2770,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core native_gate",
+          "gate": "crates/lekalo-core/tests",
           "note": "unsupported manager asserts the rule"
         }
       ]
@@ -2778,7 +2782,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core native_gate",
+          "gate": "crates/lekalo-core/tests",
           "note": "withheld output asserts the rule"
         }
       ]
@@ -2790,7 +2794,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "node:scripts/test-native-gate-contracts.mjs",
+          "gate": "scripts/test-native-gate-contracts.mjs",
           "note": "invalid plan vectors"
         }
       ]
@@ -2802,7 +2806,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core native_gate",
+          "gate": "crates/lekalo-core/tests",
           "note": "stale plan asserts the rule"
         }
       ]
@@ -2814,7 +2818,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "node:scripts/test-native-gate-contracts.mjs",
+          "gate": "scripts/test-native-gate-contracts.mjs",
           "note": "invalid policy vectors"
         }
       ]
@@ -2826,7 +2830,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core native_gate",
+          "gate": "crates/lekalo-core/tests",
           "note": "failing gate asserts the rule"
         }
       ]
@@ -2838,7 +2842,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core native_gate",
+          "gate": "crates/lekalo-core/tests",
           "note": "infrastructure failure asserts the rule"
         }
       ]
@@ -2850,7 +2854,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core native_gate",
+          "gate": "crates/lekalo-core/tests",
           "note": "unconfirmed script asserts the rule"
         }
       ]
@@ -2862,7 +2866,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core native_gate",
+          "gate": "crates/lekalo-core/tests",
           "note": "security violation asserts the rule"
         }
       ]
@@ -2874,7 +2878,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core native_gate",
+          "gate": "crates/lekalo-core/tests",
           "note": "insufficient trust asserts the rule"
         }
       ]
@@ -2886,7 +2890,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core native_gate",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid workspace asserts the rule"
         }
       ]
@@ -2898,7 +2902,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core nfr",
+          "gate": "crates/lekalo-core/tests",
           "note": "unsatisfied capability asserts the rule"
         }
       ]
@@ -2910,7 +2914,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core nfr",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid constraint asserts the rule"
         }
       ]
@@ -2946,7 +2950,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core nfr",
+          "gate": "crates/lekalo-core/tests",
           "note": "incompatible environment asserts the rule"
         }
       ]
@@ -2970,7 +2974,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core nfr",
+          "gate": "crates/lekalo-core/tests",
           "note": "stale evidence asserts the rule"
         }
       ]
@@ -2982,7 +2986,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core nfr",
+          "gate": "crates/lekalo-core/tests",
           "note": "unavailable evidence asserts the rule"
         }
       ]
@@ -2994,7 +2998,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core nfr",
+          "gate": "crates/lekalo-core/tests",
           "note": "over-limit export asserts the rule"
         }
       ]
@@ -3006,7 +3010,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core nfr",
+          "gate": "crates/lekalo-core/tests",
           "note": "denied gate asserts the rule"
         }
       ]
@@ -3018,7 +3022,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core nfr",
+          "gate": "crates/lekalo-core/tests",
           "note": "model ref mismatch asserts the rule"
         }
       ]
@@ -3030,7 +3034,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core nfr",
+          "gate": "crates/lekalo-core/tests",
           "note": "empty projection asserts the rule"
         }
       ]
@@ -3042,7 +3046,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core nfr",
+          "gate": "crates/lekalo-core/tests",
           "note": "unknown scope asserts the rule"
         }
       ]
@@ -3054,7 +3058,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core observed",
+          "gate": "crates/lekalo-core/tests",
           "note": "refused confirm asserts the rule"
         }
       ]
@@ -3066,7 +3070,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core observed",
+          "gate": "crates/lekalo-core/tests",
           "note": "incomplete graph asserts the rule"
         }
       ]
@@ -3078,7 +3082,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core observed",
+          "gate": "crates/lekalo-core/tests",
           "note": "index I/O failure asserts the rule"
         }
       ]
@@ -3102,7 +3106,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core observed",
+          "gate": "crates/lekalo-core/tests",
           "note": "promotion plan mismatch asserts the rule"
         }
       ]
@@ -3114,7 +3118,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core observed",
+          "gate": "crates/lekalo-core/tests",
           "note": "refused promotion asserts the rule"
         }
       ]
@@ -3126,7 +3130,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core observed",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid scan asserts the rule"
         }
       ]
@@ -3138,7 +3142,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core observed",
+          "gate": "crates/lekalo-core/tests",
           "note": "over-limit scan asserts the rule"
         }
       ]
@@ -3150,7 +3154,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core observed",
+          "gate": "crates/lekalo-core/tests",
           "note": "stale binding asserts the rule"
         }
       ]
@@ -3162,7 +3166,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core observed",
+          "gate": "crates/lekalo-core/tests",
           "note": "unknown module asserts the rule"
         }
       ]
@@ -3174,7 +3178,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core observed",
+          "gate": "crates/lekalo-core/tests",
           "note": "unknown symbol asserts the rule"
         }
       ]
@@ -3186,7 +3190,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core openapi_render",
+          "gate": "crates/lekalo-core/tests",
           "note": "unresolved binding asserts the rule"
         }
       ]
@@ -3198,7 +3202,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core openapi_render",
+          "gate": "crates/lekalo-core/tests",
           "note": "declared drift asserts the rule"
         }
       ]
@@ -3210,7 +3214,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core openapi_render",
+          "gate": "crates/lekalo-core/tests",
           "note": "over-limit export asserts the rule"
         }
       ]
@@ -3222,7 +3226,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core openapi_render",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid input asserts the rule"
         }
       ]
@@ -3234,7 +3238,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core openapi_render",
+          "gate": "crates/lekalo-core/tests",
           "note": "merge conflict asserts the rule"
         }
       ]
@@ -3246,7 +3250,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core openapi_render",
+          "gate": "crates/lekalo-core/tests",
           "note": "partial projection asserts the rule"
         }
       ]
@@ -3258,7 +3262,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "node:scripts/test-openapi-contracts.mjs",
+          "gate": "scripts/test-openapi-contracts.mjs",
           "note": "schema-invalid vectors"
         }
       ]
@@ -3282,7 +3286,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "node:scripts/test-php-operations-contracts.mjs",
+          "gate": "scripts/test-php-operations-contracts.mjs",
           "note": "invalid join vectors"
         }
       ]
@@ -3294,8 +3298,8 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "node:scripts/test-php-routes-contracts.mjs",
-          "note": "invalid join vectors"
+          "gate": "crates/lekalo-core/src/orchestration/generate.rs",
+          "note": "the unregistered php-routes result resolves to the registered rule; exercised by scripts/test-php-laravel-routes.mjs"
         }
       ]
     },
@@ -3318,7 +3322,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-cli query_model",
+          "gate": "crates/lekalo-cli/tests",
           "note": "contract drift asserts the rule"
         }
       ]
@@ -3330,7 +3334,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-cli query_model",
+          "gate": "crates/lekalo-cli/tests",
           "note": "over-limit export asserts the rule"
         }
       ]
@@ -3342,7 +3346,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-cli query_model",
+          "gate": "crates/lekalo-cli/tests",
           "note": "invalid filter asserts the rule"
         }
       ]
@@ -3366,7 +3370,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-cli query_model",
+          "gate": "crates/lekalo-cli/tests",
           "note": "invalid pagination asserts the rule"
         }
       ]
@@ -3378,7 +3382,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-cli query_model",
+          "gate": "crates/lekalo-cli/tests",
           "note": "invalid reference asserts the rule"
         }
       ]
@@ -3390,7 +3394,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-cli query_model",
+          "gate": "crates/lekalo-cli/tests",
           "note": "invalid sort asserts the rule"
         }
       ]
@@ -3402,7 +3406,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-cli query_model",
+          "gate": "crates/lekalo-cli/tests",
           "note": "invalid source asserts the rule"
         }
       ]
@@ -3414,8 +3418,8 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "UNMAPPED — acceptance gap, see docs/m7/issue-90-implementation.md",
-          "note": "no dedicated evidence recorded yet; adding evidence is tracked backlog"
+          "gate": "crates/lekalo-cli/tests/query_model.rs",
+          "note": "strict_refuses_the_tenant_filter_omission asserts the rule with the committed invalid/tenant-filter-missing.json attachment"
         }
       ]
     },
@@ -3426,7 +3430,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-cli query_model",
+          "gate": "crates/lekalo-cli/tests",
           "note": "visibility boundary asserts the rule"
         }
       ]
@@ -3450,7 +3454,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core requirements",
+          "gate": "crates/lekalo-core/tests",
           "note": "over-limit export asserts the rule"
         }
       ]
@@ -3462,7 +3466,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core requirements",
+          "gate": "crates/lekalo-core/tests",
           "note": "model ref mismatch asserts the rule"
         }
       ]
@@ -3474,7 +3478,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core requirements",
+          "gate": "crates/lekalo-core/tests",
           "note": "empty projection asserts the rule"
         }
       ]
@@ -3498,7 +3502,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core requirements",
+          "gate": "crates/lekalo-core/tests",
           "note": "unavailable provider asserts the rule"
         }
       ]
@@ -3510,7 +3514,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core requirements",
+          "gate": "crates/lekalo-core/tests",
           "note": "unknown reference asserts the rule"
         }
       ]
@@ -3522,7 +3526,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core requirements",
+          "gate": "crates/lekalo-core/tests",
           "note": "conflicting requirements assert the rule"
         }
       ]
@@ -3534,7 +3538,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core requirements",
+          "gate": "crates/lekalo-core/tests",
           "note": "missing requirement asserts the rule"
         }
       ]
@@ -3546,7 +3550,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core requirements",
+          "gate": "crates/lekalo-core/tests",
           "note": "stale requirement asserts the rule"
         }
       ]
@@ -3558,7 +3562,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "node:scripts/test-node-scenario-tests.mjs",
+          "gate": "scripts/test-node-scenario-tests.mjs",
           "note": "failing assertion rows record the outcome"
         }
       ]
@@ -3570,7 +3574,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core scenario",
+          "gate": "crates/lekalo-core/tests",
           "note": "ambiguous binding asserts the rule"
         }
       ]
@@ -3582,7 +3586,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core scenario",
+          "gate": "crates/lekalo-core/tests",
           "note": "binding mismatch asserts the rule"
         }
       ]
@@ -3594,7 +3598,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core scenario",
+          "gate": "crates/lekalo-core/tests",
           "note": "missing binding asserts the rule"
         }
       ]
@@ -3606,7 +3610,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core scenario",
+          "gate": "crates/lekalo-core/tests",
           "note": "drifted scenario asserts the rule"
         }
       ]
@@ -3618,7 +3622,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "node:scripts/test-node-scenario-tests.mjs",
+          "gate": "scripts/test-node-scenario-tests.mjs",
           "note": "infrastructure rows record the outcome"
         }
       ]
@@ -3630,7 +3634,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core scenario",
+          "gate": "crates/lekalo-core/tests",
           "note": "IR ref mismatch asserts the rule"
         }
       ]
@@ -3642,7 +3646,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core scenario",
+          "gate": "crates/lekalo-core/tests",
           "note": "unresolved operation asserts the rule"
         }
       ]
@@ -3654,7 +3658,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core scenario",
+          "gate": "crates/lekalo-core/tests",
           "note": "missing port asserts the rule"
         }
       ]
@@ -3666,7 +3670,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core scenario",
+          "gate": "crates/lekalo-core/tests",
           "note": "malformed port asserts the rule"
         }
       ]
@@ -3678,7 +3682,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core scenario",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid run record asserts the rule"
         }
       ]
@@ -3690,7 +3694,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core scenario",
+          "gate": "crates/lekalo-core/tests",
           "note": "unknown runner asserts the rule"
         }
       ]
@@ -3702,7 +3706,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core scenario",
+          "gate": "crates/lekalo-core/tests",
           "note": "stale evidence asserts the rule"
         }
       ]
@@ -3714,7 +3718,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "node:scripts/test-node-scenario-tests.mjs",
+          "gate": "scripts/test-node-scenario-tests.mjs",
           "note": "the concurrency case records unsupported rows only"
         }
       ]
@@ -3800,13 +3804,8 @@
       "id": "semantic.portable-target-reference",
       "code": "LEK-SEM-012",
       "category": "compatibility",
-      "evidence": "test-witness",
-      "testWitness": [
-        {
-          "gate": "UNMAPPED — acceptance gap, see docs/m7/issue-90-implementation.md",
-          "note": "no dedicated evidence recorded yet; adding evidence is tracked backlog"
-        }
-      ]
+      "evidence": "suite-pair",
+      "suitePair": "diagnostic.portable-target-reference.pair"
     },
     {
       "id": "semantic.public-output-private-type",
@@ -3871,7 +3870,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core storage_engine",
+          "gate": "crates/lekalo-core/tests",
           "note": "missing capability asserts the rule"
         }
       ]
@@ -3883,7 +3882,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core storage_engine",
+          "gate": "crates/lekalo-core/tests",
           "note": "failed conformance asserts the rule"
         }
       ]
@@ -3895,7 +3894,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core storage_engine",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid drift asserts the rule"
         }
       ]
@@ -3907,7 +3906,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core storage_engine",
+          "gate": "crates/lekalo-core/tests",
           "note": "over-limit export asserts the rule"
         }
       ]
@@ -3919,7 +3918,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core storage_engine",
+          "gate": "crates/lekalo-core/tests",
           "note": "unsupported extension asserts the rule"
         }
       ]
@@ -3931,7 +3930,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "node:scripts/test-storage-engine-contracts.mjs",
+          "gate": "scripts/test-storage-engine-contracts.mjs",
           "note": "invalid input vectors"
         }
       ]
@@ -3943,7 +3942,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core storage_engine",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid introspection asserts the rule"
         }
       ]
@@ -3955,7 +3954,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core storage_engine",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid lifecycle asserts the rule"
         }
       ]
@@ -3967,7 +3966,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core storage_engine",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid mapping asserts the rule"
         }
       ]
@@ -3979,7 +3978,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core storage_engine",
+          "gate": "crates/lekalo-core/tests",
           "note": "gated migration asserts the rule"
         }
       ]
@@ -3991,7 +3990,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core storage_engine",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid migration asserts the rule"
         }
       ]
@@ -4003,7 +4002,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "node:scripts/test-storage-engine-profile-contracts.mjs",
+          "gate": "scripts/test-storage-engine-profile-contracts.mjs",
           "note": "invalid profile vectors"
         }
       ]
@@ -4015,7 +4014,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core storage_engine",
+          "gate": "crates/lekalo-core/tests",
           "note": "unsupported render asserts the rule"
         }
       ]
@@ -4027,7 +4026,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core storage_engine",
+          "gate": "crates/lekalo-core/tests",
           "note": "unsupported version asserts the rule"
         }
       ]
@@ -4039,7 +4038,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core storage_projection",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid diff asserts the rule"
         }
       ]
@@ -4063,7 +4062,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core storage_projection",
+          "gate": "crates/lekalo-core/tests",
           "note": "over-limit export asserts the rule"
         }
       ]
@@ -4087,7 +4086,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core storage_introspection",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid introspection diff asserts the rule"
         }
       ]
@@ -4123,7 +4122,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core storage_engine_profile",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid profile diff asserts the rule"
         }
       ]
@@ -4135,7 +4134,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core storage_engine_profile",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid profile asserts the rule"
         }
       ]
@@ -4147,7 +4146,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core storage_engine_profile",
+          "gate": "crates/lekalo-core/tests",
           "note": "over-limit profile asserts the rule"
         }
       ]
@@ -4199,7 +4198,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core project_fs_directory",
+          "gate": "crates/lekalo-core/tests",
           "note": "required directory asserts the rule"
         }
       ]
@@ -4211,7 +4210,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core project_fs_directory",
+          "gate": "crates/lekalo-core/tests",
           "note": "unreadable directory asserts the rule"
         }
       ]
@@ -4239,7 +4238,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core project_fs_directory",
+          "gate": "crates/lekalo-core/tests",
           "note": "lock-not-file asserts the rule"
         }
       ]
@@ -4275,7 +4274,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core project_fs_directory",
+          "gate": "crates/lekalo-core/tests",
           "note": "absolute path asserts the rule"
         }
       ]
@@ -4287,7 +4286,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core project_fs_directory",
+          "gate": "crates/lekalo-core/tests",
           "note": "case-collision path asserts the rule"
         }
       ]
@@ -4299,7 +4298,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core project_fs_directory",
+          "gate": "crates/lekalo-core/tests",
           "note": "device path asserts the rule"
         }
       ]
@@ -4311,7 +4310,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core project_fs_directory",
+          "gate": "crates/lekalo-core/tests",
           "note": "empty path asserts the rule"
         }
       ]
@@ -4323,7 +4322,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core project_fs_directory",
+          "gate": "crates/lekalo-core/tests",
           "note": "escape path asserts the rule"
         }
       ]
@@ -4335,7 +4334,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core project_fs_directory",
+          "gate": "crates/lekalo-core/tests",
           "note": "symlink path asserts the rule"
         }
       ]
@@ -4347,7 +4346,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core project_fs_directory",
+          "gate": "crates/lekalo-core/tests",
           "note": "non-NFC path asserts the rule"
         }
       ]
@@ -4359,7 +4358,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core project_fs_directory",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid segment asserts the rule"
         }
       ]
@@ -4371,7 +4370,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core project_fs_directory",
+          "gate": "crates/lekalo-core/tests",
           "note": "8.3 alias path asserts the rule"
         }
       ]
@@ -4383,7 +4382,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core project_fs_directory",
+          "gate": "crates/lekalo-core/tests",
           "note": "special-name path asserts the rule"
         }
       ]
@@ -4395,7 +4394,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core project_fs_directory",
+          "gate": "crates/lekalo-core/tests",
           "note": "traversal path asserts the rule"
         }
       ]
@@ -4407,7 +4406,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core project_fs_directory",
+          "gate": "crates/lekalo-core/tests",
           "note": "file-as-root asserts the rule"
         }
       ]
@@ -4419,7 +4418,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core project_fs_directory",
+          "gate": "crates/lekalo-core/tests",
           "note": "missing root asserts the rule"
         }
       ]
@@ -4431,7 +4430,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core project_fs_directory",
+          "gate": "crates/lekalo-core/tests",
           "note": "unreadable root asserts the rule"
         }
       ]
@@ -4459,7 +4458,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core project_fs_directory",
+          "gate": "crates/lekalo-core/tests",
           "note": "over-limit scan asserts the rule"
         }
       ]
@@ -4471,7 +4470,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core project_fs_directory",
+          "gate": "crates/lekalo-core/tests",
           "note": "absolute selection asserts the rule"
         }
       ]
@@ -4483,7 +4482,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core project_fs_directory",
+          "gate": "crates/lekalo-core/tests",
           "note": "alias selection asserts the rule"
         }
       ]
@@ -4495,7 +4494,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core project_fs_directory",
+          "gate": "crates/lekalo-core/tests",
           "note": "device selection asserts the rule"
         }
       ]
@@ -4507,7 +4506,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core project_fs_directory",
+          "gate": "crates/lekalo-core/tests",
           "note": "empty selection asserts the rule"
         }
       ]
@@ -4519,7 +4518,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core project_fs_directory",
+          "gate": "crates/lekalo-core/tests",
           "note": "escape selection asserts the rule"
         }
       ]
@@ -4531,7 +4530,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core project_fs_directory",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid selection segment asserts the rule"
         }
       ]
@@ -4543,7 +4542,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core project_fs_directory",
+          "gate": "crates/lekalo-core/tests",
           "note": "8.3 alias selection asserts the rule"
         }
       ]
@@ -4555,7 +4554,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core project_fs_directory",
+          "gate": "crates/lekalo-core/tests",
           "note": "traversal selection asserts the rule"
         }
       ]
@@ -4567,7 +4566,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core project_fs_directory",
+          "gate": "crates/lekalo-core/tests",
           "note": "unreadable selection asserts the rule"
         }
       ]
@@ -4579,7 +4578,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "node:scripts/test-target-profile-contracts.mjs",
+          "gate": "scripts/test-target-profile-contracts.mjs",
           "note": "unsatisfied capability vectors"
         }
       ]
@@ -4591,7 +4590,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "node:scripts/test-target-profile-contracts.mjs",
+          "gate": "scripts/test-target-profile-contracts.mjs",
           "note": "incompatible combination vectors"
         }
       ]
@@ -4603,7 +4602,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "node:scripts/test-target-profile-contracts.mjs",
+          "gate": "scripts/test-target-profile-contracts.mjs",
           "note": "unknown component vectors"
         }
       ]
@@ -4615,7 +4614,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "node:scripts/test-target-profile-contracts.mjs",
+          "gate": "scripts/test-target-profile-contracts.mjs",
           "note": "invalid document vectors"
         }
       ]
@@ -4627,7 +4626,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "node:scripts/test-target-profile-contracts.mjs",
+          "gate": "scripts/test-target-profile-contracts.mjs",
           "note": "weakening inheritance vectors"
         }
       ]
@@ -4639,7 +4638,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "node:scripts/test-target-profile-contracts.mjs",
+          "gate": "scripts/test-target-profile-contracts.mjs",
           "note": "invalid reference vectors"
         }
       ]
@@ -4651,7 +4650,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core target_protocol",
+          "gate": "crates/lekalo-core/tests",
           "note": "cancelled exchange asserts the rule"
         }
       ]
@@ -4663,7 +4662,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core target_protocol",
+          "gate": "crates/lekalo-core/tests",
           "note": "unsupported capability asserts the rule"
         }
       ]
@@ -4675,7 +4674,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core target_protocol",
+          "gate": "crates/lekalo-core/tests",
           "note": "crashing adapter asserts the rule"
         }
       ]
@@ -4687,7 +4686,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core target_protocol",
+          "gate": "crates/lekalo-core/tests",
           "note": "mutating dry-run asserts the rule"
         }
       ]
@@ -4699,7 +4698,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core target_protocol",
+          "gate": "crates/lekalo-core/tests",
           "note": "skipped handshake asserts the rule"
         }
       ]
@@ -4711,7 +4710,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core target_protocol",
+          "gate": "crates/lekalo-core/tests",
           "note": "unsupported IR asserts the rule"
         }
       ]
@@ -4723,7 +4722,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core target_protocol",
+          "gate": "crates/lekalo-core/tests",
           "note": "failed operation asserts the rule"
         }
       ]
@@ -4735,7 +4734,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core target_protocol",
+          "gate": "crates/lekalo-core/tests",
           "note": "over-limit output asserts the rule"
         }
       ]
@@ -4819,7 +4818,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core target_protocol",
+          "gate": "crates/lekalo-core/tests",
           "note": "timed-out exchange asserts the rule"
         }
       ]
@@ -4831,7 +4830,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core target_protocol",
+          "gate": "crates/lekalo-core/tests",
           "note": "failed transport asserts the rule"
         }
       ]
@@ -4843,7 +4842,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core transaction_concurrency",
+          "gate": "crates/lekalo-core/tests",
           "note": "over-limit export asserts the rule"
         }
       ]
@@ -4855,7 +4854,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core transaction_concurrency",
+          "gate": "crates/lekalo-core/tests",
           "note": "external atomicity asserts the rule"
         }
       ]
@@ -4864,11 +4863,11 @@
       "id": "transaction.group-missing",
       "code": "LEK-TC-002",
       "category": "compatibility",
-      "evidence": "test-witness",
-      "testWitness": [
+      "evidence": "family-fixture",
+      "familyFixture": [
         {
-          "gate": "UNMAPPED — acceptance gap, see docs/m7/issue-90-implementation.md",
-          "note": "no dedicated evidence recorded yet; adding evidence is tracked backlog"
+          "family": "transaction-concurrency",
+          "path": "tests/fixtures/transaction-concurrency/invalid"
         }
       ]
     },
@@ -4876,11 +4875,11 @@
       "id": "transaction.group-overlap",
       "code": "LEK-TC-003",
       "category": "compatibility",
-      "evidence": "test-witness",
-      "testWitness": [
+      "evidence": "family-fixture",
+      "familyFixture": [
         {
-          "gate": "UNMAPPED — acceptance gap, see docs/m7/issue-90-implementation.md",
-          "note": "no dedicated evidence recorded yet; adding evidence is tracked backlog"
+          "family": "transaction-concurrency",
+          "path": "tests/fixtures/transaction-concurrency/invalid"
         }
       ]
     },
@@ -4888,11 +4887,11 @@
       "id": "transaction.input-invalid",
       "code": "LEK-TC-001",
       "category": "compatibility",
-      "evidence": "test-witness",
-      "testWitness": [
+      "evidence": "family-fixture",
+      "familyFixture": [
         {
-          "gate": "UNMAPPED — acceptance gap, see docs/m7/issue-90-implementation.md",
-          "note": "no dedicated evidence recorded yet; adding evidence is tracked backlog"
+          "family": "transaction-concurrency",
+          "path": "tests/fixtures/transaction-concurrency/invalid"
         }
       ]
     },
@@ -4900,11 +4899,11 @@
       "id": "transaction.partial-unacknowledged",
       "code": "LEK-TC-005",
       "category": "compatibility",
-      "evidence": "test-witness",
-      "testWitness": [
+      "evidence": "family-fixture",
+      "familyFixture": [
         {
-          "gate": "UNMAPPED — acceptance gap, see docs/m7/issue-90-implementation.md",
-          "note": "no dedicated evidence recorded yet; adding evidence is tracked backlog"
+          "family": "transaction-concurrency",
+          "path": "tests/fixtures/transaction-concurrency/invalid"
         }
       ]
     },
@@ -4915,7 +4914,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "node:scripts/test-transport-contracts.mjs",
+          "gate": "scripts/test-transport-contracts.mjs",
           "note": "unsatisfied capability vectors"
         }
       ]
@@ -4951,7 +4950,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core transport_http",
+          "gate": "crates/lekalo-core/tests",
           "note": "over-limit export asserts the rule"
         }
       ]
@@ -4987,7 +4986,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core transport_http",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid pagination asserts the rule"
         }
       ]
@@ -4999,7 +4998,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core transport_http",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid param asserts the rule"
         }
       ]
@@ -5011,7 +5010,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core transport_http",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid security asserts the rule"
         }
       ]
@@ -5023,7 +5022,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "node:CLI validate --module",
+          "gate": "crates/lekalo-cli/src/main.rs",
           "note": "unknown module scope asserts the rule"
         }
       ]
@@ -5035,7 +5034,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "node:scripts/test-validation-contracts.mjs",
+          "gate": "scripts/test-validation-contracts.mjs",
           "note": "profile identity checks"
         }
       ]
@@ -5047,7 +5046,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core validator",
+          "gate": "crates/lekalo-core/tests",
           "note": "unavailable span asserts the rule"
         }
       ]
@@ -5059,7 +5058,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core versioning",
+          "gate": "crates/lekalo-core/tests",
           "note": "incompatible adapter asserts the rule"
         }
       ]
@@ -5071,7 +5070,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core versioning",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid manifest asserts the rule"
         }
       ]
@@ -5083,7 +5082,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core versioning",
+          "gate": "crates/lekalo-core/tests",
           "note": "failed backup asserts the rule"
         }
       ]
@@ -5095,7 +5094,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core versioning",
+          "gate": "crates/lekalo-core/tests",
           "note": "failed commit asserts the rule"
         }
       ]
@@ -5107,7 +5106,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core versioning",
+          "gate": "crates/lekalo-core/tests",
           "note": "incompatible extension asserts the rule"
         }
       ]
@@ -5131,7 +5130,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core versioning",
+          "gate": "crates/lekalo-core/tests",
           "note": "concurrent migration asserts the rule"
         }
       ]
@@ -5143,7 +5142,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core versioning",
+          "gate": "crates/lekalo-core/tests",
           "note": "unmet precondition asserts the rule"
         }
       ]
@@ -5167,7 +5166,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core versioning",
+          "gate": "crates/lekalo-core/tests",
           "note": "missing path asserts the rule"
         }
       ]
@@ -5179,7 +5178,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core versioning",
+          "gate": "crates/lekalo-core/tests",
           "note": "unmigratable file asserts the rule"
         }
       ]
@@ -5203,7 +5202,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core versioning",
+          "gate": "crates/lekalo-core/tests",
           "note": "interrupted migration asserts the rule"
         }
       ]
@@ -5215,7 +5214,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core versioning",
+          "gate": "crates/lekalo-core/tests",
           "note": "invalid registry asserts the rule"
         }
       ]
@@ -5227,7 +5226,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core versioning",
+          "gate": "crates/lekalo-core/tests",
           "note": "rollback conflict asserts the rule"
         }
       ]
@@ -5239,7 +5238,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core versioning",
+          "gate": "crates/lekalo-core/tests",
           "note": "failed rollback asserts the rule"
         }
       ]
@@ -5251,7 +5250,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "cargo:test lekalo-core versioning",
+          "gate": "crates/lekalo-core/tests",
           "note": "changed source asserts the rule"
         }
       ]

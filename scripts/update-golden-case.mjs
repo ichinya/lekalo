@@ -15,7 +15,7 @@
 //   node scripts/update-golden-case.mjs apply --plan <plan-file> --accept-plan-sha256 <digest>
 
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -55,7 +55,7 @@ if (mode === "plan") {
     ?? join(repoRoot, "target", "debug", process.platform === "win32" ? "lekalo.exe" : "lekalo");
   if (!existsSync(binary)) failGate("golden-update-plan", [{ reason: "binary-missing" }]);
 
-  const sandboxBase = outDir ?? mkdtempSync(join(tmpdir(), "lekalo-golden-plan-"));
+  const sandboxBase = outDir ? resolve(outDir) : realpathSync(mkdtempSync(join(tmpdir(), "lekalo-golden-plan-")));
   mkdirSync(sandboxBase, { recursive: true });
 
   // Role producers: each declared expected role names its own runner.

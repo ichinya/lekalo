@@ -8,7 +8,7 @@
 // manifest. Deterministic; run through the reviewed update flow.
 
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,7 +35,7 @@ if (!existsSync(binary)) {
   failGate("golden-run-manifest", [{ reason: "binary-missing", hint: "cargo build -p lekalo-cli --locked" }]);
 }
 
-const root = mkdtempSync(join(tmpdir(), "lekalo-golden-manifest-"));
+const root = realpathSync(mkdtempSync(join(tmpdir(), "lekalo-golden-manifest-")));
 const outcomes = [];
 try {
   for (const entry of cases) {
@@ -52,7 +52,11 @@ try {
       cpSync(source, join(sandbox, name), { recursive: true });
       const role = suffix === "trigger" ? "trigger" : suffix === "non-trigger" ? "non-trigger" : input.role;
       const want = role === "trigger"
-        ? { status: "invalid", exit: 1, reasonCodes: d.expectation?.reasonCodes ?? [] }
+        ? {
+            status: d.expectation?.status ?? "invalid",
+            exit: d.expectation?.exit ?? 1,
+            reasonCodes: d.expectation?.reasonCodes ?? [],
+          }
         : role === "non-trigger"
           ? { status: "valid", exit: 0, reasonCodes: [] }
           : {

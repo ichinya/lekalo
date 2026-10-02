@@ -1,0 +1,43 @@
+{
+  "caseId": "diagnostic.query-read-unresolved.pair",
+  "revision": 1,
+  "algorithm": "sha256",
+  "files": [
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/query-read-unresolved/expect.json",
+      "sha256": "sha256:d76863c99899a8278a0e883ea351992ff4e15947068d88c3a5ae48310e34577b"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/query-read-unresolved/fixture.json",
+      "sha256": "sha256:4596d13bbc160e909ffb263a28140b570bff4d59f5637e5b633d3c8ebcdc16d2"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/query-read-unresolved/non-trigger/lekalo/modules/planner/entities.yaml",
+      "sha256": "sha256:4cb84da95353f19ea5f9386684b752d83461262b5da86db2b21db0a0f406b31e"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/query-read-unresolved/non-trigger/lekalo/modules/planner/module.yaml",
+      "sha256": "sha256:8da58fa762763f2b89cfa6475d6672bf2dc8ccb9def407dc51c89a76d252352a"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/query-read-unresolved/non-trigger/lekalo/modules/planner/queries.yaml",
+      "sha256": "sha256:ae62546364d0cbdcc7eb6441ccea48802332d75c57b5289d410b38d9c887ff38"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/query-read-unresolved/non-trigger/lekalo/project.yaml",
+      "sha256": "sha256:2ed52b260e7da8bb56ea5d4f5cb1fa85fef0f886df792fc4ec41e296ec3f60de"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/query-read-unresolved/trigger/lekalo/modules/planner/module.yaml",
+      "sha256": "sha256:8da58fa762763f2b89cfa6475d6672bf2dc8ccb9def407dc51c89a76d252352a"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/query-read-unresolved/trigger/lekalo/modules/planner/queries.yaml",
+      "sha256": "sha256:b4420a06002c12b4176d3ddd9e54823bcf7216db3a0397feba160073d37392be"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/query-read-unresolved/trigger/lekalo/project.yaml",
+      "sha256": "sha256:2ed52b260e7da8bb56ea5d4f5cb1fa85fef0f886df792fc4ec41e296ec3f60de"
+    }
+  ]
+}

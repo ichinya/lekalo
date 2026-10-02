@@ -1,0 +1,47 @@
+{
+  "caseId": "diagnostic.effect-resource-kind-mismatch.pair",
+  "revision": 1,
+  "algorithm": "sha256",
+  "files": [
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/effect-resource-kind-mismatch/expect.json",
+      "sha256": "sha256:6c83791d318c2e0aac9dfb74b53828888b7efe87320e2e9337391027934969db"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/effect-resource-kind-mismatch/fixture.json",
+      "sha256": "sha256:ec1426784a445e68e70c9393d88bdad88e228136b4285f7ea6e87ddd64999ed1"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/effect-resource-kind-mismatch/non-trigger/lekalo/modules/planner/commands.yaml",
+      "sha256": "sha256:cc8f4f491f1a06455d86fec520d41d9e34c645cf1b23c2dcc4fd8a21209ebea5"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/effect-resource-kind-mismatch/non-trigger/lekalo/modules/planner/entities.yaml",
+      "sha256": "sha256:4cb84da95353f19ea5f9386684b752d83461262b5da86db2b21db0a0f406b31e"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/effect-resource-kind-mismatch/non-trigger/lekalo/modules/planner/module.yaml",
+      "sha256": "sha256:8da58fa762763f2b89cfa6475d6672bf2dc8ccb9def407dc51c89a76d252352a"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/effect-resource-kind-mismatch/non-trigger/lekalo/project.yaml",
+      "sha256": "sha256:2ed52b260e7da8bb56ea5d4f5cb1fa85fef0f886df792fc4ec41e296ec3f60de"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/effect-resource-kind-mismatch/trigger/lekalo/modules/planner/commands.yaml",
+      "sha256": "sha256:78acf983e85da2b80ecd6fc1cb8eadcae5f08dd2cfd20380bb36947e04f6bbae"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/effect-resource-kind-mismatch/trigger/lekalo/modules/planner/entities.yaml",
+      "sha256": "sha256:b210db7cd6c1865de0253972daad47debce400638243e4a83aa3bf8b9fc4bb7f"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/effect-resource-kind-mismatch/trigger/lekalo/modules/planner/module.yaml",
+      "sha256": "sha256:8da58fa762763f2b89cfa6475d6672bf2dc8ccb9def407dc51c89a76d252352a"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/effect-resource-kind-mismatch/trigger/lekalo/project.yaml",
+      "sha256": "sha256:2ed52b260e7da8bb56ea5d4f5cb1fa85fef0f886df792fc4ec41e296ec3f60de"
+    }
+  ]
+}

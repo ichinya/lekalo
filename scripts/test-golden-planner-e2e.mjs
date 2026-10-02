@@ -17,7 +17,7 @@
 // stage, digest mismatch, or canned substitution fails the gate.
 
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,7 +35,7 @@ const {
 const binary = join(repoRoot, "target", "debug", process.platform === "win32" ? "lekalo.exe" : "lekalo");
 if (!existsSync(binary)) failGate("golden-planner-e2e", [{ reason: "binary-missing", hint: "cargo build -p lekalo-cli --locked" }]);
 
-const root = mkdtempSync(join(tmpdir(), "lekalo-golden-e2e-"));
+const root = realpathSync(mkdtempSync(join(tmpdir(), "lekalo-golden-e2e-")));
 const stages = [];
 const step = (name, body) => {
   try {

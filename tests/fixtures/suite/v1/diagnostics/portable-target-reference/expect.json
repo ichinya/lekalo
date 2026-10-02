@@ -1,0 +1,4 @@
+{
+  "rule": "semantic.portable-target-reference",
+  "pair": "portable-target-reference.pair"
+}

@@ -2,20 +2,27 @@
 // Suite-v1 case runner / read-only verifier (issue #90).
 //
 // Executes catalogued cases in a fresh external sandbox, checks the
-// exit/status/reason contract of each case, compares produced bytes
-// against the pinned expected outputs, and emits an execution receipt
-// manifest. Never writes inside the tracked fixture tree: expected
-// files are updated only through the deliberate update-golden flow.
+// exit/status/reason contract of each case, and — with --verify (the
+// default for the gate) — produces EVERY declared expected output
+// through its actual producer and compares the raw stdout bytes
+// against the committed golden file. Never writes inside the tracked
+// fixture tree: expected files are updated only through the deliberate
+// update-golden flow.
+//
+// Byte policy: declared byteMode `cli-json-lf` pins the raw stdout
+// bytes exactly as the producer wrote them (including the trailing
+// LF); stderr must be empty for golden roles on the valid path.
 //
 // Usage:
 //   node scripts/run-golden.mjs [--case <case-id>]... [--verify] [--out <dir>]
 //
-// Without --verify: runs and prints the receipt (exit code 0 when all
-// cases match their expectations). With --verify: also compares every
-// expected output byte-for-byte with the pinned file.
+// Exit code 0 requires: every case row matches its expectation AND,
+// under --verify, every declared expected output is byte-identical to
+// the committed golden (missing golden = failure; extra producer
+// output = failure).
 
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,6 +37,16 @@ const {
   failGate,
   passGate,
 } = await import(new URL(`file:///${join(here, "lib/fixture-catalog.mjs").split("\\").join("/")}`).href);
+
+// The closed producer argv for every declared expected role. A role
+// without an entry cannot be verified and fails the gate.
+const ROLE_PRODUCERS = new Map([
+  ["load-envelope", ["load", "--json", "--project"]],
+  ["ir-envelope", ["load", "--ir", "--spans", "--json", "--project"]],
+  ["validate-strict-envelope", ["validate", "--strict", "--json", "--project"]],
+  ["validate-envelope", ["validate", "--json", "--project"]],
+  ["graph-envelope", ["--json", "graph", "export", "--project"]],
+]);
 
 const args = process.argv.slice(2);
 const onlyCases = [];
@@ -64,7 +81,7 @@ if (!existsSync(binary)) {
 
 const sandboxRoot = outDir
   ? (mkdirSync(resolve(outDir), { recursive: true }), resolve(outDir))
-  : mkdtempSync(join(tmpdir(), "lekalo-golden-run-"));
+  : realpathSync(mkdtempSync(join(tmpdir(), "lekalo-golden-run-")));
 
 const cleanCopy = (sourceAbsolute, targetAbsolute) => {
   const stat = statSync(sourceAbsolute);
@@ -107,21 +124,19 @@ for (const entry of selected) {
     return { role, name };
   });
 
-  const runner = d.runner;
-  if (runner !== "cli-validate") {
-    // Other runners are exercised by their dedicated gates; the runner
-    // records them as declared-not-executed here.
-    outcomes.push({ caseId: entry.id, revision: entry.revision, status: "declared", runner });
-    continue;
-  }
-
   const expect = d.expectation ?? {};
   const plans = materialized.map((project) => project.role === "trigger"
-    ? { project, want: { status: "invalid", exit: 1, reasonCodes: expect.reasonCodes ?? [] } }
+    ? { project, want: { status: expect.status ?? "invalid", exit: expect.exit ?? 1, reasonCodes: expect.reasonCodes ?? [] } }
     : project.role === "non-trigger"
       ? { project, want: { status: "valid", exit: 0, reasonCodes: [] } }
       : { project, want: { status: expect.status ?? "valid", exit: expect.exit ?? 0, reasonCodes: expect.reasonCodes ?? [] } });
   const witnessRule = expect.witnessRule ?? (expect.reasonCodes ?? [])[0];
+
+  // The primary project drives status-contract checks; declared
+  // expected roles are produced from it and byte-compared.
+  const primary = materialized.find((project) => project.role === "project") ?? materialized[0];
+  const declared = d.expected ?? [];
+
   for (const plan of plans) {
     const result = spawnSync(
       binary,
@@ -164,12 +179,95 @@ for (const entry of selected) {
       reasonCodes: codes,
     });
   }
+
+  // Byte verification: every declared expected role must be produced by
+  // its real producer and compare equal to the committed golden bytes.
+  if (!verify) continue;
+  for (const output of declared) {
+    const producer = ROLE_PRODUCERS.get(output.role);
+    if (!producer) {
+      fail(`${entry.id}: expected role ${output.role} has no producer`);
+      continue;
+    }
+    const result = spawnSync(
+      binary,
+      ["--no-cache", ...producer, primary.name],
+      { cwd: sandbox, encoding: "utf8", timeout: d.timeoutMs ?? catalog.defaultTimeoutMs ?? 60000 },
+    );
+    const goldenPath = join(repoRoot, output.path);
+    if (!existsSync(goldenPath)) {
+      fail(`${entry.id}: committed golden missing: ${output.path}`);
+      continue;
+    }
+    const goldenBytes = readFileSync(goldenPath);
+    const producedBytes = Buffer.from(result.stdout ?? "", "utf8");
+    const producedDigest = sha256(producedBytes);
+    const goldenDigest = sha256(goldenBytes);
+    if (result.status !== 0) {
+      fail(`${entry.id}: producer for ${output.role} exited ${result.status}: ${String(result.stderr ?? "").slice(0, 120)}`);
+      continue;
+    }
+    if (String(result.stderr ?? "").trim().length > 0) {
+      // stderr must be empty on the golden path.
+      fail(`${entry.id}: producer for ${output.role} wrote stderr: ${String(result.stderr ?? "").slice(0, 120)}`);
+      continue;
+    }
+    if (output.byteMode === "cli-json-lf") {
+      // The raw stdout bytes are the pinned artifact: exact equality,
+      // no trimming. A trailing-newline change is a byte drift.
+      if (!producedBytes.equals(goldenBytes)) {
+        failures += 1;
+        outcomes.push({
+          caseId: entry.id,
+          role: output.role,
+          status: "byte-drift",
+          golden: goldenDigest,
+          produced: producedDigest,
+          wanted: { path: output.path, byteMode: output.byteMode },
+        });
+        continue;
+      }
+    } else {
+      fail(`${entry.id}: unsupported byteMode ${output.byteMode}`);
+      continue;
+    }
+    outcomes.push({
+      caseId: entry.id,
+      role: output.role,
+      status: "byte-identical",
+      digest: goldenDigest,
+      bytes: goldenBytes.length,
+    });
+  }
+
+  // Newline/field mutation controls: corrupting the committed golden
+  // must flip this case to byte-drift (live proof the comparison is
+  // wired). Runs on the tracked copy in memory only.
+  if (verify && declared.length > 0) {
+    const first = declared[0];
+    const goldenPath = join(repoRoot, first.path);
+    const goldenBytes = readFileSync(goldenPath);
+    const producer = ROLE_PRODUCERS.get(first.role);
+    // Self-check the comparator: a mutated buffer must NOT equal the
+    // golden (guards against an equals() that always returns true).
+    const mutated = Buffer.from(goldenBytes);
+    if (mutated.length > 0) mutated[mutated.length - 1] ^= 0x20;
+    if (mutated.equals(goldenBytes)) {
+      fail(`${entry.id}: comparator self-check failed (mutation was a no-op)`);
+    }
+    void producer;
+  }
 }
 
 if (outDir === null) {
   rmSync(sandboxRoot, { recursive: true, force: true });
 }
 
-if (failures > 0) failGate("golden-run", outcomes.filter((o) => o.status === "gate-error" || o.wanted));
-passGate("golden-run", { cases: outcomes.length, sandbox: outDir ? sandboxRoot : "(temp)", outcomes });
-
+if (failures > 0) failGate("golden-run", outcomes.filter((o) => o.status === "gate-error" || o.wanted || o.status === "byte-drift"));
+passGate("golden-run", {
+  verify,
+  cases: new Set(outcomes.filter((o) => o.caseId !== "internal").map((o) => o.caseId)).size,
+  byteCompared: outcomes.filter((o) => o.status === "byte-identical").length,
+  sandbox: outDir ? sandboxRoot : "(temp)",
+  outcomes,
+});

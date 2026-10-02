@@ -208,6 +208,26 @@ for (const rule of coverageIndex.rules) {
     case "test-witness": {
       if (!Array.isArray(rule.testWitness) || rule.testWitness.length === 0) {
         errors.push(`coverage-witness-missing-list: ${rule.id}`);
+        break;
+      }
+      // Fix round 1: every witness anchor is a repo-relative path that
+      // must exist; a fabricated or renamed witness fails the gate.
+      for (const witness of rule.testWitness) {
+        if (typeof witness.gate !== "string" || witness.gate.length === 0
+          || witness.gate.includes("UNMAPPED")
+          || witness.gate.startsWith("node:") || witness.gate.startsWith("cargo:")) {
+          errors.push(`coverage-witness-unresolved: ${rule.id}: ${witness.gate}`);
+          continue;
+        }
+        try {
+          assertRepoPath(witness.gate, `coverage ${rule.id}`);
+        } catch (error) {
+          errors.push(error.message);
+          continue;
+        }
+        if (!existsSync(repoPath(witness.gate))) {
+          errors.push(`coverage-witness-missing: ${rule.id}: ${witness.gate}`);
+        }
       }
       break;
     }
@@ -276,6 +296,81 @@ for (const file of orphans) {
   const caseBase = [...allowedOrphans].find((base) => file.startsWith(`${base}/`));
   if (caseBase) continue;
   errors.push(`orphan-suite-file: ${file}`);
+}
+
+// 9. Checksum sidecars: every catalogued case must have one, every
+//    case-owned file must be listed, and every digest must match the
+//    tracked bytes (never hand-patched).
+const checksumDir = join(REPO_ROOT, SUITE_V1, "checksums");
+if (!existsSync(checksumDir)) {
+  errors.push("checksums-directory-missing");
+} else {
+  const seenSidecars = new Set();
+  for (const name of readdirSync(checksumDir).sort()) {
+    if (!name.endsWith(".json")) {
+      errors.push(`checksums-unexpected-file: ${name}`);
+      continue;
+    }
+    const caseId = name.slice(0, -".json".length);
+    seenSidecars.add(caseId);
+    let sidecar;
+    try {
+      sidecar = readJson(`${SUITE_V1}/checksums/${name}`);
+    } catch (error) {
+      errors.push(`checksums-unreadable: ${name}: ${error.message}`);
+      continue;
+    }
+    const entry = catalog.cases.find((row) => row.caseId === caseId);
+    if (!entry) {
+      errors.push(`checksums-unknown-case: ${caseId}`);
+      continue;
+    }
+    if (sidecar.caseId !== caseId) errors.push(`checksums-identity: ${caseId}`);
+    if (sidecar.revision !== entry.revision) errors.push(`checksums-revision-drift: ${caseId}`);
+    const caseDir = entry.descriptor.slice(0, entry.descriptor.lastIndexOf("/"));
+    const expectedFiles = [];
+    {
+      const walkCase = (current, logical) => {
+        for (const child of readdirSync(current).sort()) {
+          const full = join(current, child);
+          const childLogical = `${logical}/${child}`;
+          if (statSync(full).isDirectory()) walkCase(full, childLogical);
+          else expectedFiles.push(childLogical);
+        }
+      };
+      walkCase(join(REPO_ROOT, caseDir), caseDir);
+    }
+    const listed = new Set(sidecar.files.map((row) => row.path));
+    for (const file of expectedFiles) {
+      if (!listed.has(file)) errors.push(`checksums-unlisted-file: ${caseId}: ${file}`);
+    }
+    for (const row of sidecar.files) {
+      try {
+        assertRepoPath(row.path, `checksums ${caseId}`);
+      } catch (error) {
+        errors.push(error.message);
+        continue;
+      }
+      if (!row.path.startsWith(`${caseDir}/`)) {
+        errors.push(`checksums-foreign-file: ${caseId}: ${row.path}`);
+        continue;
+      }
+      const absolute = repoPath(row.path);
+      if (!existsSync(absolute)) {
+        errors.push(`checksums-missing-file: ${caseId}: ${row.path}`);
+        continue;
+      }
+      const actual = sha256(readFileSync(absolute));
+      if (actual !== row.sha256) {
+        errors.push(`checksums-digest-drift: ${caseId}: ${row.path}`);
+      }
+    }
+  }
+  for (const entry of catalog.cases) {
+    if (!seenSidecars.has(entry.caseId)) {
+      errors.push(`checksums-sidecar-missing: ${entry.caseId}`);
+    }
+  }
 }
 
 if (errors.length > 0) failGate("golden-catalog", errors);

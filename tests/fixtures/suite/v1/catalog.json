@@ -144,6 +144,15 @@
       ]
     },
     {
+      "caseId": "diagnostic.portable-target-reference.pair",
+      "revision": 1,
+      "descriptor": "tests/fixtures/suite/v1/diagnostics/portable-target-reference/fixture.json",
+      "labels": [
+        "f06",
+        "diagnostic-pair"
+      ]
+    },
+    {
       "caseId": "diagnostic.public-output-private-type.pair",
       "revision": 1,
       "descriptor": "tests/fixtures/suite/v1/diagnostics/public-output-private-type/fixture.json",

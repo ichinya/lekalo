@@ -1,0 +1,47 @@
+{
+  "caseId": "diagnostic.query-read-kind-mismatch.pair",
+  "revision": 1,
+  "algorithm": "sha256",
+  "files": [
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/query-read-kind-mismatch/expect.json",
+      "sha256": "sha256:4773216351f5ec29367baba2fb268a0976cef0ff2d2dd628dd30540bbd76b32e"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/query-read-kind-mismatch/fixture.json",
+      "sha256": "sha256:0b2bb90d8613ca4875ece10633f530bff516199a1ccdf35654d60c0f6e61f52a"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/query-read-kind-mismatch/non-trigger/lekalo/modules/planner/entities.yaml",
+      "sha256": "sha256:4cb84da95353f19ea5f9386684b752d83461262b5da86db2b21db0a0f406b31e"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/query-read-kind-mismatch/non-trigger/lekalo/modules/planner/module.yaml",
+      "sha256": "sha256:8da58fa762763f2b89cfa6475d6672bf2dc8ccb9def407dc51c89a76d252352a"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/query-read-kind-mismatch/non-trigger/lekalo/modules/planner/queries.yaml",
+      "sha256": "sha256:ae62546364d0cbdcc7eb6441ccea48802332d75c57b5289d410b38d9c887ff38"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/query-read-kind-mismatch/non-trigger/lekalo/project.yaml",
+      "sha256": "sha256:2ed52b260e7da8bb56ea5d4f5cb1fa85fef0f886df792fc4ec41e296ec3f60de"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/query-read-kind-mismatch/trigger/lekalo/modules/planner/entities.yaml",
+      "sha256": "sha256:b210db7cd6c1865de0253972daad47debce400638243e4a83aa3bf8b9fc4bb7f"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/query-read-kind-mismatch/trigger/lekalo/modules/planner/module.yaml",
+      "sha256": "sha256:8da58fa762763f2b89cfa6475d6672bf2dc8ccb9def407dc51c89a76d252352a"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/query-read-kind-mismatch/trigger/lekalo/modules/planner/queries.yaml",
+      "sha256": "sha256:488596455771961e5577a605763b56d5ae947eee0f1a4823cdbc3cb05a8b0689"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/query-read-kind-mismatch/trigger/lekalo/project.yaml",
+      "sha256": "sha256:2ed52b260e7da8bb56ea5d4f5cb1fa85fef0f886df792fc4ec41e296ec3f60de"
+    }
+  ]
+}

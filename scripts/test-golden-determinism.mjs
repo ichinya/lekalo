@@ -11,7 +11,7 @@
 // missing row, or extra row.
 
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -54,7 +54,7 @@ function suiteTreeDigests() {
 }
 
 const before = suiteTreeDigests();
-const root = mkdtempSync(join(tmpdir(), "lekalo-golden-det-"));
+const root = realpathSync(mkdtempSync(join(tmpdir(), "lekalo-golden-det-")));
 const LANES = ["cold-1", "cold-2", "warm-cache"];
 
 /** Execute one case in one lane; return the outcome row(s). */
@@ -77,7 +77,11 @@ function runCase(entry, laneRoot) {
       role,
       name,
       want: role === "trigger"
-        ? { status: "invalid", exit: 1, reasonCodes: (d.expectation?.reasonCodes ?? []) }
+        ? {
+            status: d.expectation?.status ?? "invalid",
+            exit: d.expectation?.exit ?? 1,
+            reasonCodes: d.expectation?.reasonCodes ?? [],
+          }
         : role === "non-trigger"
           ? { status: "valid", exit: 0, reasonCodes: [] }
           : {

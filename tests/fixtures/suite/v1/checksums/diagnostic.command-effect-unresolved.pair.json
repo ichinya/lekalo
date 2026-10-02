@@ -1,0 +1,51 @@
+{
+  "caseId": "diagnostic.command-effect-unresolved.pair",
+  "revision": 1,
+  "algorithm": "sha256",
+  "files": [
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/command-effect-unresolved/expect.json",
+      "sha256": "sha256:4ee40ae40337e8ada9aa027efa3273e890f56be9a88fcd59fe4ada492ca93b3c"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/command-effect-unresolved/fixture.json",
+      "sha256": "sha256:1515bbd265491c51962f680387a888d6f6ae7eedbec98da8cf15f0a8366d8939"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/command-effect-unresolved/non-trigger/lekalo/modules/planner/commands.yaml",
+      "sha256": "sha256:fa0dce1231f3ec9b29c90c320cfa6a4e6384b323d95bb0cd308965c135565320"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/command-effect-unresolved/non-trigger/lekalo/modules/planner/entities.yaml",
+      "sha256": "sha256:df717a4497872a5e248d00936ff0716d671916dd6df920d8c6c42efcc264103e"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/command-effect-unresolved/non-trigger/lekalo/modules/planner/events.yaml",
+      "sha256": "sha256:9830f899f2f0644e72f395d479dc66dd06a05c7aad9791c082af92eda468ac48"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/command-effect-unresolved/non-trigger/lekalo/modules/planner/module.yaml",
+      "sha256": "sha256:8da58fa762763f2b89cfa6475d6672bf2dc8ccb9def407dc51c89a76d252352a"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/command-effect-unresolved/non-trigger/lekalo/project.yaml",
+      "sha256": "sha256:2ed52b260e7da8bb56ea5d4f5cb1fa85fef0f886df792fc4ec41e296ec3f60de"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/command-effect-unresolved/trigger/lekalo/modules/planner/commands.yaml",
+      "sha256": "sha256:cdc534b4faad0c74ba6aaef8f485a5963e44334dc8d8373d23e0b63a5342c0e9"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/command-effect-unresolved/trigger/lekalo/modules/planner/entities.yaml",
+      "sha256": "sha256:aa06ea6952d07194cdacaa039385c187cd3e9849babfd1b3f362f7af75fb3d17"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/command-effect-unresolved/trigger/lekalo/modules/planner/module.yaml",
+      "sha256": "sha256:8da58fa762763f2b89cfa6475d6672bf2dc8ccb9def407dc51c89a76d252352a"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/command-effect-unresolved/trigger/lekalo/project.yaml",
+      "sha256": "sha256:2ed52b260e7da8bb56ea5d4f5cb1fa85fef0f886df792fc4ec41e296ec3f60de"
+    }
+  ]
+}

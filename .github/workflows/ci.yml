@@ -98,10 +98,17 @@ jobs:
           node scripts/test-privacy-authorizing-evidence.mjs
           node scripts/test-privacy-authorization-subject.mjs
           node scripts/test-fixture-provenance.mjs
-          node scripts/test-golden-catalog.mjs
+      - name: Run the golden fixture suite catalog gates (issue #90)
+        # Catalog/normalization/hygiene/adapter-shared are Node-only.
+        # The update-policy rehearsal needs the cargo-built CLI, so it
+        # runs in build-test with the other binary-dependent gates.
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-golden-catalog.mjs
           node scripts/test-golden-normalization.mjs
           node scripts/test-golden-hygiene.mjs
-          node scripts/test-golden-update-policy.mjs
           node scripts/test-golden-adapter-shared.mjs
           node scripts/check-structure.mjs
           node scripts/test-structure-contracts.mjs
@@ -226,15 +233,18 @@ jobs:
       - run: cargo test --workspace --locked --no-fail-fast
       - name: Run the golden fixture suite gates (issue #90)
         # The suite runs on every OS: byte-stable determinism lanes,
-        # per-rule paired coverage with fresh execution receipts, and
-        # the P0 planner chain all execute the cargo-built binary in
-        # external sandboxes.
-        timeout-minutes: 15
+        # per-rule paired coverage with fresh execution receipts, the
+        # P0 planner chain, and the digest-bound update-flow rehearsal
+        # all execute the cargo-built binary in external sandboxes.
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+        timeout-minutes: 20
         run: |
           node scripts/run-golden.mjs --verify
           node scripts/test-golden-determinism.mjs
           node scripts/test-golden-diagnostic-coverage.mjs
           node scripts/test-golden-planner-e2e.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-golden-update-policy.mjs
       - name: Run the Node/TypeScript kernel suite (issue #43)
         run: node scripts/test-node-typescript-kernel.mjs
       - name: Run the adapter manifest contract gate (issue #32)

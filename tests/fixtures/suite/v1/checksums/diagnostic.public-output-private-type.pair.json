@@ -1,0 +1,63 @@
+{
+  "caseId": "diagnostic.public-output-private-type.pair",
+  "revision": 1,
+  "algorithm": "sha256",
+  "files": [
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/public-output-private-type/expect.json",
+      "sha256": "sha256:857d51fd5d9e021fb748dcc845dbb179315c68d0b251b86fc43eaacfc93c8b56"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/public-output-private-type/fixture.json",
+      "sha256": "sha256:f4d71ead9dc11d3d5f90be2ded46b26f1d4b7f497e103813cd2022d51e90b01d"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/public-output-private-type/non-trigger/lekalo/modules/audit/entities.yaml",
+      "sha256": "sha256:e3cf2228fb413990fe8a49192e6ab5889238f6347b5cdf5f9d4ea4180cac7c6d"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/public-output-private-type/non-trigger/lekalo/modules/audit/module.yaml",
+      "sha256": "sha256:c310464968718484d8f98e45dc3cfa58a2f2ee75162732d71c067b1600a819cc"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/public-output-private-type/non-trigger/lekalo/modules/planner/entities.yaml",
+      "sha256": "sha256:1d17f791f897c471083c53d8d800fb88bb4848cbc52c241ae9b3b1ea46d00764"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/public-output-private-type/non-trigger/lekalo/modules/planner/module.yaml",
+      "sha256": "sha256:01ae1d4f6269668a44240836c08c85118967a44cc8ff2abe61fdf60b1869bebc"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/public-output-private-type/non-trigger/lekalo/modules/planner/queries.yaml",
+      "sha256": "sha256:db9bfeedf75f840ddccfdbe6f8cc116f4833567fad788d6d0727e61c43c1a5ea"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/public-output-private-type/non-trigger/lekalo/project.yaml",
+      "sha256": "sha256:2ed52b260e7da8bb56ea5d4f5cb1fa85fef0f886df792fc4ec41e296ec3f60de"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/public-output-private-type/trigger/lekalo/modules/audit/entities.yaml",
+      "sha256": "sha256:e3cf2228fb413990fe8a49192e6ab5889238f6347b5cdf5f9d4ea4180cac7c6d"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/public-output-private-type/trigger/lekalo/modules/audit/module.yaml",
+      "sha256": "sha256:c310464968718484d8f98e45dc3cfa58a2f2ee75162732d71c067b1600a819cc"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/public-output-private-type/trigger/lekalo/modules/planner/entities.yaml",
+      "sha256": "sha256:1d17f791f897c471083c53d8d800fb88bb4848cbc52c241ae9b3b1ea46d00764"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/public-output-private-type/trigger/lekalo/modules/planner/module.yaml",
+      "sha256": "sha256:01ae1d4f6269668a44240836c08c85118967a44cc8ff2abe61fdf60b1869bebc"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/public-output-private-type/trigger/lekalo/modules/planner/queries.yaml",
+      "sha256": "sha256:ebf74312eaf6c4dd971b86d3ff685771bd414ff9bb8bf9343b9e3f4057120367"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/public-output-private-type/trigger/lekalo/project.yaml",
+      "sha256": "sha256:2ed52b260e7da8bb56ea5d4f5cb1fa85fef0f886df792fc4ec41e296ec3f60de"
+    }
+  ]
+}

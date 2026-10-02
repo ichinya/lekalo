@@ -552,6 +552,27 @@ const pairs = [
       "audit/queries.yaml": [],
     },
   },
+  {
+    rule: "semantic.portable-target-reference",
+    slug: "portable-target-reference",
+    advisory: true,
+    trigger: {
+      "planner/entities.yaml": [
+        scalar("planner.task_id", "uuid"),
+        entity("planner.task", [["task_id", "planner.task_id"]], ["task_id"], { portability: "portable" }),
+        scalar("planner.node_id", "uuid", { portability: "target-specific" }),
+        entity("planner.node_task", [["task_id", "planner.node_id"]], ["task_id"], { portability: "portable" }),
+      ],
+    },
+    nonTrigger: {
+      "planner/entities.yaml": [
+        scalar("planner.task_id", "uuid"),
+        entity("planner.task", [["task_id", "planner.task_id"]], ["task_id"], { portability: "portable" }),
+        scalar("planner.node_id", "uuid", { portability: "target-specific" }),
+        entity("planner.node_task", [["task_id", "planner.node_id"]], ["task_id"], { portability: "target-specific" }),
+      ],
+    },
+  },
 ];
 
 function writeProject(dir, docs) {
@@ -619,13 +640,24 @@ for (const pair of pairs) {
         { role: "project", path: `tests/fixtures/suite/v1/diagnostics/${pair.slug}/trigger` },
         { role: "project", path: `tests/fixtures/suite/v1/diagnostics/${pair.slug}/non-trigger` },
       ],
-      expectation: {
-        status: "invalid",
-        exit: 1,
-        reasonCodes: [pair.rule],
-        witnessRule: pair.rule,
-        witnessPolarity: "trigger",
-      },
+      // Advisory rules (e.g. semantic.portable-target-reference, the
+      // default-profile info override) stay exit 0 and are witnessed by
+      // reason-code presence; error rules invalidate with exit 1.
+      expectation: pair.advisory
+        ? {
+            status: "valid",
+            exit: 0,
+            reasonCodes: [pair.rule],
+            witnessRule: pair.rule,
+            witnessPolarity: "trigger",
+          }
+        : {
+            status: "invalid",
+            exit: 1,
+            reasonCodes: [pair.rule],
+            witnessRule: pair.rule,
+            witnessPolarity: "trigger",
+          },
       timeoutMs: 60000,
       determinism: {
         clockPolicy: "not-applicable-read-only",
