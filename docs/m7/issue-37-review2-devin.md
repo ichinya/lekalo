@@ -4,19 +4,26 @@ Reviewer: devin (independent round-2 verification of the fix round).
 Review-only: no implementation, test, fixture, or gate file was touched;
 the only change in this review is this document. Scope: branch
 `ichinya/m7-issue-37`, diff base `origin/ichinya/M7` =
-`9510dd0767a56c0ab34b8d3c8ceb2a14db8de825`, HEAD `541c11c7` (15 commits,
-19 files, +4939/-0, zero Rust changes). Reports verified:
-`issue-37-review-devin.md` (2 major / 10 minor),
-`issue-37-review-codex.md` (8 major / 3 minor),
-`issue-37-review-cline.md` (3 blocker / 3 major / 3 minor), against the
+`9510dd0767a56c0ab34b8d3c8ceb2a14db8de825`. Verified HEAD `541c11c7`
+(15 commits, 19 files, +4939/-0, zero Rust changes); this document's
+first revision was committed atop `f666c562`, the peer round-2 cline
+review that landed while this verification was in flight — its findings
+are cross-checked below. Reports verified: `issue-37-review-devin.md`
+(2 major / 10 minor), `issue-37-review-codex.md` (8 major / 3 minor),
+`issue-37-review-cline.md` (3 blocker / 3 major / 3 minor), and
+`issue-37-review2-cline.md` (1 major / 1 minor), against the
 dispositions in `issue-37-fix1.md`.
 
-## Verdict: ACCEPT
+## Verdict: ISSUES
 
 Every blocker and every major finding across all three round-1 reviews
 is verified fixed — most verified live on this machine, not just by
-reading code. No new blockers or majors. Two new **minor** findings and
-two nits remain (below); none gates the merge.
+reading code — and no gate was weakened. However, the peer round-2
+review found one **major** I independently reproduce and concur with:
+the `unavailable` result collapses the nonzero-probe reason to a
+hard-coded literal while the fix report's evidence describes the
+private outbox reason, and no committed gate leg exercises that path.
+Plus two new **minor** findings of my own and three nits (below).
 
 ## What was re-run here (not taken as reported)
 
@@ -74,7 +81,9 @@ two nits remain (below); none gates the merge.
   the public digest binds only the neutral routing projection (F1).
 - `--upstream` whose `--version` exits 7 → `unavailable` /
   `upstream-binary-missing`, exit 0, outbox records
-  `upstream-probe-nonzero` (devin M7).
+  `upstream-probe-nonzero` (devin M7's behavioral fix is real — a
+  nonzero probe no longer proceeds to send — but the emitted reason is
+  the collapsed literal; see peer cross-check below).
 - Insert-then-crash fake upstream (create writes the event then exits
   1): run 1 → `unknown-delivery`/`upstream-nonzero`; run 2 under the
   same key → reconciled through `workspace_events`, found the inserted
@@ -99,12 +108,14 @@ document (live `--out` run); M3 `"docs/target-protocol.md modified"`
 (live); M4 example = real captured envelope (byte-identical, above); M5
 hook gate wired in the Contracts job with `LEKALO_AJV_NODE_PATH` and the
 header corrected; M6 closed `no-change` state before the send path
-(live); M7 probe requires `kind === "ok"` (live); M8 manifest required +
-closed validation (live, three refusals); M9 boundary table now names
-exactly the committed proofs; M10 `/.ai-workspace.local.json` ignored;
-M11 every `unknown-delivery` carries a closed `reason` (asserted in
-phases C/G and observed live); M12 dead `privateRoot` removed, schema
-indentation fixed.
+(live); M7 the behavioral fix is real — a nonzero `--version` no longer
+proceeds to send — but see the round-2 major below for the collapsed
+`reason` on the wire; M8 manifest required + closed validation (live,
+three refusals); M9 boundary table now names exactly the committed
+proofs; M10 `/.ai-workspace.local.json` ignored; M11 every
+`unknown-delivery` carries a closed `reason` (asserted in phases C/G and
+observed live); M12 dead `privateRoot` removed, schema indentation
+fixed.
 
 **Codex (all verified fixed):** F1 closed manifest validation + emitted
 envelope self-validation + projection-scoped digest (all live); F2 keyed
@@ -141,7 +152,37 @@ product version); 8 — rebuttal accepted (verified negative); 9 —
 (`issue-37-implementation.md:68-70`) and the gate asserts every printed
 state is a member — executed green in both tiers.
 
-## New findings (round 2)
+## Peer round-2 cross-check (`issue-37-review2-cline.md`, landed mid-review)
+
+- **cline round-2 major (M7 reason collapse) — CONFIRMED, I concur.**
+  `scripts/ai-workspace-hook.mjs:808-814` emits the literal
+  `reason: "upstream-binary-missing"` for every probe failure branch
+  while the outbox records the precise `upstream-probe-nonzero`. My own
+  live probe of an exit-7 fake (above) produced exactly the output cline
+  quotes — `unavailable`/`upstream-binary-missing` on the wire,
+  `upstream-probe-nonzero` in `outbox.json`. Two consequences are real:
+  the fix report's M7 evidence ("a nonzero probe closes `unavailable`
+  with reason `upstream-probe-nonzero`") describes only the private
+  outbox, not the emitted result the claim implies; and the committed
+  gate asserts the missing-binary leg only (`test-ai-workspace-hook.mjs`
+  `:252`) — no nonzero-probe leg exists, so the claimed distinction is
+  unverified by the committed artifacts. Fail-closed is preserved and
+  the vocabulary stays closed, so it is not a blocker; as an
+  evidence-claim-vs-wire mismatch plus a missing test leg it is
+  consistent with this review's major bar. Suggested fix stands: derive
+  one `reason` local used by both the outbox record and the emitted
+  result, and add a nonzero-probe leg asserting it.
+- **cline round-2 minor (`.cmd`/`shell: true` vs "never a shell"
+  comments) — CONFIRMED as a doc nit.** `runProcess` does take the
+  `shell: true` branch for `.cmd`/`.bat` upstream paths on Windows
+  (`scripts/ai-workspace-hook.mjs:130-139`), so the "argv array; never
+  a shell" comments at `:157` and `:496` are inaccurate for that edge;
+  the `DEP0190` warning cline observed is consistent with that branch.
+  Benign for privacy (child stderr is quarantined; the path is
+  operator-supplied), but the comments should be scoped or the
+  executable resolved.
+
+## New findings (round 2, this reviewer)
 
 1. **minor — `source.clean` misses staged (index) modifications to
    approved paths.** `worktreeIsClean` runs `git diff --quiet`
@@ -173,6 +214,19 @@ state is a member — executed green in both tiers.
   (`limitations`) is now a real `enum`, double-checked by the hook's own
   closed set, so no live leak path exists; if a future schema adds
   another primitive array, the gap re-opens.
+- The cline round-2 `.cmd`-comment inaccuracy listed above also belongs
+  in this bucket once the comments are scoped.
+
+## Round-2 tally
+
+- Round-1 findings: 3 blockers + 13 majors verified fixed (the deduped
+  cross-report pairs counted per report), all minors dispositioned
+  (fixed or rebutted with verified evidence).
+- New round-2 findings: **1 major** (emitted `unavailable` reason
+  collapse + missing nonzero-probe gate leg — cline's, confirmed here),
+  **3 minors** (staged-modification `clean` flag, stray-positional
+  reflection in usage `detail`, `.cmd` shell comment inaccuracy), 3
+  nits.
 
 ## Honest limits of this review
 
