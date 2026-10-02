@@ -57,6 +57,8 @@ const readJson = (relative) => JSON.parse(readFileSync(join(REPO_ROOT, relative)
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const validateCatalog = ajv.compile(readJson(`${SUITE_ROOT}/schema/catalog.schema.v1.0.0.json`));
 const validateFixture = ajv.compile(readJson(`${SUITE_ROOT}/schema/fixture.schema.v1.0.0.json`));
+const validateCoverage = ajv.compile(readJson(`${SUITE_ROOT}/schema/coverage.schema.v1.0.0.json`));
+const validateRunManifest = ajv.compile(readJson(`${SUITE_ROOT}/schema/run-manifest.schema.v1.0.0.json`));
 
 const errors = [];
 const catalog = readJson(`${SUITE_V1}/catalog.json`);
@@ -159,6 +161,21 @@ const coverageIndex = readJson(`${SUITE_V1}/coverage/diagnostic-rules.json`);
 if (coverageIndex.registryIdentity !== REGISTRY_IDENTITY) errors.push("coverage registry pin");
 if (coverageIndex.registryDigest !== sha256(readFileSync(join(REPO_ROOT, REGISTRY_CONTRACT)))) {
   errors.push("coverage registry digest");
+}
+
+// 5b. The committed coverage index and run manifest must satisfy their
+//    closed schemas (unknown fields forbidden).
+{
+  const coverageDoc = readJson(`${SUITE_V1}/coverage/diagnostic-rules.json`);
+  if (!validateCoverage(coverageDoc)) {
+    errors.push(`coverage-schema: ${JSON.stringify(validateCoverage.errors).slice(0, 300)}`);
+  }
+  const manifestPath = `${SUITE_V1}/run-manifest.json`;
+  if (existsSync(repoPath(manifestPath))) {
+    if (!validateRunManifest(readJson(manifestPath))) {
+      errors.push(`run-manifest-schema: ${JSON.stringify(validateRunManifest.errors).slice(0, 300)}`);
+    }
+  }
 }
 
 // 6. Coverage index integrity: every registry rule exactly once, sorted,

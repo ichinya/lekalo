@@ -13,26 +13,29 @@ suite/
   README.md                        this file
   schema/                          closed JSON Schema documents for the suite metadata
   v1/
-    catalog.json                   the exact case inventory (F-cases, G-outputs, imported evidence)
-    coverage/diagnostic-rules.json the per-rule positive/negative coverage index
+    catalog.json                   the exact case inventory + imported evidence rows
+    run-manifest.json              the pinned cold-1 execution manifest (AC1 anchor)
+    coverage/diagnostic-rules.json the per-rule evidence index over all 449 active rules
     coverage/kinds.json            the definition-kind coverage index
-    minimal/                       F01 minimal valid project case
-    diagnostics/                   F06 per-rule paired trigger/non-trigger projects
-    graphs/                        F07 graph/effects projections and their negatives
-    queries/                       F08 inspect/impact/context golden projections
-    diff/                          F09 semantic-diff classification witnesses
-    scenarios/                     F10 scenario outcomes over the shared corpus
-    protocol/                      F11 target-protocol request/response transcripts
-    security/                      F14 hostile-path / hygiene controls (runtime recipes)
-    determinism/                   F14 determinism perturbation declarations
-    checksums/                     per-case digest expectations (sha256 sidecars)
-    integrated/                    F15 planner P0 end-to-end chain manifest
+    minimal/project/               F01 minimal valid project + 4 golden envelopes
+    diagnostics/<rule>/            F06 paired trigger/non-trigger projects (one per rule)
+    checksums/<case>.json          per-case sha256 sidecars (verified by the catalog gate)
+    importedEvidence (in catalog)  registered shared corpora owned by other families
+
+  Delivered in fix round 1: F01, F06, the coverage index, the run
+  manifest, and the integrated P0 chain as an executed gate
+  (scripts/test-golden-planner-e2e.mjs) rather than an extra fixture
+  directory. F07-F14 coverage continues to live in the existing
+  families (graph/, impact/, diff/, scenario/, target-protocol/, ...)
+  and is registered through the catalog's importedEvidence rows;
+  new suite-owned case directories are added by the reviewed update
+  flow as they are produced.
 ```
 
 ## Authoring contract
 
 - **Case identity.** Every case has a stable dotted ID
-  (`minimal.project`, `diagnostic.semantic.type-recursion.pair`, ...),
+  (`minimal.project`, `diagnostic.type-recursion.pair`, ...),
   a `fixtureSchema` (`dev.lekalo.fixture@1.0.0`) and a monotonically
   increasing `revision` (integer, starts at 1). A corrected expectation
   bumps `revision` with a reviewed rationale in the commit message.
@@ -52,10 +55,14 @@ suite/
 - **Runners and recipes.** Runner IDs resolve to a closed registry in
   `scripts/lib/fixture-catalog.mjs`. Fixture data can never supply
   arbitrary executable paths or shell strings.
-- **Update flow.** Golden updates go through the deliberate
-  `scripts/update-golden-*.mjs` flow (plan -> review summary -> apply),
-  which prints a semantic review summary bound to before/after digests.
-  It is never run automatically in CI; CI only verifies.
+- **Update flow.** Golden `expected/` updates go through the
+  deliberate `scripts/update-golden-case.mjs` flow
+  (plan -> semantic summary -> digest-bound apply). Metadata artifacts
+  (catalog, coverage index, run manifest, checksums, pair projects)
+  are maintained by reviewed regenerators (`gen-suite-coverage.mjs`,
+  `gen-suite-diagnostic-pairs.mjs`, `update-golden-run-manifest.mjs`,
+  `update-golden-checksums.mjs`) whose output the gates verify against
+  the registries and tracked bytes; CI never invokes any of them.
 
 ## Gates
 

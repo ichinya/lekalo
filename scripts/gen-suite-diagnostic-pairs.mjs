@@ -11,7 +11,7 @@
 //
 // The generator is deterministic and refuses to overwrite an existing
 // pair unless --force is given. Run it through the reviewed update flow
-// (scripts/update-golden-suite.mjs), never ad hoc in CI.
+// (scripts/update-golden-case.mjs plan/apply; the generator itself is a reviewed regenerator), never ad hoc in CI.
 //
 // Usage: node scripts/gen-suite-diagnostic-pairs.mjs [--force]
 

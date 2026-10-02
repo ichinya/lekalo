@@ -6,9 +6,10 @@
 // upstream bytes (digest-checked), never a canned copy:
 //
 //   1. materialize the shared Planner project; load/validate/compile IR
-//   2. project the dependency graph; inspect + impact + context queries
-//   3. semantic diff: formatting-only input must be equal; a real
-//      mutation must classify and feed affected seeds
+//   2. project the dependency graph; inspect + impact + context over
+//      the SAME sandbox project, symbol chosen from its own IR bytes
+//   3. semantic diff of that project against a real mutation of itself
+//      (equal-formatting shared control; seeds must name the mutation)
 //   4. scenario corpus compiled via the node-scenario-runner lane
 //      (dry-run/apply/verify exchanges, run records, rerun stability)
 //   5. final trace manifest validates and carries the chain revisions
@@ -17,7 +18,7 @@
 // stage, digest mismatch, or canned substitution fails the gate.
 
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -61,7 +62,6 @@ const expect = (condition, message) => { if (!condition) throw new Error(message
 
 // The catalog-registered shared corpus.
 const ORCHESTRATION_PROJECT = repoPath("tests/fixtures/orchestration/project");
-const SHARED_IR = repoPath("tests/fixtures/adapter-conformance/inputs/ir-minimal.json");
 const DIFF_CASE = repoPath("tests/fixtures/diff/cases/behavior");
 const TRACE_GOLDEN = repoPath("tests/fixtures/trace/golden/planner.trace.json");
 
@@ -87,37 +87,79 @@ try {
     return { loadDigest: loadEnvelopeDigest, irDefinitions: ir.envelope.ir.definitions.length };
   });
 
-  // Stage 2: graph + queries over the same project.
+  // Stage 2: graph + inspect/impact/context over the SAME sandbox
+  // project stage 1 validated; the queried symbol comes from the
+  // project's own compiled IR bytes.
+  let chainSymbol = null;
   step("graph-and-query-projections", () => {
     const graph = runLekalo(project, ["--json", "graph", "export", "--project", "."]);
     expect(graph.code === 0, `graph exit ${graph.code}`);
     expect(graph.envelope?.graph?.identity === "dev.lekalo.graph@0.2.16", "graph identity");
     const nodes = graph.envelope.graph.metadata.nodeCount;
     expect(nodes > 0, "graph non-empty");
-    // inspect over a shared-IR symbol through the compiled project copy.
-    const sharedIr = JSON.parse(readFileSync(SHARED_IR, "utf8"));
-    const symbol = sharedIr.definitions.find((def) => def.kind === "entity")?.id;
-    expect(typeof symbol === "string", "shared IR has an entity");
-    return { nodes, sharedSymbol: symbol };
+    // The queried symbol is chosen from THIS project's IR (stage-1
+    // bytes), not from an unrelated fixture.
+    const ir = runLekalo(project, ["load", "--ir", "--json", "--project", "."]);
+    expect(ir.code === 0, "stage-2 IR reload");
+    const entity = ir.envelope.ir.definitions.find((def) => def.kind === "entity");
+    chainSymbol = entity?.id;
+    expect(typeof chainSymbol === "string", "the chain project has an entity");
+    const inspect = runLekalo(project, ["inspect", chainSymbol, "--project", ".", "--json"]);
+    expect(inspect.code === 0, `inspect exit ${inspect.code}: ${inspect.text.slice(0, 120)}`);
+    expect(inspect.envelope?.inspect?.symbol?.id === chainSymbol, "inspect resolves the chain symbol");
+    const impact = runLekalo(project, ["impact", chainSymbol, "--project", ".", "--json"]);
+    expect(impact.code === 0, `impact exit ${impact.code}`);
+    expect(impact.envelope?.impact?.identity === "dev.lekalo.impact@0.2.16", "impact identity");
+    const context = runLekalo(project, ["context", chainSymbol, "--project", ".", "--budget", "4096", "--json"]);
+    expect(context.code === 0, `context exit ${context.code}`);
+    expect(context.envelope?.context?.coverage?.included > 0, "context includes symbols");
+    return {
+      nodes,
+      chainSymbol,
+      graphDigest: sha256(graph.text),
+      contextDigest: sha256(context.text),
+    };
   });
 
-  // Stage 3: semantic diff with an equal-formatting control.
+  // Stage 3: semantic diff of the CHAIN project against a real
+  // mutation of itself (input type swap), plus the shared
+  // equal-formatting control. The affected seed must name the mutated
+  // command and impact must consume the chain symbol.
   step("semantic-diff-mutation", () => {
+    expect(chainSymbol !== null, "stage 2 produced the chain symbol");
     const equal = runLekalo(
       repoPath("tests/fixtures/diff/cases"),
       ["diff", "--base", "equal-formatting/base", "equal-formatting/candidate", "--json"],
     );
     expect(equal.code === 0, `equal diff exit ${equal.code}`);
     expect(equal.envelope?.diff?.equal === true, "formatting-only input is semantically equal");
-    const behavior = runLekalo(
-      repoPath("tests/fixtures/diff/cases"),
-      ["diff", "--base", "behavior/base", "behavior/candidate", "--json"],
-    );
-    expect(behavior.code === 0, `behavior diff exit ${behavior.code}`);
-    const classification = behavior.envelope?.diff?.classification ?? [];
-    expect(classification.includes("behavioral"), "mutation classifies behavioral");
-    expect((behavior.envelope.diff.affectedSeeds ?? []).length > 0, "affected seeds present");
-    return { classification, seeds: behavior.envelope.diff.affectedSeeds.length };
+    // Candidate = a copy of the stage-1 project with one semantic edit.
+    const candidate = join(root, "candidate");
+    cpSync(project, candidate, { recursive: true });
+    const commandsPath = join(candidate, "lekalo", "modules", "planner", "commands.yaml");
+    const original = readFileSync(commandsPath, "utf8");
+    const mutated = original.replace('type: "planner.task_id"', 'type: "planner.text"');
+    expect(mutated !== original, "the chain mutation applied");
+    writeFileSync(commandsPath, mutated);
+    const diff = runLekalo(root, ["diff", "--base", "project", "candidate", "--json"]);
+    expect(diff.code === 0, `chain diff exit ${diff.code}: ${diff.text.slice(0, 160)}`);
+    expect(diff.envelope?.diff?.equal === false, "the chain mutation is semantic");
+    const classification = diff.envelope?.diff?.classification ?? [];
+    expect(classification.includes("source-breaking"), "the type swap is source-breaking");
+    const seeds = diff.envelope?.diff?.affectedSeeds ?? [];
+    expect(seeds.length > 0, "affected seeds present");
+    const subjects = JSON.stringify(seeds);
+    expect(subjects.includes("focus_task"), "the seed names the mutated command");
+    // Downstream consumption: impact over the chain symbol still
+    // resolves after the mutation exists (candidate is separate; the
+    // base project stays the impact subject).
+    const impact = runLekalo(project, ["impact", chainSymbol, "--project", ".", "--json"]);
+    expect(impact.code === 0, "post-diff impact consumes the chain project");
+    return {
+      classification,
+      seeds: seeds.length,
+      diffDigest: sha256(diff.text),
+    };
   });
 
   // Stage 4: scenario compile + run through the committed node lane.

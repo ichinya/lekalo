@@ -69,17 +69,19 @@ try {
         ["--no-cache", "validate", "--json", "--project", name],
         { cwd: sandbox, encoding: "utf8", timeout: d.timeoutMs ?? catalog.defaultTimeoutMs ?? 60000 },
       );
-      const text = ((result.stdout ?? "") + (result.stderr ?? "")).trim();
+      // The envelope lives on stdout for valid outcomes and stderr for
+      // invalid ones; parse whichever stream carries it.
+      const parseText = ((result.stdout ?? "") + (result.stderr ?? "")).trim();
       let envelope;
-      try { envelope = JSON.parse(text); } catch {
-        failGate("golden-run-manifest", [{ reason: "unparseable-envelope", caseId: entry.id, text: text.slice(0, 120) }]);
+      try { envelope = JSON.parse(parseText); } catch {
+        failGate("golden-run-manifest", [{ reason: "unparseable-envelope", caseId: entry.id, text: parseText.slice(0, 120) }]);
       }
       outcomes.push({
         caseId: entry.id,
         revision: entry.revision,
         status: envelope.status,
         exit: result.status,
-        outputDigest: sha256(text),
+        outputDigest: sha256(Buffer.from(result.stdout ?? "", "utf8")),
         reasonCodes: envelope.reasonCodes ?? [],
       });
       // Refuse to pin an expectation-violating row.

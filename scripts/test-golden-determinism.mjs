@@ -99,7 +99,9 @@ function runCase(entry, laneRoot) {
       ["--no-cache", "validate", "--json", "--project", plan.name],
       { cwd: sandbox, encoding: "utf8", timeout: d.timeoutMs ?? catalog.defaultTimeoutMs ?? 60000 },
     );
-    const text = ((result.stdout ?? "") + (result.stderr ?? "")).trim();
+    const stdoutText = result.stdout ?? "";
+    const stderrText = result.stderr ?? "";
+    const text = (stdoutText + stderrText).trim();
     let envelope;
     try { envelope = JSON.parse(text); } catch {
       return [{ caseId: entry.id, project: plan.name, error: `unparseable: ${text.slice(0, 120)}` }];
@@ -119,7 +121,10 @@ function runCase(entry, laneRoot) {
       status: envelope.status,
       exit: result.status,
       reasonCodes: codes,
-      envelopeDigest: sha256(text),
+      // Stream framing is pinned per channel: a trailing-newline change
+      // or a stdout/stderr swap flips these digests.
+      stdoutDigest: sha256(Buffer.from(stdoutText, "utf8")),
+      stderrDigest: sha256(Buffer.from(stderrText, "utf8")),
     });
   }
   return rows;
@@ -145,7 +150,7 @@ try {
     for (let i = 0; i < Math.min(rows.length, reference.length); i += 1) {
       const a = reference[i];
       const b = rows[i];
-      for (const key of ["caseId", "revision", "project", "status", "exit", "reasonCodes", "envelopeDigest"]) {
+      for (const key of ["caseId", "revision", "project", "status", "exit", "reasonCodes", "stdoutDigest", "stderrDigest"]) {
         if (JSON.stringify(a[key]) !== JSON.stringify(b[key])) {
           errors.push(`${lane}: ${a.caseId}/${a.project}: ${key} drift (${JSON.stringify(a[key])} vs ${JSON.stringify(b[key])})`);
         }
@@ -175,7 +180,7 @@ try {
       const a = committedRows[i];
       const b = reference[i];
       if (a.caseId !== b.caseId || a.revision !== b.revision || a.status !== b.status
-        || a.exit !== b.exit || a.outputDigest !== b.envelopeDigest
+        || a.exit !== b.exit || a.outputDigest !== b.stdoutDigest
         || JSON.stringify(a.reasonCodes ?? []) !== JSON.stringify(b.reasonCodes ?? [])) {
         errors.push(`committed manifest drift at row ${i}: ${a.caseId}`);
       }

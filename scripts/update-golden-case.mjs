@@ -27,6 +27,7 @@ const {
   loadCatalog,
   loadCases,
   sha256,
+  assertRepoPath,
   failGate,
 } = await import(new URL(`file:///${join(here, "lib/fixture-catalog.mjs").split("\\").join("/")}`).href);
 
@@ -141,23 +142,66 @@ if (mode === "plan") {
   const beforeMap = new Map(beforeFiles.map((row) => [row.path, row.digest]));
 
   const semanticChanges = [];
-  // Compare candidate envelopes against the declared expected roles in
-  // order: diagnostics pairs pin one envelope expectation per role.
+  // Field-wise semantic diff of every changed golden: status changes,
+  // reason-code additions/removals, diagnostic count/identity/severity
+  // deltas, then a byte-level fallback. Hashes appear only as
+  // anchors, never as the review surface.
+  const describeEnvelopeDelta = (beforeText, afterText) => {
+    const rows = [];
+    let beforeDoc;
+    let afterDoc;
+    try {
+      beforeDoc = JSON.parse(beforeText.trim());
+      afterDoc = JSON.parse(afterText.trim());
+    } catch {
+      rows.push({ kind: "bytes-changed-explained", detail: "non-JSON golden bytes changed" });
+      return rows;
+    }
+    if (beforeDoc.status !== afterDoc.status) {
+      rows.push({ kind: "bytes-changed-explained", detail: `status: ${beforeDoc.status} -> ${afterDoc.status}` });
+    }
+    const beforeCodes = beforeDoc.reasonCodes ?? [];
+    const afterCodes = afterDoc.reasonCodes ?? [];
+    const added = afterCodes.filter((code) => !beforeCodes.includes(code));
+    const removed = beforeCodes.filter((code) => !afterCodes.includes(code));
+    if (added.length > 0) {
+      rows.push({ kind: "reason-codes-changed", detail: `added reason codes: ${added.join(", ")}` });
+    }
+    if (removed.length > 0) {
+      rows.push({ kind: "reason-codes-changed", detail: `removed reason codes: ${removed.join(", ")}` });
+    }
+    const beforeDiag = beforeDoc.diagnostics ?? [];
+    const afterDiag = afterDoc.diagnostics ?? [];
+    if (beforeDiag.length !== afterDiag.length) {
+      rows.push({
+        kind: afterDiag.length > beforeDiag.length ? "diagnostics-added" : "diagnostics-removed",
+        detail: `diagnostic count: ${beforeDiag.length} -> ${afterDiag.length}`,
+      });
+    }
+    const beforeIds = new Set(beforeDiag.map((row) => `${row.id}:${row.severity}`));
+    for (const diag of afterDiag) {
+      const key = `${diag.id}:${diag.severity}`;
+      if (!beforeIds.has(key)) {
+        if (beforeDiag.some((row) => row.id === diag.id) && beforeDiag.find((row) => row.id === diag.id)?.severity !== diag.severity) {
+          rows.push({ kind: "severity-changed", detail: `${diag.id}: ${beforeDiag.find((row) => row.id === diag.id)?.severity} -> ${diag.severity}` });
+        }
+      }
+    }
+    if (rows.length === 0) {
+      rows.push({ kind: "bytes-changed-explained", detail: "envelope bytes changed with identical status/reason/diagnostic surface (message, data, or framing)" });
+    }
+    return rows;
+  };
   if (declared.length === candidateFiles.length) {
     for (let i = 0; i < declared.length; i += 1) {
-      const oldDigest = sha256(readFileSync(join(repoRoot, declared[i].path)));
+      const declaredPath = declared[i].path;
+      const beforeText = readFileSync(join(repoRoot, declaredPath), "utf8");
       const newDigest = candidateFiles[i].digest;
+      const oldDigest = sha256(Buffer.from(beforeText, "utf8"));
       if (oldDigest !== newDigest) {
-        let semantic = "bytes-changed-explained";
-        try {
-          const oldDoc = JSON.parse(readFileSync(join(repoRoot, declared[i].path), "utf8").replace(/^[^{]*/, ""));
-          const newDoc = JSON.parse(candidateFiles[i].bytes);
-          const oldCodes = oldDoc.reasonCodes ?? [];
-          const newCodes = newDoc.reasonCodes ?? [];
-          if (JSON.stringify(oldCodes) !== JSON.stringify(newCodes)) semantic = "reason-codes-changed";
-          else if ((oldDoc.diagnostics ?? []).length !== (newDoc.diagnostics ?? []).length) semantic = "diagnostics-added";
-        } catch { /* envelope is not the tracked wire form */ }
-        semanticChanges.push({ kind: semantic, detail: `${declared[i].path}: ${oldDigest.slice(0, 19)}… -> ${newDigest.slice(0, 19)}…` });
+        for (const row of describeEnvelopeDelta(beforeText, candidateFiles[i].bytes)) {
+          semanticChanges.push({ kind: row.kind, detail: `${declaredPath}: ${row.detail}` });
+        }
       }
     }
   } else {
@@ -175,34 +219,65 @@ if (mode === "plan") {
     caseId,
     caseRevision: entry.revision,
     producer: { runner: entry.descriptor.runner },
-    before: { digest: sha256(a), files: beforeFiles },
+    // before.digest binds the CURRENT tracked golden bytes (the
+    // preimages apply will replace); after.digest binds the exact
+    // candidate bytes apply will publish. Both are plain sha256 over
+    // the ordered digest list, so a reviewer can recompute either.
+    before: {
+      digest: sha256(beforeFiles.map((row) => row.digest).join("\n")),
+      files: beforeFiles,
+    },
     after: {
-      digest: sha256(b),
-      files: candidateFiles.map((row) => ({
-        path: row.path,
-        declaredPath: row.declaredPath,
-        digest: row.digest,
-        change: "modified",
-      })),
+      digest: sha256(candidateFiles.map((row) => row.digest).join("\n")),
+      // Only byte-changed files are listed for publication; unchanged
+      // goldens are not rewritten (the closed schema's change enum is
+      // added|modified|removed — no no-op rows).
+      files: candidateFiles
+        .filter((row) => beforeMap.get(row.declaredPath ?? row.path) !== row.digest)
+        .map((row) => ({
+          path: row.path,
+          declaredPath: row.declaredPath,
+          digest: row.digest,
+          change: beforeMap.has(row.declaredPath ?? row.path) ? "modified" : "added",
+        })),
     },
     summary: {
       semanticChanges,
       humanExplanation: reason,
     },
   };
+  // The semantic summary is printed for the reviewing maintainer
+  // (hashes alone are never the review surface); stdout keeps the
+  // single-JSON protocol the policy gate parses.
+  process.stderr.write(`${JSON.stringify({
+    phase: "semantic-summary",
+    caseId,
+    semanticSummary: semanticChanges,
+    changedFiles: plan.after.files.filter((row) => row.change === "modified").map((row) => row.declaredPath ?? row.path),
+  }, null, 2)}\n`);
   const planText = `${JSON.stringify(plan, null, 2)}\n`;
+  // The produced plan must satisfy the closed v1.0.0 schema.
+  {
+    const { validateGoldenUpdatePlan } = await import(new URL(`file:///${join(here, "lib/golden-schema-validation.mjs").split("\\").join("/")}`).href);
+    const violations = validateGoldenUpdatePlan(plan);
+    if (violations.length > 0) {
+      failGate("golden-update-plan", [{ reason: "plan-schema", errors: violations.slice(0, 6) }]);
+    }
+  }
   const planPath = join(sandboxBase, `${plan.planId}.json`);
   writeFileSync(planPath, planText);
-  // Candidate bytes are written beside the plan for human review.
+  // Candidate bytes are written beside the plan for human review: the
+  // exact reviewed bytes (the digest in the plan covers exactly these,
+  // with no extra newline added on write).
   for (const row of candidateFiles) {
     const target = join(sandboxBase, row.path);
     mkdirSync(dirname(target), { recursive: true });
-    writeFileSync(target, `${row.bytes}\n`);
+    writeFileSync(target, row.bytes);
   }
   const planDigest = sha256(planText);
   process.stdout.write(`${JSON.stringify({
     ok: true,
-    phase: "plan",
+    phase: "plan-written",
     caseId,
     planPath,
     planSha256: planDigest,
@@ -226,6 +301,13 @@ if (mode === "apply") {
   if (actualDigest !== accepted) {
     failGate("golden-update-apply", [{ reason: "plan-digest-mismatch", actual: actualDigest, accepted }]);
   }
+  {
+    const { validateGoldenUpdatePlan } = await import(new URL(`file:///${join(here, "lib/golden-schema-validation.mjs").split("\\").join("/")}`).href);
+    const violations = validateGoldenUpdatePlan(plan);
+    if (violations.length > 0) {
+      failGate("golden-update-apply", [{ reason: "plan-schema", errors: violations.slice(0, 6) }]);
+    }
+  }
   if (!plan.caseId || !plan.after?.files) failGate("golden-update-apply", [{ reason: "plan-shape" }]);
 
   // The plan must still describe the current preimage (no concurrent drift).
@@ -247,23 +329,48 @@ if (mode === "apply") {
     }
   }
 
-  // Write exactly the listed candidate files, mapped positionally onto
-  // the case's declared expected outputs (the same order the plan
-  // phase used). A candidate without a declared preimage is refused:
-  // new expected files go through a descriptor revision first.
+  // Write exactly the listed candidate files. Preflight everything
+  // before any write: candidate bytes must hash to the reviewed plan
+  // digest and each destination must be the descriptor-owned declared
+  // path (path-policy checked; an accepted plan cannot redirect
+  // writes outside the case's declared expected outputs).
   const declared = entry.descriptor.expected ?? [];
   const planDir = dirname(planPath);
-  if (declared.length > 0 && declared.length !== plan.after.files.length) {
-    failGate("golden-update-apply", [{ reason: "candidate-count-mismatch", declared: declared.length, candidates: plan.after.files.length }]);
-  }
-  let applied = 0;
-  for (let i = 0; i < plan.after.files.length; i += 1) {
-    const file = plan.after.files[i];
-    const declaredPath = file.declaredPath ?? declared[i]?.path;
+  const declaredPaths = new Set(declared.map((row) => row.path));
+  const preflight = [];
+  for (const file of plan.after.files) {
+    const declaredPath = file.declaredPath;
     if (!declaredPath) {
       failGate("golden-update-apply", [{ reason: "unmapped-candidate", path: file.path }]);
     }
-    const bytes = readFileSync(join(planDir, file.path));
+    // Destination must be a declared expected output of this case —
+    // an accepted plan cannot redirect writes elsewhere.
+    if (!declaredPaths.has(declaredPath)) {
+      failGate("golden-update-apply", [{ reason: "destination-not-declared", declaredPath, caseId: plan.caseId }]);
+    }
+    try {
+      assertRepoPath(declaredPath, `apply ${plan.caseId}`);
+    } catch (error) {
+      failGate("golden-update-apply", [{ reason: "destination-path-policy", detail: error.message }]);
+    }
+    // Candidate bytes must match the reviewed digest exactly; a
+    // post-review tamper of the candidate file is refused here.
+    const candidatePath = join(planDir, file.path);
+    let bytes;
+    try {
+      bytes = readFileSync(candidatePath);
+    } catch {
+      failGate("golden-update-apply", [{ reason: "candidate-missing", path: file.path }]);
+    }
+    const candidateDigest = sha256(bytes);
+    if (candidateDigest !== file.digest) {
+      failGate("golden-update-apply", [{ reason: "candidate-tampered", path: file.path, plan: file.digest, actual: candidateDigest }]);
+    }
+    preflight.push({ declaredPath, bytes });
+  }
+  // All reads succeeded; publish atomically in one pass.
+  let applied = 0;
+  for (const { declaredPath, bytes } of preflight) {
     writeFileSync(join(repoRoot, declaredPath), bytes);
     applied += 1;
   }

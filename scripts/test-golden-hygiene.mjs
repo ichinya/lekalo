@@ -44,6 +44,22 @@ const walk = (current, logical) => {
 walk(repoPath(SUITE_ROOT), SUITE_ROOT);
 scanned.push({ logical: "scripts/run-golden.mjs", text: readFileSync(join(REPO_ROOT, "scripts", "run-golden.mjs"), "utf8") });
 scanned.push({ logical: "scripts/lib/fixture-catalog.mjs", text: readFileSync(join(REPO_ROOT, "scripts", "lib", "fixture-catalog.mjs"), "utf8") });
+scanned.push({ logical: "scripts/lib/golden-schema-validation.mjs", text: readFileSync(join(REPO_ROOT, "scripts", "lib", "golden-schema-validation.mjs"), "utf8") });
+// Every suite script (gates, runner, update flow, generators) is
+// scanned: fixture content and its tooling are one hygiene domain.
+for (const name of readdirSync(join(REPO_ROOT, "scripts")).sort()) {
+  if (/^(test-golden-|update-golden-|gen-suite-|run-golden\.)/.test(name) && name.endsWith(".mjs")) {
+    const logical = `scripts/${name}`;
+    if (!scanned.some((row) => row.logical === logical)) {
+      let text = readFileSync(join(REPO_ROOT, "scripts", name), "utf8");
+      if (logical === "scripts/test-golden-hygiene.mjs") {
+        const cut = text.indexOf("// ==== hygiene control vectors (excluded from self-scan) ====");
+        if (cut >= 0) text = text.slice(0, cut);
+      }
+      scanned.push({ logical, text });
+    }
+  }
+}
 
 // The closed hostile patterns. Every match is a failure; there are no
 // exemptions because the suite contains only authored synthetic data.

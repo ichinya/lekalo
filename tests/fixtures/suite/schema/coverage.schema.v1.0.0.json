@@ -4,19 +4,40 @@
   "title": "Lekalo diagnostic-rule coverage index (v1.0.0)",
   "type": "object",
   "additionalProperties": false,
-  "required": ["coverageId", "fixtureSchema", "registryIdentity", "registryDigest", "rules"],
+  "required": [
+    "coverageId",
+    "fixtureSchema",
+    "registryIdentity",
+    "registryDigest",
+    "rules"
+  ],
   "properties": {
-    "coverageId": { "const": "dev.lekalo.fixture-coverage.diagnostic-rules" },
-    "fixtureSchema": { "const": "dev.lekalo.fixture@1.0.0" },
-    "registryIdentity": { "const": "dev.lekalo.diagnostic-registry@0.4.0" },
-    "registryDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "coverageId": {
+      "const": "dev.lekalo.fixture-coverage.diagnostic-rules"
+    },
+    "fixtureSchema": {
+      "const": "dev.lekalo.fixture@1.0.0"
+    },
+    "registryIdentity": {
+      "const": "dev.lekalo.diagnostic-registry@0.4.0"
+    },
+    "registryDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
     "generatedBy": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["script"],
+      "required": [
+        "script"
+      ],
       "properties": {
-        "script": { "const": "scripts/update-golden-coverage.mjs" },
-        "reviewed": { "type": "boolean" }
+        "script": {
+          "const": "scripts/gen-suite-coverage.mjs"
+        },
+        "reviewed": {
+          "type": "boolean"
+        }
       }
     },
     "rules": {
@@ -25,15 +46,38 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "code", "category", "evidence"],
+        "required": [
+          "id",
+          "code",
+          "category",
+          "evidence"
+        ],
         "properties": {
-          "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$" },
-          "code": { "type": "string", "pattern": "^LEK-[A-Z]+-[0-9]{3}$" },
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$"
+          },
+          "code": {
+            "type": "string",
+            "pattern": "^LEK-[A-Z]+-[0-9]{3}$"
+          },
           "category": {
-            "enum": ["adapter", "security", "semantic", "compatibility", "infrastructure", "model"]
+            "enum": [
+              "adapter",
+              "security",
+              "semantic",
+              "compatibility",
+              "infrastructure",
+              "model"
+            ]
           },
           "evidence": {
-            "enum": ["suite-pair", "family-fixture", "test-witness", "interaction-only"]
+            "enum": [
+              "suite-pair",
+              "family-fixture",
+              "test-witness",
+              "interaction-only"
+            ]
           },
           "suitePair": {
             "type": "string",
@@ -44,9 +88,15 @@
             "items": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["family", "path"],
+              "required": [
+                "family",
+                "path"
+              ],
               "properties": {
-                "family": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+                "family": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]*$"
+                },
                 "path": {
                   "type": "string",
                   "pattern": "^(?!.*(^|/)\\.\\./)(?!^/)[A-Za-z0-9._][A-Za-z0-9._/ -]*$"
@@ -59,14 +109,25 @@
             "items": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["gate"],
+              "required": [
+                "gate"
+              ],
               "properties": {
-                "gate": { "type": "string", "maxLength": 128 },
-                "note": { "type": "string", "maxLength": 256 }
+                "gate": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "note": {
+                  "type": "string",
+                  "maxLength": 256
+                }
               }
             }
           },
-          "note": { "type": "string", "maxLength": 256 }
+          "note": {
+            "type": "string",
+            "maxLength": 256
+          }
         }
       }
     }

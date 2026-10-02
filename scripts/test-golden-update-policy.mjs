@@ -31,12 +31,20 @@ const {
 
 const errors = [];
 
-// 1. CI never runs the update flow.
+// 1. CI never runs the update flow or any tracked-suite writer
+//    (generators, manifest/checksum writers included).
 const workflows = join(REPO_ROOT, ".github", "workflows");
+const writerScripts = [
+  "update-golden",
+  "gen-suite-coverage",
+  "gen-suite-diagnostic-pairs",
+];
 for (const name of readdirSync(workflows)) {
   const text = readFileSync(join(workflows, name), "utf8");
-  if (text.includes("update-golden")) {
-    errors.push(`ci-invokes-update-flow: .github/workflows/${name}`);
+  for (const writer of writerScripts) {
+    if (text.includes(writer)) {
+      errors.push(`ci-invokes-suite-writer: ${writer} in .github/workflows/${name}`);
+    }
   }
 }
 
@@ -59,6 +67,7 @@ for (const kind of kinds) {
 
 // 3. End-to-end flow against the real tool: plan -> wrong digest
 //    refused -> correct digest applies into a scratch checkout copy.
+const beforeTree = suiteTreeDigests();
 const scratch = mkdtempSync(join(tmpdir(), "lekalo-golden-policy-"));
 try {
   // Copy the minimum tree the tool reads: catalog, descriptors, inputs,
@@ -115,15 +124,73 @@ try {
     if (right.status !== 0) {
       errors.push(`apply-phase: correct digest refused: ${(right.stderr ?? "").slice(0, 300)}`);
     }
+
+    // Real-change rehearsal: mutate a committed preimage (a graph node
+    // rename via a changed project document), re-plan, and require the
+    // semantic summary to name a concrete semantic delta — not just
+    // byte hashes. The scratch catalog pins the case checksums, so the
+    // rehearsal refreshes them after the mutation first.
+    {
+      const projectYaml = join(scratch, SUITE_V1, "minimal", "project", "lekalo", "project.yaml");
+      const original = readFileSync(projectYaml, "utf8");
+      const mutated = original.replace(/description: [^\n]*/, "description: Renamed suite-v1 minimal project");
+      if (mutated === original) {
+        errors.push("real-change: mutation was a no-op");
+      } else {
+        writeFileSync(projectYaml, mutated);
+        try {
+          // Re-plan over the mutated preimage.
+          const replan = run(["plan", "--case", "minimal.project", "--reason", "#90 policy gate: real semantic-change rehearsal"]);
+          if (replan.status !== 0) {
+            errors.push(`real-change: replan failed: ${(replan.stderr ?? "").slice(0, 200)}`);
+          } else {
+            const summaryPhase = (replan.stderr ?? "").includes("semantic-summary");
+            if (!summaryPhase) errors.push("real-change: replan printed no semantic summary");
+            const planFile = JSON.parse(replan.stdout.trim()).planPath;
+            const planDoc = JSON.parse(readFileSync(planFile, "utf8"));
+            const changedRows = planDoc.after.files.filter((row) => row.change === "modified");
+            if (changedRows.length === 0) {
+              errors.push("real-change: no modified files recorded after a real mutation");
+            } else {
+              const kinds = new Set(planDoc.summary.semanticChanges.map((row) => row.kind));
+              if (kinds.size === 1 && kinds.has("digests-refreshed")) {
+                errors.push("real-change: hash-only summary for a real mutation");
+              }
+            }
+          }
+        } finally {
+          writeFileSync(projectYaml, original);
+        }
+      }
+    }
   }
 } finally {
   rmSync(scratch, { recursive: true, force: true });
 }
 
-// 4. The tracked tree is untouched by the gate itself.
-const sentinel = join(REPO_ROOT, SUITE_V1, "catalog.json");
-const sentinelDigest = sha256(readFileSync(sentinel));
-if (sentinelDigest !== sha256(readFileSync(sentinel))) errors.push("self-check");
+function suiteTreeDigests() {
+  const digests = new Map();
+  const walk = (current, logical) => {
+    for (const name of readdirSync(current).sort()) {
+      const full = join(current, name);
+      const child = `${logical}/${name}`;
+      if (statSync(full).isDirectory()) walk(full, child);
+      else digests.set(child, sha256(readFileSync(full)));
+    }
+  };
+  walk(join(REPO_ROOT, SUITE_V1), SUITE_V1);
+  return digests;
+}
+// 4. The tracked tree must be untouched by the gate itself: snapshot
+//    before the rehearsal, compare after.
+
+const afterTree = suiteTreeDigests();
+for (const [path, digest] of beforeTree) {
+  if (afterTree.get(path) !== digest) errors.push(`tracked-suite-polluted: ${path}`);
+}
+for (const path of afterTree.keys()) {
+  if (!beforeTree.has(path)) errors.push(`tracked-suite-new-file: ${path}`);
+}
 
 if (errors.length > 0) failGate("golden-update-policy", errors);
 passGate("golden-update-policy", {

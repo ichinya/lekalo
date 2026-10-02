@@ -36,21 +36,18 @@ export const RUNNERS = new Map([
 ]);
 
 /** The closed update-recipe registry. */
-export const UPDATE_RECIPES = new Set(["update-golden-case", "update-golden-coverage"]);
+export const UPDATE_RECIPES = new Set([
+  "update-golden-case",
+  "update-golden-run-manifest",
+  "update-golden-checksums",
+  "gen-suite-coverage",
+  "gen-suite-diagnostic-pairs",
+]);
 
 /** The CLI runner ids (executed through the cargo-built binary). */
 export const CLI_RUNNERS = new Set(
   [...RUNNERS.entries()].filter(([, kind]) => kind === "cli-subprocess").map(([id]) => id),
 );
-
-/** The deterministic CLI argv for each runner (after the case argv). */
-export const RUNNER_ARGS = new Map([
-  ["cli-validate", ["validate", "--json", "--project"]],
-  ["cli-load", ["load", "--json", "--project"]],
-  ["cli-load-ir", ["load", "--ir", "--spans", "--json", "--project"]],
-  ["cli-graph-export", ["--json", "graph", "export", "--project"]],
-  ["cli-trace-export", ["--json", "trace", "export"]],
-]);
 
 /**
  * Repo-relative path policy: slash-separated, no `..`, no absolute

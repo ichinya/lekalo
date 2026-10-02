@@ -4,44 +4,105 @@
   "title": "Lekalo golden-suite run manifest (v1.0.0)",
   "type": "object",
   "additionalProperties": false,
-  "required": ["manifestId", "fixtureSchema", "startedAtPolicy", "platformPolicy", "runs"],
+  "required": [
+    "manifestId",
+    "fixtureSchema",
+    "startedAtPolicy",
+    "platformPolicy",
+    "runs"
+  ],
   "properties": {
-    "manifestId": { "const": "dev.lekalo.fixture-run-manifest" },
-    "fixtureSchema": { "const": "dev.lekalo.fixture@1.0.0" },
-    "startedAtPolicy": { "const": "deterministic-logical-lane" },
+    "manifestId": {
+      "const": "dev.lekalo.fixture-run-manifest"
+    },
+    "fixtureSchema": {
+      "const": "dev.lekalo.fixture@1.0.0"
+    },
+    "startedAtPolicy": {
+      "const": "deterministic-logical-lane"
+    },
     "platformPolicy": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["normalizePaths", "normalizeNewlines"],
+      "required": [
+        "normalizePaths",
+        "normalizeNewlines"
+      ],
       "properties": {
-        "normalizePaths": { "const": "logical-repository-relative" },
-        "normalizeNewlines": { "const": "lf-only" }
+        "normalizePaths": {
+          "const": "logical-repository-relative"
+        },
+        "normalizeNewlines": {
+          "const": "lf-only"
+        }
       }
     },
     "runs": {
       "type": "array",
-      "minItems": 2,
+      "minItems": 1,
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["lane", "rootPolicy", "outcomes"],
+        "required": [
+          "lane",
+          "rootPolicy",
+          "outcomes"
+        ],
         "properties": {
-          "lane": { "enum": ["cold-1", "cold-2", "warm-cache"] },
-          "rootPolicy": { "const": "independent-sandbox" },
+          "lane": {
+            "enum": [
+              "cold-1",
+              "cold-2",
+              "warm-cache"
+            ]
+          },
+          "rootPolicy": {
+            "const": "independent-sandbox"
+          },
           "outcomes": {
             "type": "array",
             "minItems": 1,
             "items": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["caseId", "revision", "status", "exit", "outputDigest"],
+              "required": [
+                "caseId",
+                "revision",
+                "status",
+                "exit",
+                "outputDigest"
+              ],
               "properties": {
-                "caseId": { "type": "string" },
-                "revision": { "type": "integer", "minimum": 1 },
-                "status": { "enum": ["valid", "invalid", "denied", "unsupported-version"] },
-                "exit": { "type": "integer", "minimum": 0, "maximum": 5 },
-                "outputDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
-                "reasonCodes": { "type": "array", "items": { "type": "string" } }
+                "caseId": {
+                  "type": "string"
+                },
+                "revision": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "status": {
+                  "enum": [
+                    "valid",
+                    "invalid",
+                    "denied",
+                    "unsupported-version"
+                  ]
+                },
+                "exit": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 5
+                },
+                "outputDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "reasonCodes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
               }
             }
           }

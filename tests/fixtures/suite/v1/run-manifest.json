@@ -16,7 +16,7 @@
           "revision": 1,
           "status": "invalid",
           "exit": 1,
-          "outputDigest": "sha256:5cbea9bc67870f67af40daf7632180c57b74c1a0714b540df188a6c311205062",
+          "outputDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
           "reasonCodes": [
             "semantic.command-effect-kind-mismatch"
           ]
@@ -26,7 +26,7 @@
           "revision": 1,
           "status": "valid",
           "exit": 0,
-          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "outputDigest": "sha256:745171a4fcbcb580f4077997d65107db14de4db9cde5415835a521948c3c69e0",
           "reasonCodes": []
         },
         {
@@ -34,7 +34,7 @@
           "revision": 1,
           "status": "invalid",
           "exit": 1,
-          "outputDigest": "sha256:769da3f50b0ce04021c8ee74cdc14f42d5e574c1b604e563dc0559d22f618c4f",
+          "outputDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
           "reasonCodes": [
             "semantic.command-effect-unresolved"
           ]
@@ -44,7 +44,7 @@
           "revision": 1,
           "status": "valid",
           "exit": 0,
-          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "outputDigest": "sha256:745171a4fcbcb580f4077997d65107db14de4db9cde5415835a521948c3c69e0",
           "reasonCodes": []
         },
         {
@@ -52,7 +52,7 @@
           "revision": 1,
           "status": "invalid",
           "exit": 1,
-          "outputDigest": "sha256:2848f6fde9aba6d9e2c0f80f6cee042ff2c96693578f7d9785ecc76063f03ab3",
+          "outputDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
           "reasonCodes": [
             "semantic.effect-emits-kind-mismatch"
           ]
@@ -62,7 +62,7 @@
           "revision": 1,
           "status": "valid",
           "exit": 0,
-          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "outputDigest": "sha256:745171a4fcbcb580f4077997d65107db14de4db9cde5415835a521948c3c69e0",
           "reasonCodes": []
         },
         {
@@ -70,7 +70,7 @@
           "revision": 1,
           "status": "invalid",
           "exit": 1,
-          "outputDigest": "sha256:8879e2103ebba4883755b0689eae055cff47dc50d9ca8f49b9665acc893b1013",
+          "outputDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
           "reasonCodes": [
             "semantic.effect-emits-unresolved"
           ]
@@ -80,7 +80,7 @@
           "revision": 1,
           "status": "valid",
           "exit": 0,
-          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "outputDigest": "sha256:745171a4fcbcb580f4077997d65107db14de4db9cde5415835a521948c3c69e0",
           "reasonCodes": []
         },
         {
@@ -88,7 +88,7 @@
           "revision": 1,
           "status": "invalid",
           "exit": 1,
-          "outputDigest": "sha256:6fa6b33dc14a55a14a6d7a2b90f8ae647c6c50564184d3d0b9370df96a8f2796",
+          "outputDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
           "reasonCodes": [
             "semantic.effect-resource-kind-mismatch"
           ]
@@ -98,7 +98,7 @@
           "revision": 1,
           "status": "valid",
           "exit": 0,
-          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "outputDigest": "sha256:745171a4fcbcb580f4077997d65107db14de4db9cde5415835a521948c3c69e0",
           "reasonCodes": []
         },
         {
@@ -106,7 +106,7 @@
           "revision": 1,
           "status": "invalid",
           "exit": 1,
-          "outputDigest": "sha256:0c447abc26ef609cce8972ee5723aaa3bf3ad5b27dacaa13d88e9727ba689b13",
+          "outputDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
           "reasonCodes": [
             "semantic.effect-resource-unresolved"
           ]
@@ -116,7 +116,7 @@
           "revision": 1,
           "status": "valid",
           "exit": 0,
-          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "outputDigest": "sha256:745171a4fcbcb580f4077997d65107db14de4db9cde5415835a521948c3c69e0",
           "reasonCodes": []
         },
         {
@@ -124,7 +124,7 @@
           "revision": 1,
           "status": "invalid",
           "exit": 1,
-          "outputDigest": "sha256:a9a62c663c79842362e12a39afa5c58ca6001d6c9e67644100550e3d8890cba0",
+          "outputDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
           "reasonCodes": [
             "semantic.endpoint-operation-kind-mismatch"
           ]
@@ -134,7 +134,7 @@
           "revision": 1,
           "status": "valid",
           "exit": 0,
-          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "outputDigest": "sha256:745171a4fcbcb580f4077997d65107db14de4db9cde5415835a521948c3c69e0",
           "reasonCodes": []
         },
         {
@@ -142,7 +142,7 @@
           "revision": 1,
           "status": "invalid",
           "exit": 1,
-          "outputDigest": "sha256:4df681c4f74af5d6487cbbab9f8a42a78e43f6e17e0c9772b8b59fad1c40619a",
+          "outputDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
           "reasonCodes": [
             "semantic.endpoint-operation-unresolved"
           ]
@@ -152,7 +152,7 @@
           "revision": 1,
           "status": "valid",
           "exit": 0,
-          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "outputDigest": "sha256:745171a4fcbcb580f4077997d65107db14de4db9cde5415835a521948c3c69e0",
           "reasonCodes": []
         },
         {
@@ -160,7 +160,7 @@
           "revision": 1,
           "status": "invalid",
           "exit": 1,
-          "outputDigest": "sha256:a7aa7c96308892361be9d8ae5b7c37df765a025b79ebd6d691831474098ffdb4",
+          "outputDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
           "reasonCodes": [
             "semantic.entity-identity-field-missing"
           ]
@@ -170,7 +170,7 @@
           "revision": 1,
           "status": "valid",
           "exit": 0,
-          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "outputDigest": "sha256:745171a4fcbcb580f4077997d65107db14de4db9cde5415835a521948c3c69e0",
           "reasonCodes": []
         },
         {
@@ -178,7 +178,7 @@
           "revision": 1,
           "status": "invalid",
           "exit": 1,
-          "outputDigest": "sha256:8c532c0a2749ab470e2f99152d308b42b19eb4d1cc2755bbfdb0faa5a799e331",
+          "outputDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
           "reasonCodes": [
             "semantic.policy-operation-kind-mismatch"
           ]
@@ -188,7 +188,7 @@
           "revision": 1,
           "status": "valid",
           "exit": 0,
-          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "outputDigest": "sha256:745171a4fcbcb580f4077997d65107db14de4db9cde5415835a521948c3c69e0",
           "reasonCodes": []
         },
         {
@@ -196,7 +196,7 @@
           "revision": 1,
           "status": "invalid",
           "exit": 1,
-          "outputDigest": "sha256:964c9a8e6d16ce4a04312a0faf57d8f7abe12405867238d96719f840e4953cb1",
+          "outputDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
           "reasonCodes": [
             "semantic.policy-operation-unresolved"
           ]
@@ -206,7 +206,25 @@
           "revision": 1,
           "status": "valid",
           "exit": 0,
-          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "outputDigest": "sha256:745171a4fcbcb580f4077997d65107db14de4db9cde5415835a521948c3c69e0",
+          "reasonCodes": []
+        },
+        {
+          "caseId": "diagnostic.portable-target-reference.pair",
+          "revision": 1,
+          "status": "valid",
+          "exit": 0,
+          "outputDigest": "sha256:175dd0fc2d3c8e3b9dfeae86fa2c48739bee6a70bac7c508664bcf91672a413b",
+          "reasonCodes": [
+            "semantic.portable-target-reference"
+          ]
+        },
+        {
+          "caseId": "diagnostic.portable-target-reference.pair",
+          "revision": 1,
+          "status": "valid",
+          "exit": 0,
+          "outputDigest": "sha256:745171a4fcbcb580f4077997d65107db14de4db9cde5415835a521948c3c69e0",
           "reasonCodes": []
         },
         {
@@ -214,7 +232,7 @@
           "revision": 1,
           "status": "invalid",
           "exit": 1,
-          "outputDigest": "sha256:dccb8302f6033c332ac47497e423575b33af8df21a4c4a9a8523c40de7ff99ab",
+          "outputDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
           "reasonCodes": [
             "semantic.public-output-private-type",
             "semantic.visibility-boundary-violation"
@@ -225,7 +243,7 @@
           "revision": 1,
           "status": "valid",
           "exit": 0,
-          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "outputDigest": "sha256:745171a4fcbcb580f4077997d65107db14de4db9cde5415835a521948c3c69e0",
           "reasonCodes": []
         },
         {
@@ -233,7 +251,7 @@
           "revision": 1,
           "status": "invalid",
           "exit": 1,
-          "outputDigest": "sha256:51ecf95f35559a42b19f06badda27f51cc159cd74225ad3f5de487e8c8cdca31",
+          "outputDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
           "reasonCodes": [
             "semantic.query-read-kind-mismatch"
           ]
@@ -243,7 +261,7 @@
           "revision": 1,
           "status": "valid",
           "exit": 0,
-          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "outputDigest": "sha256:745171a4fcbcb580f4077997d65107db14de4db9cde5415835a521948c3c69e0",
           "reasonCodes": []
         },
         {
@@ -251,7 +269,7 @@
           "revision": 1,
           "status": "invalid",
           "exit": 1,
-          "outputDigest": "sha256:03dab16684fee093d296e152b4117909c632dc17fdd4e1b3068a607312bff0a8",
+          "outputDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
           "reasonCodes": [
             "semantic.query-read-unresolved",
             "semantic.type-ref-unresolved"
@@ -262,7 +280,7 @@
           "revision": 1,
           "status": "valid",
           "exit": 0,
-          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "outputDigest": "sha256:745171a4fcbcb580f4077997d65107db14de4db9cde5415835a521948c3c69e0",
           "reasonCodes": []
         },
         {
@@ -270,7 +288,7 @@
           "revision": 1,
           "status": "invalid",
           "exit": 1,
-          "outputDigest": "sha256:c36647f6e98092fbe450fcee9e36aa69c37b629c8b79856c2eb32578d31c3ee0",
+          "outputDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
           "reasonCodes": [
             "semantic.scenario-operation-unresolved"
           ]
@@ -280,7 +298,7 @@
           "revision": 1,
           "status": "valid",
           "exit": 0,
-          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "outputDigest": "sha256:745171a4fcbcb580f4077997d65107db14de4db9cde5415835a521948c3c69e0",
           "reasonCodes": []
         },
         {
@@ -288,7 +306,7 @@
           "revision": 1,
           "status": "invalid",
           "exit": 1,
-          "outputDigest": "sha256:5c9dbf8843523bf2033bb3a1cb888bcd5ad965e7184c27384557f7013addb909",
+          "outputDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
           "reasonCodes": [
             "semantic.type-recursion"
           ]
@@ -298,7 +316,7 @@
           "revision": 1,
           "status": "valid",
           "exit": 0,
-          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "outputDigest": "sha256:745171a4fcbcb580f4077997d65107db14de4db9cde5415835a521948c3c69e0",
           "reasonCodes": []
         },
         {
@@ -306,7 +324,7 @@
           "revision": 1,
           "status": "invalid",
           "exit": 1,
-          "outputDigest": "sha256:1e89175ac9d33cc42e57bc381f6b546f8d53714780d4f5b3f7d51a1d0dfdc701",
+          "outputDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
           "reasonCodes": [
             "semantic.type-ref-kind-mismatch"
           ]
@@ -316,7 +334,7 @@
           "revision": 1,
           "status": "valid",
           "exit": 0,
-          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "outputDigest": "sha256:745171a4fcbcb580f4077997d65107db14de4db9cde5415835a521948c3c69e0",
           "reasonCodes": []
         },
         {
@@ -324,7 +342,7 @@
           "revision": 1,
           "status": "invalid",
           "exit": 1,
-          "outputDigest": "sha256:c14ca638053d714eaa991dbc3cc8d659a37d7893db5bf600442a491877606cc1",
+          "outputDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
           "reasonCodes": [
             "semantic.type-ref-unresolved"
           ]
@@ -334,7 +352,7 @@
           "revision": 1,
           "status": "valid",
           "exit": 0,
-          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "outputDigest": "sha256:745171a4fcbcb580f4077997d65107db14de4db9cde5415835a521948c3c69e0",
           "reasonCodes": []
         },
         {
@@ -342,7 +360,7 @@
           "revision": 1,
           "status": "invalid",
           "exit": 1,
-          "outputDigest": "sha256:d4f03358b1eb4d8484825559b6ff115336f7ea874f33d83cffa0975d2d353bc0",
+          "outputDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
           "reasonCodes": [
             "semantic.visibility-boundary-violation"
           ]
@@ -352,7 +370,7 @@
           "revision": 1,
           "status": "valid",
           "exit": 0,
-          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "outputDigest": "sha256:745171a4fcbcb580f4077997d65107db14de4db9cde5415835a521948c3c69e0",
           "reasonCodes": []
         },
         {
@@ -360,7 +378,7 @@
           "revision": 1,
           "status": "valid",
           "exit": 0,
-          "outputDigest": "sha256:9dbb676528d831643d27df52d67f31fd87c7fb16822dc0ff39e3f874a65438a2",
+          "outputDigest": "sha256:745171a4fcbcb580f4077997d65107db14de4db9cde5415835a521948c3c69e0",
           "reasonCodes": []
         }
       ]

@@ -22,7 +22,7 @@
 //    proving newline-variant inputs are accepted while wire bytes stay
 //    LF-only.
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -122,18 +122,68 @@ for (const [dir, names] of byDir) {
   }
 }
 
-// 6. CRLF input acceptance: the existing loader CRLF fixture remains
-//    valid (newline-variant inputs accepted, LF wire output pinned).
-const crlfFixture = "tests/fixtures/loader/valid-crlf-multibyte";
-if (!statSync(repoPath(crlfFixture)).isDirectory()) {
-  errors.push(`crlf-control-missing: ${crlfFixture}`);
+// 6. Producer-executed newline normalization: the same project as LF
+//    and as CRLF inputs must produce byte-identical loader output
+//    (newline-variant inputs accepted, canonical wire output). Requires
+//    the cargo-built binary; the gate fails closed when it is absent
+//    (CI runs this gate only after the build).
+const binary = join(REPO_ROOT, "target", "debug", process.platform === "win32" ? "lekalo.exe" : "lekalo");
+if (!existsSync(binary)) {
+  errors.push("normalization-producer-missing: cargo build -p lekalo-cli --locked first");
 } else {
-  const entities = readFileSync(
-    repoPath(`${crlfFixture}/lekalo/modules/plan/entities.yaml`),
-  );
-  if (entities.includes(Buffer.from("\r"))) {
-    // The fixture may contain CRLF content bytes by design; both are
-    // acceptable inputs. The control only requires the directory.
+  const { spawnSync } = await import("node:child_process");
+  const { cpSync, mkdtempSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const sandbox = realpathSync(mkdtempSync(join(tmpdir(), "lekalo-norm-")));
+  try {
+    const runLoader = (projectDir) => {
+      const result = spawnSync(binary, ["--no-cache", "load", "--json", "--project", projectDir], {
+        cwd: sandbox, encoding: "utf8", timeout: 60000,
+      });
+      return { code: result.status, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
+    };
+    // The committed minimal project is the LF input; the LF copy is
+    // materialized in the sandbox so the selector stays relative.
+    const trackedProject = repoPath("tests/fixtures/suite/v1/minimal/project");
+    const lfProject = join(sandbox, "lf-project");
+    cpSync(trackedProject, lfProject, { recursive: true });
+    const lf = runLoader("lf-project");
+    if (lf.code !== 0 || lf.stderr.length > 0) {
+      errors.push("newline-vector: LF input failed: " + lf.stderr.slice(0, 120));
+    } else {
+      // The CRLF variant is materialized fresh (never tracked).
+      const crlfProject = join(sandbox, "crlf-project");
+      cpSync(lfProject, crlfProject, { recursive: true });
+      const convertToCrlf = (current) => {
+        for (const name of readdirSync(current)) {
+          const full = join(current, name);
+          if (statSync(full).isDirectory()) convertToCrlf(full);
+          else if (/.ya?ml$/.test(name)) {
+            const bytes = readFileSync(full);
+            const lfFree = bytes.toString("utf8").replaceAll(String.fromCharCode(13, 10), String.fromCharCode(10));
+            writeFileSync(full, lfFree.replaceAll(String.fromCharCode(10), String.fromCharCode(13, 10)));
+          }
+        }
+      };
+      convertToCrlf(crlfProject);
+      const crlf = runLoader("crlf-project");
+      if (crlf.code !== 0 || crlf.stderr.length > 0) {
+        errors.push("newline-vector: CRLF input refused: " + crlf.stderr.slice(0, 120));
+      } else if (crlf.stdout !== lf.stdout) {
+        errors.push("newline-vector: CRLF and LF inputs produced different loader bytes");
+      }
+      // Separator-variant spelling: a forward-slash nested relative
+      // selector exercises the path projection.
+      const nested = join(sandbox, "nested", "deep");
+      mkdirSync(nested, { recursive: true });
+      cpSync(lfProject, join(nested, "project"), { recursive: true });
+      const nestedRun = runLoader("nested/deep/project");
+      if (nestedRun.code !== 0 || nestedRun.stdout !== lf.stdout) {
+        errors.push("separator-vector: forward-slash relative selector changed the output");
+      }
+    }
+  } finally {
+    rmSync(sandbox, { recursive: true, force: true });
   }
 }
 
@@ -141,4 +191,7 @@ if (errors.length > 0) failGate("golden-normalization", errors);
 passGate("golden-normalization", {
   files: tracked.length,
   utf8DivergentKeys: divergence.map((row) => row.ch),
+  producerVectors: existsSync(binary)
+    ? ["newline-crlf-equal-output", "separator-forward-slash-equal-output"]
+    : [],
 });
