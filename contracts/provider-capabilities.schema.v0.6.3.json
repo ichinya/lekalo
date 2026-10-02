@@ -51,8 +51,8 @@
       ]
     },
     "effectClass": {
-      "description": "read-only operations never write under the prescribed provider argv; runtime-metadata operations write only Lekalo runtime metadata under the governed .lekalo/** custody; generated-artifacts (only the mutating generate form) writes the adapter-declared managed write scopes verified against the ownership plan plus .lekalo/** metadata. The protected homes (openspec/**, lekalo/**, lekalo.lock, .lekalo/{ir,cache,import,privacy,consumer}/**) are refused as target.protected-path (exit 3).",
-      "enum": ["read-only", "runtime-metadata", "generated-artifacts"]
+      "description": "read-only operations never write under the prescribed provider argv; generated-artifacts (only the mutating generate form) writes the adapter-declared managed write scopes verified against the ownership plan plus .lekalo/** metadata. The protected homes (openspec/**, lekalo/**, lekalo.lock, .lekalo/{ir,cache,import,privacy,consumer}/**) are refused as target.protected-path (exit 3).",
+      "enum": ["read-only", "generated-artifacts"]
     },
     "contractPin": {
       "type": "object",

@@ -98,13 +98,14 @@
           "maxLength": 64
         },
         "lifecycle": {
-          "description": "The artifact lifecycle, when known (generated or scaffolded).",
+          "description": "The artifact lifecycle, when known. Generated-lifecycle findings always block (exit 1) and never appear here, so a receipt finding carries exactly one of the non-generated lifecycles.",
           "type": "string",
-          "enum": ["generated", "scaffolded"]
+          "enum": ["scaffolded", "checked", "external", "custom"]
         },
         "verdict": {
-          "description": "The closed non-blocking verdict (only `orphan` may appear as reported-only; stale/manual-drift/missing block).",
-          "enum": ["orphan", "clean", "reported"]
+          "description": "The closed non-blocking finding verdict: stale, manual drift, or missing. Orphans always block (exit 1) and clean entries are only counted, so neither ever appears as a finding verdict.",
+          "type": "string",
+          "enum": ["stale", "manual-drift", "missing"]
         }
       }
     }

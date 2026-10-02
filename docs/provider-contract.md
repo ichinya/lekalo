@@ -159,7 +159,10 @@ Effect classes describe the write surface **of the prescribed argv**:
   warnings are exit 0 on stdout; the success receipt has no embedded
   `schemaVersion` member and is negotiated through the published
   `lekalo/validation-report/v0.6.3` describing schema
-  (`contracts/validation-report.schema.v0.6.3.json`); the profile
+  (`contracts/validation-report.schema.v0.6.3.json`), which covers
+  both reachable shapes: the zero-diagnostic receipt and the normal
+  warning/info-bearing receipt whose envelope carries the closed
+  `diagnostics` array plus the derived `reasonCodes`. The profile
   definition document stays `lekalo/validation-profile/v0.4.0`
   (configuration, not output). Invalid models exit 1 on stderr with
   the typed diagnostics; a strict authorization denial is exit 3
@@ -169,8 +172,11 @@ Effect classes describe the write surface **of the prescribed argv**:
   clean or findings-only check is exit 0 stdout with the
   `lekalo/generate-check/v0.6.3` receipt (operation `generate`, mode
   `check`, the exact `lockDigest` binding, verdict, counts, sorted
-  non-blocking findings); any blocking finding — stale, manual drift,
-  missing artifact, orphan — fails the run exit 1 (stderr) with the
+  non-blocking findings). Receipt findings are exactly the non-blocking
+  triple — `stale`, `manual-drift`, `missing` — on entries whose
+  lifecycle is one of the non-generated lifecycles (`scaffolded`,
+  `checked`, `external`, `custom`); orphans and every generated-
+  lifecycle finding block the run instead: exit 1 (stderr) with the
   typed diagnostic (`lock.stale`, `lock.source-changed`,
   `structure.document-missing`, `structure.runtime-unexpected-entry`).
   The receipt is never an orchestration report and is never validated

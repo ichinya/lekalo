@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://dev.lekalo/validation-report.schema.v0.6.3.json",
   "title": "Lekalo validation success receipt",
-  "description": "Closed contract of the `lekalo validate` success receipt (issue #34 provider boundary, fix round 1). The command embeds no `schemaVersion` member in its payload; this describing schema is the exact output negotiation target advertised as `lekalo/validation-report/v0.6.3` by the workflow-provider manifest. The envelope is the standard status-first projection: exit 0, stdout. Warning/info validation findings ride the envelope's `diagnostics` array (closed `lekalo/diagnostic/v0.2.16` items); error findings make the run `invalid` (exit 1, stderr) which is a semantic result, not a provider crash. `lekalo/validation-profile/v0.4.0` remains the separate profile *configuration* schema and is pinned alongside this contract.",
+  "description": "Closed contract of the `lekalo validate` success receipt (issue #34 provider boundary, fix round 2). The command embeds no `schemaVersion` member in its payload; this describing schema is the exact output negotiation target advertised as `lekalo/validation-report/v0.6.3` by the workflow-provider manifest. The envelope is the standard status-first projection: exit 0, stdout. Warning/info validation findings ride the envelope's `diagnostics` array (closed `lekalo/diagnostic/v0.2.16` items) with the derived `reasonCodes`; when the run records no findings both members are absent, and when any are recorded both are present and non-empty. Error findings make the run `invalid` (exit 1, stderr) which is a semantic result, not a provider crash. `lekalo/validation-profile/v0.4.0` remains the separate profile *configuration* schema and is pinned alongside this contract.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -19,17 +19,99 @@
       "description": "The exact canonical Model contract version that was validated.",
       "const": "0.2.16"
     },
-    "validation": { "$ref": "#/$defs/report" }
+    "validation": {
+      "$ref": "#/$defs/report"
+    },
+    "diagnostics": {
+      "description": "Present exactly when the run recorded warning/info findings: the closed diagnostic items in normalized order (the same wire items every failure envelope carries), each matching the closed `lekalo/diagnostic/v0.2.16` item schema.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4096,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema_version",
+          "registry_version",
+          "id",
+          "code",
+          "severity",
+          "category",
+          "message_id",
+          "message",
+          "data",
+          "related_locations",
+          "causes",
+          "fixes",
+          "metadata"
+        ],
+        "properties": {
+          "schema_version": { "const": "lekalo/diagnostic/v0.2.16" },
+          "registry_version": { "const": "0.4.0" },
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9-]*)+$"
+          },
+          "code": {
+            "type": "string",
+            "pattern": "^LEK-[A-Z][A-Z0-9]{1,11}-[0-9]{3}$"
+          },
+          "severity": { "enum": ["info", "warning"] },
+          "category": {
+            "enum": [
+              "model",
+              "semantic",
+              "compatibility",
+              "adapter",
+              "infrastructure",
+              "security"
+            ]
+          },
+          "message_id": { "type": "string", "minLength": 1 },
+          "message": { "type": "string", "minLength": 1, "maxLength": 512 },
+          "symbol": { "type": "string", "minLength": 1 },
+          "source": { "type": "object" },
+          "data": { "type": "object" },
+          "related_locations": { "type": "array", "maxItems": 16 },
+          "causes": { "type": "array", "maxItems": 16 },
+          "fixes": { "type": "array", "maxItems": 16 },
+          "metadata": { "type": "object" }
+        }
+      }
+    },
+    "reasonCodes": {
+      "description": "Present exactly with `diagnostics`: the unique dotted rule ids in normalized order.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4096,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9-]*)+$"
+      }
+    }
   },
   "$defs": {
     "counts": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["error", "warning", "info"],
+      "required": [
+        "error",
+        "warning",
+        "info"
+      ],
       "properties": {
-        "error": { "type": "integer", "minimum": 0 },
-        "warning": { "type": "integer", "minimum": 0 },
-        "info": { "type": "integer", "minimum": 0 }
+        "error": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "warning": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "info": {
+          "type": "integer",
+          "minimum": 0
+        }
       }
     },
     "report": {
@@ -46,7 +128,10 @@
         "profile": {
           "description": "The closed built-in profile id that ran (`default` or `strict`).",
           "type": "string",
-          "enum": ["default", "strict"]
+          "enum": [
+            "default",
+            "strict"
+          ]
         },
         "profileVersion": {
           "description": "The exact profile document version that ran.",
@@ -68,7 +153,9 @@
           "minimum": 1,
           "maximum": 4096
         },
-        "counts": { "$ref": "#/$defs/counts" }
+        "counts": {
+          "$ref": "#/$defs/counts"
+        }
       }
     }
   }

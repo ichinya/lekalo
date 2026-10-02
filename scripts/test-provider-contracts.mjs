@@ -219,11 +219,18 @@ if (binaryAvailable) {
 
   // 9. The two receipt-shaped operations validate against their own
   // published describing schemas at the process boundary, and the
-  // prescribed read-only argv materializes no cache home.
+  // prescribed read-only argv materializes no cache home. Both the
+  // zero-diagnostic and the warning/info-bearing receipt shapes are
+  // vectors (fix round 2).
   const validationFixture = resolve(root, "tests/fixtures/validation/valid/base");
+  const warningFixture = resolve(
+    root,
+    "tests/fixtures/validation/warning/portable-target-reference",
+  );
   const validationWork = join(workRoot, "validation");
   mkdirSync(validationWork, { recursive: true });
   cpSync(validationFixture, join(validationWork, "base"), { recursive: true });
+  cpSync(warningFixture, join(validationWork, "warn"), { recursive: true });
   const validateRun = spawnSync(
     binary,
     ["validate", "--no-cache", "--json", "--project", "base"],
@@ -239,6 +246,25 @@ if (binaryAvailable) {
   }
   if (existsSync(join(validationWork, "base", ".lekalo"))) {
     fail("validate-side-effect", "the prescribed argv materialized .lekalo");
+  }
+
+  // The warning/info-bearing success receipt (diagnostics + reasonCodes
+  // present) is the normal default-profile outcome and must validate.
+  const warningRun = spawnSync(
+    binary,
+    ["validate", "--no-cache", "--json", "--project", "warn"],
+    { cwd: validationWork, encoding: "utf8", windowsHide: true },
+  );
+  if (warningRun.status !== 0) fail("validate-warning-exit", String(warningRun.status));
+  const warningReceipt = JSON.parse(warningRun.stdout.trim());
+  if (!Array.isArray(warningReceipt.diagnostics) || warningReceipt.diagnostics.length === 0) {
+    fail("validate-warning-shape", "expected a diagnostics-carrying receipt");
+  }
+  if (!validateValidationReport(warningReceipt)) {
+    fail(
+      "validate-warning-receipt-schema",
+      JSON.stringify(validateValidationReport.errors, null, 1),
+    );
   }
   rmSync(workRoot, { recursive: true, force: true });
 
@@ -264,7 +290,32 @@ if (binaryAvailable) {
   }
   if (driftReceipt.verdict !== "clean") fail("drift-verdict", driftReceipt.verdict);
   rmSync(workRoot, { recursive: true, force: true });
-  checks += 2;
+
+  // The findings-bearing `verdict: reported` receipt, captured by the
+  // Rust child-process test (target/provider-receipts/, written by
+  // `cargo test -p lekalo-cli --test provider`), must validate too: the
+  // non-blocking stale/manual-drift/missing findings with their
+  // non-generated lifecycles are the exact response class consumers
+  // negotiate the drift operation for.
+  const capturedPath = resolve(root, "target/provider-receipts/drift-reported.json");
+  if (existsSync(capturedPath)) {
+    const captured = JSON.parse(readFileSync(capturedPath, "utf8"));
+    if (captured.verdict !== "reported" || captured.findings.length === 0) {
+      fail("drift-captured-shape", "expected a reported receipt with findings");
+    }
+    if (!validateGenerateCheck(captured)) {
+      fail(
+        "drift-reported-receipt-schema",
+        JSON.stringify(validateGenerateCheck.errors, null, 1),
+      );
+    }
+  } else {
+    fail(
+      "drift-captured-missing",
+      "run: cargo test -p lekalo-cli --test provider (captures target/provider-receipts/drift-reported.json)",
+    );
+  }
+  checks += 3;
 } else if (!existsSync(binary)) {
   process.stdout.write(
     `${JSON.stringify({ skipped: "live-binary", detail: `run: cargo build -p lekalo-cli (${binary})` })}\n`,

@@ -505,3 +505,141 @@ fn count_entries(root: &std::path::Path) -> usize {
     // Count content identities, not metadata churn.
     paths.len()
 }
+
+/// The drift operation's findings-bearing receipt (verdict `reported`):
+/// authored exactly the way `generate.rs` authors manifests (through the
+/// core `GenerateService::inputs` pins), then a custom-lifecycle file is
+/// drifted and the read-only check reports it without blocking. The
+/// receipt is captured under the git-ignored `target/` tree for the Node
+/// boundary gate to validate against the published schema.
+#[test]
+fn drift_reported_receipt_is_captured_for_the_schema_gate() {
+    use lekalo_core::artifacts::GenerateService;
+    use lekalo_core::digest::sha256_hex;
+    use lekalo_core::loader::LoadSelection;
+    use serde_json::json;
+
+    const REFERENCE: &str = "../../tests/fixtures/artifacts/project";
+    let work = temp_dir("drift-reported");
+    let project = work.join("proj");
+    fs_extra_copy_dir(
+        &std::path::PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/fixtures/artifacts/project"
+        )),
+        &project,
+    );
+
+    // The artifact file drifts after the manifest records it.
+    let content = "export function focusHook() {\n  return planner.focusTask();\n}\n";
+    let artifact_dir = project.join("apps/api/src/planner");
+    fs::create_dir_all(&artifact_dir).expect("artifact dir");
+    fs::write(artifact_dir.join("focus-hook.ts"), content).expect("artifact bytes");
+
+    // Explicit lock, then the exact GenerateService::inputs pins. The
+    // selection is a relative selector resolved from the test process's
+    // cwd (the crate dir) into the git-ignored crate-local target tree,
+    // exactly the way `generate.rs` addresses its sandboxes.
+    let lock = lekalo_in(
+        project.parent().expect("work"),
+        &["lock", "--json", "--project", "proj"],
+    );
+    assert_eq!(lock.status.code(), Some(0), "{lock:?}");
+    let relative = format!(
+        "target/provider-tests/{}-{}/proj",
+        std::path::Path::new(REFERENCE)
+            .file_name()
+            .expect("fixture name")
+            .to_string_lossy(),
+        std::process::id()
+    );
+    // Move the sandbox under the crate-local target tree first: the
+    // selector must resolve from the crate dir, but temp_dir lives in the
+    // system temp home.
+    let sandbox_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(&relative);
+    let _ = fs::remove_dir_all(sandbox_root.parent().expect("parent"));
+    fs::create_dir_all(sandbox_root.parent().expect("parent")).expect("sandbox parent");
+    fs::rename(&project, &sandbox_root).expect("move sandbox into target");
+    let project = sandbox_root;
+    let selection = LoadSelection {
+        project: Some(relative),
+    };
+    let inputs = GenerateService::inputs(&selection).expect("inputs receipt");
+    let mut document = json!({
+        "schema_version": "lekalo/artifact-manifest/v0.2.16",
+        "identity": "dev.lekalo.artifact-manifest@0.2.16",
+        "project_ref": "planner",
+        "lock_ref": {
+            "schema_version": "lekalo/lock/v0.3.2",
+            "digest": inputs.lock_digest,
+        },
+        "inputs": {
+            "model": {"version": inputs.model_version, "digest": inputs.model_digest},
+            "ir": {"version": inputs.ir_version, "digest": inputs.ir_digest},
+        },
+        "artifacts": [{
+            "semantic_owner": "planner.focus_task",
+            "path": "apps/api/src/planner/focus-hook.ts",
+            "artifact_kind": "source",
+            "lifecycle": "custom",
+            "content": {
+                "algorithm": "sha256",
+                "digest": format!("sha256:{}", sha256_hex(content.as_bytes())),
+                "canonicalization": "exact-file-bytes",
+            },
+            "input_refs": ["planner.focus_task"],
+            "regeneration_policy": "manual-only",
+        }],
+        "source_maps": [],
+    });
+    let mut draft = document.clone();
+    draft
+        .as_object_mut()
+        .expect("object")
+        .remove("manifest_digest");
+    document["manifest_digest"] = json!(format!(
+        "sha256:{}",
+        sha256_hex(&serde_json::to_vec(&draft).expect("wire"))
+    ));
+    let manifest_path = project.join(".lekalo/generated/manifests/ownership.json");
+    fs::create_dir_all(manifest_path.parent().expect("manifest parent")).expect("manifest dir");
+    fs::write(
+        &manifest_path,
+        serde_json::to_vec(&document).expect("canonical wire"),
+    )
+    .expect("write manifest");
+
+    // Drift the file, then the read-only check reports it.
+    let drifted_dir = project.join("apps/api/src/planner");
+    fs::create_dir_all(&drifted_dir).expect("drift artifact dir");
+    fs::write(
+        drifted_dir.join("focus-hook.ts"),
+        "export function focusHook() {\n  return 'drifted';\n}\n",
+    )
+    .expect("drift bytes");
+    let output = lekalo_in(
+        project.parent().expect("work"),
+        &["generate", "--check", "--json", "--project", "proj"],
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "custom drift never blocks: {:?}",
+        stderr_text(&output)
+    );
+    let receipt: serde_json::Value =
+        serde_json::from_str(stdout_text(&output).trim()).expect("receipt");
+    assert_eq!(receipt["status"], "valid");
+    assert_eq!(receipt["operation"], "generate");
+    assert_eq!(receipt["mode"], "check");
+    assert_eq!(receipt["verdict"], "reported");
+    assert_eq!(receipt["findings"][0]["lifecycle"], "custom");
+    assert_eq!(receipt["findings"][0]["verdict"], "manual-drift");
+    // Capture for the Node gate (git-ignored target/ tree).
+    let capture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/provider-receipts")
+        .join("drift-reported.json");
+    fs::create_dir_all(capture.parent().expect("capture parent")).expect("capture dir");
+    fs::write(&capture, stdout_text(&output)).expect("capture receipt");
+    let _ = fs::remove_dir_all(&work);
+}

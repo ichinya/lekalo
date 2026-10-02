@@ -18,9 +18,9 @@
 //!   the ownership plan, plus Lekalo's own `.lekalo/generated/**`
 //!   metadata. The protected homes (`openspec/**`, `lekalo/**`,
 //!   `lekalo.lock`, `.lekalo/{ir,cache,import,privacy,consumer}/**`)
-//!   are refused as `target.protected-path` (exit 3).
-//! - `read-or-check` marks the read-only drift check variant of
-//!   generation: it never writes and never needs an adapter.
+//!   are refused as `target.protected-path` (exit 3). The `drift`
+//!   operation is the read-only check variant of the same command:
+//!   it never writes and never needs an adapter.
 
 #![allow(non_snake_case)] // wire field names are the published contract
 
@@ -33,9 +33,6 @@ use serde::Serialize;
 pub enum EffectClass {
     /// Never writes under the prescribed argv.
     ReadOnly,
-    /// Writes Lekalo runtime metadata under the governed `.lekalo/**`
-    /// custody (caches, generated-intermediate metadata).
-    RuntimeMetadata,
     /// The mutating generation form: adapter-declared managed write
     /// scopes verified against the ownership plan, plus `.lekalo/**`
     /// metadata. Protected homes are refused.
@@ -47,7 +44,6 @@ impl EffectClass {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::ReadOnly => "read-only",
-            Self::RuntimeMetadata => "runtime-metadata",
             Self::GeneratedArtifacts => "generated-artifacts",
         }
     }
