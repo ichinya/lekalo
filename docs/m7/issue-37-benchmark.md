@@ -1,8 +1,11 @@
 # Issue #37 — CodeGraph context benchmark (AC6)
 
-Status: **run and reported**. This document is the acceptance evidence
-for acceptance criterion 6 ("Rust CodeGraph context benchmark run on
-core changes") per the benchmark protocol in
+Status: **run and reported** (fix round 1: the retrieval measurement is
+now a real repeated per-task comparison per the research protocol; the
+first-round "one sample per task" measurement was superseded). This
+document is the acceptance evidence for acceptance criterion 6
+("Rust CodeGraph context benchmark run on core changes") per the
+benchmark protocol in
 [`docs/m7/issue-37-research.md`](issue-37-research.md). Reproduce with:
 
 ```sh
@@ -22,59 +25,72 @@ node scripts/benchmark-ai-workspace-context.mjs \
 
 Machine-readable result: [`issue-37-benchmark.json`](issue-37-benchmark.json)
 (schema `lekalo/ai-workspace-context-benchmark/v0.6.3`). Raw per-run rows
-(with absolute paths) are private by design; the benchmark prints only
-the closed aggregate and runs leak probes over it before printing.
+(with absolute paths) are private by design; the benchmark probes the
+**complete printed document** for leaks before printing it.
 
 ## Navigation tasks (predeclared)
 
-| Task | Expected file found via | Baseline | CodeGraph |
+| Task | Expected evidence | Baseline covered | CodeGraph covered |
 | --- | --- | --- | --- |
-| custody-read-verification (where does the store re-verify record custody at read time) | `store.rs` | hit | hit |
-| recovery-quarantine (where recovery quarantines divergent column/body ids) | `store.rs` | hit | hit |
-| quarantine-regression-test (which test proves the divergence quarantine) | `tests.rs` | hit | hit |
+| custody-read-verification | `store.rs` + `check_frozen_refs` | yes | yes |
+| recovery-quarantine | `store.rs` + `quarantined_runs` | yes | **no** (search hit the file; the `quarantined` FTS query did not surface the symbol within the top results) |
+| quarantine-regression-test | `tests.rs` + the regression test name | **no** (the bounded baseline's 64 KiB read budget was consumed by the larger `store.rs` before `tests.rs` was visited) | yes |
 
-## Measured results (5 repetitions per timing case)
+Coverage is **measured, not asserted**: a miss is recorded truthfully
+and fails nothing. The two misses above are themselves findings: the
+baseline's byte budget is a real retrieval constraint, and upstream's
+FTS ranking is not symbol-exact. Neither strategy covered all three
+tasks.
 
-| Case | Median | Range |
-| --- | --- | --- |
-| Cold reindex (fresh DB, 3-file scope) | 182 ms | 171–209 ms |
-| Warm sync (unchanged scope) | 46 ms | 45–176 ms |
-| Retrieval, bounded local grep baseline | 2 ms | 1–3 ms |
-| Retrieval, `workspace_context` + `codegraph_search` | 43 ms | 42–45 ms |
-| Coverage of expected files, baseline | 3/3 | — |
-| Coverage of expected files, CodeGraph | 3/3 | — |
+## Measured results (5 repetitions of EVERY timing case)
 
-A second complete run reproduced the result (cold median 183 ms,
-CodeGraph retrieval median 49 ms, identical coverage and staleness
+| Case | Median | Range | Samples |
+| --- | --- | --- | --- |
+| Cold reindex (fresh DB, 3-file scope) | 174 ms | 155–198 ms | 5 |
+| Unchanged warm sync | 56 ms | 55–61 ms | 5 |
+| Changed-file sync (first sample sees the edit) | 60 ms | 53–234 ms | 5 |
+| Retrieval, bounded local grep baseline | 1 ms | 1–2 ms | 15 (3 tasks × 5 reps) |
+| Retrieval, `workspace_context` + `codegraph_search` + `codegraph_context` | 73 ms | 62–97 ms | 15 (3 tasks × 5 reps) |
+| Returned `codegraph_context` size | 10 283 chars | 9 664–10 616 | 15 |
+| Token estimate | **unknown** | — | — (upstream exposes no token count at the pin) |
+| Unresolved references (`codegraph_status`) | 953 | — | — |
+
+A second complete run reproduced the result (cold 187 ms, warm 55 ms,
+baseline 1 ms, CodeGraph 77 ms, identical staleness/deletion/revocation
 outcomes). A run on this machine is dominated by process-spawn cost
 (each MCP call spawns a fresh stdio server), which is why the baseline
 in-process grep is faster on a three-file scope; these numbers
 characterize the tool, they do not establish a general speedup claim —
 the research protocol explicitly forbids preclaiming one.
 
-## Staleness and revocation (hard gates)
+## Staleness, change, deletion, revocation (hard gates)
 
 - **Edit-after-sync staleness is real and surfaced.** Upstream
   `codegraph_status` carries no staleness field at the pin (file/node/
-  edge counts and `last_indexed_at` only), so staleness was proven
+  edge counts and `last_indexed_at` only), so staleness is proven
   behaviorally: a new unique symbol appended to a shared file after
   sync is invisible to `codegraph_search` until the next
   `codegraph sync`, then visible after it
   (`stalenessAfterEditSurfaced: true`,
-  `stalenessResolvesAfterSync: true`). Consequence recorded for
+  `stalenessResolvesAfterSync: true`; both **asserted** — the benchmark
+  fails if either stops holding). Consequence recorded for
   integrators: a sync timestamp alone never proves source freshness —
   public CodeGraph evidence must carry the provenance wrapper from
   [`docs/integrations/ai-workspace.md`](../integrations/ai-workspace.md).
-- **Revoked scope is refused, not stale-served.** After removing the
-  shares, both `codegraph_search` (over the formerly indexed files)
-  and `workspace_read` (by path) refuse: `revokedScopeDenied` both
-  true. The upstream visibility filter rechecks current share state on
-  every call, including stale indexed rows.
+- **Changed-file sync measured** over exactly the convergence sync
+  (first sample 234 ms, subsequent unchanged-path samples 53–60 ms —
+  the range honestly spans both shapes).
+- **Deletion is handled.** After removing one scope file and its
+  share, a sync drops it from the graph (`deletedFileHandled: true`);
+  the file was then restored and re-shared.
+- **Revoked scope is refused, not stale-served.** After removing all
+  scope shares, both `codegraph_search` (over the formerly indexed
+  files) and `workspace_read` (by path) refuse:
+  `revokedScopeDenied` both true (**asserted**).
 - **No snippet leakage in the published aggregate.** Live source
-  snippets (which `codegraph_context`/`codegraph_search` results
-  contain) are excluded from the printed aggregate by construction and
+  snippets are excluded from the printed aggregate by construction and
   probe-checked; a private sentinel file inside the core project never
-  appears in any result.
+  appears in any result, and the probe symbol never reaches stdout.
 
 ## Findings and limitations (explicit)
 
@@ -87,19 +103,26 @@ the research protocol explicitly forbids preclaiming one.
    path, line spans, signatures — no Git revision, no file hash, no
    parser version, no confidence envelope. The benchmark pins these at
    the wrapper level; upstream enrichment remains a documented gap.
-3. **Process-spawn-dominated timings.** Each MCP call in this protocol
+3. **Neither strategy solved all three tasks.** Baseline missed the
+   regression-test task under its read budget; CodeGraph missed the
+   quarantine symbol under FTS ranking. "Which tool is better" is
+   task-dependent; the benchmark records both misses instead of tuning
+   either side until it wins.
+4. **Process-spawn-dominated timings.** Each MCP call in this protocol
    spawns a fresh group-scoped server (the honest CLI-driven shape);
    long-lived MCP sessions would amortize that cost. Timing
    comparisons against an in-process baseline therefore measure the
    integration shape, not the indexer's asymptotics.
-4. **One machine, one OS, debug build.** Numbers are reproducible on
+5. **One machine, one OS, debug build.** Numbers are reproducible on
    the same machine (second run within noise) but are not
    cross-environment claims. CI does not run the benchmark: it needs
    the pinned upstream binary built locally.
-5. **Small scope.** Three files (the actual change surface). Indexing
+6. **Small scope.** Three files (the actual change surface). Indexing
    cost grows with shared scope; the benchmark intentionally measures
    the integration-relevant scope, not a full-repository index.
-6. **The upstream `codegraph_status` staleness gap** (finding in the
-   staleness section) is recorded as an upstream gap in the
-   implementation report; the benchmark's behavioral probe is the
-   lekalo-side mitigation, not a fix.
+7. **Token cost remains unknown.** Upstream exposes no token estimate
+   at the pin; the aggregate records `tokenEstimate: "unknown"` rather
+   than a fabricated conversion.
+8. **The upstream `codegraph_status` staleness gap** is recorded as an
+   upstream gap in the implementation report; the benchmark's
+   behavioral proof is the lekalo-side mitigation, not a fix.
