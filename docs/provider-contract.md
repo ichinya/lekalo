@@ -32,13 +32,16 @@ their own independent family versions.
 3. **Fixed command construction.** The consumer recognizes known
    operations and constructs argv from this document. There is no
    execute-by-manifest facility: command text returned by a provider is
-   never executed. The manifest carries presentation-form command
-   strings for documentation only.
+   never executed. The manifest carries no command strings at all — the
+   argv recipes live only in this document.
 4. **Closed vocabulary, exact versions.** Manifest and operation
    selection is by exact identity match, not a semver range. An
    unknown operation, an unknown schema identity, or an unexpected
    product/contract combination is `unsupported` for the consumer —
-   a refusal to guess, not a validation error.
+   a refusal to guess, not a validation error. The prescribed argv per
+   operation below is the provider-relevant subset of each command's
+   grammar, not the command's complete grammar; a consumer must not
+   hand-craft argv outside it.
 5. **The consumer owns evidence custody.** The consumer writes its own
    aggregate evidence (for AIFHub: the accepted
    `ai-factory.provider-evidence-envelope` under
@@ -46,10 +49,16 @@ their own independent family versions.
    reader of that custody and never becomes a QA writer. Lekalo's own
    writes stay inside its governed `.lekalo/**` runtime custody.
 6. **OpenSpec/HLV canonical paths are never written.** No operation in
-   this contract writes into `openspec/**` or HLV diagnostic homes.
-   The only mutating operation (`generate`) writes generated artifacts
-   under the governed `.lekalo/**` custody through the explicit
-   adapter program.
+   this contract writes into `openspec/**` or HLV diagnostic homes:
+   those are protected homes, and a generation write plan covering one
+   is refused as `target.protected-path` (exit 3). The mutating
+   `generate` form writes what its reviewed adapter declares — the
+   adapter-declared managed write scopes verified against the ownership
+   plan (legitimately including managed source roots such as
+   `src/generated/**`) plus Lekalo's own `.lekalo/generated/**`
+   metadata. Consumers must scope generation's write authorization from
+   the adapter declaration and the ownership plan, never from a
+   `.lekalo/**` assumption.
 
 ## Discovery
 
@@ -66,11 +75,11 @@ The manifest advertises:
 
 | Field | Meaning |
 | --- | --- |
-| `schemaVersion`, `identity`, `productVersion` | The exact workflow-provider contract discriminator, identity, and producing product version (`0.6.3`). |
+| `schemaVersion`, `identity`, `productVersion` | The exact workflow-provider contract discriminator, identity, and the product version this contract was implemented at (`0.6.3`; deliberately frozen — it may trail a later binary's `--version`, and consumers negotiate on `identity`/`schemaVersion`, never on this field). |
 | `discoveryCommand` | `lekalo provider describe` (presentation form). |
 | `targetProtocolIdentity` | `dev.lekalo.target-protocol@0.3.2`. The adapter protocol is a separate negotiated family: a supported workflow operation never implies a configured target. |
-| `schemaPins` | The exact upstream output discriminators (and family identities where published): context `lekalo/context/v0.2.16`, diagnostics `lekalo/diagnostic/v0.2.16`, doctor `lekalo/doctor/v0.3.2`, impact `lekalo/impact/v0.2.16`, orchestration `lekalo/orchestration/v0.2.16`, trace `lekalo/trace-manifest/v0.2.16`, validation profile `lekalo/validation-profile/v0.4.0`. |
-| `operations` | The nine operations below, canonical order, with effect class, output schema, and the `requiresProject` / `requiresAdapter` prerequisites. |
+| `schemaPins` | The exact upstream output contract identities: the seven wire-discriminated families — context `lekalo/context/v0.2.16`, diagnostics `lekalo/diagnostic/v0.2.16`, doctor `lekalo/doctor/v0.3.2`, impact `lekalo/impact/v0.2.16`, orchestration `lekalo/orchestration/v0.2.16`, trace `lekalo/trace-manifest/v0.2.16`, validation profile `lekalo/validation-profile/v0.4.0` — plus the two describing schemas of this contract series for the receipt-shaped payloads without embedded discriminators: `lekalo/validation-report/v0.6.3` (`validate` success) and `lekalo/generate-check/v0.6.3` (`drift` receipts). |
+| `operations` | The ten operations below, canonical order, with effect class, output schema, and the `requiresProject` / `requiresAdapter` prerequisites. |
 | `bounds` | `recommendedContextBudgetTokens` 5000, `maxContextBudgetTokens` 1000000 (`context.MAX_BUDGET_TOKENS`), `maxExportBytes` 33554432 (the 32 MiB impact/trace export bound). |
 | `manifestDigest` | `sha256:` over the canonical JSON (sorted keys, no whitespace) of the manifest with this field removed. Integrity metadata, not a signature. |
 
@@ -84,21 +93,36 @@ Detection is not an operation: it is the manifest plus the consumer's
 installed-tool check. The closed operation vocabulary (canonical
 order):
 
-| Operation | Command (presentation) | Effect | Output schema | Prerequisites |
+| Operation | Command (prescribed argv) | Effect | Output schema | Prerequisites |
 | --- | --- | --- | --- | --- |
 | `status` | `lekalo status [--project DIR]` | read-only | `lekalo/doctor/v0.3.2` | project |
 | `doctor` | `lekalo doctor [--project DIR] [--trace PATH]...` | read-only | `lekalo/doctor/v0.3.2` | project |
 | `impact` | `lekalo impact --changed (--base REF [--head REF] \| --worktree) [--project DIR]` | read-only | `lekalo/impact/v0.2.16` | project |
 | `context` | `lekalo context --changed SYMBOLS --budget TOKENS [--project DIR]` | read-only | `lekalo/context/v0.2.16` | project |
-| `validate` | `lekalo validate [--project DIR] [--module MODULE] [--strict]` | read-only | `lekalo/validation-profile/v0.4.0` | project |
+| `validate` | `lekalo validate --no-cache [--project DIR] [--module MODULE] [--strict]` | read-only | `lekalo/validation-report/v0.6.3` | project |
+| `drift` | `lekalo generate --check [--locked] [--project DIR]` | read-only | `lekalo/generate-check/v0.6.3` | project (lock for `--locked`) |
 | `generate` | `lekalo generate --target TARGET [--dry-run] [--locked] [--project DIR] -- PROGRAM [ARGS...]` | generated-artifacts | `lekalo/orchestration/v0.2.16` | project + adapter |
 | `verify` | `lekalo verify [--target TARGET]... [--module MODULE] [--changed] [--locked] [--trace PATH] [--project DIR]` | read-only | `lekalo/orchestration/v0.2.16` | project |
 | `readiness` | `lekalo readiness --phase implement\|generate\|verify\|release\|done [--project DIR] [--trace PATH]...` | read-only | `lekalo/doctor/v0.3.2` | project |
 | `trace.export` | `lekalo trace export PATH` | read-only | `lekalo/trace-manifest/v0.2.16` | none |
 
-Effect classes: `read-only` operations never write; a violation is a
-conformance defect. `generated-artifacts` (only `generate`) writes
-exclusively into the governed `.lekalo/**` generated/lock custody.
+Effect classes describe the write surface **of the prescribed argv**:
+
+- `read-only` operations never write. For `validate` this is true
+  only with the prescribed `--no-cache`: the default cached pipeline
+  materializes `.lekalo/cache/cache.sqlite` as an ordinary cache side
+  effect, which would corrupt a consumer's input-inventory binding for
+  a supposedly read-only phase. Never invoke the cached form from a
+  provider run.
+- `generated-artifacts` (only the mutating `generate` form) writes
+  the adapter-declared managed write scopes verified against the
+  ownership plan — legitimately including managed source roots such
+  as `src/generated/**` — plus Lekalo's own `.lekalo/generated/**`
+  metadata. The protected homes (`openspec/**`, `lekalo/**`,
+  `lekalo.lock`, `.lekalo/{ir,cache,import,privacy,consumer}/**`) are
+  refused as `target.protected-path` (exit 3).
+- The `drift` operation is the read-only check variant of generation:
+  it never writes and never needs an adapter.
 
 ### Mapping rules and interpretations
 
@@ -106,7 +130,10 @@ exclusively into the governed `.lekalo/**` generated/lock custody.
   produced report exits 0 even when its `verdict` is `degraded` or
   `blocked`. The consumer must read `verdict` and the closed check
   panel; exit 0 alone is never a pass. `readiness --phase done` is the
-  accepted `release` alias and never appears on the wire.
+  accepted `release` alias and never appears on the wire. The
+  readiness phases listed here are the provider-relevant subset; the
+  command also accepts `model`, which a workflow consumer has no
+  phase for.
 - **`doctor` is read-only at this boundary.** `--fix` renders recipe
   previews (advice only) and is unnecessary here; do not pass it.
   Missing `--trace` evidence degrades explicitly.
@@ -124,12 +151,26 @@ exclusively into the governed `.lekalo/**` generated/lock custody.
   budget first; the 1,000,000-token core bound is a hard ceiling, not
   a target.
 - **`validate` preserves original registry ids.** Valid success and
-  warnings are exit 0 on stdout (`{"status":"valid",...}`); invalid
-  models exit 1 on stderr with the typed diagnostics; a strict
-  authorization denial is exit 3 (`denied`) on stdout. A schema-valid
-  validation failure is a semantic result, never a provider crash.
-- **`generate --check` is a drift check, not an apply.** It reports
-  the ownership-manifest/lock/model/artifact state read-only. Real
+  warnings are exit 0 on stdout; the success receipt has no embedded
+  `schemaVersion` member and is negotiated through the published
+  `lekalo/validation-report/v0.6.3` describing schema
+  (`contracts/validation-report.schema.v0.6.3.json`); the profile
+  definition document stays `lekalo/validation-profile/v0.4.0`
+  (configuration, not output). Invalid models exit 1 on stderr with
+  the typed diagnostics; a strict authorization denial is exit 3
+  (`denied`) on stdout. A schema-valid validation failure is a
+  semantic result, never a provider crash.
+- **`drift` (generate --check) has its own receipt contract.** A
+  clean or findings-only check is exit 0 stdout with the
+  `lekalo/generate-check/v0.6.3` receipt (operation `generate`, mode
+  `check`, the exact `lockDigest` binding, verdict, counts, sorted
+  non-blocking findings); any blocking finding — stale, manual drift,
+  missing artifact, orphan — fails the run exit 1 (stderr) with the
+  typed diagnostic (`lock.stale`, `lock.source-changed`,
+  `structure.document-missing`, `structure.runtime-unexpected-entry`).
+  The receipt is never an orchestration report and is never validated
+  against `lekalo/orchestration/v0.2.16`. It reports the
+  ownership-manifest/lock/model/artifact state read-only. Real
   generation requires an explicit installed adapter argv after `--`;
   `--target` alone is insufficient. Generation is the only operation
   with write effects, must never run inside detection, done, or any
@@ -193,8 +234,14 @@ anonymization.
 - Rust child-process tests: `crates/lekalo-cli/tests/provider.rs`
   (stream/exit discipline, byte-identical determinism, golden
   fixture, digest domain, closed vocabulary, no-side-effect
-  discovery).
+  discovery, prescribed-argv side-effect tests for `validate` and
+  `drift`).
 - Node boundary gate: `node scripts/test-provider-contracts.mjs`
-  (schema + golden + live binary + digest recomputation, Ajv 8.17.1).
-- Schema: `contracts/provider-capabilities.schema.v0.6.3.json`
-  (closed, `additionalProperties:false`).
+  (schema + golden + live binary + digest recomputation + live
+  `validate`/`drift` receipts against their describing schemas, Ajv
+  8.17.1).
+- Schemas: `contracts/provider-capabilities.schema.v0.6.3.json`
+  (closed, `additionalProperties:false`, per-operation const tuples
+  and exact pin tuples),
+  `contracts/validation-report.schema.v0.6.3.json`, and
+  `contracts/generate-check-receipt.schema.v0.6.3.json`.

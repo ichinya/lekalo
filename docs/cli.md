@@ -464,7 +464,7 @@ operation. Exit 0 on stdout in both projections; an unknown
 ```sh
 lekalo provider describe
 # provider dev.lekalo.workflow-provider@0.6.3 product 0.6.3 operations \
-#   context,doctor,generate,impact,readiness,status,trace.export,validate,verify
+#   context,doctor,drift,generate,impact,readiness,status,trace.export,validate,verify
 ```
 
 The JSON receipt is `{"status":"valid","manifest":{...}}` with the
