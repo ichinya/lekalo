@@ -1,0 +1,38 @@
+{
+  "manifestVersion": "0.6.3",
+  "manifestKind": "lekalo-ai-workspace-routing",
+  "schemaVersion": "lekalo/ai-workspace-event/v0.6.3",
+  "description": "Reviewed public routing manifest for the AI Workspace change-event pipeline (issue #37). Committed example fixture: a deployment copies this, points the consumerSlug fields at its installation-local workspace slugs, and keeps the private binding outside the repository. Paths are repository-relative public artifacts; roles are neutral role aliases. This file must stay free of absolute paths, hosts, credentials, and private checkout names.",
+  "approvedPaths": [
+    "contracts/target-protocol.schema.v0.3.2.json",
+    "docs/target-protocol.md",
+    "docs/adr/0025-target-protocol.md",
+    "contracts/trace-manifest.schema.v0.2.16.json"
+  ],
+  "routes": [
+    {
+      "role": "greenfield-consumer",
+      "workspaceSlug": "greenfield-consumer",
+      "origin": "declared-service-link",
+      "dependencyKind": "depends_on",
+      "reaction": "inspect",
+      "watches": ["protocol", "schema"]
+    },
+    {
+      "role": "brownfield-consumer",
+      "workspaceSlug": "brownfield-consumer",
+      "origin": "declared-service-link",
+      "dependencyKind": "depends_on",
+      "reaction": "inspect",
+      "watches": ["protocol", "schema"]
+    },
+    {
+      "role": "aifhub-extension",
+      "workspaceSlug": "aifhub-extension",
+      "origin": "declared-service-link",
+      "dependencyKind": "depends_on",
+      "reaction": "inspect",
+      "watches": ["schema"]
+    }
+  ]
+}

@@ -77,12 +77,16 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-transport-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-openapi-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-run-history-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-ai-workspace-contracts.mjs
       - name: Execute protocol semantic vectors through production Rust decoding
         run: cargo test -p lekalo-core target_protocol_conformance --locked
       - name: Run contract checkers and suites
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
         run: |
           node scripts/check-contract-versions.mjs --base HEAD^
           node scripts/test-contract-versions.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-ai-workspace-hook.mjs
           node scripts/check-authority.mjs
           node scripts/test-authority-contracts.mjs
           node scripts/test-authority-cli.mjs

@@ -1,0 +1,97 @@
+{
+  "schemaVersion": "lekalo/ai-workspace-event/v0.6.3",
+  "identity": "dev.lekalo.ai-workspace-event@0.6.3",
+  "eventKind": "protocol-change",
+  "source": {
+    "producer": "lekalo-core",
+    "base": "99b3ce026cac0f81b7b32eb58670630291e145b0",
+    "head": "4a084aab03376452b42f37427a146043537d2c99",
+    "clean": true,
+    "producerVersion": "0.6.3",
+    "hookVersion": "0.6.3"
+  },
+  "manifest": {
+    "manifestVersion": "0.6.3",
+    "digest": "sha256:57194f2e110ba3d7276a7df176421ff4af5e3ffaa3e891f156286ce9d545047d",
+    "routes": 3
+  },
+  "artifacts": [
+    {
+      "path": "docs/target-protocol.md",
+      "change": "modified",
+      "old": {
+        "name": "lekalo.target-protocol-md",
+        "version": "unknown",
+        "state": "present",
+        "digest": "sha256:167b9ce72f79ddbfeeace6a3f9ee5fa650f84ef967a1149266d62a84f2f0e929"
+      },
+      "new": {
+        "name": "lekalo.target-protocol-md",
+        "version": "unknown",
+        "state": "present",
+        "digest": "sha256:55cb011402e755b8977075f15441afc2699caa572720a530a38b5763927dd6ba"
+      }
+    }
+  ],
+  "impact": {
+    "affectedRoles": [
+      {
+        "role": "brownfield-consumer",
+        "explanation": [
+          {
+            "origin": "public-artifact-changed",
+            "detail": "docs/target-protocol.md modified",
+            "sourcePath": "docs/target-protocol.md"
+          },
+          {
+            "origin": "declared-service-link",
+            "detail": "brownfield-consumer subscribes to lekalo-core protocol/schema changes",
+            "sourceRole": "lekalo-core",
+            "dependencyKind": "depends_on",
+            "reaction": "inspect"
+          }
+        ]
+      },
+      {
+        "role": "greenfield-consumer",
+        "explanation": [
+          {
+            "origin": "public-artifact-changed",
+            "detail": "docs/target-protocol.md modified",
+            "sourcePath": "docs/target-protocol.md"
+          },
+          {
+            "origin": "declared-service-link",
+            "detail": "greenfield-consumer subscribes to lekalo-core protocol/schema changes",
+            "sourceRole": "lekalo-core",
+            "dependencyKind": "depends_on",
+            "reaction": "inspect"
+          }
+        ]
+      }
+    ],
+    "complete": "declared-only",
+    "limitations": [
+      "direct-links-only",
+      "no-transitive-traversal",
+      "no-schema-version-filter",
+      "compatibility-unknown",
+      "upstream-receipt-unavailable"
+    ]
+  },
+  "policy": {
+    "sendAdmitted": false,
+    "refusalReason": "policy-not-admitted",
+    "authorityRef": {
+      "contractId": "dev.lekalo.authority-matrix",
+      "version": "0.3.2",
+      "digest": "sha256:7ae6454ea20f7b61202d368411ef9bff4e70af96f1f2a408c209d84fe9722f80"
+    },
+    "privacyPolicyRef": {
+      "contractId": "dev.lekalo.privacy-export-policy",
+      "version": "0.3.2",
+      "digest": "sha256:5a80966fa628fd4c9452325d34e7191f40ebb7a9cb49185c91d413861fb18384"
+    }
+  },
+  "eventKey": "sha256:8f981ac4edb6e7a9de80aa95c6cb78a2836240fe693f8e258e7e13a43e99df38"
+}
