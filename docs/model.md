@@ -1,183 +1,66 @@
-# Lekalo Model 0.2.16
+# Lekalo Model and glossary
 
-> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+Status: **Implemented** language-neutral Model/IR `0.2.16` at product `0.6.3`, source base `a56ee578`. Owner: semantic-contract maintainers. [#5](https://github.com/ichinya/lekalo/issues/5), [ADR-0004](adr/0004-model-v0.1.md), [ADR-0005](adr/0005-semantic-ids.md).
 
-Current baseline: 0.2.16. See [versioning](versioning.md).
+The normative [Model schema](../contracts/model.schema.v0.2.16.json), [semantic-ID contract](../contracts/semantic-ids.v0.2.16.json) and real loader determine acceptance. Prose cannot broaden them. Model describes semantics shared across targets; it contains no framework class/package/runtime identity. Language-specific bindings and implementation evidence attach to those semantics.
 
-The model is language-neutral and uses the same semantic vocabulary for
-TypeScript, PHP and Go targets. It contains no target-language class, package,
-framework or runtime concepts.
+## Documents and definition kinds
 
-The normative artifacts are:
+Documents carry `schema_version: 0.2.16` and a closed `definitions` array. The real loader reads JSON and block YAML, applies imports and normalization, and retains source spans as metadata; see [loader](loader.md). Unknown/mixed versions, unknown keys, wrong file homes and unresolved references refuse.
 
-- [`contracts/model.schema.v0.2.16.json`](../contracts/model.schema.v0.2.16.json) —
-  JSON Schema Draft 2020-12 with `$id
-  https://lekalo.dev/schemas/model/0.2.16/schema.json` and
-  `schema_version: 0.2.16`;
-- [`scripts/check-model.mjs`](../scripts/check-model.mjs) — dependency-free
-  reference shape and semantic validator;
-- [`tests/fixtures/model/valid-planner`](../tests/fixtures/model/valid-planner) —
-  the planner example covering all fourteen definition kinds;
-- `tests/fixtures/model/invalid-*` — twelve classified rejection fixtures.
-
-ADR-0004 records the decision. If prose, schema and validator disagree, a
-consumer must fail closed; prose cannot broaden the machine contract.
-
-## Documents and file homes
-
-File homes are owned by ADR-0003 and issue #4. Every semantic document is a
-closed object:
-
-```json
-{ "schema_version": "0.2.16", "definitions": [ ... ] }
-```
-
-| File | Allowed definition kinds |
-| --- | --- |
-| `lekalo/project.yaml` | exactly one `project` |
-| `lekalo/modules/<module>/module.yaml` | exactly one `module` |
-| `entities.yaml` | `scalar`, `enum`, `value-object`, `entity` |
-| `commands.yaml` | `command`, `effect` |
-| `queries.yaml` | `query` |
-| `policies.yaml` | `policy` |
-| `events.yaml` | `event` |
-| `scenarios.yaml` | `scenario` |
-| `bindings.yaml` | `endpoint`, `target-binding` |
-
-A definition in the wrong file is rejected as
-`model.kind-not-allowed-in-file`, even when its shape is otherwise valid.
-Documents are parsed as JSON in #5. JSON is a YAML subset; block-YAML parsing,
-imports, source spans and canonical normalization belong to #7.
-
-## Common fields
-
-Every definition is closed and has these common fields:
-
-| Field | Required | Rule |
+| Kind | Meaning | File in a module |
 | --- | --- | --- |
-| `id` | yes | provisional v0.1 grammar: one or two lowercase dot-separated segments, 3–129 characters |
-| `kind` | yes | one of the fourteen kinds |
-| `version` | yes | integer greater than or equal to 1 |
-| `description` | no | non-empty string, at most 2000 characters |
-| `derived_from` | no | unique requirement IDs such as `PLANNER-REQ-001` |
-| `visibility` | no | `module` or `project` |
-| `portability` | no | `portable` or `target-specific` |
+| `project` | Project semantic identity and optional ID registry | `lekalo/project.yaml` (outside modules) |
+| `module` | Semantic module identity and explicit imports | `module.yaml` |
+| `scalar` | Named scalar type and constraints | `entities.yaml` |
+| `enum` | Named enumeration | `entities.yaml` |
+| `value-object` | Named structured value | `entities.yaml` |
+| `entity` | Identity-bearing structured state | `entities.yaml` |
+| `command` | Named state-changing operation and effects | `commands.yaml` |
+| `effect` | Explicit effect description | `commands.yaml` |
+| `query` | Named read operation and result | `queries.yaml` |
+| `policy` | Semantic decision contract | `policies.yaml` |
+| `event` | Named emitted fact | `events.yaml` |
+| `scenario` | Portable behavior scenario | `scenarios.yaml` |
+| `endpoint` | Transport-facing binding to a semantic operation | `bindings.yaml` |
+| `target-binding` | Explicit target mapping | `bindings.yaml` |
 
-`derived_from` is requirement provenance, not identity. Paths, line/column
-locations and parser provenance are loader metadata and never become semantic
-IDs. Stable path-independent IDs, rename history, aliases and tombstones are
-owned by #6 and are intentionally absent from Model.
+These are the fourteen Model kinds. Authorization, transactions, expressions, query/storage/transport projections, NFRs and requirements are typed attachments owned by their [specialist references](documentation-owners.json), not additional definition kinds. Vue screens remain maintained source; automatic screen generation is **Planned**.
 
-Project and module definitions have separate identity namespaces. Other
-definitions share one project-wide namespace and use `<module>.<name>`; in
-v0.1 the module segment and module definition must match the containing module
-directory. This coupling is explicitly provisional for #6 to replace with a
-stable semantic-ID contract.
+## Identity, references and semantics
 
-## Named types
+Every definition has `id`, `kind` and positive integer `version`; optional description, requirement provenance, visibility, portability and kind-specific members follow the exact schema. Project/module IDs are one segment. A symbol is `module.name` or `module.kind_token.name`; an optional kind token must match the definition kind. The qualifier is the semantic module ID, independent of its directory name. See [stable IDs](model-1.0.md) and [ID rules](semantic-ids.md).
 
-Fields always reference a named `scalar`, `enum`, `value-object` or `entity`.
-References may be wrapped by `list` or `optional`, one wrapper per level, with
-maximum nesting depth four. Anonymous primitive field types and recursion are
-not part of v0.1. The named `value-object`/`entity` dependency graph must be
-acyclic; direct and mutual recursion fail with `model.type-recursion`.
+Only symbols can declare `renamed_from`; only the project can declare `id_registry`. History records renames/tombstones and prevents invalid convergence. Old IDs are not resolution aliases: references resolve against live definitions. Requirement IDs in `derived_from` record provenance, not symbol identity.
 
-## Definition kinds
+Fields reference named scalar/enum/value-object/entity types, with bounded list/optional wrappers. Type dependencies must be acyclic. The loader assembles references; strict validation checks types, contracts and semantics; [IR](ir.md) normalizes them. Graph/effect/impact/context projections report what they know and preserve unknown/gap states. A model span identifies Model source, not native implementation coverage.
 
-| Kind | Required kind-specific fields | Optional kind-specific fields |
-| --- | --- | --- |
-| `project` | — | — |
-| `module` | — | `imports` (placement only; semantics are #7) |
-| `scalar` | `base` | — |
-| `enum` | non-empty `values` | — |
-| `value-object` | non-empty `fields` | — |
-| `entity` | non-empty `fields`, non-empty `identity` | — |
-| `command` | — | `input`, `effects` |
-| `query` | non-empty `reads` | `returns` |
-| `policy` | non-empty `applies_to`, `decision` | — |
-| `event` | — | `payload` |
-| `effect` | `operation`, `entity` | `emits` |
-| `endpoint` | `invokes`, `method`, `path` | — |
-| `scenario` | `summary` | `covers` |
-| `target-binding` | `target` | — |
+The [synthetic planner](../tests/fixtures/model-v1/valid-planner) illustrates all kinds. The [minimal quickstart](../README.md#build-and-first-valid-example) validates a smaller input. Native operation availability depends on the selected profile/capability; valid Model alone does not prove generation or execution.
 
-Any other `kind` value, including prototype-like strings such as
-`constructor`, `toString` and `__proto__`, is classified as `model.constraint`
-before kind-specific dispatch.
+## Glossary
 
-The model has no arbitrary expression language. Policy decisions are the
-closed values `allow` and `deny`; effects are `create`, `update` or `delete`;
-endpoint methods are transport-neutral HTTP verbs.
+This is the canonical terminology location. Other pages link here.
 
-## Semantic validation
-
-JSON Schema owns document and definition shape. The reference validator owns
-project semantics that JSON Schema cannot resolve by itself:
-
-- project-wide uniqueness for all non-project/non-module IDs;
-- module-directory qualification and module manifest agreement;
-- typed cross-reference resolution, distinguishing `model.ref-unresolved`
-  from `model.ref-kind-mismatch`;
-- acyclic named-type dependencies, reported as `model.type-recursion`;
-- entity identity membership (`identity` must name declared fields);
-- target-binding resolution against `lekalo/targets/*.yaml`.
-
-Before reading any model document, the checker calls the exported #4 structure
-validator on the selected project. A malformed structure is mapped to exit `1`,
-stderr and `reasonCodes: ["model.structure-invalid", <structure reasons...>]`.
-A physical-policy denial is preserved as exit `3`, stdout and
-`reasonCodes: ["model.structure-denied", <structure reasons...>]`; it is never
-downgraded to model invalidity. Structure reason order is preserved, and only
-logical project-relative paths may appear in either envelope.
-
-After that precondition, only `ENOENT` means that an optional kind document is
-absent. A present canonical file that cannot be read fails closed as
-`model.scan-failed`; the structure validator separately requires every
-discovered module's `module.yaml`. JSON Schema string limits are counted in
-Unicode code points, not UTF-16 code units.
-
-Enum entries are objects, so JSON Schema `uniqueItems` cannot express
-uniqueness of the nested `value` property when descriptions differ. Duplicate
-enum values are therefore an explicit semantic-only `model.constraint` rule.
-
-| Reference | Required target kind |
+| Term | Meaning and detailed owner |
 | --- | --- |
-| field, input, payload and return types | `scalar`, `enum`, `value-object`, `entity` |
-| `command.effects` | `effect` |
-| `query.reads` | `entity` |
-| `policy.applies_to` | `command` |
-| `effect.entity` | `entity` |
-| `effect.emits` | `event` |
-| `endpoint.invokes` | `command`, `query` |
-| `scenario.covers` | any non-project/non-module definition |
-| `target-binding.target` | existing target file |
-
-Import visibility, cycles, short-reference normalization and source locations
-are not simulated here; they remain #7 scope.
-
-## Version and evolution policy
-
-Contracts change to the current product version when edited. All project
-documents must declare the supported exact schema version. Unknown fields
-are rejected. Per-definition versions remain separate model metadata.
-See [versioning](versioning.md) for future migration policy.
-
-## Explicit exclusions
-
-Model does not include arbitrary cycles, recursion, a full expression
-language, UI layout or distributed workflow orchestration. Complex logic is a
-future foreign-implementation contract, not an untyped escape hatch in the model.
-
-## Commands and exit protocol
-
-```sh
-node scripts/check-model.mjs
-node scripts/check-model.mjs --project tests/fixtures/model/valid-planner
-node scripts/test-model-contracts.mjs
-```
-
-Exit `0` means valid. Exit `1` means usage, malformed structure or model shape,
-or semantic invalidity and writes a stable leading `model.*` reason to stderr.
-Exit `3` preserves a well-formed #4 physical-policy denial and writes its
-deterministic JSON envelope to stdout. Model semantics do not introduce an
-independent policy-denied class.
+| Model | Canonical language-neutral application semantics; this page and [schema](../contracts/model.schema.v0.2.16.json). |
+| IR | Typed normalized intermediate representation, selected by exact contract version; [IR](ir.md). |
+| Definition / symbol | A typed Model declaration / its stable semantic ID; [IDs](semantic-ids.md). |
+| Module | Semantic grouping with imports; directory placement is separate; [loader](loader.md). |
+| Scenario | Portable behavior description compiled to Scenario IR; [scenario IR](scenario-ir.md). |
+| Effect | Explicit semantic state/event dependency; [effect graph](effect-graph.md). |
+| Target | Native-language/framework output destination; [target profile](target-profile.md). |
+| Adapter | Separate process or bounded evidence implementation, never semantic authority; [protocol](target-protocol.md). |
+| Profile / capability | Explicit resolved configuration / support claim with version and evidence; [profiles](target-profile.md). |
+| Observed / contracted / managed | Evidence-owned / maintained implementation with contract / explicitly generated artifact ownership; [adoption](adoption.md). |
+| Binding | Explicit semantic-to-native mapping with revision/fingerprint and confirmation; [bindings](bindings.md). |
+| Declaration | Recorded contracted input/output/gate custody; [contracted mode](contracted-mode.md). |
+| Artifact manifest | Provenance and permitted lifecycle for owned artifacts; [manifest](artifact-manifest.md). |
+| Evidence | Typed observation with source/custody and limits; not automatically canonical semantics. |
+| Diagnostic / result status | Registered finding / command verdict governing exit and stream; [diagnostics](diagnostics.md). |
+| Trace | Provenance-preserving relationship evidence between requirements, symbols and tests; [trace](trace-manifest.md). |
+| Native gate | Bounded tool plan and execution policy; production execution availability is separate; [native gates](native-gates.md). |
+| Canonical / derived / cached / runtime-only / direct-evidence | Artifact authority lifecycle classes; [authority](authority.md). |
+| Classification / export disposition | Data sensitivity / sharing decision independent of authority lifecycle; [security](security.md). |
+| OpenSpec / AI Factory / HLV | Requirement owner / workflow owner / validation-evidence owner; [integrations](integrations.md). |
+| Implemented / experimental / planned | Verified bounded behavior / restricted integration path / unavailable future behavior; [roadmap](roadmap.md). |

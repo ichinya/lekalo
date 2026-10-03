@@ -1,112 +1,28 @@
 # Target adapter process protocol
 
-`lekalo.target/v1`, contract 0.3.1, connects core to separate executables. Adapters may be
-written in any language; core loads no native plugin ABI. The operations
-are describe, scan, bind, validate, generate, verify, plan-clean and
-clean. Product 0.2.5, Model 0.2.16, IR 0.2.16 and diagnostic registry
-1.15.0 remain independent version lines. Registry 1.15.0 retains the
-target entries introduced in 1.10.0, the requirements entries introduced
-in 1.11.0, and the `target-profile.*` entries introduced in 1.14.0, and
-carries the `init.*` adoption entries introduced in 1.13.0 and the
-`adapter.*` conformance entries introduced in 1.15.0.
+Status: **Implemented** host protocol `lekalo.target/v1` at exact contract `0.3.2`, product `0.6.3`, source base `a56ee578`. Owner: adapter-host maintainers. [ADR-0025](adr/0025-target-protocol.md). Model/IR remain `0.2.16`; active diagnostic registry is `0.6.3`. Supported operations are describe, scan, bind, validate, generate, verify, plan-clean, clean and the read-only native-plan extension. Operation availability depends on the adapter and profile; declaration is not successful execution.
 
-## Version negotiation and capability discovery (issue #28)
+The exact [current schema](../contracts/target-protocol.schema.v0.3.2.json) and production decoder govern this checkout. Historical base/extension paragraphs below describe negotiation history; they do not admit a historical contract absent from the current registry. [Workflow provider discovery](provider-contract.md) is separate. [Native gates](native-gates.md) document planning; production native execution is **Planned**. [Architecture](architecture.md), [security](security.md), [Node adapter](../adapters/node-typescript/README.md), [PHP adapter](../adapters/php-laravel/README.md).
 
-The v1 line carries exact contract versions. The current `0.3.2`
-(`contracts/target-protocol.schema.v0.3.2.json`) is the version new
-integrations target; the frozen `0.3.1` document
-(`tests/fixtures/target-protocol/frozen-0.3.1/target-protocol.schema.v0.3.1.json`)
-keeps its exact
-published meaning and refuses the members added later. On a current
-session the describe response's `capabilities` object carries:
+## Version negotiation and capability discovery
 
-- `ir_versions` — the IR contract versions the adapter accepts
-  (exact-set membership, zero to eight entries);
-- `capabilities` — a map from named capability ids to the closed support
-  states `full`, `partial`, `unsupported`, `unknown` (at most 64 entries,
-  dotted lowercase ids);
-- `constraints` — optional declared bounds (`max_entries`, `max_writes`)
-  recorded as evidence for future operation consumers.
+This checkout probes and accepts **exactly `0.3.2`**: `BASE_VERSION`, `VERSION` and the singleton `SUPPORTED_VERSIONS` set in `crates/lekalo-core/src/target_protocol/version.rs`. A historical frozen schema does not grant runtime acceptance. The adapter must explicitly declare a version supported by this producer; arbitrary newer/older strings are refused.
 
-Negotiation is probe-and-upgrade and deterministic. Core probes with a
-`describe` request at the base version, which every v1-line adapter
-accepts, computes the highest supported version in the adapter's
-declared `protocol_versions`, and — only when that is higher than the
-base — re-describes at exactly that version. The session's negotiated
-version is the request version of the final describe, and every later
-exchange runs at it. A response claiming the base version may not carry
-extension members (the frozen base meaning is preserved byte for
-byte), and declared capability ids must carry versioned definitions in
-the embedded capability registry
-(`dev.lekalo.target-capabilities@0.3.1`); unknown ids refuse the
-response.
+Describe reports exact adapter identity/digest, protocol versions, operations, transports, target/profile choices, read/write scopes and capabilities. The closed capability object includes exact `ir_versions`, a bounded map of named support states (`full`, `partial`, `unsupported`, `unknown`) and optional declared constraints. Names must resolve in the embedded capability-definition registry. Missing or unknown evidence does not mean supported.
 
-Discovery (`target_protocol::discovery`) is safe by construction: it
-sends `describe` only — no IR path, no target or profile, no write
-operation — so an incompatible adapter is characterized and filtered
-before any project IR could be disclosed to it. An adapter on a 0.3.1
-session that did not declare the core IR contract version can never
-receive an IR-carrying operation (`target.ir-unsupported`, exit
-4/stdout); a base-only session keeps the #27 contract, where IR
-compatibility is governed upstream by the #9 compatibility preflight and
-the lock. Discovery distinguishes the adapter's declared digest from the
-verified digest over the launched entry bytes (the executable, or its
-first-argument script), and records per-capability provenance:
-`declared` from the handshake, `probed` after a successful read-only
-operation, `verified` after a full planned-and-applied exchange.
+Discovery sends only describe, without project IR or write authority. An IR-carrying operation requires explicit compatibility with the core's `0.2.16` IR. Incompatible candidates are filtered before disclosure. A declared digest is distinct from verified entry bytes; capability provenance distinguishes declared, read-only probed and planned/applied verified evidence.
 
-Selection (`target_protocol::selection`) consumes discovered candidates
-plus an explicit policy and produces a closed, serializable report with
-one fixed filter order: declared IR compatibility, then required
-capability support under the policy. `partial` proceeds only with the
-explicit `allow_partial` policy; `unknown` never satisfies a required
-capability and proceeds only with the explicit non-strict policy, each
-recorded as a warning. Survivors are ordered by adapter id ascending,
-version descending, selected profile, and every excluded candidate is
-reported with sorted stable reason tokens — the verdict is
-machine-readable and explainable. Discovery results cache under exact
-version/digest keys (adapter identity, executable bytes, negotiated
-protocol, IR version, capability-definition registry, capability
-digest); any change misses. The resolved capability snapshot lands in
-the committed `lekalo.lock` through the #10 resolver, with each entry
-bound to its capability definition version.
+Selection filters IR compatibility before required capability support. Partial support requires explicit `allow_partial`; unknown support cannot satisfy a required capability. Survivors and refusal reasons are deterministic. Cache/lock custody includes adapter identity, actual bytes, negotiated protocol, IR and capability-definition/profile digests; changes invalidate the snapshot. [Target profiles](target-profile.md), [lock](lockfile.md), [adapter conformance](adapter-conformance.md).
 
-## Scan entry evidence extension (issue #44)
+## Scan entry evidence
 
-The 0.3.1 contract additively extends every scan result entry with an
-optional closed `evidence` member: the structural `signature` digest
-(`sha256:…`) of the native symbol's call/value shape and up to eight
-`references` rows `{target, role, confidence}` describing outbound
-semantic edges. The member is typed data, never arbitrary JSON; the
-closed role set is `read`, `create`, `update`, `delete`, `emit`, `call`,
-`reference`, and the closed confidence set is `exact`, `high`, `medium`,
-`low`, `unknown`. Missing members mean unknown, never absence. The core
-merges the member into the observed evidence of the merged binding, so
-scanner references and signature digests reach the dependency graph
-end to end; a signature digest change invalidates a recorded binding
-mapping instead of silently refreshing it.
+The current schema can carry optional closed entry evidence: structural signature digest and at most eight outbound references with typed role (`read`, `create`, `update`, `delete`, `emit`, `call`, `reference`) and confidence (`exact`, `high`, `medium`, `low`, `unknown`). Missing evidence stays unknown. Core records it in observed evidence; signature changes can stale a binding instead of silently refreshing its mapping.
 
-## Resolved profile request extension (issue #29)
+Rich adapter-local evidence need not fit this closed projection. A lossy scan must refuse; [the brownfield tutorial](tutorial-brownfield-typescript.md) labels its separate contributor fallback **Experimental**. Successful direct-kernel evidence does not qualify the public wire exchange.
 
-The 0.3.1 contract is additive to the request side only: an operation
-that already carries a `profile` token may also carry
-`profile_digest` (`sha256:…`) and `profile_capabilities` (a bounded,
-id-sorted list of `{id, support}` pairs). Both members are legal only
-together, only with a profile token, and only on a session negotiated
-at exactly 0.3.1; the frozen base documents refuse them, so
-their published meanings are unchanged. The members carry the resolved
-target profile — the digest over the canonical resolved snapshot bytes
-(the lock's `profiles.digest` domain) plus the capability set the whole
-profile guarantees — so an adapter receives negotiated capabilities
-instead of arbitrary YAML. The digest also binds the plan context, so
-every planned and applied exchange is bound to the exact profile
-snapshot it was planned against. A caller supplying a resolution on an
-older session is refused with `target.capability-unsupported` before
-any launch; the resolution is never silently dropped. Resolution,
-inheritance, compatibility constraints, and the digests themselves are
-owned by the target profile contract (see
-[target profiles](target-profile.md)); the protocol only transports the
-projected snapshot.
+## Resolved profile request
+
+An operation carrying a profile token may also carry `profile_digest` and a bounded id-sorted `profile_capabilities` list. The paired members are admitted together according to the exact schema. They bind the resolved configuration and support claims; they do not carry arbitrary readable roots or grant permission expansion. The adapter's injected declared project view and host confinement remain separate boundaries.
 
 ## Requests and identities
 
@@ -264,17 +180,7 @@ and the future generation CLI are not qualified by these tests.
 
 `adapters/node-typescript/adapter.mjs` is the concrete observed MVP
 target adapter (`lekalo-target-node-typescript`, product version 0.3.0):
-a dependency-free, read-only, single-file Node kernel. It implements the
-mandatory `describe` handshake at protocol 0.3.1 and nothing else on
-the wire: `scan` belongs to #44, native gates to #48, and generation to
-#45–#47. From #45 the adapter family declares `generate`/`verify` with
-the named capability `generate.zod` and a declared write scope; the
-dedicated generation artifact `adapter-zod.mjs` (kernel plus the Zod
-generator, self-contained) carries that surface — see
-[zod-generation.md](zod-generation.md). A direct request to an
-unimplemented operation returns one valid `unsupported` error envelope
-(fixed code `operation-unsupported`), and core refuses undeclared
-operations before launch as usual.
+a dependency-free, read-only, single-file Node kernel. The bare kernel advertises describe only; configured scanner, native-plan, transport and dedicated generation bundles supply additional surfaces according to the resolved profile. See the adapter README for exact bundles and capability declarations. A scan can refuse when rich evidence cannot be represented by the closed public wire; the experimental tutorial records that refusal separately from its direct-kernel fallback.
 
 Its limits are contractual, not incidental: read roots never come from
 the wire (the base resolved profile carries digest/capability pairs,
@@ -322,8 +228,7 @@ isolation and refusal to publish its stage.
 
 The integration surface is `TargetClient::describe` / `TargetClient::call`
 plus the issue #28 discovery, capability-definition, and selection
-modules. This issue provides no adapter catalog, native target package,
-generation CLI or persisted cross-session plan authority.
+modules. Pending plans remain session-bound; this protocol grants no persisted cross-session plan authority. Adapter installation and generation CLI behavior have separate owners.
 `transport::run` is explicitly a raw process primitive for callers
 owning its command; it does not implement scope policy and is never an
 unconfined fallback for TargetClient.

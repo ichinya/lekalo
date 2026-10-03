@@ -1,178 +1,34 @@
-# Lekalo diagnostics
+# Diagnostics, results and exits
 
-> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+Status: **Implemented** at product `0.6.3`, source base `a56ee578`. Owner: result/reporting maintainers. [ADR-0010](adr/0010-diagnostics.md), [#103](https://github.com/ichinya/lekalo/issues/103), [CI reports](ci-reports.md).
 
-Issue #11 defines the stable, machine-readable diagnostic contract: one
-closed wire item (`lekalo/diagnostic/v0.2.16`), one embedded rule registry
-(`dev.lekalo.diagnostic-registry@0.2.16`, registry version `0.2.16` — issue #12 added the `semantic.*`/`validate.*` families and issue #13 added the `graph.*` family, each as a wire-shape-preserving minor increment; issue #14's effect graph reuses the `graph.*` infrastructure rules with bounded tokens and keeps its comparison states as result data; issue #15 added the `inspect.*` family for the single-symbol inspect projection as the same kind of minor increment; issue #16 adds the `impact.*` family plus the one `denied` rule its strict bounded denial requires as the same kind of wire-shape-preserving additive minor increment; issue #18 adds the `diff.*` family for the semantic diff as the same kind of wire-shape-preserving additive minor increment; issue #2…
-Rust API, deterministic normalization, and the human and JSON projections
-through the shared `DomainResult` envelope. Issue #42 adds the three `bindings.*` rules (`LEK-BND-001..003`: `bindings.proposal-unknown`, `bindings.ambiguous`, `bindings.plan-mismatch`) — the closed refusals of the issue #42 binding workflow: an unknown proposal id, an ambiguous proposal confirmed without naming one candidate of its set, and a batch applied against drifted state — publishing 1.20.0 additively over the accepted frozen 1.19.0 (issue #40's `contracted.*` family, itself published additively over the accepted frozen 1.18.0). Issue #28 adds the single `target.ir-unsupported` rule — the capability-discovery refusal that keeps an adapter which never declared the core IR contract version from receiving project IR — as the same kind of wire-shape-preserving additive minor increment. Issue #29 adds the six `target-profile.*` rules (`LEK-TPF-001..006`) — the closed refusals of the composable target profile contract: document shape, unknown component, invalid inheritance reference, incompatible combination, unsatisfied capability requirement, and unacknowledged inheritance weakening — as the same kind of additive minor increment. Issue #38 (integrated first as registry 1.13.0) adds the five `init.adopt-*` rules (`LEK-INIT-001..005`) for the `init --adopt` boundary; this integrated line publishes 1.14.0 additively over the accepted frozen 1.13.0. Issue #31 adds the four `adapter.*` rules (`LEK-ADP-002..005`) — the closed conformance-suite failure classes `check-failed` (invalid), `adapter.process-failure` (unavailable), `protocol-failure` (unsupported), and `security-failure` (denied) — and publishes 1.15.0 additively over the accepted frozen 1.14.0. Issue #39 adds the eleven `observed.*` rules (`LEK-OBS-001..011`) — the closed refusals and findings of the observed mode: scan normalization and bounds, unknown modules and symbols, the confirmation rule, the staleness gate, the observed-graph incompleteness report, and the promotion refusal and plan-pinning rules — publishing 1.16.0 additively over the accepted frozen 1.15.0. The contracts are published as the frozen instances listed below.
-Issue #69 adds the fourteen `storage-engine.*` rules (`LEK-SEN-001..014`:
-`storage-engine.input-invalid`, `.profile-invalid`, `.version-unsupported`,
-`.mapping-invalid`, `.render-unsupported`, `.introspection-invalid`,
-`.drift-invalid`, `.migration-invalid`, `.migration-gated`,
-`.capability-missing`, `.lifecycle-invalid`, `.extension-unsupported`
-(the warning-severity reporting rule for an extension outside the profile
-allow-list), `.conformance-failed`, and `.export-limit`) — the closed
-refusals and findings of the PostgreSQL storage engine family:
-wire normalization, profile coherence, the version-matrix floor, DDL
-rendering, checked-mode introspection evidence, drift, the gated
-migration plan, capability mapping, and the conformance battery. The
-registry took its reviewed successor instance 0.4.0 (the active instance is now the 0.6.3 successor) with the wire
-shape frozen; the embedded validation profiles' registry pin advances
-with no content change, and the frozen 0.3.2 generation stays
-accepted.
-Issue #97 adds the four `init.bootstrap-*` rules (`LEK-INIT-006..009`:
-`init.bootstrap-conflict`, `init.bootstrap-id-required`,
-`init.bootstrap-write-failed`, `init.bootstrap-recovery-required`) — the
-greenfield `lekalo init` / `lekalo module new` counterparts of the adoption
-refusals with mode-neutral wording — publishing 1.24.0 additively over the
-accepted frozen 1.22.0 (1.23.0 stays reserved by its parallel owner); the
-embedded validation profiles' registry pin advances with no content change.
-Issue #66 adds the nine `expression.*` rules (`LEK-EXPR-001..009`:
-`expression.input-invalid`, `expression.contract-invalid`,
-`expression.type-invalid`, `expression.complexity-limit`,
-`expression.builtin-unsupported`, `expression.eval-invalid`,
-`expression.binding-invalid`, `expression.diff-invalid`,
-`expression.export-limit`) — the closed refusals of the typed-expression
-family (see [expressions.md](expressions.md)): fatal wire-input and
-payload-bound violations, record-contract and static-type contradictions,
-the complexity refusal that routes oversized computations to the foreign
-implementation family, the managed-mode built-in block, the deterministic
-evaluation-domain and binding refusals, the semantically impossible
-comparison, and the canonical export bound — publishing 0.2.16 additively
-over the accepted frozen 1.24.0; the embedded validation profiles' registry
-pin advances with no content change. Issue #48 adds the fourteen
-`native-gate.*` rules (`LEK-NGT-001..014`) as the reviewed successor
-instance 0.3.2 (wire shape frozen). Issue #117 adds the five
-`storage.profile-*` rules (`LEK-SEP-001..005`: `storage.profile-invalid`,
-`storage.profile-limit`, `storage.profile-diff-invalid`,
-`storage.introspection-invalid`, `storage.introspection-diff-invalid`) —
-the closed refusals of the storage-engine-profile and
-storage-introspection families (see
-[storage-engine-profile.md](storage-engine-profile.md) and
-[storage-introspection.md](storage-introspection.md)) — as the reviewed
-successor instance 0.4.0 — superseded by the active 0.6.3 instance — (wire shape frozen, schema successor carries
-only the new identity constants); the embedded validation profiles move
-with it, and new fixed detail tokens under the existing `LEK-STO-*`
-rules (the MySQL-family namespace vectors: `sequence-unsupported`,
-`prefix-required`, `fulltext-unique`, `collation-charset-mismatch`, and
-the rest) ride the registered rules with no registry change.
+The closed item schema is [diagnostic.v0.2.16](../contracts/diagnostic.schema.v0.2.16.json); the active embedded rule instance is [registry.v0.6.3](../contracts/diagnostic-registry.v0.6.3.json). Item and registry versions are separate pins. Historical registry files remain exact snapshots, not current selection by filename order.
 
-- [`contracts/diagnostic.schema.v0.2.16.json`](../contracts/diagnostic.schema.v0.2.16.json) — one diagnostic item,
-- [`contracts/diagnostic-registry.schema.v0.2.16.json`](../contracts/diagnostic-registry.schema.v0.2.16.json) — the registry schema,
-- [`contracts/diagnostic-registry.v0.2.16.json`](../contracts/diagnostic-registry.v0.2.16.json) — the current registry instance,
-- [`contracts/diagnostic-registry.v0.2.16.json`](../contracts/diagnostic-registry.v0.2.16.json) — the accepted predecessor instance (issue #97),
-- [`contracts/diagnostic-registry.v0.2.16.json`](../contracts/diagnostic-registry.v0.2.16.json) — the accepted predecessor instance (issue #65),
-- [`contracts/diagnostic-registry.v0.2.16.json`](../contracts/diagnostic-registry.v0.2.16.json) — the accepted predecessor instance (issue #64),
-- [`contracts/diagnostic-registry.v0.2.16.json`](../contracts/diagnostic-registry.v0.2.16.json) — the accepted predecessor instance (issue #42),
-- [`contracts/diagnostic-registry.v0.2.16.json`](../contracts/diagnostic-registry.v0.2.16.json) — the accepted predecessor instance (issue #40),
-- [`contracts/diagnostic-registry.v0.2.16.json`](../contracts/diagnostic-registry.v0.2.16.json) — the accepted predecessor instance (issue #30),
-- [`contracts/diagnostic-registry.v0.2.16.json`](../contracts/diagnostic-registry.v0.2.16.json) — the accepted predecessor instance (issue #39),
-- [`contracts/diagnostic-registry.v0.2.16.json`](../contracts/diagnostic-registry.v0.2.16.json) — the accepted predecessor instance (issue #31),
-- [`contracts/diagnostic-registry.v0.2.16.json`](../contracts/diagnostic-registry.v0.2.16.json) — the accepted predecessor instance (issue #29),
-- [`contracts/diagnostic-registry.v0.2.16.json`](../contracts/diagnostic-registry.v0.2.16.json) — the accepted predecessor instance (issue #38),
-- [`contracts/diagnostic-registry.v0.2.16.json`](../contracts/diagnostic-registry.v0.2.16.json) — an earlier accepted predecessor instance.
-- [`contracts/diagnostic-registry.v0.2.16.json`](../contracts/diagnostic-registry.v0.2.16.json) — an earlier accepted predecessor instance.
-- [`contracts/diagnostic-registry.v0.2.16.json`](../contracts/diagnostic-registry.v0.2.16.json) — an earlier accepted predecessor instance.
+## Result status owns the exit
 
-Versions are independent of the product release, the Model/IR/protocol
-contract versions, the lock wire, and the resolver algorithm version.
+The CLI renders the shared DomainResult verdict. Severity does not independently choose the exit or stream.
 
-## The diagnostic item
+| Status | Exit | JSON result stream | Meaning |
+| --- | --- | --- | --- |
+| `valid` | 0 | stdout | This operation passed its bounded checks |
+| `invalid` | 1 | stderr | Invalid input or failed semantic/operation checks |
+| `denied` | 3 | stdout | Policy/scope denial |
+| `unsupported` | 4 | stdout | Requested versioned capability is unsupported |
+| `unavailable` | 4 | stdout | Required service/process/backend is unavailable |
+| `unsupported-version` | 5 | stderr | Unsupported contract/registry preflight version |
 
-Field order is normative: `schema_version`, `registry_version`, `id`, `code`,
-`severity`, `category`, `message_id`, `message`, optional `symbol`, optional
-`source`, then the always-present `data`, `related_locations`, `causes`,
-`fixes`, and `metadata`.
+Usage parsing errors belong to the CLI parser and can exit 2; they are not invented DomainResult statuses. Node maintenance gates and native test runners have their own documented protocols (normally exit 0/1); their success output is not necessarily a diagnostic envelope. Examples give expected streams for their actual producer.
 
-- `id` is the stable dotted rule id (`loader.json-parse`,
-  `versioning.unsupported-version`). `code` is the immutable second label
-  `LEK-SUBSYSTEM-NNN` (`^LEK-[A-Z][A-Z0-9]{1,11}-[0-9]{3}$`). Neither is
-  locale-dependent or computed from sort order; retired codes are never
-  reassigned.
-- `message_id` equals the rule id in v1. `message` is the registry's
-  deterministic default English text: JSON output never changes with the
-  host locale.
-- `severity` is `info`, `warning`, or `error`; `category` is exactly one of
-  `model`, `semantic`, `compatibility`, `adapter`, `infrastructure`,
-  `security`, registered per rule and never inferred from the prefix.
-- `source` carries a project-relative POSIX logical path and/or a nested
-  `range` with 0-based half-open byte offsets and 1-based line/column
-  Unicode-scalar positions. Absolute, drive, UNC, backslash, URI, and
-  traversal spellings are unrepresentable.
-- `data` is closed by the registry entry: every key is declared with one
-  type (`token`, `count`, `flag`, `list`, `records`, `record`), at most 16
-  fields, tokens at most 256 bytes, lists at most 64 members.
-- `related_locations` (at most 32) are a sorted set; `causes` (at most 8)
-  keep the immediate-to-root order; `fixes` (at most 16) are inert
-  suggestions with applicability `safe`, `unsafe`, or `breaking` — `safe`
-  means eligible to offer, never permission to mutate. Execution belongs to
-  #73/#96.
-- `metadata` is provider namespacing: versioned reverse-DNS keys whose
-  values carry a bounded `original_code` only. Provider raw messages,
-  stacks, stdout/stderr, paths, argv, and URLs are unrepresentable.
+## Stable finding identity and normalization
 
-## Registry and identity
+An item carries `schema_version`, `registry_version`, stable `id`/`code`, severity, category, `message_id`, rendered message and bounded data/locations. The schema owns exact optional members. The registry owns rule identities, allowed severity/category and stable data tokens. Do not interpret free prose as a machine rule or expose arbitrary adapter stderr as public diagnostics.
 
-The embedded registry is parsed and validated once per process and is the
-only source of rule identity: code, category, default severity, allowed
-statuses, default message, location requirement (`none`/`path`/`span`), and
-closed data fields. Producers construct diagnostics only through the
-registry-backed constructor; a rule the registry does not know fails closed
-into the single `diagnostics.registry-invalid` invariant diagnostic. Code
-prefixes are allocated by owner/subsystem, not by category:
+Normalization validates registry identity, deduplicates deterministically and sorts independently of discovery order. Semantic symbol IDs remain stable; source paths/spans are location metadata. Missing source/native evidence stays unknown rather than being turned into a valid coverage claim. [Validation](validation.md), [inspect](inspect.md), [impact](impact.md), [context](context.md).
 
-```text
-STR structure path/layout policy   LOAD loader pipeline        IR typed IR
-VER versioning/migrations          LOCK committed lock         CLI usage
-DIAG core capability surface       ADP adapter/provider seam
-```
+The [minimal example](../README.md#build-and-first-valid-example) expects exit 0/stdout. The example gate also proves rejection of malformed Model, an unknown symbol and a conflicting init; it checks refusal status, stream and preservation rather than accepting any nonzero exit.
 
-## Envelope integration
+## CI report projections
 
-`DomainResult` alone owns the status, the protocol stream, and the exit:
-`valid` 0/stdout, `invalid` 1/stderr, `denied` 3/stdout, `unsupported`
-4/stdout, `unavailable` 4/stdout, `unsupported-version` 5/stderr. Severity
-and category never compute an exit. Failure envelopes carry the
-authoritative `diagnostics` array plus the derived `reasonCodes` (unique ids
-in normalized order); successes omit both while empty and keep their
-accepted payload bytes. Human output renders one item per line:
-`status severity [LEK-CODE] id path:start-line:start-column: message`, with
-related locations, causes, and fixes as fixed-indent children. No ANSI.
+[CI reports](ci-reports.md) owns GitHub annotation, SARIF and JUnit projections and the `0.6.3` report schema. They project the same diagnostics with source custody and output limits. Writing a report does not turn a refused operation into success; empty reports are not evidence of native execution. Provider discovery uses its own [capability contract](provider-contract.md).
 
-Deterministic normalization: related locations sort by relation, logical
-path, and span bytes; fixes by id, applicability rank, then target; data and
-metadata keys are byte-sorted; exact machine duplicates collapse (message
-text never affects identity); the total order is global-before-located,
-then path, span bytes, line/column, code, id, symbol, severity rank, and
-canonical payload bytes. A set over the 256-diagnostic bound is an
-invariant failure, never a silent truncation.
-
-## Privacy and localization
-
-A diagnostic carries only logical project-relative paths, bounded typed
-data, and registry-approved text. Raw operating-system messages, absolute
-paths, provider output, argv, URLs, credentials, and timestamps never
-enter. A diagnostic is a safe structured payload candidate — not durable
-evidence; provenance/revision wrapping and export enforcement stay with
-their owning issues. Machine output is stable English from the registry; a
-human catalog may be injected explicitly later, but the v1 CLI never reads
-the ambient locale.
-
-## SARIF, adapters, and evidence
-
-SARIF 2.1.0 export, report files, and CI annotations belong to #103 and
-are delivered: every CI report projection (including SARIF with
-repository-relative safe paths under `%SRCROOT%`) renders from the
-closed report documented in [ci-reports.md](ci-reports.md). The adapter
-process wire, handshake, and transport belong to #27; the executable
-reference adapter and conformance suite belong to #31; #11 ships only
-the in-process, hermetic provider normalization. Durable evidence
-wrapping belongs to #22/#35/#103 and privacy enforcement to #119.
-
-## Allocated codes
-
-Every active rule with its immutable code is listed in the embedded
-registry; adding an entry is a deliberate, reviewed registry change and a
-golden update never renumbers existing codes.
+Status labels for supported behavior are different from result verdicts: **Implemented** describes an available bounded producer, **Experimental** a restricted integration path, and **Planned** an unavailable feature. See [roadmap](roadmap.md).
