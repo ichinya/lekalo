@@ -159,15 +159,19 @@ Effect classes describe the write surface **of the prescribed argv**:
   warnings are exit 0 on stdout; the success receipt has no embedded
   `schemaVersion` member and is negotiated through the published
   `lekalo/validation-report/v0.6.3` describing schema
-  (`contracts/validation-report.schema.v0.6.3.json`), which covers
-  both reachable shapes: the zero-diagnostic receipt and the normal
+  (`contracts/validation-report.schema.v0.6.3.json`), which covers all
+  three reachable shapes: the zero-diagnostic receipt; the
   warning/info-bearing receipt whose envelope carries the closed
-  `diagnostics` array plus the derived `reasonCodes`. The profile
-  definition document stays `lekalo/validation-profile/v0.4.0`
-  (configuration, not output). Invalid models exit 1 on stderr with
-  the typed diagnostics; a strict authorization denial is exit 3
-  (`denied`) on stdout. A schema-valid validation failure is a
-  semantic result, never a provider crash.
+  `diagnostics` array plus the derived `reasonCodes`; and the
+  default-profile classification-finding receipt, whose recorded review
+  rows keep their registered `error` severity on the success envelope
+  without invalidating the run (the strict profile invalidates on error
+  findings instead — those runs are exit-1 failures outside this
+  receipt). The profile definition document stays
+  `lekalo/validation-profile/v0.4.0` (configuration, not output).
+  Invalid models exit 1 on stderr with the typed diagnostics; a strict
+  authorization denial is exit 3 (`denied`) on stdout. A schema-valid
+  validation failure is a semantic result, never a provider crash.
 - **`drift` (generate --check) has its own receipt contract.** A
   clean or findings-only check is exit 0 stdout with the
   `lekalo/generate-check/v0.6.3` receipt (operation `generate`, mode

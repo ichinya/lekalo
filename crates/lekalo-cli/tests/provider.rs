@@ -509,11 +509,15 @@ fn count_entries(root: &std::path::Path) -> usize {
 /// The drift operation's findings-bearing receipt (verdict `reported`):
 /// authored exactly the way `generate.rs` authors manifests (through the
 /// core `GenerateService::inputs` pins), then a custom-lifecycle file is
-/// drifted and the read-only check reports it without blocking. The
-/// receipt is captured under the git-ignored `target/` tree for the Node
-/// boundary gate to validate against the published schema.
+/// drifted and the read-only check reports it without blocking. The live
+/// receipt must equal the committed golden fixture byte-for-byte as JSON
+/// (`tests/fixtures/provider/drift-reported.golden.json`): the Node
+/// boundary gate Ajv-validates exactly those committed bytes against the
+/// published `lekalo/generate-check/v0.6.3` schema, so live equivalence
+/// is what makes the golden a faithful representative of the wire class
+/// on every clean checkout (no git-ignored capture is involved).
 #[test]
-fn drift_reported_receipt_is_captured_for_the_schema_gate() {
+fn drift_reported_receipt_matches_the_published_golden() {
     use lekalo_core::artifacts::GenerateService;
     use lekalo_core::digest::sha256_hex;
     use lekalo_core::loader::LoadSelection;
@@ -635,11 +639,17 @@ fn drift_reported_receipt_is_captured_for_the_schema_gate() {
     assert_eq!(receipt["verdict"], "reported");
     assert_eq!(receipt["findings"][0]["lifecycle"], "custom");
     assert_eq!(receipt["findings"][0]["verdict"], "manual-drift");
-    // Capture for the Node gate (git-ignored target/ tree).
-    let capture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/provider-receipts")
-        .join("drift-reported.json");
-    fs::create_dir_all(capture.parent().expect("capture parent")).expect("capture dir");
-    fs::write(&capture, stdout_text(&output)).expect("capture receipt");
+    // The live wire bytes are the committed golden, field for field: the
+    // receipt carries no host data (logical paths, content-bound digests,
+    // fixed field order), so the check is deterministic on every runner.
+    let golden: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tests/fixtures/provider/drift-reported.golden.json"),
+        )
+        .expect("committed golden receipt"),
+    )
+    .expect("golden parses");
+    assert_eq!(receipt, golden, "live reported receipt != committed golden");
     let _ = fs::remove_dir_all(&work);
 }

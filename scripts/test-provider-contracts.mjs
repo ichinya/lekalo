@@ -217,20 +217,32 @@ if (binaryAvailable) {
   rmSync(workRoot, { recursive: true, force: true });
   checks += 2;
 
-  // 9. The two receipt-shaped operations validate against their own
+  // 9. The receipt-shaped operations validate against their own
   // published describing schemas at the process boundary, and the
-  // prescribed read-only argv materializes no cache home. Both the
-  // zero-diagnostic and the warning/info-bearing receipt shapes are
-  // vectors (fix round 2).
+  // prescribed read-only argv materializes no cache home. All three
+  // reachable success shapes are vectors (fix rounds 2-3): the
+  // zero-diagnostic receipt, the warning/info-bearing receipt, and the
+  // default-profile classification-finding receipt whose recorded
+  // finding rows keep their registered `error` severity without
+  // invalidating the run.
   const validationFixture = resolve(root, "tests/fixtures/validation/valid/base");
   const warningFixture = resolve(
     root,
     "tests/fixtures/validation/warning/portable-target-reference",
   );
+  const classificationFixtures = [
+    resolve(root, "tests/fixtures/classification/invalid/unclosed-policy"),
+    resolve(root, "tests/fixtures/classification/invalid/expired-public-grant"),
+  ];
   const validationWork = join(workRoot, "validation");
   mkdirSync(validationWork, { recursive: true });
   cpSync(validationFixture, join(validationWork, "base"), { recursive: true });
   cpSync(warningFixture, join(validationWork, "warn"), { recursive: true });
+  classificationFixtures.forEach((fixture, index) => {
+    cpSync(fixture, join(validationWork, `classification-${index}`), {
+      recursive: true,
+    });
+  });
   const validateRun = spawnSync(
     binary,
     ["validate", "--no-cache", "--json", "--project", "base"],
@@ -266,6 +278,42 @@ if (binaryAvailable) {
       JSON.stringify(validateValidationReport.errors, null, 1),
     );
   }
+
+  // The default-profile classification review records its findings onto
+  // the success envelope without invalidating; the rows keep their
+  // registered `error` severity, so the error-bearing success receipt
+  // is a reachable shape the published schema must accept (fix round 3).
+  for (let index = 0; index < classificationFixtures.length; index += 1) {
+    const classificationRun = spawnSync(
+      binary,
+      [
+        "validate", "--no-cache", "--json", "--project",
+        `classification-${index}`,
+      ],
+      { cwd: validationWork, encoding: "utf8", windowsHide: true },
+    );
+    if (classificationRun.status !== 0) {
+      fail("validate-classification-exit", String(classificationRun.status));
+    }
+    const classificationReceipt = JSON.parse(classificationRun.stdout.trim());
+    if (
+      !Array.isArray(classificationReceipt.diagnostics) ||
+      classificationReceipt.diagnostics.length === 0 ||
+      classificationReceipt.diagnostics[0].severity !== "error"
+    ) {
+      fail(
+        "validate-classification-shape",
+        "expected an error-severity recorded finding on the success envelope",
+      );
+    }
+    if (!validateValidationReport(classificationReceipt)) {
+      fail(
+        "validate-classification-receipt-schema",
+        JSON.stringify(validateValidationReport.errors, null, 1),
+      );
+    }
+    checks += 1;
+  }
   rmSync(workRoot, { recursive: true, force: true });
 
   const orchestrationFixture = resolve(root, "tests/fixtures/orchestration/project");
@@ -291,31 +339,30 @@ if (binaryAvailable) {
   if (driftReceipt.verdict !== "clean") fail("drift-verdict", driftReceipt.verdict);
   rmSync(workRoot, { recursive: true, force: true });
 
-  // The findings-bearing `verdict: reported` receipt, captured by the
-  // Rust child-process test (target/provider-receipts/, written by
-  // `cargo test -p lekalo-cli --test provider`), must validate too: the
-  // non-blocking stale/manual-drift/missing findings with their
+  // The findings-bearing `verdict: reported` receipt must validate too:
+  // the non-blocking stale/manual-drift/missing findings with their
   // non-generated lifecycles are the exact response class consumers
-  // negotiate the drift operation for.
-  const capturedPath = resolve(root, "target/provider-receipts/drift-reported.json");
-  if (existsSync(capturedPath)) {
-    const captured = JSON.parse(readFileSync(capturedPath, "utf8"));
-    if (captured.verdict !== "reported" || captured.findings.length === 0) {
-      fail("drift-captured-shape", "expected a reported receipt with findings");
-    }
-    if (!validateGenerateCheck(captured)) {
-      fail(
-        "drift-reported-receipt-schema",
-        JSON.stringify(validateGenerateCheck.errors, null, 1),
-      );
-    }
-  } else {
+  // negotiate the drift operation for. The committed golden fixture is
+  // the vector (never a git-ignored leftover); the Rust child-process
+  // test `drift_reported_receipt_matches_the_published_golden` proves
+  // the live binary emits exactly those bytes, so the Ajv verdict on
+  // the golden is the Ajv verdict on the wire class (fix round 3).
+  const reportedGolden = JSON.parse(
+    readFileSync(resolve(root, "tests/fixtures/provider/drift-reported.golden.json"), "utf8"),
+  );
+  if (reportedGolden.verdict !== "reported" || reportedGolden.findings.length === 0) {
+    fail("drift-reported-shape", "expected a reported receipt with findings");
+  }
+  if (/\\/u.test(JSON.stringify(reportedGolden))) {
+    fail("drift-reported-host-identity", "the golden carries a host path");
+  }
+  if (!validateGenerateCheck(reportedGolden)) {
     fail(
-      "drift-captured-missing",
-      "run: cargo test -p lekalo-cli --test provider (captures target/provider-receipts/drift-reported.json)",
+      "drift-reported-receipt-schema",
+      JSON.stringify(validateGenerateCheck.errors, null, 1),
     );
   }
-  checks += 3;
+  checks += 4;
 } else if (!existsSync(binary)) {
   process.stdout.write(
     `${JSON.stringify({ skipped: "live-binary", detail: `run: cargo build -p lekalo-cli (${binary})` })}\n`,
