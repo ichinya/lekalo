@@ -78,6 +78,11 @@
       "origin": "synthetic"
     },
     {
+      "family": "docs",
+      "origin": "synthetic",
+      "note": "Issue #105 documentation replay metadata: authored in-repo from public command blocks and existing synthetic corpora; no private consumer content. The contracted-module tutorial variant derives only from the synthetic contracted/planner-slice corpus, with explicit Model/declaration limits and real maintained-code tests."
+    },
+    {
       "family": "doctor",
       "origin": "synthetic"
     },
@@ -189,7 +194,7 @@
     {
       "family": "pilot",
       "origin": "synthetic",
-      "note": "issue #49 observed-mode pilot: the taskhub consumer fixture, its pinned scan document, and its native gate plan are exclusively synthetic; issue #118 adds the brownfield-ts workspace fixture (Hono + Drizzle sqliteTable + vitest), equally authored in-repo"
+      "note": "issue #49 observed-mode pilot: the taskhub consumer fixture, its pinned scan document, and its native gate plan are exclusively synthetic; issue #118 adds the brownfield-ts workspace fixture (Hono + Drizzle sqliteTable + vitest), equally authored in-repo Issue #105 adds the separate brownfield-mysql Hono/Drizzle/MySQL 8.4 fixture, authored synthetic; its actual-package native tests and authored offline declarations are distinct from the unchanged SQLite pilot."
     },
     {
       "family": "privacy",

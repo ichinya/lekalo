@@ -2686,6 +2686,20 @@
       "status": "implemented"
     },
     {
+      "id": "protocol:docs:examples",
+      "kind": "protocol",
+      "source": "scripts/test-docs-examples.mjs",
+      "owner": "docs/architecture.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:docs:owners",
+      "kind": "protocol",
+      "source": "scripts/test-docs-ownership.mjs",
+      "owner": "docs/architecture.md",
+      "status": "implemented"
+    },
+    {
       "id": "protocol:node-typescript:lekalo/client-sdk-compatibility/v0.4.0",
       "kind": "protocol",
       "source": "adapters/node-typescript/src",
@@ -2935,6 +2949,46 @@
       "kind": "protocol",
       "source": "adapters/php-laravel/src",
       "owner": "adapters/php-laravel/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:suite:catalog.schema.v1.0.0.json",
+      "kind": "protocol",
+      "source": "tests/fixtures/suite/schema/catalog.schema.v1.0.0.json",
+      "sourceDigest": "sha256:f063b228aafacf9c31a4340835469a0605ff942b22ab318940c3f5fae1b545b4",
+      "owner": "docs/architecture.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:suite:coverage.schema.v1.0.0.json",
+      "kind": "protocol",
+      "source": "tests/fixtures/suite/schema/coverage.schema.v1.0.0.json",
+      "sourceDigest": "sha256:2a302b0a98477046f6883a575d13c8a10e1504dc7c2ebcbc434cbf542890b076",
+      "owner": "docs/architecture.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:suite:fixture.schema.v1.0.0.json",
+      "kind": "protocol",
+      "source": "tests/fixtures/suite/schema/fixture.schema.v1.0.0.json",
+      "sourceDigest": "sha256:8d9f66939189d12aea9c8c539ce44bfee4b5df696ee75cf9f6fa6a28d19a15b8",
+      "owner": "docs/architecture.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:suite:golden-update.schema.v1.0.0.json",
+      "kind": "protocol",
+      "source": "tests/fixtures/suite/schema/golden-update.schema.v1.0.0.json",
+      "sourceDigest": "sha256:ab49d4864b175d47286cc387e65b74ce089176ecaa938c493c463dc034d4c875",
+      "owner": "docs/architecture.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:suite:run-manifest.schema.v1.0.0.json",
+      "kind": "protocol",
+      "source": "tests/fixtures/suite/schema/run-manifest.schema.v1.0.0.json",
+      "sourceDigest": "sha256:d0afb227d0252b45b46e30111711daffaaddd27764bdac84fbadabaf61c8ebe1",
+      "owner": "docs/architecture.md",
       "status": "implemented"
     },
     {

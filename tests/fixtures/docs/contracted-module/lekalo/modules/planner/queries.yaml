@@ -1,0 +1,22 @@
+{
+  "schema_version": "0.2.16",
+  "definitions": [
+    {
+      "id": "planner.list_tasks",
+      "kind": "query",
+      "version": 1,
+      "description": "List tasks by state",
+      "derived_from": [
+        "PLANNER-REQ-002"
+      ],
+      "reads": [
+        "planner.task"
+      ],
+      "returns": {
+        "list": {
+          "ref": "planner.task"
+        }
+      }
+    }
+  ]
+}

@@ -46,6 +46,8 @@ This is the canonical terminology location. Other pages link here.
 | Model | Canonical language-neutral application semantics; this page and [schema](../contracts/model.schema.v0.2.16.json). |
 | IR | Typed normalized intermediate representation, selected by exact contract version; [IR](ir.md). |
 | Definition / symbol | A typed Model declaration / its stable semantic ID; [IDs](semantic-ids.md). |
+| Attachment | A separately typed declaration/evidence input joined to Model/IR; it is not an extra Model definition kind. |
+| Revision / pin / digest / custody | Exact source state / admitted reference / byte identity / preservation and admission of that identity; [versioning](versioning.md), [lock](lockfile.md), [authority](authority.md). A digest is not anonymization or permission. |
 | Module | Semantic grouping with imports; directory placement is separate; [loader](loader.md). |
 | Scenario | Portable behavior description compiled to Scenario IR; [scenario IR](scenario-ir.md). |
 | Effect | Explicit semantic state/event dependency; [effect graph](effect-graph.md). |
@@ -57,10 +59,14 @@ This is the canonical terminology location. Other pages link here.
 | Declaration | Recorded contracted input/output/gate custody; [contracted mode](contracted-mode.md). |
 | Artifact manifest | Provenance and permitted lifecycle for owned artifacts; [manifest](artifact-manifest.md). |
 | Evidence | Typed observation with source/custody and limits; not automatically canonical semantics. |
+| Origin / confidence / current-stale-unknown | How evidence was obtained / strength of its stated mapping / freshness against its recorded inputs; [observed mode](observed-mode.md). Inference cannot mint confirmation. |
+| Declared / detected effect | Canonical effect contract / target-side observation of native behavior; [extended effects](extended-effects.md). Neither implies runtime coverage. |
 | Diagnostic / result status | Registered finding / command verdict governing exit and stream; [diagnostics](diagnostics.md). |
 | Trace | Provenance-preserving relationship evidence between requirements, symbols and tests; [trace](trace-manifest.md). |
 | Native gate | Bounded tool plan and execution policy; production execution availability is separate; [native gates](native-gates.md). |
 | Canonical / derived / cached / runtime-only / direct-evidence | Artifact authority lifecycle classes; [authority](authority.md). |
 | Classification / export disposition | Data sensitivity / sharing decision independent of authority lifecycle; [security](security.md). |
+| Privacy authorization | Purpose-bound permission under exact admitted policy/evidence; separate from application [authorization](authorization.md) semantics. |
+| Known / unknown / withheld / unsupported | Typed evidence states; absent or denied information is not known zero; [local history](run-history.md). |
 | OpenSpec / AI Factory / HLV | Requirement owner / workflow owner / validation-evidence owner; [integrations](integrations.md). |
 | Implemented / experimental / planned | Verified bounded behavior / restricted integration path / unavailable future behavior; [roadmap](roadmap.md). |

@@ -104,6 +104,10 @@ jobs:
           node scripts/test-privacy-authorizing-evidence.mjs
           node scripts/test-privacy-authorization-subject.mjs
           node scripts/test-fixture-provenance.mjs
+      - name: Validate documentation ownership and replay metadata (issue #105)
+        run: |
+          node scripts/test-docs-ownership.mjs --static
+          node scripts/test-docs-examples.mjs --static
       - name: Run the golden fixture suite catalog gates (issue #90)
         # Catalog/hygiene/adapter-shared are Node-only. The
         # normalization gate's newline/separator vectors execute the
@@ -322,6 +326,14 @@ jobs:
           node scripts/test-golden-diagnostic-coverage.mjs
           node scripts/test-golden-planner-e2e.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-golden-update-policy.mjs
+      - name: Replay portable documentation commands in disposable copies (issue #105)
+        timeout-minutes: 15
+        env:
+          NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+        run: |
+          set -euo pipefail
+          node scripts/test-docs-ownership.mjs
+          node scripts/test-docs-examples.mjs
       - name: Run the Node/TypeScript kernel suite (issue #43)
         run: node scripts/test-node-typescript-kernel.mjs
       - name: Run the adapter manifest contract gate (issue #32)
@@ -455,6 +467,14 @@ jobs:
           # NODE_PATH is colon-delimited on POSIX and semicolon-delimited on Windows.
           delim=":"; if [ "$RUNNER_OS" = "Windows" ]; then delim=";"; fi
           NODE_PATH="$NODE_PATH$delim$RUNNER_TEMP/lekalo-client-sdk-vue/node_modules" node scripts/test-client-sdk-runtime.mjs
+      - name: Replay the Laravel and Vue tutorial in a disposable copy (issue #105)
+        timeout-minutes: 20
+        env:
+          NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+        run: |
+          set -euo pipefail
+          delim=":"; if [ "$RUNNER_OS" = "Windows" ]; then delim=";"; fi
+          NODE_PATH="$NODE_PATH$delim$RUNNER_TEMP/lekalo-client-sdk-vue/node_modules" node scripts/test-docs-examples.mjs --lane planner
       - name: Run the scenario-test compiler gate (issue #47)
         run: node scripts/test-node-scenario-tests.mjs
       - name: Run the scenario unit suites (issue #47 review F-11)
@@ -493,6 +513,45 @@ jobs:
           if sudo grep -Eq '^lekalo-ci-bwrap(-child)? ' /sys/kernel/security/apparmor/profiles; then
             exit 1
           fi
+
+  mysql-docs:
+    name: Synthetic MySQL documentation tutorial (issue #105)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      mysql:
+        image: mysql:8.4.5@sha256:679e7e924f38a3cbb62a3d7df32924b83f7321a602d3f9f967c01b3df18495d6
+        env:
+          MYSQL_ROOT_PASSWORD: synthetic-root-only
+          MYSQL_DATABASE: lekalo_docs_tutorial
+          MYSQL_USER: tutorial
+          MYSQL_PASSWORD: synthetic-tutorial-only
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=10s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+          package-manager-cache: false
+      - name: Build the locked CLI and provision the exact schema validator
+        run: |
+          set -euo pipefail
+          cargo build -p lekalo-cli --locked
+          npm install --prefix "$RUNNER_TEMP/lekalo-ajv-8.17.1" --ignore-scripts --no-audit --no-fund --no-save ajv@8.17.1
+      - name: Provision the synthetic fixture from its committed npm lock
+        # Visible setup only; replay never installs or uses a production URL.
+        run: npm ci --prefix tests/fixtures/pilot/brownfield-mysql --ignore-scripts --no-audit --no-fund
+      - name: Replay actual-package typecheck, HTTP and MySQL persistence
+        timeout-minutes: 10
+        env:
+          NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+          LEKALO_DOCS_MYSQL_PORT: '3306'
+        run: node scripts/test-docs-examples.mjs --lane mysql
 
   mago-real:
     name: Mago real-toolchain gate (issue #55)

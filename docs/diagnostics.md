@@ -17,7 +17,7 @@ The CLI renders the shared DomainResult verdict. Severity does not independently
 | `unavailable` | 4 | stdout | Required service/process/backend is unavailable |
 | `unsupported-version` | 5 | stderr | Unsupported contract/registry preflight version |
 
-Usage parsing errors belong to the CLI parser and can exit 2; they are not invented DomainResult statuses. Node maintenance gates and native test runners have their own documented protocols (normally exit 0/1); their success output is not necessarily a diagnostic envelope. Examples give expected streams for their actual producer.
+Usage parsing errors belong to the CLI parser and can exit 2; they are not invented DomainResult statuses. Some commands emit family receipts rather than a status-shaped envelope: `verify` emits an orchestration verdict, and a validated `native run` plan currently exits 0 with `kind: native-run-result`, `outcome: unsupported`, `verdict: blocked`. That receipt proves plan validation, not execution. Node maintenance gates and native test runners have their own documented protocols (normally exit 0/1). Examples validate the actual family, exit and stream.
 
 ## Stable finding identity and normalization
 

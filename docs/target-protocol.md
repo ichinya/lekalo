@@ -170,17 +170,16 @@ fails closed, with no ambient fallback. Linux/macOS behavioral qualification
 comes from the exact-candidate hosted gates, never from Windows tests.
 
 The executable and a first-argument script are copied into a private runtime.
-Additional external runtime assets/packages need a future explicit bundle
-contract and receive no implicit host grant. Node's preserve-symlinks flags
+Additional external runtime assets/packages need an explicit bundle
+contract (**Planned**) and receive no implicit host grant. Node's preserve-symlinks flags
 avoid reading host ancestors of the already link-free copied script. The
-reference adapter is a standalone Node script; Go/PHP/Rust target packages
-and the future generation CLI are not qualified by these tests.
+reference adapter is a standalone Node script; these host tests do not qualify every target package. The PHP adapter and native tutorial have separate checks and explicit execution limits.
 
 ## The Node/TypeScript kernel adapter (issue #43)
 
 `adapters/node-typescript/adapter.mjs` is the concrete observed MVP
-target adapter (`lekalo-target-node-typescript`, product version 0.3.0):
-a dependency-free, read-only, single-file Node kernel. The bare kernel advertises describe only; configured scanner, native-plan, transport and dedicated generation bundles supply additional surfaces according to the resolved profile. See the adapter README for exact bundles and capability declarations. A scan can refuse when rich evidence cannot be represented by the closed public wire; the experimental tutorial records that refusal separately from its direct-kernel fallback.
+target adapter (`lekalo-target-node-typescript`, adapter release 0.4.0):
+a self-contained Node bundle with vendored compiler/evidence assets. The bare kernel advertises describe only; configured scanner, native-plan, transport and dedicated generation bundles supply additional surfaces according to the resolved profile. Read/write authority stays explicit. See the adapter README for exact bundles and capability declarations. A scan can refuse when rich evidence cannot be represented by the closed public wire; the experimental tutorial records that refusal separately from its direct-kernel fallback.
 
 Its limits are contractual, not incidental: read roots never come from
 the wire (the base resolved profile carries digest/capability pairs,

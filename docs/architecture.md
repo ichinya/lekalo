@@ -45,7 +45,7 @@ Workflow-provider discovery is a separate **Implemented** metadata contract, not
 
 ## Documentation ownership
 
-[documentation-owners.json](documentation-owners.json) assigns one primary reference owner to each CLI command/group/global, contract file and exported protocol shape. The inventory includes older files with exact producer/manifest selection: existence is not current-version admission. [CLI command index](cli.md#command-index) contains the real help synopsis for every nested command.
+[documentation-owners.json](documentation-owners.json) assigns one primary reference owner to each CLI command/group/global, contract file and exported protocol shape, including the five published suite-maintenance schemas and both documentation-maintenance formats. The inventory includes older files with exact producer/manifest selection: existence is not current-version admission. [CLI command index](cli.md#command-index) contains the real help synopsis for every nested command. Suite descriptor/catalog/coverage/run/update formats remain repository-maintenance protocols; this page owns their documentation entry and links the exact [schemas](../tests/fixtures/suite/schema) and [catalog library](../scripts/lib/fixture-catalog.mjs).
 
 `scripts/test-docs-ownership.mjs` checks live recursive help, exact contract bytes, adapter wire identities, pages, glossary and links; `--static` checks source/contract drift without a binary. A new command/schema/protocol must add its owner and content in the same change. `scripts/update-docs-owners.mjs --write` is an explicit maintenance operation; CI never regenerates an inventory to hide drift.
 
