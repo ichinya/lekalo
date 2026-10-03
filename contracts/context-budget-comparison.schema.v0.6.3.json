@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/context-budget-comparison.schema.v0.6.3.json",
+  "title": "Lekalo context-budget comparison",
+  "description": "Closed contract of one baseline comparison between two context-budget reports (issue #75). Subjects match by exact kind-qualified id; added and removed subjects are explicit incomparable rows, never compared against zero. Every metric row carries a signed absolute delta (base, candidate, delta) and a rational relative delta; a shared unknown is a comparable row without a delta and never fabricates a zero; asymmetric availability produces an incomparable row with a closed reason. Profile or estimator changes are configuration-change rows that end the trend (remeasure under one pinned profile). The comparison is derived evidence: it never mutates either report and never decides a verdict by itself — the caller-selected mandatory policy applies the thresholds. The contract is independent of the product release, of the Model/IR/graph/effect contract versions, and of the diagnostic registry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["metricVersion", "comparable", "subjects"],
+  "properties": {
+    "metricVersion": {
+      "const": "context-budget-semantics/1"
+    },
+    "comparable": {
+      "description": "False when any row is incomparable; no regression verdict can be derived from an incomparable comparison.",
+      "type": "boolean"
+    },
+    "configurationChange": {
+      "description": "Present exactly when the two sides ran under different pinned profiles or estimator identities.",
+      "enum": ["profile-digest", "estimator-identity"]
+    },
+    "subjects": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 20000,
+      "items": {
+        "$ref": "#/$defs/subjectComparison"
+      }
+    }
+  },
+  "$defs": {
+    "count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "signedDelta": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "metricKey": {
+      "enum": [
+        "directDependencies",
+        "edgeOccurrences",
+        "transitiveDependencies",
+        "indirectOnlyDependencies",
+        "requiredModules",
+        "contextClosureEstimatedTokens",
+        "minimumRequiredSemanticTokens",
+        "supportingSemanticTokens",
+        "optionalSourceTokens",
+        "modelFiles",
+        "sourceFiles",
+        "targetFiles",
+        "maxCrossModuleHops",
+        "unresolvedEdges",
+        "ambiguousEdges",
+        "declaredEffects",
+        "detectedEffects",
+        "policies",
+        "scenarios",
+        "largestRequiredArtifact",
+        "largestRequiredSemanticFact",
+        "duplicateSupportingTokens",
+        "generatedMaintainedRatio",
+        "minimumSafeContextEstimate",
+        "empiricallySafeContextTokens"
+      ]
+    },
+    "comparableMetric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["metric", "verdict"],
+      "properties": {
+        "metric": { "$ref": "#/$defs/metricKey" },
+        "verdict": {
+          "const": "comparable"
+        },
+        "delta": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["base", "candidate", "delta"],
+          "properties": {
+            "base": { "$ref": "#/$defs/count" },
+            "candidate": { "$ref": "#/$defs/count" },
+            "delta": { "$ref": "#/$defs/signedDelta" }
+          }
+        },
+        "relative": {
+          "description": "The rational relative delta [numerator, denominator, sign]; absent with reason zero-baseline at a zero base.",
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": { "$ref": "#/$defs/count" }
+        }
+      }
+    },
+    "incomparableMetric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["metric", "verdict", "reason"],
+      "properties": {
+        "metric": { "$ref": "#/$defs/metricKey" },
+        "verdict": {
+          "const": "incomparable"
+        },
+        "reason": {
+          "enum": ["metric-unknown"]
+        }
+      }
+    },
+    "subjectComparison": {
+      "type": "object",
+      "required": ["subject", "verdict"],
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["subject", "verdict", "deltas"],
+          "properties": {
+            "subject": { "$ref": "#/$defs/subjectId" },
+            "verdict": { "const": "comparable" },
+            "deltas": {
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  { "$ref": "#/$defs/comparableMetric" },
+                  { "$ref": "#/$defs/incomparableMetric" }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["subject", "verdict", "reason"],
+          "properties": {
+            "subject": { "$ref": "#/$defs/subjectId" },
+            "verdict": { "const": "incomparable" },
+            "reason": { "enum": ["subject-added", "subject-removed"] }
+          }
+        }
+      ]
+    },
+    "subjectId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.:#>/-]*$"
+    }
+  }
+}

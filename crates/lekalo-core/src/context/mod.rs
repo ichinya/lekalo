@@ -31,7 +31,7 @@
 //! UTF-8 JSON with byte-sorted object keys; sections appear in protection
 //! order and the manifest in selection-walk order.
 
-mod canonical;
+pub(crate) mod canonical;
 mod diagnostic;
 pub mod estimate;
 mod model;

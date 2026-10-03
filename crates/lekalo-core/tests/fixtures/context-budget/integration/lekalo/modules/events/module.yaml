@@ -1,0 +1,6 @@
+schema_version: "0.2.16"
+definitions:
+  - id: events
+    kind: module
+    version: 1
+    description: "Event contracts for the integration flow"

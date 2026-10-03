@@ -11,6 +11,7 @@ pub mod ci_report;
 pub mod classification;
 pub mod client_sdk;
 pub mod context;
+pub mod context_budget;
 pub mod contracted;
 pub mod dataflow;
 pub mod diagnostics;

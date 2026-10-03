@@ -13,7 +13,7 @@ use lekalo_core::versioning::migration::{MigrationReceipt, MigrationService, Ver
 use lekalo_core::versioning::{ModelTarget, TargetMalformation, VersionRegistry};
 use lekalo_core::DomainResult;
 use std::ffi::OsStr;
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::process::ExitCode;
 
 /// The storage-projection attachment type of the `lekalo storage`
@@ -106,6 +106,54 @@ struct Cli {
 
     #[command(subcommand)]
     command: Commands,
+}
+
+/// The context-budget flag family (issue #75): the selector triple, the
+/// exclusive budget/profile handles, and the advisory opt-ins.
+#[derive(Debug, Args)]
+struct ContextBudgetArgs {
+    /// The semantic id of the subject symbol; exactly one of this,
+    /// `--module`, and `--all` is required.
+    #[arg(long, value_name = "SYMBOL")]
+    symbol: Option<String>,
+    /// The module id whose definitions form the subject set.
+    #[arg(long, value_name = "MODULE")]
+    module: Option<String>,
+    /// Analyze every definition of the project.
+    #[arg(long)]
+    all: bool,
+    /// The explicit content-token budget of the generic chars-4
+    /// profile; exclusive with `--budget-profile`.
+    #[arg(long, value_name = "TOKENS")]
+    budget: Option<u64>,
+    /// The named profile inside `--profiles` to apply.
+    #[arg(long, value_name = "ID")]
+    budget_profile: Option<String>,
+    /// The closed profile document; required by `--budget-profile`.
+    #[arg(long, value_name = "FILE")]
+    profiles: Option<String>,
+    /// The profile version to resolve (default `1`).
+    #[arg(long, value_name = "VERSION", default_value = "1")]
+    profile_version: String,
+    /// Attach the legacy-capsule simulation at the same budget.
+    #[arg(long = "simulate-capsule")]
+    simulate_capsule: bool,
+    /// Emit advisory extraction-boundary suggestions.
+    #[arg(long)]
+    suggest: bool,
+    /// Opt in to the mapped-source recipe (whole-file accounting).
+    #[arg(long = "source-context", value_name = "RECIPE", default_value = "none")]
+    source_context: String,
+    /// The closed mandatory budget-policy document; the only denied
+    /// path. The policy pins the exact effective profile digest.
+    #[arg(long, value_name = "FILE")]
+    policy: Option<String>,
+    /// An immutable prior report to compare against (the baseline).
+    #[arg(long, value_name = "FILE")]
+    baseline: Option<String>,
+    /// Project root selector, relative to the invocation directory.
+    #[arg(long, value_name = "DIR")]
+    project: Option<String>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -204,6 +252,19 @@ enum Commands {
         /// Project root selector, relative to the invocation directory.
         #[arg(long, value_name = "DIR")]
         project: Option<String>,
+    },
+    /// Report the context-budget and local-understandability metrics of
+    /// one symbol, one module, or the whole project (issue #75): the
+    /// measured dependency closure before any budget selection, the
+    /// required semantic facts separated from supporting facts and
+    /// optional source, cross-module hops, the explainable over-budget
+    /// breakdown, advisory extraction boundaries, and the opt-in capsule
+    /// simulation. Advisory by default; a mandatory `--policy` document
+    /// is the only denied path. No default budget exists: an explicit
+    /// `--budget` or `--budget-profile` is required.
+    ContextBudget {
+        #[command(flatten)]
+        args: ContextBudgetArgs,
     },
     /// Create the committed project lock, or check an existing one.
     Lock {
@@ -2353,6 +2414,38 @@ fn runtime() -> u8 {
                 spans,
                 project,
             } => run_context(symbol, changed, budget, spans, &project),
+            Commands::ContextBudget { args } => {
+                let ContextBudgetArgs {
+                    symbol,
+                    module,
+                    all,
+                    budget,
+                    budget_profile,
+                    profiles,
+                    profile_version,
+                    simulate_capsule,
+                    suggest,
+                    source_context,
+                    policy,
+                    baseline,
+                    project,
+                } = args;
+                run_context_budget(ContextBudgetInvocation {
+                    symbol,
+                    module,
+                    all,
+                    budget,
+                    budget_profile,
+                    profiles,
+                    profile_version,
+                    simulate_capsule,
+                    suggest,
+                    source_context,
+                    policy,
+                    baseline,
+                    project,
+                })
+            }
             Commands::Diff {
                 first,
                 second,
@@ -5460,6 +5553,342 @@ fn run_context(
             Vec::new(),
         ),
     }
+}
+
+/// The typed context-budget invocation: every flag of [`ContextBudgetArgs`]
+/// grouped so the runner keeps a single parameter.
+struct ContextBudgetInvocation {
+    symbol: Option<String>,
+    module: Option<String>,
+    all: bool,
+    budget: Option<u64>,
+    budget_profile: Option<String>,
+    profiles: Option<String>,
+    profile_version: String,
+    simulate_capsule: bool,
+    suggest: bool,
+    source_context: String,
+    policy: Option<String>,
+    baseline: Option<String>,
+    project: Option<String>,
+}
+
+/// Run `lekalo context-budget`: load and compile the project once, hand
+/// the IR to the core context-budget engine with the explicit budget or
+/// named profile, and project the report. Advisory by default: a valid
+/// report exits 0 with its `assessment` data, a mandatory `--policy` that
+/// fails is a `denied` envelope carrying the report, and malformed inputs
+/// refuse closed. No timestamps, host paths, or raw source enter the
+/// report; core computation never opens files.
+fn run_context_budget(args: ContextBudgetInvocation) -> DomainResult {
+    let ContextBudgetInvocation {
+        symbol,
+        module,
+        all,
+        budget,
+        budget_profile,
+        profiles,
+        profile_version,
+        simulate_capsule,
+        suggest,
+        source_context,
+        policy,
+        baseline,
+        project,
+    } = args;
+    let profile_version = profile_version.as_str();
+    let source_context = source_context.as_str();
+    // The source recipe is validated once for both budget handles: a
+    // bogus recipe is a usage error, never a silent none.
+    if source_context != "none" && source_context != "mapped-files" {
+        return DomainResult::usage_error();
+    }
+    let source_context_requested = source_context == "mapped-files";
+    // The budget selection: an explicit generic budget or one named
+    // profile inside an explicit profile document; never both, never
+    // neither (no universal threshold exists).
+    let selection = match (budget, budget_profile.as_deref()) {
+        (Some(_), Some(_)) | (None, None) => {
+            return DomainResult::usage_error();
+        }
+        (Some(tokens), None) => {
+            match lekalo_core::context_budget::BudgetSelection::Generic(tokens).profile() {
+                Ok(profile) => {
+                    lekalo_core::context_budget::BudgetSelection::Named(Box::new(profile))
+                }
+                Err(set) => return DomainResult::invalid(set),
+            }
+        }
+        (None, Some(profile_id)) => {
+            let Some(profiles_path) = profiles.as_deref() else {
+                return DomainResult::usage_error();
+            };
+            let bytes = match read_bounded(profiles_path, "profile-file") {
+                Ok(bytes) => bytes,
+                Err(result) => return result,
+            };
+            let document = match lekalo_core::context_budget::ProfileDocument::parse(&bytes) {
+                Err(set) => {
+                    let unsupported = set
+                        .as_slice()
+                        .iter()
+                        .any(|diagnostic| diagnostic.id() == "context.profile-unsupported");
+                    return if unsupported {
+                        DomainResult::unsupported_version(set)
+                    } else {
+                        DomainResult::invalid(set)
+                    };
+                }
+                Ok(document) => document,
+            };
+            match document.resolve(profile_id, profile_version) {
+                Ok(profile) => {
+                    lekalo_core::context_budget::BudgetSelection::Named(Box::new(profile.clone()))
+                }
+                Err(set) => return DomainResult::invalid(set),
+            }
+        }
+    };
+    let request = match lekalo_core::context_budget::BudgetRequest::new(
+        symbol,
+        module,
+        all,
+        simulate_capsule,
+        suggest,
+        source_context_requested,
+    ) {
+        Ok(request) => request,
+        Err(_) => return DomainResult::usage_error(),
+    };
+    let load_selection = LoadSelection {
+        project: project
+            .clone()
+            .or_else(|| std::env::var("LEKALO_PROJECT").ok()),
+    };
+    let model = match lekalo_core::loader::normalize_model(&load_selection) {
+        Err(result) => return result,
+        Ok(model) => model,
+    };
+    let compilation = match lekalo_core::ir::compile(&model) {
+        Err(failure) => return failure.into_result(),
+        Ok(compilation) => compilation,
+    };
+    match lekalo_core::context_budget::plan(&request, &selection, &compilation) {
+        Err(set) => {
+            let unsupported = set
+                .as_slice()
+                .iter()
+                .any(|diagnostic| diagnostic.id() == "context.profile-unsupported");
+            if unsupported {
+                DomainResult::unsupported_version(set)
+            } else {
+                DomainResult::invalid(set)
+            }
+        }
+        Ok(report) => {
+            let mut diagnostics = report.warnings.clone();
+            let mut comparison_json: Option<String> = None;
+            let mut baseline_pin = lekalo_core::context_budget::StateValue::Unknown;
+            // One bounded read and one parse of the policy path feed the
+            // regression limits, the digest pin, and the mandatory
+            // evaluation (R2-8: no auxiliary unbounded re-reads). Load
+            // failures are carried to the mandatory block below, so a
+            // broken policy never outranks a broken baseline input in
+            // the error order.
+            enum PolicyLoad {
+                Ready(lekalo_core::context_budget::policy::Policy, String),
+                Failed(DomainResult),
+            }
+            let policy_loaded: Option<PolicyLoad> = policy.as_deref().map(|policy_path| {
+                match read_bounded(policy_path, "policy-file") {
+                    Err(result) => PolicyLoad::Failed(result),
+                    Ok(bytes) => {
+                        let digest = format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes));
+                        match lekalo_core::context_budget::policy::parse(&bytes) {
+                            Ok(parsed) => PolicyLoad::Ready(parsed, digest),
+                            Err(set) => {
+                                let unsupported = set.as_slice().iter().any(|diagnostic| {
+                                    diagnostic.id() == "context.profile-unsupported"
+                                });
+                                PolicyLoad::Failed(if unsupported {
+                                    DomainResult::unsupported_version(set)
+                                } else {
+                                    DomainResult::invalid(set)
+                                })
+                            }
+                        }
+                    }
+                }
+            });
+
+            // The baseline comparison is opt-in evidence, never a gate:
+            // an incomparable pair records its reason and the report
+            // stays advisory unless the policy makes regression a denial.
+            let baseline_verdict = match baseline.as_deref() {
+                Some(baseline_path) => {
+                    let bytes = match read_bounded(baseline_path, "baseline-file") {
+                        Ok(bytes) => bytes,
+                        Err(result) => return result,
+                    };
+                    let base_report = match parse_baseline(&bytes) {
+                        Ok(report) => report,
+                        Err(result) => return result,
+                    };
+                    baseline_pin = lekalo_core::context_budget::StateValue::Known(format!(
+                        "sha256:{}",
+                        lekalo_core::digest::sha256_hex(&bytes)
+                    ));
+                    let comparison =
+                        lekalo_core::context_budget::compare::compare(&base_report, &report);
+                    // The deltas always reach the output: the envelope
+                    // carries the versioned comparison block whether or
+                    // not a policy turns it into a verdict (AC5).
+                    comparison_json = Some(comparison.to_canonical_json());
+                    let limits: Option<
+                        Vec<lekalo_core::context_budget::policy::RegressionLimitWire>,
+                    > = match &policy_loaded {
+                        Some(PolicyLoad::Ready(parsed, _)) => {
+                            Some(parsed.regression_limits.clone())
+                        }
+                        _ => None,
+                    };
+                    let verdict = match &limits {
+                        Some(limits) => lekalo_core::context_budget::compare::regression_verdict(
+                            &comparison,
+                            limits,
+                        ),
+                        None => {
+                            use lekalo_core::context_budget::policy::BaselineVerdict;
+                            if comparison.comparable {
+                                BaselineVerdict::Comparable
+                            } else {
+                                BaselineVerdict::Incomparable
+                            }
+                        }
+                    };
+                    use lekalo_core::context_budget::policy::BaselineVerdict;
+                    if verdict == BaselineVerdict::Regressed {
+                        let subjects: Vec<String> = comparison
+                            .subjects
+                            .iter()
+                            .map(|subject| subject.subject.clone())
+                            .collect();
+                        diagnostics.extend(
+                            lekalo_core::context_budget::diagnostic::baseline_regression(&subjects),
+                        );
+                    } else if verdict == BaselineVerdict::Incomparable {
+                        diagnostics.extend(
+                            lekalo_core::context_budget::diagnostic::baseline_incomparable(
+                                "*",
+                                comparison
+                                    .configuration_change
+                                    .unwrap_or("baseline-incomparable"),
+                            ),
+                        );
+                    }
+                    Some(verdict)
+                }
+                None => None,
+            };
+            // The provenance pins ride with the report: the selected
+            // policy digest (when one parsed) and the consumed baseline.
+            let policy_digest_pin = match &policy_loaded {
+                Some(PolicyLoad::Ready(_, digest)) => {
+                    lekalo_core::context_budget::StateValue::Known(digest.clone())
+                }
+                _ => lekalo_core::context_budget::StateValue::Unknown,
+            };
+            // The pins are attached BEFORE either projection is built
+            // (R2-M1): serializing first left the caller-supplied pins
+            // computed but dead on the wire — a mandatory-policy pass
+            // was byte-identical to an advisory run on both pin fields.
+            let report = report.with_pins(policy_digest_pin, baseline_pin);
+            let canonical = match report.to_canonical_json() {
+                Ok(bytes) => bytes,
+                Err(set) => return DomainResult::invalid(set),
+            };
+            let build_envelope = |comparison_json: &Option<String>| {
+                if let Some(comparison_json) = comparison_json {
+                    format!(
+                        "{{\"status\":\"valid\",\"contextBudget\":{},\"contextBudgetComparison\":{}}}",
+                        canonical,
+                        comparison_json
+                    )
+                } else {
+                    format!("{{\"status\":\"valid\",\"contextBudget\":{}}}", canonical)
+                }
+            };
+            let human = report.to_markdown();
+
+            // The mandatory policy is the only denied path, and it pins
+            // the exact effective profile digest before any metric is
+            // evaluated. The report always rides the envelope.
+            match policy_loaded {
+                Some(PolicyLoad::Failed(result)) => return result,
+                Some(PolicyLoad::Ready(policy, _)) => {
+                    if !policy.pins(&report.profile) {
+                        return DomainResult::denied(
+                            lekalo_core::context_budget::diagnostic::policy_denied(
+                                "*",
+                                "policy-profile-pin",
+                            ),
+                        );
+                    }
+                    let over_budget = report.summary.over_budget_subjects > 0;
+                    if let Some(reason) =
+                        policy.evaluate(over_budget, report.complete, baseline_verdict.as_ref())
+                    {
+                        let denial =
+                            lekalo_core::context_budget::diagnostic::policy_denied("*", reason);
+                        return DomainResult::denied_json(
+                            build_envelope(&comparison_json),
+                            human,
+                            denial,
+                        );
+                    }
+                }
+                None => {}
+            }
+
+            // The advisory budget-exceeded warning keeps the valid
+            // envelope; without a mandatory policy the exit stays 0.
+            DomainResult::graph(build_envelope(&comparison_json), human, diagnostics)
+        }
+    }
+}
+/// Parse one immutable baseline report through the closed typed decoder
+/// (context_budget::baseline::parse). Malformed input is invalid, never
+/// incomparable; the decoder enforces the exact state shapes, closed
+/// field sets, identity/metric-version/estimator pins, and arithmetic.
+/// One bounded caller-input read: refuses oversized documents instead of
+/// buffering attacker- or accident-sized files (devin minor 5).
+fn read_bounded(path: &str, detail: &str) -> Result<Vec<u8>, DomainResult> {
+    let input_error = |error: io::Error| {
+        let kind = match error.kind() {
+            io::ErrorKind::NotFound => "file-missing",
+            _ => "file-unreadable",
+        };
+        DomainResult::invalid(lekalo_core::context_budget::diagnostic::input_invalid(
+            &format!("{detail}-{kind}"),
+        ))
+    };
+    let file = std::fs::File::open(path).map_err(input_error)?;
+    let mut bytes = Vec::new();
+    file.take(lekalo_core::context_budget::version::MAX_INPUT_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(input_error)?;
+    if bytes.len() as u64 > lekalo_core::context_budget::version::MAX_INPUT_BYTES {
+        return Err(DomainResult::invalid(
+            lekalo_core::context_budget::diagnostic::input_invalid(&format!("{detail}-oversized")),
+        ));
+    }
+    Ok(bytes)
+}
+
+fn parse_baseline(bytes: &[u8]) -> Result<lekalo_core::context_budget::BudgetReport, DomainResult> {
+    lekalo_core::context_budget::baseline::parse(bytes)
+        .map_err(DomainResult::invalid)
+        .map(|decoded| decoded.report)
 }
 
 /// Run one `graph` subcommand: load and compile the project, hand the IR

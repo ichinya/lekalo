@@ -1,0 +1,11 @@
+schema_version: "0.2.16"
+definitions:
+  - id: integration.sync_flow
+    kind: scenario
+    version: 1
+    description: "Full sync flow"
+    summary: "Receiving a task ends in a confirmed delivery."
+    covers:
+      - "integration.sync_external_objects"
+      - "events.delivery_confirmed"
+      - "delivery.attempt"

@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/context-budget-profile.schema.v0.6.3.json",
+  "title": "Lekalo context-budget profile",
+  "description": "Closed contract of one caller-selected context-budget profile document (issue #75). One document pins the estimator identity/version/spec digest, the budget arithmetic (window minus reservations plus the minimum-safe margin/framing), the fact-selection recipe, and the hard resource bounds; the effective profile is the normalized digest of these fields and every report embeds that digest. Profiles are non-inheriting, carry unique ids, and normalize declared key orderings into one effective profile. No default budget exists and no universal threshold is endorsed: profile numbers are caller choices. The contract is independent of the product release, of the Model/IR/graph/effect contract versions, and of the diagnostic registry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "identity", "profiles"],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/context-budget-profile/v0.6.3"
+    },
+    "identity": {
+      "const": "dev.lekalo.context-budget-profile@0.6.3"
+    },
+    "profiles": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/profileEntry"
+      }
+    }
+  },
+  "$defs": {
+    "boundedIdentifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+    },
+    "sha256Digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "profileEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "estimator", "budget"],
+      "properties": {
+        "id": { "$ref": "#/$defs/boundedIdentifier" },
+        "version": { "$ref": "#/$defs/boundedIdentifier" },
+        "estimator": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "version", "specDigest"],
+          "properties": {
+            "id": {
+              "description": "The exact accepted estimator identity; this generation admits only the pinned offline chars-4 estimator.",
+              "const": "dev.lekalo.estimator.chars-4@0.2.16"
+            },
+            "version": {
+              "const": "0.2.16"
+            },
+            "specDigest": { "$ref": "#/$defs/sha256Digest" }
+          }
+        },
+        "budget": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "contextWindowTokens",
+            "reservedOutputTokens",
+            "reservedSystemToolTokens"
+          ],
+          "properties": {
+            "contextWindowTokens": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            },
+            "reservedOutputTokens": { "$ref": "#/$defs/count" },
+            "reservedSystemToolTokens": { "$ref": "#/$defs/count" },
+            "framingTokens": { "$ref": "#/$defs/count" },
+            "marginNumerator": { "$ref": "#/$defs/count" },
+            "marginDenominator": { "$ref": "#/$defs/count" }
+          }
+        },
+        "selection": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "version": {
+              "description": "The fact-selection recipe version; only the pinned vocabulary is accepted.",
+              "const": "required-semantic-facts/1"
+            },
+            "sourceContext": {
+              "enum": ["none", "mapped-files"]
+            }
+          }
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "maxNodes": { "$ref": "#/$defs/count" },
+            "maxEdges": { "$ref": "#/$defs/count" },
+            "maxFacts": { "$ref": "#/$defs/count" },
+            "maxSubjects": { "$ref": "#/$defs/count" }
+          }
+        }
+      }
+    }
+  }
+}

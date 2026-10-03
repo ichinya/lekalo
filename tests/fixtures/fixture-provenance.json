@@ -62,6 +62,10 @@
       "origin": "synthetic"
     },
     {
+      "family": "context-budget",
+      "origin": "synthetic"
+    },
+    {
       "family": "contracted",
       "origin": "synthetic"
     },

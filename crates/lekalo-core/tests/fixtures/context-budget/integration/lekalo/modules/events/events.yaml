@@ -1,0 +1,24 @@
+schema_version: "0.2.16"
+definitions:
+  - id: events.task_accepted
+    kind: event
+    version: 1
+    description: "A task was accepted for delivery"
+    payload:
+      - name: task_ref
+        type: "events.task_ref"
+        required: true
+      - name: accepted_at
+        type: "events.timestamp"
+        required: true
+  - id: events.delivery_confirmed
+    kind: event
+    version: 1
+    description: "The external system confirmed delivery"
+    payload:
+      - name: task_ref
+        type: "events.task_ref"
+        required: true
+      - name: confirmed_at
+        type: "events.timestamp"
+        required: true
