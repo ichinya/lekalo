@@ -864,7 +864,10 @@
       "category": "infrastructure",
       "default_severity": "error",
       "allowed_statuses": [
-        "unavailable"
+        "invalid",
+        "denied",
+        "unavailable",
+        "unsupported-version"
       ],
       "message_id": "ci.report-write-failed",
       "default_message": "The CI report could not be written to the granted output location.",

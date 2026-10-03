@@ -5014,43 +5014,18 @@ fn run_readiness(
         fix: false,
         traces: evidence,
     };
-    // The gate (issue #103): a blocked required check under `--check`
-    // fails the run with the classified domain status instead of exit 0.
-    // The informational default keeps the doctor contract: the report is
-    // the product, exit 0 whenever produced.
-    let gate = |result: DomainResult| {
-        if !check || result.exit_code() != 0 {
-            return result;
-        }
-        // Re-derive the verdict from the produced document: the core
-        // owns the classification; the CLI maps it onto the exit class.
-        let blocked = serde_json::from_str::<serde_json::Value>(&result.to_json_string())
-            .ok()
-            .and_then(|document| {
-                document
-                    .get("verdict")
-                    .and_then(|verdict| verdict.as_str())
-                    .map(|verdict| verdict == "blocked")
-            })
-            .unwrap_or(false);
-        if !blocked {
-            return result;
-        }
-        // A blocked release readiness is the unavailable class (exit 4,
-        // stdout): a required check never reached a passing terminal
-        // state. The doctor document rides as the diagnostic evidence.
-        DomainResult::unavailable(
-            lekalo_core::ci_report::build::diagnostics::required_check_missing(
-                "readiness",
-                phase.as_str(),
-            ),
-        )
-    };
-    if !request.is_requested() {
-        return gate(lekalo_core::doctor::report(&selection, &git, &options));
-    }
+    // The gate (issue #103): a blocked evaluation under `--check` fails
+    // the run with the classified domain status instead of exit 0. The
+    // informational default keeps the doctor contract: the report is
+    // the product, exit 0 whenever produced (the artifact still records
+    // the gated evaluation a `--check` run would exit with).
+    // The blocked-ness is derived once by the shared evaluator over the
+    // doctor rows (review R2-5): the same computation drives the gate,
+    // the report builder, and the report validator, so a required
+    // degraded row blocks exactly like the doctor's own blocked verdict
+    // and the process exit can never disagree with the artifact under
+    // the gate.
     let result = lekalo_core::doctor::report(&selection, &git, &options);
-    // The CI report carries the doctor checks as check rows.
     let document = serde_json::from_str::<serde_json::Value>(&result.to_json_string())
         .expect("the doctor document serializes");
     let mut checks = Vec::new();
@@ -5098,12 +5073,43 @@ fn run_readiness(
         }
     }
     checks.sort_by(|left, right| left.id.cmp(&right.id));
+    // The single exit authority (review R2-5): the shared evaluator
+    // derives the evaluation over the policy-applied rows, and the
+    // `--check` gate exits with exactly that evaluation.
+    let rows: Vec<lekalo_core::ci_report::CheckRow> = checks
+        .iter()
+        .cloned()
+        .map(|draft| lekalo_core::ci_report::build::apply_check_policy(draft, request.policy))
+        .collect();
+    let evaluation = lekalo_core::ci_report::build::evaluation_of(&result, &rows, &[]);
+    let gated_result = if check && result.exit_code() == 0 {
+        match evaluation.verdict {
+            lekalo_core::ci_report::Verdict::Blocked => {
+                // A blocked readiness is the unavailable class (exit 4,
+                // stdout): a required check never reached a passing
+                // terminal state. The doctor document rides as the
+                // diagnostic evidence.
+                DomainResult::unavailable(
+                    lekalo_core::ci_report::build::diagnostics::required_check_missing(
+                        "readiness",
+                        phase.as_str(),
+                    ),
+                )
+            }
+            _ => result.clone(),
+        }
+    } else {
+        result.clone()
+    };
+    if !request.is_requested() {
+        return gated_result;
+    }
     let snapshot = crate::report_git::git_snapshot(&selection);
     let provenance = crate::report_git::provenance_for_readiness(&selection, &snapshot);
     // the shared evaluator derives the report evaluation from the same
-    // authority the gate uses: the JSON/report verdict and the process
-    // exit can never disagree inside one artifact (review F4).
-    let gated_result = gate(result.clone());
+    // authority the gate used above: under `--check` the process exit
+    // and the artifact's evaluation are one computation, never two
+    // (review R2-5).
     let outcome = lekalo_core::ci_report::CommandOutcome {
         command: lekalo_core::ci_report::CommandName::Readiness,
         mode: phase.as_str().to_owned(),
@@ -9139,13 +9145,17 @@ fn run_verify(
         let root = match lekalo_core::orchestration::project_root(&selection) {
             Ok(root) => root,
             Err(result) => {
-                return early_verify_report(&selection, result, locked, targets, module, request)
+                return early_verify_report(
+                    &selection, result, locked, true, targets, module, request,
+                )
             }
         };
         let compilation = match compile_selection(&selection) {
             Ok(compilation) => compilation,
             Err(result) => {
-                return early_verify_report(&selection, result, locked, targets, module, request)
+                return early_verify_report(
+                    &selection, result, locked, true, targets, module, request,
+                )
             }
         };
         let set = match git_input::changed_input_set(
@@ -9161,6 +9171,7 @@ fn run_verify(
                     &selection,
                     DomainResult::invalid(failure.diagnostic_set()),
                     locked,
+                    true,
                     targets,
                     module,
                     request,
@@ -9182,7 +9193,13 @@ fn run_verify(
         Some((program, adapter_args)) => {
             let root = match lekalo_core::orchestration::project_root(&selection) {
                 Ok(root) => root,
-                Err(result) => return result,
+                // The root/supply refusals are preflight facts too: the
+                // requested report is still finalized (review F2).
+                Err(result) => {
+                    return early_verify_report(
+                        &selection, result, locked, false, targets, module, request,
+                    )
+                }
             };
             match lekalo_core::orchestration::AdapterSupply::new(
                 &root,
@@ -9190,7 +9207,17 @@ fn run_verify(
                 adapter_args.to_vec(),
             ) {
                 Ok(supply) => Some(supply),
-                Err(failure) => return DomainResult::from(&failure),
+                Err(failure) => {
+                    return early_verify_report(
+                        &selection,
+                        DomainResult::from(&failure),
+                        locked,
+                        false,
+                        targets,
+                        module,
+                        request,
+                    )
+                }
             }
         }
         None => None,
@@ -9226,15 +9253,17 @@ fn run_verify(
     )
 }
 
-/// A verify preflight refusal (loader, changed-input, or supply) still
-/// finalizes the requested report (review F8): the failure is a
-/// blocking, incomplete evaluation with zero rows, never a silent
-/// missing artifact.
+/// A verify preflight refusal (loader, changed-input, supply, or root
+/// resolution) still finalizes the requested report (review F8): the
+/// failure is a blocking, incomplete evaluation with the synthesized
+/// preflight row, never a silent missing artifact. The recorded mode is
+/// the requested scope — `changed` stays `changed` (review R2-8).
 #[allow(clippy::too_many_arguments)]
 fn early_verify_report(
     selection: &LoadSelection,
     result: DomainResult,
     locked: bool,
+    changed: bool,
     targets: Vec<String>,
     module: Option<String>,
     request: &crate::report_output::ReportRequest,
@@ -9248,7 +9277,7 @@ fn early_verify_report(
         verdict: None,
         scenario_rows: Vec::new(),
     };
-    let scope_mode = "full";
+    let scope_mode = if changed { "changed" } else { "full" };
     verify_reported(
         selection,
         verified,
@@ -9285,9 +9314,44 @@ fn verify_reported(
             Ok(provenance) => provenance,
             Err(_) => crate::report_git::empty_provenance_for(&git),
         };
+    let mut components = verified.components;
+    if components.is_empty() && result.exit_code() != 0 {
+        // A preflight refusal reached the reporter without component
+        // rows (missing lock, loader refusal, changed-input refusal):
+        // the synthesized `verify.preflight` row is the terminal
+        // evidence the blocked verdict binds to (review F2/R2-3) —
+        // classified by the refusal's status, never a fabricated pass.
+        let (state, reason) = match result.status() {
+            lekalo_core::result::Status::Denied => (
+                lekalo_core::orchestration::ComponentState::Fail,
+                Some("verify.preflight-denied".to_owned()),
+            ),
+            lekalo_core::result::Status::Unavailable
+            | lekalo_core::result::Status::UnsupportedVersion => (
+                lekalo_core::orchestration::ComponentState::Absent,
+                Some("core.capability-unavailable".to_owned()),
+            ),
+            lekalo_core::result::Status::Unsupported => (
+                lekalo_core::orchestration::ComponentState::Unsupported,
+                Some("core.capability-unavailable".to_owned()),
+            ),
+            _ => (lekalo_core::orchestration::ComponentState::Fail, None),
+        };
+        components.push(lekalo_core::orchestration::ComponentReceipt {
+            id: "verify.preflight".to_owned(),
+            required: true,
+            state,
+            reason_code: reason,
+            severity_counts: None,
+            verdict_counts: None,
+            findings: None,
+            scenarios: None,
+            trace: None,
+        });
+    }
     let mut checks: Vec<CheckDraft> = Vec::new();
     let mut suites: Vec<SuiteDraft> = Vec::new();
-    for component in &verified.components {
+    for component in &components {
         if component.id == "scenarios.execution" {
             // The scenario suite: one testcase per non-passing assertion
             // retained from the durable run records (fix round 1), with
@@ -9369,6 +9433,7 @@ fn verify_reported(
             Some("lock.component-unavailable") => FailureClass::MissingComponent,
             Some("core.capability-unavailable") => FailureClass::MissingComponent,
             Some("adapter.permission-escalated") => FailureClass::Security,
+            Some("verify.preflight-denied") => FailureClass::Security,
             Some("scenario.assertion-failed") => FailureClass::Assertion,
             Some("scenario.infrastructure") => FailureClass::Infrastructure,
             _ => match component.state {

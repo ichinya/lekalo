@@ -5,15 +5,23 @@
 //! readiness); `--report-format` selects the side-channel projection
 //! (json, junit, sarif, md). A named file is a side channel: the
 //! status-owned stream and the exit class are untouched by reporting —
-//! except that a report that cannot be written is a typed
-//! `ci.report-write-failed` unavailable result (exit 4), never a
-//! silent success with a missing artifact.
+//! except that a report that cannot be written is never a silent
+//! success with a missing artifact: after a passing run it becomes the
+//! typed `ci.report-write-failed` unavailable result (exit 4), and
+//! after a failing run the refusal joins the command's own envelope as
+//! an appended diagnostic under the command's status (review R2-4).
 //!
 //! Paths are confined before any byte is written: the destination must
-//! be a new or truncatable regular file in an existing directory, and
-//! only the granted report path itself is ever touched. Report bytes
-//! are deterministic; the writer stages nothing and writes exactly one
-//! file per run.
+//! be a new or exactly-empty regular file in an existing directory;
+//! traversal spellings, symbolic links (including Windows reparse
+//! points), and the protected project homes (`lekalo/`, `.lekalo/`,
+//! `apps/`) are refused after normalizing the destination through its
+//! deepest existing ancestor, so a report can never land on — or
+//! through a link into — an analyzed input. Only the granted report
+//! path itself is ever touched, and the write is either an atomic
+//! fail-if-exists create or a fill of a file verified empty on the held
+//! handle. Report bytes are deterministic; the writer stages nothing
+//! and writes exactly one file per run.
 
 use std::path::{Path, PathBuf};
 
@@ -130,6 +138,9 @@ const PROTECTED_PREFIXES: &[&str] = &["lekalo/", ".lekalo/", "apps/"];
 /// Whether one path component chain resolves to, through, or beside a
 /// symbolic link. Every existing ancestor is no-follow checked so a
 /// linked parent cannot redirect the write out of the granted tree.
+/// Windows junctions and other reparse points do not report
+/// `is_symlink()`, so the reparse attribute is checked explicitly on
+/// that platform (review F6).
 fn parent_chain_has_links(path: &Path) -> bool {
     let mut prefix = PathBuf::new();
     for component in path.components() {
@@ -139,7 +150,7 @@ fn parent_chain_has_links(path: &Path) -> bool {
                 let Ok(metadata) = std::fs::symlink_metadata(&prefix) else {
                     return false; // missing parts cannot link
                 };
-                if metadata.file_type().is_symlink() {
+                if is_link_metadata(&metadata) {
                     return true;
                 }
             }
@@ -149,43 +160,94 @@ fn parent_chain_has_links(path: &Path) -> bool {
     false
 }
 
+/// Whether one no-follow metadata entry is a symbolic link or a Windows
+/// reparse point (a junction, mount point, or symlink — all of which
+/// redirect resolution and are refused as destination ancestors).
+fn is_link_metadata(metadata: &std::fs::Metadata) -> bool {
+    if metadata.file_type().is_symlink() {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
+        use std::os::windows::fs::MetadataExt;
+        metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+    }
+    #[cfg(not(windows))]
+    false
+}
+
+/// The confined absolute spelling of one destination: the deepest
+/// existing ancestor is canonicalized (resolving links, `..` segments,
+/// and case into the on-disk truth) and the not-yet-existing tail is
+/// appended verbatim. The protected-home check runs on this resolved
+/// spelling, so traversal spellings (`out/../lekalo/...`) and
+/// case-variant spellings (`LEKALO/...` on a case-insensitive volume)
+/// cannot bypass it (review R2-2).
+fn resolved_destination(path: &Path) -> Option<PathBuf> {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir().ok()?.join(path)
+    };
+    let mut tail: Vec<std::ffi::OsString> = Vec::new();
+    let mut probe: &Path = absolute.as_path();
+    loop {
+        match std::fs::canonicalize(probe) {
+            Ok(real) => {
+                let mut resolved = real;
+                for part in tail.iter().rev() {
+                    resolved.push(part);
+                }
+                return Some(resolved);
+            }
+            Err(_) => {
+                let last = probe.file_name()?.to_owned();
+                tail.push(last);
+                probe = probe.parent()?;
+            }
+        }
+    }
+}
+
 /// Validate the destination before any work. The destination must be
 /// absent (the writer creates it) or a pre-created empty regular file;
 /// an existing non-empty file is refused outright, so a report can
 /// never truncate a source, the lock, a baseline, or any other
 /// analyzed input. The parent must be an existing directory, every
-/// existing ancestor must be link-free, and the destination must not
-/// sit inside a protected project home. The path is never
-/// canonicalized into the report.
+/// existing ancestor must be link-free (symlinks and Windows reparse
+/// points alike), and the resolved destination must not sit inside a
+/// protected project home. The path is never canonicalized into the
+/// report; the resolved spelling is used only for the refusal checks.
 fn validate_destination(path: &Path, project_root: Option<&Path>) -> Result<(), DomainResult> {
-    use std::io::Read;
-    let Some(parent) = path.parent() else {
-        return Err(write_failure("path-invalid"));
+    // A bare filename writes beside the caller: the parent is the
+    // current directory, not the empty spelling.
+    let parent = match path.parent() {
+        Some(parent) if parent.as_os_str().is_empty() => Path::new("."),
+        Some(parent) => parent,
+        None => return Err(write_failure("path-invalid")),
     };
     let metadata = match std::fs::symlink_metadata(parent) {
         Ok(metadata) => metadata,
         Err(_) => return Err(write_failure("directory-missing")),
     };
-    if metadata.is_symlink() || !metadata.is_dir() {
+    if is_link_metadata(&metadata) || !metadata.is_dir() {
         return Err(write_failure("directory-missing"));
     }
     if parent_chain_has_links(path) {
         return Err(write_failure("path-invalid"));
     }
     // Protected-home overlap: reject destination paths inside the
-    // project's model/lock/manifest/generated/history/cache homes. The
-    // destination may be relative to the invocation directory while the
-    // root is absolute: compare the canonicalized spellings when both
-    // resolve (an unresolvable destination falls through to the
-    // existence checks below).
+    // project's model/lock/manifest/generated/history/cache homes. Both
+    // sides are resolved through their deepest existing ancestors
+    // before the prefix test, so `..` traversal, junction redirection,
+    // and case-variant spellings all resolve to the same on-disk truth
+    // and are refused like their literal spellings (review R2-2/F6).
     if let Some(root) = project_root {
-        let destination_absolute = if path.is_absolute() {
-            Some(path.to_path_buf())
-        } else {
-            std::env::current_dir().ok().map(|cwd| cwd.join(path))
-        };
-        if let Some(absolute) = destination_absolute {
-            if let Ok(relative) = absolute.strip_prefix(root) {
+        if let (Some(destination), Ok(real_root)) =
+            (resolved_destination(path), std::fs::canonicalize(root))
+        {
+            if let Ok(relative) = destination.strip_prefix(&real_root) {
                 let text = relative.to_string_lossy().replace('\\', "/");
                 if PROTECTED_PREFIXES
                     .iter()
@@ -197,29 +259,17 @@ fn validate_destination(path: &Path, project_root: Option<&Path>) -> Result<(), 
         }
     }
     match std::fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.file_type().is_symlink() => Err(write_failure("path-invalid")),
+        Ok(metadata) if is_link_metadata(&metadata) => Err(write_failure("path-invalid")),
         Ok(metadata) if !metadata.is_file() => Err(write_failure("path-invalid")),
-        Ok(metadata) => {
-            // Pre-created regular file: only an exactly-empty one is
-            // acceptable (the atomic-create pattern below then fills
-            // it). Any existing content means a real file was named;
-            // truncating analyzed inputs is never permitted.
-            if metadata.len() == 0 {
-                Ok(())
-            } else {
-                // Belt and braces: refuse anything non-empty even if a
-                // race emptied it between stat and open.
-                let empty = std::fs::File::open(path)
-                    .and_then(|mut file| file.read_to_end(&mut Vec::new()).map(|_| Vec::new()))
-                    .map(|bytes: Vec<u8>| bytes.is_empty())
-                    .unwrap_or(false);
-                if empty {
-                    Ok(())
-                } else {
-                    Err(write_failure("file-exists"))
-                }
-            }
+        Ok(metadata) if metadata.len() > 0 => {
+            // A non-empty regular file means a real analyzed file was
+            // named: truncating inputs is never permitted. The writer
+            // re-verifies emptiness on the held handle before any byte
+            // is written, so this stat check and the write cannot
+            // disagree (review R2-1).
+            Err(write_failure("file-exists"))
         }
+        Ok(_) => Ok(()),
         Err(_) => Ok(()),
     }
 }
@@ -246,17 +296,23 @@ fn projection(report: &CiReport, format: ReportFormat) -> Result<String, DomainR
 
 /// Write one report to its granted destination. The destination is
 /// re-validated with the project root (protected-home overlap), then
-/// created through `create_new` (an atomic fail-if-exists open) or
-/// opened write-only on an exactly-empty pre-created file — never
-/// through a truncating create. Returns the typed write failure on any
-/// refusal; the caller composes it with the command result (a report
-/// failure never masks a check failure and a check failure is never
-/// overwritten by a report success).
+/// written through one of two safe arms: an atomic fail-if-exists
+/// `create_new` open, or — for an exactly-empty pre-created file (a
+/// touch-created CI artifact placeholder) — a no-truncate open whose
+/// handle re-reads the whole file and refuses unless it is still empty
+/// at write time. No arm ever truncates or head-overwrites existing
+/// content, and the emptiness check and the write share one handle, so
+/// the race window of the old two-open sequence is closed (reviews
+/// R2-1/F8). Returns the typed write failure on any refusal; the caller
+/// composes it with the command result (a report failure never masks a
+/// check failure and a check failure is never overwritten by a report
+/// success).
 pub fn write_report(
     report: &CiReport,
     request: &ReportRequest,
     project_root: Option<&Path>,
 ) -> Result<(), DomainResult> {
+    use std::io::{Read, Write};
     let Some(file) = request.file.as_deref() else {
         return Ok(());
     };
@@ -268,22 +324,32 @@ pub fn write_report(
         .create_new(true)
         .open(&path)
     {
-        Ok(mut file) => {
-            use std::io::Write;
-            file.write_all(bytes.as_bytes()).and_then(|()| file.flush())
-        }
-        Err(_) if path.is_file() => {
-            // The exactly-empty pre-created file admitted by validation
-            // (e.g. a touch-created CI artifact placeholder): open
-            // without truncation and overwrite the zero bytes.
-            use std::io::Write;
-            std::fs::OpenOptions::new()
+        Ok(mut file) => file.write_all(bytes.as_bytes()).and_then(|()| file.flush()),
+        Err(_) => {
+            // The file exists (validation admitted only an
+            // exactly-empty regular file): open without truncation
+            // and verify emptiness on the held handle — a file that
+            // gained content between validation and open is
+            // refused, never overwritten.
+            let open = std::fs::OpenOptions::new()
+                .read(true)
                 .write(true)
                 .truncate(false)
-                .open(&path)
-                .and_then(|mut file| file.write_all(bytes.as_bytes()).and_then(|()| file.flush()))
+                .open(&path);
+            match open {
+                Ok(mut file) => {
+                    let mut existing = Vec::new();
+                    match file.read_to_end(&mut existing) {
+                        Ok(_) if existing.is_empty() => {
+                            file.write_all(bytes.as_bytes()).and_then(|()| file.flush())
+                        }
+                        Ok(_) => Err(std::io::Error::other("refused")),
+                        Err(error) => Err(error),
+                    }
+                }
+                Err(_) => Err(std::io::Error::other("refused")),
+            }
         }
-        Err(_) => Err(std::io::Error::other("refused")),
     };
     match write {
         Ok(()) => Ok(()),

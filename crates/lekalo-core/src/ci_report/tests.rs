@@ -574,3 +574,82 @@ fn case_row_effective_outcome_follows_the_exit_policy() {
         EffectiveOutcome::Error
     );
 }
+
+/// A preflight refusal that produces zero rows is still a real blocked
+/// run: the failed command is the terminal evidence the verdict binds
+/// to, and the report validates (review R2-3 — the evaluation and the
+/// validator must agree, never drop the artifact).
+#[test]
+fn a_failed_command_with_zero_rows_is_a_valid_blocked_report() {
+    let empty_invalid = DomainResult::invalid(
+        crate::diagnostics::DiagnosticSet::try_from_unsorted(
+            Vec::new(),
+            crate::result::Status::Invalid,
+        )
+        .expect("empty set"),
+    );
+    let outcome = CommandOutcome {
+        command: CommandName::Verify,
+        mode: "full".to_owned(),
+        targets: Vec::new(),
+        modules: Vec::new(),
+        locked: true,
+        provenance: sample_provenance(),
+        checks: Vec::new(),
+        suites: Vec::new(),
+        result: empty_invalid.clone(),
+        as_of: None,
+    };
+    let report = build(outcome, CiPolicy::Default);
+    assert_eq!(
+        report.evaluation.verdict,
+        crate::ci_report::model::Verdict::Blocked
+    );
+    assert_eq!(report.evaluation.status, "invalid");
+    assert_eq!(report.evaluation.exit_code, 1);
+    assert!(report.checks.is_empty() && report.suites.is_empty());
+    report
+        .validate()
+        .expect("zero-row blocked report validates");
+    // The reverse must stay refused: a failed command can never carry
+    // a ready verdict.
+    let mut incoherent = report.clone();
+    incoherent.evaluation.verdict = crate::ci_report::model::Verdict::Ready;
+    assert!(incoherent.validate().is_err());
+}
+
+/// A required degraded row blocks the evaluation with the unavailable
+/// class (exit 4) exactly like a blocked row (review R2-5): the shared
+/// evaluator is the single exit authority for the gate, the report,
+/// and the validator.
+#[test]
+fn a_required_degraded_row_blocks_with_the_unavailable_class() {
+    let outcome = CommandOutcome {
+        command: CommandName::Readiness,
+        mode: "release".to_owned(),
+        targets: Vec::new(),
+        modules: Vec::new(),
+        locked: false,
+        provenance: sample_provenance(),
+        checks: vec![blocked_check(
+            "tools.gates",
+            true,
+            SourceOutcome::Degraded,
+            FailureClass::None,
+        )],
+        suites: Vec::new(),
+        result: DomainResult::version("0.6.3"),
+        as_of: None,
+    };
+    let report = build(outcome, CiPolicy::Default);
+    assert_eq!(
+        report.evaluation.verdict,
+        crate::ci_report::model::Verdict::Blocked
+    );
+    assert_eq!(report.evaluation.status, "unavailable");
+    assert_eq!(report.evaluation.exit_code, 4);
+    assert_eq!(report.command_result.status, "valid");
+    assert_eq!(report.command_result.exit_code, 0);
+    assert_eq!(report.checks[0].effective_outcome, EffectiveOutcome::Error);
+    report.validate().expect("coherent blocked evaluation");
+}

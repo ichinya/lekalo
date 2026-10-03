@@ -582,3 +582,284 @@ fn a_report_destination_over_an_existing_file_is_refused() {
         serde_json::from_str(stdout_text(&output).trim()).expect("envelope parses");
     assert_eq!(envelope["reasonCodes"][0], "ci.report-write-failed");
 }
+
+/// The write refusal must fire for a NON-protected pre-existing file
+/// too (review R2-1/F1: the old non-empty check was dead code and the
+/// writer head-overwrote in place, leaving a stale tail). The file's
+/// bytes stay intact — no report bytes, no residual tail.
+#[test]
+fn a_non_protected_existing_file_is_refused_and_never_touched() {
+    let dir = fixture_copy("existing-file");
+    std::fs::create_dir_all(dir.join("out")).expect("report dir");
+    let existing = dir.join("out/existing.json");
+    std::fs::write(&existing, "A".repeat(4000)).expect("seed content");
+    let output = lekalo_in(
+        &dir,
+        &[
+            "--json",
+            "validate",
+            "--report-file",
+            "out/existing.json",
+            "--project",
+            ".",
+        ],
+    );
+    assert_eq!(exit_code(&output), 4, "the non-empty destination refuses");
+    let envelope: serde_json::Value =
+        serde_json::from_str(stdout_text(&output).trim()).expect("envelope parses");
+    assert_eq!(envelope["reasonCodes"][0], "ci.report-write-failed");
+    let after = std::fs::read(&existing).expect("read after");
+    assert_eq!(after.len(), 4000, "the file length is untouched");
+    assert!(
+        after.iter().all(|byte| *byte == b'A'),
+        "no report bytes and no residual tail were spliced in"
+    );
+}
+
+/// An exactly-empty pre-created file is still admitted and filled with
+/// exactly the report bytes (the touch-created CI placeholder path),
+/// never a splice (review R2-1).
+#[test]
+fn an_exactly_empty_pre_created_file_is_filled_with_the_exact_bytes() {
+    let dir = fixture_copy("empty-placeholder");
+    std::fs::create_dir_all(dir.join("out")).expect("report dir");
+    std::fs::write(dir.join("out/report.json"), "").expect("placeholder");
+    let output = lekalo_in(
+        &dir,
+        &[
+            "--json",
+            "validate",
+            "--report-file",
+            "out/report.json",
+            "--project",
+            ".",
+        ],
+    );
+    assert_eq!(exit_code(&output), 0, "{}", stderr_text(&output));
+    let bytes = std::fs::read(dir.join("out/report.json")).expect("report bytes");
+    assert!(
+        bytes.starts_with(b"{\"checks\":") && bytes.ends_with(b"}\n"),
+        "the placeholder was filled with exactly the canonical report"
+    );
+}
+
+/// `..` traversal that re-enters a protected home is refused on the
+/// resolved spelling (review R2-2): the report never lands inside
+/// `lekalo/` and the model sources stay intact.
+#[test]
+fn traversal_into_a_protected_home_is_refused() {
+    let dir = fixture_copy("traversal");
+    let model = dir.join("lekalo/modules/beta/entities.yaml");
+    let before = std::fs::read_to_string(&model).expect("model bytes");
+    std::fs::create_dir_all(dir.join("out")).expect("report dir");
+    let output = lekalo_in(
+        &dir,
+        &[
+            "--json",
+            "validate",
+            "--report-file",
+            "out/../lekalo/evil-report.json",
+            "--project",
+            ".",
+        ],
+    );
+    assert_eq!(exit_code(&output), 4, "the traversed destination refuses");
+    assert!(
+        !dir.join("lekalo/evil-report.json").exists(),
+        "no file was written inside the protected home"
+    );
+    assert_eq!(
+        before,
+        std::fs::read_to_string(&model).expect("model bytes after"),
+        "the model source was never overwritten"
+    );
+}
+
+/// A case-variant spelling of a protected home is refused on a
+/// case-insensitive volume (review R2-2): the prefix check runs on the
+/// canonicalized (on-disk case) spelling, not the literal one.
+#[cfg(windows)]
+#[test]
+fn a_case_variant_protected_spelling_is_refused() {
+    let dir = fixture_copy("case-variant");
+    let output = lekalo_in(
+        &dir,
+        &[
+            "--json",
+            "validate",
+            "--report-file",
+            "LEKALO/case-evil.json",
+            "--project",
+            ".",
+        ],
+    );
+    assert_eq!(
+        exit_code(&output),
+        4,
+        "the case-variant destination refuses"
+    );
+    assert!(
+        !dir.join("lekalo/case-evil.json").exists(),
+        "nothing landed in the protected home through the case variant"
+    );
+}
+
+/// A linked parent (symlink on Unix, junction on Windows) is a refused
+/// destination ancestor (review F6): the no-follow check must catch
+/// reparse points too, not only `is_symlink()`. Skipped where the OS
+/// declines link creation (privilege), never silently passed where the
+/// link exists.
+#[test]
+fn a_linked_parent_directory_is_refused() {
+    let dir = fixture_copy("linked-parent");
+    std::fs::create_dir_all(dir.join("out")).expect("report dir");
+    #[cfg(windows)]
+    let created = std::os::windows::fs::symlink_dir(dir.join("out"), dir.join("link")).is_ok();
+    #[cfg(not(windows))]
+    let created = std::os::unix::fs::symlink(dir.join("out"), dir.join("link")).is_ok();
+    if !created {
+        eprintln!("skipped: the OS declined link creation (privilege)");
+        return;
+    }
+    let output = lekalo_in(
+        &dir,
+        &[
+            "--json",
+            "validate",
+            "--report-file",
+            "link/report.json",
+            "--project",
+            ".",
+        ],
+    );
+    assert_eq!(exit_code(&output), 4, "the linked parent refuses");
+    assert!(
+        !dir.join("out/report.json").exists(),
+        "nothing was written through the link"
+    );
+}
+
+/// A verify preflight refusal (the round-1 `verify --locked` without a
+/// lock reproduction) finalizes the requested report: invalid/blocked
+/// with the synthesized `verify.preflight` row binding the verdict
+/// (review F2/R2-3), and the recorded mode is the requested scope
+/// (review R2-8).
+#[test]
+fn a_verify_preflight_refusal_writes_the_blocked_report() {
+    let dir = fixture_copy("verify-preflight");
+    std::fs::create_dir_all(dir.join("out")).expect("report dir");
+    let output = lekalo_in(
+        &dir,
+        &[
+            "--json",
+            "verify",
+            "--locked",
+            "--report-file",
+            "out/v.json",
+            "--project",
+            ".",
+        ],
+    );
+    assert_eq!(exit_code(&output), 1);
+    let report: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(dir.join("out/v.json")).expect("the report is written"),
+    )
+    .expect("report parses");
+    assert_eq!(report["evaluation"]["status"], "invalid");
+    assert_eq!(report["evaluation"]["verdict"], "blocked");
+    assert_eq!(report["evaluation"]["exitCode"], 1);
+    assert_eq!(report["invocation"]["mode"], "full");
+    let checks = report["checks"].as_array().expect("check rows");
+    assert!(
+        checks
+            .iter()
+            .any(|check| check["id"] == "verify.preflight" && check["effectiveOutcome"] == "fail"),
+        "the preflight refusal is a visible blocking row"
+    );
+}
+
+/// A `--changed` preflight refusal records the `changed` mode — never
+/// the hardcoded `full` (review R2-8).
+#[test]
+fn a_verify_changed_preflight_refusal_records_the_changed_mode() {
+    let dir = fixture_copy("verify-changed-preflight");
+    std::fs::create_dir_all(dir.join("out")).expect("report dir");
+    let output = lekalo_in(
+        &dir,
+        &[
+            "--json",
+            "verify",
+            "--changed",
+            "--project",
+            "definitely-missing-project",
+            "--report-file",
+            "out/v.json",
+        ],
+    );
+    assert_ne!(exit_code(&output), 0);
+    let report: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(dir.join("out/v.json")).expect("the report is written"),
+    )
+    .expect("report parses");
+    assert_eq!(report["invocation"]["mode"], "changed");
+    assert_eq!(report["invocation"]["command"], "verify");
+    assert_eq!(report["evaluation"]["verdict"], "blocked");
+}
+
+/// A required-degraded readiness panel gates coherently under
+/// `--check` (review R2-5/F5): the process exit equals the artifact's
+/// recorded evaluation exit (a required degraded row blocks with exit
+/// 4 — it used to exit 0 beside a blocked/4 report).
+#[test]
+fn a_required_degraded_readiness_check_exits_with_the_recorded_evaluation() {
+    // A locked fixture outside any Git work tree degrades the required
+    // `tools.gates` row (not-a-repository) with nothing blocked.
+    let id = NEXT_CASE.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        + u64::from(std::process::id());
+    let dir = std::env::temp_dir().join(format!("lekalo-r2-degraded-{id}"));
+    let _ = std::fs::remove_dir_all(&dir);
+    copy_dir(
+        &Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../")
+            .join(FIXTURE),
+        &dir,
+    );
+    let lock = lekalo_in(&dir, &["lock"]);
+    assert_eq!(exit_code(&lock), 0, "{}", stderr_text(&lock));
+    let output = lekalo_in(
+        &dir,
+        &[
+            "--json",
+            "readiness",
+            "--phase",
+            "release",
+            "--check",
+            "--report-file",
+            "r.json",
+            "--project",
+            ".",
+        ],
+    );
+    let report: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("r.json")).expect("report"))
+            .expect("report parses");
+    let recorded_exit = report["evaluation"]["exitCode"].as_u64().expect("exit");
+    assert_eq!(
+        u64::from(exit_code(&output)),
+        recorded_exit,
+        "the process exit is the recorded evaluation exit"
+    );
+    let degraded_required = report["checks"]
+        .as_array()
+        .expect("rows")
+        .iter()
+        .any(|check| {
+            check["required"] == true
+                && check["sourceOutcome"] == "degraded"
+                && check["effectiveOutcome"] == "error"
+        });
+    assert!(degraded_required, "the required degraded row is visible");
+    assert_eq!(report["evaluation"]["verdict"], "blocked");
+    assert_ne!(exit_code(&output), 0, "a blocked evaluation never exits 0");
+    let _ = std::fs::remove_dir_all(&dir);
+}

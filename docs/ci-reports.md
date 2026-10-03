@@ -48,19 +48,25 @@ lekalo readiness --phase release --check --report-file out/readiness.json [--ci-
 ```
 
 `--report-file PATH` requests the side channel; `--report-format` selects
-the projection (`json` is the default for a named file). A format without
-a path is the stable usage failure. Report writes are confined: the
-destination must be a regular file in an existing directory, links are
-refused, and only the granted report path itself is ever touched. A
-refused write is the typed `ci.report-write-failed` unavailable envelope
-(exit 4): a report failure after a passing run surfaces as exit 4; after a
-failing run the command's own failure stays on its status-owned stream and
-the report failure is not silently swallowed.
+the projection (`json` is the default for a named file; a format without
+a path is the stable usage failure). Report writes are confined: the
+destination must be a new or exactly-empty regular file in an existing
+directory; traversal spellings (`out/../…`), case-variant spellings of
+protected homes, and links (symbolic links and Windows junctions alike)
+are refused after the destination is resolved through its deepest
+existing ancestor; and the protected project homes (`lekalo/`,
+`.lekalo/`, `apps/`) are never written. Only the granted report path
+itself is ever touched: a refused write is the typed
+`ci.report-write-failed` diagnostic — after a passing run as the
+unavailable envelope (exit 4), after a failing run appended to the
+command's own envelope under its status, so the refusal is observable
+on every command class.
 
 ## Exit policy
 
-The producing command exits with the **evaluation**, never blindly with
-the legacy envelope:
+Under a gate — `validate`, `generate --check`, `verify`, and
+`readiness --check` — the producing command exits with the
+**evaluation**, never blindly with the legacy envelope:
 
 - required failure (or a genuine optional failure, or a denial, or a
   cancellation) → the classified nonzero domain status;
@@ -73,9 +79,15 @@ the legacy envelope:
   consumer ever loses the original observation.
 
 `lekalo readiness` keeps the doctor contract by default: the report is the
-product and exits 0 whenever produced. `readiness --check` is the gate:
-a blocked required panel fails the run with the classified
-`unavailable` status (exit 4) and `ci.required-check-missing`.
+product and exits 0 whenever produced. Such an informational artifact
+records the evaluation the gated run would exit with — a consumer that
+gates on the report reads the same verdict the `--check` form would
+have enforced; the informational process exit stays 0 by this
+documented contract, and it is the only case where the process exit
+and the recorded evaluation differ. `readiness --check` is the gate:
+a blocked evaluation — a required blocked **or degraded** row — fails
+the run with the classified `unavailable` status (exit 4) and
+`ci.required-check-missing`, exactly as the artifact records.
 
 `lekalo verify` retains its typed evidence on every outcome: the blocked
 verdict no longer discards the component receipt; the CI report projects
@@ -93,9 +105,12 @@ suite even when the aggregate envelope is what the user sees.
   source snippets, no timing.
 - **SARIF 2.1.0** — one run with a Lekalo tool driver; rules are derived
   from the diagnostic registry (sorted by the immutable `LEK-*` code),
-  results carry repository-relative safe paths under the `%SRCROOT%` base
-  id with one-based Unicode-scalar positions, and the closed Lekalo
-  property projection binds the report digest, status, exit, and verdict.
+  results carry safe paths relative to the resolved project root (the
+  invocation-relative project, which in a monorepo may be a workspace
+  under the repository) under the `%SRCROOT%` base id with one-based
+  Unicode-scalar positions, and the closed Lekalo property projection
+  binds the exact report digest (`lekaloReportDigest` is the SHA-256 of
+  the emitted JSON bytes of the same run), status, exit, and verdict.
   The absolute checkout URI is deliberately omitted (permitted by the
   SARIF specification).
 - **Markdown** — the concise job summary: verdict/exit, counts, the exact
@@ -116,8 +131,12 @@ caller surface live in [the action design](adr/0048-lekalo-action.md).
 ## Privacy
 
 Report content reuses the diagnostic allow-lists: logical paths only,
-bounded structured data, registry-approved text. Secret material never
-enters a report because it never enters a diagnostic. The document is
+bounded structured data, registry-approved text — secret material never
+enters a diagnostic at construction. Defense in depth: every rendered
+projection is scanned again at the sink (`scan_rendered`) before any
+byte is written, and a secret-shaped token that survives redaction
+refuses the report write (`ci.report-write-failed` with the
+`secret-token` detail) instead of publishing. The document is
 classified `ci-derived`; publication decisions belong to the caller, and
 local run history stays export-ineligible. CI gating per concern stays
 with `validate`, `lock --check`, `generate --check`, and

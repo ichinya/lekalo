@@ -81,6 +81,7 @@ pub struct CommandOutcome {
 
 /// A draft check row under construction; the policy pass fills the
 /// effective outcome.
+#[derive(Clone)]
 pub struct CheckDraft {
     /// The stable check id.
     pub id: String,
@@ -111,6 +112,7 @@ impl CheckDraft {
 }
 
 /// A draft case row under construction.
+#[derive(Clone)]
 pub struct CaseDraft {
     /// The stable case id.
     pub id: String,
@@ -195,13 +197,19 @@ pub fn apply_case_policy(draft: CaseDraft, policy: CiPolicy) -> CaseRow {
 
 /// Derive the evaluation from the underlying result plus the applied
 /// rows. The producing CLI exits with the evaluation; the underlying
-/// command result is preserved alongside it.
-fn evaluate(
+/// command result is preserved alongside it. This is the single exit
+/// authority: the CLI gate, the report builder, and the report
+/// validator all read the same derived evaluation (review R2-5), so a
+/// process exit and its artifact can never disagree under the gate.
+pub fn evaluation_of(
     command_result: &DomainResult,
     checks: &[CheckRow],
     suites: &[Suite],
-    _policy: CiPolicy,
 ) -> Evaluation {
+    evaluate(command_result, checks, suites)
+}
+
+fn evaluate(command_result: &DomainResult, checks: &[CheckRow], suites: &[Suite]) -> Evaluation {
     // The command's own failure is terminal evidence even when the rows
     // are empty (review F8): a preflight refusal (missing lock, loader
     // refusal, usage) is a blocking, incomplete evaluation — never a
@@ -342,7 +350,7 @@ pub fn build(outcome: CommandOutcome, policy: CiPolicy) -> CiReport {
         })
         .collect();
     suites.sort_by(|left, right| left.id.cmp(&right.id));
-    let evaluation = evaluate(&outcome.result, &checks, &suites, policy);
+    let evaluation = evaluate(&outcome.result, &checks, &suites);
     let diagnostic_indexes: Vec<usize> = checks
         .iter()
         .flat_map(|check| check.diagnostic_indexes.iter().copied())

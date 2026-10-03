@@ -715,8 +715,10 @@ impl CiReport {
                 return Err("suites are not sorted/unique by id");
             }
         }
-        // Count coherence: a fail/error row must exist when the
-        // evaluation blocks.
+        // Count coherence: a blocked verdict must bind to terminal
+        // evidence — a fail/error row, or the command's own failure
+        // (review R2-3: a preflight refusal with zero rows is a real
+        // blocked run, never an unrepresentable one).
         let blocking = self
             .checks
             .iter()
@@ -727,9 +729,10 @@ impl CiReport {
                     .flat_map(|suite| suite.cases.iter())
                     .map(|case| case.effective_outcome),
             )
-            .any(|outcome| matches!(outcome, EffectiveOutcome::Fail | EffectiveOutcome::Error));
+            .any(|outcome| matches!(outcome, EffectiveOutcome::Fail | EffectiveOutcome::Error))
+            || self.command_result.exit_code != 0;
         if blocking != (self.evaluation.verdict == Verdict::Blocked) {
-            return Err("verdict disagrees with the blocking rows");
+            return Err("verdict disagrees with the blocking evidence");
         }
         Ok(())
     }

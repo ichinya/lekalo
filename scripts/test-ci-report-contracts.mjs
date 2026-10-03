@@ -67,6 +67,12 @@ const validateWire = ajv.compile(schema);
 const failures = [];
 const fail = (name, reason) => failures.push({ name, reason });
 
+// The fabricated pin the fix round removed from the code (review F3):
+// `sha256:e3b0c442…b855` is exactly SHA-256("") — the digest of an
+// empty inventory. A `known` pin carrying it is always a fabrication;
+// an empty inventory must stay `unknown` with a closed reason.
+const EMPTY_SHA256 = `sha256:${createHash("sha256").update("").digest("hex")}`;
+
 const isSorted = (values) =>
   values.every((value, index) => index === 0 || value > values[index - 1]);
 
@@ -91,22 +97,29 @@ const invariants = (document) => {
       violations.push(`${label}.exitCode ${outcome.exitCode} disagrees with status ${outcome.status}`);
     }
   }
-  // A blocked verdict demands at least one blocking row (a fail/error
-  // effective outcome among the checks and the policy-translated suite
-  // cases).
-  const blockingRow = (sourceOutcome, required) =>
-    sourceOutcome === "fail" || sourceOutcome === "denied" || sourceOutcome === "cancelled"
-      ? true
-      : (sourceOutcome === "unavailable" || sourceOutcome === "not-run" || sourceOutcome === "unsupported") && required;
+  // A blocked verdict demands terminal evidence (the same rule
+  // `model.rs` validates): a fail/error effective outcome among the
+  // checks and suite cases, or a failed command result (review R2-6:
+  // the suite side reads `effectiveOutcome` — the single evaluated
+  // decision — instead of re-deriving from source outcome + required).
   const hasBlocking =
-    document.checks.some((check) =>
-      check.effectiveOutcome === "fail" || check.effectiveOutcome === "error",
+    document.commandResult.exitCode !== 0 ||
+    document.checks.some(
+      (check) => check.effectiveOutcome === "fail" || check.effectiveOutcome === "error",
     ) ||
     document.suites.some((suite) =>
-      suite.cases.some((row) => blockingRow(row.sourceOutcome, row.required)),
+      suite.cases.some(
+        (row) => row.effectiveOutcome === "fail" || row.effectiveOutcome === "error",
+      ),
     );
   if ((document.evaluation.verdict === "blocked") !== hasBlocking) {
-    violations.push(`verdict ${document.evaluation.verdict} disagrees with the blocking rows`);
+    violations.push(`verdict ${document.evaluation.verdict} disagrees with the blocking evidence`);
+  }
+  // A `known` working-set digest that is the digest of the empty
+  // string is always fabricated (review F3).
+  const workingSet = document.provenance?.git?.workingSetDigest;
+  if (workingSet?.state === "known" && workingSet?.value === EMPTY_SHA256) {
+    violations.push("workingSetDigest pins the fabricated empty-inventory digest");
   }
   // Diagnostic indexes: sorted, unique, and every referenced index is
   // declared and in bounds.
@@ -250,6 +263,34 @@ try {
   if (!run?.properties?.lekaloReportDigest?.startsWith("sha256:")) {
     fail("sarif:golden", "missing the report digest binding");
   }
+  // The digest must bind a committed report, not an arbitrary string
+  // (review F4): the sha256 of one of the pinned JSON goldens, with
+  // status/exit/verdict agreeing with that bound document.
+  const jsonGoldenDigests = new Map();
+  for (const name of readdirSync(resolve(root, goldenDir)).sort()) {
+    if (!name.endsWith(".json") || !name.startsWith("valid.")) continue;
+    const bytes = readFileSync(resolve(root, goldenDir, name));
+    jsonGoldenDigests.set(`sha256:${createHash("sha256").update(bytes).digest("hex")}`, name);
+  }
+  const boundName = jsonGoldenDigests.get(run?.properties?.lekaloReportDigest);
+  if (!boundName) {
+    fail(
+      "sarif:binding",
+      `lekaloReportDigest ${run?.properties?.lekaloReportDigest} matches no committed JSON golden`,
+    );
+  } else {
+    const bound = JSON.parse(readFileSync(resolve(root, goldenDir, boundName), "utf8"));
+    const properties = run.properties;
+    if (properties.lekaloStatus !== bound.evaluation.status) {
+      fail("sarif:binding", `lekaloStatus disagrees with ${boundName}`);
+    }
+    if (properties.lekaloExitCode !== bound.evaluation.exitCode) {
+      fail("sarif:binding", `lekaloExitCode disagrees with ${boundName}`);
+    }
+    if (properties.lekaloVerdict !== bound.evaluation.verdict) {
+      fail("sarif:binding", `lekaloVerdict disagrees with ${boundName}`);
+    }
+  }
   // The pinned official OASIS SARIF 2.1.0 schema (review F5): the
   // golden must satisfy the real specification, not just our fields.
   const sarifSchema = read("scripts/lib/sarif-schema-2.1.0.json");
@@ -304,15 +345,53 @@ if (existsSync(junitPath)) {
   if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(junit)) {
     fail("junit:control-chars", "raw control characters in the document");
   }
-  const suites = [...junit.matchAll(/<testsuite [^>]*>/g)].map((m) => m[0]);
-  for (const head of suites) {
-    const attr = (name) => Number((head.match(new RegExp(`${name}="(\\d+)"`)) || [])[1] ?? "-1");
-    const tests = attr("tests");
-    const failures = attr("failures");
-    const errors = attr("errors");
-    const skipped = attr("skipped");
-    if (tests < 0 || failures < 0 || errors < 0 || skipped < 0) {
-      fail("junit:counts", "missing count attributes");
+  const suites = [...junit.matchAll(/<testsuite ([^>]*)>([\s\S]*?)<\/testsuite>/g)].map(
+    (m) => ({ head: m[1], body: m[2] }),
+  );
+  const attr = (text, name) =>
+    Number((text.match(new RegExp(`${name}="(\\d+)"`)) || [])[1] ?? "-1");
+  const totals = { tests: 0, failures: 0, errors: 0, skipped: 0 };
+  for (const { head, body } of suites) {
+    const counts = {
+      tests: attr(head, "tests"),
+      failures: attr(head, "failures"),
+      errors: attr(head, "errors"),
+      skipped: attr(head, "skipped"),
+    };
+    for (const [name, value] of Object.entries(counts)) {
+      if (value < 0) fail("junit:counts", `missing count attribute ${name}`);
+    }
+    // Counts must derive from the emitted children, not merely exist
+    // (review F7): a tampered attribute over a different child set
+    // fails the gate.
+    const emitted = {
+      tests: (body.match(/<testcase[ >]/g) || []).length,
+      failures: (body.match(/<failure[ />]/g) || []).length,
+      errors: (body.match(/<error[ />]/g) || []).length,
+      skipped: (body.match(/<skipped[ />]/g) || []).length,
+    };
+    for (const name of Object.keys(counts)) {
+      if (counts[name] !== emitted[name]) {
+        fail(
+          "junit:counts",
+          `${name}="${counts[name]}" disagrees with ${emitted[name]} emitted children`,
+        );
+      }
+    }
+    for (const name of Object.keys(totals)) totals[name] += Math.max(counts[name], 0);
+  }
+  const aggregate = junit.match(/<testsuites ([^>]*)>/);
+  if (!aggregate) {
+    fail("junit:aggregate", "missing the testsuites element");
+  } else {
+    for (const name of Object.keys(totals)) {
+      const declared = attr(aggregate[1], name);
+      if (declared !== totals[name]) {
+        fail(
+          "junit:aggregate",
+          `${name}="${declared}" disagrees with the suite sum ${totals[name]}`,
+        );
+      }
     }
   }
 } else {
