@@ -91,8 +91,14 @@ mod tests {
         assert_eq!(DIGEST_ALGORITHM, "sha256");
         assert_eq!(RECOMMENDED_BUDGET_TOKENS, 5_000);
         assert_eq!(OPERATION_COUNT, 11);
-        // The workflow recommendation stays inside the core hard bound.
-        const { assert!(RECOMMENDED_BUDGET_TOKENS <= crate::context::version::MAX_BUDGET_TOKENS) }
+        // Check the actual discovery wire value against the core hard bound.
+        let manifest = serde_json::to_value(crate::provider::ProviderManifest::describe())
+            .expect("manifest serializes");
+        let recommended = manifest["bounds"]["recommendedContextBudgetTokens"]
+            .as_u64()
+            .expect("numeric recommendation");
+        assert_eq!(recommended, RECOMMENDED_BUDGET_TOKENS);
+        assert!(recommended <= crate::context::version::MAX_BUDGET_TOKENS);
     }
 
     #[test]

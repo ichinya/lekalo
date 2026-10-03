@@ -650,6 +650,8 @@ const catalog = {
     { family: "adapter-conformance", path: "tests/fixtures/adapter-conformance/inputs/scenario-txn-concurrency.json", consumer: "core adapter_conformance::fixture", note: "shared scenario IR" },
     { family: "orchestration", path: "tests/fixtures/orchestration/project", consumer: "node scenario e2e + php parity gates", note: "shared planner scenario corpus" },
     { family: "trace", path: "tests/fixtures/trace/golden/planner.trace.json", consumer: "trace-contracts gate; CLI trace tests", note: "canonical trace golden" },
+    { family: "trace-assessment", path: "tests/fixtures/trace-assessment/input/ready.json", consumer: "trace-evidence-contracts gate; core and CLI trace assessment tests", note: "synthetic neutral evidence golden input" },
+    { family: "trace-assessment", path: "tests/fixtures/trace-assessment/golden/ready.json", consumer: "trace-assessment-contracts gate; core and CLI trace assessment tests", note: "synthetic assessment golden; no live HLV execution" },
   ],
 };
 writeFileSync(join(suiteV1, "catalog.json"), `${JSON.stringify(catalog, null, 2)}\n`);

@@ -258,6 +258,18 @@
       "path": "tests/fixtures/trace/golden/planner.trace.json",
       "consumer": "trace-contracts gate; CLI trace tests",
       "note": "canonical trace golden"
+    },
+    {
+      "family": "trace-assessment",
+      "path": "tests/fixtures/trace-assessment/input/ready.json",
+      "consumer": "trace-evidence-contracts gate; core and CLI trace assessment tests",
+      "note": "synthetic neutral evidence golden input"
+    },
+    {
+      "family": "trace-assessment",
+      "path": "tests/fixtures/trace-assessment/golden/ready.json",
+      "consumer": "trace-assessment-contracts gate; core and CLI trace assessment tests",
+      "note": "synthetic assessment golden; no live HLV execution"
     }
   ]
 }

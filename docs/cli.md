@@ -659,6 +659,22 @@ contract, guarantees, and limits are documented in
 [docs/trace-manifest.md](trace-manifest.md) and
 [ADR-0014](adr/0014-trace-manifest.md).
 
+Issue #35 adds the explicit read-only assessment of a neutral mapping and
+revision-bound provider/native receipts:
+
+```sh
+lekalo trace assess trace.json --evidence evidence.json --json
+```
+
+The caller selects scope and supplies current Git/model/worktree pins and
+negotiated provider pins. Ready/degraded assessments exit 0 on stdout;
+required failures exit 3 with the complete report under `payload.assessment`.
+Invalid evidence exits 1 on stderr. Original HLV codes remain in the evidence;
+registered `LEK-TRACE-*` diagnostics report mapping, custody and policy findings.
+The command launches nothing and writes nothing. See
+[trace-assessment.md](trace-assessment.md), including the external adapter's
+HLV invocation and verify/done aggregation obligations.
+
 ## Inspect
 
 Issue #15 answers the single-symbol question through one thin subcommand.

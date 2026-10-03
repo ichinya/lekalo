@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Issue #34 release gate: the workflow-provider discovery boundary.
 // Validates the committed schema (contracts/provider-capabilities
-// .schema.v0.6.3.json), the committed golden manifest fixture, and the
+// .schema.v0.6.4.json), the committed golden manifest fixture, and the
 // live `lekalo provider describe --json` receipt (when the built binary
 // is present) against the same pinned third-party Draft 2020-12
 // implementation as the other contract gates. Cross-checks the closed
@@ -127,9 +127,7 @@ for (const [id, expected] of expectedSchemas) {
 }
 checks += 1;
 
-// 5. The schema pins cover exactly the nine output families (the seven
-// wire-discriminated families plus the two describing schemas of this
-// contract series).
+// 5. Exact pins cover ten output families and the neutral assessment input.
 const expectedPins = [
   "lekalo/context/v0.2.16",
   "lekalo/diagnostic/v0.2.16",
