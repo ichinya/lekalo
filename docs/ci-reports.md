@@ -59,8 +59,10 @@ existing ancestor; and the protected project homes (`lekalo/`,
 itself is ever touched: a refused write is the typed
 `ci.report-write-failed` diagnostic — after a passing run as the
 unavailable envelope (exit 4), after a failing run appended to the
-command's own envelope under its status, so the refusal is observable
-on every command class.
+command's own envelope under its status (`invalid`, `denied`,
+`unavailable`, `unsupported`, and `unsupported-version` alike — a
+degraded `unsupported` verify carries the refusal in its envelope the
+same way), so the refusal is observable on every command class.
 
 ## Exit policy
 

@@ -180,11 +180,156 @@ fn validate_deterministic_report_bytes_across_reruns() {
         "--project",
         ".",
     ];
-    let _ = lekalo_in(&dir, args);
+    let output = lekalo_in(&dir, args);
+    assert_eq!(exit_code(&output), 0, "{}", stderr_text(&output));
     let first = std::fs::read_to_string(dir.join("out/report.json")).expect("first");
-    let _ = lekalo_in(&dir, args);
+    std::fs::remove_file(dir.join("out/report.json")).expect("remove first report");
+    let output = lekalo_in(&dir, args);
+    assert_eq!(exit_code(&output), 0, "{}", stderr_text(&output));
     let second = std::fs::read_to_string(dir.join("out/report.json")).expect("second");
     assert_eq!(first, second, "the report bytes are deterministic");
+}
+
+/// Compare the complete canonical document with the committed golden.
+/// Only the commit and dirty *values* depend on the checkout running the
+/// test; their known-state shapes, the working-set pin, and every other
+/// field remain part of the comparison (review Cline F3).
+fn assert_report_matches_golden(dir: &Path, name: &str) {
+    let raw = std::fs::read_to_string(dir.join("out/report.json")).expect("live report");
+    let mut live: serde_json::Value = serde_json::from_str(&raw).expect("live JSON");
+    assert_eq!(
+        raw,
+        format!(
+            "{}\n",
+            serde_json::to_string(&live).expect("canonical JSON")
+        ),
+        "{name}: live bytes must be canonical and LF-only"
+    );
+    let golden_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/fixtures/ci-report")
+        .join(name);
+    let golden_bytes = std::fs::read_to_string(golden_path).expect("committed golden");
+    let golden: serde_json::Value = serde_json::from_str(&golden_bytes).expect("golden JSON");
+    let commit = live["provenance"]["git"]["commit"]["value"]
+        .as_str()
+        .expect("live revision is a string");
+    assert!(matches!(commit.len(), 40 | 64));
+    assert!(commit.bytes().all(|byte| byte.is_ascii_hexdigit()));
+    assert!(live["provenance"]["git"]["dirty"]["value"].is_boolean());
+    for pin in ["commit", "dirty"] {
+        assert_eq!(live["provenance"]["git"][pin]["state"], "known");
+        assert_eq!(golden["provenance"]["git"][pin]["state"], "known");
+        live["provenance"]["git"][pin]["value"] = golden["provenance"]["git"][pin]["value"].clone();
+    }
+    assert_eq!(
+        format!(
+            "{}\n",
+            serde_json::to_string(&live).expect("normalized JSON")
+        ),
+        golden_bytes,
+        "{name}: the real binary must reproduce the committed golden"
+    );
+    let markdown_name = match name {
+        "valid.validate.golden.json" => Some("valid.summary.golden.md"),
+        "valid.verify.golden.json" => Some("valid.verify.golden.md"),
+        _ => None,
+    };
+    if let Some(markdown_name) = markdown_name {
+        let markdown = std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tests/fixtures/ci-report")
+                .join(markdown_name),
+        )
+        .expect("committed Markdown golden");
+        let commit = golden["provenance"]["git"]["commit"]["value"]
+            .as_str()
+            .expect("golden commit");
+        assert!(markdown.contains(&format!("| git commit | `{commit}` |")));
+        let digest = lekalo_core::digest::sha256_hex(golden_bytes.as_bytes());
+        assert!(
+            markdown.contains(&format!("report digest: `sha256:{digest}`")),
+            "{markdown_name}: the digest must bind its committed JSON golden"
+        );
+    }
+}
+
+#[test]
+fn the_binary_reproduces_every_committed_json_golden() {
+    let cases: [(&str, &[&str], u8); 5] = [
+        ("valid.validate.golden.json", &["validate"], 0),
+        ("valid.validate-blocked.golden.json", &["validate"], 1),
+        (
+            "valid.readiness.golden.json",
+            &["readiness", "--phase", "release"],
+            0,
+        ),
+        ("valid.verify.golden.json", &["verify", "--locked"], 0),
+        (
+            "valid.generate-check.golden.json",
+            &["generate", "--check"],
+            0,
+        ),
+    ];
+    let mut pinned: Vec<String> = std::fs::read_dir(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/ci-report"),
+    )
+    .expect("golden directory")
+    .map(|entry| {
+        entry
+            .expect("golden entry")
+            .file_name()
+            .to_string_lossy()
+            .into_owned()
+    })
+    .filter(|name| name.starts_with("valid.") && name.ends_with(".golden.json"))
+    .collect();
+    pinned.sort();
+    let mut reproduced: Vec<&str> = cases.iter().map(|(name, _, _)| *name).collect();
+    reproduced.sort();
+    assert_eq!(
+        pinned, reproduced,
+        "every pinned JSON golden needs a binary reproduction"
+    );
+    for (name, command, expected_exit) in cases {
+        let dir = fixture_copy(name);
+        std::fs::create_dir_all(dir.join("out")).expect("report dir");
+        if name == "valid.validate-blocked.golden.json" {
+            let entity = dir.join("lekalo/modules/beta/entities.yaml");
+            let source = std::fs::read_to_string(&entity).expect("entity source");
+            assert!(source.contains("type: alpha.widget"));
+            std::fs::write(
+                &entity,
+                source.replace("type: alpha.widget", "type: alpha.ghost"),
+            )
+            .expect("plant the unresolved reference");
+        }
+        if matches!(
+            name,
+            "valid.verify.golden.json" | "valid.generate-check.golden.json"
+        ) {
+            let output = lekalo_in(&dir, &["lock"]);
+            assert_eq!(exit_code(&output), 0, "{}", stderr_text(&output));
+        }
+        if name == "valid.readiness.golden.json" {
+            // The documented regeneration sequence validates the plain
+            // fixture before its read-only readiness projection, warming
+            // the cache whose health is recorded in that golden.
+            let output = lekalo_in(&dir, &["validate"]);
+            assert_eq!(exit_code(&output), 0, "{}", stderr_text(&output));
+        }
+        let mut args = vec!["--json"];
+        args.extend_from_slice(command);
+        args.extend_from_slice(&["--project", ".", "--report-file", "out/report.json"]);
+        let output = lekalo_in(&dir, &args);
+        assert_eq!(
+            exit_code(&output),
+            expected_exit,
+            "{name}: {}",
+            stderr_text(&output)
+        );
+        assert_report_matches_golden(&dir, name);
+        std::fs::remove_dir_all(&dir).expect("remove golden fixture copy");
+    }
 }
 
 #[test]
@@ -862,4 +1007,171 @@ fn a_required_degraded_readiness_check_exits_with_the_recorded_evaluation() {
     assert_eq!(report["evaluation"]["verdict"], "blocked");
     assert_ne!(exit_code(&output), 0, "a blocked evaluation never exits 0");
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The write refusal must be observable on the `unsupported` command
+/// class too (review R3-1/F1): a degraded `verify --locked --target`
+/// routes the terminal result through `unsupported` (exit 4), and a
+/// blocked report destination used to leave the run with exit 4, no
+/// artifact, and no write diagnostic — the refusal was silently dropped.
+/// Now the envelope carries `ci.report-write-failed` beside the
+/// capability refusals, and nothing is written. The control run with a
+/// fresh destination still writes the coherent blocked report.
+#[test]
+fn the_write_refusal_is_visible_on_the_unsupported_class() {
+    let dir = fixture_copy("unsupported-write-refusal");
+    let lock = lekalo_in(&dir, &["lock"]);
+    assert_eq!(exit_code(&lock), 0, "{}", stderr_text(&lock));
+    std::fs::create_dir_all(dir.join("out")).expect("report dir");
+    let existing = vec![b'A'; 5500];
+    std::fs::write(dir.join("out/existing.json"), &existing).expect("existing report");
+    for destination in ["missing-dir/v.json", "out/existing.json"] {
+        let output = lekalo_in(
+            &dir,
+            &[
+                "--json",
+                "verify",
+                "--locked",
+                "--target",
+                "beta",
+                "--report-file",
+                destination,
+                "--project",
+                ".",
+            ],
+        );
+        assert_eq!(exit_code(&output), 4, "{}", stderr_text(&output));
+        let envelope: serde_json::Value =
+            serde_json::from_str(stdout_text(&output).trim()).expect("envelope parses");
+        assert_eq!(envelope["status"], "unsupported");
+        let reasons: Vec<&str> = envelope["reasonCodes"]
+            .as_array()
+            .expect("reason codes")
+            .iter()
+            .map(|code| code.as_str().expect("code"))
+            .collect();
+        assert!(
+            reasons.contains(&"ci.report-write-failed"),
+            "the refusal is never silently dropped on the unsupported class: {reasons:?}"
+        );
+        assert!(
+            reasons.contains(&"core.capability-unavailable"),
+            "the underlying component refusals survive the join: {reasons:?}"
+        );
+        assert!(!dir.join("missing-dir").exists(), "nothing was written");
+        assert_eq!(
+            std::fs::read(dir.join("out/existing.json")).expect("existing file survives"),
+            existing,
+            "a refused write must preserve the existing bytes"
+        );
+    }
+
+    // Control: the same run against a fresh destination writes the
+    // report — the unsupported class and the blocked verdict are
+    // recorded without any write-refusal diagnostic.
+    let control = lekalo_in(
+        &dir,
+        &[
+            "--json",
+            "verify",
+            "--locked",
+            "--target",
+            "beta",
+            "--report-file",
+            "out/v.json",
+            "--project",
+            ".",
+        ],
+    );
+    assert_eq!(exit_code(&control), 4, "{}", stderr_text(&control));
+    let report: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(dir.join("out/v.json")).expect("the report is written"),
+    )
+    .expect("report parses");
+    assert_eq!(report["commandResult"]["status"], "unsupported");
+    assert_eq!(report["commandResult"]["exitCode"], 4);
+    assert_eq!(report["evaluation"]["verdict"], "blocked");
+    let raw = std::fs::read_to_string(dir.join("out/v.json")).expect("report bytes");
+    assert!(
+        !raw.contains("ci.report-write-failed"),
+        "a successful write carries no refusal"
+    );
+    std::fs::remove_dir_all(&dir).expect("remove unsupported fixture copy");
+}
+
+/// A hermetic local git repository for the `--changed` scope: no
+/// network, no fetch, identity pinned through the environment (the
+/// impact.rs pattern). Git runs only the test's own setup commands.
+fn git_in(dir: &Path, args: &[&str]) {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(alias_free_path(dir))
+        .env("GIT_AUTHOR_NAME", "test")
+        .env("GIT_AUTHOR_EMAIL", "test@example.invalid")
+        .env("GIT_COMMITTER_NAME", "test")
+        .env("GIT_COMMITTER_EMAIL", "test@example.invalid")
+        .output()
+        .expect("run git");
+    assert!(
+        output.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A `--changed` run whose changed-scope resolution *succeeds* (a git
+/// fixture with a valid uncommitted edit) and whose adapter supply then
+/// refuses still records the requested scope: `mode` stays `changed`
+/// through the supply preflight arms (review R3-2 — both arms used to
+/// pass a hardcoded `false`, misrecording the run as `full`).
+#[test]
+fn a_verify_changed_supply_refusal_records_the_changed_mode() {
+    let dir = fixture_copy("verify-changed-supply");
+    git_in(&dir, &["init", "-q"]);
+    git_in(&dir, &["add", "-A"]);
+    git_in(&dir, &["commit", "-q", "-m", "init"]);
+    // A valid uncommitted edit: a leading comment cannot invalidate the
+    // model, so the changed scope resolves and the supply step is reached.
+    let entity = dir.join("lekalo/modules/beta/entities.yaml");
+    let before = std::fs::read_to_string(&entity).expect("entity source");
+    std::fs::write(&entity, format!("# touched\n{before}")).expect("plant the change");
+    std::fs::create_dir_all(dir.join("out")).expect("report dir");
+    let output = lekalo_in(
+        &dir,
+        &[
+            "--json",
+            "verify",
+            "--changed",
+            "--project",
+            ".",
+            "--report-file",
+            "out/v.json",
+            "--",
+            "totally-missing-adapter-xyz",
+        ],
+    );
+    assert_ne!(exit_code(&output), 0);
+    let report: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(dir.join("out/v.json")).expect("the report is written"),
+    )
+    .expect("report parses");
+    assert_eq!(report["invocation"]["mode"], "changed");
+    assert_eq!(report["invocation"]["command"], "verify");
+    assert_eq!(report["evaluation"]["verdict"], "blocked");
+    let checks = report["checks"].as_array().expect("check rows");
+    assert!(
+        checks
+            .iter()
+            .any(|check| check["id"] == "verify.preflight" && check["effectiveOutcome"] != "pass"),
+        "the supply refusal is a visible blocking row"
+    );
+    assert!(
+        report["diagnostics"]
+            .as_array()
+            .expect("diagnostics")
+            .iter()
+            .any(|diagnostic| diagnostic["id"] == "lock.component-unavailable"),
+        "the supply refusal, rather than changed-scope resolution, must be reached"
+    );
+    std::fs::remove_dir_all(&dir).expect("remove changed-scope fixture copy");
 }

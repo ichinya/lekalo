@@ -9194,10 +9194,12 @@ fn run_verify(
             let root = match lekalo_core::orchestration::project_root(&selection) {
                 Ok(root) => root,
                 // The root/supply refusals are preflight facts too: the
-                // requested report is still finalized (review F2).
+                // requested report is still finalized, and the recorded
+                // mode is the requested scope (review R3-2: a `--changed`
+                // run stays `changed` here as everywhere else).
                 Err(result) => {
                     return early_verify_report(
-                        &selection, result, locked, false, targets, module, request,
+                        &selection, result, locked, changed, targets, module, request,
                     )
                 }
             };
@@ -9212,7 +9214,7 @@ fn run_verify(
                         &selection,
                         DomainResult::from(&failure),
                         locked,
-                        false,
+                        changed,
                         targets,
                         module,
                         request,

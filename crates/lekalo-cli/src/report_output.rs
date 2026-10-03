@@ -383,19 +383,34 @@ pub fn compose(
                     joined,
                     command.status(),
                 ) {
-                    command = match command.status() {
-                        lekalo_core::result::Status::Invalid => DomainResult::invalid(set),
-                        lekalo_core::result::Status::Denied => DomainResult::denied(set),
-                        lekalo_core::result::Status::Unavailable => DomainResult::unavailable(set),
-                        lekalo_core::result::Status::UnsupportedVersion => {
+                    // Every failing class carries the joined set in its
+                    // own shape (review R3-1/F1: `unsupported` — exit 4,
+                    // a degraded verify's terminal class — composes the
+                    // refusal exactly like the other failing classes;
+                    // only `Valid` is success-shaped, and a passing
+                    // command never reaches this arm).
+                    command = match command {
+                        DomainResult::Invalid { .. } => DomainResult::invalid(set),
+                        DomainResult::Denied { .. } => DomainResult::denied(set),
+                        DomainResult::DeniedWithEvidence { json, human, .. } => {
+                            DomainResult::DeniedWithEvidence {
+                                diagnostics: set,
+                                json,
+                                human,
+                            }
+                        }
+                        DomainResult::Unavailable { .. } => DomainResult::unavailable(set),
+                        DomainResult::Unsupported { capability, .. } => DomainResult::Unsupported {
+                            capability,
+                            diagnostics: set,
+                        },
+                        DomainResult::UnsupportedOperation { .. } => {
+                            DomainResult::UnsupportedOperation { diagnostics: set }
+                        }
+                        DomainResult::UnsupportedVersion { .. } => {
                             DomainResult::unsupported_version(set)
                         }
-                        // The Valid and Unsupported classes carry no
-                        // report-refusal composition (a successful or
-                        // negotiated-unsupported command never reaches
-                        // this branch with a failing write).
-                        lekalo_core::result::Status::Valid
-                        | lekalo_core::result::Status::Unsupported => command,
+                        valid @ DomainResult::Valid { .. } => valid,
                     };
                 }
                 command
@@ -474,5 +489,28 @@ mod tests {
         };
         let outcome = write_report(&report, &request, None);
         assert_eq!(outcome.unwrap_err().exit_code(), 4);
+    }
+
+    /// The `unsupported` class (exit 4) is a real failing class on the
+    /// reportable path — a degraded `verify` routes its terminal result
+    /// through it (review R3-1/F1) — so the write refusal must join the
+    /// envelope exactly as for the other failing classes, with the
+    /// capability preserved in the same variant shape.
+    #[test]
+    fn a_write_refusal_joins_the_unsupported_class() {
+        let command = DomainResult::unsupported(lekalo_core::Capability::Validate);
+        let composed = compose(command, Err(write_failure("directory-missing")));
+        assert_eq!(composed.status(), lekalo_core::result::Status::Unsupported);
+        assert_eq!(composed.exit_code(), 4);
+        let codes: Vec<&str> = composed.diagnostics().iter().map(|d| d.id()).collect();
+        assert!(
+            codes.contains(&"ci.report-write-failed"),
+            "the refusal is never silently dropped: {codes:?}"
+        );
+        assert!(codes.contains(&"core.capability-unavailable"));
+        assert_eq!(
+            composed.capability(),
+            Some(lekalo_core::Capability::Validate)
+        );
     }
 }

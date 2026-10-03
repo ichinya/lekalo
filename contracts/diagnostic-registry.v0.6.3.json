@@ -867,6 +867,7 @@
         "invalid",
         "denied",
         "unavailable",
+        "unsupported",
         "unsupported-version"
       ],
       "message_id": "ci.report-write-failed",
