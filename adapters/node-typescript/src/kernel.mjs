@@ -1946,6 +1946,7 @@ export function createKernel(options = {}) {
         if (validatedRequest.protocol_version === "0.3.2") {
           capabilities.operations = capabilities.operations.filter(o => o !== "lint");
           delete capabilities.capabilities["lint.ai-readability"];
+          if (capabilities.operations.every(operation => operation === "describe")) capabilities.read_scopes = [];
         }
         return {
           response: buildResponse(validatedRequest, { capabilities }),

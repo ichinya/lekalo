@@ -130,9 +130,11 @@ pub fn validate_report(r: &Report) -> Result<(), DomainResult> {
     for d in &r.depths {
         if !["semantic-dependency", "native-call"].contains(&d.dimension.as_str())
             || !dimensions.insert((&d.dimension, &d.target))
+            || d.recursive_components > 50_000
+            || d.witness.len() > 32
             || d.maximum
                 .known()
-                .is_some_and(|m| *m > 0 && d.witness.len() != *m as usize + 1)
+                .is_some_and(|m| *m > 31 || (*m > 0 && d.witness.len() != *m as usize + 1))
         {
             return Err(bad());
         }
@@ -285,7 +287,11 @@ pub fn compare(base: &Report, candidate: &Report) -> Comparison {
     c
 }
 fn regressed(c: &Comparison) -> bool {
-    c.deltas.iter().any(|d| d.raw > 0)
+    let mut raw_by_rule = std::collections::BTreeMap::<&str, i64>::new();
+    for delta in &c.deltas {
+        *raw_by_rule.entry(&delta.rule).or_default() += delta.raw;
+    }
+    raw_by_rule.values().any(|delta| *delta > 0)
         || c.depth_deltas
             .iter()
             .any(|d| d.change > 0 || d.recursive_components > 0)

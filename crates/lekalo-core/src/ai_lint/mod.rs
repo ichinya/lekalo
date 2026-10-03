@@ -677,16 +677,43 @@ pub fn analyze(request: &Request<'_>) -> Result<Report, DomainResult> {
             }
         }
         if enabled(p, "indirection.depth-exceeded") {
-            let native = e
+            let native_records = e
                 .records
                 .iter()
-                .filter(|r| r.kind == Kind::NativeEdge && current(e, r, request.model_ref, &ir_ref))
+                .filter(|r| r.kind == Kind::NativeEdge)
+                .collect::<Vec<_>>();
+            let native_confidence = native_records
+                .iter()
+                .map(|r| confidence(r))
+                .fold(Confidence::High, std::cmp::min);
+            let incomplete = !covered(e, "indirection.depth-exceeded")
+                || native_records.iter().any(|r| {
+                    !current(e, r, request.model_ref, &ir_ref)
+                        || confidence(r) == Confidence::Unknown
+                        || r.value.known().is_none()
+                });
+            let native = native_records
+                .iter()
+                .filter(|r| current(e, r, request.model_ref, &ir_ref))
                 .filter_map(|r| r.value.known().map(|v| (hash(&r.native_id), hash(v))))
                 .collect::<Vec<_>>();
             let roots = native.iter().map(|(a, _)| a.clone()).collect::<Vec<_>>();
             let mut d = depth::measure("native-call", &e.target, &native, &roots);
-            if !covered(e, "indirection.depth-exceeded") {
+            if incomplete {
                 d.maximum = State::Unknown;
+            }
+            if d.maximum.known().is_none() {
+                for c in report
+                    .coverage
+                    .iter_mut()
+                    .filter(|c| c.target == e.target && c.rule == "indirection.depth-exceeded")
+                {
+                    c.state = CoverageState::Partial;
+                    c.limitations
+                        .push("native-depth-incomplete-or-bounded".into());
+                    c.limitations.sort();
+                    c.limitations.dedup();
+                }
             }
             if let (Some(value), Some(limit)) =
                 (d.maximum.known(), p.thresholds.native_call_depth.known())
@@ -698,7 +725,7 @@ pub fn analyze(request: &Request<'_>) -> Result<Report, DomainResult> {
                         State::Unknown,
                         &e.target,
                         &request.scope,
-                        Confidence::High,
+                        native_confidence,
                         Claim::Structural,
                         &hash(&(&config_ref, &e.sources, &d)),
                         vec![hash(e)],
