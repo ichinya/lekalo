@@ -471,7 +471,7 @@ operation. Exit 0 on stdout in both projections; an unknown
 
 ```sh
 lekalo provider describe
-# provider dev.lekalo.workflow-provider@0.6.3 product 0.6.3 operations \
+# provider dev.lekalo.workflow-provider@0.6.4 product 0.6.4 operations \
 #   context,doctor,drift,generate,impact,readiness,status,trace.export,validate,verify
 ```
 
@@ -481,7 +481,7 @@ schema identities, prerequisites), the workflow bounds, and the
 sha256 manifest digest over the canonical JSON without the digest
 field. The normative contract is
 [docs/provider-contract.md](provider-contract.md); the closed schema
-is `contracts/provider-capabilities.schema.v0.6.3.json`.
+is `contracts/provider-capabilities.schema.v0.6.4.json`.
 
 ## Graph
 
@@ -1064,6 +1064,16 @@ The typed client-SDK family (issue #72) derives its evidence beside
 these homes (`.lekalo/cache/client-sdk/<project>.json`) and adds the
 `generate.client-sdk` capability; see
 [docs/client-sdk.md](client-sdk.md).
+
+## Coupling (issue #77)
+
+`lekalo coupling --symbol ID|--module ID|--all|--changed-input FILE`
+reports semantic fan-in/out and evidence-bearing change radius. Optional
+`--field`, `--evidence`, `--baseline`, `--coupling-profile ID --profiles FILE`
+and `--context-budget TOKENS` select detail, reviewed policy and planning.
+It is read-only and advisory by default; an explicitly selected strict profile
+can deny baseline regressions while retaining the report. See
+[coupling.md](coupling.md) for metrics, closed contracts, exits and coverage.
 
 ## Privacy (issue #119)
 

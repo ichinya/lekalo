@@ -1,0 +1,25 @@
+schema_version: "0.2.16"
+definitions:
+  -
+    id: "sync.request"
+    kind: "value-object"
+    version: 1
+    fields:
+      -
+        name: "task"
+        type: "tasks.task"
+        required: true
+      -
+        name: "target"
+        type: "integrations.target_kind"
+        required: true
+  -
+    id: "sync.local_request"
+    kind: "value-object"
+    version: 1
+    visibility: "module"
+    fields:
+      -
+        name: "request"
+        type: "sync.request"
+        required: true

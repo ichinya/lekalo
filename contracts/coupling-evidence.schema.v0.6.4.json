@@ -1,0 +1,348 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lekalo.dev/contracts/coupling-evidence.schema.v0.6.4.json",
+  "title": "Coupling evidence 0.6.4",
+  "$ref": "#/$defs/evidence",
+  "$defs": {
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "const": "lekalo/coupling-evidence/v0.6.4"
+        },
+        "identity": {
+          "const": "dev.lekalo.coupling-evidence@0.6.4"
+        },
+        "inputs": {
+          "$ref": "#/$defs/pins"
+        },
+        "artifacts": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "$ref": "#/$defs/attachment"
+                }
+              },
+              "required": [
+                "state",
+                "value"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown",
+                    "withheld",
+                    "unsupported"
+                  ]
+                }
+              },
+              "required": [
+                "state"
+              ]
+            }
+          ]
+        },
+        "trace": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "$ref": "#/$defs/attachment"
+                }
+              },
+              "required": [
+                "state",
+                "value"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown",
+                    "withheld",
+                    "unsupported"
+                  ]
+                }
+              },
+              "required": [
+                "state"
+              ]
+            }
+          ]
+        },
+        "queries": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "$ref": "#/$defs/attachment"
+                }
+              },
+              "required": [
+                "state",
+                "value"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown",
+                    "withheld",
+                    "unsupported"
+                  ]
+                }
+              },
+              "required": [
+                "state"
+              ]
+            }
+          ]
+        },
+        "transactions": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "$ref": "#/$defs/attachment"
+                }
+              },
+              "required": [
+                "state",
+                "value"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown",
+                    "withheld",
+                    "unsupported"
+                  ]
+                }
+              },
+              "required": [
+                "state"
+              ]
+            }
+          ]
+        },
+        "replicas": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "obligation": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 192,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]*$"
+              },
+              "subjects": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 192,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]*$"
+                },
+                "maxItems": 64,
+                "uniqueItems": true,
+                "minItems": 2
+              },
+              "reviewRef": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 192,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]*$"
+              }
+            },
+            "required": [
+              "obligation",
+              "subjects",
+              "reviewRef"
+            ]
+          },
+          "maxItems": 256,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "identity",
+        "inputs",
+        "artifacts",
+        "trace",
+        "queries",
+        "transactions",
+        "replicas"
+      ]
+    },
+    "pins": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "project": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]*$"
+        },
+        "modelVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]*$"
+        },
+        "sourceRevision": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+                }
+              },
+              "required": [
+                "state",
+                "value"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "const": "unknown"
+                }
+              },
+              "required": [
+                "state"
+              ]
+            }
+          ]
+        },
+        "modelDigest": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "state",
+                "value"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "const": "unknown"
+                }
+              },
+              "required": [
+                "state"
+              ]
+            }
+          ]
+        },
+        "irDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "semanticDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "graphDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "effectDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "project",
+        "modelVersion",
+        "sourceRevision",
+        "modelDigest",
+        "irDigest",
+        "semanticDigest",
+        "graphDigest",
+        "effectDigest"
+      ]
+    },
+    "attachment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "bytes": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16777216
+        }
+      },
+      "required": [
+        "digest",
+        "bytes"
+      ]
+    }
+  }
+}

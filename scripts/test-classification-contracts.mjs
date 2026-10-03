@@ -45,8 +45,8 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf8"));
 const readText = (relative) => readFileSync(resolve(root, relative), "utf8");
 
-const registrySchema = read("contracts/diagnostic-registry.schema.v0.6.3.json");
-const registry = read("contracts/diagnostic-registry.v0.6.3.json");
+const registrySchema = read("contracts/diagnostic-registry.schema.v0.6.4.json");
+const registry = read("contracts/diagnostic-registry.v0.6.4.json");
 const predecessor = read("contracts/diagnostic-registry.v0.3.2.json");
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const validateRegistry = ajv.compile(registrySchema);
@@ -96,8 +96,9 @@ for (const [id, before] of predEntries) {
 }
 if (
   registry.entries.length !==
-  predEntries.size + 16 + 9 + 13 + 1 + 9 + 5 + 14 + 8 + 14 + 15 + 8 + 1 + 15 + 8 + 2
+  predEntries.size + 16 + 9 + 13 + 1 + 9 + 5 + 14 + 8 + 14 + 15 + 8 + 1 + 15 + 8 + 2 + 15
 ) {
+  // Coupling adds exactly 15 entries (#77, LEK-COUPLING-001..015).
   // The increments over the v0.3.2 predecessor, one per family that
   // joined the shared registry after it: classification (#87) +16,
   // dataflow (#87) +9, NFR +13, and the php-operations family (#59)
@@ -302,18 +303,18 @@ if (nfrRules.length !== expectedNfrCodes) fail("nfr-family-count", nfrRules.leng
 // 7. The embedded registry the Rust binary compiles is this successor,
 //    and the Rust identity constants agree.
 const registrySource = readText("crates/lekalo-core/src/diagnostics/registry.rs");
-if (!registrySource.includes("diagnostic-registry.v0.6.3.json")) {
-  fail("rust-embeds-predecessor", "diagnostic-registry.v0.6.3.json");
+if (!registrySource.includes("diagnostic-registry.v0.6.4.json")) {
+  fail("rust-embeds-predecessor", "diagnostic-registry.v0.6.4.json");
 }
 const diagnosticsVersionSource = readText("crates/lekalo-core/src/diagnostics/version.rs");
-if (!diagnosticsVersionSource.includes('REGISTRY_VERSION: &str = "0.6.3"')) {
-  fail("rust-registry-version", "0.6.3");
+if (!diagnosticsVersionSource.includes('REGISTRY_VERSION: &str = "0.6.4"')) {
+  fail("rust-registry-version", "0.6.4");
 }
-if (!diagnosticsVersionSource.includes('REGISTRY_IDENTITY: &str = "dev.lekalo.diagnostic-registry@0.6.3"')) {
-  fail("rust-registry-identity", "0.6.3");
+if (!diagnosticsVersionSource.includes('REGISTRY_IDENTITY: &str = "dev.lekalo.diagnostic-registry@0.6.4"')) {
+  fail("rust-registry-identity", "0.6.4");
 }
-if (!diagnosticsVersionSource.includes('REGISTRY_SCHEMA_VERSION: &str = "lekalo/diagnostic-registry/v0.6.3"')) {
-  fail("rust-registry-schema-version", "0.6.3");
+if (!diagnosticsVersionSource.includes('REGISTRY_SCHEMA_VERSION: &str = "lekalo/diagnostic-registry/v0.6.4"')) {
+  fail("rust-registry-schema-version", "0.6.4");
 }
 
 process.stdout.write(`${JSON.stringify({

@@ -2,7 +2,7 @@
 //!
 //! A profile selects registered semantic rules and, within the narrow
 //! governance window, their severities. The contract lives in
-//! `contracts/validation-profile.schema.v0.6.3.json`; the two built-ins are
+//! `contracts/validation-profile.schema.v0.6.4.json`; the two built-ins are
 //! embedded from the same files and parsed by the exact same closed parser,
 //! so no profile can enter the validator except through this module.
 //!
@@ -23,17 +23,17 @@ use crate::diagnostics::types::Severity;
 use crate::diagnostics::version::REGISTRY_VERSION;
 
 /// The exact wire discriminator of the validation profile contract.
-pub const PROFILE_SCHEMA_VERSION: &str = "lekalo/validation-profile/v0.6.3";
+pub const PROFILE_SCHEMA_VERSION: &str = "lekalo/validation-profile/v0.6.4";
 /// The embedded profile identity.
-pub const PROFILE_IDENTITY: &str = "dev.lekalo.validation-profile@0.6.3";
+pub const PROFILE_IDENTITY: &str = "dev.lekalo.validation-profile@0.6.4";
 /// The current validation profile contract version.
-pub const PROFILE_VERSION: &str = "0.6.3";
+pub const PROFILE_VERSION: &str = "0.6.4";
 /// The exact embedded default profile bytes.
 pub const DEFAULT_PROFILE_BYTES: &[u8] =
-    include_bytes!("../../../../contracts/validation-profile.default.v0.6.3.json");
+    include_bytes!("../../../../contracts/validation-profile.default.v0.6.4.json");
 /// The exact embedded strict profile bytes.
 pub const STRICT_PROFILE_BYTES: &[u8] =
-    include_bytes!("../../../../contracts/validation-profile.strict.v0.6.3.json");
+    include_bytes!("../../../../contracts/validation-profile.strict.v0.6.4.json");
 
 /// Why embedded profile bytes could not be trusted.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -344,7 +344,7 @@ mod tests {
     #[test]
     fn unsupported_profile_versions_fail_closed() {
         let stale = wire(PLAIN_RULE).replace(
-            concat!("\"version\":\"", "0.6.3", "\""),
+            concat!("\"version\":\"", "0.6.4", "\""),
             "\"version\":\"2.0.0\"",
         );
         assert_eq!(

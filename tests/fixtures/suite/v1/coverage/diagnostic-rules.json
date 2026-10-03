@@ -1,8 +1,8 @@
 {
   "coverageId": "dev.lekalo.fixture-coverage.diagnostic-rules",
   "fixtureSchema": "dev.lekalo.fixture@1.0.0",
-  "registryIdentity": "dev.lekalo.diagnostic-registry@0.6.3",
-  "registryDigest": "sha256:5bf7a4e246bffab041848bc010579aac34e0a95c2967bb51b625c0d2ae650dd6",
+  "registryIdentity": "dev.lekalo.diagnostic-registry@0.6.4",
+  "registryDigest": "sha256:229a34155cfdc9c154a0f08e7df29e1dae3924bc0b95c4792bb2b3a9aaebd356",
   "generatedBy": {
     "script": "scripts/gen-suite-coverage.mjs",
     "reviewed": true
@@ -1085,6 +1085,186 @@
         {
           "gate": "crates/lekalo-core/tests",
           "note": "capability seam refusal asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "coupling.baseline-incomparable",
+      "code": "LEK-COUPLING-013",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "scripts/test-coupling-contracts.mjs",
+          "note": "unknown required metric production comparison"
+        }
+      ]
+    },
+    {
+      "id": "coupling.baseline-regression",
+      "code": "LEK-COUPLING-014",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "scripts/test-coupling-contracts.mjs",
+          "note": "strict-baseline-regression production probe"
+        }
+      ]
+    },
+    {
+      "id": "coupling.change-amplification",
+      "code": "LEK-COUPLING-007",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "scripts/test-coupling-contracts.mjs",
+          "note": "configured artifact amplification production probe"
+        }
+      ]
+    },
+    {
+      "id": "coupling.cross-module-cycle",
+      "code": "LEK-COUPLING-005",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "crates/lekalo-core/tests/coupling.rs",
+          "note": "cycle_series_are_separate acceptance probe"
+        }
+      ]
+    },
+    {
+      "id": "coupling.duplication-divergence",
+      "code": "LEK-COUPLING-011",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "scripts/test-coupling-contracts.mjs",
+          "note": "explicit replica divergence production probe"
+        }
+      ]
+    },
+    {
+      "id": "coupling.evidence-incomplete",
+      "code": "LEK-COUPLING-012",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "scripts/test-coupling-contracts.mjs",
+          "note": "member-fallback-is-not-exact production probe"
+        }
+      ]
+    },
+    {
+      "id": "coupling.fan-exceeded",
+      "code": "LEK-COUPLING-003",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "scripts/test-coupling-contracts.mjs",
+          "note": "configured neighbor threshold production probe"
+        }
+      ]
+    },
+    {
+      "id": "coupling.input-invalid",
+      "code": "LEK-COUPLING-001",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "scripts/test-coupling-contracts.mjs",
+          "note": "closed-schemas and duplicate-keys-fail production probes"
+        }
+      ]
+    },
+    {
+      "id": "coupling.policy-denied",
+      "code": "LEK-COUPLING-015",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "scripts/test-coupling-contracts.mjs",
+          "note": "denial-retains-report production probe"
+        }
+      ]
+    },
+    {
+      "id": "coupling.profile-unsupported",
+      "code": "LEK-COUPLING-002",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "scripts/test-coupling-contracts.mjs",
+          "note": "unsupported-version production probe"
+        }
+      ]
+    },
+    {
+      "id": "coupling.public-contract-amplification",
+      "code": "LEK-COUPLING-004",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "scripts/test-coupling-contracts.mjs",
+          "note": "configured public radius production probe"
+        }
+      ]
+    },
+    {
+      "id": "coupling.public-target-exposure",
+      "code": "LEK-COUPLING-010",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "crates/lekalo-core/tests/coupling.rs",
+          "note": "transitive_target_exposure_is_a_fact_with_paths asserts rule"
+        }
+      ]
+    },
+    {
+      "id": "coupling.shared-abstraction-radius",
+      "code": "LEK-COUPLING-009",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "scripts/test-coupling-contracts.mjs",
+          "note": "shared abstraction threshold production probe"
+        }
+      ]
+    },
+    {
+      "id": "coupling.shared-mutable-state",
+      "code": "LEK-COUPLING-006",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "crates/lekalo-core/tests/coupling.rs",
+          "note": "centrality_is_visible_and_advisory_by_default asserts rule"
+        }
+      ]
+    },
+    {
+      "id": "coupling.transaction-spread",
+      "code": "LEK-COUPLING-008",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "crates/lekalo-core/tests/coupling.rs",
+          "note": "transaction_spread_uses_explicit_domain_groups acceptance probe"
         }
       ]
     },

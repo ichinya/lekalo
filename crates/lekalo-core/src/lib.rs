@@ -13,6 +13,7 @@ pub mod client_sdk;
 pub mod context;
 pub mod context_budget;
 pub mod contracted;
+pub mod coupling;
 pub mod dataflow;
 pub mod diagnostics;
 pub mod diff;

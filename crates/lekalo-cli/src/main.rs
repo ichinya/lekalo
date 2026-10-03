@@ -23,6 +23,7 @@ type StorageAttachment = lekalo_core::storage_projection::StorageProjectionAttac
 /// storage-profile` commands (issue #117).
 type ProfileAttachment = lekalo_core::storage_engine_profile::StorageEngineProfile;
 
+mod coupling;
 mod doctor_git;
 mod git_input;
 mod report_git;
@@ -262,6 +263,10 @@ enum Commands {
     /// simulation. Advisory by default; a mandatory `--policy` document
     /// is the only denied path. No default budget exists: an explicit
     /// `--budget` or `--budget-profile` is required.
+    Coupling {
+        #[command(flatten)]
+        args: coupling::CouplingArgs,
+    },
     ContextBudget {
         #[command(flatten)]
         args: ContextBudgetArgs,
@@ -2414,6 +2419,7 @@ fn runtime() -> u8 {
                 spans,
                 project,
             } => run_context(symbol, changed, budget, spans, &project),
+            Commands::Coupling { args } => coupling::run(args),
             Commands::ContextBudget { args } => {
                 let ContextBudgetArgs {
                     symbol,

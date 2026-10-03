@@ -1,0 +1,20 @@
+schema_version: "0.2.16"
+definitions:
+  -
+    id: "integrations.deliver_calendar"
+    kind: "command"
+    version: 1
+    input:
+      -
+        name: "payload"
+        type: "integrations.calendar_payload"
+        required: true
+  -
+    id: "integrations.deliver_webhook"
+    kind: "command"
+    version: 1
+    input:
+      -
+        name: "payload"
+        type: "integrations.webhook_payload"
+        required: true

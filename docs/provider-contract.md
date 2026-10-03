@@ -8,9 +8,9 @@ the exit/stream discipline, the side-effect classes, and the limits a
 consumer may rely on. It does not change any existing command; it
 describes and constrains them.
 
-The contract identity is **`dev.lekalo.workflow-provider@0.6.3`**, wire
-discriminator **`lekalo/workflow-provider/v0.6.3`**, schema
-`contracts/provider-capabilities.schema.v0.6.3.json` — updated in fix
+The contract identity is **`dev.lekalo.workflow-provider@0.6.4`**, wire
+discriminator **`lekalo/workflow-provider/v0.6.4`**, schema
+`contracts/provider-capabilities.schema.v0.6.4.json` — updated in fix
 round 1 (see [issue-34-fix1.md](issue-34-fix1.md)): the operation
 vocabulary is ten operations (the read-only `drift` check joined), the
 `validate`/`drift` receipts have their own published describing
@@ -80,10 +80,10 @@ The manifest advertises:
 
 | Field | Meaning |
 | --- | --- |
-| `schemaVersion`, `identity`, `productVersion` | The exact workflow-provider contract discriminator, identity, and the product version this contract was implemented at (`0.6.3`; deliberately frozen — it may trail a later binary's `--version`, and consumers negotiate on `identity`/`schemaVersion`, never on this field). |
+| `schemaVersion`, `identity`, `productVersion` | The exact workflow-provider contract discriminator, identity, and the product version this contract was implemented at (`0.6.4`; deliberately frozen — it may trail a later binary's `--version`, and consumers negotiate on `identity`/`schemaVersion`, never on this field). |
 | `discoveryCommand` | `lekalo provider describe` (presentation form). |
 | `targetProtocolIdentity` | `dev.lekalo.target-protocol@0.3.2`. The adapter protocol is a separate negotiated family: a supported workflow operation never implies a configured target. |
-| `schemaPins` | The exact upstream output contract identities: the seven wire-discriminated families — context `lekalo/context/v0.2.16`, diagnostics `lekalo/diagnostic/v0.2.16`, doctor `lekalo/doctor/v0.3.2`, impact `lekalo/impact/v0.2.16`, orchestration `lekalo/orchestration/v0.2.16`, trace `lekalo/trace-manifest/v0.2.16`, validation profile `lekalo/validation-profile/v0.6.3` — plus the two describing schemas of this contract series for the receipt-shaped payloads without embedded discriminators: `lekalo/validation-report/v0.6.3` (`validate` success) and `lekalo/generate-check/v0.6.3` (`drift` receipts). |
+| `schemaPins` | The exact upstream output contract identities: the seven wire-discriminated families — context `lekalo/context/v0.2.16`, diagnostics `lekalo/diagnostic/v0.2.16`, doctor `lekalo/doctor/v0.3.2`, impact `lekalo/impact/v0.2.16`, orchestration `lekalo/orchestration/v0.2.16`, trace `lekalo/trace-manifest/v0.2.16`, validation profile `lekalo/validation-profile/v0.6.4` — plus the two describing schemas of this contract series for the receipt-shaped payloads without embedded discriminators: `lekalo/validation-report/v0.6.4` (`validate` success) and `lekalo/generate-check/v0.6.3` (`drift` receipts). |
 | `operations` | The ten operations below, canonical order, with effect class, output schema, and the `requiresProject` / `requiresAdapter` prerequisites. |
 | `bounds` | `recommendedContextBudgetTokens` 5000, `maxContextBudgetTokens` 1000000 (`context.MAX_BUDGET_TOKENS`), `maxExportBytes` 33554432 (the 32 MiB impact/trace export bound). |
 | `manifestDigest` | `sha256:` over the canonical JSON (sorted keys, no whitespace) of the manifest with this field removed. Integrity metadata, not a signature. |
@@ -104,7 +104,7 @@ order):
 | `doctor` | `lekalo doctor [--project DIR] [--trace PATH]...` | read-only | `lekalo/doctor/v0.3.2` | project |
 | `impact` | `lekalo impact --changed (--base REF [--head REF] \| --worktree) [--project DIR]` | read-only | `lekalo/impact/v0.2.16` | project |
 | `context` | `lekalo context --changed SYMBOLS --budget TOKENS [--project DIR]` | read-only | `lekalo/context/v0.2.16` | project |
-| `validate` | `lekalo validate --no-cache [--project DIR] [--module MODULE] [--strict]` | read-only | `lekalo/validation-report/v0.6.3` | project |
+| `validate` | `lekalo validate --no-cache [--project DIR] [--module MODULE] [--strict]` | read-only | `lekalo/validation-report/v0.6.4` | project |
 | `drift` | `lekalo generate --check [--locked] [--project DIR]` | read-only | `lekalo/generate-check/v0.6.3` | project + lock (unconditional: a missing `lekalo.lock` fails with `lock.missing`; `--locked` only adds the freshness check) |
 | `generate` | `lekalo generate --target TARGET [--dry-run] [--locked] [--project DIR] -- PROGRAM [ARGS...]` | generated-artifacts | `lekalo/orchestration/v0.2.16` | project + adapter |
 | `verify` | `lekalo verify [--target TARGET]... [--module MODULE] [--changed] [--locked] [--trace PATH] [--project DIR]` | read-only | `lekalo/orchestration/v0.2.16` | project |
@@ -158,8 +158,8 @@ Effect classes describe the write surface **of the prescribed argv**:
 - **`validate` preserves original registry ids.** Valid success and
   warnings are exit 0 on stdout; the success receipt has no embedded
   `schemaVersion` member and is negotiated through the published
-  `lekalo/validation-report/v0.6.3` describing schema
-  (`contracts/validation-report.schema.v0.6.3.json`), which covers all
+  `lekalo/validation-report/v0.6.4` describing schema
+  (`contracts/validation-report.schema.v0.6.4.json`), which covers all
   three reachable shapes: the zero-diagnostic receipt; the
   warning/info-bearing receipt whose envelope carries the closed
   `diagnostics` array plus the derived `reasonCodes`; and the
@@ -168,7 +168,7 @@ Effect classes describe the write surface **of the prescribed argv**:
   without invalidating the run (the strict profile invalidates on error
   findings instead — those runs are exit-1 failures outside this
   receipt). The profile definition document stays
-  `lekalo/validation-profile/v0.6.3` (configuration, not output).
+  `lekalo/validation-profile/v0.6.4` (configuration, not output).
   Invalid models exit 1 on stderr with the typed diagnostics; a strict
   authorization denial is exit 3 (`denied`) on stdout. A schema-valid
   validation failure is a semantic result, never a provider crash.
@@ -255,8 +255,8 @@ anonymization.
   (schema + golden + live binary + digest recomputation + live
   `validate`/`drift` receipts against their describing schemas, Ajv
   8.17.1).
-- Schemas: `contracts/provider-capabilities.schema.v0.6.3.json`
+- Schemas: `contracts/provider-capabilities.schema.v0.6.4.json`
   (closed, `additionalProperties:false`, per-operation const tuples
   and exact pin tuples),
-  `contracts/validation-report.schema.v0.6.3.json`, and
+  `contracts/validation-report.schema.v0.6.4.json`, and
   `contracts/generate-check-receipt.schema.v0.6.3.json`.

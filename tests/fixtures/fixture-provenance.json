@@ -70,6 +70,11 @@
       "origin": "synthetic"
     },
     {
+      "family": "coupling",
+      "origin": "synthetic",
+      "note": "Issue #77: planner copies and authored Taskhub/provider semantic reference projections, freshly pinned synthetic attachment/golden/negative vectors; source anchors and limitations in tests/fixtures/coupling/README.md."
+    },
+    {
       "family": "diagnostics",
       "origin": "synthetic"
     },

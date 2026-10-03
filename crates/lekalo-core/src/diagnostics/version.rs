@@ -11,10 +11,10 @@ use serde::Serialize;
 pub const SCHEMA_VERSION: &str = "lekalo/diagnostic/v0.2.16";
 
 /// The exact wire discriminator of the diagnostic registry contract.
-pub const REGISTRY_SCHEMA_VERSION: &str = "lekalo/diagnostic-registry/v0.6.3";
+pub const REGISTRY_SCHEMA_VERSION: &str = "lekalo/diagnostic-registry/v0.6.4";
 
 /// The embedded diagnostic registry identity.
-pub const REGISTRY_IDENTITY: &str = "dev.lekalo.diagnostic-registry@0.6.3";
+pub const REGISTRY_IDENTITY: &str = "dev.lekalo.diagnostic-registry@0.6.4";
 
 /// The current diagnostic registry version. The integrated chain is
 /// additive end to end: 1.14.0 (issue #29) -> 1.16.0 (issue #39, the
@@ -41,9 +41,10 @@ pub const REGISTRY_IDENTITY: &str = "dev.lekalo.diagnostic-registry@0.6.3";
 /// (the reserved `scenario.*` family LEK-SCN-001..011, additive at the
 /// same 0.4.0 product generation) -> 0.6.3 (issue #75, the active
 /// `context.*` family LEK-CONTEXT-001..008 of the context-budget
-/// report; the registry takes the product version of its commit per
-/// docs/versioning.md).
-pub const REGISTRY_VERSION: &str = "0.6.3";
+/// report) -> 0.6.4 (issue #77, the independent `coupling.*` family
+/// LEK-COUPLING-001..015; the registry takes the product version of
+/// its commit per docs/versioning.md).
+pub const REGISTRY_VERSION: &str = "0.6.4";
 
 /// The closed diagnostic schema version.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
