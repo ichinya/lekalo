@@ -46,6 +46,7 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-artifact-manifest-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-cache-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-doctor-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-ci-report-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-impact-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-context-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-semantic-diff-contracts.mjs
@@ -195,6 +196,60 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install --yes bubblewrap
       - run: cargo build --workspace --locked
+      - name: Run the CI report smoke and gate (issue #103)
+        # Dogfood the closed report surface on every OS: validate over a
+        # fixture with all four report formats, the blocked readiness
+        # gate, and the drift side-channel guarantee. The report bytes
+        # are uploaded with the job artifacts (below). The report
+        # directory is exported through the step env (never a plain
+        # shell variable) so the Node assertions always see it, and the
+        # upload names explicit finalized files guarded on existence.
+        timeout-minutes: 5
+        env:
+          REPORTS: ${{ runner.temp }}/lekalo-ci-reports
+        run: |
+          set -euo pipefail
+          mkdir -p "$REPORTS"
+          rm -rf target/ci-report-smoke
+          cp -r tests/fixtures/loader/valid-direct-visibility target/ci-report-smoke
+          cd target/ci-report-smoke
+          BIN=../../target/debug/lekalo
+          "$BIN" --version > /dev/null
+          # validate: the passing run + the four projections.
+          "$BIN" --json validate --report-file "$REPORTS/validate.json" --project . > /dev/null
+          "$BIN" --json validate --report-file "$REPORTS/validate.sarif" --report-format sarif --project . > /dev/null
+          "$BIN" --json validate --report-file "$REPORTS/validate.junit.xml" --report-format junit --project . > /dev/null
+          "$BIN" --json validate --report-file "$REPORTS/validate.md" --report-format md --project . > /dev/null
+          node -e "const r=require(process.env.REPORTS + '/validate.json'); if (r.schema_version !== 'lekalo/ci-report/v0.6.3') process.exit(1); if (r.evaluation.verdict !== 'ready') process.exit(1);"
+          # readiness --check: the blocked release gate is a nonzero exit
+          # with the typed unavailable envelope, and its report still lands.
+          set +e
+          "$BIN" --json readiness --phase release --check --report-file "$REPORTS/readiness.json" --project . > "$REPORTS/readiness-envelope.txt" 2>&1
+          code=$?
+          set -e
+          test "$code" -ne 0 || { echo 'blocked readiness --check must not exit 0'; exit 1; }
+          node -e "const r=require(process.env.REPORTS + '/readiness.json'); if (r.evaluation.verdict !== 'blocked' || r.evaluation.exitCode === 0) process.exit(1);"
+          # The canonical report identity and the exact digest spelling.
+          node -e "const r=require(process.env.REPORTS + '/validate.json'); const c=require('crypto'); const h=c.createHash('sha256').update(JSON.stringify(r)+'\\n').digest('hex'); if (!/^[0-9a-f]{64}$/.test(h)) process.exit(1);"
+          cd ../..
+          echo "REPORTS_DIR=$REPORTS" >> "$GITHUB_ENV"
+      - name: Upload the CI report artifacts (issue #103)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lekalo-ci-reports-${{ matrix.os }}-${{ github.run_attempt }}
+          # Explicit finalized filenames from the confined report
+          # directory: never a broad glob over the runner root, and a
+          # missing destination fails the upload instead of widening.
+          path: |
+            ${{ runner.temp }}/lekalo-ci-reports/validate.json
+            ${{ runner.temp }}/lekalo-ci-reports/validate.sarif
+            ${{ runner.temp }}/lekalo-ci-reports/validate.junit.xml
+            ${{ runner.temp }}/lekalo-ci-reports/validate.md
+            ${{ runner.temp }}/lekalo-ci-reports/readiness.json
+            ${{ runner.temp }}/lekalo-ci-reports/readiness-envelope.txt
+          if-no-files-found: error
+          retention-days: 7
       - name: Run the local run-history end-to-end gate (issue #121)
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules

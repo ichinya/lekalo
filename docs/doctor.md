@@ -33,6 +33,14 @@ the accepted read-only `generate --check`, and a missing cache home is
 reported without being created. Nothing spawns an adapter, repairs,
 installs, or updates.
 
+Issue #103: `readiness --check` is the CI gate. The informational
+default keeps the contract above — a produced report is `valid` (exit 0)
+whatever verdict it records — while `--check` maps a blocked required
+panel onto the classified unavailable envelope (exit 4,
+`ci.required-check-missing`, `lekalo readiness` only). The closed CI
+report projection of the panel is documented in
+[ci-reports.md](ci-reports.md).
+
 ## Checks
 
 Thirteen closed check ids form the full `doctor` panel; `status`

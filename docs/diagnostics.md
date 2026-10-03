@@ -18,7 +18,7 @@ refusals and findings of the PostgreSQL storage engine family:
 wire normalization, profile coherence, the version-matrix floor, DDL
 rendering, checked-mode introspection evidence, drift, the gated
 migration plan, capability mapping, and the conformance battery. The
-registry takes its reviewed successor instance 0.4.0 with the wire
+registry took its reviewed successor instance 0.4.0 (the active instance is now the 0.6.3 successor) with the wire
 shape frozen; the embedded validation profiles' registry pin advances
 with no content change, and the frozen 0.3.2 generation stays
 accepted.
@@ -52,7 +52,7 @@ the closed refusals of the storage-engine-profile and
 storage-introspection families (see
 [storage-engine-profile.md](storage-engine-profile.md) and
 [storage-introspection.md](storage-introspection.md)) — as the reviewed
-successor instance 0.4.0 (wire shape frozen, schema successor carries
+successor instance 0.4.0 — superseded by the active 0.6.3 instance — (wire shape frozen, schema successor carries
 only the new identity constants); the embedded validation profiles move
 with it, and new fixed detail tokens under the existing `LEK-STO-*`
 rules (the MySQL-family namespace vectors: `sequence-unsupported`,
@@ -162,11 +162,14 @@ the ambient locale.
 
 ## SARIF, adapters, and evidence
 
-SARIF 2.1.0 export, report files, and CI annotations belong to #103. The
-adapter process wire, handshake, and transport belong to #27; the
-executable reference adapter and conformance suite belong to #31; #11
-ships only the in-process, hermetic provider normalization. Durable
-evidence wrapping belongs to #22/#35/#103 and privacy enforcement to #119.
+SARIF 2.1.0 export, report files, and CI annotations belong to #103 and
+are delivered: every CI report projection (including SARIF with
+repository-relative safe paths under `%SRCROOT%`) renders from the
+closed report documented in [ci-reports.md](ci-reports.md). The adapter
+process wire, handshake, and transport belong to #27; the executable
+reference adapter and conformance suite belong to #31; #11 ships only
+the in-process, hermetic provider normalization. Durable evidence
+wrapping belongs to #22/#35/#103 and privacy enforcement to #119.
 
 ## Allocated codes
 

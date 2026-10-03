@@ -1,0 +1,26 @@
+{
+  "schema_version": "lekalo/ci-report/v0.6.3",
+  "identity": "dev.lekalo.ci-report@0.6.3",
+  "producer": { "id": "lekalo", "version": "0.6.3" },
+  "invocation": { "command": "validate", "mode": "default", "targets": [], "modules": [], "locked": false },
+  "provenance": {
+    "git": {
+      "commit": { "state": "unknown", "reason": "not-a-repository" },
+      "dirty": { "state": "unknown", "reason": "not-a-repository" },
+      "workingSetDigest": { "state": "unknown", "reason": "not-a-repository" }
+    },
+    "model": { "version": { "state": "unknown", "reason": "absent" }, "digest": { "state": "unknown", "reason": "absent" } },
+    "ir": { "version": { "state": "unknown", "reason": "absent" }, "digest": { "state": "unknown", "reason": "absent" } },
+    "lock": { "version": { "state": "unknown", "reason": "absent" }, "digest": { "state": "unknown", "reason": "absent" } },
+    "profiles": [],
+    "adapters": []
+  },
+  "commandResult": { "status": "valid", "exitCode": 0 },
+  "evaluation": { "status": "valid", "exitCode": 0, "verdict": "ready", "coverage": "complete", "complete": true },
+  "checks": [],
+  "suites": [],
+  "diagnosticIndexes": [],
+  "diagnostics": [],
+  "publication": { "classification": "ci-derived", "decision": "allowed" },
+  "telemetry": { "host": "runner-1", "cwd": "C:\\repo" }
+}

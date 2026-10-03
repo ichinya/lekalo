@@ -46,6 +46,10 @@
       "origin": "synthetic"
     },
     {
+      "family": "ci-report",
+      "origin": "synthetic"
+    },
+    {
       "family": "classification",
       "origin": "synthetic"
     },

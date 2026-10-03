@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="lekalo ci report" tests="7" failures="0" errors="0" skipped="5">
+<testsuite name="lekalo.verify" tests="6" failures="0" errors="0" skipped="4">
+  <testcase name="artifact.drift" classname="lekalo.verify">
+</testcase>
+  <testcase name="bindings.registry" classname="lekalo.verify">
+    <skipped message="unavailable"/>
+</testcase>
+  <testcase name="model.validation" classname="lekalo.verify">
+</testcase>
+  <testcase name="native.gates" classname="lekalo.verify">
+    <skipped message="unsupported"/>
+</testcase>
+  <testcase name="scenarios.portable" classname="lekalo.verify">
+    <skipped message="unavailable"/>
+</testcase>
+  <testcase name="trace.summary" classname="lekalo.verify">
+    <skipped message="unavailable"/>
+</testcase>
+</testsuite>
+<testsuite name="scenarios.execution" tests="1" failures="0" errors="0" skipped="1">
+  <testcase name="scenarios.execution/rollup" classname="lekalo.verify.scenarios.execution">
+    <skipped message="unsupported"/>
+</testcase>
+</testsuite>
+</testsuites>

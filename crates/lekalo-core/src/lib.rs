@@ -7,6 +7,7 @@ pub mod adapter_package;
 pub mod artifacts;
 pub mod authorization;
 pub mod cache;
+pub mod ci_report;
 pub mod classification;
 pub mod client_sdk;
 pub mod context;
