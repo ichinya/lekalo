@@ -34,6 +34,7 @@ lekalo update --apply sha256:PLAN_ID [--offline] [--project DIR]
 lekalo migrate --to model/TARGET [--dry-run] [--project DIR]
 lekalo migrate --rollback PLAN_ID [--project DIR]
 lekalo compatibility
+lekalo provider describe
 lekalo validate [--project DIR] [--module MODULE] [--strict]
 lekalo expressions validate PATH [--builtin-support FILE]
 lekalo expressions eval PATH --vectors FILE [--builtin-support FILE]
@@ -86,7 +87,7 @@ lekalo readiness --phase model|implement|generate|verify|release [--project DIR]
 ```
 
 `init`, `init --adopt`, `module new`, `--version`, `load`, `lock`, `update`, `migrate`, `compatibility`,
-`validate`, `graph`, `effects`, `generate`, `inspect`, `impact`, `context`, `cache`,
+`provider describe`, `validate`, `graph`, `effects`, `generate`, `inspect`, `impact`, `context`, `cache`,
 `doctor`, `status`, `readiness`, and `contract` are implemented; none remains a recognized stub. `SYMBOL` is an
 opaque string at this layer, and `TOKENS` is an unsigned integer. Semantic
 ID rules, validation, and graph construction bind every implemented
@@ -450,6 +451,29 @@ The corresponding human lines are
 `unsupported info [LEK-DIAG-001] core.capability-unavailable: The requested
 capability is not implemented yet.`, and `lekalo 0.2.16`. Human and JSON
 renderers consume the same `DomainResult`.
+
+## Provider (issue #34)
+
+`lekalo provider describe` emits the workflow-provider discovery
+manifest for external `/aif-*` lifecycle consumers. It works outside
+any repository, reads nothing, launches nothing, and writes nothing;
+it supports no `init`, `install`, `update`, `sync`, or cleanup
+operation. Exit 0 on stdout in both projections; an unknown
+`provider` subcommand is the stable usage failure (exit 1, stderr).
+
+```sh
+lekalo provider describe
+# provider dev.lekalo.workflow-provider@0.6.3 product 0.6.3 operations \
+#   context,doctor,drift,generate,impact,readiness,status,trace.export,validate,verify
+```
+
+The JSON receipt is `{"status":"valid","manifest":{...}}` with the
+closed operation inventory (effect classes, pinned upstream output
+schema identities, prerequisites), the workflow bounds, and the
+sha256 manifest digest over the canonical JSON without the digest
+field. The normative contract is
+[docs/provider-contract.md](provider-contract.md); the closed schema
+is `contracts/provider-capabilities.schema.v0.6.3.json`.
 
 ## Graph
 

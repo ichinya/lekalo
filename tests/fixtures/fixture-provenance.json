@@ -193,6 +193,10 @@
       "note": "synthetic leak markers for the privacy scanner gate; no real values"
     },
     {
+      "family": "provider",
+      "origin": "synthetic"
+    },
+    {
       "family": "query-model",
       "origin": "synthetic"
     },

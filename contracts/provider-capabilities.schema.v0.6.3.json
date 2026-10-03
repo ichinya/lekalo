@@ -1,0 +1,544 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/provider-capabilities.schema.v0.6.3.json",
+  "title": "Lekalo workflow-provider capabilities manifest",
+  "description": "Closed contract of the issue #34 AIFHub-consumable discovery handshake emitted by `lekalo provider describe --json`: one `status: valid` receipt whose `manifest` object advertises the workflow-provider contract identity, the exact product version, the pinned upstream output contract identities, the closed operation vocabulary, and the workflow bounds. The manifest is deterministic metadata of the producing binary: no host identity, no timestamps, no paths, and no lifecycle operation (`init`, `install`, `update`, `sync`, `cleanup`, `migrate`) is ever advertised. Detection is the manifest plus the installed-tool check the consumer performs; a supported operation never implies a configured project or target. Fix round 1: the operation vocabulary is closed with per-operation const objects (id, effect, output schema, prerequisites all pinned), the schema pins are an exact sorted tuple, and digest-embedded mutations of the inventory cannot validate. The contract version is the product version of its implementation commit per docs/versioning.md; the upstream pins keep their own independent family versions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status",
+    "manifest"
+  ],
+  "properties": {
+    "status": {
+      "description": "The single valid status of the discovery receipt. Discovery itself never fails closed on a missing project: it has none.",
+      "const": "valid"
+    },
+    "manifest": { "$ref": "#/$defs/manifest" }
+  },
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "schemaDiscriminator": {
+      "description": "The exact `lekalo/<family>/v<version>` wire discriminator of one upstream contract family.",
+      "type": "string",
+      "pattern": "^lekalo/[a-z][a-z0-9-]*/v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "identity": {
+      "description": "The exact `dev.lekalo.<family>@<version>` contract identity.",
+      "type": "string",
+      "pattern": "^dev\\.lekalo\\.[a-z][a-z0-9-]*@(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "operationId": {
+      "description": "The closed operation vocabulary. Detection is not an operation.",
+      "enum": [
+        "context",
+        "doctor",
+        "drift",
+        "generate",
+        "impact",
+        "readiness",
+        "status",
+        "trace.export",
+        "validate",
+        "verify"
+      ]
+    },
+    "effectClass": {
+      "description": "read-only operations never write under the prescribed provider argv; generated-artifacts (only the mutating generate form) writes the adapter-declared managed write scopes verified against the ownership plan plus .lekalo/** metadata. The protected homes (openspec/**, lekalo/**, lekalo.lock, .lekalo/{ir,cache,import,privacy,consumer}/**) are refused as target.protected-path (exit 3).",
+      "enum": ["read-only", "generated-artifacts"]
+    },
+    "contractPin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion"],
+      "properties": {
+        "schemaVersion": { "$ref": "#/$defs/schemaDiscriminator" },
+        "identity": { "$ref": "#/$defs/identity" }
+      }
+    },
+    "operation": {
+      "description": "One advertised operation. The closed vocabulary pins every field per operation: a consumer can switch on the exact tuple, and a digest-valid mutated receipt (swapped effect, wrong schema, unknown id) fails this schema.",
+      "oneOf": [
+        { "$ref": "#/$defs/opContext" },
+        { "$ref": "#/$defs/opDoctor" },
+        { "$ref": "#/$defs/opDrift" },
+        { "$ref": "#/$defs/opGenerate" },
+        { "$ref": "#/$defs/opImpact" },
+        { "$ref": "#/$defs/opReadiness" },
+        { "$ref": "#/$defs/opStatus" },
+        { "$ref": "#/$defs/opTraceExport" },
+        { "$ref": "#/$defs/opValidate" },
+        { "$ref": "#/$defs/opVerify" }
+      ]
+    },
+    "opContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "effect",
+        "outputSchema",
+        "requiresProject",
+        "requiresAdapter"
+      ],
+      "properties": {
+        "id": {
+          "const": "context"
+        },
+        "effect": {
+          "const": "read-only"
+        },
+        "outputSchema": {
+          "const": "lekalo/context/v0.2.16"
+        },
+        "requiresProject": {
+          "const": true
+        },
+        "requiresAdapter": {
+          "const": false
+        }
+      }
+    },
+    "opDoctor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "effect",
+        "outputSchema",
+        "requiresProject",
+        "requiresAdapter"
+      ],
+      "properties": {
+        "id": {
+          "const": "doctor"
+        },
+        "effect": {
+          "const": "read-only"
+        },
+        "outputSchema": {
+          "const": "lekalo/doctor/v0.3.2"
+        },
+        "requiresProject": {
+          "const": true
+        },
+        "requiresAdapter": {
+          "const": false
+        }
+      }
+    },
+    "opDrift": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "effect",
+        "outputSchema",
+        "requiresProject",
+        "requiresAdapter"
+      ],
+      "properties": {
+        "id": {
+          "const": "drift"
+        },
+        "effect": {
+          "const": "read-only"
+        },
+        "outputSchema": {
+          "const": "lekalo/generate-check/v0.6.3"
+        },
+        "requiresProject": {
+          "const": true
+        },
+        "requiresAdapter": {
+          "const": false
+        }
+      }
+    },
+    "opGenerate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "effect",
+        "outputSchema",
+        "requiresProject",
+        "requiresAdapter"
+      ],
+      "properties": {
+        "id": {
+          "const": "generate"
+        },
+        "effect": {
+          "const": "generated-artifacts"
+        },
+        "outputSchema": {
+          "const": "lekalo/orchestration/v0.2.16"
+        },
+        "requiresProject": {
+          "const": true
+        },
+        "requiresAdapter": {
+          "const": true
+        }
+      }
+    },
+    "opImpact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "effect",
+        "outputSchema",
+        "requiresProject",
+        "requiresAdapter"
+      ],
+      "properties": {
+        "id": {
+          "const": "impact"
+        },
+        "effect": {
+          "const": "read-only"
+        },
+        "outputSchema": {
+          "const": "lekalo/impact/v0.2.16"
+        },
+        "requiresProject": {
+          "const": true
+        },
+        "requiresAdapter": {
+          "const": false
+        }
+      }
+    },
+    "opReadiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "effect",
+        "outputSchema",
+        "requiresProject",
+        "requiresAdapter"
+      ],
+      "properties": {
+        "id": {
+          "const": "readiness"
+        },
+        "effect": {
+          "const": "read-only"
+        },
+        "outputSchema": {
+          "const": "lekalo/doctor/v0.3.2"
+        },
+        "requiresProject": {
+          "const": true
+        },
+        "requiresAdapter": {
+          "const": false
+        }
+      }
+    },
+    "opStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "effect",
+        "outputSchema",
+        "requiresProject",
+        "requiresAdapter"
+      ],
+      "properties": {
+        "id": {
+          "const": "status"
+        },
+        "effect": {
+          "const": "read-only"
+        },
+        "outputSchema": {
+          "const": "lekalo/doctor/v0.3.2"
+        },
+        "requiresProject": {
+          "const": true
+        },
+        "requiresAdapter": {
+          "const": false
+        }
+      }
+    },
+    "opTraceExport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "effect",
+        "outputSchema",
+        "requiresProject",
+        "requiresAdapter"
+      ],
+      "properties": {
+        "id": {
+          "const": "trace.export"
+        },
+        "effect": {
+          "const": "read-only"
+        },
+        "outputSchema": {
+          "const": "lekalo/trace-manifest/v0.2.16"
+        },
+        "requiresProject": {
+          "const": false
+        },
+        "requiresAdapter": {
+          "const": false
+        }
+      }
+    },
+    "opValidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "effect",
+        "outputSchema",
+        "requiresProject",
+        "requiresAdapter"
+      ],
+      "properties": {
+        "id": {
+          "const": "validate"
+        },
+        "effect": {
+          "const": "read-only"
+        },
+        "outputSchema": {
+          "const": "lekalo/validation-report/v0.6.3"
+        },
+        "requiresProject": {
+          "const": true
+        },
+        "requiresAdapter": {
+          "const": false
+        }
+      }
+    },
+    "opVerify": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "effect",
+        "outputSchema",
+        "requiresProject",
+        "requiresAdapter"
+      ],
+      "properties": {
+        "id": {
+          "const": "verify"
+        },
+        "effect": {
+          "const": "read-only"
+        },
+        "outputSchema": {
+          "const": "lekalo/orchestration/v0.2.16"
+        },
+        "requiresProject": {
+          "const": true
+        },
+        "requiresAdapter": {
+          "const": false
+        }
+      }
+    },
+    "bounds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recommendedContextBudgetTokens",
+        "maxContextBudgetTokens",
+        "maxExportBytes"
+      ],
+      "properties": {
+        "recommendedContextBudgetTokens": {
+          "description": "The recommended `lekalo context` budget inside a workflow run; strictly below the hard bound.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 999999
+        },
+        "maxContextBudgetTokens": {
+          "description": "The hard core budget bound (context.MAX_BUDGET_TOKENS).",
+          "const": 1000000
+        },
+        "maxExportBytes": {
+          "description": "The exact maximum canonical impact/trace export bytes.",
+          "const": 33554432
+        }
+      }
+    },
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "identity",
+        "productVersion",
+        "discoveryCommand",
+        "targetProtocolIdentity",
+        "schemaPins",
+        "operations",
+        "bounds",
+        "manifestDigest"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "description": "The exact wire discriminator of this workflow-provider contract.",
+          "const": "lekalo/workflow-provider/v0.6.3"
+        },
+        "identity": {
+          "description": "The exact contract identity of this workflow-provider contract.",
+          "const": "dev.lekalo.workflow-provider@0.6.3"
+        },
+        "productVersion": {
+          "description": "The exact product version this contract was implemented at (the implementation commit's product version; may trail a later binary's --version, which consumers must not negotiate on).",
+          "const": "0.6.3"
+        },
+        "discoveryCommand": {
+          "description": "The discovery command in presentation form.",
+          "const": "lekalo provider describe"
+        },
+        "targetProtocolIdentity": {
+          "description": "The exact target-protocol identity: a supported workflow operation never implies a configured target, and the mutating generation form additionally requires an installed adapter program.",
+          "const": "dev.lekalo.target-protocol@0.3.2"
+        },
+        "schemaPins": {
+          "description": "The pinned output contract identities as an exact sorted tuple: the seven wire-discriminated families plus the two describing schemas of this contract series (validation-report, generate-check).",
+          "type": "array",
+          "minItems": 9,
+          "maxItems": 9,
+          "items": { "$ref": "#/$defs/contractPin" },
+          "prefixItems": [
+            { "$ref": "#/$defs/pinContext" },
+            { "$ref": "#/$defs/pinDiagnostic" },
+            { "$ref": "#/$defs/pinDoctor" },
+            { "$ref": "#/$defs/pinGenerateCheck" },
+            { "$ref": "#/$defs/pinImpact" },
+            { "$ref": "#/$defs/pinOrchestration" },
+            { "$ref": "#/$defs/pinTrace" },
+            { "$ref": "#/$defs/pinValidationProfile" },
+            { "$ref": "#/$defs/pinValidationReport" }
+          ]
+        },
+        "operations": {
+          "description": "The advertised operations in canonical (sorted) order; exactly one per operation id at its canonical position.",
+          "type": "array",
+          "minItems": 10,
+          "maxItems": 10,
+          "prefixItems": [
+            { "$ref": "#/$defs/opContext" },
+            { "$ref": "#/$defs/opDoctor" },
+            { "$ref": "#/$defs/opDrift" },
+            { "$ref": "#/$defs/opGenerate" },
+            { "$ref": "#/$defs/opImpact" },
+            { "$ref": "#/$defs/opReadiness" },
+            { "$ref": "#/$defs/opStatus" },
+            { "$ref": "#/$defs/opTraceExport" },
+            { "$ref": "#/$defs/opValidate" },
+            { "$ref": "#/$defs/opVerify" }
+          ],
+          "items": false
+        },
+        "bounds": { "$ref": "#/$defs/bounds" },
+        "manifestDigest": {
+          "description": "sha256 over the canonical JSON (sorted keys, no whitespace) of the manifest with this field removed. Integrity metadata, not a signature.",
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "pinContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "identity"],
+      "properties": {
+        "schemaVersion": { "const": "lekalo/context/v0.2.16" },
+        "identity": { "const": "dev.lekalo.context@0.2.16" }
+      }
+    },
+    "pinDiagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion"],
+      "properties": {
+        "schemaVersion": { "const": "lekalo/diagnostic/v0.2.16" }
+      }
+    },
+    "pinDoctor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "identity"],
+      "properties": {
+        "schemaVersion": { "const": "lekalo/doctor/v0.3.2" },
+        "identity": { "const": "dev.lekalo.doctor@0.3.2" }
+      }
+    },
+    "pinGenerateCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion"],
+      "properties": {
+        "schemaVersion": { "const": "lekalo/generate-check/v0.6.3" }
+      }
+    },
+    "pinImpact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "identity"],
+      "properties": {
+        "schemaVersion": { "const": "lekalo/impact/v0.2.16" },
+        "identity": { "const": "dev.lekalo.impact@0.2.16" }
+      }
+    },
+    "pinOrchestration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "identity"],
+      "properties": {
+        "schemaVersion": { "const": "lekalo/orchestration/v0.2.16" },
+        "identity": { "const": "dev.lekalo.orchestration-report@0.2.16" }
+      }
+    },
+    "pinTrace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "identity"],
+      "properties": {
+        "schemaVersion": { "const": "lekalo/trace-manifest/v0.2.16" },
+        "identity": { "const": "dev.lekalo.trace-manifest@0.2.16" }
+      }
+    },
+    "pinValidationProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "identity"],
+      "properties": {
+        "schemaVersion": { "const": "lekalo/validation-profile/v0.4.0" },
+        "identity": { "const": "dev.lekalo.validation-profile@0.4.0" }
+      }
+    },
+    "pinValidationReport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion"],
+      "properties": {
+        "schemaVersion": { "const": "lekalo/validation-report/v0.6.3" }
+      }
+    }
+  }
+}

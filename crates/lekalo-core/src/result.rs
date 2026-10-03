@@ -156,8 +156,10 @@ pub enum SuccessPayload {
 /// `diagnostics`, then the derived `reasonCodes`.
 #[derive(Clone, Debug, PartialEq)]
 pub enum DomainResult {
-    /// A successful result; may carry only info/warning diagnostics (v1
-    /// producers attach none) and omits the fields while empty.
+    /// A successful result; may carry the non-invalidating diagnostics
+    /// the run recorded (the `validation` payload can include
+    /// registered-`error` classification rows under the default profile;
+    /// see `DomainResult::validation`) and omits the fields while empty.
     Valid {
         payload: SuccessPayload,
         diagnostics: Vec<crate::diagnostics::Diagnostic>,
@@ -221,7 +223,10 @@ impl DomainResult {
     }
 
     /// A validation success with exact compact envelope bytes and the
-    /// non-blocking diagnostics the profile produced (warning/info only).
+    /// non-invalidating diagnostics the run recorded. Under the default
+    /// profile that includes the classification-review rows, which keep
+    /// their registered `error` severity without invalidating the run;
+    /// under the strict profile an error finding invalidates instead.
     pub fn validation(
         json: String,
         human: String,

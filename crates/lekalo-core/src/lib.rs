@@ -38,6 +38,7 @@ pub mod php_operations;
 pub mod php_routes;
 pub mod privacy;
 pub mod project_fs;
+pub mod provider;
 pub mod query_model;
 pub mod reference_evaluation;
 pub mod requirements;
