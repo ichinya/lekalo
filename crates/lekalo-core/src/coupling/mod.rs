@@ -943,12 +943,21 @@ pub fn analyze(
         State::Unknown
     };
     let conflicts = if matches!(request.selection, Selection::Changed(_)) {
-        let operations = roots
+        let operations = rows
             .iter()
+            .flat_map(|row| row.impact.ids())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
             .filter_map(|s| crate::effects::OperationId::from_qualified(s))
             .filter(|op| effects.knows_operation(op))
             .collect::<Vec<_>>();
-        if operations.is_empty() || !changes_complete {
+        if operations.is_empty()
+            || !changes_complete
+            || rows
+                .iter()
+                .filter(|row| row.measurement_basis != "aggregate-declared")
+                .any(|row| row.metrics["semanticSymbolsAffected"].value().is_none())
+        {
             State::Unknown
         } else {
             let report =

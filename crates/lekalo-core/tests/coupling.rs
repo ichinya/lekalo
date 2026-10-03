@@ -194,6 +194,16 @@ fn closed_baselines_reject_forged_scalars_nulls_and_duplicate_keys() {
     assert!(coupling::Profile::parse(br#"{"schemaVersion":"x","schemaVersion":"y"}"#).is_err());
     assert!(coupling::wire::decode::<State<u64>>(br#"{"state":"unknown","value":null}"#).is_err());
     assert!(coupling::wire::decode::<State<u64>>(br#"{"state":"unknown","value":3}"#).is_err());
+    assert!(coupling::wire::decode::<State<u64>>(br#"{"state":"known","value":null}"#).is_err());
+    assert_eq!(
+        coupling::wire::decode::<serde_json::Value>(b"null").unwrap(),
+        serde_json::Value::Null
+    );
+    let mut missing = report(&planner(), "planner.task");
+    missing.subjects[0]
+        .metrics
+        .remove("semanticSymbolsAffected");
+    assert!(coupling::compare::parse_baseline(&serde_json::to_vec(&missing).unwrap()).is_err());
 }
 
 #[test]
@@ -230,6 +240,28 @@ fn context_plan_keeps_required_facts_and_capsule_simulation() {
     assert_eq!(budget["identity"], "dev.lekalo.context-budget-report@0.6.3");
     assert!(!r.planning.public_contracts.is_empty());
     assert!(!r.planning.resources.is_empty());
+}
+
+#[test]
+fn changed_entity_maps_affected_operations_to_the_effects_owner() {
+    let changed = coupling::ChangeInput::parse(include_bytes!(
+        "../../../tests/fixtures/coupling/golden/planner.change-input.json"
+    ))
+    .unwrap();
+    let request = Request {
+        selection: Selection::Changed(changed),
+        ..request("planner.task")
+    };
+    let r = coupling::analyze(&request, &Profile::default(), &planner(), None).unwrap();
+    let conflicts: serde_json::Value =
+        serde_json::from_str(r.planning.runtime_conflicts.value().unwrap()).unwrap();
+    assert_eq!(conflicts["coverage"], "declared-only");
+    assert!(conflicts["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|i| i["classification"] == "definite-write-write"));
+    assert!(!r.planning.review_overlap.is_empty());
 }
 
 #[test]

@@ -37,8 +37,14 @@ const reportOf=o=>o.document.coupling??o.document.payload?.coupling;
 const row=(r,id)=>{const s=r.subjects.find(s=>s.subject===id);assert.ok(s,id);return s;};
 function files(dir,prefix=''){return readdirSync(dir).sort().flatMap(name=>{const p=join(dir,name),relative=prefix+name;return statSync(p).isDirectory()?files(p,relative+'/'):[[relative,sha(readFileSync(p))]];});}
 const scratch=mkdtempSync(join(tmpdir(),'lekalo-coupling-gate-'));
+const checkoutBefore=files(join(root,fixture));
 const temp=(name,value)=>{const p=join(scratch,name);writeFileSync(p,typeof value==='string'?value:JSON.stringify(value));return p;};
 try {
+ for(const directory of ['tests/fixtures/coupling/planner','crates/lekalo-core/tests/fixtures/coupling/planner']) {
+  assert.deepEqual(files(join(root,directory,'lekalo')),files(join(root,'tests/fixtures/context-budget/planner/lekalo')));
+  assert.ok(!existsSync(join(root,directory,'.lekalo/cache/cache.sqlite')),'no copied runtime cache in coupling corpus');
+ }
+ checked.push('accepted-planner-byte-parity');
  const registry=read('contracts/diagnostic-registry.v0.6.4.json');
  const entries=registry.entries.filter(e=>e.id.startsWith('coupling.'));assert.equal(entries.length,15);
  assert.deepEqual(entries.map(e=>e.code).sort(),Array.from({length:15},(_,i)=>`LEK-COUPLING-${String(i+1).padStart(3,'0')}`));
@@ -54,7 +60,10 @@ try {
  const args=['coupling','--symbol','planner.task','--project',`${fixture}/planner`];
  const first=run(args),second=run(args),report=reportOf(first);assert.equal(first.stdout,second.stdout);
  assert.deepEqual(report,read(`${fixture}/golden/planner.report.json`));
- const graph=run(['graph','export','--project',`${fixture}/planner`]).document.graph;
+ // The graph command has its own cache policy. Run that independent oracle
+ // only against a temporary copy; the coupling corpus remains immutable.
+ cpSync(join(root,fixture,'planner/lekalo'),join(scratch,'graph-oracle/lekalo'),{recursive:true});
+ const graph=run(['graph','export','--project','graph-oracle'],{cwd:scratch}).document.graph;
  const roles=new Set(['entity-field','value-object-field','event-payload','command-effect','effect-entity','command-input','query-returns','query-reads','endpoint-invokes','effect-emits']);
  const edges=graph.edges.filter(e=>roles.has(e.provenance.referenceRole));
  const rootId='entity:planner.task',s=row(report,rootId);
@@ -108,6 +117,8 @@ try {
  assert.equal(comparison.regressions,0);assert.equal(comparison.rows.find(r=>r.subject===rootId&&r.metric==='affectedTests').state,'incomparable');
  run([...args,'--baseline',join(root,fixture,'invalid/forged-count.report.json')],{exit:1});
  const missingWitness=structuredClone(report);missingWitness.witnesses=[];run([...args,'--baseline',temp('bad-witness.json',missingWitness)],{exit:1});
+ const missingMetric=structuredClone(report);delete missingMetric.subjects[0].metrics.semanticSymbolsAffected;run([...args,'--baseline',temp('missing-metric.json',missingMetric)],{exit:1});checked.push('missing-metric-refuses-before-replay');
+ const impossible=structuredClone(report);row(impossible,rootId).metrics.sharedAbstractionRadius={state:'known',value:1};run([...args,'--baseline',temp('non-type-radius.json',impossible)],{exit:1});
  const extra=structuredClone(report);extra.subjects[0].metrics.extra={state:'known',value:1};assert.equal(schemas.get('report')(extra),false);run([...args,'--baseline',temp('extra-report.json',extra)],{exit:1});
  const badState=structuredClone(report);badState.subjects[0].metrics.affectedTests={state:'unknown',value:0};assert.equal(schemas.get('report')(badState),false);run([...args,'--baseline',temp('bad-state.json',badState)],{exit:1});
  const profile=structuredClone(report.profile);profile.profileId='strict';profile.gate={mode:'strict',failOn:['baseline-regression'],baselineReadyRef:{state:'known',value:sha(baseBytes)}};profile.project.regressionLimits=[{metric:'fanInSymbols',absoluteIncrease:0,relativeIncrease:{state:'unknown'}}];
@@ -125,6 +136,7 @@ try {
  const duplicated=JSON.stringify(report.profile).replace('"profileId":"advisory"','"profileId":"advisory","profileId":"advisory"');run([...args,'--coupling-profile','advisory','--profiles',temp('duplicate.json',duplicated)],{exit:1});
  const future=structuredClone(report.profile);future.schemaVersion='lekalo/coupling-profile/v99.0.0';run([...args,'--coupling-profile','advisory','--profiles',temp('future.json',future)],{exit:5});
  const changed=run(['coupling','--changed-input',join(root,fixture,'golden/planner.change-input.json'),'--project',`${fixture}/planner`]);assert.equal(reportOf(changed).scope.kind,'changed');
+ assert.equal(reportOf(changed).planning.runtimeConflicts.state,'known');assert.equal(JSON.parse(reportOf(changed).planning.runtimeConflicts.value).coverage,'declared-only');checked.push('affected-operations-use-effects-owner');
  run(['coupling','--changed-input',join(root,fixture,'invalid/traversal.change-input.json'),'--project',`${fixture}/planner`],{exit:1});
  checked.push('duplicate-keys-fail','unsupported-version','typed-change-input','closed-schemas');
  cpSync(join(root,fixture,'planner'),join(scratch,'formatting'),{recursive:true});
@@ -141,6 +153,7 @@ try {
  process.stdout.write(JSON.stringify({ok:true,gate:'coupling-contracts',ajv:'8.17.1',schemas:5,checks:checked.length,checked})+'\n');
 }catch(error){process.stderr.write(JSON.stringify({ok:false,gate:'coupling-contracts',reason:'assertion',detail:error.message})+'\n');process.exitCode=1;}
 finally {
+ assert.deepEqual(files(join(root,fixture)),checkoutBefore,'the live gate never changes corpus bytes');
  const target=realpathSync.native(scratch),parent=realpathSync.native(tmpdir());
  assert.equal(dirname(target),parent);assert.ok(basename(target).startsWith('lekalo-coupling-gate-'));
  rmSync(target,{recursive:true,force:true});

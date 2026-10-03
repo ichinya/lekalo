@@ -63,6 +63,15 @@ fn failure(set: lekalo_core::diagnostics::DiagnosticSet) -> DomainResult {
         DomainResult::invalid(set)
     }
 }
+fn metric_text(value: &coupling::wire::State<u64>) -> String {
+    use coupling::wire::State;
+    match value {
+        State::Known { value } => value.to_string(),
+        State::Unknown => "unknown".into(),
+        State::Withheld => "withheld".into(),
+        State::Unsupported => "unsupported".into(),
+    }
+}
 pub fn run(args: CouplingArgs) -> DomainResult {
     match execute(args) {
         Ok(result) => result,
@@ -184,11 +193,11 @@ fn execute(args: CouplingArgs) -> Result<DomainResult, lekalo_core::diagnostics:
             .subjects
             .iter()
             .map(|s| format!(
-                "{}: fan-in {:?}, fan-out {:?}, public radius {:?}",
+                "{}: fan-in {}, fan-out {}, public radius {}",
                 s.subject,
-                s.metrics["fanInSymbols"].value(),
-                s.metrics["fanOutSymbols"].value(),
-                s.metrics["publicContractsAffected"].value()
+                metric_text(&s.metrics["fanInSymbols"]),
+                metric_text(&s.metrics["fanOutSymbols"]),
+                metric_text(&s.metrics["publicContractsAffected"])
             ))
             .collect::<Vec<_>>()
             .join("\n")

@@ -326,7 +326,12 @@ impl<'de> Deserialize<'de> for Unique {
         impl<'de> serde::de::Visitor<'de> for V {
             type Value = Unique;
             fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                f.write_str("non-null unique-key JSON")
+                f.write_str("unique-key JSON")
+            }
+            fn visit_unit<E: serde::de::Error>(self) -> Result<Unique, E> {
+                // Existing attachment owners may use a typed null literal.
+                // Closed coupling structures and State<T> reject null values.
+                Ok(Unique(serde_json::Value::Null))
             }
             fn visit_bool<E: serde::de::Error>(self, v: bool) -> Result<Unique, E> {
                 Ok(Unique(v.into()))

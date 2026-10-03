@@ -72,6 +72,17 @@ pub fn validate(r: &Report) -> Result<(), DiagnosticSet> {
     {
         return Err(bad());
     }
+    // Validate the closed metric vocabulary before any indexing, including
+    // aggregate replay which reads metrics from other rows.
+    if r.subjects.iter().any(|s| {
+        s.metrics.len() != wire::METRICS.len()
+            || wire::METRICS.iter().any(|m| !s.metrics.contains_key(*m))
+            || s.metrics
+                .values()
+                .any(|v| v.value().is_some_and(|n| *n > 9_007_199_254_740_991))
+    }) {
+        return Err(bad());
+    }
     let pin = &r.provenance;
     let projection = super::projection::Projection::from_snapshot(&r.projection)?;
     if pin.projection_digest != wire::digest(&r.projection) {
@@ -198,6 +209,12 @@ pub fn validate(r: &Report) -> Result<(), DiagnosticSet> {
             return Err(bad());
         }
         let root = s.subject.split('#').next().unwrap_or_default();
+        if s.measurement_basis != "aggregate-declared"
+            && !root.starts_with("type:")
+            && !count_matches(&s.metrics["sharedAbstractionRadius"], 0)
+        {
+            return Err(bad());
+        }
         if s.measurement_basis == "exact-declared" {
             let incoming = projection
                 .incoming
