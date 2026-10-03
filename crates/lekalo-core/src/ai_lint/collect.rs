@@ -155,7 +155,10 @@ pub fn request(
     let mut bindings = Vec::new();
     if let Some(o) = observed {
         for r in &o.symbols {
-            if r.status == BindingStatus::Inferred
+            if !scope
+                .iter()
+                .any(|selected| selected == &r.id || r.id.starts_with(&format!("{selected}.")))
+                || r.status == BindingStatus::Inferred
                 || r.state != BindingState::Current
                 || !matches!(r.kind, SymbolKind::Command | SymbolKind::Entity)
             {

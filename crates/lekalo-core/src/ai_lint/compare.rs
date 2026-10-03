@@ -325,9 +325,7 @@ pub fn validate_comparison(c: &Comparison) -> Result<(), DomainResult> {
                 return Err(bad());
             }
         }
-        if keys.len() != super::RULES.len() * 5
-            || c.regression != State::Known(c.deltas.iter().any(|d| d.raw > 0))
-        {
+        if keys.len() != super::RULES.len() * 5 || c.regression != State::Known(regressed(c)) {
             return Err(bad());
         }
     } else if !c.depth_deltas.is_empty()

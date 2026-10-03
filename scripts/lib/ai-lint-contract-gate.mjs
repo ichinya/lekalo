@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
-import { readFileSync, writeFileSync, mkdtempSync, cpSync, mkdirSync, rmSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, cpSync, mkdirSync, rmSync, existsSync, unlinkSync } from 'node:fs';
 import { resolve, join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -84,7 +84,8 @@ export function attachments(env) {
   const transition={attachmentRevision:'0.2.16',identity:'dev.lekalo.invariant-transition@0.2.16',schemaVersion:'lekalo/invariant-transition/v0.2.16',projectId:'planner',modelRef:{digest:env.pins.model.value,modelVersion:'0.2.16'},irRef:{digest:env.pins.ir.value,identity:'dev.lekalo.ir@0.2.16'},stateSpaces:[{stateSpaceId:'planner.task',entity:'planner.task',cyclePolicy:'allow',deadPolicy:'allow',states:[{stateId:'backlog',initial:true,terminal:true}]}],invariants:[],transitions:[],verificationMappings:[],propertyHints:[]};
   const trace=read('tests/fixtures/trace/full.trace.json');trace.modelRef.digest=env.pins.model.value;trace.irRef={schemaVersion:'0.2.16',digest:env.pins.ir.value};trace.sourceRevision='a'.repeat(40);
   if(!existsSync(join(env.project,'lekalo.lock'))) {const locked=raw(env.project,['lock']);assert.equal(locked.child.status,0,JSON.stringify(locked.envelope));}
-  const manifest={schema_version:'lekalo/artifact-manifest/v0.2.16',identity:'dev.lekalo.artifact-manifest@0.2.16',project_ref:'planner',lock_ref:{schema_version:'lekalo/lock/v0.3.2',digest:digest(readFileSync(join(env.project,'lekalo.lock'),'utf8').trimEnd())},inputs:{model:{version:'0.2.16',digest:env.pins.model.value},ir:{version:'0.2.16',digest:env.pins.ir.value}},artifacts:[],source_maps:[]};manifest.manifest_digest=hash(manifest);trace.artifactManifestRef={schemaVersion:'0.2.16',digest:manifest.manifest_digest};
+  const currentLoad=raw(env.project,['load']).child.stdout.trim();
+  const manifest={schema_version:'lekalo/artifact-manifest/v0.2.16',identity:'dev.lekalo.artifact-manifest@0.2.16',project_ref:'planner',lock_ref:{schema_version:'lekalo/lock/v0.3.2',digest:digest(readFileSync(join(env.project,'lekalo.lock'),'utf8').trimEnd())},inputs:{model:{version:'0.2.16',digest:digest(currentLoad)},ir:{version:'0.2.16',digest:env.pins.ir.value}},artifacts:[],source_maps:[]};manifest.manifest_digest=hash(manifest);trace.artifactManifestRef={schemaVersion:'0.2.16',digest:manifest.manifest_digest};
   return {transition,trace,manifest,args:['--transitions',env.file('transitions.json',transition),'--trace',env.file('trace.json',trace),'--artifacts',env.file('artifacts.json',manifest)]};
 }
 export function golden(name,value,update) {
@@ -135,7 +136,7 @@ export function evidenceCases(env,update) {
   const live=run(env.project,[...env.args,'--evidence',env.file('input.json',e),...a.args]).report;
   const f=live.findings.find(f=>f.ruleId==='hidden.observer-write');assert.equal(f.confidence,'high');assert.equal(f.claim,'possible-behavior');
   const low=clone(e);low.records.find(r=>r.mechanism==='observer').activation[2].confidence='low';const lr=run(env.project,[...env.args,'--evidence',env.file('low.json',low),...a.args]).report;assert.equal(lr.findings.find(f=>f.ruleId==='hidden.observer-write').severity,'info');
-  for(const mutate of [v=>v.pins.model=known(digest('other-model')),v=>v.locations[0].end++,v=>v.sources[0].fingerprint=digest('stale'),v=>v.records[0].claim='verified-behavior',v=>v.records.find(r=>r.kind==='effect').activation.pop(),v=>v.coverage[0].examined=known(2),v=>v.records[0].resource=known('planner.absent'),v=>v.records.find(r=>r.kind==='field-write').field=known('absent')]) {const v=clone(e);mutate(v);refusal(env,[...env.args,'--evidence',env.file('bad-evidence.json',v)],'ai-lint.input-invalid');}
+  for(const mutate of [v=>v.pins.model=known(digest('other-model')),v=>v.locations[0].end++,v=>v.sources[0].fingerprint=digest('stale'),v=>v.records[0].claim='verified-behavior',v=>v.records.find(r=>r.kind==='effect').claim='structural',v=>v.records.find(r=>r.kind==='effect').activation.pop(),v=>v.coverage[0].examined=known(2),v=>v.records[0].resource=known('planner.absent'),v=>v.records.find(r=>r.kind==='field-write').field=known('absent')]) {const v=clone(e);mutate(v);refusal(env,[...env.args,'--evidence',env.file('bad-evidence.json',v)],'ai-lint.input-invalid');}
   const partial=clone(e);partial.coverage.forEach(c=>{c.state='partial';c.limitations=['unresolved-external'];});const pr=run(env.project,[...env.args,'--evidence',env.file('partial.json',partial)]).report;assert.ok(!pr.findings.some(f=>['hidden.dispatch-without-binding','hidden.convention-only-path'].includes(f.ruleId)));
   const old=clone(e);old.records.forEach(r=>r.currency='stale');const sr=run(env.project,[...env.args,'--evidence',env.file('old.json',old)]).report;assert.ok(!sr.findings.some(f=>f.target==='node-typescript'));assert.ok(sr.coverage.some(c=>c.state==='partial'));
   const owned=attachments(env),manifest=clone(owned.manifest);manifest.artifacts=[{semantic_owner:'planner.focus_task',path:'src/events.ts',artifact_kind:'source',lifecycle:'custom',content:{algorithm:'sha256',digest:e.sources[0].fingerprint,canonicalization:'exact-file-bytes'},input_refs:['planner.focus_task'],regeneration_policy:'manual-only'}];delete manifest.manifest_digest;manifest.manifest_digest=hash(manifest);
@@ -154,6 +155,8 @@ export function waiverCases(env,update) {
   refusal(env,[...args,'--waivers',path],'ai-lint.waiver-invalid');
   const conflict=clone(w);conflict.entries.push({...conflict.entries[0],id:'duplicate-scope'});refusal(env,[...args,'--waivers',env.file('conflict.json',conflict),'--as-of','2026-10-03'],'ai-lint.waiver-invalid');
   for(const mutate of [v=>v.entries[0].subject='*',v=>v.entries[0].reason=' ',v=>v.entries[0].expiresOn=known('2026-02-30')]){const v=clone(w);mutate(v);refusal(env,[...args,'--waivers',env.file('bad-waiver.json',v),'--as-of','2026-10-03'],'ai-lint.waiver-invalid');}
+  const permanent=clone(w);permanent.entries.forEach(v=>v.expiresOn=unknown());assert.equal(run(env.project,[...args,'--waivers',env.file('permanent.json',permanent)]).report.summary.waived,report.summary.raw);
+  const foreign=clone(permanent);foreign.entries.forEach(v=>v.target='php-laravel');assert.equal(run(env.project,[...args,'--waivers',env.file('foreign-waivers.json',foreign)]).report.summary.waived,0);
   const changed=clone(w);changed.entries.forEach(v=>v.conditionDigest=digest('changed'));const stale=run(env.project,[...args,'--waivers',env.file('changed-waiver.json',changed),'--as-of','2026-10-03']).report;assert.equal(stale.summary.waived,0);assert.ok(stale.waiverAudit.every(a=>a.disposition==='condition-changed'));
   return {report,result,w,args};
 }
@@ -163,6 +166,12 @@ export function comparisonCases(env,update) {
   schema('comparison',same.comparison.value);assert.equal(same.comparison.value.comparable,true);assert.equal(same.comparison.value.regression.value,false);golden('comparison',same.comparison.value,update);
   const waived=env.file('waived-baseline.json',result),churn=run(env.project,[...args,'--baseline',waived]).report.comparison.value;assert.equal(churn.regression.value,false);assert.ok(churn.deltas.some(d=>d.active>0&&d.raw===0));
   const gap=run(env.project,[...env.args,'--baseline',base]).report.comparison.value;assert.equal(gap.comparable,false);assert.equal(gap.regression.state,'unknown');golden('comparison-incomparable',gap,update);
+  const beforeBytes=readFileSync(base),next=allEvidence(env);next.pins.revision=known('b'.repeat(40));
+  const nextAttachments=attachments(env);nextAttachments.trace=JSON.parse(JSON.stringify(nextAttachments.trace).replaceAll('a'.repeat(40),'b'.repeat(40)));nextAttachments.args[3]=env.file('next-trace.json',nextAttachments.trace);
+  const compared=run(env.project,[...env.args,'--evidence',env.file('next-revision.json',next),...nextAttachments.args,'--baseline',base]).report.comparison.value;assert.equal(compared.comparable,true);assert.equal(compared.regression.value,false);assert.deepEqual(readFileSync(base),beforeBytes,'immutable baseline');
+  const deeper=clone(next);add(deeper,{...record(deeper,'native-edge','call3'),nativeId:'call3',value:known('call4'),claim:'structural'});
+  const deepened=run(env.project,[...env.args,'--evidence',env.file('deeper.json',deeper),...nextAttachments.args,'--baseline',base]).report.comparison.value;assert.equal(deepened.regression.value,true);assert.ok(deepened.depthDeltas.some(d=>d.dimension==='native-call'&&d.change===1));
+  const fewer=clone(next);fewer.records.find(r=>r.kind==='binding-candidates').candidates.pop();const improved=run(env.project,[...env.args,'--evidence',env.file('unambiguous.json',fewer),...nextAttachments.args,'--baseline',base]).report.comparison.value;assert.ok(improved.deltas.some(d=>d.rule==='ambiguity.multiple-resolutions'&&d.raw===-1));assert.equal(improved.regression.value,false);
   const bad=clone(report);bad.summary.raw++;refusal(env,[...env.args,'--baseline',env.file('bad-baseline.json',bad)],'ai-lint.input-invalid');
   const metrics=clone(report);metrics.metrics.reverse();refusal(env,[...env.args,'--baseline',env.file('unordered-baseline.json',metrics)],'ai-lint.input-invalid');
   const regression=clone(report);regression.findings=[];regression.metrics.forEach(m=>m.raw=m.active=m.waived=0);Object.assign(regression.summary,{raw:0,active:0,waived:0,possibleEffects:0,ambiguitySets:0});
@@ -198,6 +207,16 @@ export function adapterCases(env,update) {
     const plan=install.envelope.plan?.planId??install.envelope.planId??install.envelope.plan?.id;assert.ok(plan,JSON.stringify(install.envelope));
     const applied=raw(env.project,['adapter','install','path:'+join(root,'adapters',target),'--confirm',plan]);assert.equal(applied.child.status,0,JSON.stringify(applied.envelope));
     const scan=run(env.project,[...env.args,'--scan-target',target,'--source-file',path]);assert.ok(scan.report.coverage.some(c=>c.target===target));assert.equal(scan.report.summary.verifiedEffects,0);
+    const observed={schemaVersion:'lekalo/observed-scan/v0.2.16',adapter:{id:'lekalo-target-'+target,version:target==='node-typescript'?'0.4.0':'0.2.0',digest:null},project:'planner',revision:digest(bytes),symbols:bindings.map(([nativeId,symbol,kind])=>({id:symbol,kind,stableKey:nativeId,location:{path,line:1},fingerprint:digest(bytes),mappingConfidence:'high',evidence:{}})),endpoints:[],schemas:[]};
+    const updated=raw(env.project,['observe','update','--scan',env.file('observed-scan.json',observed)]);assert.equal(updated.child.status,0,JSON.stringify(updated.envelope));
+    for(const [,symbol]of bindings){const confirmed=raw(env.project,['observe','confirm',symbol]);assert.equal(confirmed.child.status,0,JSON.stringify(confirmed.envelope));}
+    const indexPath=join(env.project,'.lekalo/import/observed/index.json'),beforeIndex=readFileSync(indexPath),beforeSource=readFileSync(join(env.project,path));
+    const collected=run(env.project,[...env.args,'--scan-target',target,'--source-file',path,'--spans']);
+    assert.ok(collected.report.findings.some(f=>f.ruleId==='hidden.observer-write'&&f.semanticSymbol.value==='planner.focus_task'),target+' installed production collector positive');
+    assert.ok(!collected.report.findings.some(f=>f.ruleId==='hidden.observer-write'&&f.semanticSymbol.value==='planner.edit_task_cmd'));
+    assert.ok(collected.report.findings.some(f=>f.ruleId==='hidden.reflective-call'));assert.equal(collected.report.summary.verifiedEffects,0);
+    assert.deepEqual(readFileSync(indexPath),beforeIndex,'lint retains observed index');assert.deepEqual(readFileSync(join(env.project,path)),beforeSource,'lint retains source');
+    unlinkSync(indexPath);
   }
 }
 export function gate(family) {

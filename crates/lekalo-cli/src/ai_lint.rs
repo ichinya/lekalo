@@ -114,6 +114,13 @@ fn execute(args: AiLintArgs) -> Result<DomainResult, DomainResult> {
     };
     let model_ref =
         input::digest(lekalo_core::loader::canonical_model_bytes(&ctx.model).as_bytes());
+    let artifact_model_ref = match lekalo_core::loader::run(&selection, false) {
+        DomainResult::Valid {
+            payload: lekalo_core::result::SuccessPayload::Model { json, .. },
+            ..
+        } => input::digest(json.as_bytes()),
+        refusal => return Err(refusal),
+    };
     let ir_ref = input::digest(compilation.project.to_canonical_json().as_bytes());
     let fs = lekalo_core::project_fs::Fs::open(&ctx.root)
         .map_err(|_| lint::diagnostic::failure("ai-lint.input-invalid", "project-root"))?;
@@ -186,6 +193,7 @@ fn execute(args: AiLintArgs) -> Result<DomainResult, DomainResult> {
     let report = lint::analyze(&lint::Request {
         compilation: &compilation,
         model_ref: &model_ref,
+        artifact_model_ref: &artifact_model_ref,
         scope,
         config: &config,
         profile: &args.lint_profile,

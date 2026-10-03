@@ -222017,7 +222017,7 @@ function validateRequestObject(document) {
     throw new RequestRefusal("profile-capabilities", "profile resolution members are paired");
   }
   if (resolution) {
-    if (request.protocol_version !== VERSION) {
+    if (!SUPPORTED_VERSIONS.includes(request.protocol_version)) {
       throw new RequestRefusal("member", "profile resolution requires the current version");
     }
     if (!hasOwn(request, "profile")) {

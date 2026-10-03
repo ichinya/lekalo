@@ -222,7 +222,7 @@ fn the_php_kernel_describes_itself_through_the_production_client() {
         .contains(&Operation::Describe));
     // The full v1 surface is declared: the strict conformance battery
     // requires exactly that (issue #31), and the adapter passes it.
-    assert_eq!(described.capabilities.operations.len(), 9);
+    assert_eq!(described.capabilities.operations.len(), 10);
     assert_eq!(
         described.capabilities.ir_versions,
         vec!["0.2.16".to_owned()]

@@ -92,7 +92,9 @@ mod tests {
         assert_eq!(RECOMMENDED_BUDGET_TOKENS, 5_000);
         assert_eq!(OPERATION_COUNT, 10);
         // The workflow recommendation stays inside the core hard bound.
-        const { assert!(RECOMMENDED_BUDGET_TOKENS <= crate::context::version::MAX_BUDGET_TOKENS) }
+        const _: [(); 1] = [(); (RECOMMENDED_BUDGET_TOKENS
+            <= crate::context::version::MAX_BUDGET_TOKENS)
+            as usize];
     }
 
     #[test]

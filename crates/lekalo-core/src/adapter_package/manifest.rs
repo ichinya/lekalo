@@ -741,7 +741,7 @@ impl ManifestWire {
             self.schema_version == MANIFEST_SCHEMA_VERSION && self.identity == MANIFEST_IDENTITY;
         let lint = self.schema_version == "lekalo/adapter-manifest/v0.6.4"
             && self.identity == "dev.lekalo.adapter-manifest@0.6.4";
-        if !legacy && !lint || !lint && self.capabilities.operations.iter().any(|op| op == "lint") {
+        if !lint && (!legacy || self.capabilities.operations.iter().any(|op| op == "lint")) {
             return Err(invalid("identity"));
         }
         if self.adapter.id.is_empty()
@@ -1018,7 +1018,7 @@ mod committed_exemplar_tests {
         // exact committed bytes.
         assert_eq!(
             document.package_digest().as_str(),
-            "sha256:29977321175011533aad0e04761a3a00b31e1933ecdb177784f2925fdd1cfc9f"
+            "sha256:c05708e6bc6b8181893c9becb9db3ea0af9ac1f7fb3c3e3d830623d5859decf2"
         );
     }
 

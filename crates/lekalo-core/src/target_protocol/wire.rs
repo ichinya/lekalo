@@ -184,7 +184,7 @@ pub fn validate_request(request: &RequestEnvelope) -> Result<(), super::TargetFa
         if request.dry_run.is_some() || request.plan_id.is_some() {
             return invalid("plan-id");
         }
-        if request.protocol_version != super::version::VERSION {
+        if !super::version::SUPPORTED_VERSIONS.contains(&request.protocol_version.as_str()) {
             return invalid("member");
         }
         let native = request.native_request.as_ref().expect("paired above");
@@ -253,7 +253,7 @@ pub fn validate_request(request: &RequestEnvelope) -> Result<(), super::TargetFa
         return invalid("profile-capabilities");
     }
     if profile_resolution {
-        if request.protocol_version != super::version::VERSION {
+        if !super::version::SUPPORTED_VERSIONS.contains(&request.protocol_version.as_str()) {
             return invalid("member");
         }
         if request.profile.is_none() {

@@ -1009,7 +1009,7 @@ function validate_request_object(array $document): array
         throw new RequestRefusal('profile-capabilities');
     }
     if ($hasDigest) {
-        if ($document['protocol_version'] !== VERSION) {
+        if (!in_array($document['protocol_version'], SUPPORTED_VERSIONS, true)) {
             throw new RequestRefusal('member');
         }
         if (!array_key_exists('profile', $document)) {

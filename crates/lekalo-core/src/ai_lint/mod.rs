@@ -29,6 +29,8 @@ pub const RULES: [&str; 11] = [
 pub struct Request<'a> {
     pub compilation: &'a Compilation,
     pub model_ref: &'a str,
+    /// Current load-envelope pin used by the existing artifact producer.
+    pub artifact_model_ref: &'a str,
     pub scope: Vec<String>,
     pub config: &'a Config,
     pub profile: &'a str,
@@ -351,7 +353,7 @@ pub fn analyze(request: &Request<'_>) -> Result<Report, DomainResult> {
             .ok()
             .flatten()
             .and_then(|b| crate::lockfile::Lockfile::parse_canonical(&b).ok());
-        if a.model().digest().as_str() != request.model_ref
+        if a.model().digest().as_str() != request.artifact_model_ref
             || a.ir().digest().as_str() != ir_ref
             || lock.as_ref().map_or(true, |l| {
                 l.digest().as_str() != a.lock_ref().digest().as_str()
@@ -518,20 +520,22 @@ pub fn analyze(request: &Request<'_>) -> Result<Report, DomainResult> {
                     c.state = CoverageState::Partial;
                     c.limitations = vec!["custody-or-currency-unknown".into()];
                 }
+                let incomplete_trace = rule == "hidden.path-without-trace-owner"
+                    && request.trace.map_or(true, |t| {
+                        let m = t.manifest();
+                        m.completeness != crate::trace::Completeness::Full
+                            || (m.model_ref.digest != request.model_ref
+                                && m.model_ref.digest != request.artifact_model_ref)
+                            || m.ir_ref.as_ref().map_or(true, |v| v.digest != ir_ref)
+                            || e.pins.revision.known() != Some(&m.source_revision)
+                            || request.artifacts.map_or(true, |a| {
+                                m.artifact_manifest_ref
+                                    .as_ref()
+                                    .map_or(true, |pin| pin.digest != a.manifest_digest().as_str())
+                            })
+                    });
                 if enabled(p, rule)
-                    && (rule == "hidden.path-without-trace-owner"
-                        && request.trace.map_or(true, |t| {
-                            let m = t.manifest();
-                            m.completeness != crate::trace::Completeness::Full
-                                || m.model_ref.digest != request.model_ref
-                                || m.ir_ref.as_ref().map_or(true, |v| v.digest != ir_ref)
-                                || e.pins.revision.known() != Some(&m.source_revision)
-                                || request.artifacts.map_or(true, |a| {
-                                    m.artifact_manifest_ref.as_ref().map_or(true, |pin| {
-                                        pin.digest != a.manifest_digest().as_str()
-                                    })
-                                })
-                        })
+                    && (incomplete_trace
                         || rule == "ambiguity.scattered-state-writes"
                             && request.transitions.is_none())
                 {

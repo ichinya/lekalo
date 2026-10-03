@@ -15,4 +15,4 @@
 | lock | `sha256:bbe9c51d3a4a579cd10f3b6794090af14acb9e2dea2bceede83a7f5440334baa` |
 | profile validation-profile.default | `sha256:2d09f1d36c02240629b5631d0d5247b600ae6b363483c485bf8f7123241faa24` |
 
-report digest: `sha256:1edc923f97cb4e3f3a61bb64dd297391ae87658782cc6ca656d9b7ccedcdf959`
+report digest: `sha256:21bc2178dbece5481853532268ac35a0d6116b89b660496edd69b58c9058f580`

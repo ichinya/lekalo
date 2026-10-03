@@ -85,6 +85,8 @@ const duplicateKeys = (text) => {
     readFileSync(join(root, "adapters", "node-typescript", "adapter.manifest.json"), "utf8"),
   );
   check("valid:shipped-exemplar", validateSuccessor(exemplar), validateSuccessor.errors);
+  const phpExemplar = JSON.parse(readFileSync(join(root, "adapters/php-laravel/adapter.manifest.json"), "utf8"));
+  check("valid:shipped-php-exemplar", validateSuccessor(phpExemplar), validateSuccessor.errors);
 
 for (const name of readdirSync(validDir)) {
   const text = readFileSync(join(validDir, name), "utf8");

@@ -4,7 +4,7 @@
   "mode": "dry-run",
   "identity": "dev.lekalo.orchestration-report@0.2.16",
   "project": "planner",
-  "lockDigest": "sha256:0f612ded887d781185306e9b15ee6925e9f6cc62d27d790001b6458156dad20a",
+  "lockDigest": "sha256:144b402d364fa998fe3cd98dac131d4d38946c3bf2d20744a4f8ab0c6b937eb3",
   "locked": false,
   "inputs": {
     "modelVersion": "0.2.16",
@@ -32,7 +32,7 @@
       },
       "state": "planned",
       "reasonCode": null,
-      "planId": "plan-dc0a133ecf82f6c3c53e6b5a4b053975e21b5e1c59ac5d709420c373980cb259",
+      "planId": "plan-normalized",
       "writes": [
         {
           "path": "src/generated/node-typescript/planner.ts",

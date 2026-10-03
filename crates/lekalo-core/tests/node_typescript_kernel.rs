@@ -76,18 +76,25 @@ fn the_kernel_describes_itself_through_the_production_client() {
     );
     assert_eq!(described.capabilities.adapter.version, "0.4.0");
     assert!(described.capabilities.adapter.digest.starts_with("sha256:"));
-    // The kernel advertises describe only, with truthful emptiness.
-    assert_eq!(described.capabilities.operations, vec![Operation::Describe]);
+    // The bundled compiler enables read-only lint independently of generation.
+    assert_eq!(
+        described.capabilities.operations,
+        vec![Operation::Describe, Operation::Lint]
+    );
     assert!(described.capabilities.ir_versions.is_empty());
-    assert!(described.capabilities.read_scopes.is_empty());
+    assert_eq!(described.capabilities.read_scopes, vec!["src/**"]);
     assert!(described.capabilities.write_scopes.is_empty());
     assert!(!described.capabilities.progress);
     // Every registered capability id is declared unsupported — an honest
     // gap, never an optimistic or invented state.
-    for state in described.capabilities.capabilities.values() {
+    for (id, state) in &described.capabilities.capabilities {
         assert_eq!(
             *state,
-            lekalo_core::target_protocol::wire::SupportState::Unsupported
+            if id == "lint.ai-readability" {
+                lekalo_core::target_protocol::wire::SupportState::Partial
+            } else {
+                lekalo_core::target_protocol::wire::SupportState::Unsupported
+            }
         );
     }
 }
