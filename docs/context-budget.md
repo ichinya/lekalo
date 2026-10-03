@@ -27,6 +27,11 @@ lekalo context-budget --all --budget-profile local-12k \
 ```
 
 Exactly one of `--symbol`, `--module`, `--all` selects the scope.
+For `--all`, the report carries `scope: {"kind":"project","id":"*"}`:
+`*` selects every definition of the loaded project. The wildcard is accepted
+only in project scope; symbol and module scope use semantic identifiers.
+The provenance pins bind the report to the measured compilation.
+
 Exactly one of `--budget N` (the generic chars-4 profile with an
 explicit content-token budget) and `--budget-profile ID --profiles
 FILE` (a named profile inside a closed profile document) is required;

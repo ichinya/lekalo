@@ -85,6 +85,7 @@
       }
     },
     "scope": {
+      "description": "The selected analysis scope. Project scope permits '*' to select every definition of the loaded project; symbol and module scope require a semantic identifier. The wildcard is local to this scope selector, not part of semanticId.",
       "type": "object",
       "additionalProperties": false,
       "required": ["kind", "id"],
@@ -93,9 +94,18 @@
           "enum": ["symbol", "module", "project"]
         },
         "id": {
-          "$ref": "#/$defs/semanticId"
+          "oneOf": [
+            { "$ref": "#/$defs/semanticId" },
+            { "const": "*" }
+          ]
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "id": { "const": "*" } } },
+          "then": { "properties": { "kind": { "const": "project" } } }
+        }
+      ]
     },
     "profile": {
       "type": "object",

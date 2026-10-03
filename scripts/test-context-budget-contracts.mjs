@@ -193,6 +193,25 @@ let liveChecked = false;
   const union = moduleReport.summary.unionRequiredTokens.value;
   if (union > perSubject) fail("union-reconciles", { union, perSubject });
 
+  // R3-1: --all must satisfy the same published report contract as
+  // symbol/module reports. Its wildcard is a project-wide selector,
+  // permitted only under project scope, never a semantic node id.
+  const projectEnvelope = run(["context-budget", "--all", "--budget", "12000"]);
+  if (projectEnvelope.status !== "valid") fail("project-status", projectEnvelope.status);
+  const projectReport = projectEnvelope.contextBudget;
+  if (!validateReport(projectReport)) fail("project-schema", validateReport.errors);
+  if (projectReport.scope.kind !== "project" || projectReport.scope.id !== "*") {
+    fail("project-scope", projectReport.scope);
+  }
+  for (const kind of ["symbol", "module"]) {
+    const wrongScope = structuredClone(projectReport);
+    wrongScope.scope.kind = kind;
+    if (validateReport(wrongScope)) fail("negative-wildcard-scope", kind);
+  }
+  const wrongProjectId = structuredClone(projectReport);
+  wrongProjectId.scope.id = "**";
+  if (validateReport(wrongProjectId)) fail("negative-project-id", "accepted");
+
   // The adversarial negatives refuse closed.
   const corrupted = JSON.parse(JSON.stringify(report));
   corrupted.subjects[0].metrics.directDependencies = { state: "unknown", value: 3 };
