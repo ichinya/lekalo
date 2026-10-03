@@ -21,6 +21,36 @@
       "origin": "synthetic"
     },
     {
+      "family": "ai-lint",
+      "origin": "synthetic",
+      "note": "Issue #76: authored Model, target source, evidence, policy, waiver and revision fixtures; no private code or executed application behavior."
+    },
+    {
+      "family": "ai-lint-comparison",
+      "origin": "synthetic",
+      "note": "Issue #76 comparison contract: authored fixtures and deterministic live CLI receipts; no private input or executed application behavior."
+    },
+    {
+      "family": "ai-lint-config",
+      "origin": "synthetic",
+      "note": "Issue #76 config contract: authored fixtures and deterministic live CLI receipts; no private input or executed application behavior."
+    },
+    {
+      "family": "ai-lint-evidence",
+      "origin": "synthetic",
+      "note": "Issue #76 evidence contract: authored fixtures and deterministic live CLI receipts; no private input or executed application behavior."
+    },
+    {
+      "family": "ai-lint-report",
+      "origin": "synthetic",
+      "note": "Issue #76 report contract: authored fixtures and deterministic live CLI receipts; no private input or executed application behavior."
+    },
+    {
+      "family": "ai-lint-waivers",
+      "origin": "synthetic",
+      "note": "Issue #76 waivers contract: authored fixtures and deterministic live CLI receipts; no private input or executed application behavior."
+    },
+    {
       "family": "ai-workspace",
       "origin": "synthetic",
       "note": "issue #37 ai-workspace integration: the reviewed routing-manifest example and the change-event envelope example are exclusively synthetic, authored in-repo from public contract identities and neutral role aliases; no private checkout content"

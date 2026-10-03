@@ -115,6 +115,8 @@ fn invalid_apply_plan_is_refused_before_the_actual_os_launch() {
         dry_run: Some(false),
         plan_id: Some(&id),
         native_request: None,
+
+        lint_request: None,
     };
     let fs = Fs::open(project.path()).unwrap();
     assert!(client
@@ -125,6 +127,8 @@ fn invalid_apply_plan_is_refused_before_the_actual_os_launch() {
         dry_run: Some(true),
         plan_id: None,
         native_request: None,
+
+        lint_request: None,
         ..call.clone()
     };
     client
@@ -232,6 +236,8 @@ fn validate_raw_response(
             dry_run: request.dry_run,
             plan_id: request.plan_id.as_deref(),
             native_request: None,
+
+            lint_request: None,
         };
         client.validate_response_payload(&call, &response, caps)
     }

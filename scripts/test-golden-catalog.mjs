@@ -57,7 +57,7 @@ const readJson = (relative) => JSON.parse(readFileSync(join(REPO_ROOT, relative)
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const validateCatalog = ajv.compile(readJson(`${SUITE_ROOT}/schema/catalog.schema.v1.0.0.json`));
 const validateFixture = ajv.compile(readJson(`${SUITE_ROOT}/schema/fixture.schema.v1.0.0.json`));
-const validateCoverage = ajv.compile(readJson(`${SUITE_ROOT}/schema/coverage.schema.v1.0.0.json`));
+const validateCoverage = ajv.compile(readJson(`${SUITE_ROOT}/schema/coverage.schema.v0.6.4.json`));
 const validateRunManifest = ajv.compile(readJson(`${SUITE_ROOT}/schema/run-manifest.schema.v1.0.0.json`));
 
 const errors = [];

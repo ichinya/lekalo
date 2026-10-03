@@ -1,0 +1,51 @@
+{
+  "registry": "dev.lekalo.version-registry",
+  "registryVersion": "0.6.4",
+  "families": {
+    "model": {
+      "current": "0.2.16",
+      "aliases": [],
+      "versions": [
+        {
+          "version": "0.2.16",
+          "state": "supported",
+          "classification": "breaking",
+          "reason": "Development baseline at product 0.2.16. Only the current contract is supported."
+        }
+      ],
+      "migrations": []
+    },
+    "ir": {
+      "current": "0.2.16",
+      "aliases": [],
+      "versions": [
+        {
+          "version": "0.2.16",
+          "state": "supported",
+          "classification": "breaking",
+          "reason": "Development baseline at product 0.2.16. Only the current contract is supported."
+        }
+      ],
+      "migrations": []
+    },
+    "protocol": {
+      "current": "0.3.2",
+      "aliases": [],
+      "versions": [
+        {
+          "version": "0.3.2",
+          "state": "supported",
+          "classification": "breaking",
+          "reason": "Issue #48 native gates: the read-only plan-native operation with typed native_request/native_plan members at product 0.3.2. Only the current contract is supported."
+        },
+        {
+          "version": "0.6.4",
+          "state": "supported",
+          "classification": "additive",
+          "reason": "Issue #76 adds read-only lint with closed lint_request/lint_evidence and capability lint.ai-readability. Protocol 0.3.2 retains its frozen members."
+        }
+      ],
+      "migrations": []
+    }
+  }
+}

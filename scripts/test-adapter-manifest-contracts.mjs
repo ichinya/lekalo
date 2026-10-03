@@ -41,6 +41,7 @@ const schemaPath = join(root, "contracts", "adapter-manifest.schema.v0.3.2.json"
 const schema = JSON.parse(readFileSync(schemaPath, "utf8"));
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const validate = ajv.compile(schema);
+const validateSuccessor = ajv.compile(JSON.parse(readFileSync(join(root,"contracts/adapter-manifest.schema.v0.6.4.json"),"utf8")));
 
 const fail = (failures) => {
   process.stderr.write(`${JSON.stringify({ ok: false, failures }, null, 2)}\n`);
@@ -83,7 +84,7 @@ const duplicateKeys = (text) => {
   const exemplar = JSON.parse(
     readFileSync(join(root, "adapters", "node-typescript", "adapter.manifest.json"), "utf8"),
   );
-  check("valid:shipped-exemplar", validate(exemplar), validate.errors);
+  check("valid:shipped-exemplar", validateSuccessor(exemplar), validateSuccessor.errors);
 
 for (const name of readdirSync(validDir)) {
   const text = readFileSync(join(validDir, name), "utf8");

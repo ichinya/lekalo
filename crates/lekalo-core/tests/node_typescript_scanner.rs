@@ -117,6 +117,8 @@ fn scan_request(profile: &'static str) -> CallRequest<'static> {
         dry_run: None,
         plan_id: None,
         native_request: None,
+
+        lint_request: None,
     }
 }
 

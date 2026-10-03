@@ -14,8 +14,8 @@ export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..
 export const SUITE_ROOT = "tests/fixtures/suite";
 export const SUITE_V1 = `${SUITE_ROOT}/v1`;
 export const FIXTURE_SCHEMA = "dev.lekalo.fixture@1.0.0";
-export const REGISTRY_IDENTITY = "dev.lekalo.diagnostic-registry@0.6.3";
-export const REGISTRY_CONTRACT = "contracts/diagnostic-registry.v0.6.3.json";
+export const REGISTRY_IDENTITY = "dev.lekalo.diagnostic-registry@0.6.4";
+export const REGISTRY_CONTRACT = "contracts/diagnostic-registry.v0.6.4.json";
 
 /** The closed runner registry: id -> execution kind. */
 export const RUNNERS = new Map([

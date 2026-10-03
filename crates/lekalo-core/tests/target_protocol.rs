@@ -100,6 +100,8 @@ fn call_request<'a>(
         dry_run,
         plan_id,
         native_request: None,
+
+        lint_request: None,
     }
 }
 

@@ -205,7 +205,7 @@ fn the_php_kernel_describes_itself_through_the_production_client() {
     let described = client
         .describe(&command, &sandbox.dir)
         .expect("the PHP kernel handshake must succeed");
-    assert_eq!(described.negotiated_version, "0.3.2");
+    assert_eq!(described.negotiated_version, "0.6.4");
     assert_eq!(
         described.capabilities.adapter.id,
         "lekalo-target-php-laravel"
@@ -214,7 +214,7 @@ fn the_php_kernel_describes_itself_through_the_production_client() {
     assert!(described.capabilities.adapter.digest.starts_with("sha256:"));
     assert_eq!(
         described.capabilities.protocol_versions,
-        vec!["0.3.2".to_owned()]
+        vec!["0.3.2".to_owned(), "0.6.4".to_owned()]
     );
     assert!(described
         .capabilities
@@ -273,6 +273,8 @@ fn the_php_generation_seam_plans_applies_and_verifies() {
                 dry_run: Some(true),
                 plan_id: None,
                 native_request: None,
+
+                lint_request: None,
             },
             &sandbox.dir,
             &fs,
@@ -301,6 +303,8 @@ fn the_php_generation_seam_plans_applies_and_verifies() {
                 dry_run: Some(false),
                 plan_id: Some(&plan_id),
                 native_request: None,
+
+                lint_request: None,
             },
             &sandbox.dir,
             &fs,
@@ -340,6 +344,8 @@ fn the_php_generation_seam_plans_applies_and_verifies() {
             dry_run: Some(false),
             plan_id: Some(&plan_id),
             native_request: None,
+
+            lint_request: None,
         },
         &sandbox.dir,
         &fs,
@@ -391,6 +397,8 @@ fn the_php_kernel_refuses_undeclared_input_without_a_fake_envelope() {
             dry_run: None,
             plan_id: None,
             native_request: Some(&native),
+
+            lint_request: None,
         },
         &sandbox.dir,
         &Fs::open(&sandbox.dir).unwrap(),
@@ -428,6 +436,8 @@ fn a_cancelled_php_exchange_is_classified_and_recoverable() {
             dry_run: None,
             plan_id: None,
             native_request: None,
+
+            lint_request: None,
         },
         &sandbox.dir,
         &Fs::open(&sandbox.dir).unwrap(),
@@ -498,6 +508,8 @@ fn the_php_type_generator_plans_applies_and_verifies_managed_types() {
                 dry_run: Some(true),
                 plan_id: None,
                 native_request: None,
+
+                lint_request: None,
             },
             &sandbox.dir,
             &fs,
@@ -535,6 +547,8 @@ fn the_php_type_generator_plans_applies_and_verifies_managed_types() {
                 dry_run: Some(false),
                 plan_id: Some(&plan_id),
                 native_request: None,
+
+                lint_request: None,
             },
             &sandbox.dir,
             &fs,
@@ -573,6 +587,8 @@ fn the_php_type_generator_plans_applies_and_verifies_managed_types() {
                 dry_run: None,
                 plan_id: None,
                 native_request: None,
+
+                lint_request: None,
             },
             &sandbox.dir,
             &fs,
@@ -610,6 +626,8 @@ fn the_php_type_generator_plans_applies_and_verifies_managed_types() {
             dry_run: Some(true),
             plan_id: None,
             native_request: None,
+
+            lint_request: None,
         },
         &sandbox.dir,
         &fs,
@@ -704,6 +722,8 @@ fn the_php_operations_generator_plans_applies_and_verifies_composed_operations()
                 dry_run: Some(true),
                 plan_id: None,
                 native_request: None,
+
+                lint_request: None,
             },
             &sandbox.dir,
             &fs,
@@ -752,6 +772,8 @@ fn the_php_operations_generator_plans_applies_and_verifies_composed_operations()
             dry_run: Some(true),
             plan_id: None,
             native_request: None,
+
+            lint_request: None,
         },
         &sandbox.dir,
         &fs,

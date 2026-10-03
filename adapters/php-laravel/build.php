@@ -32,6 +32,7 @@ const ADAPTER_VERSION = '0.2.0';
 
 /** The bundled module order: dependencies first, kernel last. */
 const BUNDLED_MODULES = [
+    'src/ai-lint.php',
     'src/analyzer.php',
     'src/strict-profile.php',
     'src/kernel.php',

@@ -1,6 +1,6 @@
 {
-  "schemaVersion": "lekalo/adapter-manifest/v0.3.2",
-  "identity": "dev.lekalo.adapter-manifest@0.3.2",
+  "schemaVersion": "lekalo/adapter-manifest/v0.6.4",
+  "identity": "dev.lekalo.adapter-manifest@0.6.4",
   "adapter": {
     "id": "lekalo-target-node-typescript",
     "name": "Node/TypeScript target adapter",
@@ -23,7 +23,8 @@
   },
   "compatibility": {
     "protocolVersions": [
-      "0.3.2"
+      "0.3.2",
+      "0.6.4"
     ],
     "irVersions": [
       "0.2.16"
@@ -34,6 +35,7 @@
     "operations": [
       "describe",
       "generate",
+      "lint",
       "plan-native",
       "scan",
       "verify"
@@ -54,7 +56,8 @@
       "preserve.classification": "unsupported",
       "scan.symbols": "full",
       "verify.scenarios": "full",
-      "verify.transport-http": "unsupported"
+      "verify.transport-http": "unsupported",
+      "lint.ai-readability": "partial"
     },
     "constraints": {},
     "readScopes": [
@@ -89,12 +92,12 @@
     "any"
   ],
   "integrity": {
-    "packageDigest": "sha256:0e577009fa09c2e98f1bc2f572c8fb2759704f29d0a293d626ebdc959453e01c",
+    "packageDigest": "sha256:29977321175011533aad0e04761a3a00b31e1933ecdb177784f2925fdd1cfc9f",
     "files": [
       {
         "path": "adapter.mjs",
-        "digest": "sha256:252bcaf2087e91cf79502110efc4b07710f4db1fe5e8fff5bd16ead389f0db8b",
-        "bytes": 14751664
+        "digest": "sha256:86c263e7671d87630e96764fadc906a27521ccdc8618b1fd08ccc9ec895ffad3",
+        "bytes": 14767361
       }
     ],
     "signaturePolicy": "unsigned",

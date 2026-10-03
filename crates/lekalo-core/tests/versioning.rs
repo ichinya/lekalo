@@ -244,7 +244,7 @@ mod compatibility {
         let registry = VersionRegistry::embedded().expect("valid");
         let report = CompatibilityReport::from_registry(registry);
         assert_eq!(report.status, "valid");
-        assert_eq!(report.registry_version, "0.2.16");
+        assert_eq!(report.registry_version, "0.6.4");
         let names: Vec<&str> = report.families.iter().map(|f| f.family).collect();
         assert_eq!(names, ["model", "ir", "protocol"]);
         let model_family: &CompatibilityReportFamilyAlias = &report.families[0];

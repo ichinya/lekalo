@@ -48,3 +48,5 @@ carries; those pins never drift with a product release.
 
 Версии принимаются только в канонической форме SemVer. Поддержка определяется
 точной записью в реестре, а не попаданием в числовой диапазон.
+
+Issue #76 publishes AI lint report/evidence/config/waivers/comparison, registry, validation profile/report, provider and package-manifest successors at `0.6.4`. The frozen `0.3.2` protocol remains the ordinary lock/bootstrap contract; the additive `0.6.4` lint seam is negotiated only after an adapter explicitly advertises it. A base describe response keeps the frozen operation vocabulary, and the upgraded describe publishes lint. Existing Model/IR/effect/observed/trace/transition/lock and context-budget wire contracts keep their accepted versions.

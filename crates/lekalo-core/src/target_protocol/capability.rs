@@ -21,7 +21,7 @@ use serde::Serialize;
 /// (issue #58), `generate.operations`/`verify.operations`
 /// (issue #59), and `generate.routes`/`verify.routes`
 /// (issue #60).
-pub const REGISTRY_IDENTITY: &str = "dev.lekalo.target-capabilities@0.4.0";
+pub const REGISTRY_IDENTITY: &str = "dev.lekalo.target-capabilities@0.6.4";
 
 /// One versioned capability definition.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -93,6 +93,12 @@ const DEFINITIONS: &[CapabilityDefinition] = &[
         definition_version: "0.3.1",
         domain: "generate",
         semantics: "Emits Zod schemas from the compiled project IR. `full` covers every declared type and invariant; `partial` covers a declared subset; `unsupported` never emits; `unknown` is a declared state the core does not treat as available.",
+    },
+    CapabilityDefinition {
+        id: "lint.ai-readability",
+        definition_version: "0.6.4",
+        domain: "lint",
+        semantics: "Collects bounded static AI readability evidence without executing application code or writing artifacts. Full covers the declared selection; partial covers a declared bounded subset with explicit limitations; unsupported and unknown never imply a clean result.",
     },
     CapabilityDefinition {
         id: "plan.native-gates",
@@ -173,7 +179,7 @@ mod tests {
 
     #[test]
     fn registry_identity_and_definitions_are_pinned() {
-        assert_eq!(REGISTRY_IDENTITY, "dev.lekalo.target-capabilities@0.4.0");
+        assert_eq!(REGISTRY_IDENTITY, "dev.lekalo.target-capabilities@0.6.4");
         let ids: Vec<&str> = definitions().iter().map(|entry| entry.id).collect();
         assert_eq!(
             ids,
@@ -187,6 +193,7 @@ mod tests {
                 "generate.transport-http",
                 "generate.ui",
                 "generate.zod",
+                "lint.ai-readability",
                 "plan.native-gates",
                 "preserve.classification",
                 "scan.schema",
@@ -203,7 +210,8 @@ mod tests {
             assert!(
                 entry.definition_version == "0.3.1"
                     || entry.definition_version == "0.3.2"
-                    || entry.definition_version == "0.4.0",
+                    || entry.definition_version == "0.4.0"
+                    || entry.definition_version == "0.6.4",
                 "definition versions stay on the accepted generations"
             );
             assert!(

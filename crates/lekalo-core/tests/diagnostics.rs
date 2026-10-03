@@ -9,7 +9,7 @@ use lekalo_core::result::DomainResult;
 #[test]
 fn embedded_registry_parses_and_is_closed() {
     let registry = DiagnosticRegistry::embedded().expect("embedded registry is valid");
-    assert_eq!(registry.registry_version(), "0.6.3");
+    assert_eq!(registry.registry_version(), "0.6.4");
     assert!(registry.len() >= 100, "the core rule inventory is present");
     // The classification and dataflow families ride the 0.4.0 successor;
     // the context.* family (#75) rides the 0.6.3 successor.

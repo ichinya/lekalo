@@ -3284,16 +3284,16 @@ var require_typescript = __commonJS({
         }
         const set = {
           has(element) {
-            const hash = getHashCode(element);
-            if (!multiMap.has(hash)) return false;
-            const candidates = multiMap.get(hash);
+            const hash2 = getHashCode(element);
+            if (!multiMap.has(hash2)) return false;
+            const candidates = multiMap.get(hash2);
             if (isArray(candidates)) return contains(candidates, element, equals);
             return equals(candidates, element);
           },
           add(element) {
-            const hash = getHashCode(element);
-            if (multiMap.has(hash)) {
-              const values = multiMap.get(hash);
+            const hash2 = getHashCode(element);
+            if (multiMap.has(hash2)) {
+              const values = multiMap.get(hash2);
               if (isArray(values)) {
                 if (!contains(values, element, equals)) {
                   values.push(element);
@@ -3302,27 +3302,27 @@ var require_typescript = __commonJS({
               } else {
                 const value = values;
                 if (!equals(value, element)) {
-                  multiMap.set(hash, [value, element]);
+                  multiMap.set(hash2, [value, element]);
                   size++;
                 }
               }
             } else {
-              multiMap.set(hash, element);
+              multiMap.set(hash2, element);
               size++;
             }
             return this;
           },
           delete(element) {
-            const hash = getHashCode(element);
-            if (!multiMap.has(hash)) return false;
-            const candidates = multiMap.get(hash);
+            const hash2 = getHashCode(element);
+            if (!multiMap.has(hash2)) return false;
+            const candidates = multiMap.get(hash2);
             if (isArray(candidates)) {
               for (let i = 0; i < candidates.length; i++) {
                 if (equals(candidates[i], element)) {
                   if (candidates.length === 1) {
-                    multiMap.delete(hash);
+                    multiMap.delete(hash2);
                   } else if (candidates.length === 2) {
-                    multiMap.set(hash, candidates[1 - i]);
+                    multiMap.set(hash2, candidates[1 - i]);
                   } else {
                     unorderedRemoveItemAt(candidates, i);
                   }
@@ -3333,7 +3333,7 @@ var require_typescript = __commonJS({
             } else {
               const candidate = candidates;
               if (equals(candidate, element)) {
-                multiMap.delete(hash);
+                multiMap.delete(hash2);
                 size--;
                 return true;
               }
@@ -8999,9 +8999,9 @@ ${lanes.join("\n")}
             }
           }
           function createSHA256Hash(data) {
-            const hash = _crypto.createHash("sha256");
-            hash.update(data);
-            return hash.digest("hex");
+            const hash2 = _crypto.createHash("sha256");
+            hash2.update(data);
+            return hash2.digest("hex");
           }
         }
         let sys2;
@@ -157963,9 +157963,9 @@ interface Symbol {
       function isRefactorErrorInfo(info) {
         return info.error !== void 0;
       }
-      function refactorKindBeginsWith(known, requested) {
+      function refactorKindBeginsWith(known2, requested) {
         if (!requested) return true;
-        return known.substr(0, requested.length) === requested;
+        return known2.substr(0, requested.length) === requested;
       }
       function getIdentifierForNode(node, scope, checker, file3) {
         return isPropertyAccessExpression(node) && !isClassLike(scope) && !checker.resolveName(
@@ -193767,30 +193767,30 @@ ${options.prefix}` : "\n" : options.prefix
         }
         return mask2;
       }
-      function createRulesMap(rules) {
-        const map2 = buildMap(rules);
+      function createRulesMap(rules2) {
+        const map2 = buildMap(rules2);
         return (context) => {
           const bucket = map2[getRuleBucketIndex(context.currentTokenSpan.kind, context.nextTokenSpan.kind)];
           if (bucket) {
-            const rules2 = [];
+            const rules22 = [];
             let ruleActionMask = 0;
             for (const rule2 of bucket) {
               const acceptRuleActions = ~getRuleActionExclusion(ruleActionMask);
               if (rule2.action & acceptRuleActions && every(rule2.context, (c) => c(context))) {
-                rules2.push(rule2);
+                rules22.push(rule2);
                 ruleActionMask |= rule2.action;
               }
             }
-            if (rules2.length) {
-              return rules2;
+            if (rules22.length) {
+              return rules22;
             }
           }
         };
       }
-      function buildMap(rules) {
+      function buildMap(rules2) {
         const map2 = new Array(mapRowLength * mapRowLength);
         const rulesBucketConstructionStateList = new Array(map2.length);
-        for (const rule2 of rules) {
+        for (const rule2 of rules2) {
           const specificRule = rule2.leftTokenRange.isSpecific && rule2.rightTokenRange.isSpecific;
           for (const left of rule2.leftTokenRange.tokens) {
             for (const right of rule2.rightTokenRange.tokens) {
@@ -193821,10 +193821,10 @@ ${options.prefix}` : "\n" : options.prefix
         RulesPosition2[RulesPosition2["NoContextRulesAny"] = maskBitSize * 5] = "NoContextRulesAny";
         return RulesPosition2;
       })(RulesPosition || {});
-      function addRule(rules, rule2, specificTokens, constructionState, rulesBucketIndex) {
+      function addRule(rules2, rule2, specificTokens, constructionState, rulesBucketIndex) {
         const position = rule2.action & 3 ? specificTokens ? 0 : RulesPosition.StopRulesAny : rule2.context !== anyContext ? specificTokens ? RulesPosition.ContextRulesSpecific : RulesPosition.ContextRulesAny : specificTokens ? RulesPosition.NoContextRulesSpecific : RulesPosition.NoContextRulesAny;
         const state = constructionState[rulesBucketIndex] || 0;
-        rules.splice(getInsertionIndex(state, position), 0, rule2);
+        rules2.splice(getInsertionIndex(state, position), 0, rule2);
         constructionState[rulesBucketIndex] = increaseInsertionIndex(state, position);
       }
       function getInsertionIndex(indexBitmap, maskPosition) {
@@ -194569,11 +194569,11 @@ ${options.prefix}` : "\n" : options.prefix
         }
         function processPair(currentItem, currentStartLine, currentParent, previousItem, previousStartLine, previousParent2, contextNode, dynamicIndentation) {
           formattingContext.updateContext(previousItem, previousParent2, currentItem, currentParent, contextNode);
-          const rules = getRules(formattingContext);
+          const rules2 = getRules(formattingContext);
           let trimTrailingWhitespaces = formattingContext.options.trimTrailingWhitespace !== false;
           let lineAction = 0;
-          if (rules) {
-            forEachRight(rules, (rule2) => {
+          if (rules2) {
+            forEachRight(rules2, (rule2) => {
               lineAction = applyRuleEdits(rule2, previousItem, previousStartLine, currentItem, currentStartLine);
               if (dynamicIndentation) {
                 switch (lineAction) {
@@ -221034,7 +221034,182 @@ __export(kernel_exports, {
   validateResolvedProjectProfile: () => validateResolvedProjectProfile,
   vendoredTs: () => vendoredTs
 });
+
+// src/ai-lint.mjs
 import { createHash } from "node:crypto";
+var unknown = () => ({ state: "unknown" });
+var known = (value) => ({ state: "known", value });
+var canon = (v) => JSON.stringify(order(v));
+function order(v) {
+  if (Array.isArray(v)) return v.map(order);
+  if (v && typeof v === "object") return Object.fromEntries(Object.keys(v).sort().map((k) => [k, order(v[k])]));
+  return v;
+}
+var hash = (v) => "sha256:" + createHash("sha256").update(canon(v)).digest("hex");
+var digest = (bytes) => "sha256:" + createHash("sha256").update(bytes).digest("hex");
+var rules = ["ambiguity.implicit-target-defaults", "ambiguity.multiple-resolutions", "ambiguity.scattered-state-writes", "hidden.convention-only-path", "hidden.dispatch-without-binding", "hidden.observer-write", "hidden.path-without-trace-owner", "hidden.reflective-call", "hidden.string-reference", "hidden.undeclared-effect", "indirection.depth-exceeded"];
+function validateLintRequest(request) {
+  const l = request.lint_request;
+  if (request.operation === "lint" !== (l !== void 0)) throw new Error("lint-request-pairing");
+  if (!l) return;
+  if (request.protocol_version !== "0.6.4" || !request.target || ["dry_run", "plan_id", "native_request", "ir_path", "profile", "profile_digest", "profile_capabilities"].some((k) => request[k] !== void 0)) throw new Error("lint-request-version-members");
+  if (!l || Object.keys(l).sort().join() !== "bindings,files,pins,scope" || !Array.isArray(l.scope) || !l.scope.length || l.scope.length > 1e4 || !Array.isArray(l.files) || l.files.length > 4096 || !Array.isArray(l.bindings) || l.bindings.length > 1e4) throw new Error("lint-request-shape");
+  const token = (s) => typeof s === "string" && /^[A-Za-z0-9][A-Za-z0-9_.:/#@\\-]{0,255}$/.test(s);
+  const sha = (s) => typeof s === "string" && /^sha256:[a-f0-9]{64}$/.test(s);
+  if (l.scope.some((s, i) => !token(s) || i > 0 && l.scope[i - 1] >= s) || l.files.some((s, i) => !/^[a-z0-9._/-]{1,512}$/.test(s) || s.split("/").some((p) => !p || p === "." || p === "..") || i > 0 && l.files[i - 1] >= s)) throw new Error("lint-request-order-path");
+  if (Object.keys(l.pins).sort().join() !== "capabilities,ir,model,observed,profile,revision") throw new Error("lint-request-pins");
+  for (const [key, p] of Object.entries(l.pins)) {
+    if (!p || !["known", "unknown", "withheld", "unsupported"].includes(p.state) || Object.keys(p).sort().join() !== (p.state === "known" ? "state,value" : "state") || p.state === "known" && !(key === "revision" ? token(p.value) : sha(p.value)) || ["model", "ir"].includes(key) && p.state !== "known") throw new Error("lint-request-pin");
+  }
+  const keys = /* @__PURE__ */ new Set();
+  for (const b of l.bindings) {
+    const key = JSON.stringify([b.path, b.nativeId, b.kind]);
+    if (keys.has(key)) throw new Error("lint-binding-ambiguous");
+    keys.add(key);
+  }
+  for (const b of l.bindings) if (!b || Object.keys(b).sort().join() !== "fingerprint,kind,nativeId,path,symbol" || !l.files.includes(b.path) || !token(b.nativeId) || !token(b.symbol) || !sha(b.fingerprint) || !["command", "entity"].includes(b.kind)) throw new Error("lint-request-binding");
+}
+function collectAiLint(request, ts2, readView, artifactDigest, adapterVersion) {
+  const l = request.lint_request, texts = /* @__PURE__ */ new Map(), sources = [], locations = [], records = [];
+  let total = 0, work = 0;
+  for (const path of l.files) {
+    const bytes = readView.readFile(path, { files: 4096, bytes: 8 * 1024 * 1024 });
+    total += bytes.length;
+    if (total > 8 * 1024 * 1024) throw new Error("lint-source-limit");
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes), fingerprint = digest(bytes);
+    texts.set(path, text);
+    sources.push({ id: hash([path, fingerprint]), path, fingerprint, bytes: bytes.length });
+  }
+  for (const b of l.bindings) if (sources.find((s) => s.path === b.path)?.fingerprint !== b.fingerprint) throw new Error("lint-binding-stale");
+  const files = new Map([...texts].map(([path, text]) => [path, ts2.createSourceFile(path, text, ts2.ScriptTarget.ES2022, true, path.endsWith(".tsx") ? ts2.ScriptKind.TSX : path.endsWith(".js") ? ts2.ScriptKind.JS : ts2.ScriptKind.TS)]));
+  const host = { getSourceFile: (path) => files.get(path), getDefaultLibFileName: () => "", writeFile: () => {
+    throw new Error("lint-write-denied");
+  }, getCurrentDirectory: () => "", getDirectories: () => [], fileExists: (path) => files.has(path), readFile: (path) => texts.get(path), getCanonicalFileName: (path) => path, useCaseSensitiveFileNames: () => true, getNewLine: () => "\n", directoryExists: () => false, realpath: (path) => path, resolveModuleNames: (names) => names.map(() => void 0) };
+  const program = ts2.createProgram([...files.keys()], { noLib: true, noEmit: true, allowJs: true, module: ts2.ModuleKind.ESNext, target: ts2.ScriptTarget.ES2022 }, host), checker = program.getTypeChecker();
+  const position = (text, offset) => {
+    const pre = text.slice(0, offset);
+    return [pre.split("\n").length, Array.from(pre.split("\n").at(-1)).length + 1];
+  };
+  function span(node, sf) {
+    const source = sources.find((s) => s.path === sf.fileName), start = node.getStart(sf), end = node.end;
+    const startByte = Buffer.byteLength(sf.text.slice(0, start)), endByte = Buffer.byteLength(sf.text.slice(0, end));
+    const id = hash([source.id, startByte, endByte]);
+    if (!locations.some((s) => s.id === id)) {
+      const [line, column] = position(sf.text, start), [endLine, endColumn] = position(sf.text, end);
+      locations.push({ id, source: source.id, start: startByte, end: endByte, line, column, endLine, endColumn });
+    }
+    return id;
+  }
+  function native(node, sf) {
+    let parts = [], at = node;
+    while (at && at !== sf) {
+      if (at.name && (ts2.isFunctionDeclaration(at) || ts2.isClassDeclaration(at) || ts2.isMethodDeclaration(at))) parts.unshift(at.name.text);
+      at = at.parent;
+    }
+    return `${sf.fileName}#${parts.join(".") || "module"}`;
+  }
+  const binding = (node, sf, kind) => l.bindings.find((b) => b.path === sf.fileName && b.nativeId === native(node, sf) && b.kind === kind);
+  function base(kind, subject, nativeId2, ids, symbol = unknown()) {
+    const r = { id: "", kind, mechanism: "direct", subject, semanticSymbol: symbol, operation: unknown(), resource: unknown(), field: unknown(), nativeId: nativeId2, confidence: "medium", currency: "current", origin: "extracted", claim: "possible-behavior", binding: unknown(), configuration: unknown(), ownership: unknown(), trace: unknown(), value: unknown(), key: unknown(), candidates: [], activation: [], locations: [...new Set(ids)].sort(), guards: [] };
+    r.id = hash([kind, subject, nativeId2, r.locations]);
+    return r;
+  }
+  function push(r) {
+    if (records.length >= 1e4 || locations.length > 1e4) throw new Error("lint-record-limit");
+    if (!records.some((s) => s.id === r.id)) records.push(r);
+  }
+  function enclosing(node, sf) {
+    let n = node;
+    while (n && n !== sf) {
+      if (ts2.isFunctionDeclaration(n) || ts2.isMethodDeclaration(n)) return n;
+      n = n.parent;
+    }
+    return sf;
+  }
+  function write(node, sf) {
+    if (!ts2.isBinaryExpression(node) || node.operatorToken.kind !== ts2.SyntaxKind.EqualsToken || !ts2.isPropertyAccessExpression(node.left)) return null;
+    const type = checker.getTypeAtLocation(node.left.expression), declaration = type.symbol?.declarations?.find((d) => ts2.isClassDeclaration(d));
+    if (!declaration) return null;
+    const resource = binding(declaration, declaration.getSourceFile(), "entity");
+    if (!resource) return null;
+    return { resource: resource.symbol, field: node.left.name.text, location: span(node, sf) };
+  }
+  const emitters = /* @__PURE__ */ new Set(), registrations = [], triggers = [], calls = [];
+  function walk(node, sf, visit) {
+    const stack = [node];
+    while (stack.length) {
+      const n = stack.pop();
+      if (++work > 1e7) throw new Error("lint-work-limit");
+      visit(n);
+      ts2.forEachChild(n, (child) => {
+        stack.push(child);
+      });
+    }
+  }
+  for (const sf of files.values()) walk(sf, sf, (node) => {
+    if (ts2.isVariableDeclaration(node) && ts2.isIdentifier(node.name) && node.initializer && ts2.isNewExpression(node.initializer)) {
+      const sym = checker.getSymbolAtLocation(node.initializer.expression), imports = sym?.declarations?.filter((d) => ts2.isImportSpecifier(d)) ?? [];
+      if (imports.some((d) => (d.propertyName?.text ?? d.name.text) === "EventEmitter" && ["node:events", "events"].includes(d.parent.parent.parent.moduleSpecifier?.text))) emitters.add(checker.getSymbolAtLocation(node.name));
+    }
+    if (ts2.isCallExpression(node)) calls.push([node, sf]);
+    const w = write(node, sf), owner = enclosing(node, sf), bound = binding(owner, sf, "command");
+    if (w && bound && l.scope.some((s) => s === bound.symbol || bound.symbol.startsWith(s + "."))) {
+      const r = base("field-write", bound.symbol, native(owner, sf), [w.location], known(bound.symbol));
+      Object.assign(r, { operation: known(bound.symbol), resource: known(w.resource), field: known(w.field), key: known("update"), confidence: "high", claim: "structural" });
+      push(r);
+    }
+  });
+  for (const sf of files.values()) walk(sf, sf, (node) => {
+    if (ts2.isBinaryExpression(node) && ts2.isPropertyAccessExpression(node.left) && ["on", "emit", "addListener", "once"].includes(node.left.name.text)) emitters.delete(checker.getSymbolAtLocation(node.left.expression));
+  });
+  for (const [call, sf] of calls) {
+    const owner = enclosing(call, sf), bound = binding(owner, sf, "command"), symbol = bound ? known(bound.symbol) : unknown(), subject = bound?.symbol ?? native(owner, sf);
+    if (bound && !l.scope.some((s) => s === bound.symbol || bound.symbol.startsWith(s + "."))) continue;
+    const expr = call.expression;
+    if (ts2.isElementAccessExpression(expr)) {
+      const resolved = ts2.isStringLiteral(expr.argumentExpression) && checker.getResolvedSignature(call)?.declaration;
+      if (!resolved) {
+        const r = base("reflection", subject, native(owner, sf) + ":computed-call", [span(call, sf)], symbol);
+        r.binding = known(false);
+        if (bound) r.operation = known(bound.symbol);
+        push(r);
+      }
+    }
+    if (!ts2.isPropertyAccessExpression(expr) || !emitters.has(checker.getSymbolAtLocation(expr.expression))) continue;
+    const bus = checker.getSymbolAtLocation(expr.expression), event = call.arguments[0];
+    if (!event || !ts2.isStringLiteral(event)) {
+      const r = base("string-reference", subject, native(owner, sf) + ":event-reference", [span(call, sf)], symbol);
+      r.binding = known(false);
+      push(r);
+      continue;
+    }
+    if (["on", "addListener", "once"].includes(expr.name.text)) {
+      const callbackArg = call.arguments[1], callback = callbackArg && (ts2.isArrowFunction(callbackArg) || ts2.isFunctionExpression(callbackArg) ? callbackArg : checker.getSymbolAtLocation(callbackArg)?.declarations?.find((d) => ts2.isFunctionDeclaration(d)));
+      if (callback?.body) registrations.push({ bus, event: event.text, call, callback, sf, once: expr.name.text === "once" });
+    }
+    if (expr.name.text === "emit" && bound) triggers.push({ bus, event: event.text, call, sf, bound, owner });
+  }
+  for (const trigger of triggers) for (const registration of registrations.filter((r) => r.bus === trigger.bus && r.event === trigger.event)) {
+    const callbackFile = registration.callback.getSourceFile();
+    walk(registration.callback.body, callbackFile, (node) => {
+      const w = write(node, callbackFile);
+      if (!w) return;
+      const triggerSpan = span(trigger.call, trigger.sf), registrationSpan = span(registration.call, registration.sf), callbackSpan = span(registration.callback, callbackFile);
+      const r = base("effect", trigger.bound.symbol, native(trigger.owner, trigger.sf) + ":observer:" + hash(registration.event).slice(7, 23), [triggerSpan, registrationSpan, callbackSpan, w.location], known(trigger.bound.symbol));
+      Object.assign(r, { operation: known(trigger.bound.symbol), resource: known(w.resource), field: known(w.field), key: known("update"), confidence: "high", mechanism: "observer" });
+      r.activation = [["binding", trigger.bound.nativeId, triggerSpan], ["trigger", native(trigger.owner, trigger.sf), triggerSpan], ["registration", native(enclosing(registration.call, registration.sf), registration.sf) + ":on", registrationSpan], ["callback", native(registration.callback, callbackFile) + ":callback", callbackSpan], ["effect", w.resource + "/" + w.field, w.location]].map(([role, identity, location]) => ({ role, identity, locations: [location], guards: registration.once ? ["once-listener", "listener-still-registered"] : ["listener-still-registered"], confidence: "high" }));
+      push(r);
+    });
+  }
+  sources.sort((a, b) => a.path < b.path ? -1 : 1);
+  locations.sort((a, b) => a.id < b.id ? -1 : 1);
+  records.sort((a, b) => a.id < b.id ? -1 : 1);
+  const supported = /* @__PURE__ */ new Set(["hidden.observer-write", "hidden.reflective-call", "hidden.string-reference", "ambiguity.scattered-state-writes"]);
+  return { schemaVersion: "lekalo/ai-lint-evidence/v0.6.4", identity: "dev.lekalo.ai-lint-evidence@0.6.4", target: request.target, scope: l.scope, producer: { id: "lekalo-target-node-typescript", version: adapterVersion, artifactDigest, tool: "node-static", compiler: known("typescript/5.9.3"), framework: known("node-events/v1"), recipe: "ai-readability/1" }, pins: l.pins, inputManifestDigest: hash(sources), sources, locations, records, limitations: ["static-files-only", "no-application-execution", "external-module-resolution-unsupported"], coverage: rules.flatMap((rule) => l.scope.map((scope) => ({ rule, target: request.target, scope, state: supported.has(rule) && files.size ? "partial" : "unsupported", eligible: unknown(), examined: known(calls.length), limitations: [supported.has(rule) ? "bounded-static-files" : "detector-unsupported"] }))) };
+}
+
+// src/kernel.mjs
+import { createHash as createHash2 } from "node:crypto";
 import {
   closeSync,
   lstatSync,
@@ -221052,7 +221227,7 @@ import { dirname, isAbsolute, resolve, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
 var PROTOCOL_TOKEN = "lekalo.target/v1";
 var VERSION = "0.3.2";
-var SUPPORTED_VERSIONS = Object.freeze([VERSION]);
+var SUPPORTED_VERSIONS = Object.freeze([VERSION, "0.6.4"]);
 var ADAPTER_ID = "lekalo-target-node-typescript";
 var ADAPTER_VERSION = "0.4.0";
 var MAX_REQUEST_BYTES = 1024 * 1024;
@@ -221089,7 +221264,8 @@ var OPERATION_TOKENS = Object.freeze([
   "verify",
   "clean",
   "plan-clean",
-  "plan-native"
+  "plan-native",
+  "lint"
 ]);
 var SUPPORT_STATES = Object.freeze(["full", "partial", "unsupported", "unknown"]);
 var CAPABILITY_IDS = Object.freeze([
@@ -221111,7 +221287,7 @@ var CAPABILITY_IDS = Object.freeze([
   "preserve.classification"
 ]);
 function entryDigest() {
-  return "sha256:" + createHash("sha256").update(readSelfBytes()).digest("hex");
+  return "sha256:" + createHash2("sha256").update(readSelfBytes()).digest("hex");
 }
 var selfBytes;
 function readSelfBytes() {
@@ -221182,17 +221358,17 @@ function vendoredTs() {
 function embeddedLibFiles() {
   return embeddedLibs;
 }
-function __attachDrizzleDeclarations(files, pin, digest) {
+function __attachDrizzleDeclarations(files, pin, digest2) {
   if (!(files instanceof Map) || files.size === 0) {
     throw new RequestRefusal("compiler", "the embedded drizzle declaration map is malformed");
   }
-  if (typeof pin !== "string" || pin === "" || typeof digest !== "string" || !isSha256Digest(digest)) {
+  if (typeof pin !== "string" || pin === "" || typeof digest2 !== "string" || !isSha256Digest(digest2)) {
     throw new RequestRefusal("compiler", "the embedded drizzle declaration identity is malformed");
   }
-  if (drizzleDeclarations !== null && (drizzleDeclarations.pin !== pin || drizzleDeclarations.digest !== digest)) {
+  if (drizzleDeclarations !== null && (drizzleDeclarations.pin !== pin || drizzleDeclarations.digest !== digest2)) {
     throw new RequestRefusal("compiler", "a different drizzle declaration closure is already attached");
   }
-  drizzleDeclarations = Object.freeze({ files, pin, digest });
+  drizzleDeclarations = Object.freeze({ files, pin, digest: digest2 });
 }
 function embeddedDrizzleDeclarations() {
   return drizzleDeclarations;
@@ -221593,7 +221769,7 @@ function canonicalNumber(value) {
   return JSON.stringify(value);
 }
 function sha256Hex(text) {
-  return createHash("sha256").update(text, "utf8").digest("hex");
+  return createHash2("sha256").update(text, "utf8").digest("hex");
 }
 var RequestRefusal = class extends Error {
   constructor(code, message) {
@@ -221726,7 +221902,8 @@ var REQUEST_KEYS = Object.freeze([
   "dry_run",
   "limits",
   "plan_id",
-  "native_request"
+  "native_request",
+  "lint_request"
 ]);
 var NATIVE_REQUEST_KEYS = Object.freeze([
   "changes",
@@ -221812,7 +221989,7 @@ function validateRequestObject(document) {
     if (hasOwn(request, "dry_run") || hasOwn(request, "plan_id")) {
       throw new RequestRefusal("plan-id", "plan-native is read-only");
     }
-    if (request.protocol_version !== VERSION) {
+    if (!SUPPORTED_VERSIONS.includes(request.protocol_version)) {
       throw new RequestRefusal("member", "plan-native requires the current version");
     }
     validateNativeRequest(request.native_request);
@@ -221851,6 +222028,7 @@ function validateRequestObject(document) {
     }
     validateProfileCapabilities(request.profile_capabilities);
   }
+  validateLintRequest(request);
   return request;
 }
 function validateProfileCapabilities(capabilities) {
@@ -221935,8 +222113,8 @@ function decodeFrameworkPolicyJson(text) {
     return { id, state };
   });
   const canonical = { providers };
-  const digest = `sha256:${createHash("sha256").update(canonicalJson(canonical), "utf8").digest("hex")}`;
-  return deepFreeze({ schema: document.schema, version: 1, providers, digest });
+  const digest2 = `sha256:${createHash2("sha256").update(canonicalJson(canonical), "utf8").digest("hex")}`;
+  return deepFreeze({ schema: document.schema, version: 1, providers, digest: digest2 });
 }
 function extractFrameworkPolicyJson(argv = process.argv.slice(2)) {
   const markers = argv.filter((argument) => argument === "--lekalo-framework-policy-json");
@@ -222057,6 +222235,11 @@ function describeCapabilities(profile = null, extensions = []) {
     capabilities.profiles = [profile.id];
     capabilities.ir_versions = [...irVersions].sort();
     capabilities.write_scopes = [...writeScopes].sort();
+  }
+  if (vendoredTs()) {
+    capabilities.operations = [.../* @__PURE__ */ new Set([...capabilities.operations, "lint"])].sort();
+    capabilities.capabilities["lint.ai-readability"] = "partial";
+    capabilities.read_scopes = [.../* @__PURE__ */ new Set([...capabilities.read_scopes, "src/**"])].sort();
   }
   return capabilities;
 }
@@ -222547,8 +222730,13 @@ function createKernel(options = {}) {
     dispatch(validatedRequest, trustedExecutionContext) {
       const operation = validatedRequest.operation;
       if (operation === "describe") {
+        const capabilities = this.describe();
+        if (validatedRequest.protocol_version === "0.3.2") {
+          capabilities.operations = capabilities.operations.filter((o) => o !== "lint");
+          delete capabilities.capabilities["lint.ai-readability"];
+        }
         return {
-          response: buildResponse(validatedRequest, { capabilities: this.describe() }),
+          response: buildResponse(validatedRequest, { capabilities }),
           internal: {
             state: "complete",
             evidence: {
@@ -222565,6 +222753,16 @@ function createKernel(options = {}) {
             }
           }
         };
+      }
+      if (operation === "lint") {
+        validateLintRequest(validatedRequest);
+        if (!vendoredTs()) return { response: buildUnsupportedResponse(validatedRequest), internal: { state: "unsupported" } };
+        const lintProfile = { readRoots: validatedRequest.lint_request.files.map((path) => ({ path, kind: "file", scope: path })) };
+        const permittedRoot2 = trustedExecutionContext?.permittedProjectRoot;
+        const roots2 = resolveReadRoots(permittedRoot2, lintProfile);
+        const readView2 = createReadView(permittedRoot2, roots2, lintProfile);
+        const evidence = collectAiLint(validatedRequest, vendoredTs(), readView2, entryDigest(), ADAPTER_VERSION);
+        return { response: buildResponse(validatedRequest, { result: { lint_evidence: evidence } }), internal: { state: "partial" } };
       }
       const extension = [...extensions.values()].find((candidate) => candidate.operations.includes(operation));
       if (!extension) {
@@ -223279,12 +223477,12 @@ __export(scanner_exports, {
   signatureGraphOfSymbol: () => signatureGraphOfSymbol,
   sortIndex: () => sortIndex
 });
-import { createHash as createHash5 } from "node:crypto";
+import { createHash as createHash6 } from "node:crypto";
 import { lstatSync as lstatSync2, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 // src/drizzle-evidence.mjs
-import { createHash as createHash2 } from "node:crypto";
+import { createHash as createHash3 } from "node:crypto";
 var DRIZZLE_EVIDENCE_SCHEMA = "lekalo/drizzle-evidence/v0.1.0";
 var DRIZZLE_BINDINGS_INPUT_SCHEMA = "lekalo/drizzle-bindings-input/v0.1.0";
 var DRIZZLE_PROJECTION_INPUT_SCHEMA = "lekalo/storage-projection-input/v0.1.0";
@@ -223424,7 +223622,7 @@ function isObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function sha256Hex2(text) {
-  return createHash2("sha256").update(text, "utf8").digest("hex");
+  return createHash3("sha256").update(text, "utf8").digest("hex");
 }
 function canonicalText(value) {
   if (value === null) return "null";
@@ -223983,9 +224181,9 @@ var ExtractorContext = class {
       detail: typeof detail === "string" ? detail.slice(0, 160) : null
     }, this.overflow);
   }
-  noteFile(modulePath, digest) {
+  noteFile(modulePath, digest2) {
     if (this.contributingFiles.size < MAX_PROVENANCE_FILES) {
-      this.contributingFiles.set(modulePath, digest);
+      this.contributingFiles.set(modulePath, digest2);
     }
   }
   tableForNodeIdentifier(node) {
@@ -225660,9 +225858,9 @@ function attachDrizzleEvidence({
   extract.fileDigestOf = (sourceFile) => {
     const cached = extract.fileDigestCache.get(sourceFile.fileName);
     if (cached !== void 0) return cached;
-    const digest = "sha256:" + sha256Hex2(sourceFile.text);
-    extract.fileDigestCache.set(sourceFile.fileName, digest);
-    return digest;
+    const digest2 = "sha256:" + sha256Hex2(sourceFile.text);
+    extract.fileDigestCache.set(sourceFile.fileName, digest2);
+    return digest2;
   };
   const bindingsInput = drizzleBindingsInput?.value ?? null;
   const projectionRecord = drizzleProjectionInput ?? null;
@@ -225971,7 +226169,7 @@ function attachDrizzleEvidence({
           ...manifest.otherFiles
         ]
       })),
-      files: [...extract.contributingFiles.entries()].map(([path, digest]) => ({ path, digest })).sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0).slice(0, MAX_PROVENANCE_FILES)
+      files: [...extract.contributingFiles.entries()].map(([path, digest2]) => ({ path, digest: digest2 })).sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0).slice(0, MAX_PROVENANCE_FILES)
     },
     dialects: sortedUnique(extract.tables.map((table) => table.dialect)),
     tables: extract.tables,
@@ -226018,7 +226216,7 @@ function drizzleEvidenceSummary(document) {
 }
 
 // src/hono-scanner.mjs
-import { createHash as createHash4 } from "node:crypto";
+import { createHash as createHash5 } from "node:crypto";
 
 // src/hono-context.mjs
 function importDeclarationOfSymbol(ts2, symbol) {
@@ -226089,7 +226287,7 @@ function importSpecifierTextAt(ctx, expression) {
 }
 
 // src/hono-evidence.mjs
-import { createHash as createHash3 } from "node:crypto";
+import { createHash as createHash4 } from "node:crypto";
 var HONO_RELATION_NAMESPACE = "dev.lekalo.hono/";
 var HONO_SPECIFIERS = Object.freeze([
   "hono",
@@ -226189,7 +226387,7 @@ function canonicalHonoText(value) {
   return `{${keys.map((key) => `${JSON.stringify(key)}:${canonicalHonoText(value[key])}`).join(",")}}`;
 }
 function sha256Hex3(text) {
-  return createHash3("sha256").update(text, "utf8").digest("hex");
+  return createHash4("sha256").update(text, "utf8").digest("hex");
 }
 function fingerprintOf(record) {
   return "sha256:" + sha256Hex3(FRESHNESS_DOMAIN + "\0" + canonicalHonoText(record));
@@ -228291,7 +228489,7 @@ var CONSTRUCTOR_VOCABULARY = Object.freeze({
 });
 var HONO_MAX_HANDLER_DIGEST_BYTES = 8192;
 function sha256Hex4(text) {
-  return createHash4("sha256").update(text, "utf8").digest("hex");
+  return createHash5("sha256").update(text, "utf8").digest("hex");
 }
 function resolveFrameworkConstructor(node, sourceFile, ctx) {
   const { ts: ts2, checker } = ctx;
@@ -228510,7 +228708,7 @@ function scanHonoProvider({ ts: ts2, checker, program, context, index, revision,
     records: records.length,
     uncertainty: uncertainty.length
   };
-  const digest = "sha256:" + sha256Hex4(canonicalHonoText({ records, uncertainty }));
+  const digest2 = "sha256:" + sha256Hex4(canonicalHonoText({ records, uncertainty }));
   const state = violations.length > 0 || budgetExceeded ? "partial" : uncertainty.length > 0 ? "partial" : apps.length === 0 ? "empty" : "complete";
   return {
     provider: {
@@ -228519,7 +228717,7 @@ function scanHonoProvider({ ts: ts2, checker, program, context, index, revision,
       state,
       frameworkVersion: ctx.frameworkVersion,
       counts,
-      digest
+      digest: digest2
     },
     records,
     uncertainty
@@ -228805,7 +229003,7 @@ function isObject2(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function sha256Hex5(text) {
-  return createHash5("sha256").update(text, "utf8").digest("hex");
+  return createHash6("sha256").update(text, "utf8").digest("hex");
 }
 function canonicalText2(value) {
   if (value === null) return "null";
@@ -228976,15 +229174,15 @@ function buildInputManifest(inventory, readBytes) {
     }
     totalBytes += file3.size;
     const base = file3.path.split("/").pop();
-    const digest = sha256Hex5(readBytes(file3.path).toString("utf8"));
+    const digest2 = sha256Hex5(readBytes(file3.path).toString("utf8"));
     if (isSourceFile(file3.path) || isDeclarationFile(file3.path)) {
-      sourceFiles.push({ path: file3.path, digest, declaration: isDeclarationFile(file3.path) });
+      sourceFiles.push({ path: file3.path, digest: digest2, declaration: isDeclarationFile(file3.path) });
     } else if (isConfigFile(file3.path)) {
-      configFiles.push({ path: file3.path, digest });
+      configFiles.push({ path: file3.path, digest: digest2 });
     } else if (base === PACKAGE_NAME) {
-      packageFiles.push({ path: file3.path, digest });
+      packageFiles.push({ path: file3.path, digest: digest2 });
     } else {
-      otherFiles.push({ path: file3.path, digest });
+      otherFiles.push({ path: file3.path, digest: digest2 });
     }
   }
   sourceFiles.sort((a, b) => utf8Compare(a.path, b.path));
@@ -229900,12 +230098,12 @@ function runScan({ profile, readView, permittedProjectRoot, limits, frameworks =
   const packageIndex = new Map(packages.map((pkg) => [pkg.root, pkg]));
   const index = emptyIndex(compilerMeta);
   index.packages = packages;
-  index.projects = projects.map(({ configPath, directory, references, extendsChain, digest }) => ({
+  index.projects = projects.map(({ configPath, directory, references, extendsChain, digest: digest2 }) => ({
     configPath,
     directory,
     references,
     extendsChain,
-    digest
+    digest: digest2
   }));
   index.diagnostics = diagnostics;
   const inventorySet = buildInventorySet(manifest);
@@ -230322,7 +230520,7 @@ __export(workspace_exports, {
   parseWorkspaceYaml: () => parseWorkspaceYaml,
   patternMatchesDirectory: () => patternMatchesDirectory
 });
-import { createHash as createHash6 } from "node:crypto";
+import { createHash as createHash7 } from "node:crypto";
 var MAX_PACKAGES = 1024;
 var MAX_EDGES = 8192;
 var MAX_PATTERNS = 256;
@@ -230338,7 +230536,7 @@ var WorkspaceRefusal = class extends Error {
   }
 };
 function sha256Text(text) {
-  return "sha256:" + createHash6("sha256").update(text, "utf8").digest("hex");
+  return "sha256:" + createHash7("sha256").update(text, "utf8").digest("hex");
 }
 function utf8Compare2(left, right) {
   const a = Buffer.from(left, "utf8");
@@ -230784,7 +230982,7 @@ __export(native_gate_extension_exports, {
   setAdapterIdentity: () => setAdapterIdentity,
   setLaunchPolicy: () => setLaunchPolicy
 });
-import { createHash as createHash8 } from "node:crypto";
+import { createHash as createHash9 } from "node:crypto";
 
 // src/native-plan.mjs
 var native_plan_exports = {};
@@ -230803,7 +231001,7 @@ __export(native_plan_exports, {
   planDigest: () => planDigest,
   selectionDigest: () => selectionDigest
 });
-import { createHash as createHash7 } from "node:crypto";
+import { createHash as createHash8 } from "node:crypto";
 var PLAN_DIGEST_DOMAIN = "lekalo.native-plan.v0.4.0";
 var SELECTION_DIGEST_DOMAIN = "lekalo.native-selection.v0.4.0";
 var PLAN_CAPABILITY = "plan.native-gates";
@@ -230901,14 +231099,14 @@ function planDigest(plan) {
     Buffer.from(PLAN_DIGEST_DOMAIN, "utf8"),
     Buffer.from(canonicalJsonText2(rest), "utf8")
   ]);
-  return "sha256:" + createHash7("sha256").update(bytes).digest("hex");
+  return "sha256:" + createHash8("sha256").update(bytes).digest("hex");
 }
 function selectionDigest(selection) {
   const bytes = Buffer.concat([
     Buffer.from(SELECTION_DIGEST_DOMAIN, "utf8"),
     Buffer.from(canonicalJsonText2(selection), "utf8")
   ]);
-  return "sha256:" + createHash7("sha256").update(bytes).digest("hex");
+  return "sha256:" + createHash8("sha256").update(bytes).digest("hex");
 }
 function isSafeLiteral(text) {
   if (typeof text !== "string" || text.length === 0 || text.length > 1024) return false;
@@ -231267,7 +231465,7 @@ function setLaunchPolicy(policy) {
   launchPolicy = policy;
 }
 function sha256Text2(text) {
-  return "sha256:" + createHash8("sha256").update(text, "utf8").digest("hex");
+  return "sha256:" + createHash9("sha256").update(text, "utf8").digest("hex");
 }
 function isObject5(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -231722,7 +231920,7 @@ __export(transport_extension_exports, {
   transportExtensionDescriptor: () => transportExtensionDescriptor,
   transportGenerateOperation: () => transportGenerateOperation
 });
-import { createHash as createHash9 } from "node:crypto";
+import { createHash as createHash10 } from "node:crypto";
 import { mkdirSync as mkdirSync2, writeFileSync as writeFileSync2 } from "node:fs";
 import { join as join2, resolve as resolve2 } from "node:path";
 var TRANSPORT_OPERATION = "generate";
@@ -231737,7 +231935,7 @@ var CLIENT_SDK_WRITE_ROOT = "src/generated/node-typescript/clients/**";
 var TRANSPORT_READ_ROOT = ".lekalo/cache/transport";
 var IR_READ_ROOT = ".lekalo/cache/ir";
 var IR_IDENTITY = "dev.lekalo.ir@0.2.16";
-var sha256Text3 = (text) => "sha256:" + createHash9("sha256").update(text, "utf8").digest("hex");
+var sha256Text3 = (text) => "sha256:" + createHash10("sha256").update(text, "utf8").digest("hex");
 var isObject6 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 var canonicalJson2 = (value) => {
   if (Array.isArray(value)) return `[${value.map(canonicalJson2).join(",")}]`;
@@ -231787,7 +231985,7 @@ function decodeEvidence(bytes) {
       // The exact-bytes digest of the evidence document: the
       // transportRef pin binds the bytes that were read, byte-stable
       // across repeats.
-      digest: "sha256:" + createHash9("sha256").update(bytes).digest("hex")
+      digest: "sha256:" + createHash10("sha256").update(bytes).digest("hex")
     }
   };
 }
@@ -232020,10 +232218,10 @@ function transportExtensionDescriptor() {
 }
 
 // src/zod-gen.mjs
-import { createHash as createHash11 } from "node:crypto";
+import { createHash as createHash12 } from "node:crypto";
 
 // src/zod-emit.mjs
-import { createHash as createHash10 } from "node:crypto";
+import { createHash as createHash11 } from "node:crypto";
 
 // src/zod-map.mjs
 var MAP_CONTRACT = "lekalo/zod-map/v0.3.2";
@@ -232409,7 +232607,7 @@ function compareFindings(left, right) {
 // src/zod-emit.mjs
 var ADAPTER_ID2 = "lekalo-target-node-typescript";
 function sha256(text) {
-  return "sha256:" + createHash10("sha256").update(text, "utf8").digest("hex");
+  return "sha256:" + createHash11("sha256").update(text, "utf8").digest("hex");
 }
 function canonicalJson3(value) {
   if (value === null) return "null";
@@ -233064,7 +233262,7 @@ function readIr(readView, irPath) {
   return { document, text };
 }
 function sha256Bytes(bytes) {
-  return "sha256:" + createHash11("sha256").update(bytes).digest("hex");
+  return "sha256:" + createHash12("sha256").update(bytes).digest("hex");
 }
 function byPath(left, right) {
   return left.path < right.path ? -1 : left.path > right.path ? 1 : 0;
@@ -233308,7 +233506,7 @@ function parseInline(token) {
 }
 
 // src/openapi-gen.mjs
-import { createHash as createHash12 } from "node:crypto";
+import { createHash as createHash13 } from "node:crypto";
 
 // src/openapi-policy.mjs
 var POLICY_PATH2 = "lekalo/targets/node-typescript.yaml";
@@ -233431,7 +233629,7 @@ var OWNERSHIP_CONTRACT = "lekalo/openapi-map/v0.4.0";
 var OPENAPI_WRITE_SCOPES = ["docs/**"];
 var MAX_DOCUMENT_BYTES = 4 * 1024 * 1024;
 var IR_IDENTITY3 = "dev.lekalo.ir@0.2.16";
-var sha256Text4 = (text) => "sha256:" + createHash12("sha256").update(text, "utf8").digest("hex");
+var sha256Text4 = (text) => "sha256:" + createHash13("sha256").update(text, "utf8").digest("hex");
 function openapiGenerateOperation(context) {
   const { request, readView } = context;
   if (!readView) {
@@ -234154,7 +234352,7 @@ function compareFindings2(left, right) {
   return symbol !== 0 ? symbol : byKey(left.detail, right.detail);
 }
 function digestOf(bytes) {
-  return "sha256:" + createHash12("sha256").update(bytes).digest("hex");
+  return "sha256:" + createHash13("sha256").update(bytes).digest("hex");
 }
 function bounded2(text) {
   return String(text ?? "unknown").replace(/[^a-zA-Z0-9._: -]+/g, "?").slice(0, 128);
@@ -234446,7 +234644,7 @@ function sidecarPath(documentPath, suffix) {
 }
 
 // src/scenario-gen.mjs
-import { createHash as createHash13 } from "node:crypto";
+import { createHash as createHash14 } from "node:crypto";
 
 // src/scenario-map.mjs
 var SCENARIO_IDENTITY = "dev.lekalo.scenario-ir@0.2.16";
@@ -235104,13 +235302,13 @@ function mapThen(then, context, portSurface) {
       return mapped;
     }
     if (kind === "entity_state") {
-      const known = ["datetime", "uuid", "uri", "decimal", "non-null"];
-      const unknown = Object.entries(assertion.fields ?? {}).filter(([, expectation]) => expectation !== null && typeof expectation === "object" && "match" in expectation && !known.includes(expectation.match)).map(([field, expectation]) => `${field}:${expectation.match}`);
-      if (unknown.length > 0) {
+      const known2 = ["datetime", "uuid", "uri", "decimal", "non-null"];
+      const unknown2 = Object.entries(assertion.fields ?? {}).filter(([, expectation]) => expectation !== null && typeof expectation === "object" && "match" in expectation && !known2.includes(expectation.match)).map(([field, expectation]) => `${field}:${expectation.match}`);
+      if (unknown2.length > 0) {
         mapped.unsupported = {
           capability: "scenario.match-kind",
           reason: "match-kind-unimplemented",
-          detail: boundToken2(unknown.join(","))
+          detail: boundToken2(unknown2.join(","))
         };
         return mapped;
       }
@@ -236238,7 +236436,7 @@ function readDocument(readView, path) {
   return { document, text };
 }
 function sha256Bytes2(bytes) {
-  return "sha256:" + createHash13("sha256").update(bytes).digest("hex");
+  return "sha256:" + createHash14("sha256").update(bytes).digest("hex");
 }
 function byPath2(left, right) {
   return left.path < right.path ? -1 : left.path > right.path ? 1 : 0;
@@ -236248,7 +236446,7 @@ function bounded3(text) {
 }
 
 // src/client-sdk-gen.mjs
-import { createHash as createHash14 } from "node:crypto";
+import { createHash as createHash15 } from "node:crypto";
 function tsDecodeMethod() {
   const body = [
     "    private async decode<T>(",
@@ -236310,7 +236508,7 @@ var CLIENT_SDK_WRITE_ROOT2 = "src/generated/node-typescript/clients/**";
 var CLIENT_SDK_EVIDENCE_DIR2 = ".lekalo/cache/client-sdk";
 var SDK_IDENTITY = "dev.lekalo.client-sdk@0.4.0";
 var SDK_SCHEMA_VERSION = "lekalo/client-sdk/v0.4.0";
-var sha256Text5 = (text) => "sha256:" + createHash14("sha256").update(text, "utf8").digest("hex");
+var sha256Text5 = (text) => "sha256:" + createHash15("sha256").update(text, "utf8").digest("hex");
 var isObject7 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 function decodeClientSdkEvidence(bytes) {
   let document;
@@ -236330,7 +236528,7 @@ function decodeClientSdkEvidence(bytes) {
     value: {
       document,
       projectId: typeof document.projectId === "string" ? document.projectId : void 0,
-      digest: "sha256:" + createHash14("sha256").update(bytes).digest("hex")
+      digest: "sha256:" + createHash15("sha256").update(bytes).digest("hex")
     }
   };
 }
@@ -236610,8 +236808,8 @@ function tsScalarType(mapping) {
 }
 function tsTypeRef(typeRef, typeIndex2) {
   if (typeRef === "lekalo.unit") return "void";
-  const known = typeIndex2.get(typeRef);
-  return known ? known.ident : "unknown";
+  const known2 = typeIndex2.get(typeRef);
+  return known2 ? known2.ident : "unknown";
 }
 function tsValueTypeRef(typeRef, shape, typeIndex2) {
   if (typeRef === "lekalo.unit") return "void";
@@ -236891,8 +237089,8 @@ function goExported(text) {
 }
 function goTypeRef(typeRef, index) {
   if (typeRef === "lekalo.unit") return "*struct{}";
-  const known = index.get(typeRef);
-  return known ? "*" + goExported(known.ident) : "any";
+  const known2 = index.get(typeRef);
+  return known2 ? "*" + goExported(known2.ident) : "any";
 }
 function goValueTypeRef(typeRef, shape, index) {
   const inner = goTypeRef(typeRef, index);
@@ -237122,7 +237320,7 @@ function clientSdkPlanIdOf(writes) {
 }
 var planIdOf3 = clientSdkPlanIdOf;
 function digestOf2(bytes) {
-  return "sha256:" + createHash14("sha256").update(bytes).digest("hex");
+  return "sha256:" + createHash15("sha256").update(bytes).digest("hex");
 }
 function bounded4(text) {
   return String(text ?? "unknown").replace(/[^a-zA-Z0-9._: -]+/g, "?").slice(0, 128);

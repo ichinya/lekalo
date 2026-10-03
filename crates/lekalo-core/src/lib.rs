@@ -4,6 +4,7 @@
 
 pub mod adapter_conformance;
 pub mod adapter_package;
+pub mod ai_lint;
 pub mod artifacts;
 pub mod authorization;
 pub mod cache;

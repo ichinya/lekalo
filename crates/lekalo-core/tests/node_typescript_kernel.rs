@@ -69,7 +69,7 @@ fn the_kernel_describes_itself_through_the_production_client() {
     let described = client
         .describe(&command, &sandbox.dir)
         .expect("the kernel handshake must succeed");
-    assert_eq!(described.negotiated_version, "0.3.2");
+    assert_eq!(described.negotiated_version, "0.6.4");
     assert_eq!(
         described.capabilities.adapter.id,
         "lekalo-target-node-typescript"
@@ -127,6 +127,8 @@ fn undeclared_operations_are_refused_before_launch() {
             dry_run: None,
             plan_id: None,
             native_request: None,
+
+            lint_request: None,
         },
         &sandbox.dir,
         &lekalo_core::project_fs::Fs::open(&sandbox.dir).expect("fs"),

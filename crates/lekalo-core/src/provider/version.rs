@@ -20,13 +20,13 @@ pub const FAMILY: &str = "dev.lekalo.workflow-provider";
 
 /// The exact workflow-provider contract version: the product version of
 /// the implementation commit (issue #34).
-pub const VERSION: &str = "0.6.3";
+pub const VERSION: &str = "0.6.4";
 
 /// The exact contract identity: family and version joined with `@`.
-pub const IDENTITY: &str = "dev.lekalo.workflow-provider@0.6.3";
+pub const IDENTITY: &str = "dev.lekalo.workflow-provider@0.6.4";
 
 /// The exact wire discriminator of the workflow-provider manifest.
-pub const SCHEMA_VERSION: &str = "lekalo/workflow-provider/v0.6.3";
+pub const SCHEMA_VERSION: &str = "lekalo/workflow-provider/v0.6.4";
 
 /// The discovery command that emits the manifest. It works outside a
 /// project, reads nothing, launches nothing, and writes nothing.
@@ -55,13 +55,13 @@ pub const OPERATION_COUNT: usize = 10;
 /// (`docs/versioning.md`), so this value names the contract's product
 /// generation and may trail a later binary's `--version`. Consumers
 /// negotiate on `identity`/`schemaVersion`, never on this field.
-pub const PRODUCT_VERSION: &str = "0.6.3";
+pub const PRODUCT_VERSION: &str = "0.6.4";
 
 /// The published closed output contract of `lekalo validate` success
 /// receipts. The payload carries no embedded `schemaVersion` member;
 /// this identity names the governing describing schema
-/// (`contracts/validation-report.schema.v0.6.3.json`).
-pub const VALIDATION_REPORT_SCHEMA: &str = "lekalo/validation-report/v0.6.3";
+/// (`contracts/validation-report.schema.v0.6.4.json`).
+pub const VALIDATION_REPORT_SCHEMA: &str = "lekalo/validation-report/v0.6.4";
 
 /// The published closed output contract of `lekalo generate --check`
 /// receipts. The payload carries no embedded `schemaVersion` member;
@@ -77,8 +77,8 @@ mod tests {
     fn identity_is_family_and_version() {
         assert_eq!(IDENTITY, format!("{FAMILY}@{VERSION}"));
         assert_eq!(FAMILY, "dev.lekalo.workflow-provider");
-        assert_eq!(VERSION, "0.6.3");
-        assert_eq!(SCHEMA_VERSION, "lekalo/workflow-provider/v0.6.3");
+        assert_eq!(VERSION, "0.6.4");
+        assert_eq!(SCHEMA_VERSION, "lekalo/workflow-provider/v0.6.4");
     }
 
     #[test]
@@ -97,12 +97,12 @@ mod tests {
 
     #[test]
     fn product_version_matches_the_workspace_release() {
-        assert_eq!(PRODUCT_VERSION, "0.6.3");
+        assert_eq!(PRODUCT_VERSION, "0.6.4");
     }
 
     #[test]
     fn receipt_output_identities_are_the_published_describing_schemas() {
-        assert_eq!(VALIDATION_REPORT_SCHEMA, "lekalo/validation-report/v0.6.3");
+        assert_eq!(VALIDATION_REPORT_SCHEMA, "lekalo/validation-report/v0.6.4");
         assert_eq!(GENERATE_CHECK_SCHEMA, "lekalo/generate-check/v0.6.3");
     }
 }

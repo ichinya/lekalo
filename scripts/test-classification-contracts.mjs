@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Issue #87 release gate: the classification and dataflow diagnostic
-// families in the additive diagnostic-registry successor chain (0.6.3 active).
+// families in the additive diagnostic-registry successor chain (0.6.4 active).
 //
 // The successor registry is created here as the shared M4 artifact: the
 // base entries are the exact 0.3.2 set (additive chain), issue #85 adds
@@ -45,8 +45,8 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf8"));
 const readText = (relative) => readFileSync(resolve(root, relative), "utf8");
 
-const registrySchema = read("contracts/diagnostic-registry.schema.v0.6.3.json");
-const registry = read("contracts/diagnostic-registry.v0.6.3.json");
+const registrySchema = read("contracts/diagnostic-registry.schema.v0.6.4.json");
+const registry = read("contracts/diagnostic-registry.v0.6.4.json");
 const predecessor = read("contracts/diagnostic-registry.v0.3.2.json");
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const validateRegistry = ajv.compile(registrySchema);
@@ -96,7 +96,7 @@ for (const [id, before] of predEntries) {
 }
 if (
   registry.entries.length !==
-  predEntries.size + 16 + 9 + 13 + 1 + 9 + 5 + 14 + 8 + 14 + 15 + 8 + 1 + 15 + 8 + 2
+  predEntries.size + 16 + 9 + 13 + 1 + 9 + 5 + 14 + 8 + 14 + 15 + 8 + 1 + 15 + 8 + 2 + 17
 ) {
   // The increments over the v0.3.2 predecessor, one per family that
   // joined the shared registry after it: classification (#87) +16,
@@ -302,17 +302,17 @@ if (nfrRules.length !== expectedNfrCodes) fail("nfr-family-count", nfrRules.leng
 // 7. The embedded registry the Rust binary compiles is this successor,
 //    and the Rust identity constants agree.
 const registrySource = readText("crates/lekalo-core/src/diagnostics/registry.rs");
-if (!registrySource.includes("diagnostic-registry.v0.6.3.json")) {
-  fail("rust-embeds-predecessor", "diagnostic-registry.v0.6.3.json");
+if (!registrySource.includes("diagnostic-registry.v0.6.4.json")) {
+  fail("rust-embeds-predecessor", "diagnostic-registry.v0.6.4.json");
 }
 const diagnosticsVersionSource = readText("crates/lekalo-core/src/diagnostics/version.rs");
-if (!diagnosticsVersionSource.includes('REGISTRY_VERSION: &str = "0.6.3"')) {
+if (!diagnosticsVersionSource.includes('REGISTRY_VERSION: &str = "0.6.4"')) {
   fail("rust-registry-version", "0.6.3");
 }
-if (!diagnosticsVersionSource.includes('REGISTRY_IDENTITY: &str = "dev.lekalo.diagnostic-registry@0.6.3"')) {
+if (!diagnosticsVersionSource.includes('REGISTRY_IDENTITY: &str = "dev.lekalo.diagnostic-registry@0.6.4"')) {
   fail("rust-registry-identity", "0.6.3");
 }
-if (!diagnosticsVersionSource.includes('REGISTRY_SCHEMA_VERSION: &str = "lekalo/diagnostic-registry/v0.6.3"')) {
+if (!diagnosticsVersionSource.includes('REGISTRY_SCHEMA_VERSION: &str = "lekalo/diagnostic-registry/v0.6.4"')) {
   fail("rust-registry-schema-version", "0.6.3");
 }
 

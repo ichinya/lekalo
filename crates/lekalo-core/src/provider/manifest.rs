@@ -78,7 +78,7 @@ pub struct ProviderManifest {
     schemaVersion: &'static str,
     /// The exact contract identity.
     identity: &'static str,
-    /// The exact producing contract's product generation (`0.6.3`, the
+    /// The exact producing contract's product generation (`0.6.4`, the
     /// implementation commit's product version; may trail a later
     /// binary's `--version`).
     productVersion: &'static str,
@@ -377,8 +377,8 @@ mod tests {
                 "lekalo/impact/v0.2.16",
                 "lekalo/orchestration/v0.2.16",
                 "lekalo/trace-manifest/v0.2.16",
-                "lekalo/validation-profile/v0.6.3",
-                "lekalo/validation-report/v0.6.3",
+                "lekalo/validation-profile/v0.6.4",
+                "lekalo/validation-report/v0.6.4",
             ]
         );
     }

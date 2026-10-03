@@ -55,12 +55,72 @@ pub fn validate_request(request: &RequestEnvelope) -> Result<(), super::TargetFa
             detail: ProtocolMismatch::Version,
         });
     }
+    if (request.operation == Operation::Lint) != request.lint_request.is_some() {
+        return invalid("lint-request");
+    }
+    if let Some(lint) = &request.lint_request {
+        if request.protocol_version != super::version::LINT_VERSION
+            || request.target.is_none()
+            || request.profile.is_some()
+            || request.profile_digest.is_some()
+            || request.profile_capabilities.is_some()
+            || request.ir_path.is_some()
+            || request.native_request.is_some()
+            || request.dry_run.is_some()
+            || request.plan_id.is_some()
+            || lint.scope.is_empty()
+            || lint.scope.len() > 10_000
+            || !crate::ai_lint::input::sorted(&lint.scope)
+            || lint.scope.iter().any(|s| !crate::ai_lint::input::token(s))
+            || lint.bindings.len() > 10_000
+            || lint.files.len() > 4096
+            || !crate::ai_lint::input::sorted(&lint.files)
+            || lint.files.iter().any(|p| !scopes::is_logical_path(p))
+        {
+            return invalid("lint-request");
+        }
+        for pin in [&lint.pins.model, &lint.pins.ir] {
+            if pin.known().map_or(true, |p| !is_sha256_digest(p)) {
+                return invalid("lint-pin");
+            }
+        }
+        let mut binding_keys = std::collections::BTreeSet::new();
+        for binding in &lint.bindings {
+            if !scopes::is_logical_path(&binding.path)
+                || !binding_keys.insert((&binding.path, &binding.native_id, &binding.kind))
+                || !lint.files.contains(&binding.path)
+                || !is_sha256_digest(&binding.fingerprint)
+                || !crate::ai_lint::input::token(&binding.native_id)
+                || !crate::ai_lint::input::token(&binding.symbol)
+                || !["command", "entity"].contains(&binding.kind.as_str())
+            {
+                return invalid("lint-binding");
+            }
+        }
+        for pin in [
+            &lint.pins.observed,
+            &lint.pins.profile,
+            &lint.pins.capabilities,
+        ] {
+            if pin.known().is_some_and(|p| !is_sha256_digest(p)) {
+                return invalid("lint-pin");
+            }
+        }
+        if lint
+            .pins
+            .revision
+            .known()
+            .is_some_and(|p| !crate::ai_lint::input::token(p))
+        {
+            return invalid("lint-pin");
+        }
+    }
     // Issue #48: plan-native requires the current contract. A frozen
     // 0.3.1 request naming the new operation is a version mismatch (the
     // frozen documents keep their exact meanings), checked before the
     // member pairing so the refusal names the protocol.
     if request.operation == Operation::PlanNative
-        && request.protocol_version != super::version::VERSION
+        && !super::version::is_supported_version(&request.protocol_version)
     {
         return Err(super::TargetFailure::ProtocolMismatch {
             detail: ProtocolMismatch::Version,
@@ -308,6 +368,15 @@ fn constraints_bounded(constraints: Option<&AdapterConstraints>) -> bool {
 /// shared decoder in the client; no test-only parser owns these decisions.
 fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity> {
     let invalid = Err(ResponseInvalidity::Shape);
+    if response
+        .result
+        .as_ref()
+        .is_some_and(|r| r.lint_evidence.is_some())
+        && (response.protocol_version != super::version::LINT_VERSION
+            || response.operation != Operation::Lint)
+    {
+        return invalid;
+    }
     if !identity_valid(&response.evidence.adapter)
         || response
             .evidence
@@ -327,7 +396,17 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
         if !identity_valid(&c.adapter)
             || !unique(&c.protocol_versions, 1, 8)
             || !c.protocol_versions.iter().all(|v| contract_version(v))
-            || !unique(&c.operations, 1, 9)
+            || !unique(
+                &c.operations,
+                1,
+                if response.protocol_version == super::version::LINT_VERSION {
+                    10
+                } else {
+                    9
+                },
+            )
+            || (response.protocol_version != super::version::LINT_VERSION
+                && c.operations.contains(&Operation::Lint))
             || !unique(&c.transports, 1, 2)
             || !unique(&c.targets, 0, 64)
             || !unique(&c.profiles, 0, 64)
@@ -441,6 +520,7 @@ pub enum Operation {
     /// executes anything.
     #[serde(rename = "plan-native")]
     PlanNative,
+    Lint,
 }
 
 impl Operation {
@@ -456,6 +536,7 @@ impl Operation {
             Self::Clean => "clean",
             Self::PlanClean => "plan-clean",
             Self::PlanNative => "plan-native",
+            Self::Lint => "lint",
         }
     }
 
@@ -520,6 +601,24 @@ impl Limits {
 /// One request envelope. `request_id` is filled in by the client from the
 /// canonical bytes of the remaining members; optional members are omitted
 /// from the wire while absent.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct LintBinding {
+    pub path: String,
+    pub native_id: String,
+    pub symbol: String,
+    pub kind: String,
+    pub fingerprint: String,
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct LintRequest {
+    pub scope: Vec<String>,
+    pub pins: crate::ai_lint::Pins,
+    pub bindings: Vec<LintBinding>,
+    pub files: Vec<String>,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RequestEnvelope {
@@ -593,6 +692,12 @@ pub struct RequestEnvelope {
         skip_serializing_if = "Option::is_none"
     )]
     pub native_request: Option<NativeRequest>,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub lint_request: Option<LintRequest>,
 }
 
 /// The adapter identity every response binds its evidence to.
@@ -920,6 +1025,12 @@ pub struct OperationResult {
         skip_serializing_if = "Option::is_none"
     )]
     pub native_plan: Option<NativePlanRef>,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub lint_evidence: Option<crate::ai_lint::Evidence>,
 }
 
 /// The closed adapter error class set of an in-envelope operation error.
@@ -1394,6 +1505,8 @@ mod tests {
             limits: None,
             plan_id: None,
             native_request: None,
+
+            lint_request: None,
         }
     }
 

@@ -23,7 +23,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const registryPath = join(root, "contracts/diagnostic-registry.v0.6.3.json");
+const registryPath = join(root, "contracts/diagnostic-registry.v0.6.4.json");
 const registry = JSON.parse(readFileSync(registryPath, "utf8"));
 const registryDigest = `sha256:${createHash("sha256").update(readFileSync(registryPath)).digest("hex")}`;
 const suiteV1 = join(root, "tests/fixtures/suite/v1");
@@ -195,6 +195,23 @@ const familyFixture = {
 //    The gate file must exist; the note names the asserting test.
 // ---------------------------------------------------------------------------
 const testWitness = {
+"ai-lint.baseline-incomparable": [["scripts/lib/ai-lint-contract-gate.mjs", "live admission and policy/refusal vectors in family gates"]],
+"ai-lint.coverage-incomplete": [["scripts/lib/ai-lint-contract-gate.mjs", "live admission and policy/refusal vectors in family gates"]],
+"ai-lint.input-invalid": [["scripts/lib/ai-lint-contract-gate.mjs", "live admission and policy/refusal vectors in family gates"]],
+"ai-lint.policy-denied": [["scripts/lib/ai-lint-contract-gate.mjs", "live admission and policy/refusal vectors in family gates"]],
+"ai-lint.version-unsupported": [["scripts/lib/ai-lint-contract-gate.mjs", "live admission and policy/refusal vectors in family gates"]],
+"ai-lint.waiver-invalid": [["scripts/lib/ai-lint-contract-gate.mjs", "live admission and policy/refusal vectors in family gates"]],
+"ambiguity.implicit-target-defaults": [["scripts/lib/ai-lint-contract-gate.mjs", "reportCases requires a freshly produced ambiguity.implicit-target-defaults finding and registered diagnostic"]],
+"ambiguity.multiple-resolutions": [["scripts/lib/ai-lint-contract-gate.mjs", "reportCases requires a freshly produced ambiguity.multiple-resolutions finding and registered diagnostic"]],
+"ambiguity.scattered-state-writes": [["scripts/lib/ai-lint-contract-gate.mjs", "reportCases requires a freshly produced ambiguity.scattered-state-writes finding and registered diagnostic"]],
+"hidden.convention-only-path": [["scripts/lib/ai-lint-contract-gate.mjs", "reportCases requires a freshly produced hidden.convention-only-path finding and registered diagnostic"]],
+"hidden.dispatch-without-binding": [["scripts/lib/ai-lint-contract-gate.mjs", "reportCases requires a freshly produced hidden.dispatch-without-binding finding and registered diagnostic"]],
+"hidden.observer-write": [["scripts/lib/ai-lint-contract-gate.mjs", "reportCases requires a freshly produced hidden.observer-write finding and registered diagnostic"]],
+"hidden.path-without-trace-owner": [["scripts/lib/ai-lint-contract-gate.mjs", "reportCases requires a freshly produced hidden.path-without-trace-owner finding and registered diagnostic"]],
+"hidden.reflective-call": [["scripts/lib/ai-lint-contract-gate.mjs", "reportCases requires a freshly produced hidden.reflective-call finding and registered diagnostic"]],
+"hidden.string-reference": [["scripts/lib/ai-lint-contract-gate.mjs", "reportCases requires a freshly produced hidden.string-reference finding and registered diagnostic"]],
+"hidden.undeclared-effect": [["scripts/lib/ai-lint-contract-gate.mjs", "reportCases requires a freshly produced hidden.undeclared-effect finding and registered diagnostic"]],
+"indirection.depth-exceeded": [["scripts/lib/ai-lint-contract-gate.mjs", "reportCases requires a freshly produced indirection.depth-exceeded finding and registered diagnostic"]],
   "adapter.check-failed": [["crates/lekalo-core/tests", "the failing-check exchange asserts the rule id"]],
   "adapter.process-failure": [["crates/lekalo-core/tests", "the crashing-adapter exchange asserts the rule id"]],
   "adapter.checksum-mismatch": [["crates/lekalo-core/tests", "tampered package bytes assert the rule"]],

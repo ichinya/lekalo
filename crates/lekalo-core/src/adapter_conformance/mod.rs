@@ -1816,6 +1816,8 @@ impl CallShape {
             dry_run: self.dry_run,
             plan_id: self.plan_id.as_deref(),
             native_request: None,
+
+            lint_request: None,
         }
     }
 }

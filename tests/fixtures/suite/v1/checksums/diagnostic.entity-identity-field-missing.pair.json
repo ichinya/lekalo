@@ -9,7 +9,7 @@
     },
     {
       "path": "tests/fixtures/suite/v1/diagnostics/entity-identity-field-missing/fixture.json",
-      "sha256": "sha256:f18ef228c28d434b506df2c44f8cebcae007f9bbefcc08e476cee7147fdd47b9"
+      "sha256": "sha256:dfdbff8ab9086bbec94e590d9b1caaf5555e1ecbed3905faea4288d36d89736c"
     },
     {
       "path": "tests/fixtures/suite/v1/diagnostics/entity-identity-field-missing/non-trigger/lekalo/modules/planner/entities.yaml",

@@ -1,6 +1,6 @@
 {
-  "schemaVersion": "lekalo/adapter-manifest/v0.3.2",
-  "identity": "dev.lekalo.adapter-manifest@0.3.2",
+  "schemaVersion": "lekalo/adapter-manifest/v0.6.4",
+  "identity": "dev.lekalo.adapter-manifest@0.6.4",
   "adapter": {
     "id": "lekalo-target-php-laravel",
     "name": "PHP/Laravel target adapter",
@@ -23,7 +23,8 @@
   },
   "compatibility": {
     "protocolVersions": [
-      "0.3.2"
+      "0.3.2",
+      "0.6.4"
     ],
     "irVersions": [
       "0.2.16"
@@ -32,15 +33,16 @@
   },
   "capabilities": {
     "operations": [
-      "describe",
-      "scan",
       "bind",
-      "validate",
-      "generate",
-      "verify",
       "clean",
+      "describe",
+      "generate",
+      "lint",
       "plan-clean",
-      "plan-native"
+      "plan-native",
+      "scan",
+      "validate",
+      "verify"
     ],
     "targets": [
       "php-laravel"
@@ -58,25 +60,38 @@
       "scan.symbols": "unsupported",
       "verify.scenarios": "full",
       "verify.transport-http": "unsupported",
-      "generate.types": "full"
+      "generate.types": "full",
+      "lint.ai-readability": "partial",
+      "generate.operations": "partial",
+      "generate.routes": "partial",
+      "verify.operations": "partial",
+      "verify.routes": "partial"
     },
     "constraints": {
       "maxEntries": 1024
     },
     "readScopes": [
       ".lekalo/cache/**",
+      ".lekalo/generated/php-laravel/operations/**",
+      ".lekalo/generated/php-laravel/routes/**",
       ".lekalo/generated/php-laravel/types/**",
       ".lekalo/import/**",
       ".lekalo/ir/**",
+      "app/**",
+      "app/lekalo-operations/**",
       "app/lekalo-types/**",
       "composer.json",
       "composer.lock",
+      "lekalo/operations/**",
       "lekalo/php-test-port.json",
+      "lekalo/routes/**",
       "lekalo/scenarios/**",
-      "lekalo/types/**"
+      "lekalo/types/**",
+      "src/**"
     ],
     "writeScopes": [
       ".lekalo/generated/php-laravel/**",
+      "app/lekalo-operations/**",
       "app/lekalo-types/**",
       "src/generated/php-laravel/scenario-tests/**",
       "tests/lekalo/scenario-tests/**"
@@ -102,12 +117,12 @@
     "any"
   ],
   "integrity": {
-    "packageDigest": "sha256:a59b0ce683c00c420644738bea0c63ae53627e3e177ab3555ab257dd43b24ff2",
+    "packageDigest": "sha256:d1446d284d9dc4301ca0838aeac0034f20ca9e0dd21a9457e4b50362d9612ea0",
     "files": [
       {
         "path": "adapter.php",
-        "digest": "sha256:5cdf352a130d449aca2dda760adf0a16272b1d52af941cbdd72172cbd1600f96",
-        "bytes": 644044
+        "digest": "sha256:361511efcce047cb44f94d157b3aad363a9175949267d091e04fc40458d298c8",
+        "bytes": 660124
       }
     ],
     "signaturePolicy": "unsigned",
@@ -120,12 +135,14 @@
         ".lekalo/generated/php-laravel/types/**",
         ".lekalo/import/**",
         ".lekalo/ir/**",
+        "app/**",
         "app/lekalo-types/**",
         "composer.json",
         "composer.lock",
         "lekalo/php-test-port.json",
         "lekalo/scenarios/**",
-        "lekalo/types/**"
+        "lekalo/types/**",
+        "src/**"
       ],
       "writeScopes": [
         ".lekalo/generated/php-laravel/**",

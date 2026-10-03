@@ -504,6 +504,8 @@ fn run_target(
             dry_run: Some(true),
             plan_id: None,
             native_request: None,
+
+            lint_request: None,
         },
         prepared.root(),
         prepared.fs(),
@@ -548,6 +550,8 @@ fn run_target(
             dry_run: Some(false),
             plan_id: Some(&plan_id),
             native_request: None,
+
+            lint_request: None,
         },
         prepared.root(),
         prepared.fs(),
