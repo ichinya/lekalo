@@ -1241,6 +1241,14 @@ enum AdapterTestReport {
 /// lives in the core.
 #[derive(Debug, Subcommand)]
 enum TraceCommands {
+    /// Assess an explicit neutral mapping and revision-bound provider receipts.
+    Assess {
+        /// Path to the neutral trace manifest JSON document.
+        path: String,
+        /// Path to the neutral validation evidence JSON document.
+        #[arg(long, value_name = "PATH")]
+        evidence: String,
+    },
     /// Validate one neutral trace manifest document.
     Validate {
         /// Path to the trace manifest JSON document.
@@ -6110,6 +6118,7 @@ fn edge_line(label: &str, edge: &lekalo_core::graph::GraphEdge) -> String {
 /// exits onto the accepted 0/1 envelope.
 fn run_trace(command: TraceCommands) -> DomainResult {
     let (path, step) = match command {
+        TraceCommands::Assess { path, evidence } => return trace_assess(&path, &evidence),
         // The collect arm never reads a manifest file: it rebuilds the
         // scenario-evidence document through the core and persists it.
         TraceCommands::Collect { project } => {
@@ -6139,6 +6148,32 @@ fn run_trace(command: TraceCommands) -> DomainResult {
         TraceStep::Validate => trace_validate(&manifest),
         TraceStep::Export => trace_export(&manifest),
         TraceStep::Query(selector) => trace_query(&manifest, &selector),
+    }
+}
+
+fn trace_assess(path: &str, evidence: &str) -> DomainResult {
+    use std::io::Read;
+    let read = |path: &str, limit: usize| -> io::Result<Vec<u8>> {
+        let file = std::fs::File::open(path)?;
+        let mut bytes = Vec::new();
+        file.take((limit + 1) as u64).read_to_end(&mut bytes)?;
+        Ok(bytes)
+    };
+    let trace_bytes = match read(path, lekalo_core::trace::version::MAX_MANIFEST_BYTES) {
+        Ok(bytes) => bytes,
+        Err(_) => return DomainResult::invalid(lekalo_core::trace::io_failure("file-unreadable")),
+    };
+    let trace = match lekalo_core::trace::TraceManifest::parse(&trace_bytes) {
+        Ok(trace) => trace,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let bytes = match read(evidence, lekalo_core::trace::assessment::MAX_BYTES) {
+        Ok(bytes) => bytes,
+        Err(_) => return DomainResult::invalid(lekalo_core::trace::io_failure("file-unreadable")),
+    };
+    match lekalo_core::trace::assessment::assess(&trace, &bytes) {
+        Ok(report) => report.domain_result(),
+        Err(diagnostics) => DomainResult::invalid(diagnostics),
     }
 }
 

@@ -9,7 +9,7 @@
     },
     {
       "path": "tests/fixtures/suite/v1/diagnostics/portable-target-reference/fixture.json",
-      "sha256": "sha256:795c62ca8397fa63f43860c7cb0a31fe1002a6250b247050b394ca638e535ab8"
+      "sha256": "sha256:e1b8baef49f6419c8798a74f66f32a245dcbdffd40e5e9c25b462c2ebfea9d1b"
     },
     {
       "path": "tests/fixtures/suite/v1/diagnostics/portable-target-reference/non-trigger/lekalo/modules/planner/entities.yaml",

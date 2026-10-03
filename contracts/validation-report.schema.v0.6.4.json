@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://dev.lekalo/validation-report.schema.v0.6.3.json",
+  "$id": "https://dev.lekalo/validation-report.schema.v0.6.4.json",
   "title": "Lekalo validation success receipt",
-  "description": "Closed contract of the `lekalo validate` success receipt (issue #34 provider boundary, fix round 3). The command embeds no `schemaVersion` member in its payload; this describing schema is the exact output negotiation target advertised as `lekalo/validation-report/v0.6.3` by the workflow-provider manifest. The envelope is the standard status-first projection: exit 0, stdout. Exactly three receipt shapes are reachable. (1) Clean: no findings were recorded and both `diagnostics` and `reasonCodes` are absent. (2) Finding-bearing: the run recorded findings and both members are present and non-empty — the model warnings/infos the profile produced, and/or the default-profile classification-review rows that ride the success envelope without invalidating it, each keeping its registered severity, including `error` (the strict profile invalidates on error findings instead, so those runs are exit-1 failures outside this receipt). (3) Any of the above is still one closed envelope: exit 0, `status:\"valid\"`, stdout. `lekalo/validation-profile/v0.6.3` remains the separate profile *configuration* schema and is pinned alongside this contract.",
+  "description": "Closed contract of the `lekalo validate` success receipt (issue #34 provider boundary, fix round 3). The command embeds no `schemaVersion` member in its payload; this describing schema is the exact output negotiation target advertised as `lekalo/validation-report/v0.6.4` by the workflow-provider manifest. The envelope is the standard status-first projection: exit 0, stdout. Exactly three receipt shapes are reachable. (1) Clean: no findings were recorded and both `diagnostics` and `reasonCodes` are absent. (2) Finding-bearing: the run recorded findings and both members are present and non-empty — the model warnings/infos the profile produced, and/or the default-profile classification-review rows that ride the success envelope without invalidating it, each keeping its registered severity, including `error` (the strict profile invalidates on error findings instead, so those runs are exit-1 failures outside this receipt). (3) Any of the above is still one closed envelope: exit 0, `status:\"valid\"`, stdout. `lekalo/validation-profile/v0.6.4` remains the separate profile *configuration* schema and is pinned alongside this contract.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -81,7 +81,7 @@
       ],
       "properties": {
         "schema_version": { "const": "lekalo/diagnostic/v0.2.16" },
-        "registry_version": { "const": "0.6.3" },
+        "registry_version": { "const": "0.6.4" },
         "id": { "$ref": "#/$defs/diagnostic/ruleId" },
         "code": { "$ref": "#/$defs/diagnostic/diagnosticCode" },
         "severity": { "enum": ["info", "warning", "error"] },
@@ -150,11 +150,11 @@
         },
         "profileVersion": {
           "description": "The exact profile document version that ran.",
-          "const": "0.6.3"
+          "const": "0.6.4"
         },
         "registryVersion": {
           "description": "The exact diagnostic registry version the findings resolve against.",
-          "const": "0.6.3"
+          "const": "0.6.4"
         },
         "moduleScope": {
           "description": "Present only for a `--module`-scoped run; the module semantic id scope.",

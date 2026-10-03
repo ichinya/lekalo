@@ -9,7 +9,7 @@
     },
     {
       "path": "tests/fixtures/suite/v1/diagnostics/endpoint-operation-unresolved/fixture.json",
-      "sha256": "sha256:bba09836714316a0d4dd2dc545b194d5557f91d0184acdb14445ed45c5bc7b03"
+      "sha256": "sha256:abccbbeaa9b9d22d6f5c1d1a9692792aad803410325ac359bcbb190f8484db50"
     },
     {
       "path": "tests/fixtures/suite/v1/diagnostics/endpoint-operation-unresolved/non-trigger/lekalo/modules/planner/bindings.yaml",

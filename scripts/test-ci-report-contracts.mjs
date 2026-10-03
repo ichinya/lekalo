@@ -58,7 +58,7 @@ const canonicalBytes = (document) => {
 };
 
 const schema = read("contracts/ci-report.schema.v0.6.3.json");
-const registry = read("contracts/diagnostic-registry.v0.6.3.json");
+const registry = read("contracts/diagnostic-registry.v0.6.4.json");
 const registryIds = new Set(registry.entries.map((entry) => entry.id));
 
 const ajv = new Ajv2020({ strict: true, allErrors: true });

@@ -9,7 +9,7 @@
     },
     {
       "path": "tests/fixtures/suite/v1/diagnostics/query-read-kind-mismatch/fixture.json",
-      "sha256": "sha256:0912398510f3baaae2b4c4c91505b06d517ec4129a08d41b993ccefd7cd355a3"
+      "sha256": "sha256:b2119291957ba5629a1fee208a9557f1ade436a5122acef90d80a5aed3e4672d"
     },
     {
       "path": "tests/fixtures/suite/v1/diagnostics/query-read-kind-mismatch/non-trigger/lekalo/modules/planner/entities.yaml",

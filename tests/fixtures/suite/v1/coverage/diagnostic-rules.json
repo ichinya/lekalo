@@ -1,8 +1,8 @@
 {
   "coverageId": "dev.lekalo.fixture-coverage.diagnostic-rules",
   "fixtureSchema": "dev.lekalo.fixture@1.0.0",
-  "registryIdentity": "dev.lekalo.diagnostic-registry@0.6.3",
-  "registryDigest": "sha256:5bf7a4e246bffab041848bc010579aac34e0a95c2967bb51b625c0d2ae650dd6",
+  "registryIdentity": "dev.lekalo.diagnostic-registry@0.6.4",
+  "registryDigest": "sha256:3806483902cfd1416fa8e4bd8b7abafb443f335eb172f2a2d9f67ae3970fa0d6",
   "generatedBy": {
     "script": "scripts/gen-suite-coverage.mjs",
     "reviewed": true
@@ -4952,6 +4952,114 @@
         {
           "gate": "crates/lekalo-core/tests",
           "note": "failed transport asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "trace.bridge-chain-uncovered",
+      "code": "LEK-TRACE-007",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "trace-assessment",
+          "path": "tests/fixtures/trace-assessment/golden/uncovered-scenario.json"
+        }
+      ]
+    },
+    {
+      "id": "trace.bridge-conflict",
+      "code": "LEK-TRACE-003",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "trace-assessment",
+          "path": "tests/fixtures/trace-assessment/golden/duplicate-mapping.json"
+        }
+      ]
+    },
+    {
+      "id": "trace.bridge-evidence-stale",
+      "code": "LEK-TRACE-004",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "trace-assessment",
+          "path": "tests/fixtures/trace-assessment/golden/stale-model.json"
+        }
+      ]
+    },
+    {
+      "id": "trace.bridge-execution-unverified",
+      "code": "LEK-TRACE-006",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "trace-assessment",
+          "path": "tests/fixtures/trace-assessment/golden/execution-digest.json"
+        }
+      ]
+    },
+    {
+      "id": "trace.bridge-input-invalid",
+      "code": "LEK-TRACE-008",
+      "category": "model",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "trace-assessment",
+          "path": "tests/fixtures/trace-assessment/golden/unknown-member.json"
+        }
+      ]
+    },
+    {
+      "id": "trace.bridge-mapping-missing",
+      "code": "LEK-TRACE-001",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "trace-assessment",
+          "path": "tests/fixtures/trace-assessment/golden/missing-mapping.json"
+        }
+      ]
+    },
+    {
+      "id": "trace.bridge-policy-denied",
+      "code": "LEK-TRACE-009",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "trace-assessment",
+          "path": "tests/fixtures/trace-assessment/golden/hlv-fail.json"
+        }
+      ]
+    },
+    {
+      "id": "trace.bridge-provider-unsupported",
+      "code": "LEK-TRACE-005",
+      "category": "adapter",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "trace-assessment",
+          "path": "tests/fixtures/trace-assessment/golden/hlv-unavailable.json"
+        }
+      ]
+    },
+    {
+      "id": "trace.bridge-reference-unresolved",
+      "code": "LEK-TRACE-002",
+      "category": "semantic",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "trace-assessment",
+          "path": "tests/fixtures/trace-assessment/golden/dangling-mapping.json"
         }
       ]
     },

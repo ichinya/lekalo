@@ -1,9 +1,9 @@
 {
   "status": "valid",
   "manifest": {
-  "schemaVersion": "lekalo/workflow-provider/v0.6.3",
-  "identity": "dev.lekalo.workflow-provider@0.6.3",
-  "productVersion": "0.6.3",
+  "schemaVersion": "lekalo/workflow-provider/v0.6.4",
+  "identity": "dev.lekalo.workflow-provider@0.6.4",
+  "productVersion": "0.6.4",
   "discoveryCommand": "lekalo provider describe",
   "targetProtocolIdentity": "dev.lekalo.target-protocol@0.3.2",
   "schemaPins": [
@@ -30,15 +30,23 @@
       "identity": "dev.lekalo.orchestration-report@0.2.16"
     },
     {
+      "schemaVersion": "lekalo/trace-assessment/v0.6.4",
+      "identity": "dev.lekalo.trace-assessment@0.6.4"
+    },
+    {
       "schemaVersion": "lekalo/trace-manifest/v0.2.16",
       "identity": "dev.lekalo.trace-manifest@0.2.16"
     },
     {
-      "schemaVersion": "lekalo/validation-profile/v0.6.3",
-      "identity": "dev.lekalo.validation-profile@0.6.3"
+      "schemaVersion": "lekalo/trace-validation-evidence/v0.6.4",
+      "identity": "dev.lekalo.trace-validation-evidence@0.6.4"
     },
     {
-      "schemaVersion": "lekalo/validation-report/v0.6.3"
+      "schemaVersion": "lekalo/validation-profile/v0.6.4",
+      "identity": "dev.lekalo.validation-profile@0.6.4"
+    },
+    {
+      "schemaVersion": "lekalo/validation-report/v0.6.4"
     }
   ],
   "operations": [
@@ -92,6 +100,13 @@
       "requiresAdapter": false
     },
     {
+      "id": "trace.assess",
+      "effect": "read-only",
+      "outputSchema": "lekalo/trace-assessment/v0.6.4",
+      "requiresProject": false,
+      "requiresAdapter": false
+    },
+    {
       "id": "trace.export",
       "effect": "read-only",
       "outputSchema": "lekalo/trace-manifest/v0.2.16",
@@ -101,7 +116,7 @@
     {
       "id": "validate",
       "effect": "read-only",
-      "outputSchema": "lekalo/validation-report/v0.6.3",
+      "outputSchema": "lekalo/validation-report/v0.6.4",
       "requiresProject": true,
       "requiresAdapter": false
     },
@@ -118,6 +133,6 @@
     "maxContextBudgetTokens": 1000000,
     "maxExportBytes": 33554432
   },
-  "manifestDigest": "sha256:e4df5e4f0aa8e4b5bc26577b622aadd7e5b6388df4ec30fbd769338cd826e59d"
+  "manifestDigest": "sha256:c8bb29f76dc1a7e411559e9d8961c89cbf8eac4bc5186a21ecef7b2b2118115e"
 }
 }

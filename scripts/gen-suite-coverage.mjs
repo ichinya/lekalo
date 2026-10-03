@@ -23,7 +23,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const registryPath = join(root, "contracts/diagnostic-registry.v0.6.3.json");
+const registryPath = join(root, "contracts/diagnostic-registry.v0.6.4.json");
 const registry = JSON.parse(readFileSync(registryPath, "utf8"));
 const registryDigest = `sha256:${createHash("sha256").update(readFileSync(registryPath)).digest("hex")}`;
 const suiteV1 = join(root, "tests/fixtures/suite/v1");
@@ -48,6 +48,15 @@ for (const slug of pairDirs) {
 // ---------------------------------------------------------------------------
 const FIX = "tests/fixtures";
 const familyFixture = {
+  "trace.bridge-mapping-missing": [`${FIX}/trace-assessment/golden/missing-mapping.json`],
+  "trace.bridge-reference-unresolved": [`${FIX}/trace-assessment/golden/dangling-mapping.json`],
+  "trace.bridge-conflict": [`${FIX}/trace-assessment/golden/duplicate-mapping.json`],
+  "trace.bridge-evidence-stale": [`${FIX}/trace-assessment/golden/stale-model.json`],
+  "trace.bridge-provider-unsupported": [`${FIX}/trace-assessment/golden/hlv-unavailable.json`],
+  "trace.bridge-execution-unverified": [`${FIX}/trace-assessment/golden/execution-digest.json`],
+  "trace.bridge-chain-uncovered": [`${FIX}/trace-assessment/golden/uncovered-scenario.json`],
+  "trace.bridge-input-invalid": [`${FIX}/trace-assessment/golden/unknown-member.json`],
+  "trace.bridge-policy-denied": [`${FIX}/trace-assessment/golden/hlv-fail.json`],
   // loader.* — the loader conformance corpus (CLI load.rs gate).
   "loader.ambiguous-short-reference": [`${FIX}/loader/invalid-ambiguous-short-reference`],
   "loader.conflicting-declaration": [`${FIX}/loader/invalid-conflicting-declaration`],

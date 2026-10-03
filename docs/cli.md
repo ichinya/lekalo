@@ -471,8 +471,8 @@ operation. Exit 0 on stdout in both projections; an unknown
 
 ```sh
 lekalo provider describe
-# provider dev.lekalo.workflow-provider@0.6.3 product 0.6.3 operations \
-#   context,doctor,drift,generate,impact,readiness,status,trace.export,validate,verify
+# provider dev.lekalo.workflow-provider@0.6.4 product 0.6.4 operations \
+#   context,doctor,drift,generate,impact,readiness,status,trace.assess,trace.export,validate,verify
 ```
 
 The JSON receipt is `{"status":"valid","manifest":{...}}` with the
@@ -481,7 +481,7 @@ schema identities, prerequisites), the workflow bounds, and the
 sha256 manifest digest over the canonical JSON without the digest
 field. The normative contract is
 [docs/provider-contract.md](provider-contract.md); the closed schema
-is `contracts/provider-capabilities.schema.v0.6.3.json`.
+is `contracts/provider-capabilities.schema.v0.6.4.json`.
 
 ## Graph
 

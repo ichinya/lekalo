@@ -15,4 +15,4 @@
 | lock | `unknown/absent` |
 | profile validation-profile.default | `sha256:2d09f1d36c02240629b5631d0d5247b600ae6b363483c485bf8f7123241faa24` |
 
-report digest: `sha256:738947ee2e5bd60b719bcd9276726b536cb58bb89586b3e36f4e32a96cafbf24`
+report digest: `sha256:53f673978866926f4f42284950e5bb792d865508e79400715c4434190d290435`

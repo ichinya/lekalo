@@ -49,8 +49,8 @@ const fail = (reason, detail) => {
 };
 const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf8"));
 
-const schema = read("contracts/provider-capabilities.schema.v0.6.3.json");
-const validationReportSchema = read("contracts/validation-report.schema.v0.6.3.json");
+const schema = read("contracts/provider-capabilities.schema.v0.6.4.json");
+const validationReportSchema = read("contracts/validation-report.schema.v0.6.4.json");
 const generateCheckSchema = read("contracts/generate-check-receipt.schema.v0.6.3.json");
 const golden = read("tests/fixtures/provider/describe.golden.json");
 const ajv = new Ajv2020({ strict: true, allErrors: true });
@@ -68,13 +68,13 @@ checks += 1;
 
 // 2. The golden fixture carries exactly the reviewed identity triple.
 const manifest = golden.manifest;
-if (manifest.schemaVersion !== "lekalo/workflow-provider/v0.6.3") {
+if (manifest.schemaVersion !== "lekalo/workflow-provider/v0.6.4") {
   fail("golden-schema-version", manifest.schemaVersion);
 }
-if (manifest.identity !== "dev.lekalo.workflow-provider@0.6.3") {
+if (manifest.identity !== "dev.lekalo.workflow-provider@0.6.4") {
   fail("golden-identity", manifest.identity);
 }
-if (manifest.productVersion !== "0.6.3") {
+if (manifest.productVersion !== "0.6.4") {
   fail("golden-product-version", manifest.productVersion);
 }
 checks += 1;
@@ -84,7 +84,7 @@ checks += 1;
 // ever advertised.
 const expectedOperations = [
   "context", "doctor", "drift", "generate", "impact", "readiness", "status",
-  "trace.export", "validate", "verify",
+  "trace.assess", "trace.export", "validate", "verify",
 ];
 const operationIds = manifest.operations.map((operation) => operation.id);
 if (JSON.stringify(operationIds) !== JSON.stringify(expectedOperations)) {
@@ -115,10 +115,11 @@ const expectedSchemas = new Map([
   ["readiness", "lekalo/doctor/v0.3.2"],
   ["impact", "lekalo/impact/v0.2.16"],
   ["context", "lekalo/context/v0.2.16"],
-  ["validate", "lekalo/validation-report/v0.6.3"],
+  ["validate", "lekalo/validation-report/v0.6.4"],
   ["drift", "lekalo/generate-check/v0.6.3"],
   ["verify", "lekalo/orchestration/v0.2.16"],
   ["generate", "lekalo/orchestration/v0.2.16"],
+  ["trace.assess", "lekalo/trace-assessment/v0.6.4"],
   ["trace.export", "lekalo/trace-manifest/v0.2.16"],
 ]);
 for (const [id, expected] of expectedSchemas) {
@@ -136,9 +137,11 @@ const expectedPins = [
   "lekalo/generate-check/v0.6.3",
   "lekalo/impact/v0.2.16",
   "lekalo/orchestration/v0.2.16",
+  "lekalo/trace-assessment/v0.6.4",
   "lekalo/trace-manifest/v0.2.16",
-  "lekalo/validation-profile/v0.6.3",
-  "lekalo/validation-report/v0.6.3",
+  "lekalo/trace-validation-evidence/v0.6.4",
+  "lekalo/validation-profile/v0.6.4",
+  "lekalo/validation-report/v0.6.4",
 ];
 const pinned = manifest.schemaPins.map((pin) => pin.schemaVersion).sort();
 if (JSON.stringify(pinned) !== JSON.stringify(expectedPins)) {

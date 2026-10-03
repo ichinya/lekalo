@@ -1,7 +1,7 @@
 {
-  "schema_version": "lekalo/diagnostic-registry/v0.6.3",
-  "identity": "dev.lekalo.diagnostic-registry@0.6.3",
-  "registry_version": "0.6.3",
+  "schema_version": "lekalo/diagnostic-registry/v0.6.4",
+  "identity": "dev.lekalo.diagnostic-registry@0.6.4",
+  "registry_version": "0.6.4",
   "closed": true,
   "entries": [
     {
@@ -9171,6 +9171,229 @@
       "data_fields": [
         {
           "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "trace.bridge-chain-uncovered",
+      "code": "LEK-TRACE-007",
+      "category": "semantic",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "trace.bridge-chain-uncovered",
+      "default_message": "A selected requirement or artifact has no complete neutral validation chain.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "trace.bridge-conflict",
+      "code": "LEK-TRACE-003",
+      "category": "semantic",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "trace.bridge-conflict",
+      "default_message": "Neutral validation evidence contains conflicting mappings.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "trace.bridge-evidence-stale",
+      "code": "LEK-TRACE-004",
+      "category": "semantic",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "trace.bridge-evidence-stale",
+      "default_message": "Neutral validation evidence is bound to different input revisions.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "trace.bridge-execution-unverified",
+      "code": "LEK-TRACE-006",
+      "category": "semantic",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "trace.bridge-execution-unverified",
+      "default_message": "A required gate execution has no verified terminal evidence.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "trace.bridge-input-invalid",
+      "code": "LEK-TRACE-008",
+      "category": "model",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "trace.bridge-input-invalid",
+      "default_message": "The neutral validation evidence document violates its closed contract.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "trace.bridge-mapping-missing",
+      "code": "LEK-TRACE-001",
+      "category": "semantic",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "trace.bridge-mapping-missing",
+      "default_message": "A required neutral scenario or binding mapping is missing.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "trace.bridge-policy-denied",
+      "code": "LEK-TRACE-009",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "trace.bridge-policy-denied",
+      "default_message": "Required neutral trace validation evidence did not satisfy the selected policy.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "trace.bridge-provider-unsupported",
+      "code": "LEK-TRACE-005",
+      "category": "adapter",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "trace.bridge-provider-unsupported",
+      "default_message": "A validation provider did not produce a supported terminal check.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "trace.bridge-reference-unresolved",
+      "code": "LEK-TRACE-002",
+      "category": "semantic",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "trace.bridge-reference-unresolved",
+      "default_message": "A neutral trace evidence reference does not resolve.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
           "type": "token"
         }
       ],
