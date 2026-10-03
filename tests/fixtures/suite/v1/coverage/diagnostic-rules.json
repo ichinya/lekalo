@@ -855,8 +855,8 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "crates/lekalo-core/tests",
-          "note": "registry successor entry resolves; the context-budget producer lands with issue #75"
+          "gate": "crates/lekalo-cli/tests",
+          "note": "the context-budget suite asserts the rule"
         }
       ]
     },
@@ -867,8 +867,8 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "crates/lekalo-core/tests",
-          "note": "registry successor entry resolves; the context-budget producer lands with issue #75"
+          "gate": "crates/lekalo-cli/tests",
+          "note": "the context-budget suite asserts the rule"
         }
       ]
     },
@@ -879,8 +879,8 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "crates/lekalo-core/tests",
-          "note": "registry successor entry resolves; the context-budget producer lands with issue #75"
+          "gate": "crates/lekalo-cli/tests",
+          "note": "the context-budget suite asserts the rule"
         }
       ]
     },
@@ -891,8 +891,8 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "crates/lekalo-core/tests",
-          "note": "registry successor entry resolves; the context-budget producer lands with issue #75"
+          "gate": "crates/lekalo-cli/tests",
+          "note": "the context-budget suite asserts the rule"
         }
       ]
     },
@@ -903,8 +903,8 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "crates/lekalo-core/tests",
-          "note": "registry successor entry resolves; the context-budget producer lands with issue #75"
+          "gate": "crates/lekalo-cli/tests",
+          "note": "the context-budget suite asserts the rule"
         }
       ]
     },
@@ -915,8 +915,8 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "crates/lekalo-core/tests",
-          "note": "registry successor entry resolves; the context-budget producer lands with issue #75"
+          "gate": "crates/lekalo-cli/tests",
+          "note": "the context-budget suite asserts the rule"
         }
       ]
     },
@@ -927,8 +927,8 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "crates/lekalo-core/tests",
-          "note": "registry successor entry resolves; the context-budget producer lands with issue #75"
+          "gate": "crates/lekalo-cli/tests",
+          "note": "the context-budget suite asserts the rule"
         }
       ]
     },
@@ -939,8 +939,8 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "crates/lekalo-core/tests",
-          "note": "registry successor entry resolves; the context-budget producer lands with issue #75"
+          "gate": "crates/lekalo-cli/tests",
+          "note": "the context-budget suite asserts the rule"
         }
       ]
     },
