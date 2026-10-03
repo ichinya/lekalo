@@ -9,7 +9,7 @@
     },
     {
       "path": "tests/fixtures/suite/v1/diagnostics/command-effect-unresolved/fixture.json",
-      "sha256": "sha256:1515bbd265491c51962f680387a888d6f6ae7eedbec98da8cf15f0a8366d8939"
+      "sha256": "sha256:cd6b0bf0b3ca3302dfd464d9084fe15f8033098c754e24d6b656ac7e16759870"
     },
     {
       "path": "tests/fixtures/suite/v1/diagnostics/command-effect-unresolved/non-trigger/lekalo/modules/planner/commands.yaml",

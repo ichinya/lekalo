@@ -9,7 +9,7 @@
     },
     {
       "path": "tests/fixtures/suite/v1/diagnostics/effect-resource-kind-mismatch/fixture.json",
-      "sha256": "sha256:ec1426784a445e68e70c9393d88bdad88e228136b4285f7ea6e87ddd64999ed1"
+      "sha256": "sha256:758327c3f5f45d83ae33f8e134d2762f74a490e9bf9b5491a31fb8759a810fb3"
     },
     {
       "path": "tests/fixtures/suite/v1/diagnostics/effect-resource-kind-mismatch/non-trigger/lekalo/modules/planner/commands.yaml",

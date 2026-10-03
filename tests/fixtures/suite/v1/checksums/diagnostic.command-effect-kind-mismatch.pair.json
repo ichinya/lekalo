@@ -9,7 +9,7 @@
     },
     {
       "path": "tests/fixtures/suite/v1/diagnostics/command-effect-kind-mismatch/fixture.json",
-      "sha256": "sha256:d9b99baa0f2958e8713c14f49e5618d5a616682ad0a66025b529d6589e108bfa"
+      "sha256": "sha256:a756562f84db8980883263c4bfc5d8ca0e61b1a2464567c4f5f89da455a1748d"
     },
     {
       "path": "tests/fixtures/suite/v1/diagnostics/command-effect-kind-mismatch/non-trigger/lekalo/modules/planner/commands.yaml",

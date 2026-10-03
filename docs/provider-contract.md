@@ -83,7 +83,7 @@ The manifest advertises:
 | `schemaVersion`, `identity`, `productVersion` | The exact workflow-provider contract discriminator, identity, and the product version this contract was implemented at (`0.6.3`; deliberately frozen — it may trail a later binary's `--version`, and consumers negotiate on `identity`/`schemaVersion`, never on this field). |
 | `discoveryCommand` | `lekalo provider describe` (presentation form). |
 | `targetProtocolIdentity` | `dev.lekalo.target-protocol@0.3.2`. The adapter protocol is a separate negotiated family: a supported workflow operation never implies a configured target. |
-| `schemaPins` | The exact upstream output contract identities: the seven wire-discriminated families — context `lekalo/context/v0.2.16`, diagnostics `lekalo/diagnostic/v0.2.16`, doctor `lekalo/doctor/v0.3.2`, impact `lekalo/impact/v0.2.16`, orchestration `lekalo/orchestration/v0.2.16`, trace `lekalo/trace-manifest/v0.2.16`, validation profile `lekalo/validation-profile/v0.4.0` — plus the two describing schemas of this contract series for the receipt-shaped payloads without embedded discriminators: `lekalo/validation-report/v0.6.3` (`validate` success) and `lekalo/generate-check/v0.6.3` (`drift` receipts). |
+| `schemaPins` | The exact upstream output contract identities: the seven wire-discriminated families — context `lekalo/context/v0.2.16`, diagnostics `lekalo/diagnostic/v0.2.16`, doctor `lekalo/doctor/v0.3.2`, impact `lekalo/impact/v0.2.16`, orchestration `lekalo/orchestration/v0.2.16`, trace `lekalo/trace-manifest/v0.2.16`, validation profile `lekalo/validation-profile/v0.6.3` — plus the two describing schemas of this contract series for the receipt-shaped payloads without embedded discriminators: `lekalo/validation-report/v0.6.3` (`validate` success) and `lekalo/generate-check/v0.6.3` (`drift` receipts). |
 | `operations` | The ten operations below, canonical order, with effect class, output schema, and the `requiresProject` / `requiresAdapter` prerequisites. |
 | `bounds` | `recommendedContextBudgetTokens` 5000, `maxContextBudgetTokens` 1000000 (`context.MAX_BUDGET_TOKENS`), `maxExportBytes` 33554432 (the 32 MiB impact/trace export bound). |
 | `manifestDigest` | `sha256:` over the canonical JSON (sorted keys, no whitespace) of the manifest with this field removed. Integrity metadata, not a signature. |
@@ -168,7 +168,7 @@ Effect classes describe the write surface **of the prescribed argv**:
   without invalidating the run (the strict profile invalidates on error
   findings instead — those runs are exit-1 failures outside this
   receipt). The profile definition document stays
-  `lekalo/validation-profile/v0.4.0` (configuration, not output).
+  `lekalo/validation-profile/v0.6.3` (configuration, not output).
   Invalid models exit 1 on stderr with the typed diagnostics; a strict
   authorization denial is exit 3 (`denied`) on stdout. A schema-valid
   validation failure is a semantic result, never a provider crash.

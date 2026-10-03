@@ -137,7 +137,7 @@ const expectedPins = [
   "lekalo/impact/v0.2.16",
   "lekalo/orchestration/v0.2.16",
   "lekalo/trace-manifest/v0.2.16",
-  "lekalo/validation-profile/v0.4.0",
+  "lekalo/validation-profile/v0.6.3",
   "lekalo/validation-report/v0.6.3",
 ];
 const pinned = manifest.schemaPins.map((pin) => pin.schemaVersion).sort();

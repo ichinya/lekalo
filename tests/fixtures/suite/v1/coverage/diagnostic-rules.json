@@ -1,8 +1,8 @@
 {
   "coverageId": "dev.lekalo.fixture-coverage.diagnostic-rules",
   "fixtureSchema": "dev.lekalo.fixture@1.0.0",
-  "registryIdentity": "dev.lekalo.diagnostic-registry@0.4.0",
-  "registryDigest": "sha256:d10787cb47d5d40485a57a877aeba07bcd708ad24d2aa64e05dd9416961d1d6a",
+  "registryIdentity": "dev.lekalo.diagnostic-registry@0.6.3",
+  "registryDigest": "sha256:5bf7a4e246bffab041848bc010579aac34e0a95c2967bb51b625c0d2ae650dd6",
   "generatedBy": {
     "script": "scripts/gen-suite-coverage.mjs",
     "reviewed": true
@@ -465,6 +465,30 @@
       ]
     },
     {
+      "id": "ci.report-write-failed",
+      "code": "LEK-CI-001",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "crates/lekalo-cli/tests",
+          "note": "the missing-destination report write asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "ci.required-check-missing",
+      "code": "LEK-CI-002",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "crates/lekalo-cli/tests",
+          "note": "the blocked readiness gate emits the rule on the unavailable envelope"
+        }
+      ]
+    },
+    {
       "id": "classification.conflicting-kind",
       "code": "LEK-CLS-004",
       "category": "semantic",
@@ -821,6 +845,102 @@
         {
           "family": "transaction-concurrency",
           "path": "tests/fixtures/transaction-concurrency/invalid"
+        }
+      ]
+    },
+    {
+      "id": "context.artifact-evidence-incomplete",
+      "code": "LEK-CONTEXT-004",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "crates/lekalo-core/tests",
+          "note": "registry successor entry resolves; the context-budget producer lands with issue #75"
+        }
+      ]
+    },
+    {
+      "id": "context.baseline-incomparable",
+      "code": "LEK-CONTEXT-005",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "crates/lekalo-core/tests",
+          "note": "registry successor entry resolves; the context-budget producer lands with issue #75"
+        }
+      ]
+    },
+    {
+      "id": "context.baseline-regression",
+      "code": "LEK-CONTEXT-007",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "crates/lekalo-core/tests",
+          "note": "registry successor entry resolves; the context-budget producer lands with issue #75"
+        }
+      ]
+    },
+    {
+      "id": "context.budget-exceeded",
+      "code": "LEK-CONTEXT-006",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "crates/lekalo-core/tests",
+          "note": "registry successor entry resolves; the context-budget producer lands with issue #75"
+        }
+      ]
+    },
+    {
+      "id": "context.closure-incomplete",
+      "code": "LEK-CONTEXT-003",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "crates/lekalo-core/tests",
+          "note": "registry successor entry resolves; the context-budget producer lands with issue #75"
+        }
+      ]
+    },
+    {
+      "id": "context.input-invalid",
+      "code": "LEK-CONTEXT-001",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "crates/lekalo-core/tests",
+          "note": "registry successor entry resolves; the context-budget producer lands with issue #75"
+        }
+      ]
+    },
+    {
+      "id": "context.policy-denied",
+      "code": "LEK-CONTEXT-008",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "crates/lekalo-core/tests",
+          "note": "registry successor entry resolves; the context-budget producer lands with issue #75"
+        }
+      ]
+    },
+    {
+      "id": "context.profile-unsupported",
+      "code": "LEK-CONTEXT-002",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "crates/lekalo-core/tests",
+          "note": "registry successor entry resolves; the context-budget producer lands with issue #75"
         }
       ]
     },

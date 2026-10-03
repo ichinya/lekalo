@@ -13,7 +13,7 @@
       "role": "model contract"
     },
     {
-      "identity": "dev.lekalo.diagnostic-registry@0.4.0",
+      "identity": "dev.lekalo.diagnostic-registry@0.6.3",
       "role": "diagnostics registry"
     }
   ],

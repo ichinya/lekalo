@@ -23,7 +23,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const registryPath = join(root, "contracts/diagnostic-registry.v0.4.0.json");
+const registryPath = join(root, "contracts/diagnostic-registry.v0.6.3.json");
 const registry = JSON.parse(readFileSync(registryPath, "utf8"));
 const registryDigest = `sha256:${createHash("sha256").update(readFileSync(registryPath)).digest("hex")}`;
 const suiteV1 = join(root, "tests/fixtures/suite/v1");
@@ -225,6 +225,8 @@ const testWitness = {
   "bindings.plan-mismatch": [["crates/lekalo-core/tests", "plan mismatch asserts the rule"]],
   "bindings.proposal-unknown": [["crates/lekalo-core/tests", "unknown proposal asserts the rule"]],
   "cache.contract-invalid": [["scripts/test-cache-contracts.mjs", "cache record schema rejects drift"]],
+  "ci.report-write-failed": [["crates/lekalo-cli/tests", "the missing-destination report write asserts the rule"]],
+  "ci.required-check-missing": [["crates/lekalo-cli/tests", "the blocked readiness gate emits the rule on the unavailable envelope"]],
   "classification.custody-ir": [["crates/lekalo-core/tests", "IR custody digest drift asserts the rule"]],
   "classification.custody-model": [["crates/lekalo-core/tests", "model custody digest drift asserts the rule"]],
   "classification.custody-project": [["crates/lekalo-core/tests", "project custody digest drift asserts the rule"]],
@@ -256,6 +258,14 @@ const testWitness = {
   "contracted.unknown-module": [["crates/lekalo-core/tests", "unknown module asserts the rule"]],
   "contracted.unknown-symbol": [["crates/lekalo-core/tests", "unknown symbol asserts the rule"]],
   "core.capability-unavailable": [["crates/lekalo-core/tests", "capability seam refusal asserts the rule"]],
+  "context.artifact-evidence-incomplete": [["crates/lekalo-core/tests", "registry successor entry resolves; the context-budget producer lands with issue #75"]],
+  "context.baseline-incomparable": [["crates/lekalo-core/tests", "registry successor entry resolves; the context-budget producer lands with issue #75"]],
+  "context.baseline-regression": [["crates/lekalo-core/tests", "registry successor entry resolves; the context-budget producer lands with issue #75"]],
+  "context.budget-exceeded": [["crates/lekalo-core/tests", "registry successor entry resolves; the context-budget producer lands with issue #75"]],
+  "context.closure-incomplete": [["crates/lekalo-core/tests", "registry successor entry resolves; the context-budget producer lands with issue #75"]],
+  "context.input-invalid": [["crates/lekalo-core/tests", "registry successor entry resolves; the context-budget producer lands with issue #75"]],
+  "context.policy-denied": [["crates/lekalo-core/tests", "registry successor entry resolves; the context-budget producer lands with issue #75"]],
+  "context.profile-unsupported": [["crates/lekalo-core/tests", "registry successor entry resolves; the context-budget producer lands with issue #75"]],
   "dataflow.adapter-metadata-loss": [["crates/lekalo-core/tests", "metadata loss asserts the rule"]],
   "dataflow.destination-forbidden": [["crates/lekalo-core/tests", "forbidden destination asserts the rule"]],
   "dataflow.exposed-private-field": [["crates/lekalo-core/tests", "exposed private field asserts the rule"]],

@@ -9,7 +9,7 @@
     },
     {
       "path": "tests/fixtures/suite/v1/diagnostics/public-output-private-type/fixture.json",
-      "sha256": "sha256:f4d71ead9dc11d3d5f90be2ded46b26f1d4b7f497e103813cd2022d51e90b01d"
+      "sha256": "sha256:7d57f06ba74ca86572f16f40070d60e03f3807a3e2ce4715c28a2908015d9339"
     },
     {
       "path": "tests/fixtures/suite/v1/diagnostics/public-output-private-type/non-trigger/lekalo/modules/audit/entities.yaml",

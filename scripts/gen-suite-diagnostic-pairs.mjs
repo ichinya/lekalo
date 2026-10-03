@@ -634,7 +634,7 @@ for (const pair of pairs) {
       runner: "cli-validate",
       contractPins: [
         { identity: "dev.lekalo.model@0.2.16", role: "model contract" },
-        { identity: "dev.lekalo.diagnostic-registry@0.4.0", role: "diagnostics registry" },
+        { identity: "dev.lekalo.diagnostic-registry@0.6.3", role: "diagnostics registry" },
       ],
       inputs: [
         { role: "project", path: `tests/fixtures/suite/v1/diagnostics/${pair.slug}/trigger` },

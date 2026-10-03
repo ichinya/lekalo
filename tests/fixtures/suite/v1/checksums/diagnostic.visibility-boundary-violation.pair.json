@@ -9,7 +9,7 @@
     },
     {
       "path": "tests/fixtures/suite/v1/diagnostics/visibility-boundary-violation/fixture.json",
-      "sha256": "sha256:833881045e8c84e6623d98cfec324675a9e5718b64d767cf91bd5adf9b8d5f31"
+      "sha256": "sha256:8ba7dd19295e8cca49fd2486216131cb001ce1a7a24928b0644fc7d586362597"
     },
     {
       "path": "tests/fixtures/suite/v1/diagnostics/visibility-boundary-violation/non-trigger/lekalo/modules/audit/entities.yaml",

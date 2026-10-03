@@ -9,7 +9,7 @@
     },
     {
       "path": "tests/fixtures/suite/v1/diagnostics/type-ref-unresolved/fixture.json",
-      "sha256": "sha256:8641ef979607968562fe5dcab898b16f2a842a15f5565e1c62fe58dec4265d06"
+      "sha256": "sha256:4d419abdc1574d97632a11aca634335252d8fa5942117a91a34470825cb82602"
     },
     {
       "path": "tests/fixtures/suite/v1/diagnostics/type-ref-unresolved/non-trigger/lekalo/modules/planner/entities.yaml",

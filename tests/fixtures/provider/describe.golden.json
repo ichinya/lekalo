@@ -34,8 +34,8 @@
       "identity": "dev.lekalo.trace-manifest@0.2.16"
     },
     {
-      "schemaVersion": "lekalo/validation-profile/v0.4.0",
-      "identity": "dev.lekalo.validation-profile@0.4.0"
+      "schemaVersion": "lekalo/validation-profile/v0.6.3",
+      "identity": "dev.lekalo.validation-profile@0.6.3"
     },
     {
       "schemaVersion": "lekalo/validation-report/v0.6.3"
@@ -118,6 +118,6 @@
     "maxContextBudgetTokens": 1000000,
     "maxExportBytes": 33554432
   },
-  "manifestDigest": "sha256:1c6fd4ee49a78cf9630698866facde1706a7127fefe1dbeab96ab4779062e2b3"
+  "manifestDigest": "sha256:e4df5e4f0aa8e4b5bc26577b622aadd7e5b6388df4ec30fbd769338cd826e59d"
 }
 }
