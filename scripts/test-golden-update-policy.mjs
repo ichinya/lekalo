@@ -7,6 +7,12 @@
 //   digests (a hash-only summary is rejected by the closed schema);
 // - apply refuses a wrong accept digest, a stale case revision, and
 //   drifted preimages, and never writes outside the reviewed list;
+// - a diagnostic.*.pair case (a descriptor with no declared expected
+//   outputs) can be planned and reviewed — its candidate rows carry no
+//   declaredPath — and apply refuses its candidates with
+//   unmapped-candidate because no destination is declared, so the
+//   no-expected branch is rehearsed end to end instead of only the
+//   minimal.project path;
 // - CI has no write path: the flow is never invoked by any workflow.
 //
 // The gate runs the real tool end to end against a scratch copy of the
@@ -167,6 +173,42 @@ try {
       }
     }
   }
+
+  // 3b. Pair-class rehearsal: a diagnostic.*.pair descriptor declares
+  //     no expected outputs, so plan must still succeed (the
+  //     no-expected branch) with a semantic summary and candidate rows
+  //     that carry no declaredPath, the digest binding still refuses a
+  //     wrong accept digest, and apply with the correct digest must
+  //     still refuse with unmapped-candidate — a pair case declares no
+  //     destination, so nothing may be written for it.
+  {
+    const pairPlan = run(["plan", "--case", "diagnostic.type-recursion.pair", "--reason", "#90 policy gate: no-expected pair class, plan review apply rehearsal"]);
+    if (pairPlan.status !== 0) {
+      errors.push(`pair-plan-phase-failed: ${(pairPlan.stderr ?? pairPlan.stdout ?? "").slice(0, 300)}`);
+    } else {
+      const pairReport = JSON.parse(pairPlan.stdout.trim());
+      const pairDoc = JSON.parse(readFileSync(pairReport.planPath, "utf8"));
+      if (!Array.isArray(pairDoc.summary?.semanticChanges) || pairDoc.summary.semanticChanges.length === 0) {
+        errors.push("pair-plan-phase: empty semantic summary");
+      }
+      if (!Array.isArray(pairDoc.after?.files) || pairDoc.after.files.length === 0) {
+        errors.push("pair-plan-phase: no candidate rows for the pair case");
+      }
+      if (pairDoc.after.files.some((row) => Object.hasOwn(row, "declaredPath"))) {
+        errors.push("pair-plan-phase: no-expected plan emitted a declaredPath member");
+      }
+      // The review binding holds for the class: wrong digest refused.
+      const pairWrong = run(["apply", "--plan", pairReport.planPath, "--accept-plan-sha256", "sha256:" + "0".repeat(64)]);
+      if (pairWrong.status === 0) errors.push("pair-apply-phase: wrong digest was accepted");
+      // Correct digest still refuses: no declared destination exists.
+      const pairApply = run(["apply", "--plan", pairReport.planPath, "--accept-plan-sha256", pairReport.planSha256]);
+      if (pairApply.status === 0) {
+        errors.push("pair-apply-phase: applied candidates without declared destinations");
+      } else if (!(pairApply.stderr ?? "").includes("unmapped-candidate")) {
+        errors.push(`pair-apply-phase: expected unmapped-candidate refusal: ${(pairApply.stderr ?? "").slice(0, 200)}`);
+      }
+    }
+  }
 } finally {
   rmSync(scratch, { recursive: true, force: true });
 }
@@ -199,4 +241,5 @@ if (errors.length > 0) failGate("golden-update-policy", errors);
 passGate("golden-update-policy", {
   planSchemaKinds: kinds.length,
   flow: "plan -> review -> apply(digest-bound)",
+  pairClassFlow: "diagnostic.type-recursion.pair: plan -> review -> apply(unmapped-candidate)",
 });

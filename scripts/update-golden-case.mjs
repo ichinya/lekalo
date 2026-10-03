@@ -125,11 +125,16 @@ if (mode === "plan") {
     failGate("golden-update-plan", [{ reason: "producer-not-deterministic", caseId, detail: "two plan executions disagree" }]);
   }
 
-  // The candidate outputs (one envelope per project role).
+  // The candidate outputs (one envelope per project role). Cases
+  // without declared expected outputs (status-contract pairs) have no
+  // declared destination, so the `declaredPath` member is omitted —
+  // a null path declares nothing, and the closed schema only admits a
+  // real descriptor-declared path. apply's unmapped-candidate refusal
+  // stays the write bound for this class.
   const declared = entry.descriptor.expected ?? [];
   const candidateFiles = cold1.map((row, index) => ({
     path: declared.length > 0 ? `expected/${declared[index].role}` : `expected/${row.project}.envelope.json`,
-    declaredPath: declared.length > 0 ? declared[index].path : null,
+    ...(declared.length > 0 ? { declaredPath: declared[index].path } : {}),
     digest: sha256(row.envelope),
     bytes: row.envelope,
   }));
@@ -236,7 +241,7 @@ if (mode === "plan") {
         .filter((row) => beforeMap.get(row.declaredPath ?? row.path) !== row.digest)
         .map((row) => ({
           path: row.path,
-          declaredPath: row.declaredPath,
+          ...(row.declaredPath ? { declaredPath: row.declaredPath } : {}),
           digest: row.digest,
           change: beforeMap.has(row.declaredPath ?? row.path) ? "modified" : "added",
         })),
