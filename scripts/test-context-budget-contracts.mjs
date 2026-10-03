@@ -4,15 +4,17 @@
 // privacy/determinism invariants, validated with the same pinned
 // third-party Draft 2020-12 implementation as the other contract gates.
 // Exact Ajv 8.17.1 is provisioned outside this checkout (CI does the
-// same on Node 18 and 24) and exposed through NODE_PATH.
+// same in the build-test job) and exposed through NODE_PATH.
 //
-// The live CLI probe needs the built binary; it is skipped with an
-// explicit flag when the binary is absent (mirroring the other gates'
-// reportLiveSkipped behavior), but the schema and fixture checks below
-// always run.
+// The live CLI probe needs the built binary and is mandatory: when the
+// binary is absent this gate fails closed with "binary-missing" (no
+// skip flag exists). CI therefore runs this gate in build-test, after
+// `cargo build --workspace --locked` (R2-B1); the schema and fixture
+// checks also validate the committed golden after the live probes.
 
 import { createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -122,8 +124,9 @@ for (const constant of [
 }
 
 // 3. The live CLI projection satisfies its own closed schema, and the
-//    adversarial negatives refuse. Skipped explicitly when the debug
-//    binary has not been built.
+//    adversarial negatives refuse. The binary check below fails closed
+//    when the debug binary has not been built; the live checks are
+//    mandatory (R2-B1).
 const binary = resolve(root, "target/debug/lekalo.exe");
 const binaryPosix = resolve(root, "target/debug/lekalo");
 if (!existsSync(binary) && !existsSync(binaryPosix)) {
@@ -148,6 +151,30 @@ let liveChecked = false;
   if (subject.overByTokens.value !== required - 200) fail("over-by", subject.overByTokens.value);
   const ledger = subject.requiredFacts.reduce((total, fact) => total + fact.tokens, 0);
   if (ledger !== required) fail("ledger-reconciles", { ledger, required });
+  // The breakdown reconciliation (R2-6): Σ(exclusive) + Σ(shared)
+  // equals the required total, and shared cost is billed to the
+  // subject's own row, never to an unrelated dependency (R2-m3).
+  const breakdownExclusive = subject.breakdown.reduce(
+    (total, row) => total + row.exclusiveRequiredTokens, 0);
+  const breakdownShared = subject.breakdown.reduce(
+    (total, row) => total + row.sharedRequiredTokens, 0);
+  if (breakdownExclusive + breakdownShared !== required) {
+    fail("breakdown-reconciles", {
+      exclusive: breakdownExclusive,
+      shared: breakdownShared,
+      required,
+    });
+  }
+  const subjectId = subject.id;
+  const subjectRow = subject.breakdown.find((row) => row.dependency === subjectId);
+  if (!subjectRow || subjectRow.sharedRequiredTokens <= 0) {
+    fail("shared-bills-the-subject", subjectId);
+  }
+  if (subject.breakdown.some(
+    (row) => row.dependency !== subjectId && row.sharedRequiredTokens !== 0,
+  )) {
+    fail("shared-only-on-the-subject-row", subjectId);
+  }
   if (!envelope.diagnostics.some((item) => item.id === "context.budget-exceeded")) {
     fail("live-warning", "context.budget-exceeded missing");
   }
@@ -223,6 +250,16 @@ let liveChecked = false;
       "--baseline", baselinePath,
     ]);
     if (withBaseline.status !== "valid") fail("baseline-status", withBaseline.status);
+    // R2-M1: the consumed baseline is pinned on the wire, never unknown.
+    if (withBaseline.contextBudget.provenance.baseline.state !== "known") {
+      fail("baseline-pin", withBaseline.contextBudget.provenance.baseline);
+    }
+    const baselineDigest = "sha256:" + createHash("sha256")
+      .update(readFileSync(baselinePath)).digest("hex");
+    if (withBaseline.contextBudget.provenance.baseline.digest !== baselineDigest) {
+      fail("baseline-pin-digest", withBaseline.contextBudget.provenance.baseline);
+    }
+    if (!validateReport(withBaseline.contextBudget)) fail("baseline-report-schema", validateReport.errors);
     if (!withBaseline.contextBudgetComparison) fail("comparison-missing", "the envelope must carry the comparison block");
     if (!validateComparison(withBaseline.contextBudgetComparison)) {
       fail("comparison-schema", validateComparison.errors);
@@ -235,6 +272,100 @@ let liveChecked = false;
     );
     if (!rows.some((row) => row.delta)) fail("comparison-deltas", "no signed deltas emitted");
     rmSync(temp, { recursive: true, force: true });
+  }
+
+  // R2-M1 gate leg: a mandatory-policy pass emits the real policy pin
+  // (digest of the exact selected policy bytes), not an advisory-
+  // identical unknown.
+  {
+    const temp = mkdtempSync(join(tmpdir(), "cb-gate-policy-"));
+    const policyPath = join(temp, "policy.json");
+    const policy = {
+      schemaVersion: "lekalo/context-budget-policy/v0.6.3",
+      identity: "dev.lekalo.context-budget-policy@0.6.3",
+      mode: "mandatory",
+      profileRef: {
+        id: report.profile.id,
+        version: report.profile.version,
+        digest: report.profile.digest,
+      },
+      // The digest binds the exact budget, so the pass must run at the
+      // pinned profile's own budget (200); required-incomplete keeps
+      // the mandatory policy from denying the over-budget subject.
+      failOn: ["required-incomplete"],
+      regressionLimits: [],
+    };
+    const pinnedBudget = 200;
+    writeFileSync(policyPath, JSON.stringify(policy));
+    const withPolicy = run([
+      "context-budget", "--symbol", "planner.focus_task",
+      "--budget", String(pinnedBudget),
+      "--policy", policyPath,
+    ]);
+    if (withPolicy.status !== "valid") fail("policy-status", withPolicy.status);
+    const policyPin = withPolicy.contextBudget.provenance.policy;
+    if (policyPin.state !== "known") fail("policy-pin-unknown", policyPin);
+    const policyDigest = "sha256:" + createHash("sha256")
+      .update(readFileSync(policyPath))
+      .digest("hex");
+    if (policyPin.digest !== policyDigest) fail("policy-pin-digest", policyPin.digest);
+    if (withPolicy.contextBudget.provenance.baseline.state !== "unknown") {
+      fail("policy-baseline-pin", withPolicy.contextBudget.provenance.baseline);
+    }
+    if (!validateReport(withPolicy.contextBudget)) fail("policy-report-schema", validateReport.errors);
+    const baselinePath = join(temp, "baseline.json");
+    writeFileSync(baselinePath, JSON.stringify(report));
+    const both = run([
+      "context-budget", "--symbol", "planner.focus_task", "--budget", "200",
+      "--policy", policyPath, "--baseline", baselinePath,
+    ]);
+    const baselineDigest = "sha256:" + createHash("sha256")
+      .update(readFileSync(baselinePath)).digest("hex");
+    if (!validateReport(both.contextBudget)) fail("combined-pins-schema", validateReport.errors);
+    if (both.contextBudget.provenance.policy.digest !== policyDigest ||
+        both.contextBudget.provenance.baseline.digest !== baselineDigest) {
+      fail("combined-pins", both.contextBudget.provenance);
+    }
+    // The metric-policy denial must preserve the same digest-bearing payload.
+    policy.failOn = ["over-budget"];
+    writeFileSync(policyPath, JSON.stringify(policy));
+    let denied;
+    try {
+      run([
+        "context-budget", "--symbol", "planner.focus_task", "--budget", "200",
+        "--policy", policyPath, "--baseline", baselinePath,
+      ]);
+      fail("policy-denial-missing", "over-budget policy passed");
+    } catch (error) {
+      if (error.status !== 3) fail("policy-denial-exit", error.status);
+      denied = JSON.parse(error.stdout);
+    }
+    const deniedReport = denied.payload?.contextBudget;
+    if (denied.status !== "denied" || !validateReport(deniedReport)) {
+      fail("policy-denial-report", validateReport.errors);
+    }
+    const deniedPolicyDigest = "sha256:" + createHash("sha256")
+      .update(readFileSync(policyPath)).digest("hex");
+    if (deniedReport.provenance.policy.digest !== deniedPolicyDigest ||
+        deniedReport.provenance.baseline.digest !== baselineDigest) {
+      fail("policy-denial-pins", deniedReport.provenance);
+    }
+    rmSync(temp, { recursive: true, force: true });
+  }
+
+  // Both input pins are closed digest-bearing states. A path, missing
+  // digest, malformed digest, extra field or digest on a non-known state refuses.
+  for (const member of ["policy", "baseline"]) {
+    for (const pin of [
+      "known", { state: "known" }, { state: "known", digest: "C:/private/base.json" },
+      { state: "known", digest: "sha256:" + "a".repeat(64), extra: true },
+      { state: "unknown", digest: "sha256:" + "a".repeat(64) },
+      { state: "unknown", digest: null }, { state: "invented" },
+    ]) {
+      const bad = structuredClone(report);
+      bad.provenance[member] = pin;
+      if (validateReport(bad)) fail("negative-provenance-pin", { member, pin });
+    }
   }
 
   // Reason/class coupling parity (devin minor 12 / codex 19).
@@ -281,6 +412,30 @@ if (goldenSubject.assessment !== "over-budget") fail("golden-assessment", golden
 const goldenRequired = goldenSubject.metrics.minimumRequiredSemanticTokens.value;
 const goldenLedger = goldenSubject.requiredFacts.reduce((total, fact) => total + fact.tokens, 0);
 if (goldenLedger !== goldenRequired) fail("golden-ledger", { ledger: goldenLedger, required: goldenRequired });
+// The golden breakdown reconciles (R2-6) and bills shared cost to the
+// subject's own row (R2-m3).
+const goldenExclusive = goldenSubject.breakdown.reduce(
+  (total, row) => total + row.exclusiveRequiredTokens, 0);
+const goldenShared = goldenSubject.breakdown.reduce(
+  (total, row) => total + row.sharedRequiredTokens, 0);
+if (goldenExclusive + goldenShared !== goldenRequired) {
+  fail("golden-breakdown-reconciles", {
+    exclusive: goldenExclusive,
+    shared: goldenShared,
+    required: goldenRequired,
+  });
+}
+const goldenId = goldenSubject.id;
+if (!goldenSubject.breakdown.some(
+  (row) => row.dependency === goldenId && row.sharedRequiredTokens > 0,
+)) {
+  fail("golden-shared-bills-the-subject", goldenId);
+}
+if (goldenSubject.breakdown.some(
+  (row) => row.dependency !== goldenId && row.sharedRequiredTokens !== 0,
+)) {
+  fail("golden-shared-only-on-the-subject-row", goldenId);
+}
 if (goldenSubject.overByTokens.value !== goldenRequired - 200) {
   fail("golden-over-by", goldenSubject.overByTokens.value);
 }

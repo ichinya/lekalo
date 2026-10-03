@@ -8,6 +8,8 @@ use crate::context_budget::{plan, BudgetRequest, BudgetSelection, ProfileDocumen
 use crate::ir::compile;
 use crate::loader::{normalize_model, LoadSelection};
 
+use std::collections::BTreeSet;
+
 const PLANNER_NAME: &str = "tests/fixtures/context-budget/planner";
 
 fn compile_fixture(name: &str) -> crate::ir::Compilation {
@@ -157,6 +159,33 @@ fn over_budget_symbol_yields_explainable_breakdown_and_exact_boundary() {
         !below.subjects[0].breakdown.is_empty(),
         "the breakdown explains the cost"
     );
+    // The additive reconciliation: Σ(exclusive) + Σ(shared) equals the
+    // required total — every required token is billed exactly once
+    // (R2-6).
+    let exclusive: u64 = below.subjects[0]
+        .breakdown
+        .iter()
+        .map(|row| row.exclusive_required_tokens)
+        .sum();
+    let shared: u64 = below.subjects[0]
+        .breakdown
+        .iter()
+        .map(|row| row.shared_required_tokens)
+        .sum();
+    assert_eq!(exclusive + shared, required);
+    // Shared cost is billed to the subject's own row, never to an
+    // unrelated dependency (R2-m3).
+    let subject_row = below.subjects[0]
+        .breakdown
+        .iter()
+        .find(|row| row.dependency == below.subjects[0].id)
+        .expect("the subject bills its own shared cost");
+    assert!(subject_row.shared_required_tokens > 0);
+    assert!(below.subjects[0]
+        .breakdown
+        .iter()
+        .filter(|row| row.dependency != below.subjects[0].id)
+        .all(|row| row.shared_required_tokens == 0));
 }
 
 /// AC4: the required/supporting split stays distinct, and optional
@@ -463,4 +492,221 @@ fn bounded_cycles_and_work() {
         roomy.complete,
         "the small fixture completes inside the default bounds"
     );
+}
+
+/// R2-7: the production supporting-request collector (not a hand-built
+/// multiplicity map) records one request per incoming edge occurrence
+/// over the real fixture graph: the scalars shared by several field and
+/// payload edges show multiplicity ≥ 2, and the walk totals exactly the
+/// report's edgeOccurrences metric.
+#[test]
+fn supporting_requests_collector_counts_real_edge_occurrences() {
+    let compilation = planner();
+    let graph = crate::graph::build(&compilation.project).expect("graph builds");
+    let root = graph
+        .resolve("planner.focus_task")
+        .expect("subject resolves");
+    let requests =
+        super::supporting_requests(&[root.id()], &graph, &crate::graph::EdgeFilter::new());
+    // type:planner.due_date is reached through four distinct edges (the
+    // entity's due field, both due_window fields, and the event
+    // payload); the collector must not dedup those requests away.
+    let shared = requests.get("type:planner.due_date").copied().unwrap_or(0);
+    assert!(
+        shared >= 2,
+        "shared scalars keep their request count, got {shared}"
+    );
+    let report = plan(
+        &symbol_request("planner.focus_task"),
+        &BudgetSelection::Generic(1_000_000),
+        &compilation,
+    )
+    .expect("report plans");
+    let expected = report.subjects[0]
+        .metrics
+        .edge_occurrences
+        .value()
+        .copied()
+        .expect("edgeOccurrences is known");
+    let total: u64 = requests.values().sum();
+    assert_eq!(
+        total, expected,
+        "the collector traverses exactly the counted edge occurrences"
+    );
+}
+
+/// codex 6 (effective source recipe) + LEK-CONTEXT-004: the explicit
+/// selection and the profile's declared recipe never disagree — the
+/// digest binds the recipe that is measured, a requested recipe is
+/// honestly unsupported (the artifact-evidence adapter is not wired in
+/// this generation) and registers the warning, and a none recipe stays
+/// silently unknown.
+#[test]
+fn source_recipe_selection_binds_digest_and_warns() {
+    let compilation = planner();
+    // A declared mapped-files profile measures the recipe: unsupported
+    // with the registered warning (never a silent unknown).
+    let mut declared_profile = BudgetSelection::Generic(12_000).profile().expect("profile");
+    declared_profile.source_context = crate::context_budget::profile::SourceContext::MappedFiles;
+    declared_profile.rebind_digest();
+    let declared = plan(
+        &symbol_request("planner.focus_task"),
+        &BudgetSelection::Named(Box::new(declared_profile)),
+        &compilation,
+    )
+    .expect("declared plans");
+    assert_eq!(
+        declared.subjects[0].metrics.optional_source_tokens,
+        StateValue::Unsupported
+    );
+    assert!(declared
+        .warnings
+        .iter()
+        .any(|diagnostic| diagnostic.id() == "context.artifact-evidence-incomplete"));
+    // The none recipe: no measurement attempt, no warning.
+    let plain = plan(
+        &symbol_request("planner.focus_task"),
+        &BudgetSelection::Generic(12_000),
+        &compilation,
+    )
+    .expect("plain plans");
+    assert_eq!(
+        plain.subjects[0].metrics.optional_source_tokens,
+        StateValue::Unknown
+    );
+    assert!(!plain
+        .warnings
+        .iter()
+        .any(|diagnostic| diagnostic.id() == "context.artifact-evidence-incomplete"));
+    // The explicit selection over a none-recipe profile normalizes the
+    // recipe into the digest-bound profile: the report can no longer
+    // claim recipe none while measuring mapped-files.
+    let mut request = symbol_request("planner.focus_task");
+    request.source_context = true;
+    let explicit =
+        plan(&request, &BudgetSelection::Generic(12_000), &compilation).expect("explicit plans");
+    assert_eq!(
+        explicit.profile.source_context,
+        crate::context_budget::profile::SourceContext::MappedFiles
+    );
+    assert_eq!(
+        explicit.subjects[0].metrics.optional_source_tokens,
+        StateValue::Unsupported
+    );
+    let none_digest = BudgetSelection::Generic(12_000)
+        .profile()
+        .expect("profile")
+        .digest;
+    assert_ne!(
+        explicit.profile.digest, none_digest,
+        "the digest binds the effective recipe"
+    );
+}
+
+/// R2-3: `--all` covers every definition kind `--module` does — every
+/// non-module node of the project — not a hand-picked kind subset.
+#[test]
+fn all_scope_covers_every_module_kind() {
+    let compilation = planner();
+    let module_request =
+        BudgetRequest::new(None, Some("planner".to_owned()), false, false, false, false)
+            .expect("module request");
+    let all_request =
+        BudgetRequest::new(None, None, true, false, false, false).expect("all request");
+    let module_report = plan(
+        &module_request,
+        &BudgetSelection::Generic(1_000_000),
+        &compilation,
+    )
+    .expect("module plans");
+    let all_report = plan(
+        &all_request,
+        &BudgetSelection::Generic(1_000_000),
+        &compilation,
+    )
+    .expect("all plans");
+    let module_kinds: BTreeSet<&str> = module_report
+        .subjects
+        .iter()
+        .filter_map(|subject| subject.id.split(':').next())
+        .collect();
+    let all_kinds: BTreeSet<&str> = all_report
+        .subjects
+        .iter()
+        .filter_map(|subject| subject.id.split(':').next())
+        .collect();
+    assert!(!module_kinds.is_empty());
+    for kind in &module_kinds {
+        assert!(all_kinds.contains(kind), "--all must cover kind {kind}");
+    }
+    assert!(
+        all_report.summary.subjects >= module_report.summary.subjects,
+        "--all is the project-wide superset of one module's subjects"
+    );
+    let graph = crate::graph::build(&compilation.project).expect("graph builds");
+    let expected: BTreeSet<&str> = graph
+        .nodes()
+        .iter()
+        .filter(|node| node.kind() != crate::graph::NodeKindId::MODULE)
+        .map(|node| node.id().as_str())
+        .collect();
+    let actual: BTreeSet<&str> = all_report
+        .subjects
+        .iter()
+        .map(|subject| subject.id.as_str())
+        .collect();
+    assert_eq!(actual, expected, "--all covers every definition exactly");
+}
+
+#[test]
+fn baseline_provenance_pins_round_trip_and_refuse_malformed_shapes() {
+    let report = plan(
+        &symbol_request("planner.focus_task"),
+        &BudgetSelection::Generic(12_000),
+        &planner(),
+    )
+    .expect("report plans")
+    .with_pins(
+        StateValue::Known(format!("sha256:{}", "a".repeat(64))),
+        StateValue::Known(format!("sha256:{}", "b".repeat(64))),
+    );
+    let canonical = report.to_canonical_json().expect("report bytes");
+    let decoded = super::baseline::parse(canonical.as_bytes()).expect("baseline decodes");
+    assert_eq!(decoded.report.provenance, report.provenance);
+    let markdown = report.to_markdown();
+    assert!(markdown.contains(report.provenance.policy.value().expect("policy digest")));
+    assert!(markdown.contains(report.provenance.baseline.value().expect("baseline digest")));
+    assert!(markdown.contains("shared 134 tokens"));
+    let document: serde_json::Value = serde_json::from_str(&canonical).expect("json");
+    for member in ["policy", "baseline"] {
+        for pin in [
+            serde_json::json!("known"),
+            serde_json::json!({"state": "known"}),
+            serde_json::json!({"state": "known", "digest": "C:/private/baseline.json"}),
+            serde_json::json!({"state": "known", "digest": format!("sha256:{}", "a".repeat(64)), "extra": true}),
+            serde_json::json!({"state": "unknown", "digest": format!("sha256:{}", "a".repeat(64))}),
+            serde_json::json!({"state": "unknown", "digest": null}),
+            serde_json::json!({"state": "invented"}),
+        ] {
+            let mut bad = document.clone();
+            bad["provenance"][member] = pin;
+            assert!(
+                super::baseline::parse(&serde_json::to_vec(&bad).expect("json bytes")).is_err(),
+                "malformed {member} pin refuses: {}",
+                bad["provenance"][member]
+            );
+        }
+        for state in ["unknown", "withheld", "unsupported"] {
+            let mut valid = document.clone();
+            valid["provenance"][member] = serde_json::json!({"state": state});
+            let decoded = super::baseline::parse(&serde_json::to_vec(&valid).expect("json bytes"))
+                .expect("state-only pin decodes");
+            let pin = if member == "policy" {
+                &decoded.report.provenance.policy
+            } else {
+                &decoded.report.provenance.baseline
+            };
+            assert_eq!(pin.state(), state);
+        }
+    }
 }

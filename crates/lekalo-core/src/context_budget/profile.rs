@@ -328,6 +328,16 @@ fn effective_profile(entry: ProfileEntryWire) -> Result<Profile, DiagnosticSet> 
     Ok(profile)
 }
 
+impl Profile {
+    /// Re-normalize the digest after an effective-recipe adjustment:
+    /// the caller's explicit source-context selection overrides the
+    /// declared one, and the digest must bind the recipe that is
+    /// actually measured (codex 6).
+    pub(crate) fn rebind_digest(&mut self) {
+        self.digest = profile_digest(self);
+    }
+}
+
 /// The canonical normalized digest of one effective profile: the exact
 /// bytes of its typed fields in fixed order (field order normalizes any
 /// declared document ordering).

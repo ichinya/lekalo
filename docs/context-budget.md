@@ -114,6 +114,17 @@ reservedSystemToolTokens`; a nonpositive result refuses. The effective
 profile digest binds estimator + selection + budget + limits and every
 report embeds it; baseline comparability requires the same digest.
 
+Known policy and baseline provenance pins carry the SHA-256 digest of the
+exact consumed file bytes as `{"state":"known","digest":"sha256:…"}`;
+absent inputs carry `{"state":"unknown"}`. Paths never enter those pins.
+The effective source recipe comes from the named profile or an explicit
+`--source-context mapped-files` selection and is bound into the profile
+digest. This generation reports mapped-files as `unsupported` with
+`LEK-CONTEXT-004` because the artifact evidence adapter is not available.
+The breakdown bills shared subject costs to the subject's own row (hops 0),
+and an untruncated breakdown's exclusive plus shared tokens sum to the
+required semantic ledger.
+
 ## Policy
 
 ```json

@@ -250,29 +250,51 @@ struct SubjectWire {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-#[allow(dead_code)]
 struct ProvenanceWire {
-    #[serde(rename = "modelVersion", default)]
+    #[serde(rename = "modelVersion")]
     model_version: String,
-    #[serde(rename = "irDigest", default)]
+    #[serde(rename = "irDigest")]
     ir_digest: String,
-    #[serde(rename = "graphIdentity", default)]
+    #[serde(rename = "graphIdentity")]
     graph_identity: String,
-    #[serde(rename = "effectIdentity", default)]
+    #[serde(rename = "effectIdentity")]
     effect_identity: String,
-    #[serde(default)]
-    baseline: String,
-    #[serde(default)]
-    policy: Option<PolicyPinWire>,
+    baseline: DigestPinWire,
+    policy: DigestPinWire,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-#[allow(dead_code)]
-struct PolicyPinWire {
+struct DigestPinWire {
     state: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, deserialize_with = "present_digest")]
     digest: Option<String>,
+}
+
+fn present_digest<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    String::deserialize(deserializer).map(Some)
+}
+
+impl DigestPinWire {
+    fn decode(self) -> Result<StateValue<String>, DiagnosticSet> {
+        match (self.state.as_str(), self.digest) {
+            ("known", Some(digest))
+                if digest.len() == 71
+                    && digest.starts_with("sha256:")
+                    && digest.as_bytes()[7..]
+                        .iter()
+                        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte)) =>
+            {
+                Ok(StateValue::Known(digest))
+            }
+            ("unknown", None) => Ok(StateValue::Unknown),
+            ("withheld", None) => Ok(StateValue::Withheld),
+            ("unsupported", None) => Ok(StateValue::Unsupported),
+            _ => Err(diagnostic::input_invalid("baseline-provenance-pin")),
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -296,8 +318,7 @@ struct BaselineWire {
     identity: String,
     #[serde(rename = "metricVersion")]
     metric_version: String,
-    #[serde(default)]
-    provenance: Option<ProvenanceWire>,
+    provenance: ProvenanceWire,
     scope: ScopeWire,
     profile: ProfileWire,
     estimator: EstimatorWire,
@@ -353,12 +374,12 @@ pub fn parse(bytes: &[u8]) -> Result<DecodedBaseline, DiagnosticSet> {
     }
     let report = BudgetReport {
         provenance: Provenance {
-            model_version: String::new(),
-            ir_digest: String::new(),
-            graph_identity: String::new(),
-            effect_identity: String::new(),
-            policy: StateValue::Unknown,
-            baseline: StateValue::Unknown,
+            model_version: wire.provenance.model_version,
+            ir_digest: wire.provenance.ir_digest,
+            graph_identity: wire.provenance.graph_identity,
+            effect_identity: wire.provenance.effect_identity,
+            policy: wire.provenance.policy.decode()?,
+            baseline: wire.provenance.baseline.decode()?,
         },
         scope: match wire.scope.kind.as_str() {
             "symbol" => Scope::Symbol(wire.scope.id),

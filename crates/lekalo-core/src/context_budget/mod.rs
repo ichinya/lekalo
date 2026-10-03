@@ -50,16 +50,20 @@ pub use value::StateValue;
 /// One dependency-breakdown row of an over-budget subject.
 #[derive(Clone, Debug, PartialEq)]
 pub struct BreakdownRow {
-    /// The reachable dependency id (kind-qualified).
+    /// The kind-qualified node id this row bills: a closure dependency,
+    /// or the subject itself for the shared bucket.
     pub dependency: String,
-    /// The owning module of the dependency, when the graph has one.
+    /// The owning module of the billed node, when the graph has one.
     pub module: Option<String>,
-    /// The minimum module-boundary hops to reach it.
+    /// The minimum module-boundary hops to reach it (0 for the subject
+    /// row).
     pub hops: Option<u64>,
     /// Required tokens attributed exclusively to this dependency.
     pub exclusive_required_tokens: u64,
-    /// Required tokens shared with other dependencies (attributed once,
-    /// to the canonically first owner).
+    /// Required tokens that are not any single dependency's own
+    /// contract (the subject's contract and synthesized subject facts):
+    /// attributed once, to the subject's own row — never to an
+    /// unrelated dependency.
     pub shared_required_tokens: u64,
 }
 
@@ -147,10 +151,10 @@ pub struct Provenance {
     pub graph_identity: String,
     /// The effect-graph contract identity.
     pub effect_identity: String,
-    /// The policy document pin: digest + verdict when a mandatory policy
+    /// The policy document pin: digest when a mandatory policy
     /// was selected (an advisory run records the advisory mode).
     pub policy: StateValue<String>,
-    /// The baseline file pin: the candidate comparison was computed.
+    /// Digest of the exact baseline bytes consumed by the comparison.
     pub baseline: StateValue<String>,
 }
 
@@ -171,7 +175,7 @@ pub struct BudgetReport {
 impl BudgetReport {
     /// Record the caller-selected policy and baseline pins into the
     /// provenance block (the CLI layer owns those file reads; core stays
-    /// filesystem-free). The policy pin carries the policy digest.
+    /// filesystem-free). Both known pins carry digests of the consumed bytes.
     pub fn with_pins(
         mut self,
         policy_pin: StateValue<String>,
@@ -210,7 +214,16 @@ pub fn plan(
     selection: &BudgetSelection,
     compilation: &Compilation,
 ) -> Result<BudgetReport, DiagnosticSet> {
-    let profile = selection.profile()?;
+    // The effective source recipe is the caller's explicit selection or
+    // the profile's declared one, never a mixture (codex 6): when the
+    // caller selects mapped-files over a none-recipe profile, the
+    // recipe and its digest bind the recipe that is actually measured.
+    let mut profile = selection.profile()?;
+    if request.source_context && profile.source_context != profile::SourceContext::MappedFiles {
+        profile.source_context = profile::SourceContext::MappedFiles;
+        profile.rebind_digest();
+    }
+    let source_measured = profile.source_context == profile::SourceContext::MappedFiles;
     let project = &compilation.project;
     let graph = graph_build(project)?;
     let effects = crate::effects::build(project)?;
@@ -240,16 +253,9 @@ pub fn plan(
             let mut found: Vec<(&NodeId, Option<String>)> = graph
                 .nodes()
                 .iter()
-                .filter(|node| {
-                    matches!(
-                        node.kind(),
-                        crate::graph::NodeKindId::OPERATION
-                            | crate::graph::NodeKindId::ENTITY
-                            | crate::graph::NodeKindId::TYPE
-                            | crate::graph::NodeKindId::EVENT
-                            | crate::graph::NodeKindId::EFFECT
-                    )
-                })
+                // Every definition kind `--module` covers: anything that
+                // is not a module node itself (R2-3).
+                .filter(|node| node.kind() != crate::graph::NodeKindId::MODULE)
                 .map(|node| (node.id(), node.module().map(str::to_owned)))
                 .collect();
             found.sort_by_key(|(id, _)| id.as_str().to_owned());
@@ -330,9 +336,9 @@ pub fn plan(
         // fact is that node's contract; effect-edge facts bill to the
         // operation that declares them). A fact whose owner is not a
         // closure dependency (the subject itself, or a synthesized fact
-        // of the subject) is shared cost of the subject row and is
-        // attributed to the canonically first dependency so that the
-        // exclusive + shared sums always reconcile to F.
+        // of the subject) is shared cost of the subject and is billed
+        // to the subject's own row so that the exclusive + shared sums
+        // always reconcile to F.
         let subject_id = node_id.as_str().to_owned();
         let mut attribution: BTreeMap<String, u64> = BTreeMap::new();
         let mut shared_total: u64 = 0;
@@ -357,11 +363,24 @@ pub fn plan(
             let entry = attribution.entry(owner).or_insert(0);
             *entry = entry.saturating_add(fact.tokens);
         }
-        // Shared cost lands on the canonically first dependency so the
-        // additive reconciliation (exclusive + shared = required) holds.
-        let first_dependency = closure.transitive.iter().next().cloned();
+        // Shared cost — the subject's own contract plus any fact whose
+        // owner is not a closure dependency — is billed to the subject
+        // itself as a distinct row, never to an unrelated dependency
+        // (R2-m3); the additive reconciliation (exclusive + shared =
+        // required) then holds for every untruncated breakdown,
+        // including a subject with no dependencies at all. A row-bound
+        // hit remains explicit in breakdown_truncated.
         let mut breakdown: Vec<BreakdownRow> = Vec::new();
         let mut breakdown_truncated = false;
+        if shared_total > 0 {
+            breakdown.push(BreakdownRow {
+                dependency: subject_id.clone(),
+                module: module.clone(),
+                hops: Some(0),
+                exclusive_required_tokens: 0,
+                shared_required_tokens: shared_total,
+            });
+        }
         for dependency in &closure.transitive {
             if breakdown.len() >= version::MAX_BREAKDOWN_ROWS {
                 breakdown_truncated = true;
@@ -372,29 +391,18 @@ pub fn plan(
                 .and_then(|node| node.module())
                 .map(str::to_owned);
             let hop = hops.hops.get(dependency).copied();
-            let exclusive = attribution.get(dependency).copied().unwrap_or(0);
-            let shared = if first_dependency.as_deref() == Some(dependency.as_str()) {
-                shared_total
-            } else {
-                0
-            };
             breakdown.push(BreakdownRow {
                 dependency: dependency.clone(),
                 module,
                 hops: hop,
-                exclusive_required_tokens: exclusive,
-                shared_required_tokens: shared,
+                exclusive_required_tokens: attribution.get(dependency).copied().unwrap_or(0),
+                shared_required_tokens: 0,
             });
         }
         breakdown.sort_by(|left, right| {
-            (
-                std::cmp::Reverse(right.exclusive_required_tokens + right.shared_required_tokens),
-                left.dependency.clone(),
-            )
-                .cmp(&(
-                    std::cmp::Reverse(left.exclusive_required_tokens + left.shared_required_tokens),
-                    right.dependency.clone(),
-                ))
+            (right.exclusive_required_tokens + right.shared_required_tokens)
+                .cmp(&(left.exclusive_required_tokens + left.shared_required_tokens))
+                .then_with(|| left.dependency.cmp(&right.dependency))
         });
 
         // Advisory extraction suggestions: the single dominant crossing
@@ -554,10 +562,12 @@ pub fn plan(
                 ),
                 minimum_required_semantic_tokens: StateValue::Known(required_tokens),
                 supporting_semantic_tokens: StateValue::Known(selection_facts.supporting_tokens()),
-                optional_source_tokens: if request.source_context {
-                    // The mapped-files recipe is declared but the artifact
-                    // evidence adapter is not wired in this generation:
-                    // honestly unsupported, with the registered warning.
+                optional_source_tokens: if source_measured {
+                    // The mapped-files recipe is declared (profile
+                    // selection or explicit caller choice) but the
+                    // artifact evidence adapter is not wired in this
+                    // generation: honestly unsupported, with the
+                    // registered warning.
                     StateValue::Unsupported
                 } else {
                     StateValue::Unknown
@@ -610,6 +620,16 @@ pub fn plan(
         });
     }
 
+    // LEK-CONTEXT-004: the requested source recipe cannot be measured
+    // in this generation (no artifact-evidence adapter is wired), so
+    // every subject's optional-source metric stays unsupported.
+    if source_measured {
+        let measured: Vec<String> = rows.iter().map(|row| row.id.clone()).collect();
+        warnings.extend(diagnostic::artifact_evidence_incomplete(
+            &measured,
+            "mapped-files-unmeasurable",
+        ));
+    }
     warnings.extend(diagnostic::budget_exceeded(&over_budget_subjects));
     warnings.extend(diagnostic::closure_incomplete(
         &bounded_subjects,
@@ -759,6 +779,19 @@ fn module_subjects<'a>(
 /// The canonical wire projection (byte-sorted object keys, compact UTF-8).
 mod wire {
     use super::*;
+
+    fn digest_pin_json(pin: &StateValue<String>) -> String {
+        match pin {
+            StateValue::Known(digest) => crate::context::canonical::object(vec![
+                ("digest", crate::context::canonical::string(digest)),
+                ("state", crate::context::canonical::string("known")),
+            ]),
+            state => crate::context::canonical::object(vec![(
+                "state",
+                crate::context::canonical::string(state.state()),
+            )]),
+        }
+    }
 
     fn state_value_u64(value: &StateValue<u64>) -> String {
         match value {
@@ -1219,10 +1252,7 @@ mod wire {
             (
                 "provenance",
                 crate::context::canonical::object(vec![
-                    (
-                        "baseline",
-                        crate::context::canonical::string(report.provenance.baseline.state()),
-                    ),
+                    ("baseline", digest_pin_json(&report.provenance.baseline)),
                     (
                         "effectIdentity",
                         crate::context::canonical::string(&report.provenance.effect_identity),
@@ -1239,19 +1269,7 @@ mod wire {
                         "modelVersion",
                         crate::context::canonical::string(&report.provenance.model_version),
                     ),
-                    (
-                        "policy",
-                        match &report.provenance.policy {
-                            StateValue::Known(digest) => crate::context::canonical::object(vec![
-                                ("digest", crate::context::canonical::string(digest)),
-                                ("state", crate::context::canonical::string("known")),
-                            ]),
-                            state => crate::context::canonical::object(vec![(
-                                "state",
-                                crate::context::canonical::string(state.state()),
-                            )]),
-                        },
-                    ),
+                    ("policy", digest_pin_json(&report.provenance.policy)),
                 ]),
             ),
             (
@@ -1309,6 +1327,15 @@ mod wire {
             report.profile.available_content_tokens
         ));
         lines.push(format!("- complete: {}", report.complete));
+        for (label, pin) in [
+            ("policy", &report.provenance.policy),
+            ("baseline", &report.provenance.baseline),
+        ] {
+            lines.push(format!(
+                "- {label}: {}",
+                pin.value().map(String::as_str).unwrap_or(pin.state())
+            ));
+        }
         lines.push(format!(
             "- summary: {} subject(s), {} over budget, {} indeterminate",
             report.summary.subjects,
@@ -1346,8 +1373,8 @@ mod wire {
                         .map(|hops| hops.to_string())
                         .unwrap_or_else(|| "?".to_owned());
                     lines.push(format!(
-                        "- {} (module {module}, hops {hops}, exclusive {} tokens)",
-                        row.dependency, row.exclusive_required_tokens
+                        "- {} (module {module}, hops {hops}, exclusive {} tokens, shared {} tokens)",
+                        row.dependency, row.exclusive_required_tokens, row.shared_required_tokens
                     ));
                 }
                 if subject.breakdown_truncated {

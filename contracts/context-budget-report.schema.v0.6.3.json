@@ -28,7 +28,7 @@
       "const": "context-budget-semantics/1"
     },
     "provenance": {
-      "description": "The input provenance tuple: the exact pins binding this report to what it measured. The policy pin carries the mandatory-policy digest when one was selected; the baseline pin records that a baseline was consumed. A pin without evidence is an explicit non-known state, never absent.",
+      "description": "The input provenance tuple: the exact pins binding this report to what it measured. Known policy and baseline pins carry SHA-256 digests of the exact consumed document bytes, never file paths. A pin without evidence is an explicit non-known state, never absent.",
       "type": "object",
       "additionalProperties": false,
       "required": ["modelVersion", "irDigest", "graphIdentity", "effectIdentity", "policy", "baseline"],
@@ -61,7 +61,27 @@
             }
           ]
         },
-        "baseline": { "enum": ["known", "unknown", "withheld", "unsupported"] }
+        "baseline": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "digest"],
+              "properties": {
+                "state": { "const": "known" },
+                "digest": { "$ref": "#/$defs/sha256Digest" }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state"],
+              "properties": {
+                "state": { "enum": ["unknown", "withheld", "unsupported"] }
+              }
+            }
+          ]
+        }
       }
     },
     "scope": {
@@ -255,6 +275,7 @@
       ]
     },
     "breakdownRow": {
+      "description": "A closure dependency's exclusive required cost, or the subject's own row (hops 0) carrying subject-owned and synthesized shared cost once. For an untruncated breakdown, exclusive plus shared tokens reconcile to the required semantic ledger.",
       "type": "object",
       "additionalProperties": false,
       "required": [

@@ -11,7 +11,6 @@
 
 use std::collections::BTreeMap;
 
-use super::closure::DependencyClosure;
 use super::facts::{FactSelection, LedgerFact};
 use super::profile::Profile;
 use super::value::StateValue;
@@ -179,28 +178,6 @@ pub fn required_module_count(
     StateValue::Known(modules.len() as u64)
 }
 
-/// The closure-scoped M6 counts: unique required fact identities per
-/// class, with declared/detected effects kept separate.
-pub fn semantic_counts(
-    selection: &FactSelection,
-) -> (StateValue<u64>, StateValue<u64>, StateValue<u64>) {
-    let policies = selection
-        .required
-        .iter()
-        .filter(|fact| fact.id.starts_with("policy:"))
-        .count() as u64;
-    let scenarios = selection
-        .required
-        .iter()
-        .filter(|fact| fact.id.starts_with("scenario:"))
-        .count() as u64;
-    (
-        StateValue::Known(selection.counted_operations.len() as u64),
-        StateValue::Known(policies),
-        StateValue::Known(scenarios),
-    )
-}
-
 /// The M8 duplicate-supporting computation: the supporting requests
 /// deduped to unique fact identities; the duplicate token sum is the
 /// requested total minus the unique total.
@@ -250,37 +227,6 @@ pub fn minimum_safe(profile: &Profile, required_tokens: StateValue<u64>) -> Stat
         StateValue::Unknown => StateValue::Unknown,
         StateValue::Withheld => StateValue::Withheld,
         StateValue::Unsupported => StateValue::Unsupported,
-    }
-}
-
-/// The M1 counts from one finished closure.
-pub fn dependency_counts(
-    closure: &DependencyClosure,
-) -> (
-    StateValue<u64>,
-    StateValue<u64>,
-    StateValue<u64>,
-    StateValue<u64>,
-) {
-    let direct = closure.direct.len() as u64;
-    let transitive = closure.transitive.len() as u64;
-    let indirect = closure.indirect_only.len() as u64;
-    let edge_count = direct.saturating_add(indirect).min(transitive);
-    if closure.complete {
-        (
-            StateValue::Known(direct),
-            StateValue::Known(transitive),
-            StateValue::Known(indirect),
-            StateValue::Known(edge_count),
-        )
-    } else {
-        // A bounded walk still proves its distinct-node lower bound.
-        (
-            StateValue::Known(direct),
-            StateValue::Known(transitive),
-            StateValue::Unknown,
-            StateValue::Known(edge_count),
-        )
     }
 }
 

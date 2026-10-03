@@ -110,6 +110,35 @@ fn over_budget_is_advisory_valid_exit_zero_with_explainable_breakdown() {
         .map(|fact| fact["tokens"].as_u64().unwrap_or(0))
         .sum();
     assert_eq!(ledger, required, "the ledger sums to the required total");
+    // Breakdown reconciliation (R2-6): Σ(exclusive) + Σ(shared) equals
+    // the required total, and shared cost is billed to the subject's
+    // own row, never to an unrelated dependency (R2-m3).
+    let rows = subject["breakdown"].as_array().expect("breakdown rows");
+    let exclusive: u64 = rows
+        .iter()
+        .map(|row| row["exclusiveRequiredTokens"].as_u64().unwrap_or(0))
+        .sum();
+    let shared: u64 = rows
+        .iter()
+        .map(|row| row["sharedRequiredTokens"].as_u64().unwrap_or(0))
+        .sum();
+    assert_eq!(
+        exclusive + shared,
+        required,
+        "the breakdown bills every required token exactly once"
+    );
+    let subject_id = subject["id"].as_str().expect("subject id");
+    let subject_row = rows
+        .iter()
+        .find(|row| row["dependency"] == *subject_id)
+        .expect("the subject bills its own shared cost")["sharedRequiredTokens"]
+        .as_u64()
+        .expect("shared tokens");
+    assert!(subject_row > 0);
+    assert!(rows
+        .iter()
+        .filter(|row| row["dependency"] != *subject_id)
+        .all(|row| row["sharedRequiredTokens"] == 0));
 }
 
 /// The exact budget boundary: at exactly the required sum the
@@ -427,18 +456,30 @@ fn tiny_budget_simulation_exposes_missing_required() {
 /// A private temp copy of the committed fixture project: generated
 /// profile/policy/baseline documents land here, so the tracked fixture
 /// tree stays byte-identical after any test run.
-fn fixture_copy(tag: &str) -> PathBuf {
-    let temp = tempfile::tempdir().expect("temp dir").keep();
-    let target = temp.join("project");
+struct FixtureCopy {
+    _temp: tempfile::TempDir,
+    project: PathBuf,
+}
+
+impl std::ops::Deref for FixtureCopy {
+    type Target = Path;
+
+    fn deref(&self) -> &Self::Target {
+        &self.project
+    }
+}
+
+fn fixture_copy(tag: &str) -> FixtureCopy {
+    let temp = tempfile::Builder::new()
+        .prefix(&format!("lekalo-context-budget-{tag}-"))
+        .tempdir()
+        .expect("temp dir");
+    let target = temp.path().join("project");
     copy_dir(&fixture_path(), &target);
-    let marker = target.join(format!(".{tag}-used"));
-    std::fs::write(&marker, b"").expect("marker");
-    // The temp dir is intentionally kept for the child process; the OS
-    // temp sweep owns its cleanup (tests never write into the checkout).
-    let mut marker = target.clone();
-    marker.push(format!(".{tag}-used"));
-    std::fs::write(&marker, b"").expect("marker");
-    target
+    FixtureCopy {
+        _temp: temp,
+        project: target,
+    }
 }
 
 fn copy_dir(source: &Path, target: &Path) {
@@ -523,6 +564,22 @@ fn mandatory_policy_denies_and_passes_on_the_pin() {
         ],
     );
     assert_eq!(exit_code(&pass), 0, "the passing side exits 0");
+    // R2-M1: the pins reach the wire — a mandatory-policy pass is no
+    // longer byte-indistinguishable from an advisory run on provenance.
+    let pass_document = document(&pass);
+    let pass_provenance = &pass_document["contextBudget"]["provenance"];
+    assert_eq!(pass_provenance["policy"]["state"], "known");
+    let expected_digest = format!(
+        "sha256:{}",
+        lekalo_core::digest::sha256_hex(&std::fs::read(&policy_path).expect("policy bytes"))
+    );
+    assert_eq!(
+        pass_provenance["policy"]["digest"]
+            .as_str()
+            .expect("digest"),
+        expected_digest,
+        "the policy pin carries the exact selected policy digest"
+    );
     let deny = lekalo_in(
         &project,
         &[
@@ -538,12 +595,74 @@ fn mandatory_policy_denies_and_passes_on_the_pin() {
     );
     assert_eq!(exit_code(&deny), 3, "the mandatory policy denies with 3");
     // The denial keeps its stdout envelope with the mirrored evidence:
-    // denied writes stdout (exit 3), never stderr.
+    // denied writes stdout (exit 3), never stderr. This denial is the
+    // profile-pin refusal (plain denied, no report payload).
     let stdout = String::from_utf8(deny.stdout.clone()).expect("stdout utf8");
-    let document: serde_json::Value = serde_json::from_str(&stdout).expect("denial envelope");
-    assert_eq!(document["status"], "denied");
-    assert_eq!(document["reasonCodes"][0], "context.policy-denied");
+    let denial_document: serde_json::Value =
+        serde_json::from_str(&stdout).expect("denial envelope");
+    assert_eq!(denial_document["status"], "denied");
+    assert_eq!(denial_document["reasonCodes"][0], "context.policy-denied");
+    // The failOn denial (a policy pinned to THIS over-budget run's own
+    // profile) rides the denied envelope with the report embedded, and
+    // the payload carries the same live pins — the canonical bytes are
+    // serialized after with_pins (R2-M1), never an advisory-identical
+    // unknown.
+    let over = document(&lekalo_in(
+        &project,
+        &[
+            "--json",
+            "context-budget",
+            "--symbol",
+            "planner.focus_task",
+            "--budget",
+            "200",
+        ],
+    ));
+    let over_profile = &over["contextBudget"]["profile"];
+    let fail_on_policy = format!(
+        r#"{{"schemaVersion":"lekalo/context-budget-policy/v0.6.3","identity":"dev.lekalo.context-budget-policy@0.6.3","mode":"mandatory","profileRef":{{"id":"{}","version":"{}","digest":"{}"}},"failOn":["over-budget"],"regressionLimits":[]}}"#,
+        over_profile["id"].as_str().expect("id"),
+        over_profile["version"].as_str().expect("version"),
+        over_profile["digest"].as_str().expect("digest"),
+    );
+    let fail_on_path = project.join("context-budget-policy-failon.json");
+    std::fs::write(&fail_on_path, fail_on_policy).expect("write failOn policy");
+    let fail_on = lekalo_in(
+        &project,
+        &[
+            "--json",
+            "context-budget",
+            "--symbol",
+            "planner.focus_task",
+            "--budget",
+            "200",
+            "--policy",
+            fail_on_path.to_str().expect("utf8 policy"),
+        ],
+    );
+    assert_eq!(exit_code(&fail_on), 3, "the failOn denial exits 3");
+    let fail_on_stdout = String::from_utf8(fail_on.stdout.clone()).expect("stdout utf8");
+    let fail_on_document: serde_json::Value =
+        serde_json::from_str(&fail_on_stdout).expect("failOn envelope");
+    assert_eq!(fail_on_document["status"], "denied");
+    let payload = &fail_on_document["payload"]["contextBudget"];
+    let payload_provenance = &payload["provenance"];
+    assert_eq!(payload_provenance["policy"]["state"], "known");
+    let fail_on_digest = format!(
+        "sha256:{}",
+        lekalo_core::digest::sha256_hex(&std::fs::read(&fail_on_path).expect("failOn bytes"))
+    );
+    assert_eq!(
+        payload_provenance["policy"]["digest"]
+            .as_str()
+            .expect("digest"),
+        fail_on_digest,
+        "the denied envelope pins the exact selected policy digest"
+    );
+    assert_eq!(payload_provenance["baseline"]["state"], "unknown");
+    assert_eq!(payload["subjects"][0]["assessment"], "over-budget");
     let _ = std::fs::remove_file(&policy_path);
+    let _ = std::fs::remove_file(&fail_on_path);
 }
 
 /// A policy pinned to a different profile digest denies before any
@@ -611,6 +730,44 @@ fn baseline_comparison_records_verdicts() {
     );
     assert_eq!(exit_code(&same_run), 0);
     let same = document(&same_run);
+    // R2-M1: the consumed baseline is pinned on the wire, not unknown.
+    assert_eq!(
+        same["contextBudget"]["provenance"]["baseline"]["state"], "known",
+        "a consumed baseline pins provenance.baseline"
+    );
+    let baseline_digest = format!(
+        "sha256:{}",
+        lekalo_core::digest::sha256_hex(&std::fs::read(&baseline_path).expect("baseline bytes"))
+    );
+    assert_eq!(
+        same["contextBudget"]["provenance"]["baseline"]["digest"], baseline_digest,
+        "the baseline pin binds the exact consumed bytes"
+    );
+    // A prior report that itself consumed a baseline remains a valid baseline.
+    let chained_path = project.join("chained-baseline.json");
+    std::fs::write(
+        &chained_path,
+        serde_json::to_vec(&same["contextBudget"]).expect("chained report"),
+    )
+    .expect("write chained baseline");
+    let chained = lekalo_in(
+        &project,
+        &[
+            "--json",
+            "context-budget",
+            "--symbol",
+            "planner.focus_task",
+            "--budget",
+            "1000000",
+            "--baseline",
+            chained_path.to_str().expect("utf8"),
+        ],
+    );
+    assert_eq!(
+        exit_code(&chained),
+        0,
+        "digest-bearing baselines round-trip"
+    );
     let warnings = same["diagnostics"].as_array().cloned().unwrap_or_default();
     assert!(!warnings
         .iter()
@@ -653,6 +810,154 @@ fn baseline_comparison_records_verdicts() {
     );
     assert_eq!(exit_code(&malformed), 1);
     let _ = std::fs::remove_file(&baseline_path);
+}
+
+#[test]
+fn source_recipe_normalizes_named_and_generic_profiles_and_preserves_policy_pin() {
+    let project = fixture_copy("source-recipe");
+    let plain_args = [
+        "--json",
+        "context-budget",
+        "--symbol",
+        "planner.focus_task",
+        "--budget",
+        "12000",
+    ];
+    let plain = document(&lekalo_in(&project, &plain_args));
+    let mut explicit_args = plain_args.to_vec();
+    explicit_args.extend(["--source-context", "mapped-files"]);
+    let explicit_run = lekalo_in(&project, &explicit_args);
+    assert_eq!(exit_code(&explicit_run), 0);
+    let explicit = document(&explicit_run);
+    assert_eq!(
+        explicit["contextBudget"]["profile"]["sourceContext"],
+        "mapped-files"
+    );
+    assert_ne!(
+        explicit["contextBudget"]["profile"]["digest"],
+        plain["contextBudget"]["profile"]["digest"]
+    );
+    assert_eq!(
+        explicit["contextBudget"]["subjects"][0]["metrics"]["optionalSourceTokens"]["state"],
+        "unsupported"
+    );
+    assert!(explicit["diagnostics"]
+        .as_array()
+        .expect("diagnostics")
+        .iter()
+        .any(|row| row["code"] == "LEK-CONTEXT-004"));
+    let profiles = write_profiles(&project);
+    let mut profile_doc: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&profiles).expect("profiles")).expect("json");
+    profile_doc["profiles"][0]["selection"]["sourceContext"] = "mapped-files".into();
+    std::fs::write(
+        &profiles,
+        serde_json::to_vec(&profile_doc).expect("profiles json"),
+    )
+    .expect("write profiles");
+    let named_run = lekalo_in(
+        &project,
+        &[
+            "--json",
+            "context-budget",
+            "--symbol",
+            "planner.focus_task",
+            "--budget-profile",
+            "local-12k",
+            "--profiles",
+            profiles.to_str().expect("utf8"),
+        ],
+    );
+    assert_eq!(exit_code(&named_run), 0);
+    let named = document(&named_run);
+    assert_eq!(
+        named["contextBudget"]["profile"]["sourceContext"],
+        "mapped-files"
+    );
+    assert_eq!(
+        named["contextBudget"]["subjects"][0]["metrics"]["optionalSourceTokens"]["state"],
+        "unsupported"
+    );
+    assert!(named["diagnostics"]
+        .as_array()
+        .expect("diagnostics")
+        .iter()
+        .any(|row| row["id"] == "context.artifact-evidence-incomplete"));
+    let policy_path = project.join("policy.json");
+    let profile = &plain["contextBudget"]["profile"];
+    let policy = serde_json::json!({
+        "schemaVersion": "lekalo/context-budget-policy/v0.6.3",
+        "identity": "dev.lekalo.context-budget-policy@0.6.3",
+        "mode": "mandatory", "profileRef": {"id": profile["id"], "version": profile["version"], "digest": profile["digest"]},
+        "failOn": ["required-incomplete"], "regressionLimits": [],
+    });
+    std::fs::write(
+        &policy_path,
+        serde_json::to_vec(&policy).expect("policy json"),
+    )
+    .expect("write policy");
+    explicit_args.extend(["--policy", policy_path.to_str().expect("utf8")]);
+    let denied = lekalo_in(&project, &explicit_args);
+    assert_eq!(
+        exit_code(&denied),
+        3,
+        "a source override cannot reuse a none-recipe policy pin"
+    );
+}
+
+#[test]
+fn caller_documents_refuse_oversized_inputs() {
+    let project = fixture_copy("oversized");
+    let path = project.join("oversized.json");
+    std::fs::File::create(&path)
+        .expect("create input")
+        .set_len(lekalo_core::context_budget::version::MAX_INPUT_BYTES + 1)
+        .expect("size input");
+    let path = path.to_str().expect("utf8");
+    for args in [
+        vec!["--budget-profile", "local-12k", "--profiles", path],
+        vec!["--budget", "12000", "--policy", path],
+        vec!["--budget", "12000", "--baseline", path],
+    ] {
+        let mut invocation = vec!["--json", "context-budget", "--symbol", "planner.focus_task"];
+        invocation.extend(args);
+        let output = lekalo_in(&project, &invocation);
+        assert_eq!(exit_code(&output), 1);
+        let stderr = String::from_utf8(output.stderr).expect("stderr");
+        let failure: serde_json::Value = serde_json::from_str(&stderr).expect("invalid envelope");
+        assert_eq!(failure["status"], "invalid");
+        assert_eq!(failure["reasonCodes"][0], "context.input-invalid");
+        assert!(
+            stderr.contains("oversized"),
+            "the bound refuses before JSON decoding"
+        );
+    }
+}
+
+#[test]
+fn fixture_copy_cleans_up_after_children_finish() {
+    let path = {
+        let project = fixture_copy("cleanup");
+        let path = project.project.clone();
+        let output = lekalo_in(
+            &project,
+            &[
+                "--json",
+                "context-budget",
+                "--symbol",
+                "planner.focus_task",
+                "--budget",
+                "12000",
+            ],
+        );
+        assert_eq!(exit_code(&output), 0);
+        assert!(path.is_dir());
+        path
+    };
+    assert!(
+        !path.exists(),
+        "the fixture owner removes its private temp directory"
+    );
 }
 
 /// AC6: the paired fixture comparison through the CLI — the integration
