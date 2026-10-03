@@ -1,0 +1,4 @@
+{
+  "rule": "semantic.query-read-unresolved",
+  "pair": "query-read-unresolved.pair"
+}

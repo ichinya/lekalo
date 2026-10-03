@@ -1,0 +1,263 @@
+{
+  "catalogId": "dev.lekalo.fixture-catalog",
+  "fixtureSchema": "dev.lekalo.fixture@1.0.0",
+  "version": "1.0.0",
+  "status": "accepted",
+  "suiteRoot": "tests/fixtures/suite",
+  "repositoryRoot": ".",
+  "defaultTimeoutMs": 60000,
+  "bytePolicy": {
+    "newline": "lf-only",
+    "pathProjection": "logical-repository-relative",
+    "jsonMode": "producer-bytes"
+  },
+  "runners": [
+    {
+      "id": "cli-validate",
+      "kind": "cli-subprocess",
+      "program": "cargo-built-lekalo"
+    },
+    {
+      "id": "cli-load",
+      "kind": "cli-subprocess",
+      "program": "cargo-built-lekalo"
+    },
+    {
+      "id": "cli-load-ir",
+      "kind": "cli-subprocess",
+      "program": "cargo-built-lekalo"
+    },
+    {
+      "id": "cli-graph-export",
+      "kind": "cli-subprocess",
+      "program": "cargo-built-lekalo"
+    },
+    {
+      "id": "node-scenario-runner",
+      "kind": "node-in-process",
+      "program": "node-repo-script"
+    },
+    {
+      "id": "static-recipe",
+      "kind": "static",
+      "program": "none"
+    }
+  ],
+  "cases": [
+    {
+      "caseId": "diagnostic.command-effect-kind-mismatch.pair",
+      "revision": 1,
+      "descriptor": "tests/fixtures/suite/v1/diagnostics/command-effect-kind-mismatch/fixture.json",
+      "labels": [
+        "f06",
+        "diagnostic-pair"
+      ]
+    },
+    {
+      "caseId": "diagnostic.command-effect-unresolved.pair",
+      "revision": 1,
+      "descriptor": "tests/fixtures/suite/v1/diagnostics/command-effect-unresolved/fixture.json",
+      "labels": [
+        "f06",
+        "diagnostic-pair"
+      ]
+    },
+    {
+      "caseId": "diagnostic.effect-emits-kind-mismatch.pair",
+      "revision": 1,
+      "descriptor": "tests/fixtures/suite/v1/diagnostics/effect-emits-kind-mismatch/fixture.json",
+      "labels": [
+        "f06",
+        "diagnostic-pair"
+      ]
+    },
+    {
+      "caseId": "diagnostic.effect-emits-unresolved.pair",
+      "revision": 1,
+      "descriptor": "tests/fixtures/suite/v1/diagnostics/effect-emits-unresolved/fixture.json",
+      "labels": [
+        "f06",
+        "diagnostic-pair"
+      ]
+    },
+    {
+      "caseId": "diagnostic.effect-resource-kind-mismatch.pair",
+      "revision": 1,
+      "descriptor": "tests/fixtures/suite/v1/diagnostics/effect-resource-kind-mismatch/fixture.json",
+      "labels": [
+        "f06",
+        "diagnostic-pair"
+      ]
+    },
+    {
+      "caseId": "diagnostic.effect-resource-unresolved.pair",
+      "revision": 1,
+      "descriptor": "tests/fixtures/suite/v1/diagnostics/effect-resource-unresolved/fixture.json",
+      "labels": [
+        "f06",
+        "diagnostic-pair"
+      ]
+    },
+    {
+      "caseId": "diagnostic.endpoint-operation-kind-mismatch.pair",
+      "revision": 1,
+      "descriptor": "tests/fixtures/suite/v1/diagnostics/endpoint-operation-kind-mismatch/fixture.json",
+      "labels": [
+        "f06",
+        "diagnostic-pair"
+      ]
+    },
+    {
+      "caseId": "diagnostic.endpoint-operation-unresolved.pair",
+      "revision": 1,
+      "descriptor": "tests/fixtures/suite/v1/diagnostics/endpoint-operation-unresolved/fixture.json",
+      "labels": [
+        "f06",
+        "diagnostic-pair"
+      ]
+    },
+    {
+      "caseId": "diagnostic.entity-identity-field-missing.pair",
+      "revision": 1,
+      "descriptor": "tests/fixtures/suite/v1/diagnostics/entity-identity-field-missing/fixture.json",
+      "labels": [
+        "f06",
+        "diagnostic-pair"
+      ]
+    },
+    {
+      "caseId": "diagnostic.policy-operation-kind-mismatch.pair",
+      "revision": 1,
+      "descriptor": "tests/fixtures/suite/v1/diagnostics/policy-operation-kind-mismatch/fixture.json",
+      "labels": [
+        "f06",
+        "diagnostic-pair"
+      ]
+    },
+    {
+      "caseId": "diagnostic.policy-operation-unresolved.pair",
+      "revision": 1,
+      "descriptor": "tests/fixtures/suite/v1/diagnostics/policy-operation-unresolved/fixture.json",
+      "labels": [
+        "f06",
+        "diagnostic-pair"
+      ]
+    },
+    {
+      "caseId": "diagnostic.portable-target-reference.pair",
+      "revision": 1,
+      "descriptor": "tests/fixtures/suite/v1/diagnostics/portable-target-reference/fixture.json",
+      "labels": [
+        "f06",
+        "diagnostic-pair"
+      ]
+    },
+    {
+      "caseId": "diagnostic.public-output-private-type.pair",
+      "revision": 1,
+      "descriptor": "tests/fixtures/suite/v1/diagnostics/public-output-private-type/fixture.json",
+      "labels": [
+        "f06",
+        "diagnostic-pair"
+      ]
+    },
+    {
+      "caseId": "diagnostic.query-read-kind-mismatch.pair",
+      "revision": 1,
+      "descriptor": "tests/fixtures/suite/v1/diagnostics/query-read-kind-mismatch/fixture.json",
+      "labels": [
+        "f06",
+        "diagnostic-pair"
+      ]
+    },
+    {
+      "caseId": "diagnostic.query-read-unresolved.pair",
+      "revision": 1,
+      "descriptor": "tests/fixtures/suite/v1/diagnostics/query-read-unresolved/fixture.json",
+      "labels": [
+        "f06",
+        "diagnostic-pair"
+      ]
+    },
+    {
+      "caseId": "diagnostic.scenario-operation-unresolved.pair",
+      "revision": 1,
+      "descriptor": "tests/fixtures/suite/v1/diagnostics/scenario-operation-unresolved/fixture.json",
+      "labels": [
+        "f06",
+        "diagnostic-pair"
+      ]
+    },
+    {
+      "caseId": "diagnostic.type-recursion.pair",
+      "revision": 1,
+      "descriptor": "tests/fixtures/suite/v1/diagnostics/type-recursion/fixture.json",
+      "labels": [
+        "f06",
+        "diagnostic-pair"
+      ]
+    },
+    {
+      "caseId": "diagnostic.type-ref-kind-mismatch.pair",
+      "revision": 1,
+      "descriptor": "tests/fixtures/suite/v1/diagnostics/type-ref-kind-mismatch/fixture.json",
+      "labels": [
+        "f06",
+        "diagnostic-pair"
+      ]
+    },
+    {
+      "caseId": "diagnostic.type-ref-unresolved.pair",
+      "revision": 1,
+      "descriptor": "tests/fixtures/suite/v1/diagnostics/type-ref-unresolved/fixture.json",
+      "labels": [
+        "f06",
+        "diagnostic-pair"
+      ]
+    },
+    {
+      "caseId": "diagnostic.visibility-boundary-violation.pair",
+      "revision": 1,
+      "descriptor": "tests/fixtures/suite/v1/diagnostics/visibility-boundary-violation/fixture.json",
+      "labels": [
+        "f06",
+        "diagnostic-pair"
+      ]
+    },
+    {
+      "caseId": "minimal.project",
+      "revision": 1,
+      "descriptor": "tests/fixtures/suite/v1/minimal/project/fixture.json",
+      "labels": [
+        "f01",
+        "minimal"
+      ]
+    }
+  ],
+  "importedEvidence": [
+    {
+      "family": "adapter-conformance",
+      "path": "tests/fixtures/adapter-conformance/inputs/ir-minimal.json",
+      "consumer": "core adapter_conformance::fixture; node/php conformance gates",
+      "note": "shared compiled IR"
+    },
+    {
+      "family": "adapter-conformance",
+      "path": "tests/fixtures/adapter-conformance/inputs/scenario-txn-concurrency.json",
+      "consumer": "core adapter_conformance::fixture",
+      "note": "shared scenario IR"
+    },
+    {
+      "family": "orchestration",
+      "path": "tests/fixtures/orchestration/project",
+      "consumer": "node scenario e2e + php parity gates",
+      "note": "shared planner scenario corpus"
+    },
+    {
+      "family": "trace",
+      "path": "tests/fixtures/trace/golden/planner.trace.json",
+      "consumer": "trace-contracts gate; CLI trace tests",
+      "note": "canonical trace golden"
+    }
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "caseId": "diagnostic.visibility-boundary-violation.pair",
+  "revision": 1,
+  "algorithm": "sha256",
+  "files": [
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/visibility-boundary-violation/expect.json",
+      "sha256": "sha256:37e2101cbbae11a77c6b5078fa016d197e3334ea5ed84094304dd145c2d930af"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/visibility-boundary-violation/fixture.json",
+      "sha256": "sha256:833881045e8c84e6623d98cfec324675a9e5718b64d767cf91bd5adf9b8d5f31"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/visibility-boundary-violation/non-trigger/lekalo/modules/audit/entities.yaml",
+      "sha256": "sha256:e3cf2228fb413990fe8a49192e6ab5889238f6347b5cdf5f9d4ea4180cac7c6d"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/visibility-boundary-violation/non-trigger/lekalo/modules/audit/module.yaml",
+      "sha256": "sha256:c310464968718484d8f98e45dc3cfa58a2f2ee75162732d71c067b1600a819cc"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/visibility-boundary-violation/non-trigger/lekalo/modules/planner/entities.yaml",
+      "sha256": "sha256:4cb84da95353f19ea5f9386684b752d83461262b5da86db2b21db0a0f406b31e"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/visibility-boundary-violation/non-trigger/lekalo/modules/planner/module.yaml",
+      "sha256": "sha256:01ae1d4f6269668a44240836c08c85118967a44cc8ff2abe61fdf60b1869bebc"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/visibility-boundary-violation/non-trigger/lekalo/modules/planner/queries.yaml",
+      "sha256": "sha256:ae62546364d0cbdcc7eb6441ccea48802332d75c57b5289d410b38d9c887ff38"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/visibility-boundary-violation/non-trigger/lekalo/project.yaml",
+      "sha256": "sha256:2ed52b260e7da8bb56ea5d4f5cb1fa85fef0f886df792fc4ec41e296ec3f60de"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/visibility-boundary-violation/trigger/lekalo/modules/audit/entities.yaml",
+      "sha256": "sha256:e3cf2228fb413990fe8a49192e6ab5889238f6347b5cdf5f9d4ea4180cac7c6d"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/visibility-boundary-violation/trigger/lekalo/modules/audit/module.yaml",
+      "sha256": "sha256:c310464968718484d8f98e45dc3cfa58a2f2ee75162732d71c067b1600a819cc"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/visibility-boundary-violation/trigger/lekalo/modules/planner/entities.yaml",
+      "sha256": "sha256:96c97b75753a0d7efce713b55a3c77b2b257f7d7ed0c2700f8c40213459d06d2"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/visibility-boundary-violation/trigger/lekalo/modules/planner/module.yaml",
+      "sha256": "sha256:01ae1d4f6269668a44240836c08c85118967a44cc8ff2abe61fdf60b1869bebc"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/visibility-boundary-violation/trigger/lekalo/modules/planner/queries.yaml",
+      "sha256": "sha256:ba3a577ccac90ae140feae2ceae810697d01e4b191173ba71ec435c1e458046d"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/visibility-boundary-violation/trigger/lekalo/project.yaml",
+      "sha256": "sha256:2ed52b260e7da8bb56ea5d4f5cb1fa85fef0f886df792fc4ec41e296ec3f60de"
+    }
+  ]
+}

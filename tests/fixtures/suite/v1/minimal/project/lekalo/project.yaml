@@ -1,0 +1,6 @@
+schema_version: "0.2.16"
+definitions:
+  - id: solo
+    kind: project
+    version: 1
+    description: The suite-v1 minimal valid project

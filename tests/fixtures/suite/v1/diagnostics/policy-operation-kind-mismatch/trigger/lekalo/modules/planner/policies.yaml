@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.2.16",
+  "definitions": [
+    {
+      "id": "planner.allow_text",
+      "kind": "policy",
+      "version": 1,
+      "applies_to": [
+        "planner.text"
+      ],
+      "decision": "allow"
+    }
+  ]
+}

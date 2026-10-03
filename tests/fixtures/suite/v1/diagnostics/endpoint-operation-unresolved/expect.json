@@ -1,0 +1,4 @@
+{
+  "rule": "semantic.endpoint-operation-unresolved",
+  "pair": "endpoint-operation-unresolved.pair"
+}

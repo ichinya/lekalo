@@ -1,0 +1,4 @@
+{
+  "rule": "semantic.type-recursion",
+  "pair": "type-recursion.pair"
+}

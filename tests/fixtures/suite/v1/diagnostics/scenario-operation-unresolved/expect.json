@@ -1,0 +1,4 @@
+{
+  "rule": "semantic.scenario-operation-unresolved",
+  "pair": "scenario-operation-unresolved.pair"
+}

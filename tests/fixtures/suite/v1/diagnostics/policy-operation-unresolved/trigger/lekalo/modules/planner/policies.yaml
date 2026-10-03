@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.2.16",
+  "definitions": [
+    {
+      "id": "planner.allow_ghost",
+      "kind": "policy",
+      "version": 1,
+      "applies_to": [
+        "planner.ghost"
+      ],
+      "decision": "allow"
+    }
+  ]
+}

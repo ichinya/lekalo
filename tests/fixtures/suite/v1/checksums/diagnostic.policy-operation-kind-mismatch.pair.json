@@ -1,0 +1,51 @@
+{
+  "caseId": "diagnostic.policy-operation-kind-mismatch.pair",
+  "revision": 1,
+  "algorithm": "sha256",
+  "files": [
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/policy-operation-kind-mismatch/expect.json",
+      "sha256": "sha256:3bdbb48e47c7a0d5ae2bbfc682c2d9f5e72cd9d9cb9d84cd19648628b246294b"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/policy-operation-kind-mismatch/fixture.json",
+      "sha256": "sha256:69293860194e023d64d4ed1ffd6a9d714f1b6809b8867d9ddadb6d1cc4021e29"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/policy-operation-kind-mismatch/non-trigger/lekalo/modules/planner/commands.yaml",
+      "sha256": "sha256:15287115259e745420852bdfdafe578357426cafa6f5ef288deb4b066348e4cb"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/policy-operation-kind-mismatch/non-trigger/lekalo/modules/planner/entities.yaml",
+      "sha256": "sha256:b210db7cd6c1865de0253972daad47debce400638243e4a83aa3bf8b9fc4bb7f"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/policy-operation-kind-mismatch/non-trigger/lekalo/modules/planner/module.yaml",
+      "sha256": "sha256:8da58fa762763f2b89cfa6475d6672bf2dc8ccb9def407dc51c89a76d252352a"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/policy-operation-kind-mismatch/non-trigger/lekalo/modules/planner/policies.yaml",
+      "sha256": "sha256:0008cbfef3b688f01e0f7f1bd19363c88cb5fa42d060768092e7375aed7f2a41"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/policy-operation-kind-mismatch/non-trigger/lekalo/project.yaml",
+      "sha256": "sha256:2ed52b260e7da8bb56ea5d4f5cb1fa85fef0f886df792fc4ec41e296ec3f60de"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/policy-operation-kind-mismatch/trigger/lekalo/modules/planner/entities.yaml",
+      "sha256": "sha256:b210db7cd6c1865de0253972daad47debce400638243e4a83aa3bf8b9fc4bb7f"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/policy-operation-kind-mismatch/trigger/lekalo/modules/planner/module.yaml",
+      "sha256": "sha256:8da58fa762763f2b89cfa6475d6672bf2dc8ccb9def407dc51c89a76d252352a"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/policy-operation-kind-mismatch/trigger/lekalo/modules/planner/policies.yaml",
+      "sha256": "sha256:347e950e5a923db7cea4654ebf1f3a58ea87e251f2f3e633a7b225edcec2c52e"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/policy-operation-kind-mismatch/trigger/lekalo/project.yaml",
+      "sha256": "sha256:2ed52b260e7da8bb56ea5d4f5cb1fa85fef0f886df792fc4ec41e296ec3f60de"
+    }
+  ]
+}

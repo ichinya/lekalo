@@ -1,0 +1,7 @@
+schema_version: "0.2.16"
+definitions:
+  - id: solo.note
+    kind: scalar
+    version: 1
+    base: string
+    description: A note body

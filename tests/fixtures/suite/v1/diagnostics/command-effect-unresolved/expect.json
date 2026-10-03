@@ -1,0 +1,4 @@
+{
+  "rule": "semantic.command-effect-unresolved",
+  "pair": "command-effect-unresolved.pair"
+}

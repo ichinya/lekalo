@@ -1,0 +1,4 @@
+{
+  "rule": "semantic.policy-operation-unresolved",
+  "pair": "policy-operation-unresolved.pair"
+}

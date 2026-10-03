@@ -1,0 +1,16 @@
+{
+  "schema_version": "0.2.16",
+  "definitions": [
+    {
+      "id": "planner.list_text",
+      "kind": "query",
+      "version": 1,
+      "reads": [
+        "planner.text"
+      ],
+      "returns": {
+        "ref": "planner.text"
+      }
+    }
+  ]
+}

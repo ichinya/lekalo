@@ -1,0 +1,12 @@
+{
+  "schema_version": "0.2.16",
+  "definitions": [
+    {
+      "id": "planner.effect_create",
+      "kind": "effect",
+      "version": 1,
+      "operation": "create",
+      "entity": "planner.ghost"
+    }
+  ]
+}

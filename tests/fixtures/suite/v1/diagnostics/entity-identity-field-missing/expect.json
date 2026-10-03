@@ -1,0 +1,4 @@
+{
+  "rule": "semantic.entity-identity-field-missing",
+  "pair": "entity-identity-field-missing.pair"
+}

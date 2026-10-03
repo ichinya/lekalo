@@ -1,0 +1,1 @@
+{"status":"valid","modelVersion":"0.2.16","model":{"definitions":[{"base":"string","description":"A note body","id":"solo.note","kind":"scalar","version":1}],"modules":[{"id":"solo","kind":"module","version":1}],"project":{"description":"The suite-v1 minimal valid project","id":"solo","kind":"project","version":1}}}

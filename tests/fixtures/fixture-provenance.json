@@ -237,6 +237,10 @@
       "origin": "synthetic"
     },
     {
+      "family": "suite",
+      "origin": "synthetic"
+    },
+    {
       "family": "target-profile",
       "origin": "synthetic"
     },

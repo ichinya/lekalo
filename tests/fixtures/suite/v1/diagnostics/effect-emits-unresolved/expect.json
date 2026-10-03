@@ -1,0 +1,4 @@
+{
+  "rule": "semantic.effect-emits-unresolved",
+  "pair": "effect-emits-unresolved.pair"
+}

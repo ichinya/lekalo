@@ -1,0 +1,54 @@
+{
+  "schema_version": "0.2.16",
+  "definitions": [
+    {
+      "id": "planner.task_id",
+      "kind": "scalar",
+      "version": 1,
+      "base": "uuid"
+    },
+    {
+      "id": "planner.task",
+      "kind": "entity",
+      "version": 1,
+      "fields": [
+        {
+          "name": "task_id",
+          "type": {
+            "ref": "planner.task_id"
+          },
+          "required": true
+        }
+      ],
+      "identity": [
+        "task_id"
+      ],
+      "portability": "portable"
+    },
+    {
+      "id": "planner.node_id",
+      "kind": "scalar",
+      "version": 1,
+      "base": "uuid",
+      "portability": "target-specific"
+    },
+    {
+      "id": "planner.node_task",
+      "kind": "entity",
+      "version": 1,
+      "fields": [
+        {
+          "name": "task_id",
+          "type": {
+            "ref": "planner.node_id"
+          },
+          "required": true
+        }
+      ],
+      "identity": [
+        "task_id"
+      ],
+      "portability": "target-specific"
+    }
+  ]
+}

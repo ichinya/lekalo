@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.fixture-catalog@1.0.0",
+  "title": "Lekalo golden-suite catalog (v1.0.0)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["catalogId", "fixtureSchema", "version", "status", "cases"],
+  "properties": {
+    "catalogId": { "const": "dev.lekalo.fixture-catalog" },
+    "fixtureSchema": { "const": "dev.lekalo.fixture@1.0.0" },
+    "version": { "const": "1.0.0" },
+    "status": { "enum": ["accepted"] },
+    "suiteRoot": { "const": "tests/fixtures/suite" },
+    "repositoryRoot": { "const": "." },
+    "defaultTimeoutMs": { "type": "integer", "minimum": 1000, "maximum": 300000 },
+    "bytePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["newline", "pathProjection", "jsonMode"],
+      "properties": {
+        "newline": { "const": "lf-only" },
+        "pathProjection": { "const": "logical-repository-relative" },
+        "jsonMode": { "const": "producer-bytes" }
+      }
+    },
+    "runners": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind"],
+        "properties": {
+          "id": {
+            "enum": [
+              "cli-validate",
+              "cli-load",
+              "cli-load-ir",
+              "cli-graph-export",
+              "cli-effects",
+              "cli-inspect",
+              "cli-impact",
+              "cli-context",
+              "cli-diff",
+              "cli-trace-export",
+              "cli-query-model-validate",
+              "node-scenario-runner",
+              "protocol-echo",
+              "static-recipe"
+            ]
+          },
+          "kind": { "enum": ["cli-subprocess", "node-in-process", "static"] },
+          "program": {
+            "enum": [
+              "cargo-built-lekalo",
+              "node-repo-script",
+              "none"
+            ]
+          }
+        }
+      }
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["caseId", "revision", "descriptor"],
+        "properties": {
+          "caseId": { "type": "string", "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$" },
+          "revision": { "type": "integer", "minimum": 1 },
+          "descriptor": { "$ref": "#/$defs/repoPath" },
+          "labels": {
+            "type": "array",
+            "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$", "maxLength": 48 }
+          }
+        }
+      }
+    },
+    "importedEvidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["family", "path", "consumer"],
+        "properties": {
+          "family": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "path": { "$ref": "#/$defs/repoPath" },
+          "consumer": { "type": "string", "maxLength": 128 },
+          "note": { "type": "string", "maxLength": 256 }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "repoPath": {
+      "type": "string",
+      "pattern": "^(?!.*(^|/)\\.\\./)(?!^/)[A-Za-z0-9._][A-Za-z0-9._/ -]*$",
+      "maxLength": 256
+    }
+  }
+}

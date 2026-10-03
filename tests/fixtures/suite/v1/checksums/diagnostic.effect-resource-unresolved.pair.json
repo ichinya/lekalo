@@ -1,0 +1,43 @@
+{
+  "caseId": "diagnostic.effect-resource-unresolved.pair",
+  "revision": 1,
+  "algorithm": "sha256",
+  "files": [
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/effect-resource-unresolved/expect.json",
+      "sha256": "sha256:dfa311cfdaaabe462808194aa348a1636723a30b85ff1ad88b0a1a82d4cea03a"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/effect-resource-unresolved/fixture.json",
+      "sha256": "sha256:9a599f658d86fe6d080d2a5267691e124869db8b26a2627e21d7b71a0698b0e9"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/effect-resource-unresolved/non-trigger/lekalo/modules/planner/commands.yaml",
+      "sha256": "sha256:cc8f4f491f1a06455d86fec520d41d9e34c645cf1b23c2dcc4fd8a21209ebea5"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/effect-resource-unresolved/non-trigger/lekalo/modules/planner/entities.yaml",
+      "sha256": "sha256:4cb84da95353f19ea5f9386684b752d83461262b5da86db2b21db0a0f406b31e"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/effect-resource-unresolved/non-trigger/lekalo/modules/planner/module.yaml",
+      "sha256": "sha256:8da58fa762763f2b89cfa6475d6672bf2dc8ccb9def407dc51c89a76d252352a"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/effect-resource-unresolved/non-trigger/lekalo/project.yaml",
+      "sha256": "sha256:2ed52b260e7da8bb56ea5d4f5cb1fa85fef0f886df792fc4ec41e296ec3f60de"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/effect-resource-unresolved/trigger/lekalo/modules/planner/commands.yaml",
+      "sha256": "sha256:aa994594d867c3b8a19ab463a00014b273ada3d59658b40be77fcd28ed2b377e"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/effect-resource-unresolved/trigger/lekalo/modules/planner/module.yaml",
+      "sha256": "sha256:8da58fa762763f2b89cfa6475d6672bf2dc8ccb9def407dc51c89a76d252352a"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/effect-resource-unresolved/trigger/lekalo/project.yaml",
+      "sha256": "sha256:2ed52b260e7da8bb56ea5d4f5cb1fa85fef0f886df792fc4ec41e296ec3f60de"
+    }
+  ]
+}

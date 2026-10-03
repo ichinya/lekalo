@@ -1,0 +1,47 @@
+{
+  "caseId": "diagnostic.policy-operation-unresolved.pair",
+  "revision": 1,
+  "algorithm": "sha256",
+  "files": [
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/policy-operation-unresolved/expect.json",
+      "sha256": "sha256:2034b7a67769c60fdb24ae801240ec9b51dc223cefb86171d303a6aa6d47d010"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/policy-operation-unresolved/fixture.json",
+      "sha256": "sha256:d28cf4574b0eb05f5776f0f6fff8c51850b7c893150e3903535831729e09c76d"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/policy-operation-unresolved/non-trigger/lekalo/modules/planner/commands.yaml",
+      "sha256": "sha256:15287115259e745420852bdfdafe578357426cafa6f5ef288deb4b066348e4cb"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/policy-operation-unresolved/non-trigger/lekalo/modules/planner/entities.yaml",
+      "sha256": "sha256:b210db7cd6c1865de0253972daad47debce400638243e4a83aa3bf8b9fc4bb7f"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/policy-operation-unresolved/non-trigger/lekalo/modules/planner/module.yaml",
+      "sha256": "sha256:8da58fa762763f2b89cfa6475d6672bf2dc8ccb9def407dc51c89a76d252352a"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/policy-operation-unresolved/non-trigger/lekalo/modules/planner/policies.yaml",
+      "sha256": "sha256:0008cbfef3b688f01e0f7f1bd19363c88cb5fa42d060768092e7375aed7f2a41"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/policy-operation-unresolved/non-trigger/lekalo/project.yaml",
+      "sha256": "sha256:2ed52b260e7da8bb56ea5d4f5cb1fa85fef0f886df792fc4ec41e296ec3f60de"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/policy-operation-unresolved/trigger/lekalo/modules/planner/module.yaml",
+      "sha256": "sha256:8da58fa762763f2b89cfa6475d6672bf2dc8ccb9def407dc51c89a76d252352a"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/policy-operation-unresolved/trigger/lekalo/modules/planner/policies.yaml",
+      "sha256": "sha256:873c7d0ae99cdd79e8f8818a988d5522f10b7ee804d95f4697dff4cc6a1aed85"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/policy-operation-unresolved/trigger/lekalo/project.yaml",
+      "sha256": "sha256:2ed52b260e7da8bb56ea5d4f5cb1fa85fef0f886df792fc4ec41e296ec3f60de"
+    }
+  ]
+}

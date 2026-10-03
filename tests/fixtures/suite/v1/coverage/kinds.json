@@ -1,0 +1,80 @@
+{
+  "coverageId": "dev.lekalo.fixture-coverage.kinds",
+  "fixtureSchema": "dev.lekalo.fixture@1.0.0",
+  "modelContract": "dev.lekalo.model@0.2.16",
+  "kinds": [
+    {
+      "kind": "scalar",
+      "witnesses": [
+        { "path": "tests/fixtures/suite/v1/minimal/project/lekalo/modules/solo/entities.yaml", "note": "minimal scalar solo.note" },
+        { "path": "tests/fixtures/suite/v1/diagnostics/type-ref-unresolved/trigger/lekalo/modules/planner/entities.yaml", "note": "scalar base uuid" }
+      ]
+    },
+    {
+      "kind": "value-object",
+      "witnesses": [
+        { "path": "tests/fixtures/suite/v1/diagnostics/type-recursion/trigger/lekalo/modules/planner/entities.yaml", "note": "loop_a/loop_b value objects with field refs" }
+      ]
+    },
+    {
+      "kind": "entity",
+      "witnesses": [
+        { "path": "tests/fixtures/suite/v1/diagnostics/entity-identity-field-missing/non-trigger/lekalo/modules/planner/entities.yaml", "note": "entity with fields + identity" }
+      ]
+    },
+    {
+      "kind": "command",
+      "witnesses": [
+        { "path": "tests/fixtures/suite/v1/diagnostics/command-effect-unresolved/non-trigger/lekalo/modules/planner/commands.yaml", "note": "command with input and effects" }
+      ]
+    },
+    {
+      "kind": "query",
+      "witnesses": [
+        { "path": "tests/fixtures/suite/v1/diagnostics/query-read-unresolved/non-trigger/lekalo/modules/planner/queries.yaml", "note": "query with reads + returns" }
+      ]
+    },
+    {
+      "kind": "policy",
+      "witnesses": [
+        { "path": "tests/fixtures/suite/v1/diagnostics/policy-operation-unresolved/non-trigger/lekalo/modules/planner/policies.yaml", "note": "policy applies_to command" }
+      ]
+    },
+    {
+      "kind": "event",
+      "witnesses": [
+        { "path": "tests/fixtures/suite/v1/diagnostics/command-effect-unresolved/non-trigger/lekalo/modules/planner/events.yaml", "note": "event with payload" }
+      ]
+    },
+    {
+      "kind": "effect",
+      "witnesses": [
+        { "path": "tests/fixtures/suite/v1/diagnostics/command-effect-unresolved/non-trigger/lekalo/modules/planner/commands.yaml", "note": "effect create on entity emitting event" }
+      ]
+    },
+    {
+      "kind": "endpoint",
+      "witnesses": [
+        { "path": "tests/fixtures/suite/v1/diagnostics/endpoint-operation-unresolved/non-trigger/lekalo/modules/planner/bindings.yaml", "note": "endpoint invokes command" }
+      ]
+    },
+    {
+      "kind": "scenario",
+      "witnesses": [
+        { "path": "tests/fixtures/suite/v1/diagnostics/scenario-operation-unresolved/non-trigger/lekalo/modules/planner/scenarios.yaml", "note": "scenario covers command" }
+      ]
+    },
+    {
+      "kind": "target-binding",
+      "witnesses": [
+        { "path": "tests/fixtures/graph/planner/lekalo/modules/planner/bindings.yaml", "note": "target-binding with portability (graph family)" }
+      ]
+    },
+    {
+      "kind": "enum",
+      "witnesses": [
+        { "path": "tests/fixtures/ir/valid-full-kinds/lekalo/modules/planner/entities.yaml", "note": "enum kind in the full-kinds IR corpus" }
+      ]
+    }
+  ]
+}
