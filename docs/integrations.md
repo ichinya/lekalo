@@ -19,7 +19,7 @@ lekalo --json trace export golden/planner.trace.json
 lekalo --json provider describe
 ```
 
-Expected: exit 0/stdout; a validated synthetic manifest, canonical trace plus digest, and `lekalo/workflow-provider/v0.6.3` discovery. The trace here is explicitly pre-authored. `trace collect` instead consumes actual adjudicated run ingest; this example does not fabricate that evidence. Confirmed relations, completeness and gaps remain visible.
+Expected: exit 0/stdout; a validated synthetic manifest, canonical trace plus digest, and `lekalo/workflow-provider/v0.6.4` discovery. The trace here is explicitly pre-authored. `trace collect` instead consumes actual adjudicated run ingest; this example does not fabricate that evidence. Confirmed relations, completeness and gaps remain visible.
 
 [Trace reference](trace-manifest.md) owns relation confidence, occurrence and completeness rules. [Provider reference](provider-contract.md) owns the discovery contract and fixed consumer argv. A supported workflow operation does not imply a project lock, installed target or native toolchain. The adapter process [target protocol](target-protocol.md) is a different family.
 

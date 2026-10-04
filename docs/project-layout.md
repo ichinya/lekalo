@@ -1,6 +1,6 @@
 # Project layout
 
-Status: **Implemented**, product 0.6.3. Owner: filesystem/reproducibility maintainers. Normative details: [canonical structure](canonical-structure.md), [ADR-0003](adr/0003-canonical-structure-and-path-safety.md), [issue #4](https://github.com/ichinya/lekalo/issues/4).
+Status: **Implemented**, product 0.6.4. Owner: filesystem/reproducibility maintainers. Normative details: [canonical structure](canonical-structure.md), [ADR-0003](adr/0003-canonical-structure-and-path-safety.md), [issue #4](https://github.com/ichinya/lekalo/issues/4).
 
 ```text illustrative
 project/

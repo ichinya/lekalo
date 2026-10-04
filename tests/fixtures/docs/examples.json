@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "sourceProduct": "0.6.3",
+  "sourceProduct": "0.6.4",
   "setup": [
     {
       "id": "source-build",

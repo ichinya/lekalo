@@ -1,6 +1,6 @@
 # Lekalo Model and glossary
 
-Status: **Implemented** language-neutral Model/IR `0.2.16` at product `0.6.3`, source base `a56ee578`. Owner: semantic-contract maintainers. [#5](https://github.com/ichinya/lekalo/issues/5), [ADR-0004](adr/0004-model-v0.1.md), [ADR-0005](adr/0005-semantic-ids.md).
+Status: **Implemented** language-neutral Model/IR `0.2.16` at product `0.6.4`, source base `a56ee578`. Owner: semantic-contract maintainers. [#5](https://github.com/ichinya/lekalo/issues/5), [ADR-0004](adr/0004-model-v0.1.md), [ADR-0005](adr/0005-semantic-ids.md).
 
 The normative [Model schema](../contracts/model.schema.v0.2.16.json), [semantic-ID contract](../contracts/semantic-ids.v0.2.16.json) and real loader determine acceptance. Prose cannot broaden them. Model describes semantics shared across targets; it contains no framework class/package/runtime identity. Language-specific bindings and implementation evidence attach to those semantics.
 

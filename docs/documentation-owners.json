@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
-  "productVersion": "0.6.3",
-  "cliSourceDigest": "sha256:b936e7220a0cc3140b49eb54efd9020d779d5becc00ef1cb07736518f68bfdcb",
+  "productVersion": "0.6.4",
+  "cliSourceDigest": "sha256:4bbbf255e7e4c95e99fcf17d6d24b353fbc898d28ac2be1872358072f117bcbe",
   "p0Pages": [
     {
       "page": "README.md",
@@ -212,6 +212,17 @@
       "status": "implemented"
     },
     {
+      "id": "cli:ai-lint",
+      "kind": "command",
+      "command": "ai-lint",
+      "usage": "lekalo ai-lint [OPTIONS]",
+      "helpDigest": "sha256:f7f224daa597e31e30ad93431e72f4280191bc6ac83eaec0953e3fd5978838cd",
+      "summary": "Optional evidence-bound AI readability analysis",
+      "leaf": true,
+      "owner": "docs/ai-lint.md",
+      "status": "implemented"
+    },
+    {
       "id": "cli:bindings",
       "kind": "command",
       "command": "bindings",
@@ -418,6 +429,17 @@
       "summary": "Merge one adapter declaration document into the conformed registry; a binding recorded with a fingerprint is conformance evidence until the source or the contract changes",
       "leaf": true,
       "owner": "docs/contracted-mode.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:coupling",
+      "kind": "command",
+      "command": "coupling",
+      "usage": "lekalo coupling [OPTIONS] <--symbol <SYMBOL>|--module <MODULE>|--all|--changed-input <CHANGED_INPUT>>",
+      "helpDigest": "sha256:fe2fb837ae1376946694f5f83f8576b5f09d6afd90bdd44921e4b2cd327513f4",
+      "summary": "Report semantic coupling and change-radius metrics with graph evidence for one symbol, one module, the whole project, or typed changed inputs (issue #77). Separate public contracts from internal impact and expose cycles, shared state, and configurable threshold/baseline findings. Advisory by default; an explicitly selected strict coupling profile may deny. Use `--context-budget` to include the optional context plan",
+      "leaf": true,
+      "owner": "docs/coupling.md",
       "status": "implemented"
     },
     {
@@ -1580,9 +1602,20 @@
       "kind": "command",
       "command": "trace",
       "usage": "lekalo trace [OPTIONS] <COMMAND>",
-      "helpDigest": "sha256:25284b21393285e69c8e721f3f41256ebbedb7bdd0a29c6d8671c442e283c941",
+      "helpDigest": "sha256:891432dd244b97c7688d8cf8a8cccc9be4ea55d74233f85bf4db548d032fa1f5",
       "summary": "Validate, canonically export, or query one neutral trace manifest",
       "leaf": false,
+      "owner": "docs/trace-manifest.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:trace assess",
+      "kind": "command",
+      "command": "trace assess",
+      "usage": "lekalo trace assess [OPTIONS] --evidence <PATH> <PATH>",
+      "helpDigest": "sha256:9f9b9a1fd9d226e7ed6a5821fdfde5635ff14acd5c2982292855d0cc329cc21d",
+      "summary": "Assess an explicit neutral mapping and revision-bound provider receipts",
+      "leaf": true,
       "owner": "docs/trace-manifest.md",
       "status": "implemented"
     },
@@ -1770,6 +1803,60 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/adapter-manifest.schema.v0.6.4.json",
+      "kind": "contract",
+      "source": "contracts/adapter-manifest.schema.v0.6.4.json",
+      "sourceDigest": "sha256:11bf3333146a4023fa0ddd7903ea308e69cc1d96a431290939bd48cf7f3f6daf",
+      "owner": "docs/adapter-manifest.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/ai-lint-comparison.schema.v0.6.4.json",
+      "kind": "contract",
+      "source": "contracts/ai-lint-comparison.schema.v0.6.4.json",
+      "sourceDigest": "sha256:4c0739a01d1f06af8f254268f4d2c0ad7faefef128321c7bb9bccd2ae2ef0a8c",
+      "owner": "docs/ai-lint.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/ai-lint-config.schema.v0.6.4.json",
+      "kind": "contract",
+      "source": "contracts/ai-lint-config.schema.v0.6.4.json",
+      "sourceDigest": "sha256:5dd4be99860b0ab1c89aaa4b12597bcc88e63719412497ed1355ad9cff0a4e60",
+      "owner": "docs/ai-lint.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/ai-lint-evidence.schema.v0.6.4.json",
+      "kind": "contract",
+      "source": "contracts/ai-lint-evidence.schema.v0.6.4.json",
+      "sourceDigest": "sha256:51b5aa3086aaa5f22e98db638e8532ed3e6f28f06d32f948025936b4968df96c",
+      "owner": "docs/ai-lint.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/ai-lint-report.schema.v0.6.4.json",
+      "kind": "contract",
+      "source": "contracts/ai-lint-report.schema.v0.6.4.json",
+      "sourceDigest": "sha256:3de6c1cd26d2e04c6c5a6a2c3c9c2a78ef2f2566696e6471c5c69bdd196660b2",
+      "owner": "docs/ai-lint.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/ai-lint-waivers.schema.v0.6.4.json",
+      "kind": "contract",
+      "source": "contracts/ai-lint-waivers.schema.v0.6.4.json",
+      "sourceDigest": "sha256:593404cec8a7a727894d3ba41e060d7a208ac6c24390a870bccb4d0caa983715",
+      "owner": "docs/ai-lint.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/ai-workspace-event.schema.v0.6.3.json",
       "kind": "contract",
       "source": "contracts/ai-workspace-event.schema.v0.6.3.json",
@@ -1923,6 +2010,51 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/coupling-change-input.schema.v0.6.4.json",
+      "kind": "contract",
+      "source": "contracts/coupling-change-input.schema.v0.6.4.json",
+      "sourceDigest": "sha256:56d8e5da8ec8f2d1c812bff5bdaf0342a42de6892ee4604833e87edbf451763d",
+      "owner": "docs/coupling.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/coupling-comparison.schema.v0.6.4.json",
+      "kind": "contract",
+      "source": "contracts/coupling-comparison.schema.v0.6.4.json",
+      "sourceDigest": "sha256:0eca87d2a100e9bad5f6e60f59be03ad24d2532ae86f14e84b4cdc9e7cd1d0aa",
+      "owner": "docs/coupling.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/coupling-evidence.schema.v0.6.4.json",
+      "kind": "contract",
+      "source": "contracts/coupling-evidence.schema.v0.6.4.json",
+      "sourceDigest": "sha256:4912180d95a064a4547f0fc13184cf9809708b0218318a225095ad333e07c84a",
+      "owner": "docs/coupling.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/coupling-profile.schema.v0.6.4.json",
+      "kind": "contract",
+      "source": "contracts/coupling-profile.schema.v0.6.4.json",
+      "sourceDigest": "sha256:a369d2243a9cb4b4fc7c7c7d8fd06ab081339b7e647d59280e3dfdc523d0cf6b",
+      "owner": "docs/coupling.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/coupling-report.schema.v0.6.4.json",
+      "kind": "contract",
+      "source": "contracts/coupling-report.schema.v0.6.4.json",
+      "sourceDigest": "sha256:90ba21587cdfc57706d94c0c52c4df4d787950f244c6a0773a6c97d92b9a9d52",
+      "owner": "docs/coupling.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/data-classification.schema.v0.4.0.json",
       "kind": "contract",
       "source": "contracts/data-classification.schema.v0.4.0.json",
@@ -1959,10 +2091,10 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
-      "id": "contract:contracts/diagnostic-registry.schema.v0.6.3.json",
+      "id": "contract:contracts/diagnostic-registry.schema.v0.6.4.json",
       "kind": "contract",
-      "source": "contracts/diagnostic-registry.schema.v0.6.3.json",
-      "sourceDigest": "sha256:e343433774b49e650ccf248adeb43189dd3141d92bc4b69df2cd2da39db5c1fd",
+      "source": "contracts/diagnostic-registry.schema.v0.6.4.json",
+      "sourceDigest": "sha256:35cfffc8583cc3cc9c9aadb9431fc88180efb1a272492b699bb52827f1cfb168",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -1986,10 +2118,10 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
-      "id": "contract:contracts/diagnostic-registry.v0.6.3.json",
+      "id": "contract:contracts/diagnostic-registry.v0.6.4.json",
       "kind": "contract",
-      "source": "contracts/diagnostic-registry.v0.6.3.json",
-      "sourceDigest": "sha256:5bf7a4e246bffab041848bc010579aac34e0a95c2967bb51b625c0d2ae650dd6",
+      "source": "contracts/diagnostic-registry.v0.6.4.json",
+      "sourceDigest": "sha256:5b6ff37667ef2f125c1a9657273117ff938598d4db39304259ed14e5d32d8704",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2454,10 +2586,10 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
-      "id": "contract:contracts/provider-capabilities.schema.v0.6.3.json",
+      "id": "contract:contracts/provider-capabilities.schema.v0.6.4.json",
       "kind": "contract",
-      "source": "contracts/provider-capabilities.schema.v0.6.3.json",
-      "sourceDigest": "sha256:6976612ed0a3f758b2b98bedeb07fe54c6183914e6bcb825362f7a3a49a3861e",
+      "source": "contracts/provider-capabilities.schema.v0.6.4.json",
+      "sourceDigest": "sha256:8a32a35933471b81483cd07bcfea0f78aead3ce8d9a0aacae4db1e65a040227e",
       "owner": "docs/provider-contract.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2661,6 +2793,15 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/target-protocol.schema.v0.6.4.json",
+      "kind": "contract",
+      "source": "contracts/target-protocol.schema.v0.6.4.json",
+      "sourceDigest": "sha256:40a169699324b537d7a9cbdf199f69201fb90db65c31deab49797cd7a4c5fcce",
+      "owner": "docs/target-protocol.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/test-port.schema.v0.4.0.json",
       "kind": "contract",
       "source": "contracts/test-port.schema.v0.4.0.json",
@@ -2670,11 +2811,29 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/trace-assessment.schema.v0.6.4.json",
+      "kind": "contract",
+      "source": "contracts/trace-assessment.schema.v0.6.4.json",
+      "sourceDigest": "sha256:37f51a56d09152fa407437cc859cbf21b9196990e7987779ed9996b365b2a15a",
+      "owner": "docs/trace-assessment.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/trace-manifest.schema.v0.2.16.json",
       "kind": "contract",
       "source": "contracts/trace-manifest.schema.v0.2.16.json",
       "sourceDigest": "sha256:5f9c5baf4dcc5d48087be2e003320999aa6b071fd06764d5276e007361c094e2",
       "owner": "docs/trace-manifest.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/trace-validation-evidence.schema.v0.6.4.json",
+      "kind": "contract",
+      "source": "contracts/trace-validation-evidence.schema.v0.6.4.json",
+      "sourceDigest": "sha256:89e301d2421b27427120311a700e083c9bd84ef65518c7813cbcf868ccb24990",
+      "owner": "docs/trace-assessment.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
@@ -2697,37 +2856,37 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
-      "id": "contract:contracts/validation-profile.default.v0.6.3.json",
+      "id": "contract:contracts/validation-profile.default.v0.6.4.json",
       "kind": "contract",
-      "source": "contracts/validation-profile.default.v0.6.3.json",
-      "sourceDigest": "sha256:2d09f1d36c02240629b5631d0d5247b600ae6b363483c485bf8f7123241faa24",
+      "source": "contracts/validation-profile.default.v0.6.4.json",
+      "sourceDigest": "sha256:15940a3eb98e181593b180d62f8d1005402e062cfb8c51e245b49a2257a463c7",
       "owner": "docs/validation.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
-      "id": "contract:contracts/validation-profile.schema.v0.6.3.json",
+      "id": "contract:contracts/validation-profile.schema.v0.6.4.json",
       "kind": "contract",
-      "source": "contracts/validation-profile.schema.v0.6.3.json",
-      "sourceDigest": "sha256:fdaddc8e44ed95d97f07a3e275cdc7c72ce6488d4a095ffa64e263a482af2727",
+      "source": "contracts/validation-profile.schema.v0.6.4.json",
+      "sourceDigest": "sha256:8fd485254c6058f1d04ac0aa75628ec450d926c68bd0e9aa18dd05ce51c77b30",
       "owner": "docs/validation.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
-      "id": "contract:contracts/validation-profile.strict.v0.6.3.json",
+      "id": "contract:contracts/validation-profile.strict.v0.6.4.json",
       "kind": "contract",
-      "source": "contracts/validation-profile.strict.v0.6.3.json",
-      "sourceDigest": "sha256:1848bb5a2d410e275751e05a2b74acff1f95a82d091f23e5388ab4e0d55722c6",
+      "source": "contracts/validation-profile.strict.v0.6.4.json",
+      "sourceDigest": "sha256:b4c5dff5768f4169ed84b734caccf05a5836a2d36d7700e8afc12ea73ae76a75",
       "owner": "docs/validation.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
-      "id": "contract:contracts/validation-report.schema.v0.6.3.json",
+      "id": "contract:contracts/validation-report.schema.v0.6.4.json",
       "kind": "contract",
-      "source": "contracts/validation-report.schema.v0.6.3.json",
-      "sourceDigest": "sha256:575b2538aed6bc1997346f43d642b4ad7399110ce7f5ecdc654f8cee7258b2c0",
+      "source": "contracts/validation-report.schema.v0.6.4.json",
+      "sourceDigest": "sha256:81d63d55a3f69f73f7bd6208cb795e1f4270e5ef4599207d5e0a7fc4ffee3ec5",
       "owner": "docs/validation.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2751,6 +2910,13 @@
       "kind": "protocol",
       "source": "scripts/test-docs-ownership.mjs",
       "owner": "docs/architecture.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:node-typescript:lekalo/ai-lint-evidence/v0.6.4",
+      "kind": "protocol",
+      "source": "adapters/node-typescript/src",
+      "owner": "adapters/node-typescript/README.md",
       "status": "implemented"
     },
     {
@@ -2863,6 +3029,13 @@
       "kind": "protocol",
       "source": "adapters/node-typescript/src",
       "owner": "adapters/node-typescript/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:php-laravel:lekalo/ai-lint-evidence/v0.6.4",
+      "kind": "protocol",
+      "source": "adapters/php-laravel/src",
+      "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
@@ -3014,10 +3187,18 @@
       "status": "implemented"
     },
     {
+      "id": "protocol:suite:coverage.schema.v0.6.4.json",
+      "kind": "protocol",
+      "source": "tests/fixtures/suite/schema/coverage.schema.v0.6.4.json",
+      "sourceDigest": "sha256:f5a896598c458ad05bb64b0a9b76b417330c18249d159477b56875e2b16ec318",
+      "owner": "docs/architecture.md",
+      "status": "implemented"
+    },
+    {
       "id": "protocol:suite:coverage.schema.v1.0.0.json",
       "kind": "protocol",
       "source": "tests/fixtures/suite/schema/coverage.schema.v1.0.0.json",
-      "sourceDigest": "sha256:2a302b0a98477046f6883a575d13c8a10e1504dc7c2ebcbc434cbf542890b076",
+      "sourceDigest": "sha256:2e52e5db21d83060dbc06130af3cb03355a11dcc42cd645aa108479c81756d20",
       "owner": "docs/architecture.md",
       "status": "implemented"
     },

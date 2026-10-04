@@ -21,7 +21,7 @@ lekalo load --ir --json --no-cache
 lekalo validate --strict --json --no-cache
 ```
 
-Expected: exit **0**, JSON on stdout, empty stderr, IR `contract: dev.lekalo.ir@0.2.16` and a valid strict report. This fixture has one project and zero modules; path A creates the first module. The gate also verifies byte-for-byte read-only preservation. Model/IR `0.2.16`, target/authority/privacy `0.3.2`, diagnostic registry/provider/CI-report `0.6.3` are exact producer pins, not one interchangeable version. [Diagnostics and exits](docs/diagnostics.md), [version policy](docs/versioning.md).
+Expected: exit **0**, JSON on stdout, empty stderr, IR `contract: dev.lekalo.ir@0.2.16` and a valid strict report. This fixture has one project and zero modules; path A creates the first module. The gate also verifies byte-for-byte read-only preservation. Model/IR `0.2.16`, target/authority/privacy `0.3.2`, diagnostic registry/provider `0.6.4` and CI-report `0.6.3` are exact producer pins, not one interchangeable version. [Diagnostics and exits](docs/diagnostics.md), [version policy](docs/versioning.md).
 
 ## Quickstart paths A-F
 

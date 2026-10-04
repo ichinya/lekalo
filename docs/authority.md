@@ -1,6 +1,6 @@
 # Artifact authority and synchronization boundaries
 
-Status: **Implemented**, accepted authority `0.3.2` at product `0.6.3`, source base `a56ee578`. Owner: boundary maintainers. [#2](https://github.com/ichinya/lekalo/issues/2), [ADR-0001](adr/0001-artifact-authority-boundaries.md).
+Status: **Implemented**, accepted authority `0.3.2` at product `0.6.4`, source base `a56ee578`. Owner: boundary maintainers. [#2](https://github.com/ichinya/lekalo/issues/2), [ADR-0001](adr/0001-artifact-authority-boundaries.md).
 
 The accepted index is [authority-contracts.manifest.json](../contracts/authority-contracts.manifest.json). Its current exact ref selects [authority-matrix.v0.3.2.json](../contracts/authority-matrix.v0.3.2.json), digest `sha256:7ae6454ea20f7b61202d368411ef9bff4e70af96f1f2a408c209d84fe9722f80`. The predecessor `0.2.16` is accepted only at its own exact ref; its filename never makes it current. [Privacy](privacy.md) selects its separate accepted policy and grants.
 

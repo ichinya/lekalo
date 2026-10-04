@@ -1,6 +1,6 @@
 # CLI reference
 
-Status: **Implemented** handlers at product `0.6.3`, source base `a56ee578`. Owner: CLI maintainers. The checked [command index](#command-index) below inventories recursive live help, including groups and nested leaves. Earlier issue-specific sections are historical examples; exact live usage and each specialist owner govern current syntax. Native production execution remains **Planned**; a handler returning unsupported is not target qualification. Model/IR stay `0.2.16`; [diagnostics](diagnostics.md) owns exits and streams.
+Status: **Implemented** handlers at product `0.6.4`, source base `a56ee578`. Owner: CLI maintainers. The checked [command index](#command-index) below inventories recursive live help, including groups and nested leaves. Earlier issue-specific sections are historical examples; exact live usage and each specialist owner govern current syntax. Native production execution remains **Planned**; a handler returning unsupported is not target qualification. Model/IR stay `0.2.16`; [diagnostics](diagnostics.md) owns exits and streams.
 
 
 Issue #3 introduces a target-neutral Rust core and the `lekalo` command-line
@@ -1122,7 +1122,7 @@ the redaction diff contract and never writes.
 <!-- issue-105-command-index -->
 ## Command index
 
-Status: **Implemented** command handlers for product 0.6.3. Handler existence does not imply every target capability, migration or native execution is available. Each row comes from recursive CLI help and has one owner in [the checked ownership inventory](documentation-owners.json). `init --adopt` is described in [adopt](adopt.md); native execution remains a typed refusal in the production CLI.
+Status: **Implemented** command handlers for product 0.6.4. Handler existence does not imply every target capability, migration or native execution is available. Each row comes from recursive CLI help and has one owner in [the checked ownership inventory](documentation-owners.json). `init --adopt` is described in [adopt](adopt.md); native execution remains a typed refusal in the production CLI.
 
 | Command | Synopsis from this binary | Reference owner |
 | --- | --- | --- |
@@ -1140,6 +1140,7 @@ Status: **Implemented** command handlers for product 0.6.3. Handler existence do
 | `lekalo adapter test` | `lekalo adapter test [OPTIONS] [PROGRAM_ARGS]...` | [reference](adapter-conformance.md) |
 | `lekalo adapter trust` | `lekalo adapter trust [OPTIONS] --level <LEVEL> <ID>` | [reference](adapter-install.md) |
 | `lekalo adapter update` | `lekalo adapter update [OPTIONS] <ID>` | [reference](adapter-install.md) |
+| `lekalo ai-lint` | `lekalo ai-lint [OPTIONS]` | [reference](ai-lint.md) |
 | `lekalo bindings` | `lekalo bindings [OPTIONS] <COMMAND>` | [reference](bindings.md) |
 | `lekalo bindings audit` | `lekalo bindings audit [OPTIONS]` | [reference](bindings.md) |
 | `lekalo bindings confirm` | `lekalo bindings confirm [OPTIONS] [PROPOSAL]` | [reference](bindings.md) |
@@ -1159,6 +1160,7 @@ Status: **Implemented** command handlers for product 0.6.3. Handler existence do
 | `lekalo contract check` | `lekalo contract check [OPTIONS]` | [reference](contracted-mode.md) |
 | `lekalo contract support` | `lekalo contract support [OPTIONS] --kind <KIND> --path <PATH> <SYMBOL>` | [reference](contracted-mode.md) |
 | `lekalo contract update` | `lekalo contract update [OPTIONS] --declaration <FILE>` | [reference](contracted-mode.md) |
+| `lekalo coupling` | `lekalo coupling [OPTIONS] <--symbol <SYMBOL>\|--module <MODULE>\|--all\|--changed-input <CHANGED_INPUT>>` | [reference](coupling.md) |
 | `lekalo dataflow` | `lekalo dataflow [OPTIONS] <COMMAND>` | [reference](classification.md) |
 | `lekalo dataflow report` | `lekalo dataflow report [OPTIONS] --attachment <PATH> --policy <PATH>` | [reference](classification.md) |
 | `lekalo diff` | `lekalo diff [OPTIONS] <OLD> [NEW]` | [reference](semantic-diff.md) |
@@ -1265,6 +1267,7 @@ Status: **Implemented** command handlers for product 0.6.3. Handler existence do
 | `lekalo storage-profile portability` | `lekalo storage-profile portability [OPTIONS] <BASE> <TARGET>` | [reference](storage-engine-profile.md) |
 | `lekalo storage-profile validate` | `lekalo storage-profile validate [OPTIONS] <PATH>` | [reference](storage-engine-profile.md) |
 | `lekalo trace` | `lekalo trace [OPTIONS] <COMMAND>` | [reference](trace-manifest.md) |
+| `lekalo trace assess` | `lekalo trace assess [OPTIONS] --evidence <PATH> <PATH>` | [reference](trace-manifest.md) |
 | `lekalo trace collect` | `lekalo trace collect [OPTIONS]` | [reference](trace-manifest.md) |
 | `lekalo trace export` | `lekalo trace export [OPTIONS] <PATH>` | [reference](trace-manifest.md) |
 | `lekalo trace query` | `lekalo trace query [OPTIONS] <PATH> <SELECTOR>` | [reference](trace-manifest.md) |

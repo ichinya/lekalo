@@ -17,7 +17,7 @@ const exact = (object, fields) => assert.deepEqual(Object.keys(object).sort(), [
 function validateRegistry(value) {
   exact(value, ["formatVersion","sourceProduct","setup","examples"]);
   assert.equal(value.formatVersion,1);
-  assert.equal(value.sourceProduct,"0.6.3");
+  assert.equal(value.sourceProduct,"0.6.4");
   const ids = [...value.setup,...value.examples].map(x=>x.id);
   assert.equal(new Set(ids).size,ids.length,"duplicate block ID");
   for (const row of value.setup) {
@@ -269,7 +269,7 @@ function check(kind,output,cwd) {
     assert.equal(value.ir.contract,"dev.lekalo.ir@0.2.16");
     assert.equal(value.ir.modelVersion,"0.2.16"); assert.equal(value.ir.project.kind,"project");
   } else if(kind==="validation") {
-    schema("validation-report.schema.v0.6.3.json",value);
+    schema("validation-report.schema.v0.6.4.json",value);
     assert.equal(value.validation.profile,"strict"); assert.equal(value.validation.counts.error,0);
   } else if(kind==="inspect") {
     schema("inspect.schema.v0.2.16.json",value.inspect);
@@ -290,7 +290,7 @@ function check(kind,output,cwd) {
     assert.equal(value.trace.completeness,"full"); assert.equal(value.trace.nodes.length,9);
     assert.equal(value.manifestDigest,sha(JSON.stringify(value.trace)));
   } else if(kind==="provider") {
-    schema("provider-capabilities.schema.v0.6.3.json",value);
+    schema("provider-capabilities.schema.v0.6.4.json",value);
   } else if(kind==="init") {
     assert.ok(existsSync(join(cwd,"lekalo/project.yaml"))); assert.ok(existsSync(join(cwd,"lekalo/modules/planner/module.yaml")));
   } else if(kind==="contract-update") {

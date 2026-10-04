@@ -1,6 +1,6 @@
 # Status, roadmap and versioned documentation
 
-Status: **Implemented** inventory and replay for product 0.6.3; release publication is **Planned** by the release owner. Owner: release/documentation maintainers. [Parent #1](https://github.com/ichinya/lekalo/issues/1), [#105](https://github.com/ichinya/lekalo/issues/105), [version policy](versioning.md).
+Status: **Implemented** inventory and replay for product 0.6.4; release publication is **Planned** by the release owner. Owner: release/documentation maintainers. [Parent #1](https://github.com/ichinya/lekalo/issues/1), [#105](https://github.com/ichinya/lekalo/issues/105), [version policy](versioning.md).
 
 ## Status legend
 
@@ -24,7 +24,7 @@ Test results (passed/failed/skipped) are separate from these feature labels. Eac
 
 ## Release documentation
 
-The working docs describe product `0.6.3` at source base `a56ee578` plus #105 documentation changes. Selected refs: Model/IR `0.2.16`, target protocol and authority/privacy `0.3.2`, active diagnostic registry/provider/CI report `0.6.3`. Exact refs come from accepted manifests and the producing binary; do not choose the highest filename by convention.
+The working docs describe product `0.6.4` at source base `a56ee578` plus #105 documentation changes. Selected refs: Model/IR `0.2.16`, target protocol and authority/privacy `0.3.2`, active diagnostic registry/provider `0.6.4`, CI report `0.6.3`. Exact refs come from accepted manifests and the producing binary; do not choose the highest filename by convention.
 
 Stable release documentation is an immutable [Git tag snapshot](https://github.com/ichinya/lekalo/tags): select a tag, then that tag's README, `docs/`, fixture locks and replay registry. For example, [v0.6.4 docs](https://github.com/ichinya/lekalo/tree/v0.6.4/docs) are **archival/unverified for #105 replay**, which was not present in that historical tag. They are not substituted for this branch's evidence. A new release records tag, source commit, selected refs and the matching required replay results; hosted CI/release publication is not claimed by local checks.
 
