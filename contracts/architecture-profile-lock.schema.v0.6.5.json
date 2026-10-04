@@ -1,0 +1,258 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.architecture-profile-lock-schema@0.6.5",
+  "title": "Lekalo architecture-profile-lock 0.6.5",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/architecture-profile-lock/v0.6.5"
+    },
+    "identity": {
+      "const": "dev.lekalo.architecture-profile-lock@0.6.5"
+    },
+    "documentDigest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "catalogRef": {
+      "$ref": "#/$defs/reference"
+    },
+    "profiles": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/resolved"
+      },
+      "maxItems": 256,
+      "minItems": 1
+    },
+    "assignments": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/assignment"
+      },
+      "maxItems": 256,
+      "minItems": 0
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "identity",
+    "documentDigest",
+    "catalogRef",
+    "profiles",
+    "assignments"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "assignment": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "$ref": "#/$defs/scope"
+        },
+        "profileRef": {
+          "$ref": "#/$defs/reference"
+        }
+      },
+      "required": [
+        "scope",
+        "profileRef"
+      ],
+      "additionalProperties": false
+    },
+    "limit": {
+      "type": "object",
+      "properties": {
+        "maximum": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000000
+        },
+        "calibrationRef": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]+$",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "maximum",
+        "calibrationRef"
+      ],
+      "additionalProperties": false
+    },
+    "reference": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]+$",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]+$",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "digest"
+      ],
+      "additionalProperties": false
+    },
+    "resolved": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": "lekalo/architecture-profile-resolved/v0.6.5"
+        },
+        "identity": {
+          "const": "dev.lekalo.architecture-profile-resolved@0.6.5"
+        },
+        "profileRef": {
+          "$ref": "#/$defs/reference"
+        },
+        "sourceDigest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "catalogRef": {
+          "$ref": "#/$defs/reference"
+        },
+        "chain": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reference"
+          },
+          "maxItems": 8,
+          "minItems": 1
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/selection"
+          },
+          "maxItems": 15,
+          "minItems": 15
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "identity",
+        "profileRef",
+        "sourceDigest",
+        "catalogRef",
+        "chain",
+        "rules"
+      ],
+      "additionalProperties": false
+    },
+    "scope": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "project",
+            "module"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]+$",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "kind",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "selection": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "enum": [
+            "architecture.bounded-context",
+            "architecture.deterministic-generation",
+            "architecture.errors-as-contracts",
+            "architecture.explicit-dependencies",
+            "architecture.explicit-operation-contracts",
+            "architecture.explicit-target-bindings",
+            "architecture.immutable-defaults",
+            "architecture.justified-abstractions",
+            "architecture.no-hidden-observers",
+            "architecture.no-service-locator-magic",
+            "architecture.scenario-linked-behavior",
+            "architecture.single-entrypoint",
+            "architecture.stable-semantic-ids",
+            "architecture.strict-native-types",
+            "architecture.tracked-duplication"
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "severity": {
+          "enum": [
+            "info",
+            "warning",
+            "error"
+          ]
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "limit": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "$ref": "#/$defs/limit"
+                }
+              },
+              "required": [
+                "state",
+                "value"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "const": "unknown"
+                }
+              },
+              "required": [
+                "state"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "enabled",
+        "severity",
+        "required",
+        "limit"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

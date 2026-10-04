@@ -50,6 +50,9 @@ pub const REGISTRY_IDENTITY: &str = "dev.lekalo.diagnostic-registry@0.6.4";
 /// its commit per docs/versioning.md).
 pub const REGISTRY_VERSION: &str = "0.6.4";
 
+/// Opt-in issue #84 union successor. Predecessor producers keep their exact pins.
+pub const SUCCESSOR_REGISTRY_VERSION: &str = "0.6.5";
+
 /// The closed diagnostic schema version.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DiagnosticSchemaVersion {

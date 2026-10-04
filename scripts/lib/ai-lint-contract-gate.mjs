@@ -10,6 +10,11 @@ import { spawnSync } from 'node:child_process';
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const fixture = join(root, 'tests/fixtures/ai-lint');
 const binary = join(root, 'target/debug', process.platform === 'win32' ? 'lekalo.exe' : 'lekalo');
+// Product-qualified successor snapshots preserve the original exact goldens.
+// Lock productVersion changes artifact/trace/condition pins, not this wire family.
+const product = readFileSync(join(root,'Cargo.toml'),'utf8').match(/\[workspace.package\][\s\S]*?version = "([^"]+)"/)?.[1];
+assert.ok(['0.6.4','0.6.5'].includes(product),'explicit product golden admission');
+const productPinnedGoldens = new Set(['report','report-waived','waivers','comparison','comparison-incomparable']);
 const require = createRequire((process.env.LEKALO_AJV_NODE_PATH || dirname(fileURLToPath(import.meta.url))) + '/');
 assert.equal(require('ajv/package.json').version, '8.17.1', 'exact Ajv gate dependency');
 const Ajv2020 = require('ajv/dist/2020').default;
@@ -90,7 +95,10 @@ export function attachments(env) {
 }
 export function golden(name,value,update) {
   const family=['report','evidence','config','waivers','comparison'].find(f=>name===f||name.startsWith(f+'-'));
-  const path=family?join(root,'tests/fixtures',`ai-lint-${family}`,'golden',name+'.json'):join(fixture,'golden',name+'.json');
+  const legacyPath=family?join(root,'tests/fixtures',`ai-lint-${family}`,'golden',name+'.json'):join(fixture,'golden',name+'.json');
+  const qualified=product==='0.6.5' && productPinnedGoldens.has(name);
+  const path=qualified?legacyPath.replace(/\.json$/,'.product-0.6.5.json'):legacyPath;
+  if(qualified) schema(family,JSON.parse(readFileSync(legacyPath,'utf8')));
   if(update) {mkdirSync(dirname(path),{recursive:true});writeFileSync(path,canonical(value)+'\n');}
   else assert.equal(readFileSync(path,'utf8'),canonical(value)+'\n',`golden drift: ${name}`);
 }
@@ -273,6 +281,8 @@ export function adapterCases(env,update) {
   }
 }
 export function gate(family) {
+  const productProbe=spawnSync(binary,['--version'],{cwd:root,encoding:'utf8',timeout:10000});
+  assert.equal(productProbe.status,0);assert.equal(productProbe.stdout.trim(),`lekalo ${product}`,'built product must match exact golden selection');
   const update=process.argv.includes('--update'),env=environment();
   try {
     const ci=readFileSync(join(root,'.github/workflows/ci.yml'),'utf8').split('  build-test:')[1];assert.ok(ci,'build-test job');const buildAt=ci.indexOf('cargo build --workspace --locked');assert.ok(buildAt>=0);for(const f of ['report','evidence','config','waivers','comparison']) {assert.ok(ci.indexOf('node scripts/test-ai-lint-'+f+'-contracts.mjs')>buildAt,'gate runs after build');assert.equal(read('tests/fixtures/fixture-provenance.json').families.find(e=>e.family==='ai-lint-'+f)?.origin,'synthetic');}

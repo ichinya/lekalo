@@ -13,7 +13,6 @@ use super::id::{DiagnosticId, MessageId};
 use super::registry::DiagnosticRegistry;
 use super::types::Severity;
 use super::version::DiagnosticSchemaVersion;
-use super::version::REGISTRY_VERSION;
 use super::{Diagnostic, DiagnosticCause, RelatedLocation, SourceLocation, SuggestedFix};
 use crate::result::Status;
 
@@ -51,7 +50,12 @@ pub(crate) fn build(
     source: Option<SourceLocation>,
     data: super::DataObject,
 ) -> Result<Diagnostic, BuildError> {
-    let registry = DiagnosticRegistry::embedded().map_err(|_| BuildError::Registry)?;
+    let predecessor = DiagnosticRegistry::embedded().map_err(|_| BuildError::Registry)?;
+    let registry = if predecessor.entry(id).is_some() {
+        predecessor
+    } else {
+        DiagnosticRegistry::successor().map_err(|_| BuildError::Registry)?
+    };
     let entry = registry
         .entry(id)
         .ok_or_else(|| BuildError::UnknownRule(id.to_owned()))?;
@@ -60,7 +64,7 @@ pub(crate) fn build(
     }
     Ok(Diagnostic {
         schema_version: DiagnosticSchemaVersion::Current,
-        registry_version: REGISTRY_VERSION.to_owned(),
+        registry_version: registry.registry_version().to_owned(),
         id: DiagnosticId::new(id).ok_or(BuildError::Registry)?,
         code: super::id::DiagnosticCode::new(entry.code().to_owned())
             .ok_or(BuildError::Registry)?,
@@ -174,8 +178,9 @@ impl DiagnosticSet {
         if diagnostics.len() > super::types::limits::DIAGNOSTICS_PER_RESULT {
             return Err(SetError::OverLimit);
         }
-        let registry = DiagnosticRegistry::embedded().map_err(|_| SetError::Registry)?;
         for diagnostic in &diagnostics {
+            let registry = DiagnosticRegistry::for_version(&diagnostic.registry_version)
+                .map_err(|_| SetError::Registry)?;
             let Some(entry) = registry.entry(diagnostic.id()) else {
                 return Err(SetError::UnknownRule(diagnostic.id().to_owned()));
             };

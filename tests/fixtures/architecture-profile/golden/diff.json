@@ -1,0 +1,25 @@
+{
+  "baseRef": "sha256:04ee9fe8ec1492444e8c93c2301722bb076a3846a26918422c4913e5d9d14742",
+  "candidateRef": "sha256:47c7a729e68bd3d677c29ba78a27d27117ae2bf976ba96ce71058a50b421ecbd",
+  "changes": [
+    {
+      "after": "sha256:d6c9f5296e0fcfc386a6d7ff5632d722445be51926da3eb0bbec8fa48c03fa04",
+      "before": "sha256:74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "member": "membership",
+      "ruleId": "profile",
+      "scope": "measured",
+      "strength": "incomparable"
+    },
+    {
+      "after": "sha256:47c7a729e68bd3d677c29ba78a27d27117ae2bf976ba96ce71058a50b421ecbd",
+      "before": "sha256:04ee9fe8ec1492444e8c93c2301722bb076a3846a26918422c4913e5d9d14742",
+      "member": "document",
+      "ruleId": "provenance",
+      "scope": "project",
+      "strength": "incomparable"
+    }
+  ],
+  "comparable": true,
+  "identity": "dev.lekalo.architecture-profile-diff@0.6.5",
+  "schemaVersion": "lekalo/architecture-profile-diff/v0.6.5"
+}

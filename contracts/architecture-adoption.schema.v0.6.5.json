@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.architecture-adoption-schema@0.6.5",
+  "title": "Lekalo architecture-adoption 0.6.5",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/architecture-adoption/v0.6.5"
+    },
+    "identity": {
+      "const": "dev.lekalo.architecture-adoption@0.6.5"
+    },
+    "snapshotRef": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "baselineRef": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/debt"
+      },
+      "maxItems": 10000,
+      "minItems": 0
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "identity",
+    "snapshotRef",
+    "baselineRef",
+    "entries"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "debt": {
+      "type": "object",
+      "properties": {
+        "ruleId": {
+          "enum": [
+            "architecture.bounded-context",
+            "architecture.deterministic-generation",
+            "architecture.errors-as-contracts",
+            "architecture.explicit-dependencies",
+            "architecture.explicit-operation-contracts",
+            "architecture.explicit-target-bindings",
+            "architecture.immutable-defaults",
+            "architecture.justified-abstractions",
+            "architecture.no-hidden-observers",
+            "architecture.no-service-locator-magic",
+            "architecture.scenario-linked-behavior",
+            "architecture.single-entrypoint",
+            "architecture.stable-semantic-ids",
+            "architecture.strict-native-types",
+            "architecture.tracked-duplication"
+          ]
+        },
+        "module": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]+$",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "conditionDigest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "owner": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]+$",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+        },
+        "reviewRef": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]+$",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "expiresOn": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        }
+      },
+      "required": [
+        "ruleId",
+        "module",
+        "conditionDigest",
+        "owner",
+        "reason",
+        "reviewRef",
+        "expiresOn"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

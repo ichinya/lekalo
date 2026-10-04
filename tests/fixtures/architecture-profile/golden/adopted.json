@@ -1,0 +1,872 @@
+{
+  "assessment": "adopting",
+  "baselineRef": {
+    "state": "known",
+    "value": "sha256:c1f959c5dfb80fead0ddd6f19b25a9efc2c57294ddd16d07d495f845b5ef9641"
+  },
+  "documentDigest": "sha256:47c7a729e68bd3d677c29ba78a27d27117ae2bf976ba96ce71058a50b421ecbd",
+  "identity": "dev.lekalo.architecture-profile-report@0.6.5",
+  "irRef": "sha256:2ed11578a45ee61635c51cc4ad5ff758db3bc2a23a867f0c70547c75188df8f7",
+  "modelRef": "sha256:7707ddf7e9b435a58c1a4d9fd6df7d8bbf09856519958e30762eec5c3c6c96de",
+  "profiles": [
+    {
+      "catalogRef": {
+        "digest": "sha256:947c4f675b3dde6f538edeae92230bf9a0b2f0865e3ce79cac69454806e1f6ff",
+        "id": "architecture-core",
+        "version": "0.6.5"
+      },
+      "chain": [
+        {
+          "digest": "sha256:9ddcbe8c39217c1fbadb4eb743cdae03923f52d5a23724693269e822dc76470a",
+          "id": "measured",
+          "version": "1"
+        }
+      ],
+      "identity": "dev.lekalo.architecture-profile-resolved@0.6.5",
+      "profileRef": {
+        "digest": "sha256:9ddcbe8c39217c1fbadb4eb743cdae03923f52d5a23724693269e822dc76470a",
+        "id": "measured",
+        "version": "1"
+      },
+      "rules": [
+        {
+          "enabled": true,
+          "id": "architecture.bounded-context",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": true,
+          "severity": "warning"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.deterministic-generation",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.errors-as-contracts",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.explicit-dependencies",
+          "limit": {
+            "state": "known",
+            "value": {
+              "calibrationRef": "synthetic/fan-out-equality",
+              "maximum": 0
+            }
+          },
+          "required": true,
+          "severity": "warning"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.explicit-operation-contracts",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.explicit-target-bindings",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.immutable-defaults",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.justified-abstractions",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.no-hidden-observers",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.no-service-locator-magic",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.scenario-linked-behavior",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.single-entrypoint",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.stable-semantic-ids",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": true,
+          "severity": "error"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.strict-native-types",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.tracked-duplication",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        }
+      ],
+      "schemaVersion": "lekalo/architecture-profile-resolved/v0.6.5",
+      "sourceDigest": "sha256:47c7a729e68bd3d677c29ba78a27d27117ae2bf976ba96ce71058a50b421ecbd"
+    }
+  ],
+  "recipe": "architecture-core/1",
+  "rows": [
+    {
+      "alternative": "Split the change boundary or reduce declared closure while retaining every required semantic fact.",
+      "conditionDigest": "sha256:6490ce30023df228b98017dab7c77aab079535c57ea487bb67d1dd38dd8dc26b",
+      "coverage": "complete",
+      "disposition": "observed",
+      "limit": {
+        "state": "unknown"
+      },
+      "measurement": "minimumRequiredSemanticTokens",
+      "module": "notify",
+      "producer": "context-budget/0.6.3",
+      "rationale": "The maximum minimum-required semantic token estimate across a module links policy to complete declared closure. It is a structural estimate, not empirical agent comprehension.",
+      "required": true,
+      "ruleId": "architecture.bounded-context",
+      "severity": "warning",
+      "value": {
+        "state": "known",
+        "value": 143
+      },
+      "witnesses": [
+        "effect:notify.rename_user",
+        "entity:notify.user",
+        "operation:notify.purge_cache_cmd",
+        "operation:notify.rename_user_cmd",
+        "type:notify.text",
+        "type:notify.user_id"
+      ]
+    },
+    {
+      "alternative": "Derive paths from stable IDs and declare nondeterministic inputs, then compare repeated generation receipts.",
+      "conditionDigest": "sha256:8ad0317b2120c153b6a91c233e8db21fdd2603ae07fc978748a2156f4b2c7c06",
+      "coverage": "unsupported",
+      "disposition": "observed",
+      "limit": {
+        "state": "unknown"
+      },
+      "measurement": "repeatedGenerationEquality",
+      "module": "notify",
+      "producer": "artifacts",
+      "rationale": "Determinism requires independent repeated outputs with pinned inputs and generator identity; content ownership alone is insufficient.",
+      "required": false,
+      "ruleId": "architecture.deterministic-generation",
+      "severity": "info",
+      "value": {
+        "state": "unsupported"
+      },
+      "witnesses": []
+    },
+    {
+      "alternative": "Use the existing typed error union and explicit boundary conversion with current native evidence.",
+      "conditionDigest": "sha256:ea6c1a4b70cef302d8e3fc6c32263650eba57a40a2235f1f9a4bf7d964d963ee",
+      "coverage": "unsupported",
+      "disposition": "observed",
+      "limit": {
+        "state": "unknown"
+      },
+      "measurement": "nativeErrorValueCoverage",
+      "module": "notify",
+      "producer": "error-contract/adapter",
+      "rationale": "Formal error declarations cannot prove that native failures return values rather than escape as exceptions.",
+      "required": false,
+      "ruleId": "architecture.errors-as-contracts",
+      "severity": "info",
+      "value": {
+        "state": "unsupported"
+      },
+      "witnesses": []
+    },
+    {
+      "alternative": "Declare the direct dependency or reduce the witnessed imports while preserving required behavior.",
+      "conditionDigest": "sha256:78867b1fa108b570641cd96dd9e18d8de29002144d26c06ff0bb5680f83e0250",
+      "coverage": "complete",
+      "disposition": "observed",
+      "limit": {
+        "state": "known",
+        "value": {
+          "calibrationRef": "synthetic/fan-out-equality",
+          "maximum": 0
+        }
+      },
+      "measurement": "fanOutModules",
+      "module": "notify",
+      "producer": "compiled-ir",
+      "rationale": "Declared module imports expose dependencies and permit a calibrated fan-out bound. Native constructor and runtime dependency completeness remain outside this measurement.",
+      "required": true,
+      "ruleId": "architecture.explicit-dependencies",
+      "severity": "warning",
+      "value": {
+        "state": "known",
+        "value": 0
+      },
+      "witnesses": []
+    },
+    {
+      "alternative": "Author the operation contract and formal error attachment, then attach current native conformance evidence.",
+      "conditionDigest": "sha256:7dbea9d579451787b5efc8af3f52ebf3e237a8456ef7dcb45c200189b2dbc246",
+      "coverage": "unsupported",
+      "disposition": "observed",
+      "limit": {
+        "state": "unknown"
+      },
+      "measurement": "operationContractCoverage",
+      "module": "notify",
+      "producer": "contracted/error-contract",
+      "rationale": "Declare kind-appropriate IO, errors and effects so a change has a visible behavioral boundary. Command output and native exception completeness are unavailable here.",
+      "required": false,
+      "ruleId": "architecture.explicit-operation-contracts",
+      "severity": "info",
+      "value": {
+        "state": "unsupported"
+      },
+      "witnesses": []
+    },
+    {
+      "alternative": "Attach an explicit confirmed operation binding with current source and adapter pins.",
+      "conditionDigest": "sha256:92c0ea217d9d16b72279ea1b1659ddc097675cf7eaafb42303215562636cf9be",
+      "coverage": "unsupported",
+      "disposition": "observed",
+      "limit": {
+        "state": "unknown"
+      },
+      "measurement": "nativeBindingCoverage",
+      "module": "notify",
+      "producer": "bindings/adapter",
+      "rationale": "A target name in Model does not establish exact operation-to-native binding or current target authority.",
+      "required": false,
+      "ruleId": "architecture.explicit-target-bindings",
+      "severity": "info",
+      "value": {
+        "state": "unsupported"
+      },
+      "witnesses": []
+    },
+    {
+      "alternative": "Use immutable values where applicable and explicitly declare mutable owners and permitted writes.",
+      "conditionDigest": "sha256:f991ea341ef059b3bb58994be26ded702b3a2e14390ed60298256f3ba54a99da",
+      "coverage": "unsupported",
+      "disposition": "observed",
+      "limit": {
+        "state": "unknown"
+      },
+      "measurement": "mutationCoverage",
+      "module": "notify",
+      "producer": "adapter",
+      "rationale": "Unclassified native mutation cannot establish immutability by default; a style preference alone must not block.",
+      "required": false,
+      "ruleId": "architecture.immutable-defaults",
+      "severity": "info",
+      "value": {
+        "state": "unsupported"
+      },
+      "witnesses": []
+    },
+    {
+      "alternative": "Keep a concrete local implementation or record the shared contract, named consumers and reuse rationale.",
+      "conditionDigest": "sha256:be10b48eca1dc41d01bf13c00b3fb4e5c811902a200a9648b9d794d76924e29a",
+      "coverage": "partial",
+      "disposition": "observed",
+      "limit": {
+        "state": "unknown"
+      },
+      "measurement": "sharedAbstractionRadius",
+      "module": "notify",
+      "producer": "coupling/0.6.4",
+      "rationale": "Shared abstraction radius is a structural proxy; it cannot determine whether abstraction is premature and never blocks here.",
+      "required": false,
+      "ruleId": "architecture.justified-abstractions",
+      "severity": "info",
+      "value": {
+        "state": "known",
+        "value": 4
+      },
+      "witnesses": []
+    },
+    {
+      "alternative": "Declare observer activation, owners and effects explicitly or use a direct operation path.",
+      "conditionDigest": "sha256:6d21c477f4781e970f83ecfbd586dc71a7599c63b4bbea06babeea1aed8c7844",
+      "coverage": "unsupported",
+      "disposition": "observed",
+      "limit": {
+        "state": "unknown"
+      },
+      "measurement": "observerCoverage",
+      "module": "notify",
+      "producer": "adapter/ai-lint",
+      "rationale": "Hidden native observer activation needs complete current target evidence; a clean token scan is insufficient.",
+      "required": false,
+      "ruleId": "architecture.no-hidden-observers",
+      "severity": "info",
+      "value": {
+        "state": "unsupported"
+      },
+      "witnesses": []
+    },
+    {
+      "alternative": "Pass explicit dependencies and bind dynamic resolution at a documented boundary.",
+      "conditionDigest": "sha256:9db5cd4fb5646061ee1182e75af5c983ae91616bcbe51660c78641884d00fa32",
+      "coverage": "unsupported",
+      "disposition": "observed",
+      "limit": {
+        "state": "unknown"
+      },
+      "measurement": "locatorCoverage",
+      "module": "notify",
+      "producer": "adapter/ai-lint",
+      "rationale": "Service locator and magic resolution require adapter-specific evidence and must not be inferred from language-neutral names.",
+      "required": false,
+      "ruleId": "architecture.no-service-locator-magic",
+      "severity": "info",
+      "value": {
+        "state": "unsupported"
+      },
+      "witnesses": []
+    },
+    {
+      "alternative": "Add a scenario for the operation and link the behavior and error cases to current passing gates.",
+      "conditionDigest": "sha256:6db54a3c6df67498d56f6946f49d9dbb21414705fe5898cefb7dd8b503fdc51e",
+      "coverage": "partial",
+      "disposition": "observed",
+      "limit": {
+        "state": "unknown"
+      },
+      "measurement": "publicOperationsWithoutScenario",
+      "module": "notify",
+      "producer": "compiled-ir/trace",
+      "rationale": "Missing scenario declarations are visible, but covers lists alone do not prove branch coverage or successful native gates.",
+      "required": false,
+      "ruleId": "architecture.scenario-linked-behavior",
+      "severity": "info",
+      "value": {
+        "state": "known",
+        "value": 2
+      },
+      "witnesses": [
+        "notify.purge_cache_cmd",
+        "notify.rename_user_cmd"
+      ]
+    },
+    {
+      "alternative": "Bind the operation to one explicit entrypoint and declare any boundary dispatch.",
+      "conditionDigest": "sha256:2557359b373676639726dd62dd496f51ecb37589768e06e43186ec25d96dcd97",
+      "coverage": "unsupported",
+      "disposition": "observed",
+      "limit": {
+        "state": "unknown"
+      },
+      "measurement": "entrypointCoverage",
+      "module": "notify",
+      "producer": "adapter",
+      "rationale": "A single native behavior entrypoint needs exact operation bindings and dispatch coverage. Endpoint declarations alone cannot prove it.",
+      "required": false,
+      "ruleId": "architecture.single-entrypoint",
+      "severity": "info",
+      "value": {
+        "state": "unsupported"
+      },
+      "witnesses": []
+    },
+    {
+      "alternative": "Declare stable semantic IDs and use explicit rename history when an identity changes.",
+      "conditionDigest": "sha256:8e63e6662652b2113f425eb72a2d3e711733a1e05915a73dfded289249860937",
+      "coverage": "complete",
+      "disposition": "observed",
+      "limit": {
+        "state": "unknown"
+      },
+      "measurement": "declaredSemanticIds",
+      "module": "notify",
+      "producer": "compiled-ir",
+      "rationale": "Canonical semantic identities must be unique and resolvable; ordinary compilation and semantic validation remain mandatory. This count does not prove lifetime stability in native code.",
+      "required": true,
+      "ruleId": "architecture.stable-semantic-ids",
+      "severity": "error",
+      "value": {
+        "state": "known",
+        "value": 6
+      },
+      "witnesses": [
+        "notify.purge_cache_cmd",
+        "notify.rename_user",
+        "notify.rename_user_cmd",
+        "notify.text",
+        "notify.user",
+        "notify.user_id"
+      ]
+    },
+    {
+      "alternative": "Select the target type checker and supply current operation-to-native bindings and typed results.",
+      "conditionDigest": "sha256:e313df20b915ea1d16bdb9eee18f4a1abba44208943068dc110e49c91419163c",
+      "coverage": "unsupported",
+      "disposition": "observed",
+      "limit": {
+        "state": "unknown"
+      },
+      "measurement": "nativeTypeCoverage",
+      "module": "notify",
+      "producer": "adapter",
+      "rationale": "Native type completeness requires an adapter-qualified inventory, beyond portable Model type declarations.",
+      "required": false,
+      "ruleId": "architecture.strict-native-types",
+      "severity": "info",
+      "value": {
+        "state": "unsupported"
+      },
+      "witnesses": []
+    },
+    {
+      "alternative": "Record semantic replica obligations and synchronization review, or justify independent contracts.",
+      "conditionDigest": "sha256:eac82e5dda086851603e39c02508df927bc0adc63045bb0a58f8b1dacc781f90",
+      "coverage": "unsupported",
+      "disposition": "observed",
+      "limit": {
+        "state": "unknown"
+      },
+      "measurement": "replicaTrackingCoverage",
+      "module": "notify",
+      "producer": "coupling/adapter",
+      "rationale": "Declared replica obligations do not inventory every native source duplicate; full tracking coverage is unavailable here.",
+      "required": false,
+      "ruleId": "architecture.tracked-duplication",
+      "severity": "info",
+      "value": {
+        "state": "unsupported"
+      },
+      "witnesses": []
+    },
+    {
+      "alternative": "Split the change boundary or reduce declared closure while retaining every required semantic fact.",
+      "conditionDigest": "sha256:ae707ed4c7a4f04332dea356e1833ee33284303b4e9850035effce68de5e98e0",
+      "coverage": "complete",
+      "disposition": "observed",
+      "limit": {
+        "state": "unknown"
+      },
+      "measurement": "minimumRequiredSemanticTokens",
+      "module": "planner",
+      "producer": "context-budget/0.6.3",
+      "rationale": "The maximum minimum-required semantic token estimate across a module links policy to complete declared closure. It is a structural estimate, not empirical agent comprehension.",
+      "required": true,
+      "ruleId": "architecture.bounded-context",
+      "severity": "warning",
+      "value": {
+        "state": "known",
+        "value": 384
+      },
+      "witnesses": [
+        "effect:planner.archive_task",
+        "effect:planner.create_task",
+        "effect:planner.edit_task",
+        "endpoint:planner.api_focus",
+        "entity:planner.task",
+        "event:planner.task_archived",
+        "event:planner.task_focused",
+        "operation:planner.archive_task_cmd",
+        "operation:planner.count_focused",
+        "operation:planner.edit_task_cmd",
+        "operation:planner.focus_task",
+        "operation:planner.list_tasks",
+        "operation:planner.user_names",
+        "policy:planner.deny_bulk_focus",
+        "scenario:planner.focus_flow",
+        "target-binding:planner.binding_node",
+        "type:planner.due_date",
+        "type:planner.due_window",
+        "type:planner.task_id",
+        "type:planner.task_state",
+        "type:planner.text"
+      ]
+    },
+    {
+      "alternative": "Derive paths from stable IDs and declare nondeterministic inputs, then compare repeated generation receipts.",
+      "conditionDigest": "sha256:33a4fd190375050a8b77a78b62c927a4282376c2f312b68262e973e3af71d648",
+      "coverage": "unsupported",
+      "disposition": "observed",
+      "limit": {
+        "state": "unknown"
+      },
+      "measurement": "repeatedGenerationEquality",
+      "module": "planner",
+      "producer": "artifacts",
+      "rationale": "Determinism requires independent repeated outputs with pinned inputs and generator identity; content ownership alone is insufficient.",
+      "required": false,
+      "ruleId": "architecture.deterministic-generation",
+      "severity": "info",
+      "value": {
+        "state": "unsupported"
+      },
+      "witnesses": []
+    },
+    {
+      "alternative": "Use the existing typed error union and explicit boundary conversion with current native evidence.",
+      "conditionDigest": "sha256:a71b3acedc89d61c23c8ac81a8dc874a27931f94484c394a1b78aa195fed9c23",
+      "coverage": "unsupported",
+      "disposition": "observed",
+      "limit": {
+        "state": "unknown"
+      },
+      "measurement": "nativeErrorValueCoverage",
+      "module": "planner",
+      "producer": "error-contract/adapter",
+      "rationale": "Formal error declarations cannot prove that native failures return values rather than escape as exceptions.",
+      "required": false,
+      "ruleId": "architecture.errors-as-contracts",
+      "severity": "info",
+      "value": {
+        "state": "unsupported"
+      },
+      "witnesses": []
+    },
+    {
+      "alternative": "Declare the direct dependency or reduce the witnessed imports while preserving required behavior.",
+      "conditionDigest": "sha256:071975bd3c3fd267c36d2cd34b8205e3ea49160cb5f96782d3b5a886bc46bc9b",
+      "coverage": "complete",
+      "disposition": "adopted",
+      "limit": {
+        "state": "known",
+        "value": {
+          "calibrationRef": "synthetic/fan-out-equality",
+          "maximum": 0
+        }
+      },
+      "measurement": "fanOutModules",
+      "module": "planner",
+      "producer": "compiled-ir",
+      "rationale": "Declared module imports expose dependencies and permit a calibrated fan-out bound. Native constructor and runtime dependency completeness remain outside this measurement.",
+      "required": true,
+      "ruleId": "architecture.explicit-dependencies",
+      "severity": "warning",
+      "value": {
+        "state": "known",
+        "value": 1
+      },
+      "witnesses": [
+        "notify"
+      ]
+    },
+    {
+      "alternative": "Author the operation contract and formal error attachment, then attach current native conformance evidence.",
+      "conditionDigest": "sha256:fcb7eb9de9fb7bf9b78c3f9c749967926adfd7f0e5c6fc2ada635b38d0560b3c",
+      "coverage": "unsupported",
+      "disposition": "observed",
+      "limit": {
+        "state": "unknown"
+      },
+      "measurement": "operationContractCoverage",
+      "module": "planner",
+      "producer": "contracted/error-contract",
+      "rationale": "Declare kind-appropriate IO, errors and effects so a change has a visible behavioral boundary. Command output and native exception completeness are unavailable here.",
+      "required": false,
+      "ruleId": "architecture.explicit-operation-contracts",
+      "severity": "info",
+      "value": {
+        "state": "unsupported"
+      },
+      "witnesses": []
+    },
+    {
+      "alternative": "Attach an explicit confirmed operation binding with current source and adapter pins.",
+      "conditionDigest": "sha256:e92a484b75912898db9e8fdb820e1758993111876f7a4bd91cbd3543b8dcbeaf",
+      "coverage": "unsupported",
+      "disposition": "observed",
+      "limit": {
+        "state": "unknown"
+      },
+      "measurement": "nativeBindingCoverage",
+      "module": "planner",
+      "producer": "bindings/adapter",
+      "rationale": "A target name in Model does not establish exact operation-to-native binding or current target authority.",
+      "required": false,
+      "ruleId": "architecture.explicit-target-bindings",
+      "severity": "info",
+      "value": {
+        "state": "unsupported"
+      },
+      "witnesses": []
+    },
+    {
+      "alternative": "Use immutable values where applicable and explicitly declare mutable owners and permitted writes.",
+      "conditionDigest": "sha256:54e19bcbefdc041d7f1628d94dbeb9572dd1c03ed5aa34513bbf050e2e1a03bc",
+      "coverage": "unsupported",
+      "disposition": "observed",
+      "limit": {
+        "state": "unknown"
+      },
+      "measurement": "mutationCoverage",
+      "module": "planner",
+      "producer": "adapter",
+      "rationale": "Unclassified native mutation cannot establish immutability by default; a style preference alone must not block.",
+      "required": false,
+      "ruleId": "architecture.immutable-defaults",
+      "severity": "info",
+      "value": {
+        "state": "unsupported"
+      },
+      "witnesses": []
+    },
+    {
+      "alternative": "Keep a concrete local implementation or record the shared contract, named consumers and reuse rationale.",
+      "conditionDigest": "sha256:989702071e8ff98dc71a5a1ea8397331e917ebd26ac2581f315f9ad43f23336e",
+      "coverage": "partial",
+      "disposition": "observed",
+      "limit": {
+        "state": "unknown"
+      },
+      "measurement": "sharedAbstractionRadius",
+      "module": "planner",
+      "producer": "coupling/0.6.4",
+      "rationale": "Shared abstraction radius is a structural proxy; it cannot determine whether abstraction is premature and never blocks here.",
+      "required": false,
+      "ruleId": "architecture.justified-abstractions",
+      "severity": "info",
+      "value": {
+        "state": "known",
+        "value": 10
+      },
+      "witnesses": []
+    },
+    {
+      "alternative": "Declare observer activation, owners and effects explicitly or use a direct operation path.",
+      "conditionDigest": "sha256:357c6305f09e26cb9e9adabbeea6431f28b3191a01214f741da19ecb756bd6bd",
+      "coverage": "unsupported",
+      "disposition": "observed",
+      "limit": {
+        "state": "unknown"
+      },
+      "measurement": "observerCoverage",
+      "module": "planner",
+      "producer": "adapter/ai-lint",
+      "rationale": "Hidden native observer activation needs complete current target evidence; a clean token scan is insufficient.",
+      "required": false,
+      "ruleId": "architecture.no-hidden-observers",
+      "severity": "info",
+      "value": {
+        "state": "unsupported"
+      },
+      "witnesses": []
+    },
+    {
+      "alternative": "Pass explicit dependencies and bind dynamic resolution at a documented boundary.",
+      "conditionDigest": "sha256:001f6376d5b4df7a49d06ecbe09380e00ca09f2a2d8182ea9222308222291146",
+      "coverage": "unsupported",
+      "disposition": "observed",
+      "limit": {
+        "state": "unknown"
+      },
+      "measurement": "locatorCoverage",
+      "module": "planner",
+      "producer": "adapter/ai-lint",
+      "rationale": "Service locator and magic resolution require adapter-specific evidence and must not be inferred from language-neutral names.",
+      "required": false,
+      "ruleId": "architecture.no-service-locator-magic",
+      "severity": "info",
+      "value": {
+        "state": "unsupported"
+      },
+      "witnesses": []
+    },
+    {
+      "alternative": "Add a scenario for the operation and link the behavior and error cases to current passing gates.",
+      "conditionDigest": "sha256:824d73515b6e298caf8a165cfa96ca6758b7d46d7fb413becdbea51abd1d2b68",
+      "coverage": "partial",
+      "disposition": "observed",
+      "limit": {
+        "state": "unknown"
+      },
+      "measurement": "publicOperationsWithoutScenario",
+      "module": "planner",
+      "producer": "compiled-ir/trace",
+      "rationale": "Missing scenario declarations are visible, but covers lists alone do not prove branch coverage or successful native gates.",
+      "required": false,
+      "ruleId": "architecture.scenario-linked-behavior",
+      "severity": "info",
+      "value": {
+        "state": "known",
+        "value": 5
+      },
+      "witnesses": [
+        "planner.archive_task_cmd",
+        "planner.count_focused",
+        "planner.edit_task_cmd",
+        "planner.list_tasks",
+        "planner.user_names"
+      ]
+    },
+    {
+      "alternative": "Bind the operation to one explicit entrypoint and declare any boundary dispatch.",
+      "conditionDigest": "sha256:e5bcc0519b1ad33efd55ea4114d4482f825f69732070bdd207c80d998cd62a90",
+      "coverage": "unsupported",
+      "disposition": "observed",
+      "limit": {
+        "state": "unknown"
+      },
+      "measurement": "entrypointCoverage",
+      "module": "planner",
+      "producer": "adapter",
+      "rationale": "A single native behavior entrypoint needs exact operation bindings and dispatch coverage. Endpoint declarations alone cannot prove it.",
+      "required": false,
+      "ruleId": "architecture.single-entrypoint",
+      "severity": "info",
+      "value": {
+        "state": "unsupported"
+      },
+      "witnesses": []
+    },
+    {
+      "alternative": "Declare stable semantic IDs and use explicit rename history when an identity changes.",
+      "conditionDigest": "sha256:8fedf07ff644e7773f8e1b16a85dd0a89b3b2733075199fd67027551e4012f2e",
+      "coverage": "complete",
+      "disposition": "observed",
+      "limit": {
+        "state": "unknown"
+      },
+      "measurement": "declaredSemanticIds",
+      "module": "planner",
+      "producer": "compiled-ir",
+      "rationale": "Canonical semantic identities must be unique and resolvable; ordinary compilation and semantic validation remain mandatory. This count does not prove lifetime stability in native code.",
+      "required": true,
+      "ruleId": "architecture.stable-semantic-ids",
+      "severity": "error",
+      "value": {
+        "state": "known",
+        "value": 21
+      },
+      "witnesses": [
+        "planner.api_focus",
+        "planner.archive_task",
+        "planner.archive_task_cmd",
+        "planner.binding_node",
+        "planner.count_focused",
+        "planner.create_task",
+        "planner.deny_bulk_focus",
+        "planner.due_date",
+        "planner.due_window",
+        "planner.edit_task",
+        "planner.edit_task_cmd",
+        "planner.focus_flow",
+        "planner.focus_task",
+        "planner.list_tasks",
+        "planner.task",
+        "planner.task_archived",
+        "planner.task_focused",
+        "planner.task_id",
+        "planner.task_state",
+        "planner.text",
+        "planner.user_names"
+      ]
+    },
+    {
+      "alternative": "Select the target type checker and supply current operation-to-native bindings and typed results.",
+      "conditionDigest": "sha256:1e8b76862862e0be6169bb8f1f9e28226c1bf75fe21043511856b40db0abe707",
+      "coverage": "unsupported",
+      "disposition": "observed",
+      "limit": {
+        "state": "unknown"
+      },
+      "measurement": "nativeTypeCoverage",
+      "module": "planner",
+      "producer": "adapter",
+      "rationale": "Native type completeness requires an adapter-qualified inventory, beyond portable Model type declarations.",
+      "required": false,
+      "ruleId": "architecture.strict-native-types",
+      "severity": "info",
+      "value": {
+        "state": "unsupported"
+      },
+      "witnesses": []
+    },
+    {
+      "alternative": "Record semantic replica obligations and synchronization review, or justify independent contracts.",
+      "conditionDigest": "sha256:16644da2bfadad77b1e16928d93dee580822df0f669ae5c5c45245586580c22a",
+      "coverage": "unsupported",
+      "disposition": "observed",
+      "limit": {
+        "state": "unknown"
+      },
+      "measurement": "replicaTrackingCoverage",
+      "module": "planner",
+      "producer": "coupling/adapter",
+      "rationale": "Declared replica obligations do not inventory every native source duplicate; full tracking coverage is unavailable here.",
+      "required": false,
+      "ruleId": "architecture.tracked-duplication",
+      "severity": "info",
+      "value": {
+        "state": "unsupported"
+      },
+      "witnesses": []
+    }
+  ],
+  "schemaVersion": "lekalo/architecture-profile-report/v0.6.5",
+  "scope": {
+    "id": "planner",
+    "kind": "project"
+  },
+  "snapshotRef": "sha256:93228fddf5c86666a74440a66833529e628766cf7c5618470094ed3a6fba67c5"
+}

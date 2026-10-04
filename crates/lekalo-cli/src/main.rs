@@ -24,6 +24,7 @@ type StorageAttachment = lekalo_core::storage_projection::StorageProjectionAttac
 type ProfileAttachment = lekalo_core::storage_engine_profile::StorageEngineProfile;
 
 mod ai_lint;
+mod architecture_profile;
 mod coupling;
 mod doctor_git;
 mod git_input;
@@ -269,6 +270,11 @@ enum Commands {
     Coupling {
         #[command(flatten)]
         args: coupling::CouplingArgs,
+    },
+    /// Resolve and assess opt-in architecture policy over declared core evidence.
+    ArchitectureProfile {
+        #[command(subcommand)]
+        command: architecture_profile::Command,
     },
     /// Report the context-budget and local-understandability metrics of
     /// one symbol, one module, or the whole project (issue #75): the
@@ -2441,6 +2447,7 @@ fn runtime() -> u8 {
                 project,
             } => run_context(symbol, changed, budget, spans, &project),
             Commands::Coupling { args } => coupling::run(args),
+            Commands::ArchitectureProfile { command } => architecture_profile::run(command),
             Commands::ContextBudget { args } => {
                 let ContextBudgetArgs {
                     symbol,

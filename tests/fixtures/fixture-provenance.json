@@ -9,6 +9,11 @@
       "origin": "synthetic"
     },
     {
+      "family": "architecture-profile",
+      "origin": "synthetic",
+      "note": "Issue #84: authored architecture policy, resolution, scope, lock, diff, baseline and adoption goldens over the synthetic context-budget planner. No native runtime or AI task outcome claims."
+    },
+    {
       "family": "adapter-manifest",
       "origin": "synthetic"
     },

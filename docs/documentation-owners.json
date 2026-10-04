@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
-  "productVersion": "0.6.4",
-  "cliSourceDigest": "sha256:4bbbf255e7e4c95e99fcf17d6d24b353fbc898d28ac2be1872358072f117bcbe",
+  "productVersion": "0.6.5",
+  "cliSourceDigest": "sha256:4a1a4e388355485254c21b9755b413107bb7c9385293ec07a7fef6301c520f36",
   "p0Pages": [
     {
       "page": "README.md",
@@ -220,6 +220,72 @@
       "summary": "Optional evidence-bound AI readability analysis",
       "leaf": true,
       "owner": "docs/ai-lint.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:architecture-profile",
+      "kind": "command",
+      "command": "architecture-profile",
+      "usage": "lekalo architecture-profile [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:2e4a81fc83b1f0475277ccdf07a8ce6d038e0da96cf33c16559b9c2c5b37566e",
+      "summary": "Resolve and assess opt-in architecture policy over declared core evidence",
+      "leaf": false,
+      "owner": "docs/architecture-profile.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:architecture-profile assess",
+      "kind": "command",
+      "command": "architecture-profile assess",
+      "usage": "lekalo architecture-profile assess [OPTIONS] <--module <MODULE>|--all>",
+      "helpDigest": "sha256:bf41e2bc133e8192672914c450f4ca54e353df436c89a852ed8429f14d81dbcf",
+      "summary": "Assess selected modules; source remains read-only and advisory without --check",
+      "leaf": true,
+      "owner": "docs/architecture-profile.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:architecture-profile catalog",
+      "kind": "command",
+      "command": "architecture-profile catalog",
+      "usage": "lekalo architecture-profile catalog [OPTIONS]",
+      "helpDigest": "sha256:60565e636f82e2455bef3fe1f54123a6972b7a9ca3da7cd5350014fe7c462fde",
+      "summary": "Emit the versioned language-neutral rule catalog and its coverage boundaries",
+      "leaf": true,
+      "owner": "docs/architecture-profile.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:architecture-profile diff",
+      "kind": "command",
+      "command": "architecture-profile diff",
+      "usage": "lekalo architecture-profile diff [OPTIONS] --base-profiles <BASE_PROFILES> --candidate-profiles <CANDIDATE_PROFILES>",
+      "helpDigest": "sha256:da34ad37ec88f2487f5d9d916dbe60884a9d1534ea45c9ef32001e01b8604e37",
+      "summary": "Compare two admitted profile documents, independently of Model changes",
+      "leaf": true,
+      "owner": "docs/architecture-profile.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:architecture-profile lock",
+      "kind": "command",
+      "command": "architecture-profile lock",
+      "usage": "lekalo architecture-profile lock [OPTIONS]",
+      "helpDigest": "sha256:b72f12ecaf9787b7ef9fcdd49121b9ccdfb10443bded4478d42d2e45b0f4cb6b",
+      "summary": "Emit a dedicated architecture lock sidecar for explicit caller persistence",
+      "leaf": true,
+      "owner": "docs/architecture-profile.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:architecture-profile resolve",
+      "kind": "command",
+      "command": "architecture-profile resolve",
+      "usage": "lekalo architecture-profile resolve [OPTIONS] --architecture-profile <ARCHITECTURE_PROFILE>",
+      "helpDigest": "sha256:a19c36ae9c0b2ebcc958927618f6044606acb7cd170450fafb5b350d7ce06779",
+      "summary": "Resolve an exact named profile, parent chain and effective rule digest",
+      "leaf": true,
+      "owner": "docs/architecture-profile.md",
       "status": "implemented"
     },
     {
@@ -1866,6 +1932,87 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/architecture-adoption.schema.v0.6.5.json",
+      "kind": "contract",
+      "source": "contracts/architecture-adoption.schema.v0.6.5.json",
+      "sourceDigest": "sha256:d3ea1b51d5f4792b6ce04f6d43fd06f3ad11ef5d4e49fbaec5305c110db2d8d7",
+      "owner": "docs/architecture-profile.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/architecture-profile-diff.schema.v0.6.5.json",
+      "kind": "contract",
+      "source": "contracts/architecture-profile-diff.schema.v0.6.5.json",
+      "sourceDigest": "sha256:e50c0b6571d01cafb27bd27ffd2573e3b7d011594a29f5e8918f6e517f4433d6",
+      "owner": "docs/architecture-profile.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/architecture-profile-lock.schema.v0.6.5.json",
+      "kind": "contract",
+      "source": "contracts/architecture-profile-lock.schema.v0.6.5.json",
+      "sourceDigest": "sha256:b368bc3cca99edc0077fbc014a13fd04b58229c73e34ec5de7bc3491cfc5847d",
+      "owner": "docs/architecture-profile.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/architecture-profile-report.schema.v0.6.5.json",
+      "kind": "contract",
+      "source": "contracts/architecture-profile-report.schema.v0.6.5.json",
+      "sourceDigest": "sha256:66887755a40fabecd58167b9c4e2b557c212283d21271542208aada2fd08b537",
+      "owner": "docs/architecture-profile.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/architecture-profile-resolved.schema.v0.6.5.json",
+      "kind": "contract",
+      "source": "contracts/architecture-profile-resolved.schema.v0.6.5.json",
+      "sourceDigest": "sha256:edaf888ebb1d6582af538b7f4c6ec703fcaac0b80c547d9029351567b7f4897a",
+      "owner": "docs/architecture-profile.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/architecture-profile.schema.v0.6.5.json",
+      "kind": "contract",
+      "source": "contracts/architecture-profile.schema.v0.6.5.json",
+      "sourceDigest": "sha256:c98d9edc70f96a9e6e822c0916695d0c176e9d93a7542066b98a56900741a409",
+      "owner": "docs/architecture-profile.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/architecture-profile.v0.6.5.json",
+      "kind": "contract",
+      "source": "contracts/architecture-profile.v0.6.5.json",
+      "sourceDigest": "sha256:28b18f815827fe4201bacd302f47608051655b88c8c2734966a7abe85714facf",
+      "owner": "docs/architecture-profile.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/architecture-rule-catalog.schema.v0.6.5.json",
+      "kind": "contract",
+      "source": "contracts/architecture-rule-catalog.schema.v0.6.5.json",
+      "sourceDigest": "sha256:431b81ca6b278305c1d628a8dde5e0242da6b8acd293fd12f9193c5a0fbca5a0",
+      "owner": "docs/architecture-profile.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/architecture-rule-catalog.v0.6.5.json",
+      "kind": "contract",
+      "source": "contracts/architecture-rule-catalog.v0.6.5.json",
+      "sourceDigest": "sha256:947c4f675b3dde6f538edeae92230bf9a0b2f0865e3ce79cac69454806e1f6ff",
+      "owner": "docs/architecture-profile.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/artifact-manifest.schema.v0.2.16.json",
       "kind": "contract",
       "source": "contracts/artifact-manifest.schema.v0.2.16.json",
@@ -2100,6 +2247,15 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/diagnostic-registry.schema.v0.6.5.json",
+      "kind": "contract",
+      "source": "contracts/diagnostic-registry.schema.v0.6.5.json",
+      "sourceDigest": "sha256:b393880fabde9425d33e632d97c904dcf4c8765330bf6271ff68e7584c141519",
+      "owner": "docs/diagnostics.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/diagnostic-registry.v0.2.16.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.2.16.json",
@@ -2122,6 +2278,15 @@
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.6.4.json",
       "sourceDigest": "sha256:5b6ff37667ef2f125c1a9657273117ff938598d4db39304259ed14e5d32d8704",
+      "owner": "docs/diagnostics.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/diagnostic-registry.v0.6.5.json",
+      "kind": "contract",
+      "source": "contracts/diagnostic-registry.v0.6.5.json",
+      "sourceDigest": "sha256:c0ec3b923751c226d388b071ffcff78b023c86d820c83105ce204e469a9dd212",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

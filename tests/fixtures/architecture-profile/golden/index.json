@@ -1,0 +1,38 @@
+[
+  {
+    "name": "catalog",
+    "family": "architecture-rule-catalog"
+  },
+  {
+    "name": "profiles",
+    "family": "architecture-profile"
+  },
+  {
+    "name": "resolved",
+    "family": "architecture-profile-resolved"
+  },
+  {
+    "name": "lock",
+    "family": "architecture-profile-lock"
+  },
+  {
+    "name": "report",
+    "family": "architecture-profile-report"
+  },
+  {
+    "name": "violation",
+    "family": "architecture-profile-report"
+  },
+  {
+    "name": "diff",
+    "family": "architecture-profile-diff"
+  },
+  {
+    "name": "adoption",
+    "family": "architecture-adoption"
+  },
+  {
+    "name": "adopted",
+    "family": "architecture-profile-report"
+  }
+]

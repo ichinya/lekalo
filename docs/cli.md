@@ -1122,7 +1122,7 @@ the redaction diff contract and never writes.
 <!-- issue-105-command-index -->
 ## Command index
 
-Status: **Implemented** command handlers for product 0.6.4. Handler existence does not imply every target capability, migration or native execution is available. Each row comes from recursive CLI help and has one owner in [the checked ownership inventory](documentation-owners.json). `init --adopt` is described in [adopt](adopt.md); native execution remains a typed refusal in the production CLI.
+Status: **Implemented** command handlers for product 0.6.5. Handler existence does not imply every target capability, migration or native execution is available. Each row comes from recursive CLI help and has one owner in [the checked ownership inventory](documentation-owners.json). `init --adopt` is described in [adopt](adopt.md); native execution remains a typed refusal in the production CLI.
 
 | Command | Synopsis from this binary | Reference owner |
 | --- | --- | --- |
@@ -1141,6 +1141,12 @@ Status: **Implemented** command handlers for product 0.6.4. Handler existence do
 | `lekalo adapter trust` | `lekalo adapter trust [OPTIONS] --level <LEVEL> <ID>` | [reference](adapter-install.md) |
 | `lekalo adapter update` | `lekalo adapter update [OPTIONS] <ID>` | [reference](adapter-install.md) |
 | `lekalo ai-lint` | `lekalo ai-lint [OPTIONS]` | [reference](ai-lint.md) |
+| `lekalo architecture-profile` | `lekalo architecture-profile [OPTIONS] <COMMAND>` | [reference](architecture-profile.md) |
+| `lekalo architecture-profile assess` | `lekalo architecture-profile assess [OPTIONS] <--module <MODULE>\|--all>` | [reference](architecture-profile.md) |
+| `lekalo architecture-profile catalog` | `lekalo architecture-profile catalog [OPTIONS]` | [reference](architecture-profile.md) |
+| `lekalo architecture-profile diff` | `lekalo architecture-profile diff [OPTIONS] --base-profiles <BASE_PROFILES> --candidate-profiles <CANDIDATE_PROFILES>` | [reference](architecture-profile.md) |
+| `lekalo architecture-profile lock` | `lekalo architecture-profile lock [OPTIONS]` | [reference](architecture-profile.md) |
+| `lekalo architecture-profile resolve` | `lekalo architecture-profile resolve [OPTIONS] --architecture-profile <ARCHITECTURE_PROFILE>` | [reference](architecture-profile.md) |
 | `lekalo bindings` | `lekalo bindings [OPTIONS] <COMMAND>` | [reference](bindings.md) |
 | `lekalo bindings audit` | `lekalo bindings audit [OPTIONS]` | [reference](bindings.md) |
 | `lekalo bindings confirm` | `lekalo bindings confirm [OPTIONS] [PROPOSAL]` | [reference](bindings.md) |

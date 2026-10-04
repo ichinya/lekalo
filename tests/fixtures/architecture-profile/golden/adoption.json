@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "lekalo/architecture-adoption/v0.6.5",
+  "identity": "dev.lekalo.architecture-adoption@0.6.5",
+  "snapshotRef": "sha256:93228fddf5c86666a74440a66833529e628766cf7c5618470094ed3a6fba67c5",
+  "baselineRef": "sha256:c1f959c5dfb80fead0ddd6f19b25a9efc2c57294ddd16d07d495f845b5ef9641",
+  "entries": [
+    {
+      "ruleId": "architecture.explicit-dependencies",
+      "module": "planner",
+      "conditionDigest": "sha256:071975bd3c3fd267c36d2cd34b8205e3ea49160cb5f96782d3b5a886bc46bc9b",
+      "owner": "synthetic-owner",
+      "reason": "Adopt existing synthetic module fan-out while retaining its exact condition.",
+      "reviewRef": "synthetic/review-84",
+      "expiresOn": "2026-10-05"
+    }
+  ]
+}
