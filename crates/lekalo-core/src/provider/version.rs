@@ -20,13 +20,13 @@ pub const FAMILY: &str = "dev.lekalo.workflow-provider";
 
 /// The exact workflow-provider contract version: the product version of
 /// the implementation commit (issue #34).
-pub const VERSION: &str = "0.6.3";
+pub const VERSION: &str = "0.6.4";
 
 /// The exact contract identity: family and version joined with `@`.
-pub const IDENTITY: &str = "dev.lekalo.workflow-provider@0.6.3";
+pub const IDENTITY: &str = "dev.lekalo.workflow-provider@0.6.4";
 
 /// The exact wire discriminator of the workflow-provider manifest.
-pub const SCHEMA_VERSION: &str = "lekalo/workflow-provider/v0.6.3";
+pub const SCHEMA_VERSION: &str = "lekalo/workflow-provider/v0.6.4";
 
 /// The discovery command that emits the manifest. It works outside a
 /// project, reads nothing, launches nothing, and writes nothing.
@@ -47,7 +47,7 @@ pub const RECOMMENDED_BUDGET_TOKENS: u64 = 5_000;
 /// The exact number of advertised workflow operations. The closed
 /// vocabulary fails closed: discovery supports no `init`, `install`,
 /// `update`, `sync`, or cleanup operation.
-pub const OPERATION_COUNT: usize = 10;
+pub const OPERATION_COUNT: usize = 11;
 
 /// The exact product version this contract was implemented at (issue
 /// #34). Deliberately a frozen literal, not `CARGO_PKG_VERSION`: an
@@ -55,13 +55,13 @@ pub const OPERATION_COUNT: usize = 10;
 /// (`docs/versioning.md`), so this value names the contract's product
 /// generation and may trail a later binary's `--version`. Consumers
 /// negotiate on `identity`/`schemaVersion`, never on this field.
-pub const PRODUCT_VERSION: &str = "0.6.3";
+pub const PRODUCT_VERSION: &str = "0.6.4";
 
 /// The published closed output contract of `lekalo validate` success
 /// receipts. The payload carries no embedded `schemaVersion` member;
 /// this identity names the governing describing schema
-/// (`contracts/validation-report.schema.v0.6.3.json`).
-pub const VALIDATION_REPORT_SCHEMA: &str = "lekalo/validation-report/v0.6.3";
+/// (`contracts/validation-report.schema.v0.6.4.json`).
+pub const VALIDATION_REPORT_SCHEMA: &str = "lekalo/validation-report/v0.6.4";
 
 /// The published closed output contract of `lekalo generate --check`
 /// receipts. The payload carries no embedded `schemaVersion` member;
@@ -77,8 +77,8 @@ mod tests {
     fn identity_is_family_and_version() {
         assert_eq!(IDENTITY, format!("{FAMILY}@{VERSION}"));
         assert_eq!(FAMILY, "dev.lekalo.workflow-provider");
-        assert_eq!(VERSION, "0.6.3");
-        assert_eq!(SCHEMA_VERSION, "lekalo/workflow-provider/v0.6.3");
+        assert_eq!(VERSION, "0.6.4");
+        assert_eq!(SCHEMA_VERSION, "lekalo/workflow-provider/v0.6.4");
     }
 
     #[test]
@@ -90,19 +90,25 @@ mod tests {
     fn digest_and_bounds_match_the_published_contract() {
         assert_eq!(DIGEST_ALGORITHM, "sha256");
         assert_eq!(RECOMMENDED_BUDGET_TOKENS, 5_000);
-        assert_eq!(OPERATION_COUNT, 10);
-        // The workflow recommendation stays inside the core hard bound.
-        const { assert!(RECOMMENDED_BUDGET_TOKENS <= crate::context::version::MAX_BUDGET_TOKENS) }
+        assert_eq!(OPERATION_COUNT, 11);
+        // Check the actual discovery wire value against the core hard bound.
+        let manifest = serde_json::to_value(crate::provider::ProviderManifest::describe())
+            .expect("manifest serializes");
+        let recommended = manifest["bounds"]["recommendedContextBudgetTokens"]
+            .as_u64()
+            .expect("numeric recommendation");
+        assert_eq!(recommended, RECOMMENDED_BUDGET_TOKENS);
+        assert!(recommended <= crate::context::version::MAX_BUDGET_TOKENS);
     }
 
     #[test]
     fn product_version_matches_the_workspace_release() {
-        assert_eq!(PRODUCT_VERSION, "0.6.3");
+        assert_eq!(PRODUCT_VERSION, "0.6.4");
     }
 
     #[test]
     fn receipt_output_identities_are_the_published_describing_schemas() {
-        assert_eq!(VALIDATION_REPORT_SCHEMA, "lekalo/validation-report/v0.6.3");
+        assert_eq!(VALIDATION_REPORT_SCHEMA, "lekalo/validation-report/v0.6.4");
         assert_eq!(GENERATE_CHECK_SCHEMA, "lekalo/generate-check/v0.6.3");
     }
 }

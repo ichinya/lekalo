@@ -52,7 +52,7 @@ const reportSchema = read("contracts/context-budget-report.schema.v0.6.3.json");
 const profileSchema = read("contracts/context-budget-profile.schema.v0.6.3.json");
 const policySchema = read("contracts/context-budget-policy.schema.v0.6.3.json");
 const comparisonSchema = read("contracts/context-budget-comparison.schema.v0.6.3.json");
-const registry = read("contracts/diagnostic-registry.v0.6.3.json");
+const registry = read("contracts/diagnostic-registry.v0.6.4.json");
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const validateReport = ajv.compile(reportSchema);
 const validateProfile = ajv.compile(profileSchema);
@@ -103,13 +103,13 @@ if (policyEntry.allowed_statuses.includes("valid")) {
 //    identity constants agree with the published contract.
 const registrySource = readFileSync(
   resolve(root, "crates/lekalo-core/src/diagnostics/registry.rs"), "utf8");
-if (!registrySource.includes("diagnostic-registry.v0.6.3.json")) {
-  fail("rust-embeds-predecessor", "diagnostic-registry.v0.6.3.json");
+if (!registrySource.includes("diagnostic-registry.v0.6.4.json")) {
+  fail("rust-embeds-predecessor", "diagnostic-registry.v0.6.4.json");
 }
 const versionSource = readFileSync(
   resolve(root, "crates/lekalo-core/src/diagnostics/version.rs"), "utf8");
-if (!versionSource.includes('REGISTRY_VERSION: &str = "0.6.3"')) {
-  fail("rust-registry-version", "0.6.3");
+if (!versionSource.includes('REGISTRY_VERSION: &str = "0.6.4"')) {
+  fail("rust-registry-version", "0.6.4");
 }
 const budgetVersionSource = readFileSync(
   resolve(root, "crates/lekalo-core/src/context_budget/version.rs"), "utf8");

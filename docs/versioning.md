@@ -1,6 +1,6 @@
 # Версии контрактов и миграции
 
-Текущая версия продукта — `0.6.3`, заданная в
+Текущая версия продукта — `0.6.4`, заданная в
 `workspace.package.version` в `Cargo.toml`. Контракты сохраняют собственные
 принятые версии: выпуск продукта не меняет байты и версии неизменённых
 контрактов. Старые схемы, переходы между ними и история миграций storage
@@ -15,7 +15,7 @@ discriminator wire-формата, встроенные константы и с
 Issue #34 adds the workflow-provider discovery family
 (`dev.lekalo.workflow-provider`): the AIFHub-consumable
 `lekalo provider describe` handshake emitted as
-`lekalo/workflow-provider/v0.6.3`. Like doctor, it is an independent
+`lekalo/workflow-provider/v0.6.4`. Like doctor, it is an independent
 family — separate from the `lekalo.target/v1` adapter protocol, from
 every Model/IR/graph/effect/lock contract, and from the diagnostic
 registry — but unlike the per-command contracts it takes the product

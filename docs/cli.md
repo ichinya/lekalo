@@ -471,8 +471,8 @@ operation. Exit 0 on stdout in both projections; an unknown
 
 ```sh
 lekalo provider describe
-# provider dev.lekalo.workflow-provider@0.6.3 product 0.6.3 operations \
-#   context,doctor,drift,generate,impact,readiness,status,trace.export,validate,verify
+# provider dev.lekalo.workflow-provider@0.6.4 product 0.6.4 operations \
+#   context,doctor,drift,generate,impact,readiness,status,trace.assess,trace.export,validate,verify
 ```
 
 The JSON receipt is `{"status":"valid","manifest":{...}}` with the
@@ -481,7 +481,7 @@ schema identities, prerequisites), the workflow bounds, and the
 sha256 manifest digest over the canonical JSON without the digest
 field. The normative contract is
 [docs/provider-contract.md](provider-contract.md); the closed schema
-is `contracts/provider-capabilities.schema.v0.6.3.json`.
+is `contracts/provider-capabilities.schema.v0.6.4.json`.
 
 ## Graph
 
@@ -658,6 +658,22 @@ lekalo trace query tests/fixtures/trace/partial.trace.json gaps
 contract, guarantees, and limits are documented in
 [docs/trace-manifest.md](trace-manifest.md) and
 [ADR-0014](adr/0014-trace-manifest.md).
+
+Issue #35 adds the explicit read-only assessment of a neutral mapping and
+revision-bound provider/native receipts:
+
+```sh
+lekalo trace assess trace.json --evidence evidence.json --json
+```
+
+The caller selects scope and supplies current Git/model/worktree pins and
+negotiated provider pins. Ready/degraded assessments exit 0 on stdout;
+required failures exit 3 with the complete report under `payload.assessment`.
+Invalid evidence exits 1 on stderr. Original HLV codes remain in the evidence;
+registered `LEK-TRACE-*` diagnostics report mapping, custody and policy findings.
+The command launches nothing and writes nothing. See
+[trace-assessment.md](trace-assessment.md), including the external adapter's
+HLV invocation and verify/done aggregation obligations.
 
 ## Inspect
 

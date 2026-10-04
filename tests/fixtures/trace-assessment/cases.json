@@ -1,0 +1,322 @@
+[
+  {
+    "id": "ready",
+    "expect": {
+      "status": "valid",
+      "verdict": "ready",
+      "coverage": "complete",
+      "execution": "passed"
+    }
+  },
+  {
+    "id": "optional-unavailable",
+    "expect": {
+      "status": "valid",
+      "verdict": "degraded",
+      "coverage": "complete",
+      "execution": "passed"
+    }
+  },
+  {
+    "id": "hlv-fail",
+    "expect": {
+      "status": "denied",
+      "verdict": "blocked",
+      "coverage": "complete",
+      "execution": "passed"
+    }
+  },
+  {
+    "id": "hlv-warn",
+    "expect": {
+      "status": "denied",
+      "verdict": "blocked",
+      "coverage": "complete",
+      "execution": "passed"
+    }
+  },
+  {
+    "id": "hlv-unavailable",
+    "expect": {
+      "status": "denied",
+      "verdict": "blocked",
+      "coverage": "complete",
+      "execution": "passed"
+    }
+  },
+  {
+    "id": "hlv-unsupported",
+    "expect": {
+      "status": "denied",
+      "verdict": "blocked",
+      "coverage": "complete",
+      "execution": "passed"
+    }
+  },
+  {
+    "id": "hlv-infrastructure",
+    "expect": {
+      "status": "denied",
+      "verdict": "blocked",
+      "coverage": "complete",
+      "execution": "passed"
+    }
+  },
+  {
+    "id": "hlv-configuration",
+    "expect": {
+      "status": "denied",
+      "verdict": "blocked",
+      "coverage": "complete",
+      "execution": "passed"
+    }
+  },
+  {
+    "id": "missing-mapping",
+    "expect": {
+      "status": "denied",
+      "verdict": "blocked",
+      "coverage": "partial",
+      "execution": "unverified"
+    }
+  },
+  {
+    "id": "dangling-mapping",
+    "expect": {
+      "status": "denied",
+      "verdict": "blocked",
+      "coverage": "conflicting",
+      "execution": "unverified"
+    }
+  },
+  {
+    "id": "duplicate-mapping",
+    "expect": {
+      "status": "denied",
+      "verdict": "blocked",
+      "coverage": "conflicting"
+    }
+  },
+  {
+    "id": "uncovered-scenario",
+    "expect": {
+      "status": "denied",
+      "verdict": "blocked",
+      "coverage": "partial"
+    }
+  },
+  {
+    "id": "stale-git",
+    "expect": {
+      "status": "denied",
+      "verdict": "blocked",
+      "coverage": "partial",
+      "execution": "unverified"
+    }
+  },
+  {
+    "id": "stale-model",
+    "expect": {
+      "status": "denied",
+      "verdict": "blocked",
+      "coverage": "partial",
+      "execution": "unverified"
+    }
+  },
+  {
+    "id": "stale-receipt",
+    "expect": {
+      "status": "denied",
+      "verdict": "blocked",
+      "coverage": "partial"
+    }
+  },
+  {
+    "id": "stale-worktree",
+    "expect": {
+      "status": "denied",
+      "verdict": "blocked",
+      "coverage": "partial",
+      "execution": "unverified"
+    }
+  },
+  {
+    "id": "unsupported-protocol",
+    "expect": {
+      "status": "denied",
+      "verdict": "blocked",
+      "coverage": "complete"
+    }
+  },
+  {
+    "id": "unqualified-tool",
+    "expect": {
+      "status": "denied",
+      "verdict": "blocked",
+      "coverage": "complete"
+    }
+  },
+  {
+    "id": "execution-fail",
+    "expect": {
+      "status": "denied",
+      "verdict": "blocked",
+      "coverage": "complete",
+      "execution": "failed"
+    }
+  },
+  {
+    "id": "execution-digest",
+    "expect": {
+      "status": "denied",
+      "verdict": "blocked",
+      "coverage": "complete",
+      "execution": "unverified"
+    }
+  },
+  {
+    "id": "execution-not-requested",
+    "expect": {
+      "status": "valid",
+      "verdict": "ready",
+      "coverage": "complete",
+      "execution": "not-requested"
+    }
+  },
+  {
+    "id": "unreferenced-failure",
+    "expect": {
+      "status": "denied",
+      "verdict": "blocked",
+      "coverage": "conflicting"
+    }
+  },
+  {
+    "id": "missing-provider",
+    "expect": {
+      "status": "denied",
+      "verdict": "blocked",
+      "coverage": "complete"
+    }
+  },
+  {
+    "id": "missing-pin",
+    "expect": {
+      "status": "denied",
+      "verdict": "blocked",
+      "coverage": "complete"
+    }
+  },
+  {
+    "id": "without-hlv",
+    "expect": {
+      "status": "valid",
+      "verdict": "ready",
+      "coverage": "complete",
+      "execution": "passed"
+    }
+  },
+  {
+    "id": "missing-binding",
+    "expect": {
+      "status": "denied",
+      "verdict": "blocked",
+      "coverage": "partial",
+      "execution": "unverified"
+    }
+  },
+  {
+    "id": "unrelated-execution",
+    "expect": {
+      "status": "denied",
+      "verdict": "blocked",
+      "coverage": "conflicting",
+      "execution": "unverified"
+    }
+  },
+  {
+    "id": "duplicate-provider",
+    "expect": {
+      "status": "denied",
+      "verdict": "blocked",
+      "coverage": "conflicting",
+      "execution": "passed"
+    }
+  },
+  {
+    "id": "unknown-member",
+    "expect": {
+      "status": "invalid",
+      "rule": "trace.bridge-input-invalid"
+    }
+  },
+  {
+    "id": "contradictory-pass",
+    "expect": {
+      "status": "invalid",
+      "rule": "trace.bridge-input-invalid"
+    }
+  },
+  {
+    "id": "null-test",
+    "expect": {
+      "status": "invalid",
+      "rule": "trace.bridge-input-invalid"
+    }
+  },
+  {
+    "id": "duplicate-identity",
+    "expect": {
+      "status": "invalid",
+      "rule": "trace.bridge-input-invalid"
+    }
+  },
+  {
+    "id": "overlong-code",
+    "expect": {
+      "status": "invalid",
+      "rule": "trace.bridge-input-invalid"
+    }
+  },
+  {
+    "id": "mapping-digest",
+    "expect": {
+      "status": "invalid",
+      "rule": "trace.bridge-input-invalid"
+    }
+  },
+  {
+    "id": "duplicate-key",
+    "expect": {
+      "status": "invalid",
+      "rule": "trace.bridge-input-invalid"
+    }
+  },
+  {
+    "id": "escaped-duplicate",
+    "expect": {
+      "status": "invalid",
+      "rule": "trace.bridge-input-invalid"
+    }
+  },
+  {
+    "id": "missing-hlv-test-id",
+    "trace": "missing-hlv-test-id.trace.json",
+    "expect": {
+      "status": "denied",
+      "verdict": "blocked",
+      "coverage": "partial",
+      "execution": "unverified"
+    }
+  },
+  {
+    "id": "stale-hlv-gate-id",
+    "trace": "stale-hlv-gate-id.trace.json",
+    "expect": {
+      "status": "denied",
+      "verdict": "blocked",
+      "coverage": "partial",
+      "execution": "unverified"
+    }
+  }
+]

@@ -78,7 +78,7 @@ pub struct ProviderManifest {
     schemaVersion: &'static str,
     /// The exact contract identity.
     identity: &'static str,
-    /// The exact producing contract's product generation (`0.6.3`, the
+    /// The exact producing contract's product generation (`0.6.4`, the
     /// implementation commit's product version; may trail a later
     /// binary's `--version`).
     productVersion: &'static str,
@@ -181,8 +181,16 @@ impl ProviderManifest {
                 identity: Some(crate::orchestration::IDENTITY),
             },
             ContractPin {
+                schemaVersion: crate::trace::assessment::REPORT_SCHEMA,
+                identity: Some(crate::trace::assessment::REPORT_IDENTITY),
+            },
+            ContractPin {
                 schemaVersion: crate::trace::version::SCHEMA_VERSION,
                 identity: Some(crate::trace::version::IDENTITY),
+            },
+            ContractPin {
+                schemaVersion: crate::trace::assessment::EVIDENCE_SCHEMA,
+                identity: Some(crate::trace::assessment::EVIDENCE_IDENTITY),
             },
             ContractPin {
                 schemaVersion: crate::validator::profile::PROFILE_SCHEMA_VERSION,
@@ -360,7 +368,7 @@ mod tests {
     }
 
     #[test]
-    fn pins_cover_exactly_the_nine_output_families() {
+    fn pins_cover_the_ten_output_families_and_evidence_input() {
         let manifest = ProviderManifest::describe();
         let schemas: Vec<_> = manifest
             .schemaPins
@@ -376,9 +384,11 @@ mod tests {
                 "lekalo/generate-check/v0.6.3",
                 "lekalo/impact/v0.2.16",
                 "lekalo/orchestration/v0.2.16",
+                "lekalo/trace-assessment/v0.6.4",
                 "lekalo/trace-manifest/v0.2.16",
-                "lekalo/validation-profile/v0.6.3",
-                "lekalo/validation-report/v0.6.3",
+                "lekalo/trace-validation-evidence/v0.6.4",
+                "lekalo/validation-profile/v0.6.4",
+                "lekalo/validation-report/v0.6.4",
             ]
         );
     }

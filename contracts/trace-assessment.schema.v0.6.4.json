@@ -1,0 +1,1041 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/trace-assessment.schema.v0.6.4.json",
+  "title": "Neutral trace assessment receipt",
+  "description": "Read-only trace.assess valid/denied receipt. Ready is scoped structural coverage plus requested qualified execution; blocked retains every independent supplied receipt. Original codes are separate from registered Lekalo summaries. Current pins are supplied by the external owner, not read from live Git by this service.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/valid"
+    },
+    {
+      "$ref": "#/$defs/denied"
+    }
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.:-]*$",
+      "maxLength": 192
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "revision": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+    },
+    "occurrence": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*$",
+      "maxLength": 64
+    },
+    "provider": {
+      "enum": [
+        "openspec",
+        "hlv",
+        "source-native",
+        "aifhub",
+        "lekalo"
+      ]
+    },
+    "pin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "digest"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*(?:\\.[a-z0-9][a-z0-9-]*)+(?:/[a-z0-9][a-z0-9-]*(?:\\.[a-z0-9][a-z0-9-]*)*)*$",
+          "maxLength": 128
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "maxLength": 32
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "digest"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "0.2.16"
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "originalDiagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "severity",
+        "subject"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.:-]*$",
+          "maxLength": 128
+        },
+        "severity": {
+          "enum": [
+            "error",
+            "warning",
+            "info"
+          ]
+        },
+        "subject": {
+          "$ref": "#/$defs/id"
+        }
+      }
+    },
+    "providerPin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "tool",
+        "protocol"
+      ],
+      "properties": {
+        "provider": {
+          "$ref": "#/$defs/provider"
+        },
+        "tool": {
+          "$ref": "#/$defs/pin"
+        },
+        "protocol": {
+          "$ref": "#/$defs/pin"
+        }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requirements",
+        "artifacts",
+        "scenarios"
+      ],
+      "properties": {
+        "requirements": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "maxItems": 10000,
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "maxItems": 10000,
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "scenarios": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "maxItems": 10000,
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      }
+    },
+    "chain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "occurrence",
+        "requirement",
+        "symbol",
+        "artifact",
+        "scenario",
+        "relationRefs",
+        "evidenceRefs"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "occurrence": {
+          "$ref": "#/$defs/occurrence"
+        },
+        "requirement": {
+          "$ref": "#/$defs/id"
+        },
+        "symbol": {
+          "$ref": "#/$defs/id"
+        },
+        "artifact": {
+          "$ref": "#/$defs/id"
+        },
+        "scenario": {
+          "$ref": "#/$defs/id"
+        },
+        "test": {
+          "$ref": "#/$defs/id"
+        },
+        "gate": {
+          "$ref": "#/$defs/id"
+        },
+        "relationRefs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/digest"
+          },
+          "maxItems": 5,
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "maxItems": 16,
+          "minItems": 0,
+          "uniqueItems": true
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "provider",
+        "kind",
+        "outcome",
+        "protocol",
+        "sourceRevision",
+        "modelRef",
+        "workingSetDigest",
+        "resultDigest",
+        "diagnostics"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "provider": {
+          "$ref": "#/$defs/provider"
+        },
+        "kind": {
+          "enum": [
+            "check",
+            "execution"
+          ]
+        },
+        "outcome": {
+          "enum": [
+            "pass",
+            "warn",
+            "fail",
+            "unavailable",
+            "unsupported",
+            "infrastructure",
+            "configuration"
+          ]
+        },
+        "tool": {
+          "$ref": "#/$defs/pin"
+        },
+        "protocol": {
+          "$ref": "#/$defs/pin"
+        },
+        "sourceRevision": {
+          "$ref": "#/$defs/revision"
+        },
+        "modelRef": {
+          "$ref": "#/$defs/model"
+        },
+        "workingSetDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "resultDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "gate": {
+          "$ref": "#/$defs/id"
+        },
+        "test": {
+          "$ref": "#/$defs/id"
+        },
+        "artifact": {
+          "$ref": "#/$defs/id"
+        },
+        "artifactDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/originalDiagnostic"
+          },
+          "maxItems": 128,
+          "minItems": 0
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "execution"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "gate",
+              "test",
+              "artifact",
+              "artifactDigest"
+            ],
+            "properties": {
+              "gate": {},
+              "test": {},
+              "artifact": {},
+              "artifactDigest": {}
+            }
+          },
+          "else": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "gate"
+                  ],
+                  "properties": {
+                    "gate": {}
+                  }
+                },
+                {
+                  "required": [
+                    "test"
+                  ],
+                  "properties": {
+                    "test": {}
+                  }
+                },
+                {
+                  "required": [
+                    "artifact"
+                  ],
+                  "properties": {
+                    "artifact": {}
+                  }
+                },
+                {
+                  "required": [
+                    "artifactDigest"
+                  ],
+                  "properties": {
+                    "artifactDigest": {}
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "outcome": {
+                "enum": [
+                  "pass",
+                  "warn",
+                  "fail"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "tool"
+            ],
+            "properties": {
+              "tool": {}
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "outcome": {
+                "const": "pass"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "diagnostics": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "severity": {
+                      "const": "info"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "outcome": {
+                "const": "warn"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "diagnostics": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "severity": {
+                      "enum": [
+                        "warning",
+                        "info"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "coverage": {
+      "enum": [
+        "complete",
+        "partial",
+        "conflicting"
+      ]
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rule",
+        "subject",
+        "detail"
+      ],
+      "properties": {
+        "rule": {
+          "enum": [
+            "trace.bridge-mapping-missing",
+            "trace.bridge-reference-unresolved",
+            "trace.bridge-conflict",
+            "trace.bridge-evidence-stale",
+            "trace.bridge-provider-unsupported",
+            "trace.bridge-execution-unverified",
+            "trace.bridge-chain-uncovered"
+          ]
+        },
+        "subject": {
+          "$ref": "#/$defs/id"
+        },
+        "detail": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]*$",
+          "maxLength": 64
+        }
+      }
+    },
+    "diagnostic": {
+      "allOf": [
+        {
+          "$ref": "https://dev.lekalo/diagnostic.schema.v0.2.16.json"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "registry_version": {
+              "const": "0.6.4"
+            },
+            "id": {
+              "enum": [
+                "trace.bridge-mapping-missing",
+                "trace.bridge-reference-unresolved",
+                "trace.bridge-conflict",
+                "trace.bridge-evidence-stale",
+                "trace.bridge-provider-unsupported",
+                "trace.bridge-execution-unverified",
+                "trace.bridge-chain-uncovered",
+                "trace.bridge-policy-denied"
+              ]
+            }
+          }
+        },
+        {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "const": "trace.bridge-chain-uncovered"
+                },
+                "code": {
+                  "const": "LEK-TRACE-007"
+                },
+                "severity": {
+                  "const": "warning"
+                },
+                "category": {
+                  "const": "semantic"
+                },
+                "message_id": {
+                  "const": "trace.bridge-chain-uncovered"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "const": "trace.bridge-conflict"
+                },
+                "code": {
+                  "const": "LEK-TRACE-003"
+                },
+                "severity": {
+                  "const": "warning"
+                },
+                "category": {
+                  "const": "semantic"
+                },
+                "message_id": {
+                  "const": "trace.bridge-conflict"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "const": "trace.bridge-evidence-stale"
+                },
+                "code": {
+                  "const": "LEK-TRACE-004"
+                },
+                "severity": {
+                  "const": "warning"
+                },
+                "category": {
+                  "const": "semantic"
+                },
+                "message_id": {
+                  "const": "trace.bridge-evidence-stale"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "const": "trace.bridge-execution-unverified"
+                },
+                "code": {
+                  "const": "LEK-TRACE-006"
+                },
+                "severity": {
+                  "const": "warning"
+                },
+                "category": {
+                  "const": "semantic"
+                },
+                "message_id": {
+                  "const": "trace.bridge-execution-unverified"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "const": "trace.bridge-mapping-missing"
+                },
+                "code": {
+                  "const": "LEK-TRACE-001"
+                },
+                "severity": {
+                  "const": "warning"
+                },
+                "category": {
+                  "const": "semantic"
+                },
+                "message_id": {
+                  "const": "trace.bridge-mapping-missing"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "const": "trace.bridge-policy-denied"
+                },
+                "code": {
+                  "const": "LEK-TRACE-009"
+                },
+                "severity": {
+                  "const": "error"
+                },
+                "category": {
+                  "const": "semantic"
+                },
+                "message_id": {
+                  "const": "trace.bridge-policy-denied"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "const": "trace.bridge-provider-unsupported"
+                },
+                "code": {
+                  "const": "LEK-TRACE-005"
+                },
+                "severity": {
+                  "const": "warning"
+                },
+                "category": {
+                  "const": "adapter"
+                },
+                "message_id": {
+                  "const": "trace.bridge-provider-unsupported"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "const": "trace.bridge-reference-unresolved"
+                },
+                "code": {
+                  "const": "LEK-TRACE-002"
+                },
+                "severity": {
+                  "const": "warning"
+                },
+                "category": {
+                  "const": "semantic"
+                },
+                "message_id": {
+                  "const": "trace.bridge-reference-unresolved"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "chainReport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "chain",
+        "coverage",
+        "execution"
+      ],
+      "properties": {
+        "chain": {
+          "$ref": "#/$defs/chain"
+        },
+        "coverage": {
+          "$ref": "#/$defs/coverage"
+        },
+        "execution": {
+          "enum": [
+            "passed",
+            "failed",
+            "unverified",
+            "not-requested"
+          ]
+        }
+      }
+    },
+    "assessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "identity",
+        "projectRef",
+        "sourceRevision",
+        "modelRef",
+        "workingSetDigest",
+        "traceDigest",
+        "mappingDigest",
+        "policy",
+        "requiredProviders",
+        "providerPins",
+        "requireExecution",
+        "scope",
+        "evidenceDigest",
+        "expectedTraceDigest",
+        "coverage",
+        "verdict",
+        "chains",
+        "evidence",
+        "findings",
+        "diagnostics"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "lekalo/trace-assessment/v0.6.4"
+        },
+        "identity": {
+          "const": "dev.lekalo.trace-assessment@0.6.4"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/id"
+        },
+        "sourceRevision": {
+          "$ref": "#/$defs/revision"
+        },
+        "modelRef": {
+          "$ref": "#/$defs/model"
+        },
+        "workingSetDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "traceDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "mappingDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "policy": {
+          "enum": [
+            "optional",
+            "required"
+          ]
+        },
+        "requiredProviders": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/provider"
+          },
+          "maxItems": 5,
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "providerPins": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/providerPin"
+          },
+          "maxItems": 5,
+          "minItems": 0
+        },
+        "requireExecution": {
+          "type": "boolean"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        },
+        "evidenceDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "expectedTraceDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "coverage": {
+          "$ref": "#/$defs/coverage"
+        },
+        "verdict": {
+          "enum": [
+            "ready",
+            "degraded",
+            "blocked"
+          ]
+        },
+        "chains": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/chainReport"
+          },
+          "maxItems": 10000,
+          "minItems": 0
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence"
+          },
+          "maxItems": 2000,
+          "minItems": 0
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/finding"
+          },
+          "maxItems": 200000,
+          "minItems": 0
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          },
+          "maxItems": 8,
+          "minItems": 0
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "verdict": {
+                "const": "ready"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "coverage": {
+                "const": "complete"
+              },
+              "findings": {
+                "type": "array",
+                "maxItems": 0
+              },
+              "diagnostics": {
+                "type": "array",
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "verdict": {
+                "enum": [
+                  "degraded",
+                  "blocked"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "findings": {
+                "type": "array",
+                "minItems": 1
+              },
+              "diagnostics": {
+                "type": "array",
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "verdict": {
+                "const": "blocked"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "policy": {
+                "const": "required"
+              },
+              "diagnostics": {
+                "type": "array",
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "const": "trace.bridge-policy-denied"
+                    }
+                  },
+                  "required": [
+                    "id"
+                  ]
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "diagnostics": {
+                "type": "array",
+                "not": {
+                  "contains": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "const": "trace.bridge-policy-denied"
+                      }
+                    },
+                    "required": [
+                      "id"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "verdict": {
+                "const": "degraded"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "policy": {
+                "const": "optional"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "valid": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "assessment"
+      ],
+      "properties": {
+        "status": {
+          "const": "valid"
+        },
+        "assessment": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/assessment"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "verdict": {
+                  "enum": [
+                    "ready",
+                    "degraded"
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "assessment"
+      ],
+      "properties": {
+        "status": {
+          "const": "valid"
+        },
+        "assessment": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/assessment"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "verdict": {
+                  "const": "blocked"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "denied": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "payload",
+        "diagnostics",
+        "reasonCodes"
+      ],
+      "properties": {
+        "status": {
+          "const": "denied"
+        },
+        "payload": {
+          "$ref": "#/$defs/payload"
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          },
+          "maxItems": 8,
+          "minItems": 1
+        },
+        "reasonCodes": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "trace.bridge-mapping-missing",
+              "trace.bridge-reference-unresolved",
+              "trace.bridge-conflict",
+              "trace.bridge-evidence-stale",
+              "trace.bridge-provider-unsupported",
+              "trace.bridge-execution-unverified",
+              "trace.bridge-chain-uncovered",
+              "trace.bridge-policy-denied"
+            ]
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}

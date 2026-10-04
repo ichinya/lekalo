@@ -265,6 +265,11 @@
       "origin": "synthetic"
     },
     {
+      "family": "trace-assessment",
+      "origin": "synthetic",
+      "note": "Issue #35 neutral evidence/assessment vectors, original-code and custody negative controls; greenfield/adopt HLV-owned sentinels. Synthetic receipts, never live HLV execution."
+    },
+    {
       "family": "transaction-concurrency",
       "origin": "synthetic"
     },

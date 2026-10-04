@@ -23,6 +23,7 @@
 //! input insertion order. The manifest digest is `sha256:` over exactly
 //! those canonical bytes (no trailing LF).
 
+pub mod assessment;
 pub mod canonical;
 pub mod completeness;
 pub mod diagnostic;

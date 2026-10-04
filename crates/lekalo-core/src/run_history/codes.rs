@@ -1,6 +1,6 @@
 //! The stable history diagnostic ids (issue #121).
 //!
-//! Every id is registered in `contracts/diagnostic-registry.v0.6.3.json`
+//! Every id is registered in `contracts/diagnostic-registry.v0.6.4.json`
 //! before use; details are fixed tokens, never rejected values,
 //! absolute paths, secrets, timestamps, or raw SQLite/Git errors.
 

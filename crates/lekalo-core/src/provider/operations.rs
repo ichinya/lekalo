@@ -150,6 +150,13 @@ pub const OPERATIONS: [Operation; crate::provider::version::OPERATION_COUNT] = [
         requiresAdapter: false,
     },
     Operation {
+        id: "trace.assess",
+        effect: EffectClass::ReadOnly,
+        outputSchema: crate::trace::assessment::REPORT_SCHEMA,
+        requiresProject: false,
+        requiresAdapter: false,
+    },
+    Operation {
         id: "trace.export",
         effect: EffectClass::ReadOnly,
         outputSchema: crate::trace::version::SCHEMA_VERSION,
@@ -189,6 +196,7 @@ mod tests {
                 "impact",
                 "readiness",
                 "status",
+                "trace.assess",
                 "trace.export",
                 "validate",
                 "verify"

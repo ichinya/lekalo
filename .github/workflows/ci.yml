@@ -42,6 +42,8 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-scenario-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-effect-graph-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-trace-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-trace-evidence-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-trace-assessment-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-inspect-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-artifact-manifest-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-cache-contracts.mjs
@@ -196,6 +198,12 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install --yes bubblewrap
       - run: cargo build --workspace --locked
+      - name: Run neutral trace evidence and assessment contracts (issue #35)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+        run: |
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-trace-evidence-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-trace-assessment-contracts.mjs --require-binary
       - name: Run the CI report smoke and gate (issue #103)
         # Dogfood the closed report surface on every OS: validate over a
         # fixture with all four report formats, the blocked readiness

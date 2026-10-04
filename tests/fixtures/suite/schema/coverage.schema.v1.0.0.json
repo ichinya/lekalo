@@ -19,7 +19,7 @@
       "const": "dev.lekalo.fixture@1.0.0"
     },
     "registryIdentity": {
-      "const": "dev.lekalo.diagnostic-registry@0.6.3"
+      "const": "dev.lekalo.diagnostic-registry@0.6.4"
     },
     "registryDigest": {
       "type": "string",
