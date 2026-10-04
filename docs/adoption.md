@@ -19,12 +19,15 @@ Modes can coexist per symbol/artifact. They are not a Model `mode` property. Dis
 ```sh docs-example=contract-planner
 lekalo --json contract update --declaration declarations/initial.json
 node --test --test-reporter=tap test/native.test.mjs
+lekalo --no-cache --json contract check --module planner
 lekalo --json contract attach planner.focus_task --native-test tutorial.focus
 lekalo --json contract attach planner.list_tasks --native-test tutorial.list
 lekalo --no-cache --json contract check --module planner
 ```
 
-Expected: all commands exit **0/stdout**. Update records four bindings; two actual maintained-code tests pass; attach records their exact external IDs; check returns clean conformance. The tutorial variant omits the original corpus's deliberately unimplemented count query and absent support artifact rather than claiming they passed. The gate preserves maintained source, then mutates a copied bound source and requires fingerprint drift for `planner.focus_task`. Conformance verifies declared shape/effects, fingerprints and coverage presence; the two tests do not prove all domain effects, persistence or scenarios. Follow the greenfield tutorial for broader native runtime proof.
+Expected: update records four bindings and two actual maintained-code tests pass, both **0/stdout**. The first check exits **1/stderr**, `status: invalid`, with exactly two `contracted.coverage-missing` findings for `planner.focus_task` and `planner.list_tasks`: executing a test does not attach its ID. Continue with the two attach commands (**0/stdout**), which record their exact external IDs. The final check returns clean conformance (**0/stdout**). If running interactively with shell fail-fast enabled, treat the first check's expected exit 1 as a deliberate refusal and continue only after verifying those findings.
+
+The tutorial variant omits the original corpus's deliberately unimplemented count query and absent support artifact rather than claiming they passed. The gate preserves maintained source, then mutates a copied bound source and requires fingerprint drift for `planner.focus_task`. Conformance verifies declared shape/effects, fingerprints and coverage presence; the two tests do not prove all domain effects, persistence or scenarios. Follow the greenfield tutorial for broader native runtime proof.
 
 The observed-to-contracted transition is additive: record a scan; explicitly choose/confirm a use-case mapping; preview and confirm promotion into canonical Model; ingest a contracted declaration; attach native tests/gates. Keep the plan IDs and provenance. Inferred observations never become canonical automatically.
 

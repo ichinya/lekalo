@@ -30,7 +30,7 @@ Expected: exit **0**, JSON on stdout, empty stderr, IR `contract: dev.lekalo.ir@
 | A. New minimal project | [Project layout and init](docs/project-layout.md) | Empty directory -> project/module -> load and strict validate; creates Model, not an application runtime. |
 | B. Adopt an existing Node.js project | [Synthetic Hono + Drizzle + MySQL](docs/tutorial-brownfield-typescript.md) | Disposable adoption, bounded scan and binding; experimental wire path, actual MySQL persistence checked separately. |
 | C. Describe one contracted module | [Adoption and contract check](docs/adoption.md) | Maintained implementation + recorded contract declaration; no silent ownership promotion. |
-| D. Inspect / impact / context | [Architecture example](docs/architecture.md) | Three real CLI projections over the same synthetic contracted planner; bounded context can report gaps. |
+| D. Inspect / impact / context | [Architecture example](docs/architecture.md) | Three read-only projections over the original partial planner corpus; use a separate disposable copy from C. |
 | E. Generate / check / verify | [Greenfield Laravel + Vue planner](docs/tutorial-greenfield-planner.md) | Real adapter scenario exchange, Laravel HTTP/scenarios and checked client/maintained Vue screen; native production CLI execution stays planned. |
 | F. Export trace; use AIFHub Extension / HLV | [Integration handoffs](docs/integrations.md) | Validated synthetic trace and provider discovery; external tool installation and delivery are separate. |
 

@@ -4,9 +4,17 @@ Status: **Implemented** synthetic contracted planner slice; browser execution an
 
 The `greenfield-consumer` is fictional. Reuse the committed target-neutral planner Model and contracts, a generated/checked API client and a maintained Vue screen. No real application clone or private data is needed. Start with [minimal bootstrap](project-layout.md#minimal-project), then use the documented synthetic corpus for the complete planner slice; the empty initial Model is not silently presented as that larger fixture.
 
-## Describe and inspect the planner (C-D)
+## Contract the planner (C)
 
-Create a disposable copy of `tests/fixtures/contracted/planner-slice`; it contains the canonical definitions, owner declaration and maintained TypeScript control used by the core conformance example. Execute [contract one module](adoption.md#contract-one-module), then [projection example](architecture.md#projection-example). This proves target-neutral core semantics, not Laravel production behavior. Laravel/Eloquent/Vue concepts stay in target configuration/native artifacts.
+Working root: [tests/fixtures/docs/contracted-module](../tests/fixtures/docs/contracted-module). Copy this synthetic tutorial variant into a disposable directory named `contract-planner` and enter that copy's root, which contains `lekalo/project.yaml`, `declarations/initial.json` and `test/native.test.mjs`. With the built `lekalo` on PATH and Node 24, execute every command in [contract one module](adoption.md#contract-one-module) from that root: update the declaration, run the two maintained-code tests, check the missing coverage, attach their IDs, then check clean conformance. The first check deliberately exits **1/stderr** with two `contracted.coverage-missing` findings; running tests alone does not attach evidence. The final check exits **0/stdout**.
+
+The variant omits the original corpus's deliberately unimplemented count query and absent generated support artifact. Its conformance example proves declared shape/effects, exact fingerprints and attached coverage presence; it does not establish Laravel production behavior. Laravel/Eloquent/Vue concepts stay in target configuration/native artifacts.
+
+## Inspect the planner (D)
+
+Working root: [tests/fixtures/contracted/planner-slice](../tests/fixtures/contracted/planner-slice). Switch to a **second fresh disposable copy**, named `inspect-planner`, of this original projection corpus and enter its root containing `lekalo/project.yaml`. Execute the three commands in [projection example](architecture.md#projection-example) there. Keep the step C copy separate; do not overlay fixtures or transfer its contracted registry.
+
+The original contains the unimplemented `planner.count_focused` query, an absent declared support artifact and no `test/native.test.mjs`. Its projections deliberately expose partial evidence; it is not a clean conformance fixture. All three displayed projections exit **0/stdout**. The documentation gate checks these two linked working-root selections against the replay registry and executes C before D in their separate copies.
 
 ## Generate, check and verify (E)
 
