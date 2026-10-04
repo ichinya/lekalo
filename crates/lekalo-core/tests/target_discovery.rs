@@ -144,6 +144,8 @@ fn legacy_adapter_stays_on_the_frozen_base_contract() {
                 dry_run: None,
                 plan_id: None,
                 native_request: None,
+
+                lint_request: None,
             },
             &sandbox.dir,
             &lekalo_core::project_fs::Fs::open(&sandbox.dir).unwrap(),
@@ -177,6 +179,8 @@ fn incompatible_adapter_is_filtered_before_any_ir_is_transferred() {
                 dry_run: None,
                 plan_id: None,
                 native_request: None,
+
+                lint_request: None,
             },
             &sandbox.dir,
             &lekalo_core::project_fs::Fs::open(&sandbox.dir).unwrap(),
@@ -443,7 +447,7 @@ fn discovered_capabilities_resolve_into_the_lock_snapshot() {
 fn capability_definitions_are_versioned_and_closed() {
     assert_eq!(
         capability::REGISTRY_IDENTITY,
-        "dev.lekalo.target-capabilities@0.4.0"
+        "dev.lekalo.target-capabilities@0.6.4"
     );
     for id in [
         "scan.symbols",
@@ -517,6 +521,8 @@ fn resolved_profiles_reach_current_adapters() {
                 dry_run: None,
                 plan_id: None,
                 native_request: None,
+
+                lint_request: None,
             },
             &sandbox.dir,
             &fs,

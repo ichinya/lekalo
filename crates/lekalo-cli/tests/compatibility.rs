@@ -64,7 +64,7 @@ fn the_projection_reports_exactly_the_three_families_in_order() {
     let value: serde_json::Value =
         serde_json::from_str(stdout_text(&output).trim()).expect("envelope parses");
     assert_eq!(value["status"], "valid");
-    assert_eq!(value["registryVersion"], "0.2.16");
+    assert_eq!(value["registryVersion"], "0.6.4");
     let families = value["families"].as_array().expect("families array");
     assert_eq!(families.len(), 3);
     assert_eq!(families[0]["family"], "model");
@@ -76,6 +76,7 @@ fn the_projection_reports_exactly_the_three_families_in_order() {
     assert_eq!(families[1]["current"], "0.2.16");
     assert_eq!(families[2]["family"], "protocol");
     assert_eq!(families[2]["current"], "0.3.2");
-    assert_eq!(families[2]["versions"].as_array().map(Vec::len), Some(1));
+    assert_eq!(families[2]["versions"].as_array().map(Vec::len), Some(2));
     assert_eq!(families[2]["versions"][0]["version"], "0.3.2");
+    assert_eq!(families[2]["versions"][1]["version"], "0.6.4");
 }

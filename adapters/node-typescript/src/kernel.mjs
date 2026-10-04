@@ -51,6 +51,7 @@
  *   closed contract can represent, and refuses lossy projections.
  */
 
+import { collectAiLint, validateLintRequest } from './ai-lint.mjs';
 import { createHash } from "node:crypto";
 import {
   closeSync,
@@ -73,7 +74,7 @@ export const PROTOCOL_TOKEN = "lekalo.target/v1";
 /** The sole protocol version this kernel speaks (the current contract). */
 export const VERSION = "0.3.2";
 /** The closed supported-version set: exact membership, never ranges. */
-export const SUPPORTED_VERSIONS = Object.freeze([VERSION]);
+export const SUPPORTED_VERSIONS = Object.freeze([VERSION, "0.6.4"]);
 /** The adapter identity token. */
 export const ADAPTER_ID = "lekalo-target-node-typescript";
 /** The adapter release version (the reserved product version). */
@@ -128,6 +129,7 @@ const OPERATION_TOKENS = Object.freeze([
   "clean",
   "plan-clean",
   "plan-native",
+  "lint",
 ]);
 
 const SUPPORT_STATES = Object.freeze(["full", "partial", "unsupported", "unknown"]);
@@ -887,7 +889,7 @@ function validateNativeContentRef(reference) {
 const REQUEST_KEYS = Object.freeze([
   "protocol", "protocol_version", "operation", "request_id", "project_root",
   "ir_path", "target", "profile", "profile_digest", "profile_capabilities",
-  "dry_run", "limits", "plan_id", "native_request",
+  "dry_run", "limits", "plan_id", "native_request", "lint_request",
 ]);
 
 /** The closed native_request member keys (issue #48, protocol 0.3.2). */
@@ -983,7 +985,7 @@ export function validateRequestObject(document) {
     if (hasOwn(request, "dry_run") || hasOwn(request, "plan_id")) {
       throw new RequestRefusal("plan-id", "plan-native is read-only");
     }
-    if (request.protocol_version !== VERSION) {
+    if (!SUPPORTED_VERSIONS.includes(request.protocol_version)) {
       throw new RequestRefusal("member", "plan-native requires the current version");
     }
     validateNativeRequest(request.native_request);
@@ -1014,7 +1016,7 @@ export function validateRequestObject(document) {
     throw new RequestRefusal("profile-capabilities", "profile resolution members are paired");
   }
   if (resolution) {
-    if (request.protocol_version !== VERSION) {
+    if (!SUPPORTED_VERSIONS.includes(request.protocol_version)) {
       throw new RequestRefusal("member", "profile resolution requires the current version");
     }
     if (!hasOwn(request, "profile")) {
@@ -1025,6 +1027,7 @@ export function validateRequestObject(document) {
     }
     validateProfileCapabilities(request.profile_capabilities);
   }
+  validateLintRequest(request);
   return request;
 }
 
@@ -1291,6 +1294,7 @@ export function describeCapabilities(profile = null, extensions = []) {
     capabilities.ir_versions = [...irVersions].sort();
     capabilities.write_scopes = [...writeScopes].sort();
   }
+  if (vendoredTs()) { capabilities.operations = [...new Set([...capabilities.operations,"lint"])].sort(); capabilities.capabilities["lint.ai-readability"] = "partial"; capabilities.read_scopes = [...new Set([...capabilities.read_scopes,"src/**"])].sort(); }
   return capabilities;
 }
 
@@ -1938,8 +1942,14 @@ export function createKernel(options = {}) {
     dispatch(validatedRequest, trustedExecutionContext) {
       const operation = validatedRequest.operation;
       if (operation === "describe") {
+        const capabilities = this.describe();
+        if (validatedRequest.protocol_version === "0.3.2") {
+          capabilities.operations = capabilities.operations.filter(o => o !== "lint");
+          delete capabilities.capabilities["lint.ai-readability"];
+          if (capabilities.operations.every(operation => operation === "describe")) capabilities.read_scopes = [];
+        }
         return {
-          response: buildResponse(validatedRequest, { capabilities: this.describe() }),
+          response: buildResponse(validatedRequest, { capabilities }),
           internal: {
             state: "complete",
             evidence: {
@@ -1959,6 +1969,16 @@ export function createKernel(options = {}) {
             },
           },
         };
+      }
+      if (operation === "lint") {
+        validateLintRequest(validatedRequest);
+        if (!vendoredTs()) return { response: buildUnsupportedResponse(validatedRequest), internal: {state: "unsupported"} };
+        const lintProfile = { readRoots: validatedRequest.lint_request.files.map(path => ({path,kind:"file",scope:path})) };
+        const permittedRoot = trustedExecutionContext?.permittedProjectRoot;
+        const roots = resolveReadRoots(permittedRoot, lintProfile);
+        const readView = createReadView(permittedRoot, roots, lintProfile);
+        const evidence = collectAiLint(validatedRequest, vendoredTs(), readView, entryDigest(), ADAPTER_VERSION);
+        return { response: buildResponse(validatedRequest,{result:{lint_evidence:evidence}}), internal:{state:"partial"} };
       }
       const extension = [...extensions.values()].find((candidate) =>
         candidate.operations.includes(operation));

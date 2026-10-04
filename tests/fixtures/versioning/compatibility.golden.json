@@ -1,6 +1,6 @@
 {
   "status": "valid",
-  "registryVersion": "0.2.16",
+  "registryVersion": "0.6.4",
   "families": [
     {
       "family": "model",
@@ -34,13 +34,18 @@
       "family": "protocol",
       "current": "0.3.2",
       "min": "0.3.2",
-      "max": "0.3.2",
+      "max": "0.6.4",
       "aliases": [],
       "versions": [
         {
           "version": "0.3.2",
           "state": "supported",
           "classification": "breaking"
+        },
+        {
+          "version": "0.6.4",
+          "state": "supported",
+          "classification": "additive"
         }
       ]
     }

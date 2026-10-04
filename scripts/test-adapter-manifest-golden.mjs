@@ -25,10 +25,10 @@ const verifyAdapter = (directory, adapterId, entryName, irVersion) => {
   );
 
   // 1. Identity and compatibility pins.
-  if (manifest.schemaVersion !== "lekalo/adapter-manifest/v0.3.2") {
+  if (manifest.schemaVersion !== "lekalo/adapter-manifest/v0.6.4") {
     fail("schema-version", manifest.schemaVersion);
   }
-  if (manifest.identity !== "dev.lekalo.adapter-manifest@0.3.2") {
+  if (manifest.identity !== "dev.lekalo.adapter-manifest@0.6.4") {
     fail("identity", manifest.identity);
   }
   if (manifest.adapter.id !== adapterId) {
@@ -41,6 +41,7 @@ const verifyAdapter = (directory, adapterId, entryName, irVersion) => {
     fail("ir-compatibility", manifest.compatibility.irVersions.join(","));
   }
 
+  if (!manifest.compatibility.protocolVersions.includes("0.6.4") || !manifest.capabilities.operations.includes("lint")) fail("lint-compatibility", adapterId);
   // 2. The entry digest must match the committed artifact bytes exactly.
   const entry = manifest.integrity.files.find((file) => file.path === entryName);
   if (!entry) fail("entry-missing", `${entryName} is not in integrity.files`);

@@ -23,6 +23,7 @@ type StorageAttachment = lekalo_core::storage_projection::StorageProjectionAttac
 /// storage-profile` commands (issue #117).
 type ProfileAttachment = lekalo_core::storage_engine_profile::StorageEngineProfile;
 
+mod ai_lint;
 mod coupling;
 mod doctor_git;
 mod git_input;
@@ -159,6 +160,11 @@ struct ContextBudgetArgs {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    /// Optional evidence-bound AI readability analysis.
+    AiLint {
+        #[command(flatten)]
+        args: ai_lint::AiLintArgs,
+    },
     /// Validate the semantic layer of a Lekalo project over the typed IR.
     Validate {
         /// Project root selector, relative to the invocation directory.
@@ -2419,6 +2425,7 @@ fn runtime() -> u8 {
                 run_validate_reported(project, module, strict, cli.no_cache, &request)
             }
             Commands::Compatibility => run_compatibility(),
+            Commands::AiLint { args } => ai_lint::run(args),
             Commands::Provider { command } => run_provider(command),
             Commands::Inspect {
                 symbol,

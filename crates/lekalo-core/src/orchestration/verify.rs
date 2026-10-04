@@ -709,6 +709,8 @@ fn adapter_component(
             dry_run: None,
             plan_id: None,
             native_request: None,
+
+            lint_request: None,
         },
         prepared.root(),
         prepared.fs(),

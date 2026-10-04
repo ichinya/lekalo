@@ -248,9 +248,9 @@ for (const vector of vectors.vectors) {
 //    active, error-severity, and semantic-category; every one is
 //    preserved from the frozen 1.24.0 line plus exactly its own nine.
 // ---------------------------------------------------------------------------
-const registry = read("contracts/diagnostic-registry.v0.2.16.json");
+const registry = read("contracts/diagnostic-registry.v0.6.4.json");
 const predecessor = read("contracts/diagnostic-registry.v0.2.16.json");
-if (registry.registry_version !== "0.2.16") fail("registry-version", registry.registry_version);
+if (registry.registry_version !== "0.6.4") fail("registry-version", registry.registry_version);
 const expectedExpressionRules = [
   ["expression.input-invalid", "LEK-EXPR-001"],
   ["expression.contract-invalid", "LEK-EXPR-002"],

@@ -41,8 +41,11 @@ pub const REGISTRY_IDENTITY: &str = "dev.lekalo.diagnostic-registry@0.6.4";
 /// (the reserved `scenario.*` family LEK-SCN-001..011, additive at the
 /// same 0.4.0 product generation) -> 0.6.3 (issue #75, the active
 /// `context.*` family LEK-CONTEXT-001..008 of the context-budget
-/// report) -> 0.6.4 (issues #35 and #77, the `trace.bridge-*` family
-/// LEK-TRACE-001..009 and the independent `coupling.*` family
+/// report) -> 0.6.4 (issues #35, #76 and #77: the `trace.bridge-*`
+/// family LEK-TRACE-001..009, the `ai-lint.*` family
+/// LEK-AILINT-001..006, the `ambiguity.*` family LEK-AMBIGUITY-001..003,
+/// the `hidden.*` family LEK-HIDDEN-001..006/009, the `indirection.*`
+/// family LEK-INDIRECTION-001, and the `coupling.*` family
 /// LEK-COUPLING-001..015; the registry takes the product version of
 /// its commit per docs/versioning.md).
 pub const REGISTRY_VERSION: &str = "0.6.4";

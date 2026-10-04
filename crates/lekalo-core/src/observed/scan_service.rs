@@ -313,6 +313,8 @@ pub fn run(
             dry_run: None,
             plan_id: None,
             native_request: None,
+
+            lint_request: None,
         },
         &ctx.root,
         &fs,

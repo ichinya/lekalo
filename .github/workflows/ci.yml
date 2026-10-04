@@ -258,6 +258,16 @@ jobs:
             ${{ runner.temp }}/lekalo-ci-reports/readiness-envelope.txt
           if-no-files-found: error
           retention-days: 7
+      - name: Run AI lint contract families (issue #76)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-ai-lint-report-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-ai-lint-evidence-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-ai-lint-config-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-ai-lint-waivers-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-ai-lint-comparison-contracts.mjs
       - name: Run the context-budget contract gate (issue #75)
         # Needs the binary built above; the schema-only Ajv list in the
         # contracts job never builds one (R2-B1).

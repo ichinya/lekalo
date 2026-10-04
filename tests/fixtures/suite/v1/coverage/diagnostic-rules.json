@@ -2,7 +2,7 @@
   "coverageId": "dev.lekalo.fixture-coverage.diagnostic-rules",
   "fixtureSchema": "dev.lekalo.fixture@1.0.0",
   "registryIdentity": "dev.lekalo.diagnostic-registry@0.6.4",
-  "registryDigest": "sha256:b58378587b1ec91892ac92a04f68cefd7db6c0f8a0a6d1936d0dd4bd371ec26b",
+  "registryDigest": "sha256:5b6ff37667ef2f125c1a9657273117ff938598d4db39304259ed14e5d32d8704",
   "generatedBy": {
     "script": "scripts/gen-suite-coverage.mjs",
     "reviewed": true
@@ -245,6 +245,114 @@
         {
           "family": "adapter-manifest",
           "path": "tests/fixtures/adapter-manifest/invalid/traversal-adapter-id.json"
+        }
+      ]
+    },
+    {
+      "id": "ai-lint.baseline-incomparable",
+      "code": "LEK-AILINT-005",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "scripts/lib/ai-lint-contract-gate.mjs",
+          "note": "live admission and policy/refusal vectors in family gates"
+        }
+      ]
+    },
+    {
+      "id": "ai-lint.coverage-incomplete",
+      "code": "LEK-AILINT-003",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "scripts/lib/ai-lint-contract-gate.mjs",
+          "note": "live admission and policy/refusal vectors in family gates"
+        }
+      ]
+    },
+    {
+      "id": "ai-lint.input-invalid",
+      "code": "LEK-AILINT-001",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "scripts/lib/ai-lint-contract-gate.mjs",
+          "note": "live admission and policy/refusal vectors in family gates"
+        }
+      ]
+    },
+    {
+      "id": "ai-lint.policy-denied",
+      "code": "LEK-AILINT-006",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "scripts/lib/ai-lint-contract-gate.mjs",
+          "note": "live admission and policy/refusal vectors in family gates"
+        }
+      ]
+    },
+    {
+      "id": "ai-lint.version-unsupported",
+      "code": "LEK-AILINT-002",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "scripts/lib/ai-lint-contract-gate.mjs",
+          "note": "live admission and policy/refusal vectors in family gates"
+        }
+      ]
+    },
+    {
+      "id": "ai-lint.waiver-invalid",
+      "code": "LEK-AILINT-004",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "scripts/lib/ai-lint-contract-gate.mjs",
+          "note": "live admission and policy/refusal vectors in family gates"
+        }
+      ]
+    },
+    {
+      "id": "ambiguity.implicit-target-defaults",
+      "code": "LEK-AMBIGUITY-003",
+      "category": "compatibility",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "scripts/lib/ai-lint-contract-gate.mjs",
+          "note": "reportCases requires a freshly produced ambiguity.implicit-target-defaults finding and registered diagnostic"
+        }
+      ]
+    },
+    {
+      "id": "ambiguity.multiple-resolutions",
+      "code": "LEK-AMBIGUITY-001",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "scripts/lib/ai-lint-contract-gate.mjs",
+          "note": "reportCases requires a freshly produced ambiguity.multiple-resolutions finding and registered diagnostic"
+        }
+      ]
+    },
+    {
+      "id": "ambiguity.scattered-state-writes",
+      "code": "LEK-AMBIGUITY-002",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "scripts/lib/ai-lint-contract-gate.mjs",
+          "note": "reportCases requires a freshly produced ambiguity.scattered-state-writes finding and registered diagnostic"
         }
       ]
     },
@@ -1869,6 +1977,90 @@
       ]
     },
     {
+      "id": "hidden.convention-only-path",
+      "code": "LEK-HIDDEN-002",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "scripts/lib/ai-lint-contract-gate.mjs",
+          "note": "reportCases requires a freshly produced hidden.convention-only-path finding and registered diagnostic"
+        }
+      ]
+    },
+    {
+      "id": "hidden.dispatch-without-binding",
+      "code": "LEK-HIDDEN-001",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "scripts/lib/ai-lint-contract-gate.mjs",
+          "note": "reportCases requires a freshly produced hidden.dispatch-without-binding finding and registered diagnostic"
+        }
+      ]
+    },
+    {
+      "id": "hidden.observer-write",
+      "code": "LEK-HIDDEN-009",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "scripts/lib/ai-lint-contract-gate.mjs",
+          "note": "reportCases requires a freshly produced hidden.observer-write finding and registered diagnostic"
+        }
+      ]
+    },
+    {
+      "id": "hidden.path-without-trace-owner",
+      "code": "LEK-HIDDEN-003",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "scripts/lib/ai-lint-contract-gate.mjs",
+          "note": "reportCases requires a freshly produced hidden.path-without-trace-owner finding and registered diagnostic"
+        }
+      ]
+    },
+    {
+      "id": "hidden.reflective-call",
+      "code": "LEK-HIDDEN-004",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "scripts/lib/ai-lint-contract-gate.mjs",
+          "note": "reportCases requires a freshly produced hidden.reflective-call finding and registered diagnostic"
+        }
+      ]
+    },
+    {
+      "id": "hidden.string-reference",
+      "code": "LEK-HIDDEN-005",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "scripts/lib/ai-lint-contract-gate.mjs",
+          "note": "reportCases requires a freshly produced hidden.string-reference finding and registered diagnostic"
+        }
+      ]
+    },
+    {
+      "id": "hidden.undeclared-effect",
+      "code": "LEK-HIDDEN-006",
+      "category": "adapter",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "scripts/lib/ai-lint-contract-gate.mjs",
+          "note": "reportCases requires a freshly produced hidden.undeclared-effect finding and registered diagnostic"
+        }
+      ]
+    },
+    {
       "id": "history.busy",
       "code": "LEK-HST-007",
       "category": "infrastructure",
@@ -2189,6 +2381,18 @@
         {
           "family": "implementation",
           "path": "tests/fixtures/implementation/semantic/target-missing.expect.json"
+        }
+      ]
+    },
+    {
+      "id": "indirection.depth-exceeded",
+      "code": "LEK-INDIRECTION-001",
+      "category": "semantic",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "scripts/lib/ai-lint-contract-gate.mjs",
+          "note": "reportCases requires a freshly produced indirection.depth-exceeded finding and registered diagnostic"
         }
       ]
     },

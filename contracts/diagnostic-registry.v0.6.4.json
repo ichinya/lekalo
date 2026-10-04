@@ -447,6 +447,227 @@
       "lifecycle": "active"
     },
     {
+      "id": "ai-lint.baseline-incomparable",
+      "code": "LEK-AILINT-005",
+      "category": "compatibility",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "ai-lint.baseline-incomparable",
+      "default_message": "The AI lint baseline has incompatible selection, recipes or coverage.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "ai-lint.coverage-incomplete",
+      "code": "LEK-AILINT-003",
+      "category": "semantic",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "ai-lint.coverage-incomplete",
+      "default_message": "AI lint coverage is incomplete; collect current evidence before claiming a clean result.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "ai-lint.input-invalid",
+      "code": "LEK-AILINT-001",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "ai-lint.input-invalid",
+      "default_message": "An AI lint input was refused.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "ai-lint.policy-denied",
+      "code": "LEK-AILINT-006",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "ai-lint.policy-denied",
+      "default_message": "The explicitly selected AI lint policy denies this report.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "ai-lint.version-unsupported",
+      "code": "LEK-AILINT-002",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unsupported-version"
+      ],
+      "message_id": "ai-lint.version-unsupported",
+      "default_message": "An AI lint contract or recipe version is unsupported.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "ai-lint.waiver-invalid",
+      "code": "LEK-AILINT-004",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "ai-lint.waiver-invalid",
+      "default_message": "An AI lint waiver is malformed or conflicts with its exact scope.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "ambiguity.implicit-target-defaults",
+      "code": "LEK-AMBIGUITY-003",
+      "category": "compatibility",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "ambiguity.implicit-target-defaults",
+      "default_message": "Comparable targets have different implicit defaults; declare a portable setting.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "claim",
+          "type": "token"
+        },
+        {
+          "name": "confidence",
+          "type": "token"
+        },
+        {
+          "name": "evidence",
+          "type": "token"
+        },
+        {
+          "name": "finding",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "ambiguity.multiple-resolutions",
+      "code": "LEK-AMBIGUITY-001",
+      "category": "semantic",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "ambiguity.multiple-resolutions",
+      "default_message": "Multiple current routes may resolve this subject; use a context-qualified binding.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "claim",
+          "type": "token"
+        },
+        {
+          "name": "confidence",
+          "type": "token"
+        },
+        {
+          "name": "evidence",
+          "type": "token"
+        },
+        {
+          "name": "finding",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "ambiguity.scattered-state-writes",
+      "code": "LEK-AMBIGUITY-002",
+      "category": "semantic",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "ambiguity.scattered-state-writes",
+      "default_message": "Independent commands may write this field without declared transitions; declare a transition owner.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "claim",
+          "type": "token"
+        },
+        {
+          "name": "confidence",
+          "type": "token"
+        },
+        {
+          "name": "evidence",
+          "type": "token"
+        },
+        {
+          "name": "finding",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "authorization.actor-invalid",
       "code": "LEK-AUTH-002",
       "category": "security",
@@ -3529,6 +3750,237 @@
       "lifecycle": "active"
     },
     {
+      "id": "hidden.convention-only-path",
+      "code": "LEK-HIDDEN-002",
+      "category": "adapter",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "hidden.convention-only-path",
+      "default_message": "A path may depend on convention without explicit configuration; declare the configuration.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "claim",
+          "type": "token"
+        },
+        {
+          "name": "confidence",
+          "type": "token"
+        },
+        {
+          "name": "evidence",
+          "type": "token"
+        },
+        {
+          "name": "finding",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "hidden.dispatch-without-binding",
+      "code": "LEK-HIDDEN-001",
+      "category": "adapter",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "hidden.dispatch-without-binding",
+      "default_message": "A dynamic dispatch may lack an explicit binding; use typed injection.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "claim",
+          "type": "token"
+        },
+        {
+          "name": "confidence",
+          "type": "token"
+        },
+        {
+          "name": "evidence",
+          "type": "token"
+        },
+        {
+          "name": "finding",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "hidden.observer-write",
+      "code": "LEK-HIDDEN-009",
+      "category": "adapter",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "hidden.observer-write",
+      "default_message": "An activated observer may write an undeclared resource; declare the write or call it explicitly.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "claim",
+          "type": "token"
+        },
+        {
+          "name": "confidence",
+          "type": "token"
+        },
+        {
+          "name": "evidence",
+          "type": "token"
+        },
+        {
+          "name": "finding",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "hidden.path-without-trace-owner",
+      "code": "LEK-HIDDEN-003",
+      "category": "semantic",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "hidden.path-without-trace-owner",
+      "default_message": "A current path lacks a traced semantic owner; declare its owner and trace.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "claim",
+          "type": "token"
+        },
+        {
+          "name": "confidence",
+          "type": "token"
+        },
+        {
+          "name": "evidence",
+          "type": "token"
+        },
+        {
+          "name": "finding",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "hidden.reflective-call",
+      "code": "LEK-HIDDEN-004",
+      "category": "adapter",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "hidden.reflective-call",
+      "default_message": "A reflective or computed call may hide dispatch; use a closed typed map.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "claim",
+          "type": "token"
+        },
+        {
+          "name": "confidence",
+          "type": "token"
+        },
+        {
+          "name": "evidence",
+          "type": "token"
+        },
+        {
+          "name": "finding",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "hidden.string-reference",
+      "code": "LEK-HIDDEN-005",
+      "category": "adapter",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "hidden.string-reference",
+      "default_message": "A behavior reference may depend on an unresolved string; use a checked reference map.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "claim",
+          "type": "token"
+        },
+        {
+          "name": "confidence",
+          "type": "token"
+        },
+        {
+          "name": "evidence",
+          "type": "token"
+        },
+        {
+          "name": "finding",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "hidden.undeclared-effect",
+      "code": "LEK-HIDDEN-006",
+      "category": "adapter",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "hidden.undeclared-effect",
+      "default_message": "An activated target path may have an undeclared effect; declare it explicitly.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "claim",
+          "type": "token"
+        },
+        {
+          "name": "confidence",
+          "type": "token"
+        },
+        {
+          "name": "evidence",
+          "type": "token"
+        },
+        {
+          "name": "finding",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "history.busy",
       "code": "LEK-HST-007",
       "category": "infrastructure",
@@ -4140,6 +4592,39 @@
         },
         {
           "name": "target",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "indirection.depth-exceeded",
+      "code": "LEK-INDIRECTION-001",
+      "category": "semantic",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "indirection.depth-exceeded",
+      "default_message": "A measured dependency path exceeds the configured depth; introduce a direct boundary.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "claim",
+          "type": "token"
+        },
+        {
+          "name": "confidence",
+          "type": "token"
+        },
+        {
+          "name": "evidence",
+          "type": "token"
+        },
+        {
+          "name": "finding",
           "type": "token"
         }
       ],

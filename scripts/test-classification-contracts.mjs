@@ -96,7 +96,7 @@ for (const [id, before] of predEntries) {
 }
 if (
   registry.entries.length !==
-  predEntries.size + 16 + 9 + 13 + 1 + 9 + 5 + 14 + 8 + 14 + 15 + 8 + 1 + 15 + 8 + 2 + 9 + 15
+  predEntries.size + 16 + 9 + 13 + 1 + 9 + 5 + 14 + 8 + 14 + 15 + 8 + 1 + 15 + 8 + 2 + 9 + 15 + 17
 ) {
   // Coupling adds exactly 15 entries (#77, LEK-COUPLING-001..015).
   // The increments over the v0.3.2 predecessor, one per family that
@@ -112,7 +112,10 @@ if (
   // slot stays unassigned by design; registry and codes.rs agree on
   // the same fifteen ids), the context-budget family +8 (#75,
   // LEK-CONTEXT-001..008), and the CI report family +2 (#103,
-  // LEK-CI-001..002), and neutral trace +9 (#35, LEK-TRACE-001..009).
+  // LEK-CI-001..002), neutral trace +9 (#35, LEK-TRACE-001..009), and
+  // the AI-lint stack +17 (#76: LEK-AILINT-001..006,
+  // LEK-AMBIGUITY-001..003, LEK-HIDDEN-001..006/009,
+  // LEK-INDIRECTION-001).
   fail("entry-count", registry.entries.length);
 }
 
