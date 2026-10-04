@@ -167,6 +167,8 @@ fn root_and_each_command_help_succeed_without_a_failure_envelope() {
         vec!["inspect", "--help"],
         vec!["impact", "--help"],
         vec!["context", "--help"],
+        vec!["coupling", "--help"],
+        vec!["context-budget", "--help"],
     ];
 
     for args in cases {
@@ -177,6 +179,37 @@ fn root_and_each_command_help_succeed_without_a_failure_envelope() {
         assert!(stdout.contains("Usage:"));
         assert!(!stdout.contains("\"status\""));
         assert!(!stdout.contains("cli.usage"));
+        let text = stdout.split_whitespace().collect::<Vec<_>>().join(" ");
+        match args.as_slice() {
+            ["--help"] | ["--json", "--help"] => {
+                for (command, description) in [
+                    ("coupling", "semantic coupling and change-radius"),
+                    (
+                        "context-budget",
+                        "context-budget and local-understandability",
+                    ),
+                ] {
+                    let row = stdout
+                        .lines()
+                        .find(|line| line.trim_start().starts_with(&format!("{command} ")))
+                        .expect("command listed in root help");
+                    assert!(row.contains(description), "{row}");
+                }
+            }
+            ["coupling", "--help"] => {
+                assert!(text.contains("semantic coupling and change-radius"));
+                assert!(text.contains("Advisory by default"));
+                assert!(!text.contains("--budget"));
+                assert!(!text.contains("over-budget"));
+            }
+            ["context-budget", "--help"] => {
+                assert!(text.contains("context-budget and local-understandability"));
+                assert!(text.contains("--budget"));
+                assert!(text.contains("No default budget exists"));
+                assert!(!text.contains("The context-budget flag family"));
+            }
+            _ => {}
+        }
     }
 }
 

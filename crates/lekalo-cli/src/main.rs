@@ -254,6 +254,16 @@ enum Commands {
         #[arg(long, value_name = "DIR")]
         project: Option<String>,
     },
+    /// Report semantic coupling and change-radius metrics with graph evidence
+    /// for one symbol, one module, the whole project, or typed changed inputs
+    /// (issue #77). Separate public contracts from internal impact and expose
+    /// cycles, shared state, and configurable threshold/baseline findings.
+    /// Advisory by default; an explicitly selected strict coupling profile may
+    /// deny. Use `--context-budget` to include the optional context plan.
+    Coupling {
+        #[command(flatten)]
+        args: coupling::CouplingArgs,
+    },
     /// Report the context-budget and local-understandability metrics of
     /// one symbol, one module, or the whole project (issue #75): the
     /// measured dependency closure before any budget selection, the
@@ -263,10 +273,6 @@ enum Commands {
     /// simulation. Advisory by default; a mandatory `--policy` document
     /// is the only denied path. No default budget exists: an explicit
     /// `--budget` or `--budget-profile` is required.
-    Coupling {
-        #[command(flatten)]
-        args: coupling::CouplingArgs,
-    },
     ContextBudget {
         #[command(flatten)]
         args: ContextBudgetArgs,
