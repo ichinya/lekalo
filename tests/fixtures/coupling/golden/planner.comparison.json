@@ -1,0 +1,1206 @@
+{
+  "baselineDigest": "sha256:c9c6efbe49192d0f092ae9e7de8326b641918666e7dccab5d60500ef1c51cd53",
+  "candidateDigest": "sha256:1d5e49871542b32ddc3f8770e9fb88cdeaa4548593e4a1ec240df0a4871f2074",
+  "comparable": true,
+  "identity": "dev.lekalo.coupling-comparison@0.6.4",
+  "metricVersion": "coupling-metrics/1",
+  "reasons": [],
+  "regressions": 0,
+  "rows": [
+    {
+      "absolute": {
+        "state": "known",
+        "value": 0
+      },
+      "base": {
+        "state": "known",
+        "value": 6
+      },
+      "candidate": {
+        "state": "known",
+        "value": 6
+      },
+      "metric": "fanInSymbols",
+      "reason": "none",
+      "relative": {
+        "state": "known",
+        "value": {
+          "denominator": 6,
+          "numerator": 0
+        }
+      },
+      "state": "comparable",
+      "subject": "entity:planner.task",
+      "verdict": "unchanged-or-allowed"
+    },
+    {
+      "absolute": {
+        "state": "known",
+        "value": 0
+      },
+      "base": {
+        "state": "known",
+        "value": 5
+      },
+      "candidate": {
+        "state": "known",
+        "value": 5
+      },
+      "metric": "fanOutSymbols",
+      "reason": "none",
+      "relative": {
+        "state": "known",
+        "value": {
+          "denominator": 5,
+          "numerator": 0
+        }
+      },
+      "state": "comparable",
+      "subject": "entity:planner.task",
+      "verdict": "unchanged-or-allowed"
+    },
+    {
+      "absolute": {
+        "state": "known",
+        "value": 0
+      },
+      "base": {
+        "state": "known",
+        "value": 0
+      },
+      "candidate": {
+        "state": "known",
+        "value": 0
+      },
+      "metric": "fanInModules",
+      "reason": "zero-baseline",
+      "relative": {
+        "state": "unknown"
+      },
+      "state": "comparable",
+      "subject": "entity:planner.task",
+      "verdict": "unchanged-or-allowed"
+    },
+    {
+      "absolute": {
+        "state": "known",
+        "value": 0
+      },
+      "base": {
+        "state": "known",
+        "value": 0
+      },
+      "candidate": {
+        "state": "known",
+        "value": 0
+      },
+      "metric": "fanOutModules",
+      "reason": "zero-baseline",
+      "relative": {
+        "state": "unknown"
+      },
+      "state": "comparable",
+      "subject": "entity:planner.task",
+      "verdict": "unchanged-or-allowed"
+    },
+    {
+      "absolute": {
+        "state": "known",
+        "value": 0
+      },
+      "base": {
+        "state": "known",
+        "value": 8
+      },
+      "candidate": {
+        "state": "known",
+        "value": 8
+      },
+      "metric": "publicContractsAffected",
+      "reason": "none",
+      "relative": {
+        "state": "known",
+        "value": {
+          "denominator": 8,
+          "numerator": 0
+        }
+      },
+      "state": "comparable",
+      "subject": "entity:planner.task",
+      "verdict": "unchanged-or-allowed"
+    },
+    {
+      "absolute": {
+        "state": "known",
+        "value": 0
+      },
+      "base": {
+        "state": "known",
+        "value": 0
+      },
+      "candidate": {
+        "state": "known",
+        "value": 0
+      },
+      "metric": "internalSymbolsAffected",
+      "reason": "zero-baseline",
+      "relative": {
+        "state": "unknown"
+      },
+      "state": "comparable",
+      "subject": "entity:planner.task",
+      "verdict": "unchanged-or-allowed"
+    },
+    {
+      "absolute": {
+        "state": "known",
+        "value": 0
+      },
+      "base": {
+        "state": "known",
+        "value": 11
+      },
+      "candidate": {
+        "state": "known",
+        "value": 11
+      },
+      "metric": "semanticSymbolsAffected",
+      "reason": "none",
+      "relative": {
+        "state": "known",
+        "value": {
+          "denominator": 11,
+          "numerator": 0
+        }
+      },
+      "state": "comparable",
+      "subject": "entity:planner.task",
+      "verdict": "unchanged-or-allowed"
+    },
+    {
+      "absolute": {
+        "state": "known",
+        "value": 0
+      },
+      "base": {
+        "state": "known",
+        "value": 1
+      },
+      "candidate": {
+        "state": "known",
+        "value": 1
+      },
+      "metric": "modulesAffected",
+      "reason": "none",
+      "relative": {
+        "state": "known",
+        "value": {
+          "denominator": 1,
+          "numerator": 0
+        }
+      },
+      "state": "comparable",
+      "subject": "entity:planner.task",
+      "verdict": "unchanged-or-allowed"
+    },
+    {
+      "absolute": {
+        "state": "unknown"
+      },
+      "base": {
+        "state": "unknown"
+      },
+      "candidate": {
+        "state": "unknown"
+      },
+      "metric": "affectedArtifacts",
+      "reason": "unavailable-evidence",
+      "relative": {
+        "state": "unknown"
+      },
+      "state": "incomparable",
+      "subject": "entity:planner.task",
+      "verdict": "indeterminate"
+    },
+    {
+      "absolute": {
+        "state": "unknown"
+      },
+      "base": {
+        "state": "unknown"
+      },
+      "candidate": {
+        "state": "unknown"
+      },
+      "metric": "affectedTests",
+      "reason": "unavailable-evidence",
+      "relative": {
+        "state": "unknown"
+      },
+      "state": "incomparable",
+      "subject": "entity:planner.task",
+      "verdict": "indeterminate"
+    },
+    {
+      "absolute": {
+        "state": "unknown"
+      },
+      "base": {
+        "state": "unsupported"
+      },
+      "candidate": {
+        "state": "unsupported"
+      },
+      "metric": "affectedTargets",
+      "reason": "unavailable-evidence",
+      "relative": {
+        "state": "unknown"
+      },
+      "state": "incomparable",
+      "subject": "entity:planner.task",
+      "verdict": "indeterminate"
+    },
+    {
+      "absolute": {
+        "state": "unknown"
+      },
+      "base": {
+        "state": "unknown"
+      },
+      "candidate": {
+        "state": "unknown"
+      },
+      "metric": "requiredChecks",
+      "reason": "unavailable-evidence",
+      "relative": {
+        "state": "unknown"
+      },
+      "state": "incomparable",
+      "subject": "entity:planner.task",
+      "verdict": "indeterminate"
+    },
+    {
+      "absolute": {
+        "state": "known",
+        "value": 0
+      },
+      "base": {
+        "state": "known",
+        "value": 0
+      },
+      "candidate": {
+        "state": "known",
+        "value": 0
+      },
+      "metric": "crossModuleCycles",
+      "reason": "zero-baseline",
+      "relative": {
+        "state": "unknown"
+      },
+      "state": "comparable",
+      "subject": "entity:planner.task",
+      "verdict": "unchanged-or-allowed"
+    },
+    {
+      "absolute": {
+        "state": "known",
+        "value": 0
+      },
+      "base": {
+        "state": "known",
+        "value": 1
+      },
+      "candidate": {
+        "state": "known",
+        "value": 1
+      },
+      "metric": "sharedMutableResources",
+      "reason": "none",
+      "relative": {
+        "state": "known",
+        "value": {
+          "denominator": 1,
+          "numerator": 0
+        }
+      },
+      "state": "comparable",
+      "subject": "entity:planner.task",
+      "verdict": "unchanged-or-allowed"
+    },
+    {
+      "absolute": {
+        "state": "unknown"
+      },
+      "base": {
+        "state": "unknown"
+      },
+      "candidate": {
+        "state": "unknown"
+      },
+      "metric": "transactionSpread",
+      "reason": "unavailable-evidence",
+      "relative": {
+        "state": "unknown"
+      },
+      "state": "incomparable",
+      "subject": "entity:planner.task",
+      "verdict": "indeterminate"
+    },
+    {
+      "absolute": {
+        "state": "known",
+        "value": 0
+      },
+      "base": {
+        "state": "known",
+        "value": 0
+      },
+      "candidate": {
+        "state": "known",
+        "value": 0
+      },
+      "metric": "sharedAbstractionRadius",
+      "reason": "zero-baseline",
+      "relative": {
+        "state": "unknown"
+      },
+      "state": "comparable",
+      "subject": "entity:planner.task",
+      "verdict": "unchanged-or-allowed"
+    },
+    {
+      "absolute": {
+        "state": "known",
+        "value": 0
+      },
+      "base": {
+        "state": "known",
+        "value": 0
+      },
+      "candidate": {
+        "state": "known",
+        "value": 0
+      },
+      "metric": "publicTargetExposure",
+      "reason": "zero-baseline",
+      "relative": {
+        "state": "unknown"
+      },
+      "state": "comparable",
+      "subject": "entity:planner.task",
+      "verdict": "unchanged-or-allowed"
+    },
+    {
+      "absolute": {
+        "state": "unknown"
+      },
+      "base": {
+        "state": "unsupported"
+      },
+      "candidate": {
+        "state": "unsupported"
+      },
+      "metric": "duplicationDivergence",
+      "reason": "unavailable-evidence",
+      "relative": {
+        "state": "unknown"
+      },
+      "state": "incomparable",
+      "subject": "entity:planner.task",
+      "verdict": "indeterminate"
+    },
+    {
+      "absolute": {
+        "state": "known",
+        "value": 0
+      },
+      "base": {
+        "state": "known",
+        "value": 6
+      },
+      "candidate": {
+        "state": "known",
+        "value": 6
+      },
+      "metric": "fanInSymbols",
+      "reason": "none",
+      "relative": {
+        "state": "known",
+        "value": {
+          "denominator": 6,
+          "numerator": 0
+        }
+      },
+      "state": "comparable",
+      "subject": "module:planner",
+      "verdict": "unchanged-or-allowed"
+    },
+    {
+      "absolute": {
+        "state": "known",
+        "value": 0
+      },
+      "base": {
+        "state": "known",
+        "value": 5
+      },
+      "candidate": {
+        "state": "known",
+        "value": 5
+      },
+      "metric": "fanOutSymbols",
+      "reason": "none",
+      "relative": {
+        "state": "known",
+        "value": {
+          "denominator": 5,
+          "numerator": 0
+        }
+      },
+      "state": "comparable",
+      "subject": "module:planner",
+      "verdict": "unchanged-or-allowed"
+    },
+    {
+      "absolute": {
+        "state": "known",
+        "value": 0
+      },
+      "base": {
+        "state": "known",
+        "value": 0
+      },
+      "candidate": {
+        "state": "known",
+        "value": 0
+      },
+      "metric": "fanInModules",
+      "reason": "zero-baseline",
+      "relative": {
+        "state": "unknown"
+      },
+      "state": "comparable",
+      "subject": "module:planner",
+      "verdict": "unchanged-or-allowed"
+    },
+    {
+      "absolute": {
+        "state": "known",
+        "value": 0
+      },
+      "base": {
+        "state": "known",
+        "value": 0
+      },
+      "candidate": {
+        "state": "known",
+        "value": 0
+      },
+      "metric": "fanOutModules",
+      "reason": "zero-baseline",
+      "relative": {
+        "state": "unknown"
+      },
+      "state": "comparable",
+      "subject": "module:planner",
+      "verdict": "unchanged-or-allowed"
+    },
+    {
+      "absolute": {
+        "state": "known",
+        "value": 0
+      },
+      "base": {
+        "state": "known",
+        "value": 8
+      },
+      "candidate": {
+        "state": "known",
+        "value": 8
+      },
+      "metric": "publicContractsAffected",
+      "reason": "none",
+      "relative": {
+        "state": "known",
+        "value": {
+          "denominator": 8,
+          "numerator": 0
+        }
+      },
+      "state": "comparable",
+      "subject": "module:planner",
+      "verdict": "unchanged-or-allowed"
+    },
+    {
+      "absolute": {
+        "state": "known",
+        "value": 0
+      },
+      "base": {
+        "state": "known",
+        "value": 0
+      },
+      "candidate": {
+        "state": "known",
+        "value": 0
+      },
+      "metric": "internalSymbolsAffected",
+      "reason": "zero-baseline",
+      "relative": {
+        "state": "unknown"
+      },
+      "state": "comparable",
+      "subject": "module:planner",
+      "verdict": "unchanged-or-allowed"
+    },
+    {
+      "absolute": {
+        "state": "known",
+        "value": 0
+      },
+      "base": {
+        "state": "known",
+        "value": 11
+      },
+      "candidate": {
+        "state": "known",
+        "value": 11
+      },
+      "metric": "semanticSymbolsAffected",
+      "reason": "none",
+      "relative": {
+        "state": "known",
+        "value": {
+          "denominator": 11,
+          "numerator": 0
+        }
+      },
+      "state": "comparable",
+      "subject": "module:planner",
+      "verdict": "unchanged-or-allowed"
+    },
+    {
+      "absolute": {
+        "state": "known",
+        "value": 0
+      },
+      "base": {
+        "state": "known",
+        "value": 1
+      },
+      "candidate": {
+        "state": "known",
+        "value": 1
+      },
+      "metric": "modulesAffected",
+      "reason": "none",
+      "relative": {
+        "state": "known",
+        "value": {
+          "denominator": 1,
+          "numerator": 0
+        }
+      },
+      "state": "comparable",
+      "subject": "module:planner",
+      "verdict": "unchanged-or-allowed"
+    },
+    {
+      "absolute": {
+        "state": "unknown"
+      },
+      "base": {
+        "state": "unknown"
+      },
+      "candidate": {
+        "state": "unknown"
+      },
+      "metric": "affectedArtifacts",
+      "reason": "unavailable-evidence",
+      "relative": {
+        "state": "unknown"
+      },
+      "state": "incomparable",
+      "subject": "module:planner",
+      "verdict": "indeterminate"
+    },
+    {
+      "absolute": {
+        "state": "unknown"
+      },
+      "base": {
+        "state": "unknown"
+      },
+      "candidate": {
+        "state": "unknown"
+      },
+      "metric": "affectedTests",
+      "reason": "unavailable-evidence",
+      "relative": {
+        "state": "unknown"
+      },
+      "state": "incomparable",
+      "subject": "module:planner",
+      "verdict": "indeterminate"
+    },
+    {
+      "absolute": {
+        "state": "unknown"
+      },
+      "base": {
+        "state": "unknown"
+      },
+      "candidate": {
+        "state": "unknown"
+      },
+      "metric": "affectedTargets",
+      "reason": "unavailable-evidence",
+      "relative": {
+        "state": "unknown"
+      },
+      "state": "incomparable",
+      "subject": "module:planner",
+      "verdict": "indeterminate"
+    },
+    {
+      "absolute": {
+        "state": "unknown"
+      },
+      "base": {
+        "state": "unknown"
+      },
+      "candidate": {
+        "state": "unknown"
+      },
+      "metric": "requiredChecks",
+      "reason": "unavailable-evidence",
+      "relative": {
+        "state": "unknown"
+      },
+      "state": "incomparable",
+      "subject": "module:planner",
+      "verdict": "indeterminate"
+    },
+    {
+      "absolute": {
+        "state": "known",
+        "value": 0
+      },
+      "base": {
+        "state": "known",
+        "value": 0
+      },
+      "candidate": {
+        "state": "known",
+        "value": 0
+      },
+      "metric": "crossModuleCycles",
+      "reason": "zero-baseline",
+      "relative": {
+        "state": "unknown"
+      },
+      "state": "comparable",
+      "subject": "module:planner",
+      "verdict": "unchanged-or-allowed"
+    },
+    {
+      "absolute": {
+        "state": "known",
+        "value": 0
+      },
+      "base": {
+        "state": "known",
+        "value": 1
+      },
+      "candidate": {
+        "state": "known",
+        "value": 1
+      },
+      "metric": "sharedMutableResources",
+      "reason": "none",
+      "relative": {
+        "state": "known",
+        "value": {
+          "denominator": 1,
+          "numerator": 0
+        }
+      },
+      "state": "comparable",
+      "subject": "module:planner",
+      "verdict": "unchanged-or-allowed"
+    },
+    {
+      "absolute": {
+        "state": "unknown"
+      },
+      "base": {
+        "state": "unknown"
+      },
+      "candidate": {
+        "state": "unknown"
+      },
+      "metric": "transactionSpread",
+      "reason": "unavailable-evidence",
+      "relative": {
+        "state": "unknown"
+      },
+      "state": "incomparable",
+      "subject": "module:planner",
+      "verdict": "indeterminate"
+    },
+    {
+      "absolute": {
+        "state": "unknown"
+      },
+      "base": {
+        "state": "unknown"
+      },
+      "candidate": {
+        "state": "unknown"
+      },
+      "metric": "sharedAbstractionRadius",
+      "reason": "unavailable-evidence",
+      "relative": {
+        "state": "unknown"
+      },
+      "state": "incomparable",
+      "subject": "module:planner",
+      "verdict": "indeterminate"
+    },
+    {
+      "absolute": {
+        "state": "unknown"
+      },
+      "base": {
+        "state": "unknown"
+      },
+      "candidate": {
+        "state": "unknown"
+      },
+      "metric": "publicTargetExposure",
+      "reason": "unavailable-evidence",
+      "relative": {
+        "state": "unknown"
+      },
+      "state": "incomparable",
+      "subject": "module:planner",
+      "verdict": "indeterminate"
+    },
+    {
+      "absolute": {
+        "state": "unknown"
+      },
+      "base": {
+        "state": "unknown"
+      },
+      "candidate": {
+        "state": "unknown"
+      },
+      "metric": "duplicationDivergence",
+      "reason": "unavailable-evidence",
+      "relative": {
+        "state": "unknown"
+      },
+      "state": "incomparable",
+      "subject": "module:planner",
+      "verdict": "indeterminate"
+    },
+    {
+      "absolute": {
+        "state": "known",
+        "value": 0
+      },
+      "base": {
+        "state": "known",
+        "value": 6
+      },
+      "candidate": {
+        "state": "known",
+        "value": 6
+      },
+      "metric": "fanInSymbols",
+      "reason": "none",
+      "relative": {
+        "state": "known",
+        "value": {
+          "denominator": 6,
+          "numerator": 0
+        }
+      },
+      "state": "comparable",
+      "subject": "project:planner",
+      "verdict": "unchanged-or-allowed"
+    },
+    {
+      "absolute": {
+        "state": "known",
+        "value": 0
+      },
+      "base": {
+        "state": "known",
+        "value": 5
+      },
+      "candidate": {
+        "state": "known",
+        "value": 5
+      },
+      "metric": "fanOutSymbols",
+      "reason": "none",
+      "relative": {
+        "state": "known",
+        "value": {
+          "denominator": 5,
+          "numerator": 0
+        }
+      },
+      "state": "comparable",
+      "subject": "project:planner",
+      "verdict": "unchanged-or-allowed"
+    },
+    {
+      "absolute": {
+        "state": "known",
+        "value": 0
+      },
+      "base": {
+        "state": "known",
+        "value": 0
+      },
+      "candidate": {
+        "state": "known",
+        "value": 0
+      },
+      "metric": "fanInModules",
+      "reason": "zero-baseline",
+      "relative": {
+        "state": "unknown"
+      },
+      "state": "comparable",
+      "subject": "project:planner",
+      "verdict": "unchanged-or-allowed"
+    },
+    {
+      "absolute": {
+        "state": "known",
+        "value": 0
+      },
+      "base": {
+        "state": "known",
+        "value": 0
+      },
+      "candidate": {
+        "state": "known",
+        "value": 0
+      },
+      "metric": "fanOutModules",
+      "reason": "zero-baseline",
+      "relative": {
+        "state": "unknown"
+      },
+      "state": "comparable",
+      "subject": "project:planner",
+      "verdict": "unchanged-or-allowed"
+    },
+    {
+      "absolute": {
+        "state": "known",
+        "value": 0
+      },
+      "base": {
+        "state": "known",
+        "value": 8
+      },
+      "candidate": {
+        "state": "known",
+        "value": 8
+      },
+      "metric": "publicContractsAffected",
+      "reason": "none",
+      "relative": {
+        "state": "known",
+        "value": {
+          "denominator": 8,
+          "numerator": 0
+        }
+      },
+      "state": "comparable",
+      "subject": "project:planner",
+      "verdict": "unchanged-or-allowed"
+    },
+    {
+      "absolute": {
+        "state": "known",
+        "value": 0
+      },
+      "base": {
+        "state": "known",
+        "value": 0
+      },
+      "candidate": {
+        "state": "known",
+        "value": 0
+      },
+      "metric": "internalSymbolsAffected",
+      "reason": "zero-baseline",
+      "relative": {
+        "state": "unknown"
+      },
+      "state": "comparable",
+      "subject": "project:planner",
+      "verdict": "unchanged-or-allowed"
+    },
+    {
+      "absolute": {
+        "state": "known",
+        "value": 0
+      },
+      "base": {
+        "state": "known",
+        "value": 11
+      },
+      "candidate": {
+        "state": "known",
+        "value": 11
+      },
+      "metric": "semanticSymbolsAffected",
+      "reason": "none",
+      "relative": {
+        "state": "known",
+        "value": {
+          "denominator": 11,
+          "numerator": 0
+        }
+      },
+      "state": "comparable",
+      "subject": "project:planner",
+      "verdict": "unchanged-or-allowed"
+    },
+    {
+      "absolute": {
+        "state": "known",
+        "value": 0
+      },
+      "base": {
+        "state": "known",
+        "value": 1
+      },
+      "candidate": {
+        "state": "known",
+        "value": 1
+      },
+      "metric": "modulesAffected",
+      "reason": "none",
+      "relative": {
+        "state": "known",
+        "value": {
+          "denominator": 1,
+          "numerator": 0
+        }
+      },
+      "state": "comparable",
+      "subject": "project:planner",
+      "verdict": "unchanged-or-allowed"
+    },
+    {
+      "absolute": {
+        "state": "unknown"
+      },
+      "base": {
+        "state": "unknown"
+      },
+      "candidate": {
+        "state": "unknown"
+      },
+      "metric": "affectedArtifacts",
+      "reason": "unavailable-evidence",
+      "relative": {
+        "state": "unknown"
+      },
+      "state": "incomparable",
+      "subject": "project:planner",
+      "verdict": "indeterminate"
+    },
+    {
+      "absolute": {
+        "state": "unknown"
+      },
+      "base": {
+        "state": "unknown"
+      },
+      "candidate": {
+        "state": "unknown"
+      },
+      "metric": "affectedTests",
+      "reason": "unavailable-evidence",
+      "relative": {
+        "state": "unknown"
+      },
+      "state": "incomparable",
+      "subject": "project:planner",
+      "verdict": "indeterminate"
+    },
+    {
+      "absolute": {
+        "state": "unknown"
+      },
+      "base": {
+        "state": "unknown"
+      },
+      "candidate": {
+        "state": "unknown"
+      },
+      "metric": "affectedTargets",
+      "reason": "unavailable-evidence",
+      "relative": {
+        "state": "unknown"
+      },
+      "state": "incomparable",
+      "subject": "project:planner",
+      "verdict": "indeterminate"
+    },
+    {
+      "absolute": {
+        "state": "unknown"
+      },
+      "base": {
+        "state": "unknown"
+      },
+      "candidate": {
+        "state": "unknown"
+      },
+      "metric": "requiredChecks",
+      "reason": "unavailable-evidence",
+      "relative": {
+        "state": "unknown"
+      },
+      "state": "incomparable",
+      "subject": "project:planner",
+      "verdict": "indeterminate"
+    },
+    {
+      "absolute": {
+        "state": "known",
+        "value": 0
+      },
+      "base": {
+        "state": "known",
+        "value": 0
+      },
+      "candidate": {
+        "state": "known",
+        "value": 0
+      },
+      "metric": "crossModuleCycles",
+      "reason": "zero-baseline",
+      "relative": {
+        "state": "unknown"
+      },
+      "state": "comparable",
+      "subject": "project:planner",
+      "verdict": "unchanged-or-allowed"
+    },
+    {
+      "absolute": {
+        "state": "known",
+        "value": 0
+      },
+      "base": {
+        "state": "known",
+        "value": 1
+      },
+      "candidate": {
+        "state": "known",
+        "value": 1
+      },
+      "metric": "sharedMutableResources",
+      "reason": "none",
+      "relative": {
+        "state": "known",
+        "value": {
+          "denominator": 1,
+          "numerator": 0
+        }
+      },
+      "state": "comparable",
+      "subject": "project:planner",
+      "verdict": "unchanged-or-allowed"
+    },
+    {
+      "absolute": {
+        "state": "unknown"
+      },
+      "base": {
+        "state": "unknown"
+      },
+      "candidate": {
+        "state": "unknown"
+      },
+      "metric": "transactionSpread",
+      "reason": "unavailable-evidence",
+      "relative": {
+        "state": "unknown"
+      },
+      "state": "incomparable",
+      "subject": "project:planner",
+      "verdict": "indeterminate"
+    },
+    {
+      "absolute": {
+        "state": "unknown"
+      },
+      "base": {
+        "state": "unknown"
+      },
+      "candidate": {
+        "state": "unknown"
+      },
+      "metric": "sharedAbstractionRadius",
+      "reason": "unavailable-evidence",
+      "relative": {
+        "state": "unknown"
+      },
+      "state": "incomparable",
+      "subject": "project:planner",
+      "verdict": "indeterminate"
+    },
+    {
+      "absolute": {
+        "state": "unknown"
+      },
+      "base": {
+        "state": "unknown"
+      },
+      "candidate": {
+        "state": "unknown"
+      },
+      "metric": "publicTargetExposure",
+      "reason": "unavailable-evidence",
+      "relative": {
+        "state": "unknown"
+      },
+      "state": "incomparable",
+      "subject": "project:planner",
+      "verdict": "indeterminate"
+    },
+    {
+      "absolute": {
+        "state": "unknown"
+      },
+      "base": {
+        "state": "unknown"
+      },
+      "candidate": {
+        "state": "unknown"
+      },
+      "metric": "duplicationDivergence",
+      "reason": "unavailable-evidence",
+      "relative": {
+        "state": "unknown"
+      },
+      "state": "incomparable",
+      "subject": "project:planner",
+      "verdict": "indeterminate"
+    }
+  ],
+  "schemaVersion": "lekalo/coupling-comparison/v0.6.4"
+}

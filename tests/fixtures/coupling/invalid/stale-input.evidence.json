@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "lekalo/coupling-evidence/v0.6.4",
+  "identity": "dev.lekalo.coupling-evidence@0.6.4",
+  "inputs": {
+    "effectDigest": "sha256:7dbbb339029d5b96dca6a3be31c2877cf93892e1acdbc7270dc6fbd65387e896",
+    "graphDigest": "sha256:13e6e978d2733e709eeb47bd7b6f12e1499cc063b71d993c843340c9023987e1",
+    "irDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "modelDigest": {
+      "state": "known",
+      "value": "sha256:7707ddf7e9b435a58c1a4d9fd6df7d8bbf09856519958e30762eec5c3c6c96de"
+    },
+    "modelVersion": "0.2.16",
+    "project": "planner",
+    "semanticDigest": "sha256:97a84841b2d87d3dfe7024db607400e0de4d3448fad9f78fee569000dee85a06",
+    "sourceRevision": {
+      "state": "known",
+      "value": "97a84841b2d87d3dfe7024db607400e0de4d3448fad9f78fee569000dee85a06"
+    }
+  },
+  "artifacts": {
+    "state": "known",
+    "value": {
+      "digest": "sha256:0278d766f696f739db40c40194c2d03054d5cf87f61978608746af8af6848d20",
+      "bytes": "{\"artifacts\":[{\"adapter_ref\":{\"artifacts\":[{\"digest\":\"sha256:ef7e5b43e59f8b5991e60674c27c77a0d40b9ebae51ee95b619e0fb21889aef4\",\"platform\":\"any\"}],\"digest\":\"sha256:d7033ba1b254494bfc158b3e9e7cdd586f1c42fee7eeef5c839e84520eaf5a58\",\"id\":\"node-typescript\",\"protocol_version\":\"0.2.16\",\"version\":\"0.1.2\"},\"artifact_kind\":\"source\",\"content\":{\"algorithm\":\"sha256\",\"canonicalization\":\"exact-file-bytes\",\"digest\":\"sha256:ed7002b439e9ac845f22357d822bac1444730fbdb6016d3ec9432297b9ec9f73\"},\"generator_ref\":{\"id\":\"planner-gen\",\"version\":\"0.3.0\"},\"input_refs\":[\"planner.create_task\",\"planner.task\"],\"lifecycle\":\"generated\",\"path\":\"apps/api/src/planner/focus-task.ts\",\"regeneration_policy\":\"on-input-change\",\"semantic_owner\":\"planner.create_task\"}],\"identity\":\"dev.lekalo.artifact-manifest@0.2.16\",\"inputs\":{\"ir\":{\"digest\":\"sha256:2ed11578a45ee61635c51cc4ad5ff758db3bc2a23a867f0c70547c75188df8f7\",\"version\":\"0.2.16\"},\"model\":{\"digest\":\"sha256:7707ddf7e9b435a58c1a4d9fd6df7d8bbf09856519958e30762eec5c3c6c96de\",\"version\":\"0.2.16\"}},\"lock_ref\":{\"digest\":\"sha256:0c030586945fe504b604ecc2e875c38ede400cd5cd73da9730302162e6b02c6f\",\"schema_version\":\"lekalo/lock/v0.3.2\"},\"manifest_digest\":\"sha256:2ce81be9e55eba3b798f591a819764a12ec5a6adc066ae3badea9bea3ab7d7fe\",\"project_ref\":\"planner\",\"schema_version\":\"lekalo/artifact-manifest/v0.2.16\",\"source_maps\":[{\"artifact\":{\"artifact_kind\":\"source\",\"path\":\"apps/api/src/planner/focus-task.ts\",\"semantic_owner\":\"planner.create_task\"},\"entries\":[{\"end\":615,\"semantic_id\":\"planner.create_task\",\"start\":0},{\"end\":904,\"semantic_id\":\"planner.task\",\"start\":700}],\"input_revision\":\"sha256:6d4c1acb6249efde7bcbd389cbe4c557e89eae23aea580ea25249a46b081a16b\"}]}\n"
+    }
+  },
+  "trace": {
+    "state": "known",
+    "value": {
+      "digest": "sha256:546c56dd7e957debff18da1d4a5c2d49dcf89d8d61f9fd5b0068792115d5a180",
+      "bytes": "{\"schemaVersion\":\"lekalo/trace-manifest/v0.2.16\",\"identity\":\"dev.lekalo.trace-manifest@0.2.16\",\"manifestId\":\"coupling-planner-trace\",\"projectRef\":\"planner\",\"completeness\":\"full\",\"sourceRevision\":\"97a84841b2d87d3dfe7024db607400e0de4d3448fad9f78fee569000dee85a06\",\"modelRef\":{\"schemaVersion\":\"0.2.16\",\"digest\":\"sha256:7707ddf7e9b435a58c1a4d9fd6df7d8bbf09856519958e30762eec5c3c6c96de\"},\"irRef\":{\"schemaVersion\":\"0.2.16\",\"digest\":\"sha256:2ed11578a45ee61635c51cc4ad5ff758db3bc2a23a867f0c70547c75188df8f7\"},\"graphRef\":{\"schemaVersion\":\"0.2.16\",\"digest\":\"sha256:13e6e978d2733e709eeb47bd7b6f12e1499cc063b71d993c843340c9023987e1\"},\"exportProfile\":\"requirement-to-gate\",\"nodes\":[{\"nodeId\":\"requirement:COUPLING-REQ-001\",\"nodeKind\":\"requirement\",\"requirementId\":\"COUPLING-REQ-001\"},{\"nodeId\":\"symbol:planner.focus_task\",\"nodeKind\":\"symbol\",\"semanticId\":\"planner.focus_task\",\"contractVersion\":\"0.2.16\"},{\"nodeId\":\"test:planner-focus\",\"nodeKind\":\"native_test\",\"testId\":\"planner.test.focus\",\"contractVersion\":\"0.2.16\"},{\"nodeId\":\"gate:planner-focus\",\"nodeKind\":\"gate\",\"gateId\":\"planner.gate.focus\",\"contractVersion\":\"0.2.16\"}],\"relations\":[{\"relationId\":\"sha256:c5aa32936fcb040eff7435d292d1238758278642fa18b9483bf3a61944fdd4c9\",\"relationKind\":\"implements\",\"fromNode\":\"symbol:planner.focus_task\",\"toNode\":\"requirement:COUPLING-REQ-001\",\"occurrence\":\"coupling.fixture\",\"provenance\":{\"origin\":\"declared\",\"sourceSystem\":\"lekalo\",\"sourceRevision\":\"97a84841b2d87d3dfe7024db607400e0de4d3448fad9f78fee569000dee85a06\",\"sourceDigest\":\"sha256:97a84841b2d87d3dfe7024db607400e0de4d3448fad9f78fee569000dee85a06\",\"recordedBy\":\"lekalo.core\"},\"confidence\":\"exact\",\"status\":\"confirmed\",\"evidenceRefs\":[\"gate:planner-focus\"]},{\"relationId\":\"sha256:287c636024671cb95f09341f76018a65f442de40d774fb7f6baec2c2d11ff5d4\",\"relationKind\":\"verifies\",\"fromNode\":\"test:planner-focus\",\"toNode\":\"symbol:planner.focus_task\",\"occurrence\":\"coupling.fixture\",\"provenance\":{\"origin\":\"declared\",\"sourceSystem\":\"lekalo\",\"sourceRevision\":\"97a84841b2d87d3dfe7024db607400e0de4d3448fad9f78fee569000dee85a06\",\"sourceDigest\":\"sha256:97a84841b2d87d3dfe7024db607400e0de4d3448fad9f78fee569000dee85a06\",\"recordedBy\":\"lekalo.core\"},\"confidence\":\"exact\",\"status\":\"confirmed\",\"evidenceRefs\":[\"gate:planner-focus\"]},{\"relationId\":\"sha256:225c1722eb64132ce3c4ec2bcbbe6d3ec6e584b0232b5c814a8039a84a8b1528\",\"relationKind\":\"evidences\",\"fromNode\":\"gate:planner-focus\",\"toNode\":\"test:planner-focus\",\"occurrence\":\"coupling.fixture\",\"provenance\":{\"origin\":\"declared\",\"sourceSystem\":\"lekalo\",\"sourceRevision\":\"97a84841b2d87d3dfe7024db607400e0de4d3448fad9f78fee569000dee85a06\",\"sourceDigest\":\"sha256:97a84841b2d87d3dfe7024db607400e0de4d3448fad9f78fee569000dee85a06\",\"recordedBy\":\"lekalo.core\"},\"confidence\":\"exact\",\"status\":\"confirmed\",\"evidenceRefs\":[\"gate:planner-focus\"]}],\"gaps\":[]}"
+    }
+  },
+  "queries": {
+    "state": "unknown"
+  },
+  "transactions": {
+    "state": "unknown"
+  },
+  "replicas": []
+}

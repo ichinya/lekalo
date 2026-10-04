@@ -1,0 +1,1612 @@
+{
+  "complete": true,
+  "coverage": {
+    "artifacts": {
+      "state": "unknown"
+    },
+    "declared": {
+      "state": "known",
+      "value": "canonical-ir"
+    },
+    "members": {
+      "state": "unknown"
+    },
+    "observed": {
+      "state": "unsupported"
+    },
+    "tests": {
+      "state": "unknown"
+    },
+    "transactions": {
+      "state": "unknown"
+    }
+  },
+  "cycles": [],
+  "findings": [
+    {
+      "centrality": {
+        "state": "unknown"
+      },
+      "detail": "declared-risk-evidence",
+      "metric": "sharedMutableResources",
+      "rule": "coupling.shared-mutable-state",
+      "subject": "entity:planner.task",
+      "witnessRefs": [
+        "sha256:0b9a8709918cdef3c9a900f3594f7bcefc698f6682e262750227a471d22045fe",
+        "sha256:0bde0cadd6616e149ce9fd68e3cddb959af2c87bd0cc7aab75e421ce0b19b23b",
+        "sha256:3c18a5f8a9cb32e731277303d6d5b593821806c29897010d864b7bf86607db4d",
+        "sha256:462fa3f0555121e14feac66a24bfe65356cc2181cf2e5889156bbe7879e7904f",
+        "sha256:51cb0d1b4cc762ece3a163ee4f1b7202cd8c99f44706e9f09fe3ed38c4f19659",
+        "sha256:661b57a925f1e6f71e0a42b62bbe5ebcbee6e9e83e30f239eb64631bff18c604",
+        "sha256:71e6306640ae1c45be77c41f2dc5289ebd232be48c5b67ee5ef40972698f7cde",
+        "sha256:7cafed29f8ea2f281027036cab3f4f0d9d5529db5d5eeda0250fd8fc6058ff41",
+        "sha256:a7e0ff8237e015fefe85d76d930e8cd0bc19cf10f0d2e24718f7c7d528b89307",
+        "sha256:a81b16c88ed38096d2df3ee58932635c4f28e9642ce26e0ebdb388055f8420bc",
+        "sha256:a93239a440baf091a6bf8f33890b112eff413466af67f69310f0d68b676ace1b",
+        "sha256:abe50791110b34289eb6cb909be41803ff51901b342f488c79af933dfb56a795",
+        "sha256:b5cde3d624be2595f747855404bdf5853050cd86414073705301ba4d886758c6",
+        "sha256:c43489d06373221aa21f0c1d26b5b51175a7989d8afbf33fb0ce7632ba9360bd",
+        "sha256:cc33af652547aed0789a4017a6e0c5ae8f072c6fc791f894c3d3c7a095603d39",
+        "sha256:db22c64dad305c62af63860fcd381091c713d87cc9242d02e795c88fb0a15fa1",
+        "sha256:f75ad95f7646962d4ef94649d12413ab99a9e165e1d6c8b1bb3db08dbcb4fee4"
+      ]
+    }
+  ],
+  "identity": "dev.lekalo.coupling-report@0.6.4",
+  "metricVersion": "coupling-metrics/1",
+  "planning": {
+    "contextBudget": {
+      "state": "unknown"
+    },
+    "evidenceGaps": [],
+    "internalSymbols": [],
+    "publicContracts": [
+      "endpoint:planner.api_focus",
+      "entity:planner.task",
+      "operation:planner.archive_task_cmd",
+      "operation:planner.count_focused",
+      "operation:planner.edit_task_cmd",
+      "operation:planner.focus_task",
+      "operation:planner.list_tasks",
+      "operation:planner.user_names"
+    ],
+    "requiredChecks": [],
+    "resources": [
+      "planner.task"
+    ],
+    "reviewOverlap": [
+      "endpoint:planner.api_focus",
+      "entity:planner.task",
+      "operation:planner.archive_task_cmd",
+      "operation:planner.count_focused",
+      "operation:planner.edit_task_cmd",
+      "operation:planner.focus_task",
+      "operation:planner.list_tasks",
+      "operation:planner.user_names"
+    ],
+    "runtimeConflicts": {
+      "state": "unknown"
+    },
+    "transactionGroups": []
+  },
+  "profile": {
+    "centralityDeclarations": [],
+    "domainGroups": [],
+    "gate": {
+      "baselineReadyRef": {
+        "state": "unknown"
+      },
+      "failOn": [],
+      "mode": "advisory"
+    },
+    "identity": "dev.lekalo.coupling-profile@0.6.4",
+    "measurement": {
+      "includeObserved": false,
+      "recipe": "declared-architecture/1"
+    },
+    "modules": [],
+    "profileId": "advisory",
+    "profileRevision": 1,
+    "project": {
+      "limits": [],
+      "regressionLimits": []
+    },
+    "schemaVersion": "lekalo/coupling-profile/v0.6.4"
+  },
+  "projection": {
+    "edges": [
+      {
+        "confidence": "canonical",
+        "from": "effect:notify.rename_user",
+        "key": "effect:notify.rename_user|references|entity:notify.user|0",
+        "occurrence": 0,
+        "relation": "references",
+        "role": "effect-entity",
+        "to": "entity:notify.user"
+      },
+      {
+        "confidence": "canonical",
+        "from": "effect:planner.archive_task",
+        "key": "effect:planner.archive_task|emits|event:planner.task_archived|0",
+        "occurrence": 0,
+        "relation": "emits",
+        "role": "effect-emits",
+        "to": "event:planner.task_archived"
+      },
+      {
+        "confidence": "canonical",
+        "from": "effect:planner.archive_task",
+        "key": "effect:planner.archive_task|references|entity:planner.task|0",
+        "occurrence": 0,
+        "relation": "references",
+        "role": "effect-entity",
+        "to": "entity:planner.task"
+      },
+      {
+        "confidence": "canonical",
+        "from": "effect:planner.create_task",
+        "key": "effect:planner.create_task|emits|event:planner.task_focused|0",
+        "occurrence": 0,
+        "relation": "emits",
+        "role": "effect-emits",
+        "to": "event:planner.task_focused"
+      },
+      {
+        "confidence": "canonical",
+        "from": "effect:planner.create_task",
+        "key": "effect:planner.create_task|references|entity:planner.task|0",
+        "occurrence": 0,
+        "relation": "references",
+        "role": "effect-entity",
+        "to": "entity:planner.task"
+      },
+      {
+        "confidence": "canonical",
+        "from": "effect:planner.edit_task",
+        "key": "effect:planner.edit_task|references|entity:planner.task|0",
+        "occurrence": 0,
+        "relation": "references",
+        "role": "effect-entity",
+        "to": "entity:planner.task"
+      },
+      {
+        "confidence": "canonical",
+        "from": "endpoint:planner.api_focus",
+        "key": "endpoint:planner.api_focus|exposes|operation:planner.focus_task|0",
+        "occurrence": 0,
+        "relation": "exposes",
+        "role": "endpoint-invokes",
+        "to": "operation:planner.focus_task"
+      },
+      {
+        "confidence": "canonical",
+        "from": "entity:notify.user",
+        "key": "entity:notify.user|references|type:notify.text|1",
+        "occurrence": 1,
+        "relation": "references",
+        "role": "entity-field",
+        "to": "type:notify.text"
+      },
+      {
+        "confidence": "canonical",
+        "from": "entity:notify.user",
+        "key": "entity:notify.user|references|type:notify.user_id|0",
+        "occurrence": 0,
+        "relation": "references",
+        "role": "entity-field",
+        "to": "type:notify.user_id"
+      },
+      {
+        "confidence": "canonical",
+        "from": "entity:planner.task",
+        "key": "entity:planner.task|references|type:planner.due_date|3",
+        "occurrence": 3,
+        "relation": "references",
+        "role": "entity-field",
+        "to": "type:planner.due_date"
+      },
+      {
+        "confidence": "canonical",
+        "from": "entity:planner.task",
+        "key": "entity:planner.task|references|type:planner.due_window|4",
+        "occurrence": 4,
+        "relation": "references",
+        "role": "entity-field",
+        "to": "type:planner.due_window"
+      },
+      {
+        "confidence": "canonical",
+        "from": "entity:planner.task",
+        "key": "entity:planner.task|references|type:planner.task_id|0",
+        "occurrence": 0,
+        "relation": "references",
+        "role": "entity-field",
+        "to": "type:planner.task_id"
+      },
+      {
+        "confidence": "canonical",
+        "from": "entity:planner.task",
+        "key": "entity:planner.task|references|type:planner.task_state|2",
+        "occurrence": 2,
+        "relation": "references",
+        "role": "entity-field",
+        "to": "type:planner.task_state"
+      },
+      {
+        "confidence": "canonical",
+        "from": "entity:planner.task",
+        "key": "entity:planner.task|references|type:planner.text|1",
+        "occurrence": 1,
+        "relation": "references",
+        "role": "entity-field",
+        "to": "type:planner.text"
+      },
+      {
+        "confidence": "canonical",
+        "from": "event:planner.task_archived",
+        "key": "event:planner.task_archived|references|type:planner.task_id|0",
+        "occurrence": 0,
+        "relation": "references",
+        "role": "event-payload",
+        "to": "type:planner.task_id"
+      },
+      {
+        "confidence": "canonical",
+        "from": "event:planner.task_focused",
+        "key": "event:planner.task_focused|references|type:planner.due_date|1",
+        "occurrence": 1,
+        "relation": "references",
+        "role": "event-payload",
+        "to": "type:planner.due_date"
+      },
+      {
+        "confidence": "canonical",
+        "from": "event:planner.task_focused",
+        "key": "event:planner.task_focused|references|type:planner.task_id|0",
+        "occurrence": 0,
+        "relation": "references",
+        "role": "event-payload",
+        "to": "type:planner.task_id"
+      },
+      {
+        "confidence": "canonical",
+        "from": "operation:notify.purge_cache_cmd",
+        "key": "operation:notify.purge_cache_cmd|accepts|type:notify.user_id|0",
+        "occurrence": 0,
+        "relation": "accepts",
+        "role": "command-input",
+        "to": "type:notify.user_id"
+      },
+      {
+        "confidence": "canonical",
+        "from": "operation:notify.rename_user_cmd",
+        "key": "operation:notify.rename_user_cmd|accepts|type:notify.text|1",
+        "occurrence": 1,
+        "relation": "accepts",
+        "role": "command-input",
+        "to": "type:notify.text"
+      },
+      {
+        "confidence": "canonical",
+        "from": "operation:notify.rename_user_cmd",
+        "key": "operation:notify.rename_user_cmd|accepts|type:notify.user_id|0",
+        "occurrence": 0,
+        "relation": "accepts",
+        "role": "command-input",
+        "to": "type:notify.user_id"
+      },
+      {
+        "confidence": "canonical",
+        "from": "operation:notify.rename_user_cmd",
+        "key": "operation:notify.rename_user_cmd|references|effect:notify.rename_user|0",
+        "occurrence": 0,
+        "relation": "references",
+        "role": "command-effect",
+        "to": "effect:notify.rename_user"
+      },
+      {
+        "confidence": "canonical",
+        "from": "operation:planner.archive_task_cmd",
+        "key": "operation:planner.archive_task_cmd|accepts|type:planner.task_id|0",
+        "occurrence": 0,
+        "relation": "accepts",
+        "role": "command-input",
+        "to": "type:planner.task_id"
+      },
+      {
+        "confidence": "canonical",
+        "from": "operation:planner.archive_task_cmd",
+        "key": "operation:planner.archive_task_cmd|references|effect:planner.archive_task|0",
+        "occurrence": 0,
+        "relation": "references",
+        "role": "command-effect",
+        "to": "effect:planner.archive_task"
+      },
+      {
+        "confidence": "canonical",
+        "from": "operation:planner.count_focused",
+        "key": "operation:planner.count_focused|reads|entity:planner.task|0",
+        "occurrence": 0,
+        "relation": "reads",
+        "role": "query-reads",
+        "to": "entity:planner.task"
+      },
+      {
+        "confidence": "canonical",
+        "from": "operation:planner.count_focused",
+        "key": "operation:planner.count_focused|returns|type:planner.task_state|0",
+        "occurrence": 0,
+        "relation": "returns",
+        "role": "query-returns",
+        "to": "type:planner.task_state"
+      },
+      {
+        "confidence": "canonical",
+        "from": "operation:planner.edit_task_cmd",
+        "key": "operation:planner.edit_task_cmd|accepts|type:planner.task_id|0",
+        "occurrence": 0,
+        "relation": "accepts",
+        "role": "command-input",
+        "to": "type:planner.task_id"
+      },
+      {
+        "confidence": "canonical",
+        "from": "operation:planner.edit_task_cmd",
+        "key": "operation:planner.edit_task_cmd|accepts|type:planner.text|1",
+        "occurrence": 1,
+        "relation": "accepts",
+        "role": "command-input",
+        "to": "type:planner.text"
+      },
+      {
+        "confidence": "canonical",
+        "from": "operation:planner.edit_task_cmd",
+        "key": "operation:planner.edit_task_cmd|references|effect:planner.edit_task|0",
+        "occurrence": 0,
+        "relation": "references",
+        "role": "command-effect",
+        "to": "effect:planner.edit_task"
+      },
+      {
+        "confidence": "canonical",
+        "from": "operation:planner.focus_task",
+        "key": "operation:planner.focus_task|accepts|type:planner.task_id|0",
+        "occurrence": 0,
+        "relation": "accepts",
+        "role": "command-input",
+        "to": "type:planner.task_id"
+      },
+      {
+        "confidence": "canonical",
+        "from": "operation:planner.focus_task",
+        "key": "operation:planner.focus_task|references|effect:planner.create_task|0",
+        "occurrence": 0,
+        "relation": "references",
+        "role": "command-effect",
+        "to": "effect:planner.create_task"
+      },
+      {
+        "confidence": "canonical",
+        "from": "operation:planner.list_tasks",
+        "key": "operation:planner.list_tasks|reads|entity:planner.task|0",
+        "occurrence": 0,
+        "relation": "reads",
+        "role": "query-reads",
+        "to": "entity:planner.task"
+      },
+      {
+        "confidence": "canonical",
+        "from": "operation:planner.list_tasks",
+        "key": "operation:planner.list_tasks|returns|entity:planner.task|0",
+        "occurrence": 0,
+        "relation": "returns",
+        "role": "query-returns",
+        "to": "entity:planner.task"
+      },
+      {
+        "confidence": "canonical",
+        "from": "operation:planner.user_names",
+        "key": "operation:planner.user_names|reads|entity:notify.user|0",
+        "occurrence": 0,
+        "relation": "reads",
+        "role": "query-reads",
+        "to": "entity:notify.user"
+      },
+      {
+        "confidence": "canonical",
+        "from": "operation:planner.user_names",
+        "key": "operation:planner.user_names|reads|entity:planner.task|1",
+        "occurrence": 1,
+        "relation": "reads",
+        "role": "query-reads",
+        "to": "entity:planner.task"
+      },
+      {
+        "confidence": "canonical",
+        "from": "operation:planner.user_names",
+        "key": "operation:planner.user_names|returns|type:planner.text|0",
+        "occurrence": 0,
+        "relation": "returns",
+        "role": "query-returns",
+        "to": "type:planner.text"
+      },
+      {
+        "confidence": "canonical",
+        "from": "type:planner.due_window",
+        "key": "type:planner.due_window|references|type:planner.due_date|0",
+        "occurrence": 0,
+        "relation": "references",
+        "role": "value-object-field",
+        "to": "type:planner.due_date"
+      },
+      {
+        "confidence": "canonical",
+        "from": "type:planner.due_window",
+        "key": "type:planner.due_window|references|type:planner.due_date|1",
+        "occurrence": 1,
+        "relation": "references",
+        "role": "value-object-field",
+        "to": "type:planner.due_date"
+      }
+    ],
+    "fields": {
+      "entity:notify.user": {
+        "name": [
+          "type:notify.text"
+        ],
+        "user_id": [
+          "type:notify.user_id"
+        ]
+      },
+      "entity:planner.task": {
+        "due": [
+          "type:planner.due_date"
+        ],
+        "state": [
+          "type:planner.task_state"
+        ],
+        "task_id": [
+          "type:planner.task_id"
+        ],
+        "title": [
+          "type:planner.text"
+        ],
+        "window": [
+          "type:planner.due_window"
+        ]
+      },
+      "event:planner.task_archived": {
+        "task_id": [
+          "type:planner.task_id"
+        ]
+      },
+      "event:planner.task_focused": {
+        "focused_at": [
+          "type:planner.due_date"
+        ],
+        "task_id": [
+          "type:planner.task_id"
+        ]
+      },
+      "operation:notify.purge_cache_cmd": {
+        "user_id": [
+          "type:notify.user_id"
+        ]
+      },
+      "operation:notify.rename_user_cmd": {
+        "name": [
+          "type:notify.text"
+        ],
+        "user_id": [
+          "type:notify.user_id"
+        ]
+      },
+      "operation:planner.archive_task_cmd": {
+        "task_id": [
+          "type:planner.task_id"
+        ]
+      },
+      "operation:planner.edit_task_cmd": {
+        "task_id": [
+          "type:planner.task_id"
+        ],
+        "title": [
+          "type:planner.text"
+        ]
+      },
+      "operation:planner.focus_task": {
+        "task_id": [
+          "type:planner.task_id"
+        ]
+      },
+      "type:planner.due_window": {
+        "from": [
+          "type:planner.due_date"
+        ],
+        "to": [
+          "type:planner.due_date"
+        ]
+      }
+    },
+    "symbols": {
+      "effect:notify.rename_user": {
+        "class": "supporting",
+        "effectOperation": "update",
+        "module": "notify",
+        "targetSpecific": false
+      },
+      "effect:planner.archive_task": {
+        "class": "supporting",
+        "effectOperation": "delete",
+        "module": "planner",
+        "targetSpecific": false
+      },
+      "effect:planner.create_task": {
+        "class": "supporting",
+        "effectOperation": "create",
+        "module": "planner",
+        "targetSpecific": false
+      },
+      "effect:planner.edit_task": {
+        "class": "supporting",
+        "effectOperation": "update",
+        "module": "planner",
+        "targetSpecific": false
+      },
+      "endpoint:planner.api_focus": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "planner",
+        "targetSpecific": false
+      },
+      "entity:notify.user": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "notify",
+        "targetSpecific": false
+      },
+      "entity:planner.task": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "planner",
+        "targetSpecific": false
+      },
+      "event:planner.task_archived": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "planner",
+        "targetSpecific": false
+      },
+      "event:planner.task_focused": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "planner",
+        "targetSpecific": false
+      },
+      "module:notify": {
+        "class": "unclassified",
+        "effectOperation": "none",
+        "module": "notify",
+        "targetSpecific": false
+      },
+      "module:planner": {
+        "class": "unclassified",
+        "effectOperation": "none",
+        "module": "planner",
+        "targetSpecific": false
+      },
+      "operation:notify.purge_cache_cmd": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "notify",
+        "targetSpecific": false
+      },
+      "operation:notify.rename_user_cmd": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "notify",
+        "targetSpecific": false
+      },
+      "operation:planner.archive_task_cmd": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "planner",
+        "targetSpecific": false
+      },
+      "operation:planner.count_focused": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "planner",
+        "targetSpecific": false
+      },
+      "operation:planner.edit_task_cmd": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "planner",
+        "targetSpecific": false
+      },
+      "operation:planner.focus_task": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "planner",
+        "targetSpecific": false
+      },
+      "operation:planner.list_tasks": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "planner",
+        "targetSpecific": false
+      },
+      "operation:planner.user_names": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "planner",
+        "targetSpecific": false
+      },
+      "policy:planner.deny_bulk_focus": {
+        "class": "supporting",
+        "effectOperation": "none",
+        "module": "planner",
+        "targetSpecific": false
+      },
+      "project:planner": {
+        "class": "unclassified",
+        "effectOperation": "none",
+        "module": "",
+        "targetSpecific": false
+      },
+      "requirement:PLANNER-REQ-001": {
+        "class": "unclassified",
+        "effectOperation": "none",
+        "module": "",
+        "targetSpecific": false
+      },
+      "scenario:planner.focus_flow": {
+        "class": "supporting",
+        "effectOperation": "none",
+        "module": "planner",
+        "targetSpecific": false
+      },
+      "target-binding:planner.binding_node": {
+        "class": "supporting",
+        "effectOperation": "none",
+        "module": "planner",
+        "targetSpecific": true
+      },
+      "type:notify.text": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "notify",
+        "targetSpecific": false
+      },
+      "type:notify.user_id": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "notify",
+        "targetSpecific": false
+      },
+      "type:planner.due_date": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "planner",
+        "targetSpecific": false
+      },
+      "type:planner.due_window": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "planner",
+        "targetSpecific": false
+      },
+      "type:planner.task_id": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "planner",
+        "targetSpecific": false
+      },
+      "type:planner.task_state": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "planner",
+        "targetSpecific": false
+      },
+      "type:planner.text": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "planner",
+        "targetSpecific": false
+      }
+    }
+  },
+  "provenance": {
+    "evidence": {
+      "state": "unknown"
+    },
+    "inputs": {
+      "effectDigest": "sha256:7dbbb339029d5b96dca6a3be31c2877cf93892e1acdbc7270dc6fbd65387e896",
+      "graphDigest": "sha256:13e6e978d2733e709eeb47bd7b6f12e1499cc063b71d993c843340c9023987e1",
+      "irDigest": "sha256:2ed11578a45ee61635c51cc4ad5ff758db3bc2a23a867f0c70547c75188df8f7",
+      "modelDigest": {
+        "state": "known",
+        "value": "sha256:7707ddf7e9b435a58c1a4d9fd6df7d8bbf09856519958e30762eec5c3c6c96de"
+      },
+      "modelVersion": "0.2.16",
+      "project": "planner",
+      "semanticDigest": "sha256:97a84841b2d87d3dfe7024db607400e0de4d3448fad9f78fee569000dee85a06",
+      "sourceRevision": {
+        "state": "unknown"
+      }
+    },
+    "measurementDigest": "sha256:492bcb6c2193bac297be695ecf6c4ae53718835603bc597659fab74e1686f10b",
+    "profileDigest": "sha256:d6dc425eef456dba1e0240c10ca5832db240d88c4c75ea7ef7c7056e3daeaeb4",
+    "projectionDigest": "sha256:42a016e3be1c20f07f4087b780db93c027496a67a4f45876ec3ffed152d15d4a"
+  },
+  "publicContractCounts": {
+    "endpoint": 1,
+    "entity": 1,
+    "event": 0,
+    "operation": 6,
+    "type": 0
+  },
+  "recipe": "declared-architecture/1",
+  "schemaVersion": "lekalo/coupling-report/v0.6.4",
+  "scope": {
+    "changedInput": {
+      "state": "unknown"
+    },
+    "kind": "symbol",
+    "roots": [
+      "entity:planner.task"
+    ],
+    "selector": "entity:planner.task"
+  },
+  "subjects": [
+    {
+      "affectedModules": [
+        "planner"
+      ],
+      "artifacts": [],
+      "checks": [],
+      "fanIn": [
+        "effect:planner.archive_task",
+        "effect:planner.create_task",
+        "effect:planner.edit_task",
+        "operation:planner.count_focused",
+        "operation:planner.list_tasks",
+        "operation:planner.user_names"
+      ],
+      "fanOut": [
+        "type:planner.due_date",
+        "type:planner.due_window",
+        "type:planner.task_id",
+        "type:planner.task_state",
+        "type:planner.text"
+      ],
+      "gaps": [],
+      "impact": {
+        "internalSymbols": [],
+        "publicContracts": [
+          "endpoint:planner.api_focus",
+          "entity:planner.task",
+          "operation:planner.archive_task_cmd",
+          "operation:planner.count_focused",
+          "operation:planner.edit_task_cmd",
+          "operation:planner.focus_task",
+          "operation:planner.list_tasks",
+          "operation:planner.user_names"
+        ],
+        "supportingSymbols": [
+          "effect:planner.archive_task",
+          "effect:planner.create_task",
+          "effect:planner.edit_task"
+        ],
+        "unclassifiedSymbols": []
+      },
+      "importEdgeKeys": [],
+      "lowerBounds": {},
+      "measurementBasis": "exact-declared",
+      "metrics": {
+        "affectedArtifacts": {
+          "state": "unknown"
+        },
+        "affectedTargets": {
+          "state": "unsupported"
+        },
+        "affectedTests": {
+          "state": "unknown"
+        },
+        "crossModuleCycles": {
+          "state": "known",
+          "value": 0
+        },
+        "duplicationDivergence": {
+          "state": "unsupported"
+        },
+        "fanInModules": {
+          "state": "known",
+          "value": 0
+        },
+        "fanInSymbols": {
+          "state": "known",
+          "value": 6
+        },
+        "fanOutModules": {
+          "state": "known",
+          "value": 0
+        },
+        "fanOutSymbols": {
+          "state": "known",
+          "value": 5
+        },
+        "internalSymbolsAffected": {
+          "state": "known",
+          "value": 0
+        },
+        "modulesAffected": {
+          "state": "known",
+          "value": 1
+        },
+        "publicContractsAffected": {
+          "state": "known",
+          "value": 8
+        },
+        "publicTargetExposure": {
+          "state": "known",
+          "value": 0
+        },
+        "requiredChecks": {
+          "state": "unknown"
+        },
+        "semanticSymbolsAffected": {
+          "state": "known",
+          "value": 11
+        },
+        "sharedAbstractionRadius": {
+          "state": "known",
+          "value": 0
+        },
+        "sharedMutableResources": {
+          "state": "known",
+          "value": 1
+        },
+        "transactionSpread": {
+          "state": "unknown"
+        }
+      },
+      "module": "planner",
+      "possible": [],
+      "replicaObligations": [],
+      "resources": [
+        "planner.task"
+      ],
+      "sharedResources": [
+        "planner.task"
+      ],
+      "subject": "entity:planner.task",
+      "targetExposure": [],
+      "targets": [],
+      "tests": [],
+      "transactionGroups": [],
+      "transactionScopes": [],
+      "witnessRefs": [
+        "sha256:0b9a8709918cdef3c9a900f3594f7bcefc698f6682e262750227a471d22045fe",
+        "sha256:0bde0cadd6616e149ce9fd68e3cddb959af2c87bd0cc7aab75e421ce0b19b23b",
+        "sha256:3c18a5f8a9cb32e731277303d6d5b593821806c29897010d864b7bf86607db4d",
+        "sha256:462fa3f0555121e14feac66a24bfe65356cc2181cf2e5889156bbe7879e7904f",
+        "sha256:51cb0d1b4cc762ece3a163ee4f1b7202cd8c99f44706e9f09fe3ed38c4f19659",
+        "sha256:661b57a925f1e6f71e0a42b62bbe5ebcbee6e9e83e30f239eb64631bff18c604",
+        "sha256:71e6306640ae1c45be77c41f2dc5289ebd232be48c5b67ee5ef40972698f7cde",
+        "sha256:7cafed29f8ea2f281027036cab3f4f0d9d5529db5d5eeda0250fd8fc6058ff41",
+        "sha256:a7e0ff8237e015fefe85d76d930e8cd0bc19cf10f0d2e24718f7c7d528b89307",
+        "sha256:a81b16c88ed38096d2df3ee58932635c4f28e9642ce26e0ebdb388055f8420bc",
+        "sha256:a93239a440baf091a6bf8f33890b112eff413466af67f69310f0d68b676ace1b",
+        "sha256:abe50791110b34289eb6cb909be41803ff51901b342f488c79af933dfb56a795",
+        "sha256:b5cde3d624be2595f747855404bdf5853050cd86414073705301ba4d886758c6",
+        "sha256:c43489d06373221aa21f0c1d26b5b51175a7989d8afbf33fb0ce7632ba9360bd",
+        "sha256:cc33af652547aed0789a4017a6e0c5ae8f072c6fc791f894c3d3c7a095603d39",
+        "sha256:db22c64dad305c62af63860fcd381091c713d87cc9242d02e795c88fb0a15fa1",
+        "sha256:f75ad95f7646962d4ef94649d12413ab99a9e165e1d6c8b1bb3db08dbcb4fee4"
+      ]
+    },
+    {
+      "affectedModules": [
+        "planner"
+      ],
+      "artifacts": [],
+      "checks": [],
+      "fanIn": [
+        "effect:planner.archive_task",
+        "effect:planner.create_task",
+        "effect:planner.edit_task",
+        "operation:planner.count_focused",
+        "operation:planner.list_tasks",
+        "operation:planner.user_names"
+      ],
+      "fanOut": [
+        "type:planner.due_date",
+        "type:planner.due_window",
+        "type:planner.task_id",
+        "type:planner.task_state",
+        "type:planner.text"
+      ],
+      "gaps": [],
+      "impact": {
+        "internalSymbols": [],
+        "publicContracts": [
+          "endpoint:planner.api_focus",
+          "entity:planner.task",
+          "operation:planner.archive_task_cmd",
+          "operation:planner.count_focused",
+          "operation:planner.edit_task_cmd",
+          "operation:planner.focus_task",
+          "operation:planner.list_tasks",
+          "operation:planner.user_names"
+        ],
+        "supportingSymbols": [
+          "effect:planner.archive_task",
+          "effect:planner.create_task",
+          "effect:planner.edit_task"
+        ],
+        "unclassifiedSymbols": []
+      },
+      "importEdgeKeys": [
+        "module:planner|requires|module:notify|0"
+      ],
+      "lowerBounds": {},
+      "measurementBasis": "aggregate-declared",
+      "metrics": {
+        "affectedArtifacts": {
+          "state": "unknown"
+        },
+        "affectedTargets": {
+          "state": "unknown"
+        },
+        "affectedTests": {
+          "state": "unknown"
+        },
+        "crossModuleCycles": {
+          "state": "known",
+          "value": 0
+        },
+        "duplicationDivergence": {
+          "state": "unknown"
+        },
+        "fanInModules": {
+          "state": "known",
+          "value": 0
+        },
+        "fanInSymbols": {
+          "state": "known",
+          "value": 6
+        },
+        "fanOutModules": {
+          "state": "known",
+          "value": 0
+        },
+        "fanOutSymbols": {
+          "state": "known",
+          "value": 5
+        },
+        "internalSymbolsAffected": {
+          "state": "known",
+          "value": 0
+        },
+        "modulesAffected": {
+          "state": "known",
+          "value": 1
+        },
+        "publicContractsAffected": {
+          "state": "known",
+          "value": 8
+        },
+        "publicTargetExposure": {
+          "state": "unknown"
+        },
+        "requiredChecks": {
+          "state": "unknown"
+        },
+        "semanticSymbolsAffected": {
+          "state": "known",
+          "value": 11
+        },
+        "sharedAbstractionRadius": {
+          "state": "unknown"
+        },
+        "sharedMutableResources": {
+          "state": "known",
+          "value": 1
+        },
+        "transactionSpread": {
+          "state": "unknown"
+        }
+      },
+      "module": "planner",
+      "possible": [],
+      "replicaObligations": [],
+      "resources": [
+        "planner.task"
+      ],
+      "sharedResources": [
+        "planner.task"
+      ],
+      "subject": "module:planner",
+      "targetExposure": [],
+      "targets": [],
+      "tests": [],
+      "transactionGroups": [],
+      "transactionScopes": [],
+      "witnessRefs": [
+        "sha256:0b9a8709918cdef3c9a900f3594f7bcefc698f6682e262750227a471d22045fe",
+        "sha256:0bde0cadd6616e149ce9fd68e3cddb959af2c87bd0cc7aab75e421ce0b19b23b",
+        "sha256:3c18a5f8a9cb32e731277303d6d5b593821806c29897010d864b7bf86607db4d",
+        "sha256:462fa3f0555121e14feac66a24bfe65356cc2181cf2e5889156bbe7879e7904f",
+        "sha256:51cb0d1b4cc762ece3a163ee4f1b7202cd8c99f44706e9f09fe3ed38c4f19659",
+        "sha256:661b57a925f1e6f71e0a42b62bbe5ebcbee6e9e83e30f239eb64631bff18c604",
+        "sha256:71e6306640ae1c45be77c41f2dc5289ebd232be48c5b67ee5ef40972698f7cde",
+        "sha256:7cafed29f8ea2f281027036cab3f4f0d9d5529db5d5eeda0250fd8fc6058ff41",
+        "sha256:a7e0ff8237e015fefe85d76d930e8cd0bc19cf10f0d2e24718f7c7d528b89307",
+        "sha256:a81b16c88ed38096d2df3ee58932635c4f28e9642ce26e0ebdb388055f8420bc",
+        "sha256:a93239a440baf091a6bf8f33890b112eff413466af67f69310f0d68b676ace1b",
+        "sha256:abe50791110b34289eb6cb909be41803ff51901b342f488c79af933dfb56a795",
+        "sha256:b5cde3d624be2595f747855404bdf5853050cd86414073705301ba4d886758c6",
+        "sha256:c43489d06373221aa21f0c1d26b5b51175a7989d8afbf33fb0ce7632ba9360bd",
+        "sha256:cc33af652547aed0789a4017a6e0c5ae8f072c6fc791f894c3d3c7a095603d39",
+        "sha256:db22c64dad305c62af63860fcd381091c713d87cc9242d02e795c88fb0a15fa1",
+        "sha256:f75ad95f7646962d4ef94649d12413ab99a9e165e1d6c8b1bb3db08dbcb4fee4"
+      ]
+    },
+    {
+      "affectedModules": [
+        "planner"
+      ],
+      "artifacts": [],
+      "checks": [],
+      "fanIn": [
+        "effect:planner.archive_task",
+        "effect:planner.create_task",
+        "effect:planner.edit_task",
+        "operation:planner.count_focused",
+        "operation:planner.list_tasks",
+        "operation:planner.user_names"
+      ],
+      "fanOut": [
+        "type:planner.due_date",
+        "type:planner.due_window",
+        "type:planner.task_id",
+        "type:planner.task_state",
+        "type:planner.text"
+      ],
+      "gaps": [],
+      "impact": {
+        "internalSymbols": [],
+        "publicContracts": [
+          "endpoint:planner.api_focus",
+          "entity:planner.task",
+          "operation:planner.archive_task_cmd",
+          "operation:planner.count_focused",
+          "operation:planner.edit_task_cmd",
+          "operation:planner.focus_task",
+          "operation:planner.list_tasks",
+          "operation:planner.user_names"
+        ],
+        "supportingSymbols": [
+          "effect:planner.archive_task",
+          "effect:planner.create_task",
+          "effect:planner.edit_task"
+        ],
+        "unclassifiedSymbols": []
+      },
+      "importEdgeKeys": [
+        "module:planner|requires|module:notify|0"
+      ],
+      "lowerBounds": {},
+      "measurementBasis": "aggregate-declared",
+      "metrics": {
+        "affectedArtifacts": {
+          "state": "unknown"
+        },
+        "affectedTargets": {
+          "state": "unknown"
+        },
+        "affectedTests": {
+          "state": "unknown"
+        },
+        "crossModuleCycles": {
+          "state": "known",
+          "value": 0
+        },
+        "duplicationDivergence": {
+          "state": "unknown"
+        },
+        "fanInModules": {
+          "state": "known",
+          "value": 0
+        },
+        "fanInSymbols": {
+          "state": "known",
+          "value": 6
+        },
+        "fanOutModules": {
+          "state": "known",
+          "value": 0
+        },
+        "fanOutSymbols": {
+          "state": "known",
+          "value": 5
+        },
+        "internalSymbolsAffected": {
+          "state": "known",
+          "value": 0
+        },
+        "modulesAffected": {
+          "state": "known",
+          "value": 1
+        },
+        "publicContractsAffected": {
+          "state": "known",
+          "value": 8
+        },
+        "publicTargetExposure": {
+          "state": "unknown"
+        },
+        "requiredChecks": {
+          "state": "unknown"
+        },
+        "semanticSymbolsAffected": {
+          "state": "known",
+          "value": 11
+        },
+        "sharedAbstractionRadius": {
+          "state": "unknown"
+        },
+        "sharedMutableResources": {
+          "state": "known",
+          "value": 1
+        },
+        "transactionSpread": {
+          "state": "unknown"
+        }
+      },
+      "module": "",
+      "possible": [],
+      "replicaObligations": [],
+      "resources": [
+        "planner.task"
+      ],
+      "sharedResources": [
+        "planner.task"
+      ],
+      "subject": "project:planner",
+      "targetExposure": [],
+      "targets": [],
+      "tests": [],
+      "transactionGroups": [],
+      "transactionScopes": [],
+      "witnessRefs": [
+        "sha256:0b9a8709918cdef3c9a900f3594f7bcefc698f6682e262750227a471d22045fe",
+        "sha256:0bde0cadd6616e149ce9fd68e3cddb959af2c87bd0cc7aab75e421ce0b19b23b",
+        "sha256:3c18a5f8a9cb32e731277303d6d5b593821806c29897010d864b7bf86607db4d",
+        "sha256:462fa3f0555121e14feac66a24bfe65356cc2181cf2e5889156bbe7879e7904f",
+        "sha256:51cb0d1b4cc762ece3a163ee4f1b7202cd8c99f44706e9f09fe3ed38c4f19659",
+        "sha256:661b57a925f1e6f71e0a42b62bbe5ebcbee6e9e83e30f239eb64631bff18c604",
+        "sha256:71e6306640ae1c45be77c41f2dc5289ebd232be48c5b67ee5ef40972698f7cde",
+        "sha256:7cafed29f8ea2f281027036cab3f4f0d9d5529db5d5eeda0250fd8fc6058ff41",
+        "sha256:a7e0ff8237e015fefe85d76d930e8cd0bc19cf10f0d2e24718f7c7d528b89307",
+        "sha256:a81b16c88ed38096d2df3ee58932635c4f28e9642ce26e0ebdb388055f8420bc",
+        "sha256:a93239a440baf091a6bf8f33890b112eff413466af67f69310f0d68b676ace1b",
+        "sha256:abe50791110b34289eb6cb909be41803ff51901b342f488c79af933dfb56a795",
+        "sha256:b5cde3d624be2595f747855404bdf5853050cd86414073705301ba4d886758c6",
+        "sha256:c43489d06373221aa21f0c1d26b5b51175a7989d8afbf33fb0ce7632ba9360bd",
+        "sha256:cc33af652547aed0789a4017a6e0c5ae8f072c6fc791f894c3d3c7a095603d39",
+        "sha256:db22c64dad305c62af63860fcd381091c713d87cc9242d02e795c88fb0a15fa1",
+        "sha256:f75ad95f7646962d4ef94649d12413ab99a9e165e1d6c8b1bb3db08dbcb4fee4"
+      ]
+    }
+  ],
+  "suggestions": [
+    {
+      "action": "review-consumer-projection-or-boundary-cut",
+      "applied": false,
+      "preserve": [
+        "semantic-identity",
+        "public-contract-compatibility",
+        "types-nullability-presence",
+        "policy-errors",
+        "effects-transaction-boundaries",
+        "invariants-ownership"
+      ],
+      "subject": "entity:planner.task",
+      "witnessRefs": [
+        "sha256:0b9a8709918cdef3c9a900f3594f7bcefc698f6682e262750227a471d22045fe",
+        "sha256:0bde0cadd6616e149ce9fd68e3cddb959af2c87bd0cc7aab75e421ce0b19b23b",
+        "sha256:3c18a5f8a9cb32e731277303d6d5b593821806c29897010d864b7bf86607db4d",
+        "sha256:462fa3f0555121e14feac66a24bfe65356cc2181cf2e5889156bbe7879e7904f",
+        "sha256:51cb0d1b4cc762ece3a163ee4f1b7202cd8c99f44706e9f09fe3ed38c4f19659",
+        "sha256:661b57a925f1e6f71e0a42b62bbe5ebcbee6e9e83e30f239eb64631bff18c604",
+        "sha256:71e6306640ae1c45be77c41f2dc5289ebd232be48c5b67ee5ef40972698f7cde",
+        "sha256:7cafed29f8ea2f281027036cab3f4f0d9d5529db5d5eeda0250fd8fc6058ff41",
+        "sha256:a7e0ff8237e015fefe85d76d930e8cd0bc19cf10f0d2e24718f7c7d528b89307",
+        "sha256:a81b16c88ed38096d2df3ee58932635c4f28e9642ce26e0ebdb388055f8420bc",
+        "sha256:a93239a440baf091a6bf8f33890b112eff413466af67f69310f0d68b676ace1b",
+        "sha256:abe50791110b34289eb6cb909be41803ff51901b342f488c79af933dfb56a795",
+        "sha256:b5cde3d624be2595f747855404bdf5853050cd86414073705301ba4d886758c6",
+        "sha256:c43489d06373221aa21f0c1d26b5b51175a7989d8afbf33fb0ce7632ba9360bd",
+        "sha256:cc33af652547aed0789a4017a6e0c5ae8f072c6fc791f894c3d3c7a095603d39",
+        "sha256:db22c64dad305c62af63860fcd381091c713d87cc9242d02e795c88fb0a15fa1",
+        "sha256:f75ad95f7646962d4ef94649d12413ab99a9e165e1d6c8b1bb3db08dbcb4fee4"
+      ]
+    }
+  ],
+  "summary": {
+    "internalSymbols": [],
+    "publicContracts": [
+      "endpoint:planner.api_focus",
+      "entity:planner.task",
+      "operation:planner.archive_task_cmd",
+      "operation:planner.count_focused",
+      "operation:planner.edit_task_cmd",
+      "operation:planner.focus_task",
+      "operation:planner.list_tasks",
+      "operation:planner.user_names"
+    ],
+    "supportingSymbols": [
+      "effect:planner.archive_task",
+      "effect:planner.create_task",
+      "effect:planner.edit_task"
+    ],
+    "unclassifiedSymbols": []
+  },
+  "witnesses": [
+    {
+      "confidence": "canonical",
+      "direction": "forward",
+      "edges": [
+        {
+          "confidence": "canonical",
+          "from": "entity:planner.task",
+          "key": "entity:planner.task|references|type:planner.due_window|4",
+          "occurrence": 4,
+          "relation": "references",
+          "role": "entity-field",
+          "to": "type:planner.due_window"
+        }
+      ],
+      "evidenceRefs": [],
+      "id": "sha256:0b9a8709918cdef3c9a900f3594f7bcefc698f6682e262750227a471d22045fe",
+      "root": "entity:planner.task",
+      "subject": "type:planner.due_window"
+    },
+    {
+      "confidence": "canonical",
+      "direction": "reverse",
+      "edges": [
+        {
+          "confidence": "canonical",
+          "from": "effect:planner.create_task",
+          "key": "effect:planner.create_task|references|entity:planner.task|0",
+          "occurrence": 0,
+          "relation": "references",
+          "role": "effect-entity",
+          "to": "entity:planner.task"
+        },
+        {
+          "confidence": "canonical",
+          "from": "operation:planner.focus_task",
+          "key": "operation:planner.focus_task|references|effect:planner.create_task|0",
+          "occurrence": 0,
+          "relation": "references",
+          "role": "command-effect",
+          "to": "effect:planner.create_task"
+        },
+        {
+          "confidence": "canonical",
+          "from": "endpoint:planner.api_focus",
+          "key": "endpoint:planner.api_focus|exposes|operation:planner.focus_task|0",
+          "occurrence": 0,
+          "relation": "exposes",
+          "role": "endpoint-invokes",
+          "to": "operation:planner.focus_task"
+        }
+      ],
+      "evidenceRefs": [],
+      "id": "sha256:0bde0cadd6616e149ce9fd68e3cddb959af2c87bd0cc7aab75e421ce0b19b23b",
+      "root": "entity:planner.task",
+      "subject": "endpoint:planner.api_focus"
+    },
+    {
+      "confidence": "canonical",
+      "direction": "forward",
+      "edges": [
+        {
+          "confidence": "canonical",
+          "from": "entity:planner.task",
+          "key": "entity:planner.task|references|type:planner.task_id|0",
+          "occurrence": 0,
+          "relation": "references",
+          "role": "entity-field",
+          "to": "type:planner.task_id"
+        }
+      ],
+      "evidenceRefs": [],
+      "id": "sha256:3c18a5f8a9cb32e731277303d6d5b593821806c29897010d864b7bf86607db4d",
+      "root": "entity:planner.task",
+      "subject": "type:planner.task_id"
+    },
+    {
+      "confidence": "canonical",
+      "direction": "reverse",
+      "edges": [
+        {
+          "confidence": "canonical",
+          "from": "effect:planner.edit_task",
+          "key": "effect:planner.edit_task|references|entity:planner.task|0",
+          "occurrence": 0,
+          "relation": "references",
+          "role": "effect-entity",
+          "to": "entity:planner.task"
+        },
+        {
+          "confidence": "canonical",
+          "from": "operation:planner.edit_task_cmd",
+          "key": "operation:planner.edit_task_cmd|references|effect:planner.edit_task|0",
+          "occurrence": 0,
+          "relation": "references",
+          "role": "command-effect",
+          "to": "effect:planner.edit_task"
+        }
+      ],
+      "evidenceRefs": [],
+      "id": "sha256:462fa3f0555121e14feac66a24bfe65356cc2181cf2e5889156bbe7879e7904f",
+      "root": "entity:planner.task",
+      "subject": "operation:planner.edit_task_cmd"
+    },
+    {
+      "confidence": "canonical",
+      "direction": "reverse",
+      "edges": [
+        {
+          "confidence": "canonical",
+          "from": "effect:planner.create_task",
+          "key": "effect:planner.create_task|references|entity:planner.task|0",
+          "occurrence": 0,
+          "relation": "references",
+          "role": "effect-entity",
+          "to": "entity:planner.task"
+        }
+      ],
+      "evidenceRefs": [],
+      "id": "sha256:51cb0d1b4cc762ece3a163ee4f1b7202cd8c99f44706e9f09fe3ed38c4f19659",
+      "root": "entity:planner.task",
+      "subject": "effect:planner.create_task"
+    },
+    {
+      "confidence": "canonical",
+      "direction": "reverse",
+      "edges": [],
+      "evidenceRefs": [],
+      "id": "sha256:661b57a925f1e6f71e0a42b62bbe5ebcbee6e9e83e30f239eb64631bff18c604",
+      "root": "entity:planner.task",
+      "subject": "entity:planner.task"
+    },
+    {
+      "confidence": "canonical",
+      "direction": "reverse",
+      "edges": [
+        {
+          "confidence": "canonical",
+          "from": "effect:planner.archive_task",
+          "key": "effect:planner.archive_task|references|entity:planner.task|0",
+          "occurrence": 0,
+          "relation": "references",
+          "role": "effect-entity",
+          "to": "entity:planner.task"
+        }
+      ],
+      "evidenceRefs": [],
+      "id": "sha256:71e6306640ae1c45be77c41f2dc5289ebd232be48c5b67ee5ef40972698f7cde",
+      "root": "entity:planner.task",
+      "subject": "effect:planner.archive_task"
+    },
+    {
+      "confidence": "canonical",
+      "direction": "effects",
+      "edges": [],
+      "evidenceRefs": [
+        "operation:planner.archive_task_cmd|delete|planner.task|effect:planner.archive_task|0",
+        "operation:planner.edit_task_cmd|update|planner.task|effect:planner.edit_task|0",
+        "operation:planner.focus_task|create|planner.task|effect:planner.create_task|0"
+      ],
+      "id": "sha256:7cafed29f8ea2f281027036cab3f4f0d9d5529db5d5eeda0250fd8fc6058ff41",
+      "root": "entity:planner.task",
+      "subject": "entity:planner.task"
+    },
+    {
+      "confidence": "canonical",
+      "direction": "reverse",
+      "edges": [
+        {
+          "confidence": "canonical",
+          "from": "operation:planner.count_focused",
+          "key": "operation:planner.count_focused|reads|entity:planner.task|0",
+          "occurrence": 0,
+          "relation": "reads",
+          "role": "query-reads",
+          "to": "entity:planner.task"
+        }
+      ],
+      "evidenceRefs": [],
+      "id": "sha256:a7e0ff8237e015fefe85d76d930e8cd0bc19cf10f0d2e24718f7c7d528b89307",
+      "root": "entity:planner.task",
+      "subject": "operation:planner.count_focused"
+    },
+    {
+      "confidence": "canonical",
+      "direction": "reverse",
+      "edges": [
+        {
+          "confidence": "canonical",
+          "from": "effect:planner.create_task",
+          "key": "effect:planner.create_task|references|entity:planner.task|0",
+          "occurrence": 0,
+          "relation": "references",
+          "role": "effect-entity",
+          "to": "entity:planner.task"
+        },
+        {
+          "confidence": "canonical",
+          "from": "operation:planner.focus_task",
+          "key": "operation:planner.focus_task|references|effect:planner.create_task|0",
+          "occurrence": 0,
+          "relation": "references",
+          "role": "command-effect",
+          "to": "effect:planner.create_task"
+        }
+      ],
+      "evidenceRefs": [],
+      "id": "sha256:a81b16c88ed38096d2df3ee58932635c4f28e9642ce26e0ebdb388055f8420bc",
+      "root": "entity:planner.task",
+      "subject": "operation:planner.focus_task"
+    },
+    {
+      "confidence": "canonical",
+      "direction": "reverse",
+      "edges": [
+        {
+          "confidence": "canonical",
+          "from": "effect:planner.archive_task",
+          "key": "effect:planner.archive_task|references|entity:planner.task|0",
+          "occurrence": 0,
+          "relation": "references",
+          "role": "effect-entity",
+          "to": "entity:planner.task"
+        },
+        {
+          "confidence": "canonical",
+          "from": "operation:planner.archive_task_cmd",
+          "key": "operation:planner.archive_task_cmd|references|effect:planner.archive_task|0",
+          "occurrence": 0,
+          "relation": "references",
+          "role": "command-effect",
+          "to": "effect:planner.archive_task"
+        }
+      ],
+      "evidenceRefs": [],
+      "id": "sha256:a93239a440baf091a6bf8f33890b112eff413466af67f69310f0d68b676ace1b",
+      "root": "entity:planner.task",
+      "subject": "operation:planner.archive_task_cmd"
+    },
+    {
+      "confidence": "canonical",
+      "direction": "reverse",
+      "edges": [
+        {
+          "confidence": "canonical",
+          "from": "operation:planner.user_names",
+          "key": "operation:planner.user_names|reads|entity:planner.task|1",
+          "occurrence": 1,
+          "relation": "reads",
+          "role": "query-reads",
+          "to": "entity:planner.task"
+        }
+      ],
+      "evidenceRefs": [],
+      "id": "sha256:abe50791110b34289eb6cb909be41803ff51901b342f488c79af933dfb56a795",
+      "root": "entity:planner.task",
+      "subject": "operation:planner.user_names"
+    },
+    {
+      "confidence": "canonical",
+      "direction": "reverse",
+      "edges": [
+        {
+          "confidence": "canonical",
+          "from": "operation:planner.list_tasks",
+          "key": "operation:planner.list_tasks|reads|entity:planner.task|0",
+          "occurrence": 0,
+          "relation": "reads",
+          "role": "query-reads",
+          "to": "entity:planner.task"
+        }
+      ],
+      "evidenceRefs": [],
+      "id": "sha256:b5cde3d624be2595f747855404bdf5853050cd86414073705301ba4d886758c6",
+      "root": "entity:planner.task",
+      "subject": "operation:planner.list_tasks"
+    },
+    {
+      "confidence": "canonical",
+      "direction": "forward",
+      "edges": [
+        {
+          "confidence": "canonical",
+          "from": "entity:planner.task",
+          "key": "entity:planner.task|references|type:planner.task_state|2",
+          "occurrence": 2,
+          "relation": "references",
+          "role": "entity-field",
+          "to": "type:planner.task_state"
+        }
+      ],
+      "evidenceRefs": [],
+      "id": "sha256:c43489d06373221aa21f0c1d26b5b51175a7989d8afbf33fb0ce7632ba9360bd",
+      "root": "entity:planner.task",
+      "subject": "type:planner.task_state"
+    },
+    {
+      "confidence": "canonical",
+      "direction": "reverse",
+      "edges": [
+        {
+          "confidence": "canonical",
+          "from": "effect:planner.edit_task",
+          "key": "effect:planner.edit_task|references|entity:planner.task|0",
+          "occurrence": 0,
+          "relation": "references",
+          "role": "effect-entity",
+          "to": "entity:planner.task"
+        }
+      ],
+      "evidenceRefs": [],
+      "id": "sha256:cc33af652547aed0789a4017a6e0c5ae8f072c6fc791f894c3d3c7a095603d39",
+      "root": "entity:planner.task",
+      "subject": "effect:planner.edit_task"
+    },
+    {
+      "confidence": "canonical",
+      "direction": "forward",
+      "edges": [
+        {
+          "confidence": "canonical",
+          "from": "entity:planner.task",
+          "key": "entity:planner.task|references|type:planner.text|1",
+          "occurrence": 1,
+          "relation": "references",
+          "role": "entity-field",
+          "to": "type:planner.text"
+        }
+      ],
+      "evidenceRefs": [],
+      "id": "sha256:db22c64dad305c62af63860fcd381091c713d87cc9242d02e795c88fb0a15fa1",
+      "root": "entity:planner.task",
+      "subject": "type:planner.text"
+    },
+    {
+      "confidence": "canonical",
+      "direction": "forward",
+      "edges": [
+        {
+          "confidence": "canonical",
+          "from": "entity:planner.task",
+          "key": "entity:planner.task|references|type:planner.due_date|3",
+          "occurrence": 3,
+          "relation": "references",
+          "role": "entity-field",
+          "to": "type:planner.due_date"
+        }
+      ],
+      "evidenceRefs": [],
+      "id": "sha256:f75ad95f7646962d4ef94649d12413ab99a9e165e1d6c8b1bb3db08dbcb4fee4",
+      "root": "entity:planner.task",
+      "subject": "type:planner.due_date"
+    }
+  ]
+}

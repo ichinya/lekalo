@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "lekalo/coupling-change-input/v0.6.4",
+  "identity": "dev.lekalo.coupling-change-input@0.6.4",
+  "mode": "worktree",
+  "baseRevision": {
+    "state": "unknown"
+  },
+  "candidateRevision": {
+    "state": "unknown"
+  },
+  "entries": [
+    {
+      "symbolIds": [
+        "planner.task"
+      ],
+      "members": [],
+      "path": "../secret.txt",
+      "fromPath": {
+        "state": "unknown"
+      },
+      "change": "modified",
+      "evidence": "canonical"
+    }
+  ]
+}

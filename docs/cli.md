@@ -1081,6 +1081,16 @@ these homes (`.lekalo/cache/client-sdk/<project>.json`) and adds the
 `generate.client-sdk` capability; see
 [docs/client-sdk.md](client-sdk.md).
 
+## Coupling (issue #77)
+
+`lekalo coupling --symbol ID|--module ID|--all|--changed-input FILE`
+reports semantic fan-in/out and evidence-bearing change radius. Optional
+`--field`, `--evidence`, `--baseline`, `--coupling-profile ID --profiles FILE`
+and `--context-budget TOKENS` select detail, reviewed policy and planning.
+It is read-only and advisory by default; an explicitly selected strict profile
+can deny baseline regressions while retaining the report. See
+[coupling.md](coupling.md) for metrics, closed contracts, exits and coverage.
+
 ## Privacy (issue #119)
 
 Issue #119 adds the privacy family: the deterministic, custody-verified

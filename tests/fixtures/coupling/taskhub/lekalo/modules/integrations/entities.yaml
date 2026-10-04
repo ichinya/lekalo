@@ -1,0 +1,72 @@
+schema_version: "0.2.16"
+definitions:
+  -
+    id: "integrations.text"
+    kind: "scalar"
+    version: 1
+    base: "string"
+  -
+    id: "integrations.target_kind"
+    kind: "enum"
+    version: 1
+    values:
+      -
+        value: "calendar"
+      -
+        value: "webhook"
+  -
+    id: "integrations.calendar_payload"
+    kind: "value-object"
+    version: 1
+    fields:
+      -
+        name: "calendar_id"
+        type: "integrations.text"
+        required: true
+      -
+        name: "date"
+        type: "integrations.text"
+        required: true
+      -
+        name: "title"
+        type: "integrations.text"
+        required: true
+  -
+    id: "integrations.webhook_payload"
+    kind: "value-object"
+    version: 1
+    fields:
+      -
+        name: "endpoint"
+        type: "integrations.text"
+        required: true
+      -
+        name: "body"
+        type: "integrations.text"
+        required: true
+  -
+    id: "integrations.client"
+    kind: "value-object"
+    version: 1
+    fields:
+      -
+        name: "kind"
+        type: "integrations.target_kind"
+        required: true
+      -
+        name: "endpoint"
+        type: "integrations.text"
+        required: true
+  -
+    id: "integrations.delivery_ack"
+    kind: "value-object"
+    version: 1
+    fields:
+      -
+        name: "target"
+        type: "integrations.text"
+        required: true
+      -
+        name: "accepted_at"
+        type: "integrations.text"
+        required: true

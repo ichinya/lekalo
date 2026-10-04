@@ -23,6 +23,7 @@ type StorageAttachment = lekalo_core::storage_projection::StorageProjectionAttac
 /// storage-profile` commands (issue #117).
 type ProfileAttachment = lekalo_core::storage_engine_profile::StorageEngineProfile;
 
+mod coupling;
 mod doctor_git;
 mod git_input;
 mod report_git;
@@ -252,6 +253,16 @@ enum Commands {
         /// Project root selector, relative to the invocation directory.
         #[arg(long, value_name = "DIR")]
         project: Option<String>,
+    },
+    /// Report semantic coupling and change-radius metrics with graph evidence
+    /// for one symbol, one module, the whole project, or typed changed inputs
+    /// (issue #77). Separate public contracts from internal impact and expose
+    /// cycles, shared state, and configurable threshold/baseline findings.
+    /// Advisory by default; an explicitly selected strict coupling profile may
+    /// deny. Use `--context-budget` to include the optional context plan.
+    Coupling {
+        #[command(flatten)]
+        args: coupling::CouplingArgs,
     },
     /// Report the context-budget and local-understandability metrics of
     /// one symbol, one module, or the whole project (issue #75): the
@@ -2422,6 +2433,7 @@ fn runtime() -> u8 {
                 spans,
                 project,
             } => run_context(symbol, changed, budget, spans, &project),
+            Commands::Coupling { args } => coupling::run(args),
             Commands::ContextBudget { args } => {
                 let ContextBudgetArgs {
                     symbol,

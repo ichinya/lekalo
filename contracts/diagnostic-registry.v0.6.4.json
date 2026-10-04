@@ -2024,6 +2024,366 @@
       "lifecycle": "active"
     },
     {
+      "id": "coupling.baseline-incomparable",
+      "code": "LEK-COUPLING-013",
+      "category": "compatibility",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid"
+      ],
+      "message_id": "coupling.baseline-incomparable",
+      "default_message": "The coupling baseline cannot support an exact comparison.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "coupling.baseline-regression",
+      "code": "LEK-COUPLING-014",
+      "category": "semantic",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid"
+      ],
+      "message_id": "coupling.baseline-regression",
+      "default_message": "A comparable coupling metric exceeds its regression allowance.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "coupling.change-amplification",
+      "code": "LEK-COUPLING-007",
+      "category": "semantic",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid"
+      ],
+      "message_id": "coupling.change-amplification",
+      "default_message": "A change amplification component exceeds its configured threshold.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "coupling.cross-module-cycle",
+      "code": "LEK-COUPLING-005",
+      "category": "semantic",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid"
+      ],
+      "message_id": "coupling.cross-module-cycle",
+      "default_message": "A permitted dependency cycle crosses module boundaries.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "coupling.duplication-divergence",
+      "code": "LEK-COUPLING-011",
+      "category": "semantic",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid"
+      ],
+      "message_id": "coupling.duplication-divergence",
+      "default_message": "Explicit replicas of the same obligation have divergent contracts.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "coupling.evidence-incomplete",
+      "code": "LEK-COUPLING-012",
+      "category": "semantic",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid"
+      ],
+      "message_id": "coupling.evidence-incomplete",
+      "default_message": "Required coupling evidence is unavailable or incomplete.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "coupling.fan-exceeded",
+      "code": "LEK-COUPLING-003",
+      "category": "semantic",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid"
+      ],
+      "message_id": "coupling.fan-exceeded",
+      "default_message": "A semantic neighbor count exceeds its configured threshold.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "coupling.input-invalid",
+      "code": "LEK-COUPLING-001",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "coupling.input-invalid",
+      "default_message": "The coupling input violates the closed contract.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "coupling.policy-denied",
+      "code": "LEK-COUPLING-015",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "coupling.policy-denied",
+      "default_message": "The selected strict coupling profile denies the result.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "coupling.profile-unsupported",
+      "code": "LEK-COUPLING-002",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unsupported-version"
+      ],
+      "message_id": "coupling.profile-unsupported",
+      "default_message": "The coupling contract or recipe version is unsupported.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "coupling.public-contract-amplification",
+      "code": "LEK-COUPLING-004",
+      "category": "semantic",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid"
+      ],
+      "message_id": "coupling.public-contract-amplification",
+      "default_message": "The public contract change radius exceeds its configured threshold.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "coupling.public-target-exposure",
+      "code": "LEK-COUPLING-010",
+      "category": "compatibility",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid"
+      ],
+      "message_id": "coupling.public-target-exposure",
+      "default_message": "A public contract transitively exposes a target-specific type.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "coupling.shared-abstraction-radius",
+      "code": "LEK-COUPLING-009",
+      "category": "semantic",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid"
+      ],
+      "message_id": "coupling.shared-abstraction-radius",
+      "default_message": "A shared abstraction radius exceeds its configured threshold.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "coupling.shared-mutable-state",
+      "code": "LEK-COUPLING-006",
+      "category": "semantic",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid"
+      ],
+      "message_id": "coupling.shared-mutable-state",
+      "default_message": "Multiple declared operations mutate the same resource.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "coupling.transaction-spread",
+      "code": "LEK-COUPLING-008",
+      "category": "semantic",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid"
+      ],
+      "message_id": "coupling.transaction-spread",
+      "default_message": "A declared transaction spans configured domain groups.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "dataflow.adapter-metadata-loss",
       "code": "LEK-DFL-008",
       "category": "semantic",

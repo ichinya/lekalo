@@ -96,8 +96,9 @@ for (const [id, before] of predEntries) {
 }
 if (
   registry.entries.length !==
-  predEntries.size + 16 + 9 + 13 + 1 + 9 + 5 + 14 + 8 + 14 + 15 + 8 + 1 + 15 + 8 + 2 + 9
+  predEntries.size + 16 + 9 + 13 + 1 + 9 + 5 + 14 + 8 + 14 + 15 + 8 + 1 + 15 + 8 + 2 + 9 + 15
 ) {
+  // Coupling adds exactly 15 entries (#77, LEK-COUPLING-001..015).
   // The increments over the v0.3.2 predecessor, one per family that
   // joined the shared registry after it: classification (#87) +16,
   // dataflow (#87) +9, NFR +13, and the php-operations family (#59)

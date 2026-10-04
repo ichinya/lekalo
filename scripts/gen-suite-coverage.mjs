@@ -204,6 +204,21 @@ const familyFixture = {
 //    The gate file must exist; the note names the asserting test.
 // ---------------------------------------------------------------------------
 const testWitness = {
+  "coupling.input-invalid": [["scripts/test-coupling-contracts.mjs","closed-schemas and duplicate-keys-fail production probes"]],
+  "coupling.profile-unsupported": [["scripts/test-coupling-contracts.mjs","unsupported-version production probe"]],
+  "coupling.fan-exceeded": [["scripts/test-coupling-contracts.mjs","configured neighbor threshold production probe"]],
+  "coupling.public-contract-amplification": [["scripts/test-coupling-contracts.mjs","configured public radius production probe"]],
+  "coupling.cross-module-cycle": [["crates/lekalo-core/tests/coupling.rs","cycle_series_are_separate acceptance probe"]],
+  "coupling.shared-mutable-state": [["crates/lekalo-core/tests/coupling.rs","centrality_is_visible_and_advisory_by_default asserts rule"]],
+  "coupling.change-amplification": [["scripts/test-coupling-contracts.mjs","configured artifact amplification production probe"]],
+  "coupling.transaction-spread": [["crates/lekalo-core/tests/coupling.rs","transaction_spread_uses_explicit_domain_groups acceptance probe"]],
+  "coupling.shared-abstraction-radius": [["scripts/test-coupling-contracts.mjs","shared abstraction threshold production probe"]],
+  "coupling.public-target-exposure": [["crates/lekalo-core/tests/coupling.rs","transitive_target_exposure_is_a_fact_with_paths asserts rule"]],
+  "coupling.duplication-divergence": [["scripts/test-coupling-contracts.mjs","explicit replica divergence production probe"]],
+  "coupling.evidence-incomplete": [["scripts/test-coupling-contracts.mjs","member-fallback-is-not-exact production probe"]],
+  "coupling.baseline-incomparable": [["scripts/test-coupling-contracts.mjs","unknown required metric production comparison"]],
+  "coupling.baseline-regression": [["scripts/test-coupling-contracts.mjs","strict-baseline-regression production probe"]],
+  "coupling.policy-denied": [["scripts/test-coupling-contracts.mjs","denial-retains-report production probe"]],
   "adapter.check-failed": [["crates/lekalo-core/tests", "the failing-check exchange asserts the rule id"]],
   "adapter.process-failure": [["crates/lekalo-core/tests", "the crashing-adapter exchange asserts the rule id"]],
   "adapter.checksum-mismatch": [["crates/lekalo-core/tests", "tampered package bytes assert the rule"]],

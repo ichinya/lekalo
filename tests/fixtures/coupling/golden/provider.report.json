@@ -1,0 +1,1051 @@
+{
+  "complete": true,
+  "coverage": {
+    "artifacts": {
+      "state": "unknown"
+    },
+    "declared": {
+      "state": "known",
+      "value": "canonical-ir"
+    },
+    "members": {
+      "state": "unknown"
+    },
+    "observed": {
+      "state": "unsupported"
+    },
+    "tests": {
+      "state": "unknown"
+    },
+    "transactions": {
+      "state": "unknown"
+    }
+  },
+  "cycles": [],
+  "findings": [],
+  "identity": "dev.lekalo.coupling-report@0.6.4",
+  "metricVersion": "coupling-metrics/1",
+  "planning": {
+    "contextBudget": {
+      "state": "unknown"
+    },
+    "evidenceGaps": [],
+    "internalSymbols": [],
+    "publicContracts": [
+      "operation:provider.context",
+      "operation:provider.doctor",
+      "operation:provider.drift",
+      "operation:provider.generate",
+      "operation:provider.impact",
+      "operation:provider.readiness",
+      "operation:provider.status",
+      "operation:provider.trace_export",
+      "operation:provider.validate",
+      "operation:provider.verify",
+      "type:provider.manifest"
+    ],
+    "requiredChecks": [],
+    "resources": [],
+    "reviewOverlap": [
+      "operation:provider.context",
+      "operation:provider.doctor",
+      "operation:provider.drift",
+      "operation:provider.generate",
+      "operation:provider.impact",
+      "operation:provider.readiness",
+      "operation:provider.status",
+      "operation:provider.trace_export",
+      "operation:provider.validate",
+      "operation:provider.verify",
+      "type:provider.manifest"
+    ],
+    "runtimeConflicts": {
+      "state": "unknown"
+    },
+    "transactionGroups": []
+  },
+  "profile": {
+    "centralityDeclarations": [],
+    "domainGroups": [],
+    "gate": {
+      "baselineReadyRef": {
+        "state": "unknown"
+      },
+      "failOn": [],
+      "mode": "advisory"
+    },
+    "identity": "dev.lekalo.coupling-profile@0.6.4",
+    "measurement": {
+      "includeObserved": false,
+      "recipe": "declared-architecture/1"
+    },
+    "modules": [],
+    "profileId": "advisory",
+    "profileRevision": 1,
+    "project": {
+      "limits": [],
+      "regressionLimits": []
+    },
+    "schemaVersion": "lekalo/coupling-profile/v0.6.4"
+  },
+  "projection": {
+    "edges": [
+      {
+        "confidence": "canonical",
+        "from": "operation:provider.context",
+        "key": "operation:provider.context|accepts|type:provider.manifest|0",
+        "occurrence": 0,
+        "relation": "accepts",
+        "role": "command-input",
+        "to": "type:provider.manifest"
+      },
+      {
+        "confidence": "canonical",
+        "from": "operation:provider.doctor",
+        "key": "operation:provider.doctor|accepts|type:provider.manifest|0",
+        "occurrence": 0,
+        "relation": "accepts",
+        "role": "command-input",
+        "to": "type:provider.manifest"
+      },
+      {
+        "confidence": "canonical",
+        "from": "operation:provider.drift",
+        "key": "operation:provider.drift|accepts|type:provider.manifest|0",
+        "occurrence": 0,
+        "relation": "accepts",
+        "role": "command-input",
+        "to": "type:provider.manifest"
+      },
+      {
+        "confidence": "canonical",
+        "from": "operation:provider.generate",
+        "key": "operation:provider.generate|accepts|type:provider.manifest|0",
+        "occurrence": 0,
+        "relation": "accepts",
+        "role": "command-input",
+        "to": "type:provider.manifest"
+      },
+      {
+        "confidence": "canonical",
+        "from": "operation:provider.impact",
+        "key": "operation:provider.impact|accepts|type:provider.manifest|0",
+        "occurrence": 0,
+        "relation": "accepts",
+        "role": "command-input",
+        "to": "type:provider.manifest"
+      },
+      {
+        "confidence": "canonical",
+        "from": "operation:provider.readiness",
+        "key": "operation:provider.readiness|accepts|type:provider.manifest|0",
+        "occurrence": 0,
+        "relation": "accepts",
+        "role": "command-input",
+        "to": "type:provider.manifest"
+      },
+      {
+        "confidence": "canonical",
+        "from": "operation:provider.status",
+        "key": "operation:provider.status|accepts|type:provider.manifest|0",
+        "occurrence": 0,
+        "relation": "accepts",
+        "role": "command-input",
+        "to": "type:provider.manifest"
+      },
+      {
+        "confidence": "canonical",
+        "from": "operation:provider.trace_export",
+        "key": "operation:provider.trace_export|accepts|type:provider.manifest|0",
+        "occurrence": 0,
+        "relation": "accepts",
+        "role": "command-input",
+        "to": "type:provider.manifest"
+      },
+      {
+        "confidence": "canonical",
+        "from": "operation:provider.validate",
+        "key": "operation:provider.validate|accepts|type:provider.manifest|0",
+        "occurrence": 0,
+        "relation": "accepts",
+        "role": "command-input",
+        "to": "type:provider.manifest"
+      },
+      {
+        "confidence": "canonical",
+        "from": "operation:provider.verify",
+        "key": "operation:provider.verify|accepts|type:provider.manifest|0",
+        "occurrence": 0,
+        "relation": "accepts",
+        "role": "command-input",
+        "to": "type:provider.manifest"
+      },
+      {
+        "confidence": "canonical",
+        "from": "type:provider.manifest",
+        "key": "type:provider.manifest|references|type:provider.text|0",
+        "occurrence": 0,
+        "relation": "references",
+        "role": "value-object-field",
+        "to": "type:provider.text"
+      },
+      {
+        "confidence": "canonical",
+        "from": "type:provider.manifest",
+        "key": "type:provider.manifest|references|type:provider.text|1",
+        "occurrence": 1,
+        "relation": "references",
+        "role": "value-object-field",
+        "to": "type:provider.text"
+      },
+      {
+        "confidence": "canonical",
+        "from": "type:provider.manifest",
+        "key": "type:provider.manifest|references|type:provider.text|2",
+        "occurrence": 2,
+        "relation": "references",
+        "role": "value-object-field",
+        "to": "type:provider.text"
+      }
+    ],
+    "fields": {
+      "operation:provider.context": {
+        "manifest": [
+          "type:provider.manifest"
+        ]
+      },
+      "operation:provider.doctor": {
+        "manifest": [
+          "type:provider.manifest"
+        ]
+      },
+      "operation:provider.drift": {
+        "manifest": [
+          "type:provider.manifest"
+        ]
+      },
+      "operation:provider.generate": {
+        "manifest": [
+          "type:provider.manifest"
+        ]
+      },
+      "operation:provider.impact": {
+        "manifest": [
+          "type:provider.manifest"
+        ]
+      },
+      "operation:provider.readiness": {
+        "manifest": [
+          "type:provider.manifest"
+        ]
+      },
+      "operation:provider.status": {
+        "manifest": [
+          "type:provider.manifest"
+        ]
+      },
+      "operation:provider.trace_export": {
+        "manifest": [
+          "type:provider.manifest"
+        ]
+      },
+      "operation:provider.validate": {
+        "manifest": [
+          "type:provider.manifest"
+        ]
+      },
+      "operation:provider.verify": {
+        "manifest": [
+          "type:provider.manifest"
+        ]
+      },
+      "type:provider.manifest": {
+        "operations": [
+          "type:provider.text"
+        ],
+        "protocol_version": [
+          "type:provider.text"
+        ],
+        "provider_id": [
+          "type:provider.text"
+        ]
+      }
+    },
+    "symbols": {
+      "module:provider": {
+        "class": "unclassified",
+        "effectOperation": "none",
+        "module": "provider",
+        "targetSpecific": false
+      },
+      "operation:provider.context": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "provider",
+        "targetSpecific": false
+      },
+      "operation:provider.doctor": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "provider",
+        "targetSpecific": false
+      },
+      "operation:provider.drift": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "provider",
+        "targetSpecific": false
+      },
+      "operation:provider.generate": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "provider",
+        "targetSpecific": false
+      },
+      "operation:provider.impact": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "provider",
+        "targetSpecific": false
+      },
+      "operation:provider.readiness": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "provider",
+        "targetSpecific": false
+      },
+      "operation:provider.status": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "provider",
+        "targetSpecific": false
+      },
+      "operation:provider.trace_export": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "provider",
+        "targetSpecific": false
+      },
+      "operation:provider.validate": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "provider",
+        "targetSpecific": false
+      },
+      "operation:provider.verify": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "provider",
+        "targetSpecific": false
+      },
+      "project:workflow_provider": {
+        "class": "unclassified",
+        "effectOperation": "none",
+        "module": "",
+        "targetSpecific": false
+      },
+      "type:provider.manifest": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "provider",
+        "targetSpecific": false
+      },
+      "type:provider.text": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "provider",
+        "targetSpecific": false
+      }
+    }
+  },
+  "provenance": {
+    "evidence": {
+      "state": "unknown"
+    },
+    "inputs": {
+      "effectDigest": "sha256:b6aa0e642bae50d0c1fa614259dbe5bc4ac8e9d2f248c46d076e87390951acdf",
+      "graphDigest": "sha256:78b625b61e9c7b94e7f0ff151dde10ec033f8689b722fc5dece2b07f1eeba938",
+      "irDigest": "sha256:6a8731f00b06698c6f2909fa0ebcf3c5e082817d3867978f9fad30519df903f5",
+      "modelDigest": {
+        "state": "known",
+        "value": "sha256:557d2cf9dadce3d0009672c56b7df5f8db566f77578eb4c406320052a6e94c66"
+      },
+      "modelVersion": "0.2.16",
+      "project": "workflow_provider",
+      "semanticDigest": "sha256:bdf733be23ec004e97e4a3d1c722eb9a63501d8780d8a597b67ee5ede1c01d36",
+      "sourceRevision": {
+        "state": "unknown"
+      }
+    },
+    "measurementDigest": "sha256:492bcb6c2193bac297be695ecf6c4ae53718835603bc597659fab74e1686f10b",
+    "profileDigest": "sha256:d6dc425eef456dba1e0240c10ca5832db240d88c4c75ea7ef7c7056e3daeaeb4",
+    "projectionDigest": "sha256:6f3be590b91b425bbd2bb6d837a28cb413e4dcb272cb97ea2a0ce1ea522d59e1"
+  },
+  "publicContractCounts": {
+    "endpoint": 0,
+    "entity": 0,
+    "event": 0,
+    "operation": 10,
+    "type": 1
+  },
+  "recipe": "declared-architecture/1",
+  "schemaVersion": "lekalo/coupling-report/v0.6.4",
+  "scope": {
+    "changedInput": {
+      "state": "unknown"
+    },
+    "kind": "symbol",
+    "roots": [
+      "type:provider.manifest"
+    ],
+    "selector": "type:provider.manifest"
+  },
+  "subjects": [
+    {
+      "affectedModules": [
+        "provider"
+      ],
+      "artifacts": [],
+      "checks": [],
+      "fanIn": [
+        "operation:provider.context",
+        "operation:provider.doctor",
+        "operation:provider.drift",
+        "operation:provider.generate",
+        "operation:provider.impact",
+        "operation:provider.readiness",
+        "operation:provider.status",
+        "operation:provider.trace_export",
+        "operation:provider.validate",
+        "operation:provider.verify"
+      ],
+      "fanOut": [
+        "type:provider.text"
+      ],
+      "gaps": [],
+      "impact": {
+        "internalSymbols": [],
+        "publicContracts": [
+          "operation:provider.context",
+          "operation:provider.doctor",
+          "operation:provider.drift",
+          "operation:provider.generate",
+          "operation:provider.impact",
+          "operation:provider.readiness",
+          "operation:provider.status",
+          "operation:provider.trace_export",
+          "operation:provider.validate",
+          "operation:provider.verify",
+          "type:provider.manifest"
+        ],
+        "supportingSymbols": [],
+        "unclassifiedSymbols": []
+      },
+      "importEdgeKeys": [],
+      "lowerBounds": {},
+      "measurementBasis": "aggregate-declared",
+      "metrics": {
+        "affectedArtifacts": {
+          "state": "unknown"
+        },
+        "affectedTargets": {
+          "state": "unknown"
+        },
+        "affectedTests": {
+          "state": "unknown"
+        },
+        "crossModuleCycles": {
+          "state": "known",
+          "value": 0
+        },
+        "duplicationDivergence": {
+          "state": "unknown"
+        },
+        "fanInModules": {
+          "state": "known",
+          "value": 0
+        },
+        "fanInSymbols": {
+          "state": "known",
+          "value": 10
+        },
+        "fanOutModules": {
+          "state": "known",
+          "value": 0
+        },
+        "fanOutSymbols": {
+          "state": "known",
+          "value": 1
+        },
+        "internalSymbolsAffected": {
+          "state": "known",
+          "value": 0
+        },
+        "modulesAffected": {
+          "state": "known",
+          "value": 1
+        },
+        "publicContractsAffected": {
+          "state": "known",
+          "value": 11
+        },
+        "publicTargetExposure": {
+          "state": "unknown"
+        },
+        "requiredChecks": {
+          "state": "unknown"
+        },
+        "semanticSymbolsAffected": {
+          "state": "known",
+          "value": 11
+        },
+        "sharedAbstractionRadius": {
+          "state": "unknown"
+        },
+        "sharedMutableResources": {
+          "state": "known",
+          "value": 0
+        },
+        "transactionSpread": {
+          "state": "unknown"
+        }
+      },
+      "module": "provider",
+      "possible": [],
+      "replicaObligations": [],
+      "resources": [],
+      "sharedResources": [],
+      "subject": "module:provider",
+      "targetExposure": [],
+      "targets": [],
+      "tests": [],
+      "transactionGroups": [],
+      "transactionScopes": [],
+      "witnessRefs": [
+        "sha256:3ae12860af61773bc490b579af476de64e1b31e046f7bd825f165c0290dc3989",
+        "sha256:4112244074bb1ead1c7d0f489b2ecf54c6649076e2cf13e0a30a09f863c8d6af",
+        "sha256:46ee94a3e8d5c4a83f108ee4ef29b4f6d73e55d8374c84cd7fbbf6600af4de1e",
+        "sha256:4d442fb6a377cc268ea7fd074260c5e98af52a3f0bd2b28ada044e2bb2aa45a1",
+        "sha256:6d146cda101c026000ec811a787d8f8ab63fe5a842834fd4722062a0bded1c0d",
+        "sha256:8f815d89897b43e6f051255df5bccf1f08382465fdb650bcd76c0038f7695110",
+        "sha256:a76c331f5bf05eb3baafdc1dc54116c7c4c760762d5f788459e5cad72f16966b",
+        "sha256:be0ddcbaa98476ad313eb6a778947e33a45d3b9e074c7e91f1844a802c6a8bf8",
+        "sha256:c3cb127a32b25c7849862b82d40d6f670aab4b97178f221d6839944aa6040d94",
+        "sha256:ef9b060471fa994d1de04b78950f118d4ee11fd9197b9e394c725b3eb999a415",
+        "sha256:f26e9fba147da00aaf113a9092321c83b0c836deffad803908ff8c8b6d0db359",
+        "sha256:f37685f55aeb1a1fb51ab113fcf3f3ba06ab61fa9f5b6785f2336b60df2d1e8b"
+      ]
+    },
+    {
+      "affectedModules": [
+        "provider"
+      ],
+      "artifacts": [],
+      "checks": [],
+      "fanIn": [
+        "operation:provider.context",
+        "operation:provider.doctor",
+        "operation:provider.drift",
+        "operation:provider.generate",
+        "operation:provider.impact",
+        "operation:provider.readiness",
+        "operation:provider.status",
+        "operation:provider.trace_export",
+        "operation:provider.validate",
+        "operation:provider.verify"
+      ],
+      "fanOut": [
+        "type:provider.text"
+      ],
+      "gaps": [],
+      "impact": {
+        "internalSymbols": [],
+        "publicContracts": [
+          "operation:provider.context",
+          "operation:provider.doctor",
+          "operation:provider.drift",
+          "operation:provider.generate",
+          "operation:provider.impact",
+          "operation:provider.readiness",
+          "operation:provider.status",
+          "operation:provider.trace_export",
+          "operation:provider.validate",
+          "operation:provider.verify",
+          "type:provider.manifest"
+        ],
+        "supportingSymbols": [],
+        "unclassifiedSymbols": []
+      },
+      "importEdgeKeys": [],
+      "lowerBounds": {},
+      "measurementBasis": "aggregate-declared",
+      "metrics": {
+        "affectedArtifacts": {
+          "state": "unknown"
+        },
+        "affectedTargets": {
+          "state": "unknown"
+        },
+        "affectedTests": {
+          "state": "unknown"
+        },
+        "crossModuleCycles": {
+          "state": "known",
+          "value": 0
+        },
+        "duplicationDivergence": {
+          "state": "unknown"
+        },
+        "fanInModules": {
+          "state": "known",
+          "value": 0
+        },
+        "fanInSymbols": {
+          "state": "known",
+          "value": 10
+        },
+        "fanOutModules": {
+          "state": "known",
+          "value": 0
+        },
+        "fanOutSymbols": {
+          "state": "known",
+          "value": 1
+        },
+        "internalSymbolsAffected": {
+          "state": "known",
+          "value": 0
+        },
+        "modulesAffected": {
+          "state": "known",
+          "value": 1
+        },
+        "publicContractsAffected": {
+          "state": "known",
+          "value": 11
+        },
+        "publicTargetExposure": {
+          "state": "unknown"
+        },
+        "requiredChecks": {
+          "state": "unknown"
+        },
+        "semanticSymbolsAffected": {
+          "state": "known",
+          "value": 11
+        },
+        "sharedAbstractionRadius": {
+          "state": "unknown"
+        },
+        "sharedMutableResources": {
+          "state": "known",
+          "value": 0
+        },
+        "transactionSpread": {
+          "state": "unknown"
+        }
+      },
+      "module": "",
+      "possible": [],
+      "replicaObligations": [],
+      "resources": [],
+      "sharedResources": [],
+      "subject": "project:workflow_provider",
+      "targetExposure": [],
+      "targets": [],
+      "tests": [],
+      "transactionGroups": [],
+      "transactionScopes": [],
+      "witnessRefs": [
+        "sha256:3ae12860af61773bc490b579af476de64e1b31e046f7bd825f165c0290dc3989",
+        "sha256:4112244074bb1ead1c7d0f489b2ecf54c6649076e2cf13e0a30a09f863c8d6af",
+        "sha256:46ee94a3e8d5c4a83f108ee4ef29b4f6d73e55d8374c84cd7fbbf6600af4de1e",
+        "sha256:4d442fb6a377cc268ea7fd074260c5e98af52a3f0bd2b28ada044e2bb2aa45a1",
+        "sha256:6d146cda101c026000ec811a787d8f8ab63fe5a842834fd4722062a0bded1c0d",
+        "sha256:8f815d89897b43e6f051255df5bccf1f08382465fdb650bcd76c0038f7695110",
+        "sha256:a76c331f5bf05eb3baafdc1dc54116c7c4c760762d5f788459e5cad72f16966b",
+        "sha256:be0ddcbaa98476ad313eb6a778947e33a45d3b9e074c7e91f1844a802c6a8bf8",
+        "sha256:c3cb127a32b25c7849862b82d40d6f670aab4b97178f221d6839944aa6040d94",
+        "sha256:ef9b060471fa994d1de04b78950f118d4ee11fd9197b9e394c725b3eb999a415",
+        "sha256:f26e9fba147da00aaf113a9092321c83b0c836deffad803908ff8c8b6d0db359",
+        "sha256:f37685f55aeb1a1fb51ab113fcf3f3ba06ab61fa9f5b6785f2336b60df2d1e8b"
+      ]
+    },
+    {
+      "affectedModules": [
+        "provider"
+      ],
+      "artifacts": [],
+      "checks": [],
+      "fanIn": [
+        "operation:provider.context",
+        "operation:provider.doctor",
+        "operation:provider.drift",
+        "operation:provider.generate",
+        "operation:provider.impact",
+        "operation:provider.readiness",
+        "operation:provider.status",
+        "operation:provider.trace_export",
+        "operation:provider.validate",
+        "operation:provider.verify"
+      ],
+      "fanOut": [
+        "type:provider.text"
+      ],
+      "gaps": [],
+      "impact": {
+        "internalSymbols": [],
+        "publicContracts": [
+          "operation:provider.context",
+          "operation:provider.doctor",
+          "operation:provider.drift",
+          "operation:provider.generate",
+          "operation:provider.impact",
+          "operation:provider.readiness",
+          "operation:provider.status",
+          "operation:provider.trace_export",
+          "operation:provider.validate",
+          "operation:provider.verify",
+          "type:provider.manifest"
+        ],
+        "supportingSymbols": [],
+        "unclassifiedSymbols": []
+      },
+      "importEdgeKeys": [],
+      "lowerBounds": {},
+      "measurementBasis": "exact-declared",
+      "metrics": {
+        "affectedArtifacts": {
+          "state": "unknown"
+        },
+        "affectedTargets": {
+          "state": "unsupported"
+        },
+        "affectedTests": {
+          "state": "unknown"
+        },
+        "crossModuleCycles": {
+          "state": "known",
+          "value": 0
+        },
+        "duplicationDivergence": {
+          "state": "unsupported"
+        },
+        "fanInModules": {
+          "state": "known",
+          "value": 0
+        },
+        "fanInSymbols": {
+          "state": "known",
+          "value": 10
+        },
+        "fanOutModules": {
+          "state": "known",
+          "value": 0
+        },
+        "fanOutSymbols": {
+          "state": "known",
+          "value": 1
+        },
+        "internalSymbolsAffected": {
+          "state": "known",
+          "value": 0
+        },
+        "modulesAffected": {
+          "state": "known",
+          "value": 1
+        },
+        "publicContractsAffected": {
+          "state": "known",
+          "value": 11
+        },
+        "publicTargetExposure": {
+          "state": "known",
+          "value": 0
+        },
+        "requiredChecks": {
+          "state": "unknown"
+        },
+        "semanticSymbolsAffected": {
+          "state": "known",
+          "value": 11
+        },
+        "sharedAbstractionRadius": {
+          "state": "known",
+          "value": 10
+        },
+        "sharedMutableResources": {
+          "state": "known",
+          "value": 0
+        },
+        "transactionSpread": {
+          "state": "unknown"
+        }
+      },
+      "module": "provider",
+      "possible": [],
+      "replicaObligations": [],
+      "resources": [],
+      "sharedResources": [],
+      "subject": "type:provider.manifest",
+      "targetExposure": [],
+      "targets": [],
+      "tests": [],
+      "transactionGroups": [],
+      "transactionScopes": [],
+      "witnessRefs": [
+        "sha256:3ae12860af61773bc490b579af476de64e1b31e046f7bd825f165c0290dc3989",
+        "sha256:4112244074bb1ead1c7d0f489b2ecf54c6649076e2cf13e0a30a09f863c8d6af",
+        "sha256:46ee94a3e8d5c4a83f108ee4ef29b4f6d73e55d8374c84cd7fbbf6600af4de1e",
+        "sha256:4d442fb6a377cc268ea7fd074260c5e98af52a3f0bd2b28ada044e2bb2aa45a1",
+        "sha256:6d146cda101c026000ec811a787d8f8ab63fe5a842834fd4722062a0bded1c0d",
+        "sha256:8f815d89897b43e6f051255df5bccf1f08382465fdb650bcd76c0038f7695110",
+        "sha256:a76c331f5bf05eb3baafdc1dc54116c7c4c760762d5f788459e5cad72f16966b",
+        "sha256:be0ddcbaa98476ad313eb6a778947e33a45d3b9e074c7e91f1844a802c6a8bf8",
+        "sha256:c3cb127a32b25c7849862b82d40d6f670aab4b97178f221d6839944aa6040d94",
+        "sha256:ef9b060471fa994d1de04b78950f118d4ee11fd9197b9e394c725b3eb999a415",
+        "sha256:f26e9fba147da00aaf113a9092321c83b0c836deffad803908ff8c8b6d0db359",
+        "sha256:f37685f55aeb1a1fb51ab113fcf3f3ba06ab61fa9f5b6785f2336b60df2d1e8b"
+      ]
+    }
+  ],
+  "suggestions": [],
+  "summary": {
+    "internalSymbols": [],
+    "publicContracts": [
+      "operation:provider.context",
+      "operation:provider.doctor",
+      "operation:provider.drift",
+      "operation:provider.generate",
+      "operation:provider.impact",
+      "operation:provider.readiness",
+      "operation:provider.status",
+      "operation:provider.trace_export",
+      "operation:provider.validate",
+      "operation:provider.verify",
+      "type:provider.manifest"
+    ],
+    "supportingSymbols": [],
+    "unclassifiedSymbols": []
+  },
+  "witnesses": [
+    {
+      "confidence": "canonical",
+      "direction": "reverse",
+      "edges": [
+        {
+          "confidence": "canonical",
+          "from": "operation:provider.generate",
+          "key": "operation:provider.generate|accepts|type:provider.manifest|0",
+          "occurrence": 0,
+          "relation": "accepts",
+          "role": "command-input",
+          "to": "type:provider.manifest"
+        }
+      ],
+      "evidenceRefs": [],
+      "id": "sha256:3ae12860af61773bc490b579af476de64e1b31e046f7bd825f165c0290dc3989",
+      "root": "type:provider.manifest",
+      "subject": "operation:provider.generate"
+    },
+    {
+      "confidence": "canonical",
+      "direction": "reverse",
+      "edges": [
+        {
+          "confidence": "canonical",
+          "from": "operation:provider.validate",
+          "key": "operation:provider.validate|accepts|type:provider.manifest|0",
+          "occurrence": 0,
+          "relation": "accepts",
+          "role": "command-input",
+          "to": "type:provider.manifest"
+        }
+      ],
+      "evidenceRefs": [],
+      "id": "sha256:4112244074bb1ead1c7d0f489b2ecf54c6649076e2cf13e0a30a09f863c8d6af",
+      "root": "type:provider.manifest",
+      "subject": "operation:provider.validate"
+    },
+    {
+      "confidence": "canonical",
+      "direction": "reverse",
+      "edges": [
+        {
+          "confidence": "canonical",
+          "from": "operation:provider.status",
+          "key": "operation:provider.status|accepts|type:provider.manifest|0",
+          "occurrence": 0,
+          "relation": "accepts",
+          "role": "command-input",
+          "to": "type:provider.manifest"
+        }
+      ],
+      "evidenceRefs": [],
+      "id": "sha256:46ee94a3e8d5c4a83f108ee4ef29b4f6d73e55d8374c84cd7fbbf6600af4de1e",
+      "root": "type:provider.manifest",
+      "subject": "operation:provider.status"
+    },
+    {
+      "confidence": "canonical",
+      "direction": "reverse",
+      "edges": [
+        {
+          "confidence": "canonical",
+          "from": "operation:provider.doctor",
+          "key": "operation:provider.doctor|accepts|type:provider.manifest|0",
+          "occurrence": 0,
+          "relation": "accepts",
+          "role": "command-input",
+          "to": "type:provider.manifest"
+        }
+      ],
+      "evidenceRefs": [],
+      "id": "sha256:4d442fb6a377cc268ea7fd074260c5e98af52a3f0bd2b28ada044e2bb2aa45a1",
+      "root": "type:provider.manifest",
+      "subject": "operation:provider.doctor"
+    },
+    {
+      "confidence": "canonical",
+      "direction": "reverse",
+      "edges": [
+        {
+          "confidence": "canonical",
+          "from": "operation:provider.context",
+          "key": "operation:provider.context|accepts|type:provider.manifest|0",
+          "occurrence": 0,
+          "relation": "accepts",
+          "role": "command-input",
+          "to": "type:provider.manifest"
+        }
+      ],
+      "evidenceRefs": [],
+      "id": "sha256:6d146cda101c026000ec811a787d8f8ab63fe5a842834fd4722062a0bded1c0d",
+      "root": "type:provider.manifest",
+      "subject": "operation:provider.context"
+    },
+    {
+      "confidence": "canonical",
+      "direction": "reverse",
+      "edges": [
+        {
+          "confidence": "canonical",
+          "from": "operation:provider.readiness",
+          "key": "operation:provider.readiness|accepts|type:provider.manifest|0",
+          "occurrence": 0,
+          "relation": "accepts",
+          "role": "command-input",
+          "to": "type:provider.manifest"
+        }
+      ],
+      "evidenceRefs": [],
+      "id": "sha256:8f815d89897b43e6f051255df5bccf1f08382465fdb650bcd76c0038f7695110",
+      "root": "type:provider.manifest",
+      "subject": "operation:provider.readiness"
+    },
+    {
+      "confidence": "canonical",
+      "direction": "reverse",
+      "edges": [
+        {
+          "confidence": "canonical",
+          "from": "operation:provider.impact",
+          "key": "operation:provider.impact|accepts|type:provider.manifest|0",
+          "occurrence": 0,
+          "relation": "accepts",
+          "role": "command-input",
+          "to": "type:provider.manifest"
+        }
+      ],
+      "evidenceRefs": [],
+      "id": "sha256:a76c331f5bf05eb3baafdc1dc54116c7c4c760762d5f788459e5cad72f16966b",
+      "root": "type:provider.manifest",
+      "subject": "operation:provider.impact"
+    },
+    {
+      "confidence": "canonical",
+      "direction": "reverse",
+      "edges": [
+        {
+          "confidence": "canonical",
+          "from": "operation:provider.trace_export",
+          "key": "operation:provider.trace_export|accepts|type:provider.manifest|0",
+          "occurrence": 0,
+          "relation": "accepts",
+          "role": "command-input",
+          "to": "type:provider.manifest"
+        }
+      ],
+      "evidenceRefs": [],
+      "id": "sha256:be0ddcbaa98476ad313eb6a778947e33a45d3b9e074c7e91f1844a802c6a8bf8",
+      "root": "type:provider.manifest",
+      "subject": "operation:provider.trace_export"
+    },
+    {
+      "confidence": "canonical",
+      "direction": "reverse",
+      "edges": [
+        {
+          "confidence": "canonical",
+          "from": "operation:provider.verify",
+          "key": "operation:provider.verify|accepts|type:provider.manifest|0",
+          "occurrence": 0,
+          "relation": "accepts",
+          "role": "command-input",
+          "to": "type:provider.manifest"
+        }
+      ],
+      "evidenceRefs": [],
+      "id": "sha256:c3cb127a32b25c7849862b82d40d6f670aab4b97178f221d6839944aa6040d94",
+      "root": "type:provider.manifest",
+      "subject": "operation:provider.verify"
+    },
+    {
+      "confidence": "canonical",
+      "direction": "forward",
+      "edges": [
+        {
+          "confidence": "canonical",
+          "from": "type:provider.manifest",
+          "key": "type:provider.manifest|references|type:provider.text|0",
+          "occurrence": 0,
+          "relation": "references",
+          "role": "value-object-field",
+          "to": "type:provider.text"
+        }
+      ],
+      "evidenceRefs": [],
+      "id": "sha256:ef9b060471fa994d1de04b78950f118d4ee11fd9197b9e394c725b3eb999a415",
+      "root": "type:provider.manifest",
+      "subject": "type:provider.text"
+    },
+    {
+      "confidence": "canonical",
+      "direction": "reverse",
+      "edges": [],
+      "evidenceRefs": [],
+      "id": "sha256:f26e9fba147da00aaf113a9092321c83b0c836deffad803908ff8c8b6d0db359",
+      "root": "type:provider.manifest",
+      "subject": "type:provider.manifest"
+    },
+    {
+      "confidence": "canonical",
+      "direction": "reverse",
+      "edges": [
+        {
+          "confidence": "canonical",
+          "from": "operation:provider.drift",
+          "key": "operation:provider.drift|accepts|type:provider.manifest|0",
+          "occurrence": 0,
+          "relation": "accepts",
+          "role": "command-input",
+          "to": "type:provider.manifest"
+        }
+      ],
+      "evidenceRefs": [],
+      "id": "sha256:f37685f55aeb1a1fb51ab113fcf3f3ba06ab61fa9f5b6785f2336b60df2d1e8b",
+      "root": "type:provider.manifest",
+      "subject": "operation:provider.drift"
+    }
+  ]
+}

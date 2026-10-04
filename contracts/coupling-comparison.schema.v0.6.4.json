@@ -1,0 +1,303 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lekalo.dev/contracts/coupling-comparison.schema.v0.6.4.json",
+  "title": "Coupling comparison 0.6.4",
+  "$ref": "#/$defs/comparison",
+  "$defs": {
+    "comparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "const": "lekalo/coupling-comparison/v0.6.4"
+        },
+        "identity": {
+          "const": "dev.lekalo.coupling-comparison@0.6.4"
+        },
+        "metricVersion": {
+          "const": "coupling-metrics/1"
+        },
+        "baselineDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "candidateDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "comparable": {
+          "type": "boolean"
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "subject": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 192,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]*$"
+              },
+              "metric": {
+                "enum": [
+                  "fanInSymbols",
+                  "fanOutSymbols",
+                  "fanInModules",
+                  "fanOutModules",
+                  "publicContractsAffected",
+                  "internalSymbolsAffected",
+                  "semanticSymbolsAffected",
+                  "modulesAffected",
+                  "affectedArtifacts",
+                  "affectedTests",
+                  "affectedTargets",
+                  "requiredChecks",
+                  "crossModuleCycles",
+                  "sharedMutableResources",
+                  "transactionSpread",
+                  "sharedAbstractionRadius",
+                  "publicTargetExposure",
+                  "duplicationDivergence"
+                ]
+              },
+              "state": {
+                "enum": [
+                  "added",
+                  "removed",
+                  "incomparable",
+                  "comparable"
+                ]
+              },
+              "base": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "state": {
+                        "const": "known"
+                      },
+                      "value": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "state",
+                      "value"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "state": {
+                        "enum": [
+                          "unknown",
+                          "withheld",
+                          "unsupported"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "state"
+                    ]
+                  }
+                ]
+              },
+              "candidate": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "state": {
+                        "const": "known"
+                      },
+                      "value": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "state",
+                      "value"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "state": {
+                        "enum": [
+                          "unknown",
+                          "withheld",
+                          "unsupported"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "state"
+                    ]
+                  }
+                ]
+              },
+              "absolute": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "state": {
+                        "const": "known"
+                      },
+                      "value": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "state",
+                      "value"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "state": {
+                        "enum": [
+                          "unknown",
+                          "withheld",
+                          "unsupported"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "state"
+                    ]
+                  }
+                ]
+              },
+              "relative": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "state": {
+                        "const": "known"
+                      },
+                      "value": {
+                        "$ref": "#/$defs/rational"
+                      }
+                    },
+                    "required": [
+                      "state",
+                      "value"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "state": {
+                        "const": "unknown"
+                      }
+                    },
+                    "required": [
+                      "state"
+                    ]
+                  }
+                ]
+              },
+              "verdict": {
+                "enum": [
+                  "indeterminate",
+                  "unchanged-or-allowed",
+                  "regression"
+                ]
+              },
+              "reason": {
+                "enum": [
+                  "subject-added",
+                  "subject-removed",
+                  "measurement-mismatch",
+                  "unavailable-evidence",
+                  "zero-baseline",
+                  "decrease",
+                  "none"
+                ]
+              }
+            },
+            "required": [
+              "subject",
+              "metric",
+              "state",
+              "base",
+              "candidate",
+              "absolute",
+              "relative",
+              "verdict",
+              "reason"
+            ]
+          },
+          "maxItems": 20000,
+          "uniqueItems": true
+        },
+        "regressions": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 192,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]*$"
+          },
+          "maxItems": 16,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "identity",
+        "metricVersion",
+        "baselineDigest",
+        "candidateDigest",
+        "comparable",
+        "rows",
+        "regressions",
+        "reasons"
+      ]
+    },
+    "rational": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "numerator": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "denominator": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "numerator",
+        "denominator"
+      ]
+    }
+  }
+}

@@ -266,6 +266,12 @@ jobs:
         run: |
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-context-budget-contracts.mjs
+      - name: Run the coupling contract gate (issue #77)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-coupling-contracts.mjs
       - name: Run the local run-history end-to-end gate (issue #121)
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
