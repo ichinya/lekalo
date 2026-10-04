@@ -1,0 +1,302 @@
+{
+  "formatVersion": 1,
+  "sourceProduct": "0.6.3",
+  "setup": [
+    {
+      "id": "source-build",
+      "document": "README.md",
+      "line": "cargo build -p lekalo-cli --locked",
+      "requires": "built-cli"
+    },
+    {
+      "id": "mysql-packages",
+      "document": "docs/tutorial-brownfield-typescript.md",
+      "line": "npm ci --ignore-scripts --no-audit --no-fund",
+      "requires": "locked-mysql-dependencies"
+    }
+  ],
+  "examples": [
+    {
+      "id": "read-minimal",
+      "document": "README.md",
+      "fixture": "tests/fixtures/loader/valid-zero-modules",
+      "lane": "portable",
+      "write": false,
+      "commands": [
+        {
+          "line": "lekalo load --ir --json --no-cache",
+          "exit": 0,
+          "stream": "stdout",
+          "check": "ir"
+        },
+        {
+          "line": "lekalo validate --strict --json --no-cache",
+          "exit": 0,
+          "stream": "stdout",
+          "check": "validation"
+        }
+      ]
+    },
+    {
+      "id": "minimal-init",
+      "document": "docs/project-layout.md",
+      "fixture": "empty",
+      "lane": "portable",
+      "write": true,
+      "commands": [
+        {
+          "line": "lekalo --json init --project-id tutorial --module planner",
+          "exit": 0,
+          "stream": "stdout",
+          "check": "init"
+        },
+        {
+          "line": "lekalo --no-cache --json load --ir",
+          "exit": 0,
+          "stream": "stdout",
+          "check": "ir"
+        },
+        {
+          "line": "lekalo --no-cache --json validate --strict",
+          "exit": 0,
+          "stream": "stdout",
+          "check": "validation"
+        }
+      ]
+    },
+    {
+      "id": "contract-planner",
+      "document": "docs/adoption.md",
+      "fixture": "tests/fixtures/docs/contracted-module",
+      "lane": "portable",
+      "write": true,
+      "commands": [
+        {
+          "line": "lekalo --json contract update --declaration declarations/initial.json",
+          "exit": 0,
+          "stream": "stdout",
+          "check": "contract-update"
+        },
+        {
+          "line": "node --test --test-reporter=tap test/native.test.mjs",
+          "exit": 0,
+          "stream": "stdout",
+          "check": "native-tests"
+        },
+        {
+          "line": "lekalo --no-cache --json contract check --module planner",
+          "exit": 1,
+          "stream": "stderr",
+          "check": "contract-coverage-missing"
+        },
+        {
+          "line": "lekalo --json contract attach planner.focus_task --native-test tutorial.focus",
+          "exit": 0,
+          "stream": "stdout",
+          "check": "contract-attach"
+        },
+        {
+          "line": "lekalo --json contract attach planner.list_tasks --native-test tutorial.list",
+          "exit": 0,
+          "stream": "stdout",
+          "check": "contract-attach"
+        },
+        {
+          "line": "lekalo --no-cache --json contract check --module planner",
+          "exit": 0,
+          "stream": "stdout",
+          "check": "contract-check"
+        }
+      ]
+    },
+    {
+      "id": "inspect-planner",
+      "document": "docs/architecture.md",
+      "fixture": "tests/fixtures/contracted/planner-slice",
+      "lane": "portable",
+      "write": false,
+      "commands": [
+        {
+          "line": "lekalo --no-cache --json inspect planner.focus_task",
+          "exit": 0,
+          "stream": "stdout",
+          "check": "inspect"
+        },
+        {
+          "line": "lekalo --no-cache --json impact planner.focus_task",
+          "exit": 0,
+          "stream": "stdout",
+          "check": "impact"
+        },
+        {
+          "line": "lekalo --no-cache --json context planner.focus_task --budget 5000",
+          "exit": 0,
+          "stream": "stdout",
+          "check": "context"
+        }
+      ]
+    },
+    {
+      "id": "trace-discovery",
+      "document": "docs/integrations.md",
+      "fixture": "tests/fixtures/trace",
+      "lane": "portable",
+      "write": false,
+      "commands": [
+        {
+          "line": "lekalo --json trace validate golden/planner.trace.json",
+          "exit": 0,
+          "stream": "stdout",
+          "check": "trace-validate"
+        },
+        {
+          "line": "lekalo --json trace export golden/planner.trace.json",
+          "exit": 0,
+          "stream": "stdout",
+          "check": "trace-export"
+        },
+        {
+          "line": "lekalo --json provider describe",
+          "exit": 0,
+          "stream": "stdout",
+          "check": "provider"
+        }
+      ]
+    },
+    {
+      "id": "security-checks",
+      "document": "docs/security.md",
+      "fixture": "repository",
+      "lane": "portable",
+      "write": false,
+      "commands": [
+        {
+          "line": "node scripts/check-authority.mjs",
+          "exit": 0,
+          "stream": "stdout",
+          "check": "authority"
+        },
+        {
+          "line": "node scripts/check-privacy.mjs",
+          "exit": 0,
+          "stream": "stdout",
+          "check": "privacy"
+        },
+        {
+          "line": "node scripts/test-fixture-provenance.mjs",
+          "exit": 0,
+          "stream": "stdout",
+          "check": "provenance"
+        }
+      ]
+    },
+    {
+      "id": "planner-chain",
+      "document": "docs/tutorial-greenfield-planner.md",
+      "fixture": "repository",
+      "lane": "portable",
+      "write": false,
+      "commands": [
+        {
+          "line": "node scripts/test-golden-planner-e2e.mjs",
+          "exit": 0,
+          "stream": "stdout",
+          "check": "planner-chain"
+        }
+      ]
+    },
+    {
+      "id": "mysql-observed",
+      "document": "docs/tutorial-brownfield-typescript.md",
+      "fixture": "repository",
+      "lane": "portable",
+      "write": false,
+      "commands": [
+        {
+          "line": "node scripts/pilot-brownfield-ts.mjs --consumer tests/fixtures/pilot/brownfield-mysql --bind packages/api/src/routes/tasks.ts:submitTask:task.submit --disposition public-fixture",
+          "exit": 0,
+          "stream": "stdout",
+          "check": "mysql-observed"
+        }
+      ]
+    },
+    {
+      "id": "laravel-vue-native",
+      "document": "docs/tutorial-greenfield-planner.md",
+      "fixture": "repository",
+      "lane": "planner",
+      "write": false,
+      "commands": [
+        {
+          "line": "node scripts/test-pilot-laravel-vue.mjs",
+          "exit": 0,
+          "stream": "stdout",
+          "check": "laravel-vue"
+        }
+      ]
+    },
+    {
+      "id": "mysql-http",
+      "document": "docs/tutorial-brownfield-typescript.md",
+      "fixture": "tests/fixtures/pilot/brownfield-mysql",
+      "lane": "mysql",
+      "write": false,
+      "commands": [
+        {
+          "line": "node node_modules/typescript/bin/tsc --noEmit -p tsconfig.runtime.json",
+          "exit": 0,
+          "stream": "stdout",
+          "check": "typescript"
+        },
+        {
+          "line": "node --test --test-reporter=tap test/http.test.mjs",
+          "exit": 0,
+          "stream": "stdout",
+          "check": "http"
+        }
+      ]
+    },
+    {
+      "id": "mysql-persistence",
+      "document": "docs/tutorial-brownfield-typescript.md",
+      "fixture": "tests/fixtures/pilot/brownfield-mysql",
+      "lane": "mysql",
+      "write": false,
+      "commands": [
+        {
+          "line": "node --test --test-reporter=tap test/mysql.test.mjs",
+          "exit": 0,
+          "stream": "stdout",
+          "check": "mysql"
+        }
+      ]
+    },
+    {
+      "id": "generate-check",
+      "document": "docs/tutorial-greenfield-planner.md",
+      "fixture": "tests/fixtures/orchestration/project",
+      "lane": "portable",
+      "write": true,
+      "commands": [
+        {
+          "line": "lekalo --json lock",
+          "exit": 0,
+          "stream": "stdout",
+          "check": "lock"
+        },
+        {
+          "line": "lekalo --no-cache --json generate --check",
+          "exit": 0,
+          "stream": "stdout",
+          "check": "generate-check"
+        },
+        {
+          "line": "lekalo --no-cache --json verify",
+          "exit": 0,
+          "stream": "stdout",
+          "check": "verify"
+        }
+      ]
+    }
+  ]
+}

@@ -1,4 +1,7 @@
-# Lekalo CLI foundation
+# CLI reference
+
+Status: **Implemented** handlers at product `0.6.3`, source base `a56ee578`. Owner: CLI maintainers. The checked [command index](#command-index) below inventories recursive live help, including groups and nested leaves. Earlier issue-specific sections are historical examples; exact live usage and each specialist owner govern current syntax. Native production execution remains **Planned**; a handler returning unsupported is not target qualification. Model/IR stay `0.2.16`; [diagnostics](diagnostics.md) owns exits and streams.
+
 
 Issue #3 introduces a target-neutral Rust core and the `lekalo` command-line
 front end. The workspace is edition 2021, uses Cargo resolver 2, has an exact
@@ -1115,3 +1118,162 @@ the leak-scanner verification pass - writing only under
 `.lekalo/privacy/`; `--dry-run` prints the exact candidate payload and
 the redaction diff and writes nothing. `lekalo privacy redact` prints
 the redaction diff contract and never writes.
+
+<!-- issue-105-command-index -->
+## Command index
+
+Status: **Implemented** command handlers for product 0.6.3. Handler existence does not imply every target capability, migration or native execution is available. Each row comes from recursive CLI help and has one owner in [the checked ownership inventory](documentation-owners.json). `init --adopt` is described in [adopt](adopt.md); native execution remains a typed refusal in the production CLI.
+
+| Command | Synopsis from this binary | Reference owner |
+| --- | --- | --- |
+| `lekalo adapter` | `lekalo adapter [OPTIONS] <COMMAND>` | [reference](adapter-install.md) |
+| `lekalo adapter discover` | `lekalo adapter discover [OPTIONS] --source <SOURCE>` | [reference](adapter-install.md) |
+| `lekalo adapter info` | `lekalo adapter info [OPTIONS] <ID>` | [reference](adapter-install.md) |
+| `lekalo adapter install` | `lekalo adapter install [OPTIONS] <SOURCE>` | [reference](adapter-install.md) |
+| `lekalo adapter list` | `lekalo adapter list [OPTIONS]` | [reference](adapter-install.md) |
+| `lekalo adapter quarantine` | `lekalo adapter quarantine [OPTIONS] <COMMAND>` | [reference](adapter-install.md) |
+| `lekalo adapter quarantine list` | `lekalo adapter quarantine list [OPTIONS]` | [reference](adapter-install.md) |
+| `lekalo adapter quarantine purge` | `lekalo adapter quarantine purge [OPTIONS]` | [reference](adapter-install.md) |
+| `lekalo adapter quarantine release` | `lekalo adapter quarantine release [OPTIONS] <ID>` | [reference](adapter-install.md) |
+| `lekalo adapter revoke` | `lekalo adapter revoke [OPTIONS] --reason <TOKEN> <ID>` | [reference](adapter-install.md) |
+| `lekalo adapter rollback` | `lekalo adapter rollback [OPTIONS] --to <VERSION> <ID>` | [reference](adapter-install.md) |
+| `lekalo adapter test` | `lekalo adapter test [OPTIONS] [PROGRAM_ARGS]...` | [reference](adapter-conformance.md) |
+| `lekalo adapter trust` | `lekalo adapter trust [OPTIONS] --level <LEVEL> <ID>` | [reference](adapter-install.md) |
+| `lekalo adapter update` | `lekalo adapter update [OPTIONS] <ID>` | [reference](adapter-install.md) |
+| `lekalo bindings` | `lekalo bindings [OPTIONS] <COMMAND>` | [reference](bindings.md) |
+| `lekalo bindings audit` | `lekalo bindings audit [OPTIONS]` | [reference](bindings.md) |
+| `lekalo bindings confirm` | `lekalo bindings confirm [OPTIONS] [PROPOSAL]` | [reference](bindings.md) |
+| `lekalo bindings list` | `lekalo bindings list [OPTIONS]` | [reference](bindings.md) |
+| `lekalo bindings propose` | `lekalo bindings propose [OPTIONS]` | [reference](bindings.md) |
+| `lekalo cache` | `lekalo cache [OPTIONS] <COMMAND>` | [reference](cache.md) |
+| `lekalo cache clear` | `lekalo cache clear [OPTIONS]` | [reference](cache.md) |
+| `lekalo cache status` | `lekalo cache status [OPTIONS]` | [reference](cache.md) |
+| `lekalo classification` | `lekalo classification [OPTIONS] <COMMAND>` | [reference](classification.md) |
+| `lekalo classification inspect` | `lekalo classification inspect [OPTIONS] --attachment <PATH> --policy <PATH>` | [reference](classification.md) |
+| `lekalo classification validate` | `lekalo classification validate [OPTIONS] --attachment <PATH> --policy <PATH>` | [reference](classification.md) |
+| `lekalo compatibility` | `lekalo compatibility [OPTIONS]` | [reference](versioning.md) |
+| `lekalo context` | `lekalo context [OPTIONS] --budget <TOKENS> [SYMBOL]` | [reference](context.md) |
+| `lekalo context-budget` | `lekalo context-budget [OPTIONS]` | [reference](context-budget.md) |
+| `lekalo contract` | `lekalo contract [OPTIONS] <COMMAND>` | [reference](contracted-mode.md) |
+| `lekalo contract attach` | `lekalo contract attach [OPTIONS] <SYMBOL>` | [reference](contracted-mode.md) |
+| `lekalo contract check` | `lekalo contract check [OPTIONS]` | [reference](contracted-mode.md) |
+| `lekalo contract support` | `lekalo contract support [OPTIONS] --kind <KIND> --path <PATH> <SYMBOL>` | [reference](contracted-mode.md) |
+| `lekalo contract update` | `lekalo contract update [OPTIONS] --declaration <FILE>` | [reference](contracted-mode.md) |
+| `lekalo dataflow` | `lekalo dataflow [OPTIONS] <COMMAND>` | [reference](classification.md) |
+| `lekalo dataflow report` | `lekalo dataflow report [OPTIONS] --attachment <PATH> --policy <PATH>` | [reference](classification.md) |
+| `lekalo diff` | `lekalo diff [OPTIONS] <OLD> [NEW]` | [reference](semantic-diff.md) |
+| `lekalo doctor` | `lekalo doctor [OPTIONS]` | [reference](doctor.md) |
+| `lekalo effects` | `lekalo effects [OPTIONS] <COMMAND>` | [reference](effect-graph.md) |
+| `lekalo effects conflicts` | `lekalo effects conflicts [OPTIONS] --changed <OPERATIONS>` | [reference](effect-graph.md) |
+| `lekalo effects show` | `lekalo effects show [OPTIONS] <OPERATION>` | [reference](effect-graph.md) |
+| `lekalo effects writers` | `lekalo effects writers [OPTIONS] <RESOURCE>` | [reference](effect-graph.md) |
+| `lekalo expressions` | `lekalo expressions [OPTIONS] <COMMAND>` | [reference](expressions.md) |
+| `lekalo expressions diff` | `lekalo expressions diff [OPTIONS] <BASE> <CANDIDATE>` | [reference](expressions.md) |
+| `lekalo expressions eval` | `lekalo expressions eval [OPTIONS] --vectors <FILE> <PATH>` | [reference](expressions.md) |
+| `lekalo expressions render` | `lekalo expressions render [OPTIONS] --target <TARGET> <PATH>` | [reference](expressions.md) |
+| `lekalo expressions validate` | `lekalo expressions validate [OPTIONS] <PATH>` | [reference](expressions.md) |
+| `lekalo generate` | `lekalo generate [OPTIONS] [PROGRAM_ARGS]...` | [reference](orchestration.md) |
+| `lekalo graph` | `lekalo graph [OPTIONS] <COMMAND>` | [reference](graph.md) |
+| `lekalo graph callers` | `lekalo graph callers [OPTIONS] <SYMBOL>` | [reference](graph.md) |
+| `lekalo graph export` | `lekalo graph export [OPTIONS]` | [reference](graph.md) |
+| `lekalo graph path` | `lekalo graph path [OPTIONS] <FROM> <TO>` | [reference](graph.md) |
+| `lekalo graph show` | `lekalo graph show [OPTIONS] <SYMBOL>` | [reference](graph.md) |
+| `lekalo history` | `lekalo history [OPTIONS] <COMMAND>` | [reference](run-history.md) |
+| `lekalo history clear` | `lekalo history clear [OPTIONS] --scope <TOKEN>` | [reference](run-history.md) |
+| `lekalo history compact` | `lekalo history compact [OPTIONS]` | [reference](run-history.md) |
+| `lekalo history delete` | `lekalo history delete [OPTIONS] --scope <TOKEN> <RUN_ID>` | [reference](run-history.md) |
+| `lekalo history dependents` | `lekalo history dependents [OPTIONS] <COMMAND>` | [reference](run-history.md) |
+| `lekalo history dependents register` | `lekalo history dependents register [OPTIONS] --kind <KIND> --scope <TOKEN> <DEPENDENT_ID>` | [reference](run-history.md) |
+| `lekalo history dependents resolve` | `lekalo history dependents resolve [OPTIONS] --scope <TOKEN> <DEPENDENT_ID>` | [reference](run-history.md) |
+| `lekalo history init` | `lekalo history init [OPTIONS]` | [reference](run-history.md) |
+| `lekalo history list` | `lekalo history list [OPTIONS] --scope <TOKEN>` | [reference](run-history.md) |
+| `lekalo history prune` | `lekalo history prune [OPTIONS] --scope <TOKEN>` | [reference](run-history.md) |
+| `lekalo history record` | `lekalo history record [OPTIONS] --input <SOURCE> --scope <TOKEN>` | [reference](run-history.md) |
+| `lekalo history recover` | `lekalo history recover [OPTIONS]` | [reference](run-history.md) |
+| `lekalo history retention` | `lekalo history retention [OPTIONS] --scope <TOKEN>` | [reference](run-history.md) |
+| `lekalo history scope` | `lekalo history scope [OPTIONS] <COMMAND>` | [reference](run-history.md) |
+| `lekalo history scope create` | `lekalo history scope create [OPTIONS]` | [reference](run-history.md) |
+| `lekalo history show` | `lekalo history show [OPTIONS] --scope <TOKEN> <RUN_ID>` | [reference](run-history.md) |
+| `lekalo impact` | `lekalo impact [OPTIONS] [SYMBOL]` | [reference](impact.md) |
+| `lekalo init` | `lekalo init [OPTIONS]` | [reference](bootstrap.md) |
+| `lekalo inspect` | `lekalo inspect [OPTIONS] <SYMBOL>` | [reference](inspect.md) |
+| `lekalo load` | `lekalo load [OPTIONS]` | [reference](loader.md) |
+| `lekalo lock` | `lekalo lock [OPTIONS] [PROGRAM_ARGS]...` | [reference](lockfile.md) |
+| `lekalo migrate` | `lekalo migrate [OPTIONS]` | [reference](versioning.md) |
+| `lekalo module` | `lekalo module [OPTIONS] <COMMAND>` | [reference](bootstrap.md) |
+| `lekalo module new` | `lekalo module new [OPTIONS] <ID>` | [reference](bootstrap.md) |
+| `lekalo native` | `lekalo native [OPTIONS] <COMMAND>` | [reference](native-gates.md) |
+| `lekalo native run` | `lekalo native run [OPTIONS] <PLAN>` | [reference](native-gates.md) |
+| `lekalo nfr` | `lekalo nfr [OPTIONS] <COMMAND>` | [reference](nfr.md) |
+| `lekalo nfr diff` | `lekalo nfr diff [OPTIONS] <BASE> <CANDIDATE>` | [reference](nfr.md) |
+| `lekalo nfr impact` | `lekalo nfr impact [OPTIONS] --base <BASE> <PATH>` | [reference](nfr.md) |
+| `lekalo nfr query` | `lekalo nfr query [OPTIONS] --as-of <DATE> <PATH> <SELECTOR>` | [reference](nfr.md) |
+| `lekalo nfr report` | `lekalo nfr report [OPTIONS] --as-of <DATE> <PATH>` | [reference](nfr.md) |
+| `lekalo nfr trace` | `lekalo nfr trace [OPTIONS] --as-of <DATE> <PATH>` | [reference](nfr.md) |
+| `lekalo nfr validate` | `lekalo nfr validate [OPTIONS] --as-of <DATE> <PATH>` | [reference](nfr.md) |
+| `lekalo observe` | `lekalo observe [OPTIONS] <COMMAND>` | [reference](observed-mode.md) |
+| `lekalo observe attach` | `lekalo observe attach [OPTIONS] <SYMBOL>` | [reference](observed-mode.md) |
+| `lekalo observe baseline` | `lekalo observe baseline [OPTIONS]` | [reference](observed-mode.md) |
+| `lekalo observe bind` | `lekalo observe bind [OPTIONS] --path <PATH> <SYMBOL>` | [reference](observed-mode.md) |
+| `lekalo observe check` | `lekalo observe check [OPTIONS]` | [reference](observed-mode.md) |
+| `lekalo observe confirm` | `lekalo observe confirm [OPTIONS] <SYMBOL>` | [reference](observed-mode.md) |
+| `lekalo observe impact` | `lekalo observe impact [OPTIONS] <SYMBOL>` | [reference](observed-mode.md) |
+| `lekalo observe inspect` | `lekalo observe inspect [OPTIONS] <SYMBOL>` | [reference](observed-mode.md) |
+| `lekalo observe promote` | `lekalo observe promote [OPTIONS]` | [reference](observed-mode.md) |
+| `lekalo observe update` | `lekalo observe update [OPTIONS] --scan <FILE>` | [reference](observed-mode.md) |
+| `lekalo openapi` | `lekalo openapi [OPTIONS] <COMMAND>` | [reference](openapi.md) |
+| `lekalo openapi check` | `lekalo openapi check [OPTIONS] --transport <FILE> <PATH>` | [reference](openapi.md) |
+| `lekalo openapi diff` | `lekalo openapi diff [OPTIONS] <BASE> <CANDIDATE>` | [reference](openapi.md) |
+| `lekalo openapi inspect` | `lekalo openapi inspect [OPTIONS] --endpoint <SYMBOL> <PATH>` | [reference](openapi.md) |
+| `lekalo openapi render` | `lekalo openapi render [OPTIONS] <PATH>` | [reference](openapi.md) |
+| `lekalo privacy` | `lekalo privacy [OPTIONS] <COMMAND>` | [reference](privacy-runtime.md) |
+| `lekalo privacy evaluate` | `lekalo privacy evaluate [OPTIONS] --decision <FILE>` | [reference](privacy-runtime.md) |
+| `lekalo privacy export` | `lekalo privacy export [OPTIONS] --destination <SPEC> <ARTIFACT>` | [reference](privacy-runtime.md) |
+| `lekalo privacy redact` | `lekalo privacy redact [OPTIONS] --payload <FILE>` | [reference](privacy-runtime.md) |
+| `lekalo privacy subject` | `lekalo privacy subject [OPTIONS] --artifact <FILE> --destination <SPEC>` | [reference](privacy-runtime.md) |
+| `lekalo provider` | `lekalo provider [OPTIONS] <COMMAND>` | [reference](provider-contract.md) |
+| `lekalo provider describe` | `lekalo provider describe [OPTIONS]` | [reference](provider-contract.md) |
+| `lekalo query-model` | `lekalo query-model [OPTIONS] <COMMAND>` | [reference](query-model.md) |
+| `lekalo query-model diff` | `lekalo query-model diff [OPTIONS] <BASE> <CANDIDATE>` | [reference](query-model.md) |
+| `lekalo query-model validate` | `lekalo query-model validate [OPTIONS] <PATH>` | [reference](query-model.md) |
+| `lekalo readiness` | `lekalo readiness [OPTIONS] --phase <PHASE>` | [reference](doctor.md) |
+| `lekalo requirements` | `lekalo requirements [OPTIONS] <COMMAND>` | [reference](requirements.md) |
+| `lekalo requirements query` | `lekalo requirements query [OPTIONS] <PATH> <SELECTOR>` | [reference](requirements.md) |
+| `lekalo requirements report` | `lekalo requirements report [OPTIONS] <PATH>` | [reference](requirements.md) |
+| `lekalo requirements trace` | `lekalo requirements trace [OPTIONS] <PATH>` | [reference](requirements.md) |
+| `lekalo requirements validate` | `lekalo requirements validate [OPTIONS] <PATH>` | [reference](requirements.md) |
+| `lekalo scan` | `lekalo scan [OPTIONS] --target <TARGET> [PROGRAM_ARGS]...` | [reference](observed-mode.md) |
+| `lekalo status` | `lekalo status [OPTIONS]` | [reference](doctor.md) |
+| `lekalo storage` | `lekalo storage [OPTIONS] <COMMAND>` | [reference](storage-engine.md) |
+| `lekalo storage capabilities` | `lekalo storage capabilities [OPTIONS] --projection <PATH> <PATH>` | [reference](storage-engine.md) |
+| `lekalo storage conformance` | `lekalo storage conformance [OPTIONS] --profile <PATH> --projection <PATH>` | [reference](storage-engine.md) |
+| `lekalo storage ddl` | `lekalo storage ddl [OPTIONS] --projection <PATH> <PROFILE>` | [reference](storage-engine.md) |
+| `lekalo storage diff` | `lekalo storage diff [OPTIONS] <BASE> <CANDIDATE>` | [reference](storage-projection.md) |
+| `lekalo storage drift` | `lekalo storage drift [OPTIONS] --projection <ATTACHMENT> --profile <PATH> <SCAN>` | [reference](storage-engine.md) |
+| `lekalo storage input` | `lekalo storage input [OPTIONS] --projection <PATH> <PROFILE>` | [reference](storage-engine.md) |
+| `lekalo storage introspect-check` | `lekalo storage introspect-check [OPTIONS] --projection <PATH> --evidence <PATH> --namespace <NAMESPACE>` | [reference](storage-introspection.md) |
+| `lekalo storage laravel-plan` | `lekalo storage laravel-plan [OPTIONS] --profile <PATH> <BASE> <CANDIDATE>` | [reference](laravel-migrations.md) |
+| `lekalo storage migrate-plan` | `lekalo storage migrate-plan [OPTIONS] --profile <PATH> <BASE> <CANDIDATE>` | [reference](storage-engine.md) |
+| `lekalo storage plan` | `lekalo storage plan [OPTIONS] <BASE> <CANDIDATE>` | [reference](storage-projection.md) |
+| `lekalo storage profile` | `lekalo storage profile [OPTIONS] --engine <ENGINE>` | [reference](storage-engine.md) |
+| `lekalo storage project` | `lekalo storage project [OPTIONS] --namespace <NAMESPACE> <PATH>` | [reference](storage-projection.md) |
+| `lekalo storage validate` | `lekalo storage validate [OPTIONS] <PATH>` | [reference](storage-projection.md) |
+| `lekalo storage validate-engine` | `lekalo storage validate-engine [OPTIONS] <PATH>` | [reference](storage-engine.md) |
+| `lekalo storage-profile` | `lekalo storage-profile [OPTIONS] <COMMAND>` | [reference](storage-engine-profile.md) |
+| `lekalo storage-profile capabilities` | `lekalo storage-profile capabilities [OPTIONS] <PATH>` | [reference](storage-engine-profile.md) |
+| `lekalo storage-profile diff` | `lekalo storage-profile diff [OPTIONS] <BASE> <CANDIDATE>` | [reference](storage-engine-profile.md) |
+| `lekalo storage-profile portability` | `lekalo storage-profile portability [OPTIONS] <BASE> <TARGET>` | [reference](storage-engine-profile.md) |
+| `lekalo storage-profile validate` | `lekalo storage-profile validate [OPTIONS] <PATH>` | [reference](storage-engine-profile.md) |
+| `lekalo trace` | `lekalo trace [OPTIONS] <COMMAND>` | [reference](trace-manifest.md) |
+| `lekalo trace collect` | `lekalo trace collect [OPTIONS]` | [reference](trace-manifest.md) |
+| `lekalo trace export` | `lekalo trace export [OPTIONS] <PATH>` | [reference](trace-manifest.md) |
+| `lekalo trace query` | `lekalo trace query [OPTIONS] <PATH> <SELECTOR>` | [reference](trace-manifest.md) |
+| `lekalo trace validate` | `lekalo trace validate [OPTIONS] <PATH>` | [reference](trace-manifest.md) |
+| `lekalo transport` | `lekalo transport [OPTIONS] <COMMAND>` | [reference](transport-http.md) |
+| `lekalo transport diff` | `lekalo transport diff [OPTIONS] <BASE> <CANDIDATE>` | [reference](transport-http.md) |
+| `lekalo transport inspect` | `lekalo transport inspect [OPTIONS] --endpoint <SYMBOL> <PATH>` | [reference](transport-http.md) |
+| `lekalo transport project` | `lekalo transport project [OPTIONS] --namespace <NAMESPACE> <PATH>` | [reference](transport-http.md) |
+| `lekalo transport validate` | `lekalo transport validate [OPTIONS] <PATH>` | [reference](transport-http.md) |
+| `lekalo update` | `lekalo update [OPTIONS]` | [reference](lockfile.md) |
+| `lekalo validate` | `lekalo validate [OPTIONS]` | [reference](validation.md) |
+| `lekalo verify` | `lekalo verify [OPTIONS] [PROGRAM_ARGS]...` | [reference](orchestration.md) |

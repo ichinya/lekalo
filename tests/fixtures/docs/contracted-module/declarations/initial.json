@@ -1,0 +1,107 @@
+{
+  "schemaVersion": "lekalo/contracted-declaration/v0.4.0",
+  "adapter": {
+    "id": "lekalo-target-node-typescript",
+    "version": "0.2.16",
+    "digest": null
+  },
+  "project": "planner",
+  "revision": "sha256:675a7bbd6d9bcc80fb5193a6ec0c0cdb6ecbd838d1efea48d28e5b594c290b3e",
+  "symbols": [
+    {
+      "id": "planner.focus_task",
+      "kind": "command",
+      "source": {
+        "path": "src/focus.ts",
+        "line": 13
+      },
+      "fingerprint": "sha256:416483b189d80f6c008fc66797813ae822c91d8df90f784d65ba08f76b8ebcef",
+      "signature": {
+        "inputs": [
+          {
+            "name": "task_id",
+            "type": "planner.task_id",
+            "required": true
+          }
+        ],
+        "output": null,
+        "reads": []
+      },
+      "effects": [
+        {
+          "kind": "create",
+          "subject": "planner.task"
+        },
+        {
+          "kind": "emit-event",
+          "subject": "planner.task_created"
+        }
+      ]
+    },
+    {
+      "id": "planner.list_tasks",
+      "kind": "query",
+      "source": {
+        "path": "src/queries.ts",
+        "line": 14
+      },
+      "fingerprint": "sha256:3802449e7029868aeeba1c8e636c974b8ffc3b6fe8e888815cda911510d42694",
+      "signature": {
+        "inputs": [],
+        "output": "list(planner.task)",
+        "reads": [
+          "planner.task"
+        ]
+      },
+      "effects": []
+    },
+    {
+      "id": "planner.task",
+      "kind": "entity",
+      "source": {
+        "path": "src/ids.ts",
+        "line": 3
+      },
+      "fingerprint": "sha256:c2f13e81d2cac25ab44a37ed97c73d2964216aef3f87cb33077bca06437e9e08",
+      "signature": null,
+      "effects": [],
+      "shape": {
+        "fields": [
+          {
+            "name": "task_id",
+            "type": "planner.task_id",
+            "required": true
+          },
+          {
+            "name": "title",
+            "type": "planner.text",
+            "required": true
+          },
+          {
+            "name": "state",
+            "type": "planner.task_state",
+            "required": true
+          },
+          {
+            "name": "due",
+            "type": "optional(planner.due_date)",
+            "required": false
+          }
+        ]
+      }
+    },
+    {
+      "id": "planner.task_id",
+      "kind": "scalar",
+      "source": {
+        "path": "src/ids.ts",
+        "line": 1
+      },
+      "fingerprint": "sha256:c2f13e81d2cac25ab44a37ed97c73d2964216aef3f87cb33077bca06437e9e08",
+      "shape": {
+        "base": "uuid"
+      }
+    }
+  ],
+  "artifacts": []
+}

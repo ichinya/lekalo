@@ -1,0 +1,1 @@
+{"extends":"../../tsconfig.json","compilerOptions":{"baseUrl":".","paths":{"drizzle-orm":["types/drizzle.d.ts"],"drizzle-orm/mysql2":["types/mysql2.d.ts"],"drizzle-orm/mysql-core":["types/mysql-core.d.ts"]}},"include":["src","types"]}

@@ -1,0 +1,5 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {"baseUrl":".","paths":{"hono":["types/hono.d.ts"]}},
+  "include": ["src", "types"]
+}

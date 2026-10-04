@@ -1,0 +1,3112 @@
+{
+  "formatVersion": 1,
+  "productVersion": "0.6.3",
+  "cliSourceDigest": "sha256:b936e7220a0cc3140b49eb54efd9020d779d5becc00ef1cb07736518f68bfdcb",
+  "p0Pages": [
+    {
+      "page": "README.md",
+      "owner": "contributor-entry maintainers"
+    },
+    {
+      "page": "docs/architecture.md",
+      "owner": "core and adapter-host maintainers"
+    },
+    {
+      "page": "docs/authority.md",
+      "owner": "boundary maintainers"
+    },
+    {
+      "page": "docs/model.md",
+      "owner": "semantic-contract maintainers"
+    },
+    {
+      "page": "docs/project-layout.md",
+      "owner": "filesystem/reproducibility maintainers"
+    },
+    {
+      "page": "docs/target-protocol.md",
+      "owner": "adapter-host maintainers"
+    },
+    {
+      "page": "docs/diagnostics.md",
+      "owner": "result/reporting maintainers"
+    },
+    {
+      "page": "docs/adoption.md",
+      "owner": "bootstrap/evidence maintainers"
+    },
+    {
+      "page": "docs/security.md",
+      "owner": "privacy and adapter-host maintainers"
+    },
+    {
+      "page": "docs/integrations.md",
+      "owner": "workflow/evidence-consumer maintainers"
+    },
+    {
+      "page": "docs/tutorial-greenfield-planner.md",
+      "owner": "planner fixture maintainers"
+    },
+    {
+      "page": "docs/tutorial-brownfield-typescript.md",
+      "owner": "Node evidence fixture maintainers"
+    },
+    {
+      "page": "docs/roadmap.md",
+      "owner": "release/documentation maintainers"
+    }
+  ],
+  "records": [
+    {
+      "id": "cli:adapter",
+      "kind": "command",
+      "command": "adapter",
+      "usage": "lekalo adapter [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:4b64a6d9cbca920fbc83125f01bf994ebfaab64f79123aab58eb1b5ce2b25d47",
+      "summary": "Run the target adapter conformance suite (issue #31)",
+      "leaf": false,
+      "owner": "docs/adapter-install.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:adapter discover",
+      "kind": "command",
+      "command": "adapter discover",
+      "usage": "lekalo adapter discover [OPTIONS] --source <SOURCE>",
+      "helpDigest": "sha256:2f6c880621f281c3ba0b54272650afa2529f0ab93aedefafe7c4eb968fe9b34f",
+      "summary": "Enumerate the adapter package discovery sources without running anything (issue #32). Auto-discovery never installs or trusts",
+      "leaf": true,
+      "owner": "docs/adapter-install.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:adapter info",
+      "kind": "command",
+      "command": "adapter info",
+      "usage": "lekalo adapter info [OPTIONS] <ID>",
+      "helpDigest": "sha256:8239eddbf33029bf3bdca5fcb83e178e1cb698f6b044639f10a3f4345c5b8f56",
+      "summary": "Show one installed package's manifest projection, trust, and provenance (issue #32)",
+      "leaf": true,
+      "owner": "docs/adapter-install.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:adapter install",
+      "kind": "command",
+      "command": "adapter install",
+      "usage": "lekalo adapter install [OPTIONS] <SOURCE>",
+      "helpDigest": "sha256:3ffce007c3bf6a6189915e16872c316b4d82db3b4381c5349a6f06dde302cd63",
+      "summary": "Install one adapter package from a closed source (issue #32).",
+      "leaf": true,
+      "owner": "docs/adapter-install.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:adapter list",
+      "kind": "command",
+      "command": "adapter list",
+      "usage": "lekalo adapter list [OPTIONS]",
+      "helpDigest": "sha256:8968d47dfc3f1c00363ca2d1301afebcbecf5e280351c985c433ff968fa73a3a",
+      "summary": "List the installed adapter packages from the local store inventory (issue #32)",
+      "leaf": true,
+      "owner": "docs/adapter-install.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:adapter quarantine",
+      "kind": "command",
+      "command": "adapter quarantine",
+      "usage": "lekalo adapter quarantine [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:b6e40969d38e119282ac16448a05568fbc79d87ebad2b88a047b55b996a4b198",
+      "summary": "Report or purge the quarantine custody (issue #32)",
+      "leaf": false,
+      "owner": "docs/adapter-install.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:adapter quarantine list",
+      "kind": "command",
+      "command": "adapter quarantine list",
+      "usage": "lekalo adapter quarantine list [OPTIONS]",
+      "helpDigest": "sha256:10e922ab4bdea5a8df392b6cf754894417bd84b863ff812d284c8e64bb24b37b",
+      "summary": "List the quarantined packages",
+      "leaf": true,
+      "owner": "docs/adapter-install.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:adapter quarantine purge",
+      "kind": "command",
+      "command": "adapter quarantine purge",
+      "usage": "lekalo adapter quarantine purge [OPTIONS]",
+      "helpDigest": "sha256:06ca63872df7f42c0e15a03226c0d8d27d4a31363910221d90af89a47158c061",
+      "summary": "Purge quarantined bytes (the only removal path)",
+      "leaf": true,
+      "owner": "docs/adapter-install.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:adapter quarantine release",
+      "kind": "command",
+      "command": "adapter quarantine release",
+      "usage": "lekalo adapter quarantine release [OPTIONS] <ID>",
+      "helpDigest": "sha256:4f1e37ee9f6d998c91ce87d30b9aadc039719a6d3644ffe7be3a7635e5df1444",
+      "summary": "Release a quarantined package: re-plan it as a normal (trusted) install into the live store under explicit confirmation",
+      "leaf": true,
+      "owner": "docs/adapter-install.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:adapter revoke",
+      "kind": "command",
+      "command": "adapter revoke",
+      "usage": "lekalo adapter revoke [OPTIONS] --reason <TOKEN> <ID>",
+      "helpDigest": "sha256:dc1cb1e83ec9a28000b07dcdb4eed9d4ddd3ce50b2ccfc6d6904af30bb97c678",
+      "summary": "Record a revocation for an adapter id/version in the local store (issue #32)",
+      "leaf": true,
+      "owner": "docs/adapter-install.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:adapter rollback",
+      "kind": "command",
+      "command": "adapter rollback",
+      "usage": "lekalo adapter rollback [OPTIONS] --to <VERSION> <ID>",
+      "helpDigest": "sha256:b0de7fe4fb0c2621a830c8064916bbf1fe5467331f433b61b72753233ce13481",
+      "summary": "Repoint the selected pin to a previously installed immutable version (issue #32). Bytes are never modified",
+      "leaf": true,
+      "owner": "docs/adapter-install.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:adapter test",
+      "kind": "command",
+      "command": "adapter test",
+      "usage": "lekalo adapter test [OPTIONS] [PROGRAM_ARGS]...",
+      "helpDigest": "sha256:c5ed135ef82bdc452d0eaef12e629285e1e017bfb6394057823fdb5d0b1f3e4b",
+      "summary": "Run the conformance battery against one adapter executable.",
+      "leaf": true,
+      "owner": "docs/adapter-conformance.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:adapter trust",
+      "kind": "command",
+      "command": "adapter trust",
+      "usage": "lekalo adapter trust [OPTIONS] --level <LEVEL> <ID>",
+      "helpDigest": "sha256:f4415a442d6df73ee295c4290aeaa11bf51320606d8275a582b06c24bd2e21e2",
+      "summary": "Record an explicit trust transition for an installed package (issue #32)",
+      "leaf": true,
+      "owner": "docs/adapter-install.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:adapter update",
+      "kind": "command",
+      "command": "adapter update",
+      "usage": "lekalo adapter update [OPTIONS] <ID>",
+      "helpDigest": "sha256:b8e519d2ba73b1c41bfe62aea4e9fedc7b6396e28b444c7a8ab1310336080996",
+      "summary": "Update one installed package to another immutable version (issue #32). The plan renders the permission/capability diff; a widening diff refuses without `--allow-escalation`",
+      "leaf": true,
+      "owner": "docs/adapter-install.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:bindings",
+      "kind": "command",
+      "command": "bindings",
+      "usage": "lekalo bindings [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:3d7f3d3c3fc8b102075d996f7317197173fe0950e5a0dec0d728d94f15db1b14",
+      "summary": "List, propose, confirm, and audit the binding registry (issue #42). The core owns every decision; this binary only selects, renders, and maps exits",
+      "leaf": false,
+      "owner": "docs/bindings.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:bindings audit",
+      "kind": "command",
+      "command": "bindings audit",
+      "usage": "lekalo bindings audit [OPTIONS]",
+      "helpDigest": "sha256:b03e13858d043264958e5f400f509f0f6079e44fabdcc0a95e840428477bcc50",
+      "summary": "Re-fingerprint every binding after source changes: a changed signature or path is stale (gate failure) or correctly re-resolved, never silent",
+      "leaf": true,
+      "owner": "docs/bindings.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:bindings confirm",
+      "kind": "command",
+      "command": "bindings confirm",
+      "usage": "lekalo bindings confirm [OPTIONS] [PROPOSAL]",
+      "helpDigest": "sha256:7fe1793c9469a583012e5f40dfebae4afefc822cf063d7d6314ee368f07af450",
+      "summary": "Confirm inferred bindings: one by proposal id (with --candidate for an ambiguous proposal), or the unambiguous set as a batch with the planned-and-confirmed preview",
+      "leaf": true,
+      "owner": "docs/bindings.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:bindings list",
+      "kind": "command",
+      "command": "bindings list",
+      "usage": "lekalo bindings list [OPTIONS]",
+      "helpDigest": "sha256:491a96d4f4a0777e0d0f9baf4ffc0eade8332cd1c2c0d52d010938dd1aea9657",
+      "summary": "Project the whole registry: implement/expose/verify rows with source, confidence, provenance, and freshness",
+      "leaf": true,
+      "owner": "docs/bindings.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:bindings propose",
+      "kind": "command",
+      "command": "bindings propose",
+      "usage": "lekalo bindings propose [OPTIONS]",
+      "helpDigest": "sha256:09a619d029cd4b52e63bca3fb128d1d4cfc0cdb9f55c69d30f1e15057f6ad6a9",
+      "summary": "Derive the current confirmation proposals with their full candidate sets; ambiguous mappings list every candidate and pick none",
+      "leaf": true,
+      "owner": "docs/bindings.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:cache",
+      "kind": "command",
+      "command": "cache",
+      "usage": "lekalo cache [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:4f767c42e0f8ba851269a461d294f1622d368f071af85c2b0b9eb36743200e8a",
+      "summary": "The `cache` subcommands: the thin status/clear handoff (issue #20)",
+      "leaf": false,
+      "owner": "docs/cache.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:cache clear",
+      "kind": "command",
+      "command": "cache clear",
+      "usage": "lekalo cache clear [OPTIONS]",
+      "helpDigest": "sha256:0b02e48ce39e1400d2c0c438595f140bda951dfa3e14f725a9fa3bca99fc0b86",
+      "summary": "Clear the cache home (`.lekalo/cache/**` except migration state)",
+      "leaf": true,
+      "owner": "docs/cache.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:cache status",
+      "kind": "command",
+      "command": "cache status",
+      "usage": "lekalo cache status [OPTIONS]",
+      "helpDigest": "sha256:b637f8e10b7ba9c67ccfff3d25db7ca698bf13d539da3789459a55b01f9a3222",
+      "summary": "Print the read-only, bounded cache health projection",
+      "leaf": true,
+      "owner": "docs/cache.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:classification",
+      "kind": "command",
+      "command": "classification",
+      "usage": "lekalo classification [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:f786ea88c47dc140aaf645d59212917c1dd952e1e43373d2d151c6615fe1c3c8",
+      "summary": "Validate or inspect one data-classification attachment against the project (issue #87): custody, subject resolution, grants, and the governing policy",
+      "leaf": false,
+      "owner": "docs/classification.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:classification inspect",
+      "kind": "command",
+      "command": "classification inspect",
+      "usage": "lekalo classification inspect [OPTIONS] --attachment <PATH> --policy <PATH>",
+      "helpDigest": "sha256:2ef42f6b349ed678a5d640449a5cbdab536db6395c2e773b58b6f99aa45321e5",
+      "summary": "Inspect one classification attachment: the resolved kinds of every declared subject in canonical order",
+      "leaf": true,
+      "owner": "docs/classification.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:classification validate",
+      "kind": "command",
+      "command": "classification validate",
+      "usage": "lekalo classification validate [OPTIONS] --attachment <PATH> --policy <PATH>",
+      "helpDigest": "sha256:196c0b2230a2c618ea815e954176102305c68da210f243508ebd1c5ed889de04",
+      "summary": "Validate one classification attachment and its governing policy against the project: custody pins, subject resolution, grant coherence, and (under the strict profile) the sensitive-sink rule over the declared graph. The documents are read from the given project-relative paths; the core owns every decision",
+      "leaf": true,
+      "owner": "docs/classification.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:compatibility",
+      "kind": "command",
+      "command": "compatibility",
+      "usage": "lekalo compatibility [OPTIONS]",
+      "helpDigest": "sha256:6e20dc8e0932d945fece129c53cccb4e242108b053f12db35215ba8510dbd0c9",
+      "summary": "Print the embedded contract version registry",
+      "leaf": true,
+      "owner": "docs/versioning.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:context",
+      "kind": "command",
+      "command": "context",
+      "usage": "lekalo context [OPTIONS] --budget <TOKENS> [SYMBOL]",
+      "helpDigest": "sha256:25a71a86227f35d6edd4eca311ff123d311fb7774d412b51d1b8e96fc001c0a2",
+      "summary": "Build a bounded context capsule for one semantic symbol, or for the explicitly supplied changed symbols. The human projection of the valid result is the agent-facing Markdown; `--json` emits the structured capsule (`lekalo/context/v1.0.0`)",
+      "leaf": true,
+      "owner": "docs/context.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:context-budget",
+      "kind": "command",
+      "command": "context-budget",
+      "usage": "lekalo context-budget [OPTIONS]",
+      "helpDigest": "sha256:eaf571d1fa47e6f2fb81e631b8c785eebccef98cc73a387a44aa9c7ed25d0e8d",
+      "summary": "Report the context-budget and local-understandability metrics of one symbol, one module, or the whole project (issue #75): the measured dependency closure before any budget selection, the required semantic facts separated from supporting facts and optional source, cross-module hops, the explainable over-budget breakdown, advisory extraction boundaries, and the opt-in capsule simulation. Advisory by default; a mandatory `--policy` document is the only denied path. No default budget exists: an explicit `--budget` or `--budget-profile` is required",
+      "leaf": true,
+      "owner": "docs/context-budget.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:contract",
+      "kind": "command",
+      "command": "contract",
+      "usage": "lekalo contract [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:e653ed33a5c92bd0290dda3023f9773104ea71f88ef4ac23b99ad7ade0153493",
+      "summary": "Record, verify, and govern AI-written implementation in contracted mode (issue #40). The model is primary, the target source is maintained code, and the adapter checks conformance and may generate support artifacts only. The core owns every decision; this binary only selects, renders, and maps exits",
+      "leaf": false,
+      "owner": "docs/contracted-mode.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:contract attach",
+      "kind": "command",
+      "command": "contract attach",
+      "usage": "lekalo contract attach [OPTIONS] <SYMBOL>",
+      "helpDigest": "sha256:274ada2987a62c7b4afb654d816a3cd5c2d824073b7d4b9c6662004b28df2424",
+      "summary": "Attach verbatim native-test or gate ids to one recorded symbol",
+      "leaf": true,
+      "owner": "docs/contracted-mode.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:contract check",
+      "kind": "command",
+      "command": "contract check",
+      "usage": "lekalo contract check [OPTIONS]",
+      "helpDigest": "sha256:38999dfd08c4c5edfc356a2c6cf9f230c158206ad919f9d72de9b2afcd9796e9",
+      "summary": "Run the conformance gate: re-fingerprint every binding, recompute the canonical signatures and declared effects from the typed IR, and re-digest every fingerprinted support artifact",
+      "leaf": true,
+      "owner": "docs/contracted-mode.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:contract support",
+      "kind": "command",
+      "command": "contract support",
+      "usage": "lekalo contract support [OPTIONS] --kind <KIND> --path <PATH> <SYMBOL>",
+      "helpDigest": "sha256:f73f7d700dda115dcc7bc413777ba44d1ba5f01a1f9addc1be419b6500794047",
+      "summary": "Register one support artifact in the ownership manifest; the path must stay inside the generated home, and maintained implementation paths refuse by construction",
+      "leaf": true,
+      "owner": "docs/contracted-mode.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:contract update",
+      "kind": "command",
+      "command": "contract update",
+      "usage": "lekalo contract update [OPTIONS] --declaration <FILE>",
+      "helpDigest": "sha256:a2239b5aedf28b64aaa13be2018f4af7f233970f7a4dfadf6dec9f82929b79c5",
+      "summary": "Merge one adapter declaration document into the conformed registry; a binding recorded with a fingerprint is conformance evidence until the source or the contract changes",
+      "leaf": true,
+      "owner": "docs/contracted-mode.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:dataflow",
+      "kind": "command",
+      "command": "dataflow",
+      "usage": "lekalo dataflow [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:135f1231aff3a2002a236255e7b2aa3c4a77f822aa8fd64f825bd83330a32e08",
+      "summary": "Derive or inspect the data-flow report over the classified project (issue #87): flows, tenant relations, gate decisions, and the first-class unknown list",
+      "leaf": false,
+      "owner": "docs/classification.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:dataflow report",
+      "kind": "command",
+      "command": "dataflow report",
+      "usage": "lekalo dataflow report [OPTIONS] --attachment <PATH> --policy <PATH>",
+      "helpDigest": "sha256:22194ce96be52aeab07cc176309d06d0bcc26f75d30ee6952633ed66dbed18fc",
+      "summary": "Derive the data-flow report over the classified project: flows, findings, unknowns, and the aggregated gate verdict, pinned to the exact input digests. Read-only; the report is never written by this command",
+      "leaf": true,
+      "owner": "docs/classification.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:diff",
+      "kind": "command",
+      "command": "diff",
+      "usage": "lekalo diff [OPTIONS] <OLD> [NEW]",
+      "helpDigest": "sha256:d8fd4468e4c0f376e92f53698d5cb911197b5d96c10d93a2aa56dd223b36058d",
+      "summary": "Compare two accepted project selections semantically",
+      "leaf": true,
+      "owner": "docs/semantic-diff.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:doctor",
+      "kind": "command",
+      "command": "doctor",
+      "usage": "lekalo doctor [OPTIONS]",
+      "helpDigest": "sha256:7f4782ab0f51b5173e75c3dd869c1d074b80b63e61810f32ffc06d46eacc9f78",
+      "summary": "Diagnose project, model, adapters, artifacts, and integrations in one read-only readiness report",
+      "leaf": true,
+      "owner": "docs/doctor.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:effects",
+      "kind": "command",
+      "command": "effects",
+      "usage": "lekalo effects [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:a95c6c72f4c725126012e0ce288a36289163f3f9a27802d42acae4479485e89d",
+      "summary": "Project the declared and detected effect graph of operations",
+      "leaf": false,
+      "owner": "docs/effect-graph.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:effects conflicts",
+      "kind": "command",
+      "command": "effects conflicts",
+      "usage": "lekalo effects conflicts [OPTIONS] --changed <OPERATIONS>",
+      "helpDigest": "sha256:07807e5ecfd70443bfcbfe6fc13d9552cc5ff25e110c9dbdb037cdd055c270c1",
+      "summary": "Classify parallel-change conflicts for one explicit change set.",
+      "leaf": true,
+      "owner": "docs/effect-graph.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:effects show",
+      "kind": "command",
+      "command": "effects show",
+      "usage": "lekalo effects show [OPTIONS] <OPERATION>",
+      "helpDigest": "sha256:10a254da468af7345d55a7687da00dae47c58af881d05d096e26f1c304eb512f",
+      "summary": "Show one operation's declared and detected effects",
+      "leaf": true,
+      "owner": "docs/effect-graph.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:effects writers",
+      "kind": "command",
+      "command": "effects writers",
+      "usage": "lekalo effects writers [OPTIONS] <RESOURCE>",
+      "helpDigest": "sha256:85902dd998e52d8f87efa0808a1d495d97908a12884a725d8058eba0ecdf4a3c",
+      "summary": "Report which operations write (or read with `--readers`) one resource or exact field",
+      "leaf": true,
+      "owner": "docs/effect-graph.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:expressions",
+      "kind": "command",
+      "command": "expressions",
+      "usage": "lekalo expressions [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:ade9a6b20b76db0d6cb0c8b222b2d8ecf868b9e18f7c76c074f3e1081759df3a",
+      "summary": "Validate, evaluate, render, or compare typed-expression attachments (issue #66). The core owns every decision; this binary only selects, renders, and maps exits",
+      "leaf": false,
+      "owner": "docs/expressions.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:expressions diff",
+      "kind": "command",
+      "command": "expressions diff",
+      "usage": "lekalo expressions diff [OPTIONS] <BASE> <CANDIDATE>",
+      "helpDigest": "sha256:fead0a688a5d1800b60c2ea72d46acc3f72f7c9b704834458f049bc3f62e7685",
+      "summary": "Compare two same-family attachments and classify every changed path; the verdict stays data, never an exit code",
+      "leaf": true,
+      "owner": "docs/expressions.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:expressions eval",
+      "kind": "command",
+      "command": "expressions eval",
+      "usage": "lekalo expressions eval [OPTIONS] --vectors <FILE> <PATH>",
+      "helpDigest": "sha256:9036d9a1cadc118233fd911acbf6ebe6e0d48b619c2b15b0484c7063613eef6c",
+      "summary": "Evaluate the shared vectors of one attachment against the deterministic reference evaluator with the injected clock",
+      "leaf": true,
+      "owner": "docs/expressions.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:expressions render",
+      "kind": "command",
+      "command": "expressions render",
+      "usage": "lekalo expressions render [OPTIONS] --target <TARGET> <PATH>",
+      "helpDigest": "sha256:b32218239f136b886b49021c8c7e323b60706b8fbe37060b9640085a0a9de03a",
+      "summary": "Render one complete cross-target program (node, php, or go) that computes the shared vectors",
+      "leaf": true,
+      "owner": "docs/expressions.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:expressions validate",
+      "kind": "command",
+      "command": "expressions validate",
+      "usage": "lekalo expressions validate [OPTIONS] <PATH>",
+      "helpDigest": "sha256:818f2a5d7fc4ab4b35498c907c086ea3bd819e9c930c6dc7c27d0d4c52de0f77",
+      "summary": "Validate one attachment: exhaustive static typing, canonical bytes, and the required capability set",
+      "leaf": true,
+      "owner": "docs/expressions.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:generate",
+      "kind": "command",
+      "command": "generate",
+      "usage": "lekalo generate [OPTIONS] [PROGRAM_ARGS]...",
+      "helpDigest": "sha256:2f3fadec012a45f8286c5944e404e4f5d6bac58e4de4129b21c468e3563b7f0d",
+      "summary": "Check generated-artifact ownership and drift, or plan and apply a confirmed clean of orphaned generated files",
+      "leaf": true,
+      "owner": "docs/orchestration.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:graph",
+      "kind": "command",
+      "command": "graph",
+      "usage": "lekalo graph [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:7cda05795273a1ca366fc3abf6805db33867613bd1fded6e43ae9f5a408198a8",
+      "summary": "Project the deterministic dependency graph of semantic symbols",
+      "leaf": false,
+      "owner": "docs/graph.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:graph callers",
+      "kind": "command",
+      "command": "graph callers",
+      "usage": "lekalo graph callers [OPTIONS] <SYMBOL>",
+      "helpDigest": "sha256:bbf381c7cf6e51c5a05faf06be7ac23d559de97b5c24ebc26d76d57f2cd555f0",
+      "summary": "Report what depends on one symbol (the reverse view)",
+      "leaf": true,
+      "owner": "docs/graph.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:graph export",
+      "kind": "command",
+      "command": "graph export",
+      "usage": "lekalo graph export [OPTIONS]",
+      "helpDigest": "sha256:6bc6fae3b2cbf1851428b70075e09cc86e37cef66e77472cc8ee2f95f0f3c7cd",
+      "summary": "Export the whole canonical graph as compact deterministic JSON",
+      "leaf": true,
+      "owner": "docs/graph.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:graph path",
+      "kind": "command",
+      "command": "graph path",
+      "usage": "lekalo graph path [OPTIONS] <FROM> <TO>",
+      "helpDigest": "sha256:49755beebeb3b562c865eadb6ac75656f722afada72b427091b4dee5d357e070",
+      "summary": "Report the shortest dependency path between two symbols",
+      "leaf": true,
+      "owner": "docs/graph.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:graph show",
+      "kind": "command",
+      "command": "graph show",
+      "usage": "lekalo graph show [OPTIONS] <SYMBOL>",
+      "helpDigest": "sha256:e6a57e4337ed43738d0a4636e7e779d64e0a8b4db93e6f62aade9d59d938aa19",
+      "summary": "Show one symbol with its direct dependencies and dependents",
+      "leaf": true,
+      "owner": "docs/graph.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:history",
+      "kind": "command",
+      "command": "history",
+      "usage": "lekalo history [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:6c2c397041f46ae729002e872504467e246fde75fdde910228b991c7534c4699",
+      "summary": "Record, inspect, and retain the local-only run history and metrics recorder (issue #121). Fully offline, repository/tenant isolated under `.lekalo/history/`, atomic with recovery, and with no export surface: public payloads are built only by the aggregate consumer, never here",
+      "leaf": false,
+      "owner": "docs/run-history.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:history clear",
+      "kind": "command",
+      "command": "history clear",
+      "usage": "lekalo history clear [OPTIONS] --scope <TOKEN>",
+      "helpDigest": "sha256:a2ff6fc0e0530adb1bb5a18e21d1d9e6ba1ffbd4303f8ccc270f3ec3a4b2ce0b",
+      "summary": "Clear one whole scope through the same transactional delete/invalidation path",
+      "leaf": true,
+      "owner": "docs/run-history.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:history compact",
+      "kind": "command",
+      "command": "history compact",
+      "usage": "lekalo history compact [OPTIONS]",
+      "helpDigest": "sha256:ed29befb23e0f69aa3bbf819a020f4694068cc7550650ebc559384fec367fc73",
+      "summary": "Compact the store with `VACUUM` after deletes have committed; a failure is reported separately and never undoes a deletion",
+      "leaf": true,
+      "owner": "docs/run-history.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:history delete",
+      "kind": "command",
+      "command": "history delete",
+      "usage": "lekalo history delete [OPTIONS] --scope <TOKEN> <RUN_ID>",
+      "helpDigest": "sha256:e19d0a2abb7f24ba1b0375cfad1ba2a44c9c3d399ad79e46377f2383874065cd",
+      "summary": "Delete one raw record; deletion transactionally invalidates every dependent index/claim reference",
+      "leaf": true,
+      "owner": "docs/run-history.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:history dependents",
+      "kind": "command",
+      "command": "history dependents",
+      "usage": "lekalo history dependents [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:2d9f72ed9bceae2fb0576817a824bfa4cafea7f504e2ff35f04831b5c7037314",
+      "summary": "The typed local dependent-reference seam for the evidence consumers (indexes, claims, aggregate inputs)",
+      "leaf": false,
+      "owner": "docs/run-history.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:history dependents register",
+      "kind": "command",
+      "command": "history dependents register",
+      "usage": "lekalo history dependents register [OPTIONS] --kind <KIND> --scope <TOKEN> <DEPENDENT_ID>",
+      "helpDigest": "sha256:d3d3d5da23fa02b10a91ee34ef5e823bc3aec5a9af76eb0d079d19bdef993378",
+      "summary": "Bind one local dependent reference to live source records; a registration that would create a dependency cycle refuses",
+      "leaf": true,
+      "owner": "docs/run-history.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:history dependents resolve",
+      "kind": "command",
+      "command": "history dependents resolve",
+      "usage": "lekalo history dependents resolve [OPTIONS] --scope <TOKEN> <DEPENDENT_ID>",
+      "helpDigest": "sha256:a5444de6067b186dbf9fe1bc237bc828e6b05905cf39ffc8d1ee3a3def28e77a",
+      "summary": "Live revalidation of one dependent reference: every bound digest must resolve to live same-scope bytes right now",
+      "leaf": true,
+      "owner": "docs/run-history.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:history init",
+      "kind": "command",
+      "command": "history init",
+      "usage": "lekalo history init [OPTIONS]",
+      "helpDigest": "sha256:c3e5496cdcfee49e48a0748e1ab5994de2fef53d59d361ebb9390bd100d11d36",
+      "summary": "Create the governed history home (`.lekalo/history/`) with its generated ignore protection and verified untracked custody",
+      "leaf": true,
+      "owner": "docs/run-history.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:history list",
+      "kind": "command",
+      "command": "history list",
+      "usage": "lekalo history list [OPTIONS] --scope <TOKEN>",
+      "helpDigest": "sha256:ae1281352b7a7144b5e45bc666e79b930f44dc01eea7b88bbe4fc551a18231a0",
+      "summary": "The bounded, sorted, same-scope-only list page",
+      "leaf": true,
+      "owner": "docs/run-history.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:history prune",
+      "kind": "command",
+      "command": "history prune",
+      "usage": "lekalo history prune [OPTIONS] --scope <TOKEN>",
+      "helpDigest": "sha256:140dc2e3947b0438fc9079235f13152a4b02f7dbed9cc5a55d159d6fcbe7e32c",
+      "summary": "Enforce retention for one scope; dry-run lists the victims, `--apply` deletes them with dependent invalidation atomically",
+      "leaf": true,
+      "owner": "docs/run-history.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:history record",
+      "kind": "command",
+      "command": "history record",
+      "usage": "lekalo history record [OPTIONS] --input <SOURCE> --scope <TOKEN>",
+      "helpDigest": "sha256:80ad14e2ea440c276d230d1a7209d3ea505e84abb9e00ac0788c1823431e9a92",
+      "summary": "Validate and atomically append one bounded typed harness observation from stdin (`--input -`). The recorder exit proves ingestion only: a recorded operation whose own status is `fail` still ingests validly",
+      "leaf": true,
+      "owner": "docs/run-history.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:history recover",
+      "kind": "command",
+      "command": "history recover",
+      "usage": "lekalo history recover [OPTIONS]",
+      "helpDigest": "sha256:f219379f1245a426035beb0895761e2310712dfa43367a9b3502b1199882cacc",
+      "summary": "Verify integrity, foreign keys, identity, and every record digest, then rebuild the secondary index from validated surviving records only",
+      "leaf": true,
+      "owner": "docs/run-history.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:history retention",
+      "kind": "command",
+      "command": "history retention",
+      "usage": "lekalo history retention [OPTIONS] --scope <TOKEN>",
+      "helpDigest": "sha256:74173e0bb21a5f909403f975a872a414f4c792ae1ea00cf1716f278afc6bdc63",
+      "summary": "Configure the store-wide retention bounds; the strictest applicable bound is enforced per tenant scope",
+      "leaf": true,
+      "owner": "docs/run-history.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:history scope",
+      "kind": "command",
+      "command": "history scope",
+      "usage": "lekalo history scope [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:a01e2f5c12014d3225dd9ceed3921d820af93ec4aa1c262a7967a4833c1bed28",
+      "summary": "Mint one random local tenant scope token. No tenant name or host identity is accepted or derivable",
+      "leaf": false,
+      "owner": "docs/run-history.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:history scope create",
+      "kind": "command",
+      "command": "history scope create",
+      "usage": "lekalo history scope create [OPTIONS]",
+      "helpDigest": "sha256:089a81c715bccb055285cbe2c742f08a67beac75aa20336c8ab51a22fda7de4a",
+      "summary": "Mint one random local tenant scope token",
+      "leaf": true,
+      "owner": "docs/run-history.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:history show",
+      "kind": "command",
+      "command": "history show",
+      "usage": "lekalo history show [OPTIONS] --scope <TOKEN> <RUN_ID>",
+      "helpDigest": "sha256:6a8092c1f421a2f810fe26157ab53037003782329e60cf20e8b09031bb8805cb",
+      "summary": "Show one sanitized record and its separately stored assertion set, named apart for the local operator",
+      "leaf": true,
+      "owner": "docs/run-history.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:impact",
+      "kind": "command",
+      "command": "impact",
+      "usage": "lekalo impact [OPTIONS] [SYMBOL]",
+      "helpDigest": "sha256:43879bdb5e21462bb7375a9b89c56cc10c000b551653b99dd46e329595b279e7",
+      "summary": "Report the impact and change radius of one semantic symbol, or of the changed inputs of a Git revision range or the working tree",
+      "leaf": true,
+      "owner": "docs/impact.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:init",
+      "kind": "command",
+      "command": "init",
+      "usage": "lekalo init [OPTIONS]",
+      "helpDigest": "sha256:ecead53ca1124227b74cab7d30f6ab444854b96a63ad966e1d35327113969f52",
+      "summary": "Bootstrap a new greenfield Lekalo project in the invocation directory (issue #97), or adopt an existing repository with `--adopt` (issue #38)",
+      "leaf": true,
+      "owner": "docs/bootstrap.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:inspect",
+      "kind": "command",
+      "command": "inspect",
+      "usage": "lekalo inspect [OPTIONS] <SYMBOL>",
+      "helpDigest": "sha256:1049aebd74b46a22deb2360ce6223c0a819d1a1672bea32fc9654d01695dc0e7",
+      "summary": "Inspect one semantic symbol: identity, contract, effects, relations, and bounded projections in one deterministic view",
+      "leaf": true,
+      "owner": "docs/inspect.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:load",
+      "kind": "command",
+      "command": "load",
+      "usage": "lekalo load [OPTIONS]",
+      "helpDigest": "sha256:617d2a3d1af74bdee40fc10cca14bda0366085cdd842eded48a0e40cd233f80a",
+      "summary": "Load YAML/JSON sources, resolve imports, and emit the canonical model",
+      "leaf": true,
+      "owner": "docs/loader.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:lock",
+      "kind": "command",
+      "command": "lock",
+      "usage": "lekalo lock [OPTIONS] [PROGRAM_ARGS]...",
+      "helpDigest": "sha256:dbb5620a49755bc77ebb7e548639622f16b0d48c10644146e9020be1fb39e98f",
+      "summary": "Create the committed project lock, or check an existing one",
+      "leaf": true,
+      "owner": "docs/lockfile.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:migrate",
+      "kind": "command",
+      "command": "migrate",
+      "usage": "lekalo migrate [OPTIONS]",
+      "helpDigest": "sha256:22cd34a5c08393fff0f1c2d5c3ae0f24904a3fb2235d7f3be31f9e763b41e65b",
+      "summary": "Migrate the Model contract version to a registered target, or roll back one recorded migration",
+      "leaf": true,
+      "owner": "docs/versioning.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:module",
+      "kind": "command",
+      "command": "module",
+      "usage": "lekalo module [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:c264b4e0b002a3f1cb48903677077fdaaea5d0e6c7d9c6d1558d8c17ca57d1f6",
+      "summary": "Create one additional empty module in an initialized project (issue #97)",
+      "leaf": false,
+      "owner": "docs/bootstrap.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:module new",
+      "kind": "command",
+      "command": "module new",
+      "usage": "lekalo module new [OPTIONS] <ID>",
+      "helpDigest": "sha256:2e93ac7f2cc6c6e9d602d84e0eb52c8f23f305b523bc2f3f637ca8577cfe7850",
+      "summary": "Create one additional empty module: the module manifest and nothing else, no-overwrite, gated by the normal load and validation path",
+      "leaf": true,
+      "owner": "docs/bootstrap.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:native",
+      "kind": "command",
+      "command": "native",
+      "usage": "lekalo native [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:980538ed0b32fbd7c737daa2e4582bc63dda7b2ef83757a4c701738eb99fa0c1",
+      "summary": "Plan native build/test gates over a Node workspace (issue #48). Planning is read-only: it produces the immutable proposed plan with its digest. Execution of trusted synthetic fixtures is owned by the test-only harness — the production binary never launches a gate command and answers with a typed refusal",
+      "leaf": false,
+      "owner": "docs/native-gates.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:native run",
+      "kind": "command",
+      "command": "native run",
+      "usage": "lekalo native run [OPTIONS] <PLAN>",
+      "helpDigest": "sha256:f27983982c82bca8848cd1528646d8f92a2267e13fa6dbcb15c802a6c97aba22",
+      "summary": "Propose the immutable native gate plan over the current workspace: workspace inventory, affected closure, confirmed commands, and the plan digest. Read-only; never launches a command. The plan document is read from stdin",
+      "leaf": true,
+      "owner": "docs/native-gates.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:nfr",
+      "kind": "command",
+      "command": "nfr",
+      "usage": "lekalo nfr [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:5a6ede246e22f0e12e181bd1d1b035687aff65f67c4fc17dd3887d4718b9f070",
+      "summary": "Resolve NFR constraints against their measured evidence (issue #85): the gate, the derived report, and the closed queries. The core owns every decision; this binary only selects, renders, and maps exits",
+      "leaf": false,
+      "owner": "docs/nfr.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:nfr diff",
+      "kind": "command",
+      "command": "nfr diff",
+      "usage": "lekalo nfr diff [OPTIONS] <BASE> <CANDIDATE>",
+      "helpDigest": "sha256:79c5ca44ed4cfd07fa9b45e99f5ebb8ff106ba6ecbdbad5d2d0718d509f9e6ab",
+      "summary": "Compare two same-family NFR attachments semantically; the verdict stays data (breaking, non-breaking, policy-change)",
+      "leaf": true,
+      "owner": "docs/nfr.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:nfr impact",
+      "kind": "command",
+      "command": "nfr impact",
+      "usage": "lekalo nfr impact [OPTIONS] --base <BASE> <PATH>",
+      "helpDigest": "sha256:1fd1df02e0c5d7f34007591f6ceba51af85fd1a9d191f62a9a12bf33cbe6d05d",
+      "summary": "Project the impact of a constraint change through the accepted impact engine: the changed constraints' scope symbols enter as a synthesized typed changed-input set, and the standard impact payload carries the affected scenarios and gates",
+      "leaf": true,
+      "owner": "docs/nfr.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:nfr query",
+      "kind": "command",
+      "command": "nfr query",
+      "usage": "lekalo nfr query [OPTIONS] --as-of <DATE> <PATH> <SELECTOR>",
+      "helpDigest": "sha256:b4d48b576770d98fd12cfa78f5b1f05c1f9b1b00862f43f66708812429b4981f",
+      "summary": "Run one closed query over the resolution report",
+      "leaf": true,
+      "owner": "docs/nfr.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:nfr report",
+      "kind": "command",
+      "command": "nfr report",
+      "usage": "lekalo nfr report [OPTIONS] --as-of <DATE> <PATH>",
+      "helpDigest": "sha256:0cbcdf176678cc6c202a227029d2cffaa74cff1b08f31bf13dc8e0ec5a9078f9",
+      "summary": "Emit the canonical resolution report: per-constraint statuses, per-environment rows, foreign evidence, open questions, and the gate verdict",
+      "leaf": true,
+      "owner": "docs/nfr.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:nfr trace",
+      "kind": "command",
+      "command": "nfr trace",
+      "usage": "lekalo nfr trace [OPTIONS] --as-of <DATE> <PATH>",
+      "helpDigest": "sha256:af57834cf7f5c488b4a355239d2aa6cc2ce254399ddacdb98a715e66a45de108",
+      "summary": "Emit the neutral #22 trace-manifest projection of the resolved NFR constraints: constraint, symbol, and gate nodes, the implements and evidences edges, and the explicit gaps",
+      "leaf": true,
+      "owner": "docs/nfr.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:nfr validate",
+      "kind": "command",
+      "command": "nfr validate",
+      "usage": "lekalo nfr validate [OPTIONS] --as-of <DATE> <PATH>",
+      "helpDigest": "sha256:d5f1b6107c6e04b7dc684bc1f0fe3628e738b81dd7113ee25cc5b756805cd245",
+      "summary": "Validate the attachment and gate every mandatory constraint: violated, unverified, stale, unsupported, or conflicted mandatory rows deny the gate; `--strict` escalates advisory violated/unverified/stale rows into the denied set",
+      "leaf": true,
+      "owner": "docs/nfr.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:observe",
+      "kind": "command",
+      "command": "observe",
+      "usage": "lekalo observe [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:4e695a3f10ea36a2f06abc746d274f9c90874a947c330280ec3464899ad34e07",
+      "summary": "Record, bind, verify, and promote existing code in observed mode (issue #39). The core owns every decision; this binary only selects, renders, and maps exits",
+      "leaf": false,
+      "owner": "docs/observed-mode.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:observe attach",
+      "kind": "command",
+      "command": "observe attach",
+      "usage": "lekalo observe attach [OPTIONS] <SYMBOL>",
+      "helpDigest": "sha256:5809fe407691250ccb7c3827c3a11fef62f93e5e963f695bb1f29f72076f924d",
+      "summary": "Attach native tests and gates to one recorded symbol",
+      "leaf": true,
+      "owner": "docs/observed-mode.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:observe baseline",
+      "kind": "command",
+      "command": "observe baseline",
+      "usage": "lekalo observe baseline [OPTIONS]",
+      "helpDigest": "sha256:8c2cd83298981da5f2bf894ffec3f20ead07c2e9652914e6d7f6e5fb36e95ad4",
+      "summary": "Record the deterministic baseline metrics document over the current observed index (issue #49): the index digest, the binding-state counts, the scan identity, and — when a plan document is supplied — the validated identity of the confirmed native gate plan (the production surface never launches it). Deterministic: an identical index and plan identity write byte-identical documents",
+      "leaf": true,
+      "owner": "docs/observed-mode.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:observe bind",
+      "kind": "command",
+      "command": "observe bind",
+      "usage": "lekalo observe bind [OPTIONS] --path <PATH> <SYMBOL>",
+      "helpDigest": "sha256:09eae63e115f19de6166b67ac849b0357c5876e4d3439594c48a30f65686644b",
+      "summary": "Bind one recorded symbol to a source location explicitly",
+      "leaf": true,
+      "owner": "docs/observed-mode.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:observe check",
+      "kind": "command",
+      "command": "observe check",
+      "usage": "lekalo observe check [OPTIONS]",
+      "helpDigest": "sha256:4451dc34762064cf07b4ee5f47f12edee2247b6bbc1ed4061df76722a0d94905",
+      "summary": "Run the staleness gate over every recorded binding; any stale binding fails with registered diagnostics",
+      "leaf": true,
+      "owner": "docs/observed-mode.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:observe confirm",
+      "kind": "command",
+      "command": "observe confirm",
+      "usage": "lekalo observe confirm [OPTIONS] <SYMBOL>",
+      "helpDigest": "sha256:15fb3ae7ef504fe2f89f3f18d408389131fce56c47c98b5d0c1ec56531c529e5",
+      "summary": "Confirm one inferred binding; confirmed facts are user-owned",
+      "leaf": true,
+      "owner": "docs/observed-mode.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:observe impact",
+      "kind": "command",
+      "command": "observe impact",
+      "usage": "lekalo observe impact [OPTIONS] <SYMBOL>",
+      "helpDigest": "sha256:cb0f06a4bd3386073c0672a9520f9d518b7bdf031b9ac43d4816d4fc4fcfcde3",
+      "summary": "Project the observed impact of one recorded symbol; the recorded graph always reports its own incompleteness",
+      "leaf": true,
+      "owner": "docs/observed-mode.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:observe inspect",
+      "kind": "command",
+      "command": "observe inspect",
+      "usage": "lekalo observe inspect [OPTIONS] <SYMBOL>",
+      "helpDigest": "sha256:0c8a80aac4ec79bd2a05dcc522e7218fab21339825830b0358e03f04b6caef26",
+      "summary": "Project the observed card of one recorded symbol",
+      "leaf": true,
+      "owner": "docs/observed-mode.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:observe promote",
+      "kind": "command",
+      "command": "observe promote",
+      "usage": "lekalo observe promote [OPTIONS]",
+      "helpDigest": "sha256:e85618636434c7120ed8a6f6ed716b8e1476447a81da0034d1ccc4811b864111",
+      "summary": "Plan (with --dry-run) or apply (with --confirm) the explicit promotion of observed symbols into the canonical model",
+      "leaf": true,
+      "owner": "docs/observed-mode.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:observe update",
+      "kind": "command",
+      "command": "observe update",
+      "usage": "lekalo observe update [OPTIONS] --scan <FILE>",
+      "helpDigest": "sha256:0b6037f02f4fb207611e0f65cf695f462cee6d4ef05b8bf32edefbb816a0a356",
+      "summary": "Merge one adapter scan document into the observed index; a binding recorded under a stable key survives a source move",
+      "leaf": true,
+      "owner": "docs/observed-mode.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:openapi",
+      "kind": "command",
+      "command": "openapi",
+      "usage": "lekalo openapi [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:faa535bad0496d890766c36c0d3b6d577c177eb53b53e90bee83fda5eca7872f",
+      "summary": "Render, check, or inspect the OpenAPI projection of one transport attachment (issue #46). The core owns every decision; this binary only reads the documents, selects, renders, and maps exits",
+      "leaf": false,
+      "owner": "docs/openapi.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:openapi check",
+      "kind": "command",
+      "command": "openapi check",
+      "usage": "lekalo openapi check [OPTIONS] --transport <FILE> <PATH>",
+      "helpDigest": "sha256:d4228554ec4b5e513dc41580b04c679c2b9deca0084684b3ed377b1fec0e58f5",
+      "summary": "Check a maintained OpenAPI document against the current attachment: bind every operation, recompute the fragments, and report per-pointer drift plus the unbound-manual inventory",
+      "leaf": true,
+      "owner": "docs/openapi.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:openapi diff",
+      "kind": "command",
+      "command": "openapi diff",
+      "usage": "lekalo openapi diff [OPTIONS] <BASE> <CANDIDATE>",
+      "helpDigest": "sha256:a27a5bb98cb4806eda44553934378c7489995cdd9c0efabf2014ae2d7960c293",
+      "summary": "Compare two same-family attachments and report the pointer-level view of the transport compatibility classes; the verdict stays data, never an exit code",
+      "leaf": true,
+      "owner": "docs/openapi.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:openapi inspect",
+      "kind": "command",
+      "command": "openapi inspect",
+      "usage": "lekalo openapi inspect [OPTIONS] --endpoint <SYMBOL> <PATH>",
+      "helpDigest": "sha256:d7827b1ff94c51433ee2f4a222acc87653af447a492a2aad0342fa63e3f7c317",
+      "summary": "Inspect one endpoint's rendered operation: the joined Model surface plus every projected OpenAPI member",
+      "leaf": true,
+      "owner": "docs/openapi.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:openapi render",
+      "kind": "command",
+      "command": "openapi render",
+      "usage": "lekalo openapi render [OPTIONS] <PATH>",
+      "helpDigest": "sha256:73b81493c6b5e06df69c4e1c45fbccf25b57296339fd942a8e3766638a716cbe",
+      "summary": "Render the OpenAPI document of one validated attachment: the canonical bytes, their digest, and the projection findings",
+      "leaf": true,
+      "owner": "docs/openapi.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:privacy",
+      "kind": "command",
+      "command": "privacy",
+      "usage": "lekalo privacy [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:3bf8880123417c7440b1dd00e63e202adfb7cc651bde8fa34c9bfcbdf566d9c8",
+      "summary": "The privacy family (issue #119): the deterministic, custody- verified export-decision evaluator over the frozen #120 policy. The core owns every decision; this binary only reads the decision file, renders, and maps exits",
+      "leaf": false,
+      "owner": "docs/privacy-runtime.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:privacy evaluate",
+      "kind": "command",
+      "command": "privacy evaluate",
+      "usage": "lekalo privacy evaluate [OPTIONS] --decision <FILE>",
+      "helpDigest": "sha256:e349e3404e3753d7dee9a54ba4aba318c0b2360ebaf584322b102713c2462f09",
+      "summary": "Evaluate one export-decision input (exact JSON bytes) against the custody-verified frozen #120 policy. Prints the closed `ExportDecisionOutput` and exits 0 (allow), 3 (deny or transform-required), or 1 (malformed input or custody failure). Startup, parse, and custody failures print the separate closed CLI error object on stderr",
+      "leaf": true,
+      "owner": "docs/privacy-runtime.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:privacy export",
+      "kind": "command",
+      "command": "privacy export",
+      "usage": "lekalo privacy export [OPTIONS] --destination <SPEC> <ARTIFACT>",
+      "helpDigest": "sha256:0673cb22119c57a60b7b6e51bcc52f9315f25723eb130f0761a676e38872870f",
+      "summary": "Export one artifact document under the fail-closed privacy pipeline (issue #119): class resolution, decision evaluation, the closed redaction transforms, the leak-scanner verification pass, and the writes under `.lekalo/privacy/`. `--dry-run` prints the exact candidate payload and the redaction diff and writes nothing",
+      "leaf": true,
+      "owner": "docs/privacy-runtime.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:privacy redact",
+      "kind": "command",
+      "command": "privacy redact",
+      "usage": "lekalo privacy redact [OPTIONS] --payload <FILE>",
+      "helpDigest": "sha256:0e9429027accdca0f4259f7fb82bb4d5ca247de09153d0c0c79bb3543863644b",
+      "summary": "Show the redaction diff contract of one payload document (issue #119): the closed transforms, the leak findings, and the redacted payload on stdout. Read-only: writes nothing",
+      "leaf": true,
+      "owner": "docs/privacy-runtime.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:privacy subject",
+      "kind": "command",
+      "command": "privacy subject",
+      "usage": "lekalo privacy subject [OPTIONS] --artifact <FILE> --destination <SPEC>",
+      "helpDigest": "sha256:52163344a32a6ff3a3f1997d551b2a8a60c47c4a81578279acc7012f4c4bbba7",
+      "summary": "Print the canonical `{subjectDigest, subjectProfileRef}` of the synthesized decision input for one artifact + destination (issue #119, fix round 2, C-F1): the pair an operator needs to author authorizing evidence. Metadata-only; the evidence positions are excluded from the projection, so authoring never needs a fixpoint. Exit contract like `export`'s pre-evaluation failures",
+      "leaf": true,
+      "owner": "docs/privacy-runtime.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:provider",
+      "kind": "command",
+      "command": "provider",
+      "usage": "lekalo provider [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:bafcb19a9c5320ab3d15b8ac0e0f73f9c77f3286a54c4af97391ced263fef504",
+      "summary": "Emit the issue #34 workflow-provider discovery manifest for AIFHub `/aif-*` consumers: a closed, deterministic receipt that works outside any project, reads nothing, launches nothing, and writes nothing",
+      "leaf": false,
+      "owner": "docs/provider-contract.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:provider describe",
+      "kind": "command",
+      "command": "provider describe",
+      "usage": "lekalo provider describe [OPTIONS]",
+      "helpDigest": "sha256:85060d527028d6fb2c4ec2ce63d89f035b283a9b07ec79de28534d98f6d2baf2",
+      "summary": "Emit the workflow-provider manifest (capability discovery)",
+      "leaf": true,
+      "owner": "docs/provider-contract.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:query-model",
+      "kind": "command",
+      "command": "query-model",
+      "usage": "lekalo query-model [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:ef8090433921f771fad8b9968398eeb28c75ff383600b81142463b68574f129f",
+      "summary": "Validate one declarative query-model attachment against the project, or compare two attachments of the same family",
+      "leaf": false,
+      "owner": "docs/query-model.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:query-model diff",
+      "kind": "command",
+      "command": "query-model diff",
+      "usage": "lekalo query-model diff [OPTIONS] <BASE> <CANDIDATE>",
+      "helpDigest": "sha256:2af40ef20f54d949f4cf0d43de1db874289e4b9dddde4215b36a40044b959988",
+      "summary": "Compare two same-family attachments and classify every changed path; the verdict stays data, never an exit code",
+      "leaf": true,
+      "owner": "docs/query-model.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:query-model validate",
+      "kind": "command",
+      "command": "query-model validate",
+      "usage": "lekalo query-model validate [OPTIONS] <PATH>",
+      "helpDigest": "sha256:5ed8f333fe96a4e19a3dd53e07d5064335ba7427ee6d4709df4ff0bfc0fe3bb1",
+      "summary": "Validate the attachment against the selected project and emit the deterministic plan summary of every declared query",
+      "leaf": true,
+      "owner": "docs/query-model.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:readiness",
+      "kind": "command",
+      "command": "readiness",
+      "usage": "lekalo readiness [OPTIONS] --phase <PHASE>",
+      "helpDigest": "sha256:87b121117f3384b73bdddeaeabe98c139458bd6ce1380e31fa584a3129c8c9a9",
+      "summary": "Report phase readiness with required and optional checks",
+      "leaf": true,
+      "owner": "docs/doctor.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:requirements",
+      "kind": "command",
+      "command": "requirements",
+      "usage": "lekalo requirements [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:50298b8cbf55395027b02547a426f2ef66c3572ae2091229dda45cc923da3c77",
+      "summary": "Resolve one requirements attachment against its project: the read-only OpenSpec requirement traceability integration",
+      "leaf": false,
+      "owner": "docs/requirements.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:requirements query",
+      "kind": "command",
+      "command": "requirements query",
+      "usage": "lekalo requirements query [OPTIONS] <PATH> <SELECTOR>",
+      "helpDigest": "sha256:105a0b817b771883d5db181922fffe76c55da7242a82ec071fdebf3a730806d8",
+      "summary": "Run one closed query over the resolution report",
+      "leaf": true,
+      "owner": "docs/requirements.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:requirements report",
+      "kind": "command",
+      "command": "requirements report",
+      "usage": "lekalo requirements report [OPTIONS] <PATH>",
+      "helpDigest": "sha256:8b38aef8ad642fc078bb8a9af0f4bfa6300e36addd2a49de3e4488dedd38ede4",
+      "summary": "Emit the canonical resolution report: catalog, coverage gaps, conflicts, and changed-requirement impact",
+      "leaf": true,
+      "owner": "docs/requirements.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:requirements trace",
+      "kind": "command",
+      "command": "requirements trace",
+      "usage": "lekalo requirements trace [OPTIONS] <PATH>",
+      "helpDigest": "sha256:0e1b0fb4e53c532d04e2a616ee8024ac006e969c5c1631cbb598142bac4f7856",
+      "summary": "Emit the neutral #22 trace-manifest projection of the resolved requirements",
+      "leaf": true,
+      "owner": "docs/requirements.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:requirements validate",
+      "kind": "command",
+      "command": "requirements validate",
+      "usage": "lekalo requirements validate [OPTIONS] <PATH>",
+      "helpDigest": "sha256:cb86a882521032b04c2016c208efbd2f556523d3f323bd6853d24fcd2b15e02e",
+      "summary": "Validate the attachment and gate every requirement reference: stale, missing, or conflicted references deny the gate",
+      "leaf": true,
+      "owner": "docs/requirements.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:scan",
+      "kind": "command",
+      "command": "scan",
+      "usage": "lekalo scan [OPTIONS] --target <TARGET> [PROGRAM_ARGS]...",
+      "helpDigest": "sha256:513f07c8a0e2d5dde3c8adb593a70b96c2c0f82066ee6a79267ea6453ee67343",
+      "summary": "Scan existing code through one target adapter and record the bindings (issue #42). Everything after the program path is passed to the adapter verbatim (no shell), so adapter flags come last",
+      "leaf": true,
+      "owner": "docs/observed-mode.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:status",
+      "kind": "command",
+      "command": "status",
+      "usage": "lekalo status [OPTIONS]",
+      "helpDigest": "sha256:08cc50720705cfd53784971b12c85c0d67dbd790e47d1c1403adebccd71022fa",
+      "summary": "Report the freshness panel — lock, cache, bindings, artifacts — plus the exact git/model/lock revisions",
+      "leaf": true,
+      "owner": "docs/doctor.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:storage",
+      "kind": "command",
+      "command": "storage",
+      "usage": "lekalo storage [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:ab8956236afd342a241b267b88eab0982e866a43365234d4c4673a703b2c137d",
+      "summary": "The storage family: the engine matrix, profile validation, the deterministic DDL rendering, migration planning, drift, and capability mapping (issue #69), plus the storage-projection validate/project/diff/introspect-check/plan handoff (issue #117). The core owns every decision; this binary only reads documents, selects, renders, and maps exits",
+      "leaf": false,
+      "owner": "docs/storage-engine.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:storage capabilities",
+      "kind": "command",
+      "command": "storage capabilities",
+      "usage": "lekalo storage capabilities [OPTIONS] --projection <PATH> <PATH>",
+      "helpDigest": "sha256:1ca22f7587759c19f464ac84abe49721dc03ff9dac56e6df0cfb543c74a117ca",
+      "summary": "Project the engine capability snapshot, optionally mapped against one transaction-concurrency attachment's requirements",
+      "leaf": true,
+      "owner": "docs/storage-engine.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:storage conformance",
+      "kind": "command",
+      "command": "storage conformance",
+      "usage": "lekalo storage conformance [OPTIONS] --profile <PATH> --projection <PATH>",
+      "helpDigest": "sha256:b4fd9e3c4b76716d2009b3af266ad149f24ccf1eb4690ba6bf2991ce5714080e",
+      "summary": "Run the storage-component conformance battery over the committed fixture set: the profile and its bound projection, the optional checked-mode evidence pair, the engine input document, and the runtime goldens. A skip is never a pass",
+      "leaf": true,
+      "owner": "docs/storage-engine.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:storage ddl",
+      "kind": "command",
+      "command": "storage ddl",
+      "usage": "lekalo storage ddl [OPTIONS] --projection <PATH> <PROFILE>",
+      "helpDigest": "sha256:5f032f7ed3e83cb47ca026d8ecf021358981ec2c48cd021af97c1badc8fdd5e7",
+      "summary": "Render the deterministic DDL document of one profile over its bound storage-projection attachment",
+      "leaf": true,
+      "owner": "docs/storage-engine.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:storage diff",
+      "kind": "command",
+      "command": "storage diff",
+      "usage": "lekalo storage diff [OPTIONS] <BASE> <CANDIDATE>",
+      "helpDigest": "sha256:0de3ea8a844946bf762fda8a5bde137b17f2a821cf054347021c1a5ab04b69b6",
+      "summary": "Compare two same-family attachments and classify every changed path; the verdict stays data, never an exit code",
+      "leaf": true,
+      "owner": "docs/storage-projection.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:storage drift",
+      "kind": "command",
+      "command": "storage drift",
+      "usage": "lekalo storage drift [OPTIONS] --projection <ATTACHMENT> --profile <PATH> <SCAN>",
+      "helpDigest": "sha256:2c2674edee9532a50440cb10a7f23750e282f3b6fd7e8fb483f9a8aba5e3784b",
+      "summary": "Compare one checked-mode storage-observation evidence document against its bound storage-projection attachment and report the typed drift findings",
+      "leaf": true,
+      "owner": "docs/storage-engine.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:storage input",
+      "kind": "command",
+      "command": "storage input",
+      "usage": "lekalo storage input [OPTIONS] --projection <PATH> <PROFILE>",
+      "helpDigest": "sha256:44e80f114f943616b9d2ff3a6d1a2ce9af925df7d097014ab24836816bb1880d",
+      "summary": "Print the single runtime-neutral engine input document every runtime consumer (Node.js, Laravel, Go, Rust) receives",
+      "leaf": true,
+      "owner": "docs/storage-engine.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:storage introspect-check",
+      "kind": "command",
+      "command": "storage introspect-check",
+      "usage": "lekalo storage introspect-check [OPTIONS] --projection <PATH> --evidence <PATH> --namespace <NAMESPACE>",
+      "helpDigest": "sha256:d18d36efdabe2b1473171cc623e0cfa7d60bf3e9167a37244d023b401e29d211",
+      "summary": "Compare one declared projection against one adapter-produced introspection evidence document; drift is data, never a guessed repair. No database connection exists anywhere",
+      "leaf": true,
+      "owner": "docs/storage-introspection.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:storage laravel-plan",
+      "kind": "command",
+      "command": "storage laravel-plan",
+      "usage": "lekalo storage laravel-plan [OPTIONS] --profile <PATH> <BASE> <CANDIDATE>",
+      "helpDigest": "sha256:65ff3a73e63c6a406cfd936348c4f5f68abcecb68bb1bff71d1ca81e7d234041",
+      "summary": "Derive the bounded Laravel migration input from two same-project storage-projection attachments under one engine profile (issue #57). The plan is gated by the effective policy — destructive **or** backfill obligations block — and the blocked input prints with its planId for --confirm. A validated rename-history document turns same-entity physical renames into RENAME steps instead of drop+add. The output is a dry run: artifacts are never written and no database is contacted",
+      "leaf": true,
+      "owner": "docs/laravel-migrations.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:storage migrate-plan",
+      "kind": "command",
+      "command": "storage migrate-plan",
+      "usage": "lekalo storage migrate-plan [OPTIONS] --profile <PATH> <BASE> <CANDIDATE>",
+      "helpDigest": "sha256:c5d5301d62de6ec1163d1ae8995a56b63bfc8bd35d7805c7134b11870166b0e6",
+      "summary": "Derive the deterministic migration plan from two same-project storage-projection attachments under one engine profile. A destructive plan is gated: it prints blocked unless the exact planId is named with --confirm (the native-gate custody pattern)",
+      "leaf": true,
+      "owner": "docs/storage-engine.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:storage plan",
+      "kind": "command",
+      "command": "storage plan",
+      "usage": "lekalo storage plan [OPTIONS] <BASE> <CANDIDATE>",
+      "helpDigest": "sha256:56c87b6deee8877d9a5947cb03de8aad93dbb286a71277ed133980d05a02e948",
+      "summary": "Derive the non-executable migration plan over one comparison; destructive and backfill steps carry the explicit gate. The plan-id acknowledgment stays data: with `--confirm` and the exact plan identity the envelope records the acknowledgment, and a wrong identity refuses as stale",
+      "leaf": true,
+      "owner": "docs/storage-projection.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:storage profile",
+      "kind": "command",
+      "command": "storage profile",
+      "usage": "lekalo storage profile [OPTIONS] --engine <ENGINE>",
+      "helpDigest": "sha256:df6113ec222d7b69746e4ff850ff28c7af55b933f8440b51469830ab399bcc2a",
+      "summary": "Print the owner-published engine version matrix, or one version's capability answers",
+      "leaf": true,
+      "owner": "docs/storage-engine.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:storage project",
+      "kind": "command",
+      "command": "storage project",
+      "usage": "lekalo storage project [OPTIONS] --namespace <NAMESPACE> <PATH>",
+      "helpDigest": "sha256:074294626c986d6e8c246ca09544d4ba3df354ce5605d9238f038cc7194030db",
+      "summary": "Derive one namespace's storage projection from one attachment and emit its canonical bytes",
+      "leaf": true,
+      "owner": "docs/storage-projection.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:storage validate",
+      "kind": "command",
+      "command": "storage validate",
+      "usage": "lekalo storage validate [OPTIONS] <PATH>",
+      "helpDigest": "sha256:fc6750d6d2fe72296d2db247ae3b5a51919ca3d99662866f051d64351749bab6",
+      "summary": "Validate one storage-projection attachment against the selected project and emit the derived-projection summary of every declared namespace",
+      "leaf": true,
+      "owner": "docs/storage-projection.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:storage validate-engine",
+      "kind": "command",
+      "command": "storage validate-engine",
+      "usage": "lekalo storage validate-engine [OPTIONS] <PATH>",
+      "helpDigest": "sha256:1db9453a2cc46ed58d0ede37427274c4d6fdb616ce4294bc90d3277ffa7110b5",
+      "summary": "Validate one storage-engine attachment and emit its canonical bytes",
+      "leaf": true,
+      "owner": "docs/storage-engine.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:storage-profile",
+      "kind": "command",
+      "command": "storage-profile",
+      "usage": "lekalo storage-profile [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:3e9979fcecb37081833ec2942c53d6dfbddcbf30b243ff7799455f0e390838a4",
+      "summary": "Validate, project, or compare storage-engine-profile capability evidence (issue #117)",
+      "leaf": false,
+      "owner": "docs/storage-engine-profile.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:storage-profile capabilities",
+      "kind": "command",
+      "command": "storage-profile capabilities",
+      "usage": "lekalo storage-profile capabilities [OPTIONS] <PATH>",
+      "helpDigest": "sha256:e35dce1e52f9ce56b70b1f194b5930dc88be5b9fe6748d021558a419c43c8690",
+      "summary": "Emit the capability snapshot JSON of one profile (the #24 bridge input)",
+      "leaf": true,
+      "owner": "docs/storage-engine-profile.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:storage-profile diff",
+      "kind": "command",
+      "command": "storage-profile diff",
+      "usage": "lekalo storage-profile diff [OPTIONS] <BASE> <CANDIDATE>",
+      "helpDigest": "sha256:4df9db0bb477ac6795b8ce19fe9099c82347f1c621f99d4c750c7943ed720447",
+      "summary": "Compare two same-family profiles and classify every changed path; the verdict stays data, never an exit code",
+      "leaf": true,
+      "owner": "docs/storage-engine-profile.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:storage-profile portability",
+      "kind": "command",
+      "command": "storage-profile portability",
+      "usage": "lekalo storage-profile portability [OPTIONS] <BASE> <TARGET>",
+      "helpDigest": "sha256:ad7124ddcbf503d2aebe7ccc48b5365d37529e4083dc3b1d88535d4d1d18abb9",
+      "summary": "Compare two profiles and emit the portability report",
+      "leaf": true,
+      "owner": "docs/storage-engine-profile.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:storage-profile validate",
+      "kind": "command",
+      "command": "storage-profile validate",
+      "usage": "lekalo storage-profile validate [OPTIONS] <PATH>",
+      "helpDigest": "sha256:2f34d1b205e8b4469aea83d4919f330578f5a2c474a4705fdc6df234319350f7",
+      "summary": "Validate one engine profile attachment and emit the identity summary",
+      "leaf": true,
+      "owner": "docs/storage-engine-profile.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:trace",
+      "kind": "command",
+      "command": "trace",
+      "usage": "lekalo trace [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:25284b21393285e69c8e721f3f41256ebbedb7bdd0a29c6d8671c442e283c941",
+      "summary": "Validate, canonically export, or query one neutral trace manifest",
+      "leaf": false,
+      "owner": "docs/trace-manifest.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:trace collect",
+      "kind": "command",
+      "command": "trace collect",
+      "usage": "lekalo trace collect [OPTIONS]",
+      "helpDigest": "sha256:5a4f26702fdff32bca23a2ba58aea339b85c8493543a891e8c3beba492e79939",
+      "summary": "Rebuild the scenario → test → gate manifest from the adjudicated run-record ingest home and persist the canonical document under `.lekalo/import/trace/`. The one write command of the trace surface: exactly one derived document, atomically replaced",
+      "leaf": true,
+      "owner": "docs/trace-manifest.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:trace export",
+      "kind": "command",
+      "command": "trace export",
+      "usage": "lekalo trace export [OPTIONS] <PATH>",
+      "helpDigest": "sha256:49860f1a2ac445e8b3e5d0259a858c9426919710b04194d39a83b7f8da32a5df",
+      "summary": "Emit the canonical bytes and digest of one validated manifest",
+      "leaf": true,
+      "owner": "docs/trace-manifest.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:trace query",
+      "kind": "command",
+      "command": "trace query",
+      "usage": "lekalo trace query [OPTIONS] <PATH> <SELECTOR>",
+      "helpDigest": "sha256:9f9818ffc7720a62eae6e6f0072659e95e7264cf386317a6890b4173802ab694",
+      "summary": "Run one closed forward/reverse query over a validated manifest",
+      "leaf": true,
+      "owner": "docs/trace-manifest.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:trace validate",
+      "kind": "command",
+      "command": "trace validate",
+      "usage": "lekalo trace validate [OPTIONS] <PATH>",
+      "helpDigest": "sha256:4529ace2bcd73730be976c324905b6e4576df2a8c929c6c78f08378fcbfbec93",
+      "summary": "Validate one neutral trace manifest document",
+      "leaf": true,
+      "owner": "docs/trace-manifest.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:transport",
+      "kind": "command",
+      "command": "transport",
+      "usage": "lekalo transport [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:274b06c111301b16c24ed101466a62849a62d1605a3e78b475fb90c02cbeba8d",
+      "summary": "Validate, inspect, project or compare HTTP/JSON transport attachments (issue #70). The core owns every decision; this binary only selects, renders, and maps exits",
+      "leaf": false,
+      "owner": "docs/transport-http.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:transport diff",
+      "kind": "command",
+      "command": "transport diff",
+      "usage": "lekalo transport diff [OPTIONS] <BASE> <CANDIDATE>",
+      "helpDigest": "sha256:ec88dfb8c9ca0e1df9c77695159ae7c6f4e87009f6912a13ac7ebf88c7ca456a",
+      "summary": "Compare two same-family attachments and classify every changed path; the verdict stays data, never an exit code",
+      "leaf": true,
+      "owner": "docs/transport-http.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:transport inspect",
+      "kind": "command",
+      "command": "transport inspect",
+      "usage": "lekalo transport inspect [OPTIONS] --endpoint <SYMBOL> <PATH>",
+      "helpDigest": "sha256:14b68c64525488e515c32d9356e11cd121e2f748f799a22705bae770a08b7963",
+      "summary": "Inspect one endpoint binding: the joined Model surface (method, path, invokes) plus every declared transport member",
+      "leaf": true,
+      "owner": "docs/transport-http.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:transport project",
+      "kind": "command",
+      "command": "transport project",
+      "usage": "lekalo transport project [OPTIONS] --namespace <NAMESPACE> <PATH>",
+      "helpDigest": "sha256:3816af26aab682eecde471ce1008c4b743e81eada94359b7efdd1692b9d201a2",
+      "summary": "Project the attachment into the canonical route surface of one closed namespace (node, laravel, go, or rust)",
+      "leaf": true,
+      "owner": "docs/transport-http.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:transport validate",
+      "kind": "command",
+      "command": "transport validate",
+      "usage": "lekalo transport validate [OPTIONS] <PATH>",
+      "helpDigest": "sha256:3ed1153e2e4127f4692e51b1e80e0bb1af80773609dbee2c602bf7ba0c1a2f52",
+      "summary": "Validate the attachment against the selected project: wire normalization, custody, the semantic pass, and — under `--strict` — the mapping-completeness and capability gates",
+      "leaf": true,
+      "owner": "docs/transport-http.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:update",
+      "kind": "command",
+      "command": "update",
+      "usage": "lekalo update [OPTIONS]",
+      "helpDigest": "sha256:65c9a1a49eaf5624c9e379e78def3500cc5c538da50ec17fa62c96c46c711082",
+      "summary": "Preview a deterministic lock update, or apply one exact plan",
+      "leaf": true,
+      "owner": "docs/lockfile.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:validate",
+      "kind": "command",
+      "command": "validate",
+      "usage": "lekalo validate [OPTIONS]",
+      "helpDigest": "sha256:7b34141c47e78df5a3f2a1e24f4e3b7d2668616b41874b79f95a67e7f98fc27d",
+      "summary": "Validate the semantic layer of a Lekalo project over the typed IR",
+      "leaf": true,
+      "owner": "docs/validation.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:verify",
+      "kind": "command",
+      "command": "verify",
+      "usage": "lekalo verify [OPTIONS] [PROGRAM_ARGS]...",
+      "helpDigest": "sha256:604250b14735736f2d9542c12a1d6f1951a2f1b674cd79fcf8ca025356956f91",
+      "summary": "Run the read-only verification pipeline over a validated project: core validation, drift, per-target adapter validation, portable",
+      "leaf": true,
+      "owner": "docs/orchestration.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:--help",
+      "kind": "global",
+      "owner": "docs/cli.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:--version",
+      "kind": "global",
+      "owner": "docs/cli.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:--json",
+      "kind": "global",
+      "owner": "docs/cli.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:--no-cache",
+      "kind": "global",
+      "owner": "docs/cli.md",
+      "status": "implemented"
+    },
+    {
+      "id": "contract:contracts/adapter-install-plan.schema.v0.3.2.json",
+      "kind": "contract",
+      "source": "contracts/adapter-install-plan.schema.v0.3.2.json",
+      "sourceDigest": "sha256:c34ca4377db74ff9bf28406c2a901dc0a8e20e5395101315e59ca9e4c8ab471a",
+      "owner": "docs/adapter-install.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/adapter-inventory.schema.v0.3.2.json",
+      "kind": "contract",
+      "source": "contracts/adapter-inventory.schema.v0.3.2.json",
+      "sourceDigest": "sha256:7eaf248d83e239932572975e541a597991508d765495bcf3e3fe1b4ae91b91b6",
+      "owner": "docs/adapter-install.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/adapter-manifest.schema.v0.3.2.json",
+      "kind": "contract",
+      "source": "contracts/adapter-manifest.schema.v0.3.2.json",
+      "sourceDigest": "sha256:a95e657a1d729a44faa2d565366ba4f86aaa0603aeaeed1ba7837287d6368ec1",
+      "owner": "docs/adapter-manifest.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/ai-workspace-event.schema.v0.6.3.json",
+      "kind": "contract",
+      "source": "contracts/ai-workspace-event.schema.v0.6.3.json",
+      "sourceDigest": "sha256:28b8d1572ab6bba0072510b05dd5e10dd86b2c35e03846c64561809c256f1fef",
+      "owner": "docs/integrations/ai-workspace.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/artifact-manifest.schema.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/artifact-manifest.schema.v0.2.16.json",
+      "sourceDigest": "sha256:327d4a4b8d42b603bbb178213f0308a3a777e61769bb40159f7af56eea2c9205",
+      "owner": "docs/artifact-manifest.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/authority-contracts.manifest.json",
+      "kind": "contract",
+      "source": "contracts/authority-contracts.manifest.json",
+      "sourceDigest": "sha256:d3a686c5b31181a301251bcb606d23f6d3a639a97bb273fe799be4a12e5f2cd8",
+      "owner": "docs/authority.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/authority-matrix.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/authority-matrix.v0.2.16.json",
+      "sourceDigest": "sha256:141641cfbc1fbf6a07add99feafb877f9f544687ad558ab91d619ec7dd78d1b4",
+      "owner": "docs/authority.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/authority-matrix.v0.3.2.json",
+      "kind": "contract",
+      "source": "contracts/authority-matrix.v0.3.2.json",
+      "sourceDigest": "sha256:7ae6454ea20f7b61202d368411ef9bff4e70af96f1f2a408c209d84fe9722f80",
+      "owner": "docs/authority.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/authorization.schema.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/authorization.schema.v0.2.16.json",
+      "sourceDigest": "sha256:198c817ab80c7c5d6329cb6a00cc6446db4d1acf2ba8150adf350b66d2aa6583",
+      "owner": "docs/authorization.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/cache.schema.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/cache.schema.v0.2.16.json",
+      "sourceDigest": "sha256:5225adf0e37f0956329c459bf53e8102f333ec853e93a833754bb13545d3f2a2",
+      "owner": "docs/cache.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/ci-report.schema.v0.6.3.json",
+      "kind": "contract",
+      "source": "contracts/ci-report.schema.v0.6.3.json",
+      "sourceDigest": "sha256:7b81afdece6d5444289c13367dd85625ed26e86845f43d35c2d94873b9eb884e",
+      "owner": "docs/ci-reports.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/classification-policy.schema.v0.4.0.json",
+      "kind": "contract",
+      "source": "contracts/classification-policy.schema.v0.4.0.json",
+      "sourceDigest": "sha256:f06a9827f6a90d90563abe626702b9eeb0b2c7429533ed693e313eb00f2878b7",
+      "owner": "docs/classification.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/client-sdk.schema.v0.4.0.json",
+      "kind": "contract",
+      "source": "contracts/client-sdk.schema.v0.4.0.json",
+      "sourceDigest": "sha256:152d55841cabdad0402b567fb1797b162f3093de53b85289621302f7ac30657f",
+      "owner": "docs/client-sdk.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/context-budget-comparison.schema.v0.6.3.json",
+      "kind": "contract",
+      "source": "contracts/context-budget-comparison.schema.v0.6.3.json",
+      "sourceDigest": "sha256:632d880dc96052e1ee8311f953b223e5fa26b7dedcae49c87855f73cd0d4a63f",
+      "owner": "docs/context-budget.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/context-budget-policy.schema.v0.6.3.json",
+      "kind": "contract",
+      "source": "contracts/context-budget-policy.schema.v0.6.3.json",
+      "sourceDigest": "sha256:372eefecafc51b3719c2303ab45d38696b8706af7f99f104e0202846d043e2f7",
+      "owner": "docs/context-budget.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/context-budget-profile.schema.v0.6.3.json",
+      "kind": "contract",
+      "source": "contracts/context-budget-profile.schema.v0.6.3.json",
+      "sourceDigest": "sha256:37cd1998759c21df54db34c12251727ff5b4e470ddc45075252c8fff93d2850f",
+      "owner": "docs/context-budget.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/context-budget-report.schema.v0.6.3.json",
+      "kind": "contract",
+      "source": "contracts/context-budget-report.schema.v0.6.3.json",
+      "sourceDigest": "sha256:485197e5902d086cf7eae87f73b1986d1ed429570fe86cbc15b6d5fa1c9228ca",
+      "owner": "docs/context-budget.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/context-capsule.schema.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/context-capsule.schema.v0.2.16.json",
+      "sourceDigest": "sha256:271695daea02ccf85a4610ee8940129551bfeff5e78fc0bd4f8f20cca53055cd",
+      "owner": "docs/context.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/contracted-declaration.schema.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/contracted-declaration.schema.v0.2.16.json",
+      "sourceDigest": "sha256:9a0ad469a8340d2610c63c0a6e5afb11842e4c0c91cbec42f43cf44d09d54f4b",
+      "owner": "docs/contracted-mode.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/contracted-declaration.schema.v0.4.0.json",
+      "kind": "contract",
+      "source": "contracts/contracted-declaration.schema.v0.4.0.json",
+      "sourceDigest": "sha256:dab8d12917b179a7f0ece26367cb104b54a613520197fb7b9ee0f175ea686876",
+      "owner": "docs/contracted-mode.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/data-classification.schema.v0.4.0.json",
+      "kind": "contract",
+      "source": "contracts/data-classification.schema.v0.4.0.json",
+      "sourceDigest": "sha256:5648f48dded2646b5f431a23e4b00f9b1eb1b566a0bbf386f12d4e9b44ce2c9a",
+      "owner": "docs/classification.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/data-flow-report.schema.v0.4.0.json",
+      "kind": "contract",
+      "source": "contracts/data-flow-report.schema.v0.4.0.json",
+      "sourceDigest": "sha256:f86a0c2f8f34f3c1e1c19bdc69c8e8d5120fb01096bf72f22ff4b91e927793c6",
+      "owner": "docs/classification.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/diagnostic-registry.schema.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/diagnostic-registry.schema.v0.2.16.json",
+      "sourceDigest": "sha256:631e058609b85a855266268bccb5f060f9190360694fb50455787e3fbce20b49",
+      "owner": "docs/diagnostics.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/diagnostic-registry.schema.v0.3.2.json",
+      "kind": "contract",
+      "source": "contracts/diagnostic-registry.schema.v0.3.2.json",
+      "sourceDigest": "sha256:5f69175553eb10e4b6bd5886073506367ba4b8a03945c2511d774ecfdfbd5879",
+      "owner": "docs/diagnostics.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/diagnostic-registry.schema.v0.6.3.json",
+      "kind": "contract",
+      "source": "contracts/diagnostic-registry.schema.v0.6.3.json",
+      "sourceDigest": "sha256:e343433774b49e650ccf248adeb43189dd3141d92bc4b69df2cd2da39db5c1fd",
+      "owner": "docs/diagnostics.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/diagnostic-registry.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/diagnostic-registry.v0.2.16.json",
+      "sourceDigest": "sha256:210882ef8faee17f5f94e70b5c3bce1a4fa71c94e02ce070cb6f0e2bfa33d9ef",
+      "owner": "docs/diagnostics.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/diagnostic-registry.v0.3.2.json",
+      "kind": "contract",
+      "source": "contracts/diagnostic-registry.v0.3.2.json",
+      "sourceDigest": "sha256:69814757038fa7e012797050436f53e49f06509e69c7fadb94aa97ff2a1dd6e1",
+      "owner": "docs/diagnostics.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/diagnostic-registry.v0.6.3.json",
+      "kind": "contract",
+      "source": "contracts/diagnostic-registry.v0.6.3.json",
+      "sourceDigest": "sha256:5bf7a4e246bffab041848bc010579aac34e0a95c2967bb51b625c0d2ae650dd6",
+      "owner": "docs/diagnostics.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/diagnostic.schema.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/diagnostic.schema.v0.2.16.json",
+      "sourceDigest": "sha256:97683cce1c7ac66a8040df70faaa9babebcf3b1b2b69fafa0f2d20c9eefa835b",
+      "owner": "docs/diagnostics.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/doctor.schema.v0.3.2.json",
+      "kind": "contract",
+      "source": "contracts/doctor.schema.v0.3.2.json",
+      "sourceDigest": "sha256:79fd3967350e4e19cdec77a39933a5d4eee55a410d88f591bb717d20b5406aaa",
+      "owner": "docs/doctor.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/effect-graph.schema.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/effect-graph.schema.v0.2.16.json",
+      "sourceDigest": "sha256:0bd7bbae21190f0d092f3d91db881449d8ef2b2e7ced8c8499173d2847f36796",
+      "owner": "docs/effect-graph.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/error-contract.schema.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/error-contract.schema.v0.2.16.json",
+      "sourceDigest": "sha256:ba940ec166d38d9bff3feb797de7cd78138ce1ef2e24cc3a46586dcd24428c2b",
+      "owner": "docs/error-contracts.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/error-registry.schema.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/error-registry.schema.v0.2.16.json",
+      "sourceDigest": "sha256:bde5f5a56ba7892195ef05a96bfe21bd80a2fbd5b0df378dbb4d676731103b8e",
+      "owner": "docs/error-contracts.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/error-registry.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/error-registry.v0.2.16.json",
+      "sourceDigest": "sha256:d8e3689a2fca44b55d05944e4387789d978613eac87f211623e6611cd694797b",
+      "owner": "docs/error-contracts.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/expressions-builtin-support.schema.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/expressions-builtin-support.schema.v0.2.16.json",
+      "sourceDigest": "sha256:cbf1c49570917e4c01dc95b0d6551b46df6dcbbfb4853ff157e034fd0f150a03",
+      "owner": "docs/expressions.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/expressions-vectors.schema.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/expressions-vectors.schema.v0.2.16.json",
+      "sourceDigest": "sha256:2404d61ea9047fde2f859012cd704ece13bda00295e37320149d83a457f3bcdc",
+      "owner": "docs/expressions.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/expressions.schema.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/expressions.schema.v0.2.16.json",
+      "sourceDigest": "sha256:23b025cbc4622f8b2535a5c4d528bd0cbe6336673f8ac4822bb5badd68468282",
+      "owner": "docs/expressions.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/extended-effects.schema.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/extended-effects.schema.v0.2.16.json",
+      "sourceDigest": "sha256:57619a7ef4a8dc2e4fb2a2dbd5427421df399634d3a74642cae1f8eed3860197",
+      "owner": "docs/extended-effects.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/generate-check-receipt.schema.v0.6.3.json",
+      "kind": "contract",
+      "source": "contracts/generate-check-receipt.schema.v0.6.3.json",
+      "sourceDigest": "sha256:36364d151a25d14f164eb61857efe5ca992250a6dfcb09dec70d424974afc3b1",
+      "owner": "docs/orchestration.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/graph.schema.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/graph.schema.v0.2.16.json",
+      "sourceDigest": "sha256:8d7fb6f3f9de32892e172900ee543f9797e268c7f78264adbf71090527bbe6ba",
+      "owner": "docs/graph.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/impact.schema.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/impact.schema.v0.2.16.json",
+      "sourceDigest": "sha256:a846784c17c9c93a122528656b075827c07cd8309e56652f41b02e052f93bf1f",
+      "owner": "docs/impact.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/implementation.schema.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/implementation.schema.v0.2.16.json",
+      "sourceDigest": "sha256:74c1297e86075fd3f7699363ae3fda2f178c9c181731b2d01b5864403bdda100",
+      "owner": "docs/implementation.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/inspect.schema.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/inspect.schema.v0.2.16.json",
+      "sourceDigest": "sha256:49e5c5cfcce7c3192f96ca82c92c4a5a870a1db5cee57bfb766b4f23ac8fadc4",
+      "owner": "docs/inspect.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/invariant-transition.schema.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/invariant-transition.schema.v0.2.16.json",
+      "sourceDigest": "sha256:cd2ee41d9ac2be6ca5789c82a16aadaeecfea5f89822e0dbc9e7ea47fa19e350",
+      "owner": "docs/invariant-transition.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/laravel-migration-input.schema.v0.4.0.json",
+      "kind": "contract",
+      "source": "contracts/laravel-migration-input.schema.v0.4.0.json",
+      "sourceDigest": "sha256:ac714743feeb4f7cb4f1df5640d00f2e2e865cb53562c7519b2ebe6998172af3",
+      "owner": "docs/laravel-migrations.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/lock.schema.v0.3.2.json",
+      "kind": "contract",
+      "source": "contracts/lock.schema.v0.3.2.json",
+      "sourceDigest": "sha256:b322338b131db7b9c61ef91ea4457036aa001139f31877a229d9a49c80bca3d8",
+      "owner": "docs/lockfile.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/model.schema.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/model.schema.v0.2.16.json",
+      "sourceDigest": "sha256:0bf1d8274e6bc5501d68b55944e562ac999210803e10bdaf69e4cf14ab1ccba2",
+      "owner": "docs/model.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/native-gate-plan.schema.v0.4.0.json",
+      "kind": "contract",
+      "source": "contracts/native-gate-plan.schema.v0.4.0.json",
+      "sourceDigest": "sha256:447a1b1c3c2aab3dc217eba7d3a3d55a942d74be2484564b7dc68febf2ce3e2a",
+      "owner": "docs/native-gates.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/native-gate-policy.schema.v0.4.0.json",
+      "kind": "contract",
+      "source": "contracts/native-gate-policy.schema.v0.4.0.json",
+      "sourceDigest": "sha256:53a5b7edafee37d514e1f27e2971539ac101ad1bea13c1997fe6e0e0457c24e2",
+      "owner": "docs/native-gates.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/native-gate-run.schema.v0.4.0.json",
+      "kind": "contract",
+      "source": "contracts/native-gate-run.schema.v0.4.0.json",
+      "sourceDigest": "sha256:661b3c13a074f54e8bdc283b344e13b9a4d202b0be30add49435876d79cc7b49",
+      "owner": "docs/native-gates.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/native-gate-view.schema.v0.4.0.json",
+      "kind": "contract",
+      "source": "contracts/native-gate-view.schema.v0.4.0.json",
+      "sourceDigest": "sha256:82413cdaa4d67da03be1a0e23a56877830b1eb8a6b970687ef6ae9c88abed7bd",
+      "owner": "docs/native-gates.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/nfr-evidence.schema.v0.4.0.json",
+      "kind": "contract",
+      "source": "contracts/nfr-evidence.schema.v0.4.0.json",
+      "sourceDigest": "sha256:13474be3b7b834f47333dd2d1d6eaa23f9dbef66de3a68edfc48232ab05145bb",
+      "owner": "docs/nfr.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/nfr-report.schema.v0.4.0.json",
+      "kind": "contract",
+      "source": "contracts/nfr-report.schema.v0.4.0.json",
+      "sourceDigest": "sha256:af61493b18ad84a92f63559e3b89a54e17371c98db3eb8acd725dbd45b705b27",
+      "owner": "docs/nfr.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/nfr.schema.v0.4.0.json",
+      "kind": "contract",
+      "source": "contracts/nfr.schema.v0.4.0.json",
+      "sourceDigest": "sha256:38f4ccadc02a8bc4c21d6d7a9a15d8112781fd85563bf457284dd143667c6a54",
+      "owner": "docs/nfr.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/observed-index.schema.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/observed-index.schema.v0.2.16.json",
+      "sourceDigest": "sha256:bf6db95ffe283751ee841c3de80e3e82493379caae78a8cad101e9d6647f0439",
+      "owner": "docs/observed-mode.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/observed-scan.schema.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/observed-scan.schema.v0.2.16.json",
+      "sourceDigest": "sha256:b549d60ac25fb98c48b906a19ab70c8ca5101924af485504164a2ca9afbe5a09",
+      "owner": "docs/observed-mode.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/orchestration-report.schema.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/orchestration-report.schema.v0.2.16.json",
+      "sourceDigest": "sha256:e2a206c3862359ed813ec961ddec7ffd0acbe08641a343d4753f37f0c05ea0aa",
+      "owner": "docs/orchestration.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/php-operations-evidence.schema.v0.4.0.json",
+      "kind": "contract",
+      "source": "contracts/php-operations-evidence.schema.v0.4.0.json",
+      "sourceDigest": "sha256:a4eb9a2df19323ca6e1a7b6fbbfe02f60064fd7f7193cc126e12886f9eafeb95",
+      "owner": "docs/php-laravel-operations.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/php-operations-input.schema.v0.4.0.json",
+      "kind": "contract",
+      "source": "contracts/php-operations-input.schema.v0.4.0.json",
+      "sourceDigest": "sha256:743ad62fd611ac21d4bdeab3588ee9c98eab302980cd0f73a167793435050fef",
+      "owner": "docs/php-laravel-operations.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/php-operations-map.schema.v0.4.0.json",
+      "kind": "contract",
+      "source": "contracts/php-operations-map.schema.v0.4.0.json",
+      "sourceDigest": "sha256:2890e1032e5c3f66cbb414351324c4dac17fb3ec54dcde2f06cbb5f58b4c3393",
+      "owner": "docs/php-laravel-operations.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/php-routes-evidence.schema.v0.4.0.json",
+      "kind": "contract",
+      "source": "contracts/php-routes-evidence.schema.v0.4.0.json",
+      "sourceDigest": "sha256:692d1c245ae34429aeb0e18a13889263c3ac02a1cded6465a1b8c0328025da60",
+      "owner": "adapters/php-laravel/README.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/php-routes-input.schema.v0.4.0.json",
+      "kind": "contract",
+      "source": "contracts/php-routes-input.schema.v0.4.0.json",
+      "sourceDigest": "sha256:c5130674664dc9f7432e7a076697ff10664a70cf062d323449ff4fb4e5aa6426",
+      "owner": "adapters/php-laravel/README.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/php-routes-map.schema.v0.4.0.json",
+      "kind": "contract",
+      "source": "contracts/php-routes-map.schema.v0.4.0.json",
+      "sourceDigest": "sha256:236fbd72f96b2b7f1e0ed1d42d07c408a822eb7d18657ce898fab969fcb390df",
+      "owner": "adapters/php-laravel/README.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/php-types-evidence.schema.v0.4.0.json",
+      "kind": "contract",
+      "source": "contracts/php-types-evidence.schema.v0.4.0.json",
+      "sourceDigest": "sha256:e990dc5d47091dd6d6d7f156aa1e3156073a24f41c92f5f1c4da9bcdd141b55d",
+      "owner": "adapters/php-laravel/README.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/php-types-input.schema.v0.4.0.json",
+      "kind": "contract",
+      "source": "contracts/php-types-input.schema.v0.4.0.json",
+      "sourceDigest": "sha256:cf50a5b1994cdaf5221c0218eef3bd5d9dbea4ee15ce9bbc4938ddb8aec44053",
+      "owner": "adapters/php-laravel/README.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/php-types-map.schema.v0.4.0.json",
+      "kind": "contract",
+      "source": "contracts/php-types-map.schema.v0.4.0.json",
+      "sourceDigest": "sha256:daab17787839136b336e2a23deeb19a346342bb6249889971b656ddf96f1769c",
+      "owner": "adapters/php-laravel/README.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/privacy-authorization-subject-profile.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/privacy-authorization-subject-profile.v0.2.16.json",
+      "sourceDigest": "sha256:11c3c6ddea482ba5cf1bca27f08d602801d7739f1bd57ed5efb15e100584dec0",
+      "owner": "docs/privacy.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/privacy-authorizing-evidence.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/privacy-authorizing-evidence.v0.2.16.json",
+      "sourceDigest": "sha256:cba51a4d9ae21a8d6ad7ebcb98f63410d918b0308ebcbdce1a165e084f52957e",
+      "owner": "docs/privacy.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/privacy-cli-error.schema.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/privacy-cli-error.schema.v0.2.16.json",
+      "sourceDigest": "sha256:46305d2c886f81e6793f4981814d1bb940bd4fffe0a02d25f6d0a615ea7fdf57",
+      "owner": "docs/privacy-runtime.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/privacy-export.schema.v0.2.16.classification.json",
+      "kind": "contract",
+      "source": "contracts/privacy-export.schema.v0.2.16.classification.json",
+      "sourceDigest": "sha256:a6d871bb9159e104667afe7543423d665dd3f30498e22b0d7ae63426da8f2741",
+      "owner": "docs/privacy.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/privacy-export.schema.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/privacy-export.schema.v0.2.16.json",
+      "sourceDigest": "sha256:56b4a0ccbd8347a0e0e72c44e769e0e1ac94d171b3a18e0dfc1df62a1ecbf833",
+      "owner": "docs/privacy.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/privacy-export.schema.v0.2.16.output.json",
+      "kind": "contract",
+      "source": "contracts/privacy-export.schema.v0.2.16.output.json",
+      "sourceDigest": "sha256:f65ce24d1335a4bd12ae3f7887b8c1629b93512eca54968dc087cdb9ed5519f6",
+      "owner": "docs/privacy-runtime.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/privacy-export.schema.v0.3.2.json",
+      "kind": "contract",
+      "source": "contracts/privacy-export.schema.v0.3.2.json",
+      "sourceDigest": "sha256:e0e95cc56db5758914aa34d12b3d2831954bc9df81d61184d37941d923c63581",
+      "owner": "docs/privacy.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/privacy-export.schema.v0.3.2.output.json",
+      "kind": "contract",
+      "source": "contracts/privacy-export.schema.v0.3.2.output.json",
+      "sourceDigest": "sha256:446c0a52433b6f4c265486a9d9736953436a883b120db56540b881dfd6f2b384",
+      "owner": "docs/privacy-runtime.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/privacy-policy.v0.2.16.classification.json",
+      "kind": "contract",
+      "source": "contracts/privacy-policy.v0.2.16.classification.json",
+      "sourceDigest": "sha256:78de535f02b6a8065579b43798ed650849aca0b7edf1aa08b2e0219fc744dde6",
+      "owner": "docs/privacy.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/privacy-policy.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/privacy-policy.v0.2.16.json",
+      "sourceDigest": "sha256:f7fd703b431681bd9aa9d7936642907ca100ab5761b0db1547c1b5f2b7cfed38",
+      "owner": "docs/privacy.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/privacy-policy.v0.2.16.manifest.json",
+      "kind": "contract",
+      "source": "contracts/privacy-policy.v0.2.16.manifest.json",
+      "sourceDigest": "sha256:376b5c6365ab9f4dd0d2f35533394e997ebbf52a484eb45bf9879ba7bc734946",
+      "owner": "docs/privacy.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/privacy-policy.v0.3.2.json",
+      "kind": "contract",
+      "source": "contracts/privacy-policy.v0.3.2.json",
+      "sourceDigest": "sha256:1fb9047934146e4ec76029b9c2c00b9fac4f605193911147974869b8794ab7dc",
+      "owner": "docs/privacy.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/privacy-policy.v0.3.2.manifest.json",
+      "kind": "contract",
+      "source": "contracts/privacy-policy.v0.3.2.manifest.json",
+      "sourceDigest": "sha256:760f64bac4f2dd3e62e68b92a97f251316a215278a841d32b9e5b98a21302bf8",
+      "owner": "docs/privacy.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/provider-capabilities.schema.v0.6.3.json",
+      "kind": "contract",
+      "source": "contracts/provider-capabilities.schema.v0.6.3.json",
+      "sourceDigest": "sha256:6976612ed0a3f758b2b98bedeb07fe54c6183914e6bcb825362f7a3a49a3861e",
+      "owner": "docs/provider-contract.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/query-model.schema.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/query-model.schema.v0.2.16.json",
+      "sourceDigest": "sha256:a9052c59d83e03bb8331aac87aed81947fa40af24e78d583ceee755072339f29",
+      "owner": "docs/query-model.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/reference-evaluation.schema.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/reference-evaluation.schema.v0.2.16.json",
+      "sourceDigest": "sha256:10f8a0f56d8d75d66d137ece15b014dd2fe2bf01706bf24ed541d465bb33c812",
+      "owner": "docs/reference-evaluation.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/requirements-report.schema.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/requirements-report.schema.v0.2.16.json",
+      "sourceDigest": "sha256:d1cfe09ec9f459ad7f469758aa14c4e8a79bffed02ede751a368f04c684e7adc",
+      "owner": "docs/requirements.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/requirements.schema.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/requirements.schema.v0.2.16.json",
+      "sourceDigest": "sha256:21e9c5193f4bd35686039fb7a0e224901ac0db9bbbcc8f9438cc8db0d14c0bba",
+      "owner": "docs/requirements.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/run-assertions.schema.v0.4.0.json",
+      "kind": "contract",
+      "source": "contracts/run-assertions.schema.v0.4.0.json",
+      "sourceDigest": "sha256:b448ef1fafa5389480d1ff1ea8229a20cc10f538cea5d5e819434596663a0d86",
+      "owner": "docs/run-history.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/run-history-store.schema.v0.4.0.json",
+      "kind": "contract",
+      "source": "contracts/run-history-store.schema.v0.4.0.json",
+      "sourceDigest": "sha256:f7f77b5e2ce863f31b75140d9e6ae504b25468f99ad488e59a0f2c2cbcdf92db",
+      "owner": "docs/run-history.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/run-observation.schema.v0.4.0.json",
+      "kind": "contract",
+      "source": "contracts/run-observation.schema.v0.4.0.json",
+      "sourceDigest": "sha256:e5cd60bc64543f1e29d8144895086a5a43f725cec7e426a5d2f37b90c2b50cb0",
+      "owner": "docs/run-history.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/run-record.schema.v0.4.0.json",
+      "kind": "contract",
+      "source": "contracts/run-record.schema.v0.4.0.json",
+      "sourceDigest": "sha256:36b1e38217c59b232d0b243cbba07bd45b881b9a3834ad3cd3f6f5489c97bd43",
+      "owner": "docs/run-history.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/scenario-ir.schema.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/scenario-ir.schema.v0.2.16.json",
+      "sourceDigest": "sha256:f877ec13080e0fa94eabce5df745e3dfa74f1f508555edbeeb958b32b5778c39",
+      "owner": "docs/scenario-ir.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/scenario-run.schema.v0.4.0.json",
+      "kind": "contract",
+      "source": "contracts/scenario-run.schema.v0.4.0.json",
+      "sourceDigest": "sha256:f0ab66697ad7b2c48dea7180b301080586df3a4f3f09fc2700373ef7cbfad358",
+      "owner": "docs/native-gates.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/semantic-diff.schema.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/semantic-diff.schema.v0.2.16.json",
+      "sourceDigest": "sha256:987e9916515cfa39142db7986ee81d24ce0a31b479ffd2fdc396f37ca68678b8",
+      "owner": "docs/semantic-diff.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/semantic-ids.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/semantic-ids.v0.2.16.json",
+      "sourceDigest": "sha256:ae399d9d1eeb755fe7db08cd84e539d6372ee7dbab02a4fe4a006bfcabc815bd",
+      "owner": "docs/semantic-ids.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/storage-engine-profile.schema.v0.4.0.json",
+      "kind": "contract",
+      "source": "contracts/storage-engine-profile.schema.v0.4.0.json",
+      "sourceDigest": "sha256:03e61be02f1f59a6df5e9fd374719adcffcc3544fef7edcff6e2f6afb9a7c098",
+      "owner": "docs/storage-engine-profile.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/storage-engine.schema.v0.4.0.json",
+      "kind": "contract",
+      "source": "contracts/storage-engine.schema.v0.4.0.json",
+      "sourceDigest": "sha256:a03bad922e00ce469ea100ba6d07ea0ef47ec99448b528e361c3805c58a96c57",
+      "owner": "docs/storage-engine.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/storage-introspection.schema.v0.4.0.json",
+      "kind": "contract",
+      "source": "contracts/storage-introspection.schema.v0.4.0.json",
+      "sourceDigest": "sha256:ce4e9f858bd8e3530db82d90e5bc661277586456771aefd9391da8bad29e8df0",
+      "owner": "docs/storage-introspection.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/storage-migration-plan.schema.v0.4.0.json",
+      "kind": "contract",
+      "source": "contracts/storage-migration-plan.schema.v0.4.0.json",
+      "sourceDigest": "sha256:b5ffc4b972d02d134e4f25c0a6ee90236fd19a8019d1f0d9aa503b8550ed92eb",
+      "owner": "docs/storage-engine.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/storage-observation.schema.v0.4.0.json",
+      "kind": "contract",
+      "source": "contracts/storage-observation.schema.v0.4.0.json",
+      "sourceDigest": "sha256:18713a38156da6631e0d0dc0f8e076fa9cc28ebc68506648354ecd06ce9f54e9",
+      "owner": "docs/storage-introspection.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/storage-projection.schema.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/storage-projection.schema.v0.2.16.json",
+      "sourceDigest": "sha256:c9ba3f7572ac8298ce58390667ff7b2b6d08afe8205f8435ae2bcc170e71ff39",
+      "owner": "docs/storage-projection.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/storage-projection.schema.v0.4.0.json",
+      "kind": "contract",
+      "source": "contracts/storage-projection.schema.v0.4.0.json",
+      "sourceDigest": "sha256:b2f301096129c21fc856f848544a46eede6d98c1ec236c3d4f3045244b366843",
+      "owner": "docs/storage-projection.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/storage-rename-history.schema.v0.4.0.json",
+      "kind": "contract",
+      "source": "contracts/storage-rename-history.schema.v0.4.0.json",
+      "sourceDigest": "sha256:80c273811a5370b9db88eb21c956d5d19194d163eb8ba9e19cbacba550148517",
+      "owner": "docs/storage-projection.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/target-profile.schema.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/target-profile.schema.v0.2.16.json",
+      "sourceDigest": "sha256:4d651cec2c3b374d3b3f3f4949f92e5d1a1c8de483819a2c2299b806bbff5a15",
+      "owner": "docs/target-profile.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/target-protocol.schema.v0.3.2.json",
+      "kind": "contract",
+      "source": "contracts/target-protocol.schema.v0.3.2.json",
+      "sourceDigest": "sha256:8af325a150a64c04ab8cbe4838e039e3026e46ebbea8a0385c80153b8935825f",
+      "owner": "docs/target-protocol.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/test-port.schema.v0.4.0.json",
+      "kind": "contract",
+      "source": "contracts/test-port.schema.v0.4.0.json",
+      "sourceDigest": "sha256:3a52522cf90610fbac5560bea11f43ffd8de1971fb01423ef057344d9285da99",
+      "owner": "docs/native-gates.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/trace-manifest.schema.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/trace-manifest.schema.v0.2.16.json",
+      "sourceDigest": "sha256:5f9c5baf4dcc5d48087be2e003320999aa6b071fd06764d5276e007361c094e2",
+      "owner": "docs/trace-manifest.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/transaction-concurrency.schema.v0.2.16.json",
+      "kind": "contract",
+      "source": "contracts/transaction-concurrency.schema.v0.2.16.json",
+      "sourceDigest": "sha256:b7c2b3a821d3d21f033fbc926a72c68d93e75d2489f27fbbfc04bcfae8304229",
+      "owner": "docs/transaction-concurrency.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/transport-http.schema.v0.4.0.json",
+      "kind": "contract",
+      "source": "contracts/transport-http.schema.v0.4.0.json",
+      "sourceDigest": "sha256:222d950e6445a5a079eca41a1f531ed1dbe4c4f7e79ad8e37dd753d4692338a5",
+      "owner": "docs/transport-http.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/validation-profile.default.v0.6.3.json",
+      "kind": "contract",
+      "source": "contracts/validation-profile.default.v0.6.3.json",
+      "sourceDigest": "sha256:2d09f1d36c02240629b5631d0d5247b600ae6b363483c485bf8f7123241faa24",
+      "owner": "docs/validation.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/validation-profile.schema.v0.6.3.json",
+      "kind": "contract",
+      "source": "contracts/validation-profile.schema.v0.6.3.json",
+      "sourceDigest": "sha256:fdaddc8e44ed95d97f07a3e275cdc7c72ce6488d4a095ffa64e263a482af2727",
+      "owner": "docs/validation.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/validation-profile.strict.v0.6.3.json",
+      "kind": "contract",
+      "source": "contracts/validation-profile.strict.v0.6.3.json",
+      "sourceDigest": "sha256:1848bb5a2d410e275751e05a2b74acff1f95a82d091f23e5388ab4e0d55722c6",
+      "owner": "docs/validation.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/validation-report.schema.v0.6.3.json",
+      "kind": "contract",
+      "source": "contracts/validation-report.schema.v0.6.3.json",
+      "sourceDigest": "sha256:575b2538aed6bc1997346f43d642b4ad7399110ce7f5ecdc654f8cee7258b2c0",
+      "owner": "docs/validation.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "protocol:compiled-ir",
+      "kind": "protocol",
+      "source": "crates/lekalo-core/src/ir/version.rs",
+      "owner": "docs/ir.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:docs:examples",
+      "kind": "protocol",
+      "source": "scripts/test-docs-examples.mjs",
+      "owner": "docs/architecture.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:docs:owners",
+      "kind": "protocol",
+      "source": "scripts/test-docs-ownership.mjs",
+      "owner": "docs/architecture.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:node-typescript:lekalo/client-sdk-compatibility/v0.4.0",
+      "kind": "protocol",
+      "source": "adapters/node-typescript/src",
+      "owner": "adapters/node-typescript/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:node-typescript:lekalo/client-sdk-map/v0.4.0",
+      "kind": "protocol",
+      "source": "adapters/node-typescript/src",
+      "owner": "adapters/node-typescript/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:node-typescript:lekalo/client-sdk/v0.4.0",
+      "kind": "protocol",
+      "source": "adapters/node-typescript/src",
+      "owner": "adapters/node-typescript/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:node-typescript:lekalo/drizzle-bindings-input/v0.1.0",
+      "kind": "protocol",
+      "source": "adapters/node-typescript/src",
+      "owner": "adapters/node-typescript/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:node-typescript:lekalo/drizzle-evidence/v0.1.0",
+      "kind": "protocol",
+      "source": "adapters/node-typescript/src",
+      "owner": "adapters/node-typescript/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:node-typescript:lekalo/native-gate-plan/v0.4.0",
+      "kind": "protocol",
+      "source": "adapters/node-typescript/src",
+      "owner": "adapters/node-typescript/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:node-typescript:lekalo/native-gate-policy/v0.4.0",
+      "kind": "protocol",
+      "source": "adapters/node-typescript/src",
+      "owner": "adapters/node-typescript/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:node-typescript:lekalo/native-gate-run/v0.4.0",
+      "kind": "protocol",
+      "source": "adapters/node-typescript/src",
+      "owner": "adapters/node-typescript/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:node-typescript:lekalo/native-gate-view/v0.4.0",
+      "kind": "protocol",
+      "source": "adapters/node-typescript/src",
+      "owner": "adapters/node-typescript/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:node-typescript:lekalo/openapi-map/v0.4.0",
+      "kind": "protocol",
+      "source": "adapters/node-typescript/src",
+      "owner": "adapters/node-typescript/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:node-typescript:lekalo/scenario-ir/v0.2.16",
+      "kind": "protocol",
+      "source": "adapters/node-typescript/src",
+      "owner": "adapters/node-typescript/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:node-typescript:lekalo/scenario-run/v0.4.0",
+      "kind": "protocol",
+      "source": "adapters/node-typescript/src",
+      "owner": "adapters/node-typescript/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:node-typescript:lekalo/scenario-test-map/v0.4.0",
+      "kind": "protocol",
+      "source": "adapters/node-typescript/src",
+      "owner": "adapters/node-typescript/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:node-typescript:lekalo/storage-projection-input/v0.1.0",
+      "kind": "protocol",
+      "source": "adapters/node-typescript/src",
+      "owner": "adapters/node-typescript/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:node-typescript:lekalo/transport-http/v0.4.0",
+      "kind": "protocol",
+      "source": "adapters/node-typescript/src",
+      "owner": "adapters/node-typescript/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:node-typescript:lekalo/zod-map/v0.3.2",
+      "kind": "protocol",
+      "source": "adapters/node-typescript/src",
+      "owner": "adapters/node-typescript/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:php-laravel:lekalo/laravel-migration-input/v0.4.0",
+      "kind": "protocol",
+      "source": "adapters/php-laravel/src",
+      "owner": "adapters/php-laravel/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:php-laravel:lekalo/laravel-migration-ledger/v0.4.0",
+      "kind": "protocol",
+      "source": "adapters/php-laravel/src",
+      "owner": "adapters/php-laravel/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:php-laravel:lekalo/native-gate-plan/v0.4.0",
+      "kind": "protocol",
+      "source": "adapters/php-laravel/src",
+      "owner": "adapters/php-laravel/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:php-laravel:lekalo/native-selection/v0.4.0",
+      "kind": "protocol",
+      "source": "adapters/php-laravel/src",
+      "owner": "adapters/php-laravel/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:php-laravel:lekalo/php-operations-evidence/v0.4.0",
+      "kind": "protocol",
+      "source": "adapters/php-laravel/src",
+      "owner": "adapters/php-laravel/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:php-laravel:lekalo/php-operations-input/v0.4.0",
+      "kind": "protocol",
+      "source": "adapters/php-laravel/src",
+      "owner": "adapters/php-laravel/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:php-laravel:lekalo/php-operations-map/v0.4.0",
+      "kind": "protocol",
+      "source": "adapters/php-laravel/src",
+      "owner": "adapters/php-laravel/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:php-laravel:lekalo/php-routes-evidence/v0.4.0",
+      "kind": "protocol",
+      "source": "adapters/php-laravel/src",
+      "owner": "adapters/php-laravel/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:php-laravel:lekalo/php-routes-input/v0.4.0",
+      "kind": "protocol",
+      "source": "adapters/php-laravel/src",
+      "owner": "adapters/php-laravel/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:php-laravel:lekalo/php-routes-map/v0.4.0",
+      "kind": "protocol",
+      "source": "adapters/php-laravel/src",
+      "owner": "adapters/php-laravel/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:php-laravel:lekalo/php-test-port/v0.1.0",
+      "kind": "protocol",
+      "source": "adapters/php-laravel/src",
+      "owner": "adapters/php-laravel/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:php-laravel:lekalo/php-types-evidence/v0.4.0",
+      "kind": "protocol",
+      "source": "adapters/php-laravel/src",
+      "owner": "adapters/php-laravel/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:php-laravel:lekalo/php-types-input/v0.4.0",
+      "kind": "protocol",
+      "source": "adapters/php-laravel/src",
+      "owner": "adapters/php-laravel/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:php-laravel:lekalo/php-types-map/v0.4.0",
+      "kind": "protocol",
+      "source": "adapters/php-laravel/src",
+      "owner": "adapters/php-laravel/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:php-laravel:lekalo/provider-evidence/v0.1.0",
+      "kind": "protocol",
+      "source": "adapters/php-laravel/src",
+      "owner": "adapters/php-laravel/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:php-laravel:lekalo/scenario-ir/v0.2.16",
+      "kind": "protocol",
+      "source": "adapters/php-laravel/src",
+      "owner": "adapters/php-laravel/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:php-laravel:lekalo/scenario-run/v0.4.0",
+      "kind": "protocol",
+      "source": "adapters/php-laravel/src",
+      "owner": "adapters/php-laravel/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:php-laravel:lekalo/scenario-test-map/v0.4.0",
+      "kind": "protocol",
+      "source": "adapters/php-laravel/src",
+      "owner": "adapters/php-laravel/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:php-laravel:lekalo/scenario-toolchain/v0.1.0",
+      "kind": "protocol",
+      "source": "adapters/php-laravel/src",
+      "owner": "adapters/php-laravel/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:php-laravel:lekalo/transport-http/v0.4.0",
+      "kind": "protocol",
+      "source": "adapters/php-laravel/src",
+      "owner": "adapters/php-laravel/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:suite:catalog.schema.v1.0.0.json",
+      "kind": "protocol",
+      "source": "tests/fixtures/suite/schema/catalog.schema.v1.0.0.json",
+      "sourceDigest": "sha256:f063b228aafacf9c31a4340835469a0605ff942b22ab318940c3f5fae1b545b4",
+      "owner": "docs/architecture.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:suite:coverage.schema.v1.0.0.json",
+      "kind": "protocol",
+      "source": "tests/fixtures/suite/schema/coverage.schema.v1.0.0.json",
+      "sourceDigest": "sha256:2a302b0a98477046f6883a575d13c8a10e1504dc7c2ebcbc434cbf542890b076",
+      "owner": "docs/architecture.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:suite:fixture.schema.v1.0.0.json",
+      "kind": "protocol",
+      "source": "tests/fixtures/suite/schema/fixture.schema.v1.0.0.json",
+      "sourceDigest": "sha256:8d9f66939189d12aea9c8c539ce44bfee4b5df696ee75cf9f6fa6a28d19a15b8",
+      "owner": "docs/architecture.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:suite:golden-update.schema.v1.0.0.json",
+      "kind": "protocol",
+      "source": "tests/fixtures/suite/schema/golden-update.schema.v1.0.0.json",
+      "sourceDigest": "sha256:ab49d4864b175d47286cc387e65b74ce089176ecaa938c493c463dc034d4c875",
+      "owner": "docs/architecture.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:suite:run-manifest.schema.v1.0.0.json",
+      "kind": "protocol",
+      "source": "tests/fixtures/suite/schema/run-manifest.schema.v1.0.0.json",
+      "sourceDigest": "sha256:d0afb227d0252b45b46e30111711daffaaddd27764bdac84fbadabaf61c8ebe1",
+      "owner": "docs/architecture.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:target:bind",
+      "kind": "protocol",
+      "source": "contracts/target-protocol.schema.v0.3.2.json",
+      "owner": "docs/target-protocol.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:target:clean",
+      "kind": "protocol",
+      "source": "contracts/target-protocol.schema.v0.3.2.json",
+      "owner": "docs/target-protocol.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:target:describe",
+      "kind": "protocol",
+      "source": "contracts/target-protocol.schema.v0.3.2.json",
+      "owner": "docs/target-protocol.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:target:generate",
+      "kind": "protocol",
+      "source": "contracts/target-protocol.schema.v0.3.2.json",
+      "owner": "docs/target-protocol.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:target:plan-clean",
+      "kind": "protocol",
+      "source": "contracts/target-protocol.schema.v0.3.2.json",
+      "owner": "docs/target-protocol.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:target:plan-native",
+      "kind": "protocol",
+      "source": "contracts/target-protocol.schema.v0.3.2.json",
+      "owner": "docs/target-protocol.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:target:scan",
+      "kind": "protocol",
+      "source": "contracts/target-protocol.schema.v0.3.2.json",
+      "owner": "docs/target-protocol.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:target:validate",
+      "kind": "protocol",
+      "source": "contracts/target-protocol.schema.v0.3.2.json",
+      "owner": "docs/target-protocol.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:target:verify",
+      "kind": "protocol",
+      "source": "contracts/target-protocol.schema.v0.3.2.json",
+      "owner": "docs/target-protocol.md",
+      "status": "implemented"
+    }
+  ]
+}

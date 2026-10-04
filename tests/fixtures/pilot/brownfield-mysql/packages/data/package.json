@@ -1,0 +1,1 @@
+{"name":"brownfield-data","version":"1.0.0","private":true,"type":"module","dependencies":{"drizzle-orm":"0.44.7","mysql2":"3.24.5"}}
