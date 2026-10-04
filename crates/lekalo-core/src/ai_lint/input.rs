@@ -192,6 +192,8 @@ pub fn admit_evidence(
     ir: &str,
     scope: &[String],
 ) -> Result<(), DomainResult> {
+    // Typed protocol decoding must enforce the same wire bounds as file replay.
+    validate_tree(&serde_json::to_value(e).expect("typed wire"), "", 0)?;
     check_header("evidence", &e.schema_version, &e.identity)?;
     if e.producer.recipe != "ai-readability/1" {
         return Err(failure("ai-lint.version-unsupported", "detector-recipe"));
@@ -389,4 +391,27 @@ pub fn parse_waivers(
         }
     }
     Ok(w)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn protocol_evidence_and_file_replay_share_document_location_bounds() {
+        let mut evidence: Evidence = serde_json::from_slice(include_bytes!(
+            "../../../../tests/fixtures/ai-lint-evidence/golden/evidence.json"
+        ))
+        .expect("committed evidence");
+        evidence.locations.resize(33, evidence.locations[0].clone());
+        let fs = Fs::open(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tests/fixtures/ai-lint/model"),
+        )
+        .expect("fixture filesystem");
+        let supplied = parse::<Evidence>(&canonical(&evidence)).unwrap_err();
+        let collected = admit_evidence(&evidence, &fs, "model", "ir", &evidence.scope).unwrap_err();
+        assert_eq!(collected.to_json_string(), supplied.to_json_string());
+        assert!(collected.to_json_string().contains("wire-bound"));
+    }
 }

@@ -542,6 +542,25 @@ pub fn analyze(request: &Request<'_>) -> Result<Report, DomainResult> {
                     c.state = CoverageState::Unknown;
                     c.limitations = vec!["required-attachment-absent-or-incomplete".into()];
                 }
+                let incomplete_effect = e.records.iter().any(|r| {
+                    r.kind == Kind::Effect
+                        && rule
+                            == if r.mechanism == Mechanism::Observer {
+                                "hidden.observer-write"
+                            } else {
+                                "hidden.undeclared-effect"
+                            }
+                        && (r.operation.known().is_none()
+                            || r.resource.known().is_none()
+                            || r.key.known().is_none())
+                });
+                if enabled(p, rule) && incomplete_effect {
+                    c.state = CoverageState::Partial;
+                    c.limitations
+                        .push("effect-comparison-input-unavailable".into());
+                    c.limitations.sort();
+                    c.limitations.dedup();
+                }
                 report.coverage.push(c);
             }
         }
@@ -580,18 +599,14 @@ pub fn analyze(request: &Request<'_>) -> Result<Report, DomainResult> {
                     Some("hidden.string-reference")
                 }
                 Kind::Effect => {
-                    let declared =
-                        r.operation
-                            .known()
-                            .zip(r.resource.known())
-                            .map(|(op, resource)| {
-                                declared_effect(
-                                    request.compilation,
-                                    op,
-                                    resource,
-                                    r.key.known().map(String::as_str),
-                                )
-                            });
+                    let declared = r
+                        .operation
+                        .known()
+                        .zip(r.resource.known())
+                        .zip(r.key.known())
+                        .map(|((op, resource), action)| {
+                            declared_effect(request.compilation, op, resource, action)
+                        });
                     if declared == Some(false) {
                         if r.mechanism == Mechanism::Observer {
                             Some("hidden.observer-write")
@@ -891,13 +906,8 @@ pub fn analyze(request: &Request<'_>) -> Result<Report, DomainResult> {
     }
     Ok(report)
 }
-fn declared_effect(
-    compilation: &Compilation,
-    op: &str,
-    resource: &str,
-    operation: Option<&str>,
-) -> bool {
-    compilation.project.definitions.iter().any(|d| if let Definition::Command(c) = d { c.id.as_str()==op && c.effects.iter().any(|id| compilation.project.definitions.iter().any(|e| matches!(e, Definition::Effect(e) if &e.id==id && e.entity.as_str()==resource && operation.is_some_and(|o| e.operation.as_str()==o)))) } else {false})
+fn declared_effect(compilation: &Compilation, op: &str, resource: &str, operation: &str) -> bool {
+    compilation.project.definitions.iter().any(|d| if let Definition::Command(c) = d { c.id.as_str()==op && c.effects.iter().any(|id| compilation.project.definitions.iter().any(|e| matches!(e, Definition::Effect(e) if &e.id==id && e.entity.as_str()==resource && e.operation.as_str()==operation))) } else {false})
 }
 fn observed_ambiguities(
     request: &Request<'_>,

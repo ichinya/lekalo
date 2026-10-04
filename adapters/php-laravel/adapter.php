@@ -111,9 +111,23 @@ function lint_collect(array $request): array
     }
     if (count($records)>10000 || count($locations)>10000) {throw new RequestRefusal('lint-source','record-limit');}
     usort($sources,static fn($a,$b)=>strcmp($a['path'],$b['path']));ksort($locations,SORT_STRING);ksort($records,SORT_STRING);
+    // Bound the document-level span union without shortening any record or
+    // activation chain. Canonical record order determines the retained slice.
+    $locationLimited=count($locations)>32;$limit=$locationLimited?['document-location-limit']:[];
+    if ($locationLimited) {
+        $retained=[];$kept=[];
+        foreach ($records as $id=>$record) {
+            $refs=array_fill_keys($record['locations'],true);
+            foreach ($record['activation'] as $step) {foreach ($step['locations'] as $location) {$refs[$location]=true;}}
+            if (count($retained)+count(array_diff_key($refs,$retained))>32) {continue;}
+            $retained+=$refs;$kept[$id]=$record;
+        }
+        foreach ($locations as $id=>$location) {if (count($retained)<32) {$retained[$id]=true;}}
+        $locations=array_intersect_key($locations,$retained);$records=$kept;
+    }
     $rules=['ambiguity.implicit-target-defaults','ambiguity.multiple-resolutions','ambiguity.scattered-state-writes','hidden.convention-only-path','hidden.dispatch-without-binding','hidden.observer-write','hidden.path-without-trace-owner','hidden.reflective-call','hidden.string-reference','hidden.undeclared-effect','indirection.depth-exceeded'];$coverage=[];
-    foreach ($rules as $rule) {foreach ($lint['scope'] as $scope) {$supported=in_array($rule,['hidden.observer-write','hidden.reflective-call','ambiguity.scattered-state-writes'],true);$coverage[]=['rule'=>$rule,'target'=>$request['target'],'scope'=>$scope,'state'=>$supported&&count($files)>0?'partial':'unsupported','eligible'=>lint_unknown(),'examined'=>lint_known(count($methods)),'limitations'=>[$supported?'bounded-token-files':'detector-unsupported']];}}
-    return ['schemaVersion'=>'lekalo/ai-lint-evidence/v0.6.4','identity'=>'dev.lekalo.ai-lint-evidence@0.6.4','target'=>$request['target'],'scope'=>$lint['scope'],'producer'=>['id'=>ADAPTER_ID,'version'=>ADAPTER_VERSION,'artifactDigest'=>'sha256:'.hash_file('sha256', __FILE__),'tool'=>'php-token-static','compiler'=>lint_known('php/'.PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION),'framework'=>lint_unknown(),'recipe'=>'ai-readability/1'],'pins'=>$lint['pins'],'inputManifestDigest'=>lint_hash($sources),'sources'=>$sources,'locations'=>array_values($locations),'records'=>array_values($records),'coverage'=>$coverage,'limitations'=>['static-files-only','no-application-execution','framework-version-unknown','external-class-resolution-unsupported']];
+    foreach ($rules as $rule) {foreach ($lint['scope'] as $scope) {$supported=in_array($rule,['hidden.observer-write','hidden.reflective-call','ambiguity.scattered-state-writes'],true);$coverage[]=['rule'=>$rule,'target'=>$request['target'],'scope'=>$scope,'state'=>$supported&&count($files)>0?'partial':'unsupported','eligible'=>lint_unknown(),'examined'=>lint_known(count($methods)),'limitations'=>$supported?['bounded-token-files',...$limit]:['detector-unsupported']];}}
+    return ['schemaVersion'=>'lekalo/ai-lint-evidence/v0.6.4','identity'=>'dev.lekalo.ai-lint-evidence@0.6.4','target'=>$request['target'],'scope'=>$lint['scope'],'producer'=>['id'=>ADAPTER_ID,'version'=>ADAPTER_VERSION,'artifactDigest'=>'sha256:'.hash_file('sha256', __FILE__),'tool'=>'php-token-static','compiler'=>lint_known('php/'.PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION),'framework'=>lint_unknown(),'recipe'=>'ai-readability/1'],'pins'=>$lint['pins'],'inputManifestDigest'=>lint_hash($sources),'sources'=>$sources,'locations'=>array_values($locations),'records'=>array_values($records),'coverage'=>$coverage,'limitations'=>['static-files-only','no-application-execution','framework-version-unknown','external-class-resolution-unsupported',...$limit]];
 }
 
 // ---- bundled toolchain lock (issue #55) -------------------------

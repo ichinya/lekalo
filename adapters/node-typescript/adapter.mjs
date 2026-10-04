@@ -221204,8 +221204,20 @@ function collectAiLint(request, ts2, readView, artifactDigest, adapterVersion) {
   sources.sort((a, b) => a.path < b.path ? -1 : 1);
   locations.sort((a, b) => a.id < b.id ? -1 : 1);
   records.sort((a, b) => a.id < b.id ? -1 : 1);
+  const locationLimited = locations.length > 32, retained = /* @__PURE__ */ new Set();
+  const boundedRecords = locationLimited ? records.filter((r) => {
+    const refs = /* @__PURE__ */ new Set([...r.locations, ...r.activation.flatMap((step) => step.locations)]);
+    if (retained.size + [...refs].filter((id) => !retained.has(id)).length > 32) return false;
+    for (const id of refs) retained.add(id);
+    return true;
+  }) : records;
+  if (locationLimited) for (const location of locations) {
+    if (retained.size < 32) retained.add(location.id);
+  }
+  const boundedLocations = locationLimited ? locations.filter((location) => retained.has(location.id)) : locations;
+  const limit = locationLimited ? ["document-location-limit"] : [];
   const supported = /* @__PURE__ */ new Set(["hidden.observer-write", "hidden.reflective-call", "hidden.string-reference", "ambiguity.scattered-state-writes"]);
-  return { schemaVersion: "lekalo/ai-lint-evidence/v0.6.4", identity: "dev.lekalo.ai-lint-evidence@0.6.4", target: request.target, scope: l.scope, producer: { id: "lekalo-target-node-typescript", version: adapterVersion, artifactDigest, tool: "node-static", compiler: known("typescript/5.9.3"), framework: known("node-events/v1"), recipe: "ai-readability/1" }, pins: l.pins, inputManifestDigest: hash(sources), sources, locations, records, limitations: ["static-files-only", "no-application-execution", "external-module-resolution-unsupported"], coverage: rules.flatMap((rule) => l.scope.map((scope) => ({ rule, target: request.target, scope, state: supported.has(rule) && files.size ? "partial" : "unsupported", eligible: unknown(), examined: known(calls.length), limitations: [supported.has(rule) ? "bounded-static-files" : "detector-unsupported"] }))) };
+  return { schemaVersion: "lekalo/ai-lint-evidence/v0.6.4", identity: "dev.lekalo.ai-lint-evidence@0.6.4", target: request.target, scope: l.scope, producer: { id: "lekalo-target-node-typescript", version: adapterVersion, artifactDigest, tool: "node-static", compiler: known("typescript/5.9.3"), framework: known("node-events/v1"), recipe: "ai-readability/1" }, pins: l.pins, inputManifestDigest: hash(sources), sources, locations: boundedLocations, records: boundedRecords, limitations: ["static-files-only", "no-application-execution", "external-module-resolution-unsupported", ...limit], coverage: rules.flatMap((rule) => l.scope.map((scope) => ({ rule, target: request.target, scope, state: supported.has(rule) && files.size ? "partial" : "unsupported", eligible: unknown(), examined: known(calls.length), limitations: supported.has(rule) ? ["bounded-static-files", ...limit] : ["detector-unsupported"] }))) };
 }
 
 // src/kernel.mjs

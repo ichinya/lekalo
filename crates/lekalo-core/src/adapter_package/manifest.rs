@@ -1018,7 +1018,7 @@ mod committed_exemplar_tests {
         // exact committed bytes.
         assert_eq!(
             document.package_digest().as_str(),
-            "sha256:f48c2471c3f700ea45d8d38237de19bb3f279f9be423cd92fbd53f5ba851e55f"
+            "sha256:bb0459dd683b0d5f0763ead0769f87a3006df4a0d17eeaa7dc7ba6a2fbd59275"
         );
     }
 

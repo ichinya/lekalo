@@ -135,6 +135,26 @@ export function evidenceCases(env,update) {
   const e=allEvidence(env);schema('evidence',e);golden('evidence',e,update);const a=attachments(env);
   const live=run(env.project,[...env.args,'--evidence',env.file('input.json',e),...a.args]).report;
   const f=live.findings.find(f=>f.ruleId==='hidden.observer-write');assert.equal(f.confidence,'high');assert.equal(f.claim,'possible-behavior');
+  // R2: unavailable actions cannot prove a current declaration is missing.
+  const effectPolicy=clone(env.policy);effectPolicy.profiles.forEach(p=>p.thresholds={semanticDependencyDepth:unknown(),nativeCallDepth:unknown(),uncoveredWriterGroups:unknown()});
+  const effectArgs=['--config',env.file('effect-action-config.json',effectPolicy)];
+  for(const mechanism of ['observer','direct']) for(const state of ['known','unknown','unsupported','withheld']) {
+    const control=clone(e),effect=clone(e.records.find(r=>r.kind==='effect'&&r.mechanism===mechanism));control.records=[];
+    Object.assign(effect,{subject:'planner.edit_task_cmd',nativeId:`fixture/edit-${mechanism}`,semanticSymbol:known('planner.edit_task_cmd'),operation:known('planner.edit_task_cmd'),key:state==='known'?known('update'):{state}});add(control,effect);schema('evidence',control);
+    const args=[...effectArgs,'--evidence',env.file('effect-action.json',control)];
+    const result=run(env.project,args),ci=run(env.project,[...args,'--lint-profile','ci','--check']);
+    for(const {report} of [result,ci]) {
+      assert.ok(!report.findings.some(f=>['hidden.observer-write','hidden.undeclared-effect'].includes(f.ruleId)),`${mechanism}/${state} cannot prove undeclared effect`);
+      const row=report.coverage.find(c=>c.target===e.target&&c.rule===(mechanism==='observer'?'hidden.observer-write':'hidden.undeclared-effect'));
+      assert.equal(row.state,state==='known'?'complete':'partial');if(state!=='known')assert.ok(row.limitations.includes('effect-comparison-input-unavailable'));
+    }
+    if(state!=='known')assert.ok(ci.envelope.diagnostics.some(d=>d.id==='ai-lint.coverage-incomplete'));
+    if(state==='known') {
+      effect.key=known('create');control.records=[];add(control,effect);
+      const missing=run(env.project,[...effectArgs,'--evidence',env.file('known-missing-action.json',control),'--lint-profile','ci','--check'],'denied').report;
+      assert.ok(missing.findings.some(f=>f.ruleId===(mechanism==='observer'?'hidden.observer-write':'hidden.undeclared-effect')),'known mismatching action still produces a warning');
+    }
+  }
   const low=clone(e);low.records.find(r=>r.mechanism==='observer').activation[2].confidence='low';const lr=run(env.project,[...env.args,'--evidence',env.file('low.json',low),...a.args]).report;assert.equal(lr.findings.find(f=>f.ruleId==='hidden.observer-write').severity,'info');
   const lowDepth=clone(e);lowDepth.records.filter(r=>r.kind==='native-edge').forEach(r=>r.confidence='low');const lowNative=run(env.project,[...env.args,'--evidence',env.file('low-depth.json',lowDepth)]).report.findings.find(f=>f.ruleId==='indirection.depth-exceeded'&&f.target===e.target);assert.equal(lowNative.confidence,'low');assert.equal(lowNative.severity,'info');
   for(const mutate of [r=>r.confidence='unknown',r=>r.value=unknown(),r=>r.currency='stale']) {
@@ -228,6 +248,28 @@ export function adapterCases(env,update) {
     const selected=raw(env.project,['ai-lint','--symbol','planner.focus_task',...env.args,'--scan-target',target,'--source-file',path]);assert.equal(selected.child.status,0,JSON.stringify(selected.envelope));assert.ok(selected.envelope.report.findings.some(f=>f.ruleId==='hidden.observer-write'&&f.semanticSymbol.value==='planner.focus_task'),target+' single-symbol scope retains entity mapping');
     assert.deepEqual(readFileSync(indexPath),beforeIndex,'lint retains observed index');assert.deepEqual(readFileSync(join(env.project,path)),beforeSource,'lint retains source');
     unlinkSync(indexPath);
+    // R1: exactly 32/33 detector locations, through both admission paths.
+    // PHP creates one method span plus one computed-call span; an empty
+    // seventeenth method yields precisely 33 rather than 34 locations.
+    try {for(const count of [32,33]) {
+      const text=target==='node-typescript'
+        ? Array.from({length:count},(_,i)=>`export function case${i}(obj: any, key: string) { obj[key](); }`).join('\n')+'\n'
+        : '<?php\nclass Cases {\n'+Array.from({length:16},(_,i)=>`public function case${i}($obj, $key) { $obj->$key(); }`).join('\n')+(count===33?'\npublic function extra() {}':'')+'\n}\n';
+      writeFileSync(join(env.project,path),text);
+      const boundary=clone(request);boundary.lint_request.bindings=[];
+      const receipt=call(boundary);assert.equal(receipt.status,0,receipt.stderr);const response=JSON.parse(receipt.stdout);assert.ok(protocol(response),JSON.stringify(protocol.errors));
+      const evidence=response.result.lint_evidence;schema('evidence',evidence);assert.equal(evidence.locations.length,32);assert.equal(evidence.limitations.includes('document-location-limit'),count===33);
+      const expectedRecords=target==='node-typescript'?32:16;assert.equal(evidence.records.length,expectedRecords,'whole retained records');
+      const supplied=run(env.project,[...env.args,'--evidence',env.file('bounded-collector.json',evidence)]),installed=run(env.project,[...env.args,'--scan-target',target,'--source-file',path]);
+      const selected=report=>report.findings.filter(f=>f.target===target).map(f=>[f.id,f.ruleId,f.confidence,f.severity]);
+      assert.deepEqual(selected(installed.report),selected(supplied.report));assert.equal(selected(supplied.report).length,expectedRecords);
+      assert.deepEqual(installed.report.coverage.filter(c=>c.target===target),supplied.report.coverage.filter(c=>c.target===target),'collection/replay coverage parity');
+      for(const result of [supplied,installed]) {
+        assert.ok(result.envelope.diagnostics.some(d=>d.id==='ai-lint.coverage-incomplete'));
+        const coverage=result.report.coverage.find(c=>c.target===target&&c.rule==='hidden.reflective-call');assert.equal(coverage.state,'partial');assert.equal(coverage.limitations.includes('document-location-limit'),count===33);
+      }
+      const oversized=clone(evidence);oversized.locations.push(clone(oversized.locations[0]));schema('evidence',oversized,false);refusal(env,[...env.args,'--evidence',env.file('over-bound-collector.json',oversized)],'ai-lint.input-invalid');
+    }} finally {writeFileSync(join(env.project,path),bytes);}
   }
 }
 export function gate(family) {
