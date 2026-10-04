@@ -1,16 +1,17 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { ROOT, P0, text, sha, safePath, binary, discoverCommands, commandOwner, contractRecords, protocolRecords, validateMetadata, assertPublicText, filesUnder } from "./lib/docs-maintenance.mjs";
+import { ROOT, P0, text, sha, safePath, binary, discoverCommands, commandOwner, contractRecords, protocolRecords, validateMetadata, validatePageOwners, assertPublicText, filesUnder } from "./lib/docs-maintenance.mjs";
 import { join, relative, resolve, dirname } from "node:path";
 
 const args=process.argv.slice(2);
 assert.ok(args.length===0 || args.join(" ")==="--static", "unknown ownership arguments");
 const metadata=JSON.parse(text("docs/documentation-owners.json"));
-assert.deepEqual(Object.keys(metadata).sort(),["cliSourceDigest","formatVersion","productVersion","records"]);
+assert.deepEqual(Object.keys(metadata).sort(),["cliSourceDigest","formatVersion","p0Pages","productVersion","records"]);
 assert.equal(metadata.formatVersion,1);
 assert.equal(metadata.cliSourceDigest,sha(text("crates/lekalo-cli/src/main.rs").replaceAll("\r\n","\n")),"CLI changed without owner refresh");
 assert.equal(metadata.productVersion,text("Cargo.toml").match(/\[workspace.package\][\s\S]*?version = "([^"]+)"/)?.[1]);
+validatePageOwners(metadata.p0Pages);
 validateMetadata(metadata.records);
 assert.deepEqual(metadata.records.filter(x=>x.kind==="global"),["--help","--version","--json","--no-cache"].map(flag=>({id:`cli:${flag}`,kind:"global",owner:"docs/cli.md",status:"implemented"})),"global ownership drift");
 assert.deepEqual(metadata.records.filter(x=>x.kind==="contract"),contractRecords(),"contract ownership inventory drift");
@@ -38,4 +39,21 @@ for(const path of [join(ROOT,"README.md"),...filesUnder(join(ROOT,"docs")).filte
 for(const canary of ["https://private.example/consumer","consumer-private-canary","credential-canary-105","tenant-private-canary","mysql://user:password@private.example/db"]) assert.throws(()=>assertPublicText(canary));
 assert.throws(()=>safePath("../escape"));
 assert.throws(()=>validateMetadata([metadata.records[0],metadata.records[0]]));
-console.log(JSON.stringify({ok:true,gate:"docs-ownership",mode:args.length?"static":"live-help",surfaces:metadata.records.length,requiredDocs:P0.length}));
+let pageOwnerControls=0;
+const refusePages=(pages,reason)=>{assert.throws(()=>validatePageOwners(pages),reason); pageOwnerControls++;};
+for(const page of P0) {
+  refusePages(metadata.p0Pages.filter(row=>row.page!==page),/missing P0 page owner/);
+  refusePages([...metadata.p0Pages,metadata.p0Pages.find(row=>row.page===page)],/duplicate P0 page owner/);
+}
+refusePages(undefined,/P0 page owners must be an array/);
+refusePages([],/missing P0 page owner/);
+for(const [patch,reason] of [
+  [{page:"docs/unknown.md"},/unknown P0 page/],
+  [{owner:""},/invalid P0 subsystem owner/],
+  [{owner:["one","two"]},/invalid P0 subsystem owner/],
+  [{extra:true},/unknown\/missing P0 page owner field/],
+  [{owner:"unassigned maintainers"},/P0 prose owner drift/],
+]) {
+  const pages=structuredClone(metadata.p0Pages); Object.assign(pages[0],patch); refusePages(pages,reason);
+}
+console.log(JSON.stringify({ok:true,gate:"docs-ownership",mode:args.length?"static":"live-help",surfaces:metadata.records.length,requiredDocs:P0.length,p0Owners:metadata.p0Pages.length,pageOwnerControls}));

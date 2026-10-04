@@ -2,6 +2,60 @@
   "formatVersion": 1,
   "productVersion": "0.6.3",
   "cliSourceDigest": "sha256:b936e7220a0cc3140b49eb54efd9020d779d5becc00ef1cb07736518f68bfdcb",
+  "p0Pages": [
+    {
+      "page": "README.md",
+      "owner": "contributor-entry maintainers"
+    },
+    {
+      "page": "docs/architecture.md",
+      "owner": "core and adapter-host maintainers"
+    },
+    {
+      "page": "docs/authority.md",
+      "owner": "boundary maintainers"
+    },
+    {
+      "page": "docs/model.md",
+      "owner": "semantic-contract maintainers"
+    },
+    {
+      "page": "docs/project-layout.md",
+      "owner": "filesystem/reproducibility maintainers"
+    },
+    {
+      "page": "docs/target-protocol.md",
+      "owner": "adapter-host maintainers"
+    },
+    {
+      "page": "docs/diagnostics.md",
+      "owner": "result/reporting maintainers"
+    },
+    {
+      "page": "docs/adoption.md",
+      "owner": "bootstrap/evidence maintainers"
+    },
+    {
+      "page": "docs/security.md",
+      "owner": "privacy and adapter-host maintainers"
+    },
+    {
+      "page": "docs/integrations.md",
+      "owner": "workflow/evidence-consumer maintainers"
+    },
+    {
+      "page": "docs/tutorial-greenfield-planner.md",
+      "owner": "planner fixture maintainers"
+    },
+    {
+      "page": "docs/tutorial-brownfield-typescript.md",
+      "owner": "Node evidence fixture maintainers"
+    },
+    {
+      "page": "docs/roadmap.md",
+      "owner": "release/documentation maintainers"
+    }
+  ],
   "records": [
     {
       "id": "cli:adapter",

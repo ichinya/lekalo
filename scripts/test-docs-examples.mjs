@@ -12,7 +12,7 @@ const args = process.argv.slice(2);
 assert.ok(args.length === 0 || args.join(" ") === "--static" || (args.length === 2 && args[0] === "--lane" && ["portable","planner","mysql"].includes(args[1])), "unknown docs gate arguments");
 const lane = args[1] ?? "portable";
 const registry = JSON.parse(text("tests/fixtures/docs/examples.json"));
-const CHECKS = new Set(["ir","validation","init","inspect","impact","context","contract-update","contract-check","contract-attach","native-tests","lock","generate-check","verify","trace-validate","trace-export","provider","authority","privacy","provenance","planner-chain","mysql-observed","laravel-vue","typescript","http","mysql"]);
+const CHECKS = new Set(["ir","validation","init","inspect","impact","context","contract-update","contract-coverage-missing","contract-check","contract-attach","native-tests","lock","generate-check","verify","trace-validate","trace-export","provider","authority","privacy","provenance","planner-chain","mysql-observed","laravel-vue","typescript","http","mysql"]);
 const exact = (object, fields) => assert.deepEqual(Object.keys(object).sort(), [...fields].sort(), "unknown/missing replay metadata field");
 function validateRegistry(value) {
   exact(value, ["formatVersion","sourceProduct","setup","examples"]);
@@ -61,8 +61,31 @@ function validateBlocks(value, read = text) {
   }
   assert.deepEqual([...found].sort(),[...value.setup,...value.examples].map(x=>x.id).sort(),"orphan replay registry entry");
 }
+// The linked C/D walkthrough has no local command block, so fence coverage alone
+// cannot catch a wrong fixture selection. Its visible working-root links are
+// checked against the same recipes that run in contributor order below.
+function validatePlannerWalkthrough(value, read = text) {
+  const tutorial=read("docs/tutorial-greenfield-planner.md").replaceAll("\r\n","\n");
+  let previousHeading=-1, previousRecipe=-1;
+  for(const [id,heading,anchor] of [
+    ["contract-planner","Contract the planner (C)","contract-one-module"],
+    ["inspect-planner","Inspect the planner (D)","projection-example"],
+  ]) {
+    const index=value.examples.findIndex(row=>row.id===id), row=value.examples[index];
+    assert.ok(row && index>previousRecipe,"linked planner replay order drift"); previousRecipe=index;
+    const marker=`## ${heading}\n`, position=tutorial.indexOf(marker);
+    assert.ok(position>previousHeading && tutorial.split(marker).length===2,"missing/duplicate planner step"); previousHeading=position;
+    const section=tutorial.slice(position+marker.length).split(/^## /m)[0];
+    const roots=[...section.matchAll(/^Working root: \[([^\]]+)\]\(([^)]+)\)\./gm)];
+    assert.equal(roots.length,1,"missing/duplicate planner working root");
+    assert.equal(roots[0][1],row.fixture,"linked planner fixture drift");
+    assert.equal(roots[0][2],`../${row.fixture}`,"linked planner root URL drift");
+    assert.ok(section.includes(`](${row.document.slice(5)}#${anchor})`),"linked planner command page drift");
+  }
+}
 validateRegistry(registry);
 validateBlocks(registry);
+validatePlannerWalkthrough(registry);
 // Scanner declarations are explicit authored inputs, never missing-import
 // substitutions. Runtime checking must exclude all of them.
 const mysqlFixture="tests/fixtures/pilot/brownfield-mysql";
@@ -78,8 +101,14 @@ const changed = structuredClone(registry); changed.examples[0].commands[0].line 
 assert.throws(()=>validateBlocks(changed));
 assert.throws(()=>validateBlocks(registry,path=>text(path)+(path==="README.md"?"\n\`\`\`sh\nnode unknown.mjs\n\`\`\`\n":"")));
 assert.throws(()=>safePath("../fixture-escape"));
+assert.throws(()=>validatePlannerWalkthrough(registry,path=>text(path).replaceAll("tests/fixtures/docs/contracted-module","tests/fixtures/contracted/planner-slice")),/linked planner fixture drift/);
+assert.throws(()=>validatePlannerWalkthrough(registry,path=>text(path).replaceAll("Working root:","Unregistered root:")),/missing\/duplicate planner working root/);
+const reversed=structuredClone(registry);
+const contractedIndex=reversed.examples.findIndex(row=>row.id==="contract-planner"), projectionIndex=reversed.examples.findIndex(row=>row.id==="inspect-planner");
+[reversed.examples[contractedIndex],reversed.examples[projectionIndex]]=[reversed.examples[projectionIndex],reversed.examples[contractedIndex]];
+assert.throws(()=>validatePlannerWalkthrough(reversed),/linked planner replay order drift/);
 if(args[0] === "--static") {
-  console.log(JSON.stringify({ok:true,gate:"docs-examples",mode:"static",examples:registry.examples.length,setup:registry.setup.length,controls:4}));
+  console.log(JSON.stringify({ok:true,gate:"docs-examples",mode:"static",examples:registry.examples.length,setup:registry.setup.length,controls:7}));
   process.exit(0);
 }
 
@@ -201,6 +230,17 @@ function check(kind,output,cwd) {
     return;
   }
   const value=receipt(output);
+  if(kind==="contract-coverage-missing") {
+    assert.equal(value.status,"invalid");
+    assert.deepEqual(value.reasonCodes,["contracted.coverage-missing","contracted.coverage-missing"]);
+    assert.deepEqual(value.diagnostics.map(x=>x.symbol).sort(),["planner.focus_task","planner.list_tasks"]);
+    for(const diagnostic of value.diagnostics) {
+      schema("diagnostic.schema.v0.2.16.json",diagnostic);
+      assert.equal(diagnostic.id,"contracted.coverage-missing"); assert.equal(diagnostic.severity,"error");
+      assert.equal(diagnostic.data.detail,"no-native-test");
+    }
+    return;
+  }
   if(kind==="verify") {
     schema("orchestration-report.schema.v0.2.16.json",value);
     assert.equal(value.operation,"verify"); assert.equal(value.verdict,"ready");
@@ -266,7 +306,7 @@ function check(kind,output,cwd) {
     assert.equal(value.verdict,"clean"); assert.equal(value.counts.artifacts,0);
   } else throw new Error("unhandled semantic check");
 }
-let commands=0, controls=4;
+let commands=0, controls=7;
 const completed=[];
 try {
   for(const row of registry.examples.filter(x=>x.lane===lane)) {

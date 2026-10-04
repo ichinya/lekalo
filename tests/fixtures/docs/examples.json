@@ -65,6 +65,51 @@
       ]
     },
     {
+      "id": "contract-planner",
+      "document": "docs/adoption.md",
+      "fixture": "tests/fixtures/docs/contracted-module",
+      "lane": "portable",
+      "write": true,
+      "commands": [
+        {
+          "line": "lekalo --json contract update --declaration declarations/initial.json",
+          "exit": 0,
+          "stream": "stdout",
+          "check": "contract-update"
+        },
+        {
+          "line": "node --test --test-reporter=tap test/native.test.mjs",
+          "exit": 0,
+          "stream": "stdout",
+          "check": "native-tests"
+        },
+        {
+          "line": "lekalo --no-cache --json contract check --module planner",
+          "exit": 1,
+          "stream": "stderr",
+          "check": "contract-coverage-missing"
+        },
+        {
+          "line": "lekalo --json contract attach planner.focus_task --native-test tutorial.focus",
+          "exit": 0,
+          "stream": "stdout",
+          "check": "contract-attach"
+        },
+        {
+          "line": "lekalo --json contract attach planner.list_tasks --native-test tutorial.list",
+          "exit": 0,
+          "stream": "stdout",
+          "check": "contract-attach"
+        },
+        {
+          "line": "lekalo --no-cache --json contract check --module planner",
+          "exit": 0,
+          "stream": "stdout",
+          "check": "contract-check"
+        }
+      ]
+    },
+    {
       "id": "inspect-planner",
       "document": "docs/architecture.md",
       "fixture": "tests/fixtures/contracted/planner-slice",
@@ -88,45 +133,6 @@
           "exit": 0,
           "stream": "stdout",
           "check": "context"
-        }
-      ]
-    },
-    {
-      "id": "contract-planner",
-      "document": "docs/adoption.md",
-      "fixture": "tests/fixtures/docs/contracted-module",
-      "lane": "portable",
-      "write": true,
-      "commands": [
-        {
-          "line": "lekalo --json contract update --declaration declarations/initial.json",
-          "exit": 0,
-          "stream": "stdout",
-          "check": "contract-update"
-        },
-        {
-          "line": "node --test --test-reporter=tap test/native.test.mjs",
-          "exit": 0,
-          "stream": "stdout",
-          "check": "native-tests"
-        },
-        {
-          "line": "lekalo --json contract attach planner.focus_task --native-test tutorial.focus",
-          "exit": 0,
-          "stream": "stdout",
-          "check": "contract-attach"
-        },
-        {
-          "line": "lekalo --json contract attach planner.list_tasks --native-test tutorial.list",
-          "exit": 0,
-          "stream": "stdout",
-          "check": "contract-attach"
-        },
-        {
-          "line": "lekalo --no-cache --json contract check --module planner",
-          "exit": 0,
-          "stream": "stdout",
-          "check": "contract-check"
         }
       ]
     },

@@ -102,3 +102,20 @@ export function validateMetadata(records) {
     assert.ok(text(row.owner).trim().length > 50, "empty documentation owner");
   }
 }
+// Page accountability is separate from the public command/schema/protocol census.
+// The explicit machine list must cover every P0 page exactly once; prose alone
+// cannot supply a missing record, and an owner is one subsystem role, not a list.
+export function validatePageOwners(pages) {
+  assert.ok(Array.isArray(pages), "P0 page owners must be an array");
+  const seen = new Set();
+  for (const row of pages) {
+    assert.ok(row && typeof row === "object", "invalid P0 page owner record");
+    assert.deepEqual(Object.keys(row).sort(), ["owner", "page"], "unknown/missing P0 page owner field");
+    assert.ok(P0.includes(row.page), `unknown P0 page: ${row.page}`);
+    assert.ok(!seen.has(row.page), `duplicate P0 page owner: ${row.page}`);
+    seen.add(row.page);
+    assert.ok(typeof row.owner === "string" && row.owner.length > 0 && row.owner === row.owner.trim(), "invalid P0 subsystem owner");
+    assert.equal(text(row.page).match(/\bOwner: ([^.;\r\n]+)[.;]/)?.[1], row.owner, `P0 prose owner drift: ${row.page}`);
+  }
+  assert.deepEqual([...seen].sort(), [...P0].sort(), "missing P0 page owner");
+}
