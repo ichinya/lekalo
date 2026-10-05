@@ -143,6 +143,31 @@
       "origin": "synthetic"
     },
     {
+      "family": "framework-lift-arm",
+      "origin": "synthetic",
+      "note": "Issue #100: synthetic recorded evidence; no external model run, private code or prompt."
+    },
+    {
+      "family": "framework-lift-baseline",
+      "origin": "synthetic",
+      "note": "Issue #100: synthetic recorded evidence; no external model run, private code or prompt."
+    },
+    {
+      "family": "framework-lift-campaign",
+      "origin": "synthetic",
+      "note": "Issue #100: synthetic recorded evidence; no external model run, private code or prompt."
+    },
+    {
+      "family": "framework-lift-result",
+      "origin": "synthetic",
+      "note": "Issue #100: synthetic recorded evidence; no external model run, private code or prompt."
+    },
+    {
+      "family": "framework-lift-task",
+      "origin": "synthetic",
+      "note": "Issue #100: synthetic recorded evidence; no external model run, private code or prompt."
+    },
+    {
       "family": "graph",
       "origin": "synthetic"
     },

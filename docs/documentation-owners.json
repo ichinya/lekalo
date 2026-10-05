@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "productVersion": "0.6.5",
-  "cliSourceDigest": "sha256:4a1a4e388355485254c21b9755b413107bb7c9385293ec07a7fef6301c520f36",
+  "cliSourceDigest": "sha256:c4ac1cfa6a980f2c21e644f09bfbf78f009097862431dfb24212dde454678c82",
   "p0Pages": [
     {
       "page": "README.md",
@@ -2277,7 +2277,7 @@
       "id": "contract:contracts/diagnostic-registry.v0.6.4.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.6.4.json",
-      "sourceDigest": "sha256:5b6ff37667ef2f125c1a9657273117ff938598d4db39304259ed14e5d32d8704",
+      "sourceDigest": "sha256:ab3063d7c219184945feccc6908f08da8d6565adb6652a3f8ce3bc3040e3779c",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2378,6 +2378,51 @@
       "source": "contracts/extended-effects.schema.v0.2.16.json",
       "sourceDigest": "sha256:57619a7ef4a8dc2e4fb2a2dbd5427421df399634d3a74642cae1f8eed3860197",
       "owner": "docs/extended-effects.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/framework-lift-arm.schema.v0.6.4.json",
+      "kind": "contract",
+      "source": "contracts/framework-lift-arm.schema.v0.6.4.json",
+      "sourceDigest": "sha256:fa8cdfbbed38d891ab6db4aee69fab8a33f90407421306cd7ef847ce92452dad",
+      "owner": "docs/framework-lift.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/framework-lift-baseline.schema.v0.6.4.json",
+      "kind": "contract",
+      "source": "contracts/framework-lift-baseline.schema.v0.6.4.json",
+      "sourceDigest": "sha256:d14a30add2e0d98cd8184a5e0239df92103d85c3a75925686710f14289db47bc",
+      "owner": "docs/framework-lift.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/framework-lift-campaign.schema.v0.6.4.json",
+      "kind": "contract",
+      "source": "contracts/framework-lift-campaign.schema.v0.6.4.json",
+      "sourceDigest": "sha256:1ccd085fa887e28c43cad1c92e01c016e7453b163ec9b781d776a2ec60e4b071",
+      "owner": "docs/framework-lift.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/framework-lift-result.schema.v0.6.4.json",
+      "kind": "contract",
+      "source": "contracts/framework-lift-result.schema.v0.6.4.json",
+      "sourceDigest": "sha256:a17efce4c835ca2199df2e76ca8559b8834df030cc6d3c713cedc3ae5ceb0369",
+      "owner": "docs/framework-lift.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/framework-lift-task.schema.v0.6.4.json",
+      "kind": "contract",
+      "source": "contracts/framework-lift-task.schema.v0.6.4.json",
+      "sourceDigest": "sha256:68cf61d605709804ad2dc6619d9a25d271d24aef82545f7029951c8b7e07b8e7",
+      "owner": "docs/framework-lift.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },

@@ -27,6 +27,7 @@ mod ai_lint;
 mod architecture_profile;
 mod coupling;
 mod doctor_git;
+mod evaluation;
 mod git_input;
 mod report_git;
 pub(crate) mod report_output;
@@ -275,6 +276,12 @@ enum Commands {
     ArchitectureProfile {
         #[command(subcommand)]
         command: architecture_profile::Command,
+    },
+    /// Validate preregistered Framework Lift protocols and compare local recorded evidence.
+    /// Never launches an agent/provider or exports private artifacts (issue #100).
+    Evaluation {
+        #[command(subcommand)]
+        command: evaluation::Commands,
     },
     /// Report the context-budget and local-understandability metrics of
     /// one symbol, one module, or the whole project (issue #75): the
@@ -2448,6 +2455,7 @@ fn runtime() -> u8 {
             } => run_context(symbol, changed, budget, spans, &project),
             Commands::Coupling { args } => coupling::run(args),
             Commands::ArchitectureProfile { command } => architecture_profile::run(command),
+            Commands::Evaluation { command } => evaluation::run(command),
             Commands::ContextBudget { args } => {
                 let ContextBudgetArgs {
                     symbol,
