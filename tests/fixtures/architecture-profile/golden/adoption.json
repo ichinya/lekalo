@@ -1,8 +1,8 @@
 {
   "schemaVersion": "lekalo/architecture-adoption/v0.6.5",
   "identity": "dev.lekalo.architecture-adoption@0.6.5",
-  "snapshotRef": "sha256:d1d6e468369757f09c5f9247836a4d138d7343d9501fad039157231ee8142bfd",
-  "baselineRef": "sha256:21c2d39d3e420518d66f4468b13a1ecd542fd5adf2a1230f386fce86d493dda5",
+  "snapshotRef": "sha256:074c9debfe8b876db9a88066063103668df8fe838fa3a607a3799103445b27f1",
+  "baselineRef": "sha256:dde3090b08e706274a3a23c906d8b91c757f2bc71e3366af6c3646631aa8196d",
   "entries": [
     {
       "ruleId": "architecture.explicit-dependencies",

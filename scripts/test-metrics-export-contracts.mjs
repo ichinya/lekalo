@@ -36,9 +36,12 @@ function golden(f,value,suffix=''){
 }
 const baseline=read('tests/fixtures/metrics-export/registry-baseline.json');
 const registry=read('contracts/diagnostic-registry.v0.6.4.json');
-const old=registry.entries.filter(e=>!e.id.startsWith('metrics-export.'));
+// The baseline pins the pre-#102 registry: post-merge siblings add the
+// `evaluation.*` family (#100, +6) at the same product generation, so the
+// predecessor projection excludes both families added after it.
+const old=registry.entries.filter(e=>!e.id.startsWith('metrics-export.')&&!e.id.startsWith('evaluation.'));
 assert.equal(old.length,baseline.entries);assert.equal(sha(JSON.stringify(old)),baseline.digest,'500 predecessor entries remain exact');
-assert.equal(registry.entries.length,508);
+assert.equal(registry.entries.length,baseline.entries+6+8);
 const definition=read('contracts/metrics-aggregation-definition.v0.6.4.json');
 golden('metrics-aggregation-definition',definition);
 const selection=read('tests/fixtures/metrics-export/goldens/evaluation-export-input.json');

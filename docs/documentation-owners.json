@@ -1004,6 +1004,39 @@
       "status": "implemented"
     },
     {
+      "id": "cli:metrics",
+      "kind": "command",
+      "command": "metrics",
+      "usage": "lekalo metrics [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:7b76d4bc3e2d91378dc639ef7ba6cfd297ee17e0a808b74b5afb2c07d93f7aec",
+      "summary": "Privacy-safe public metrics from versioned local run history",
+      "leaf": false,
+      "owner": "docs/metrics-export.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:metrics export",
+      "kind": "command",
+      "command": "metrics export",
+      "usage": "lekalo metrics export [OPTIONS] --evaluation <FILE> --scope <TOKEN>",
+      "helpDigest": "sha256:3817c8f8c79df1271b15ab2ffc34f4dee6ee3182c911d865493e8167e804ac32",
+      "summary": "Preview or confirm a privacy-safe aggregate from live local history",
+      "leaf": true,
+      "owner": "docs/metrics-export.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:metrics status",
+      "kind": "command",
+      "command": "metrics status",
+      "usage": "lekalo metrics status [OPTIONS] --scope <TOKEN> <EXPORT_ID>",
+      "helpDigest": "sha256:ead494425fb380efff5b0c330afe76eaa8ad2081f10c24e8fcfd302635928949",
+      "summary": "Recheck source deletion, byte integrity and current declared authorization",
+      "leaf": true,
+      "owner": "docs/metrics-export.md",
+      "status": "implemented"
+    },
+    {
       "id": "cli:migrate",
       "kind": "command",
       "command": "migrate",

@@ -2,7 +2,7 @@
   "identity": "dev.lekalo.architecture-rule-catalog@0.6.5",
   "recipe": "architecture-core/1",
   "registryRef": {
-    "digest": "sha256:c2eed26a5426f169667cacf0e8f2099e6a739858d966fdf1ed824292f7435f49",
+    "digest": "sha256:7b2be768be48050057682980b240f109d33adc56b1b4cb4b27848507df22b130",
     "id": "diagnostic-registry",
     "version": "0.6.5"
   },
