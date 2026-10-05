@@ -2,6 +2,7 @@
 //! #100 supplies paired trial membership through EvaluationInput.
 mod aggregate;
 mod privacy;
+mod source_schema;
 mod storage;
 pub mod types;
 
@@ -176,6 +177,7 @@ fn snapshot(store: &Store, scope: &str, input: &EvaluationInput) -> Result<(u64,
 }
 
 fn validate_assertion_shape(assertions: &Value, record: &Value) -> Result<()> {
+    source_schema::assertions(assertions)?;
     use crate::run_history::types::AssertionRow;
     if assertions["identity"] != "dev.lekalo.run-assertions@0.4.0"
         || assertions["artifactKind"] != "history.assertion-set"
@@ -205,6 +207,7 @@ fn validate_assertion_shape(assertions: &Value, record: &Value) -> Result<()> {
 }
 
 fn validate_source_shape(record: &Value) -> Result<()> {
+    source_schema::record(record)?;
     use crate::run_history::types::{MetricsIn, Pilot, ProvenanceIn, StatusShape};
     static SCHEMA: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
     let schema = SCHEMA.get_or_init(|| {
@@ -499,6 +502,18 @@ pub fn status(project: &Path, id: &str, scope: &str, authorization: Option<&str>
                         .as_str()
                         .ok_or(StoreError::Corrupt("dependent"))?,
                 )?;
+                // Historical packages may predate full schema admission. A
+                // matching historical digest cannot keep an invalid source
+                // eligible after the validator has been corrected.
+                let record =
+                    storage::parse(r.as_bytes()).map_err(|_| StoreError::Corrupt("record"))?;
+                validate_source_shape(&record).map_err(|_| StoreError::Corrupt("record"))?;
+                if let Some(assertions) = &a {
+                    let assertions = storage::parse(assertions.as_bytes())
+                        .map_err(|_| StoreError::Corrupt("assertions"))?;
+                    validate_assertion_shape(&assertions, &record)
+                        .map_err(|_| StoreError::Corrupt("assertions"))?;
+                }
                 if digest(r.as_bytes()) != source["recordDigest"]
                     || a.as_ref().map(|v| digest(v.as_bytes()))
                         != source["assertionDigest"].as_str().map(str::to_owned)

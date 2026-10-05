@@ -24,6 +24,7 @@ const canon=v=>Array.isArray(v)?`[${v.map(canon).join(',')}]`:v&&typeof v==='obj
 const canonical=v=>canon(v)+'\n';
 const validators=new Map(families.map(f=>[f,ajv.compile(read(`contracts/${f}.schema.v0.6.4.json`))]));
 const recordValidator=ajv.compile(read('contracts/run-record.schema.v0.4.0.json'));
+const assertionValidator=ajv.compile(read('contracts/run-assertions.schema.v0.4.0.json'));
 function valid(f,v){const validator=validators.get(f);assert.ok(validator(v),`${f}: ${JSON.stringify(validator.errors)}`);}
 function golden(f,value,suffix=''){
  const p=join(root,`tests/fixtures/metrics-export/goldens/${f}${suffix}.json`);
@@ -275,13 +276,26 @@ const observation=read('tests/fixtures/run-history/valid/observation.json');
  const database=join(project,'.lekalo/history/store.sqlite');
  const victim=native.input.trials[0].runId;
  const sql=new DatabaseSync(database);
- const stored=sql.prepare('SELECT record_bytes,record_digest FROM runs WHERE run_id=?').get(victim);
+ const stored=sql.prepare('SELECT record_bytes,record_digest,assertion_set_id FROM runs WHERE run_id=?').get(victim);
  const record=JSON.parse(Buffer.from(stored.record_bytes).toString('utf8'));assert.ok(recordValidator(record));
  const update=sql.prepare('UPDATE runs SET record_bytes=?,record_digest=? WHERE run_id=?');
  const restored=()=>update.run(stored.record_bytes,stored.record_digest,victim);
+ write('schema-auth.json',authorize(metrics(native.path,native.sc,['--dry-run'])));
+ const schemaReady=metrics(native.path,native.sc,['--dry-run','--authorization','schema-auth.json']);
+ assert.equal(schemaReady.status,'ready');
+ const dependentCount=()=>sql.prepare('SELECT COUNT(*) AS count FROM dependents WHERE tenant_scope_id=?').get(native.sc).count;
+ const beforeDependents=dependentCount();
+ const sourceRefusal=()=>{
+  for(const extra of [['--dry-run'],['--confirm',schemaReady.previewDigest,'--authorization','schema-auth.json']]){
+   const refused=metrics(native.path,native.sc,extra,3);
+   assert.ok((refused.stdout+refused.stderr).includes('metrics-export.source-invalidated'),'schema-invalid source refuses before preview or activation');
+   assert.ok(!(refused.stdout+refused.stderr).includes('private-prompt-canary'),'source details never enter refusals');
+  }
+  assert.equal(dependentCount(),beforeDependents,'source refusal registers no aggregate');
+ };
  try {
   update.run(Buffer.from('{}\n'),stored.record_digest,victim);metrics(native.path,native.sc,['--dry-run'],3);
-  restored();record.privacy.policyRef.version='9.9.9';const bytes=Buffer.from(canonical(record));update.run(bytes,sha(bytes),victim);
+  restored();const wrongPolicy=structuredClone(record);wrongPolicy.privacy.policyRef.version='9.9.9';const bytes=Buffer.from(canonical(wrongPolicy));update.run(bytes,sha(bytes),victim);
   metrics(native.path,native.sc,['--dry-run'],3);
   for(const mutate of [
    r=>{r.scope.repositoryRole='private_native_symbol';},
@@ -289,11 +303,44 @@ const observation=read('tests/fixtures/run-history/valid/observation.json');
    r=>{r.privacy.classificationContractRef.version='9.9.9';},
    r=>{r.prompt='consumer-private-canary';},
    r=>{r.metrics.durationMs={state:'unknown',value:0};},
+   r=>{r.recordedAt='invalid-not-a-timestamp';},
+   r=>{r.timestamp='invalid-not-a-timestamp';},
+   r=>{r.operation.prompt='private-prompt-canary';},
+   r=>{r.operation.affectedSemanticIds=['bad/id'];},
+   r=>{r.measurementSources=[{prompt:'private-prompt-canary'}];},
+   r=>{r.testGateSummaries=[{prompt:'private-prompt-canary'}];},
+   r=>{r.diagnostics=[{prompt:'private-prompt-canary'}];},
+   r=>{r.privacy.provenance.prompt='private-prompt-canary';},
+   r=>{r.repeat={prompt:'private-prompt-canary'};},
   ]){
    const changed=JSON.parse(Buffer.from(stored.record_bytes).toString('utf8'));mutate(changed);
+   assert.equal(recordValidator(changed),false,'record mutation must violate the unchanged frozen schema');
    const mutated=Buffer.from(canonical(changed));update.run(mutated,sha(mutated),victim);
-   metrics(native.path,native.sc,['--dry-run'],3);
+   sourceRefusal();
   }
+  restored();
+  const assertionStored=sql.prepare('SELECT bytes,digest FROM assertion_sets WHERE set_id=?').get(stored.assertion_set_id);
+  const assertion=JSON.parse(Buffer.from(assertionStored.bytes).toString('utf8'));assert.ok(assertionValidator(assertion));
+  const assertionUpdate=sql.prepare('UPDATE assertion_sets SET bytes=?,digest=? WHERE set_id=?');
+  try {
+   for(const mutate of [
+    a=>{a.prompt='private-prompt-canary';},
+    a=>{a.scope.prompt='private-prompt-canary';},
+    a=>{delete a.exportDisposition;},
+    a=>{a.rows[0].evidenceRef='invalid-evidence';},
+    a=>{a.rows[0].subjectSemanticId='bad/id';},
+    a=>{a.rows[0].assertionId='a'.repeat(129);},
+   ]){
+    const changed=structuredClone(assertion);mutate(changed);
+    assert.equal(assertionValidator(changed),false,'assertion mutation must violate the unchanged frozen schema');
+    const bytes=Buffer.from(canonical(changed));assertionUpdate.run(bytes,sha(bytes),stored.assertion_set_id);
+    const rebound=structuredClone(record);rebound.assertionsRef.digest=sha(bytes);
+    assert.ok(recordValidator(rebound),'rebound parent stays schema-valid');
+    const parentBytes=Buffer.from(canonical(rebound));update.run(parentBytes,sha(parentBytes),victim);
+    sourceRefusal();
+   }
+  } finally {assertionUpdate.run(assertionStored.bytes,assertionStored.digest,stored.assertion_set_id);restored();}
+  assert.equal(metrics(native.path,native.sc,['--dry-run','--authorization','schema-auth.json']).status,'ready','restored valid sources remain usable');
  } finally {restored();sql.close();}
  // Fresh lifecycles verify the filesystem bridge for clear, prune/retention,
  // and recovery as well as the explicit delete tested above.
