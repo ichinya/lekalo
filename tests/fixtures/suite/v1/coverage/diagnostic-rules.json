@@ -2,7 +2,7 @@
   "coverageId": "dev.lekalo.fixture-coverage.diagnostic-rules",
   "fixtureSchema": "dev.lekalo.fixture@1.0.0",
   "registryIdentity": "dev.lekalo.diagnostic-registry@0.6.4",
-  "registryDigest": "sha256:5b6ff37667ef2f125c1a9657273117ff938598d4db39304259ed14e5d32d8704",
+  "registryDigest": "sha256:ab3063d7c219184945feccc6908f08da8d6565adb6652a3f8ce3bc3040e3779c",
   "generatedBy": {
     "script": "scripts/gen-suite-coverage.mjs",
     "reviewed": true
@@ -1733,6 +1733,78 @@
         {
           "gate": "crates/lekalo-core/tests",
           "note": "unreachable error asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "evaluation.arm-incomparable",
+      "code": "LEK-EVAL-003",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "scripts/test-framework-lift-contracts.mjs",
+          "note": "live different profile and A Lekalo exposure refusal"
+        }
+      ]
+    },
+    {
+      "id": "evaluation.baseline-drift",
+      "code": "LEK-EVAL-002",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "scripts/test-framework-lift-contracts.mjs",
+          "note": "live changed approval and current workspace bytes refusal"
+        }
+      ]
+    },
+    {
+      "id": "evaluation.metric-inconsistent",
+      "code": "LEK-EVAL-005",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "scripts/test-framework-lift-contracts.mjs",
+          "note": "live missing source and cache-subset refusal"
+        }
+      ]
+    },
+    {
+      "id": "evaluation.private-egress-denied",
+      "code": "LEK-EVAL-006",
+      "category": "security",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "scripts/test-framework-lift-contracts.mjs",
+          "note": "live private campaign cloud policy refusal before executor"
+        }
+      ]
+    },
+    {
+      "id": "evaluation.protocol-invalid",
+      "code": "LEK-EVAL-001",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "scripts/test-framework-lift-contracts.mjs",
+          "note": "live nested closure and duplicate-key refusal"
+        }
+      ]
+    },
+    {
+      "id": "evaluation.required-evidence-missing",
+      "code": "LEK-EVAL-004",
+      "category": "infrastructure",
+      "evidence": "test-witness",
+      "testWitness": [
+        {
+          "gate": "scripts/test-framework-lift-contracts.mjs",
+          "note": "live stale candidate assertion refusal"
         }
       ]
     },

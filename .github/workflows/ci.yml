@@ -286,6 +286,14 @@ jobs:
         run: |
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-coupling-contracts.mjs
+      - name: Run every Framework Lift family live gate (issue #100)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+        run: |
+          set -euo pipefail
+          for family in baseline task campaign arm result; do
+            NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-framework-lift-contracts.mjs --family "$family"
+          done
       - name: Run the local run-history end-to-end gate (issue #121)
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules

@@ -1169,6 +1169,11 @@ Status: **Implemented** command handlers for product 0.6.4. Handler existence do
 | `lekalo effects conflicts` | `lekalo effects conflicts [OPTIONS] --changed <OPERATIONS>` | [reference](effect-graph.md) |
 | `lekalo effects show` | `lekalo effects show [OPTIONS] <OPERATION>` | [reference](effect-graph.md) |
 | `lekalo effects writers` | `lekalo effects writers [OPTIONS] <RESOURCE>` | [reference](effect-graph.md) |
+| `lekalo evaluation` | `lekalo evaluation [OPTIONS] <COMMAND>` | [reference](framework-lift.md) |
+| `lekalo evaluation compare` | `lekalo evaluation compare [OPTIONS] --baseline <BASELINE> --task <TASK> --campaign <CAMPAIGN> --consumer-alias <CONSUMER_ALIAS>` | [reference](framework-lift.md) |
+| `lekalo evaluation preflight` | `lekalo evaluation preflight [OPTIONS] --baseline <BASELINE> --task <TASK> --campaign <CAMPAIGN> --workspace <WORKSPACE>` | [reference](framework-lift.md) |
+| `lekalo evaluation record-arm` | `lekalo evaluation record-arm [OPTIONS] --baseline <BASELINE> --task <TASK> --campaign <CAMPAIGN> --input <INPUT>` | [reference](framework-lift.md) |
+| `lekalo evaluation validate` | `lekalo evaluation validate [OPTIONS] --family <FAMILY> --input <INPUT>` | [reference](framework-lift.md) |
 | `lekalo expressions` | `lekalo expressions [OPTIONS] <COMMAND>` | [reference](expressions.md) |
 | `lekalo expressions diff` | `lekalo expressions diff [OPTIONS] <BASE> <CANDIDATE>` | [reference](expressions.md) |
 | `lekalo expressions eval` | `lekalo expressions eval [OPTIONS] --vectors <FILE> <PATH>` | [reference](expressions.md) |

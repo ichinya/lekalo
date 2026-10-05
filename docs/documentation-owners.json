@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "productVersion": "0.6.4",
-  "cliSourceDigest": "sha256:4bbbf255e7e4c95e99fcf17d6d24b353fbc898d28ac2be1872358072f117bcbe",
+  "cliSourceDigest": "sha256:8f4442964dad75c4f4965b436c95e5d7dd7cae83f0b900636cbeca3f0d2b28f8",
   "p0Pages": [
     {
       "page": "README.md",
@@ -528,6 +528,61 @@
       "summary": "Report which operations write (or read with `--readers`) one resource or exact field",
       "leaf": true,
       "owner": "docs/effect-graph.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:evaluation",
+      "kind": "command",
+      "command": "evaluation",
+      "usage": "lekalo evaluation [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:28d058a1a864b496d92aa6189d647e9ca308293a0d9208825e7d0c94276024a1",
+      "summary": "Validate preregistered Framework Lift protocols and compare local recorded evidence. Never launches an agent/provider or exports private artifacts (issue #100)",
+      "leaf": false,
+      "owner": "docs/framework-lift.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:evaluation compare",
+      "kind": "command",
+      "command": "evaluation compare",
+      "usage": "lekalo evaluation compare [OPTIONS] --baseline <BASELINE> --task <TASK> --campaign <CAMPAIGN> --consumer-alias <CONSUMER_ALIAS>",
+      "helpDigest": "sha256:360aa7967d520cadba13fbc9015730237c8e3b676c5dd9137f3755253cf4d7fd",
+      "summary": "Compare all scheduled slots; retains missing, failed and retried attempts",
+      "leaf": true,
+      "owner": "docs/framework-lift.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:evaluation preflight",
+      "kind": "command",
+      "command": "evaluation preflight",
+      "usage": "lekalo evaluation preflight [OPTIONS] --baseline <BASELINE> --task <TASK> --campaign <CAMPAIGN> --workspace <WORKSPACE>",
+      "helpDigest": "sha256:95af7dab876437e07578c6d9bc09cdce465454dc9d42828aee443323340cf140",
+      "summary": "Verify approved protocol pins and baseline file bytes before an executor call",
+      "leaf": true,
+      "owner": "docs/framework-lift.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:evaluation record-arm",
+      "kind": "command",
+      "command": "evaluation record-arm",
+      "usage": "lekalo evaluation record-arm [OPTIONS] --baseline <BASELINE> --task <TASK> --campaign <CAMPAIGN> --input <INPUT>",
+      "helpDigest": "sha256:3f15743b604d56fc4c090501a8111e7f9a86c81cf9c0f4c3959e9e4e1b62a9c8",
+      "summary": "Admit one recorded arm against its exact preregistration (no execution)",
+      "leaf": true,
+      "owner": "docs/framework-lift.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:evaluation validate",
+      "kind": "command",
+      "command": "evaluation validate",
+      "usage": "lekalo evaluation validate [OPTIONS] --family <FAMILY> --input <INPUT>",
+      "helpDigest": "sha256:f1ca5c369d0cb9a76296d9bf98459dfb18f01762b368d0b9a1a3b1bcba4f6a72",
+      "summary": "Validate one closed local evaluation document; does not attest execution",
+      "leaf": true,
+      "owner": "docs/framework-lift.md",
       "status": "implemented"
     },
     {
@@ -2121,7 +2176,7 @@
       "id": "contract:contracts/diagnostic-registry.v0.6.4.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.6.4.json",
-      "sourceDigest": "sha256:5b6ff37667ef2f125c1a9657273117ff938598d4db39304259ed14e5d32d8704",
+      "sourceDigest": "sha256:ab3063d7c219184945feccc6908f08da8d6565adb6652a3f8ce3bc3040e3779c",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2213,6 +2268,51 @@
       "source": "contracts/extended-effects.schema.v0.2.16.json",
       "sourceDigest": "sha256:57619a7ef4a8dc2e4fb2a2dbd5427421df399634d3a74642cae1f8eed3860197",
       "owner": "docs/extended-effects.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/framework-lift-arm.schema.v0.6.4.json",
+      "kind": "contract",
+      "source": "contracts/framework-lift-arm.schema.v0.6.4.json",
+      "sourceDigest": "sha256:fa8cdfbbed38d891ab6db4aee69fab8a33f90407421306cd7ef847ce92452dad",
+      "owner": "docs/framework-lift.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/framework-lift-baseline.schema.v0.6.4.json",
+      "kind": "contract",
+      "source": "contracts/framework-lift-baseline.schema.v0.6.4.json",
+      "sourceDigest": "sha256:d14a30add2e0d98cd8184a5e0239df92103d85c3a75925686710f14289db47bc",
+      "owner": "docs/framework-lift.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/framework-lift-campaign.schema.v0.6.4.json",
+      "kind": "contract",
+      "source": "contracts/framework-lift-campaign.schema.v0.6.4.json",
+      "sourceDigest": "sha256:1ccd085fa887e28c43cad1c92e01c016e7453b163ec9b781d776a2ec60e4b071",
+      "owner": "docs/framework-lift.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/framework-lift-result.schema.v0.6.4.json",
+      "kind": "contract",
+      "source": "contracts/framework-lift-result.schema.v0.6.4.json",
+      "sourceDigest": "sha256:a17efce4c835ca2199df2e76ca8559b8834df030cc6d3c713cedc3ae5ceb0369",
+      "owner": "docs/framework-lift.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/framework-lift-task.schema.v0.6.4.json",
+      "kind": "contract",
+      "source": "contracts/framework-lift-task.schema.v0.6.4.json",
+      "sourceDigest": "sha256:68cf61d605709804ad2dc6619d9a25d271d24aef82545f7029951c8b7e07b8e7",
+      "owner": "docs/framework-lift.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
