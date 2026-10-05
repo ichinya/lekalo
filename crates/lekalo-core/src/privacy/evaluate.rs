@@ -723,7 +723,7 @@ fn decision_shape(value: &Json, aggregation: bool, context: &TrustedContext) -> 
         && (!aggregation
             || (value.get("removesSourceRows") == Some(&Json::Bool(true))
                 && value.get("removesSourceIdentities") == Some(&Json::Bool(true))))
-        && (!aggregation
+        && (aggregation
             || unique_known(
                 value.get("removedSensitivities").unwrap_or(&Json::Null),
                 policy_vocabulary(context, "dataSensitivity"),

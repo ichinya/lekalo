@@ -96,7 +96,7 @@ for (const [id, before] of predEntries) {
 }
 if (
   registry.entries.length !==
-  predEntries.size + 16 + 9 + 13 + 1 + 9 + 5 + 14 + 8 + 14 + 15 + 8 + 1 + 15 + 8 + 2 + 9 + 15 + 17 + 6
+  predEntries.size + 16 + 9 + 13 + 1 + 9 + 5 + 14 + 8 + 14 + 15 + 8 + 1 + 15 + 8 + 2 + 9 + 15 + 17 + 6 + 8
 ) {
   // Coupling adds exactly 15 entries (#77, LEK-COUPLING-001..015).
   // The increments over the v0.3.2 predecessor, one per family that
@@ -116,7 +116,8 @@ if (
   // the AI-lint stack +17 (#76: LEK-AILINT-001..006,
   // LEK-AMBIGUITY-001..003, LEK-HIDDEN-001..006/009,
   // LEK-INDIRECTION-001), and the evaluation family +6 (#100,
-  // LEK-EVAL-001..006).
+  // LEK-EVAL-001..006), and the metrics-export family +8 (#102,
+  // LEK-MEXPORT-001..008).
   fail("entry-count", registry.entries.length);
 }
 

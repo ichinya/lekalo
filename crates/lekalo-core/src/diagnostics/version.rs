@@ -48,7 +48,9 @@ pub const REGISTRY_IDENTITY: &str = "dev.lekalo.diagnostic-registry@0.6.4";
 /// family LEK-INDIRECTION-001, and the `coupling.*` family
 /// LEK-COUPLING-001..015; the registry takes the product version of
 /// its commit per docs/versioning.md). Issue #100 adds six independent
-/// `evaluation.*` rules LEK-EVAL-001..006 without modifying earlier entries.
+/// `evaluation.*` rules LEK-EVAL-001..006 without modifying earlier
+/// entries; issue #102 adds eight `metrics-export.*` rules
+/// LEK-MEXPORT-001..008 the same way.
 pub const REGISTRY_VERSION: &str = "0.6.4";
 
 /// Opt-in issue #84 union successor. Predecessor producers keep their exact pins.

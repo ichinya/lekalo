@@ -6351,6 +6351,134 @@
       "lifecycle": "active"
     },
     {
+      "id": "metrics-export.authorization-refused",
+      "code": "LEK-MEXPORT-004",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "metrics-export.authorization-refused",
+      "default_message": "Aggregate export authorization was refused.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "metrics-export.evaluation-required",
+      "code": "LEK-MEXPORT-002",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "metrics-export.evaluation-required",
+      "default_message": "An approved paired evaluation selection is required.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "metrics-export.input-invalid",
+      "code": "LEK-MEXPORT-001",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "metrics-export.input-invalid",
+      "default_message": "Invalid aggregate export input.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "metrics-export.leak-refused",
+      "code": "LEK-MEXPORT-005",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "metrics-export.leak-refused",
+      "default_message": "Aggregate export contains a residual disclosure.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "metrics-export.overlap-refused",
+      "code": "LEK-MEXPORT-008",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "metrics-export.overlap-refused",
+      "default_message": "Overlapping aggregate release was refused.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "metrics-export.preview-stale",
+      "code": "LEK-MEXPORT-006",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "metrics-export.preview-stale",
+      "default_message": "The confirmed aggregate preview is stale.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "metrics-export.source-invalidated",
+      "code": "LEK-MEXPORT-003",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "metrics-export.source-invalidated",
+      "default_message": "Aggregate source evidence is unavailable or invalidated.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "metrics-export.storage-refused",
+      "code": "LEK-MEXPORT-007",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "denied"
+      ],
+      "message_id": "metrics-export.storage-refused",
+      "default_message": "Aggregate export storage confinement refused the operation.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "native-gate.approval-missing",
       "code": "LEK-NGT-005",
       "category": "adapter",

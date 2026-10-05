@@ -2,7 +2,7 @@
   "coverageId": "dev.lekalo.fixture-coverage.diagnostic-rules",
   "fixtureSchema": "dev.lekalo.fixture@1.0.0",
   "registryIdentity": "dev.lekalo.diagnostic-registry@0.6.4",
-  "registryDigest": "sha256:ab3063d7c219184945feccc6908f08da8d6565adb6652a3f8ce3bc3040e3779c",
+  "registryDigest": "sha256:323d4614eef262b5d4a3a0afaab9e07a4921a7c409bb3f64d16c93060ff71e9f",
   "generatedBy": {
     "script": "scripts/gen-suite-coverage.mjs",
     "reviewed": true
@@ -3300,6 +3300,102 @@
         {
           "gate": "crates/lekalo-core/tests",
           "note": "concurrent update asserts the rule"
+        }
+      ]
+    },
+    {
+      "id": "metrics-export.authorization-refused",
+      "code": "LEK-MEXPORT-004",
+      "category": "security",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "metrics-export",
+          "path": "tests/fixtures/metrics-export"
+        }
+      ]
+    },
+    {
+      "id": "metrics-export.evaluation-required",
+      "code": "LEK-MEXPORT-002",
+      "category": "security",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "metrics-export",
+          "path": "tests/fixtures/metrics-export"
+        }
+      ]
+    },
+    {
+      "id": "metrics-export.input-invalid",
+      "code": "LEK-MEXPORT-001",
+      "category": "security",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "metrics-export",
+          "path": "tests/fixtures/metrics-export"
+        }
+      ]
+    },
+    {
+      "id": "metrics-export.leak-refused",
+      "code": "LEK-MEXPORT-005",
+      "category": "security",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "metrics-export",
+          "path": "tests/fixtures/metrics-export"
+        }
+      ]
+    },
+    {
+      "id": "metrics-export.overlap-refused",
+      "code": "LEK-MEXPORT-008",
+      "category": "security",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "metrics-export",
+          "path": "tests/fixtures/metrics-export"
+        }
+      ]
+    },
+    {
+      "id": "metrics-export.preview-stale",
+      "code": "LEK-MEXPORT-006",
+      "category": "security",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "metrics-export",
+          "path": "tests/fixtures/metrics-export"
+        }
+      ]
+    },
+    {
+      "id": "metrics-export.source-invalidated",
+      "code": "LEK-MEXPORT-003",
+      "category": "security",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "metrics-export",
+          "path": "tests/fixtures/metrics-export"
+        }
+      ]
+    },
+    {
+      "id": "metrics-export.storage-refused",
+      "code": "LEK-MEXPORT-007",
+      "category": "security",
+      "evidence": "family-fixture",
+      "familyFixture": [
+        {
+          "family": "metrics-export",
+          "path": "tests/fixtures/metrics-export"
         }
       ]
     },

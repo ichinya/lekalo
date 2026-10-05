@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "productVersion": "0.6.5",
-  "cliSourceDigest": "sha256:c4ac1cfa6a980f2c21e644f09bfbf78f009097862431dfb24212dde454678c82",
+  "cliSourceDigest": "sha256:d560091cab9776fdf53a2baf5d7158236cedbce77b12ea2622c464c8872f3422",
   "p0Pages": [
     {
       "page": "README.md",
@@ -2044,7 +2044,7 @@
       "id": "contract:contracts/architecture-profile.v0.6.5.json",
       "kind": "contract",
       "source": "contracts/architecture-profile.v0.6.5.json",
-      "sourceDigest": "sha256:387f34e8e1014b794905e07ab6a43b38f8fe79d5bc7630829c91b330bd427427",
+      "sourceDigest": "sha256:673cd7ef051e206c73ba84b509483f8ba92c2bc91c76f3157675a25f476d7386",
       "owner": "docs/architecture-profile.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2062,7 +2062,7 @@
       "id": "contract:contracts/architecture-rule-catalog.v0.6.5.json",
       "kind": "contract",
       "source": "contracts/architecture-rule-catalog.v0.6.5.json",
-      "sourceDigest": "sha256:984abde21fa810f0fbe9169ea28d22ced39d5b0bcafafbe36e8c5b216d0141f3",
+      "sourceDigest": "sha256:e0f59ce454a645fcec8e8e52168ed3f920a4ec9ba0e03e9f0f684f77a73ef426",
       "owner": "docs/architecture-profile.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2305,7 +2305,7 @@
       "id": "contract:contracts/diagnostic-registry.schema.v0.6.5.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.schema.v0.6.5.json",
-      "sourceDigest": "sha256:b29fa7c7972bf34a97458189ebef6e0f01a8d2730ac4153252966333bf617db3",
+      "sourceDigest": "sha256:d0ee58bae31c9cff8249fc28a6420d1d63faee6ef0232335460317303a14894f",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2332,7 +2332,7 @@
       "id": "contract:contracts/diagnostic-registry.v0.6.4.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.6.4.json",
-      "sourceDigest": "sha256:ab3063d7c219184945feccc6908f08da8d6565adb6652a3f8ce3bc3040e3779c",
+      "sourceDigest": "sha256:323d4614eef262b5d4a3a0afaab9e07a4921a7c409bb3f64d16c93060ff71e9f",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2341,7 +2341,7 @@
       "id": "contract:contracts/diagnostic-registry.v0.6.5.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.6.5.json",
-      "sourceDigest": "sha256:c2eed26a5426f169667cacf0e8f2099e6a739858d966fdf1ed824292f7435f49",
+      "sourceDigest": "sha256:7b2be768be48050057682980b240f109d33adc56b1b4cb4b27848507df22b130",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2397,6 +2397,15 @@
       "source": "contracts/error-registry.v0.2.16.json",
       "sourceDigest": "sha256:d8e3689a2fca44b55d05944e4387789d978613eac87f211623e6611cd694797b",
       "owner": "docs/error-contracts.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/evaluation-export-input.schema.v0.6.4.json",
+      "kind": "contract",
+      "source": "contracts/evaluation-export-input.schema.v0.6.4.json",
+      "sourceDigest": "sha256:6ab131ac0c6d61edb789a4fe90127da331c4c88c7f174c302d7de8b5897a363b",
+      "owner": "docs/metrics-export.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
@@ -2550,6 +2559,42 @@
       "source": "contracts/lock.schema.v0.3.2.json",
       "sourceDigest": "sha256:b322338b131db7b9c61ef91ea4457036aa001139f31877a229d9a49c80bca3d8",
       "owner": "docs/lockfile.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/metrics-aggregation-definition.schema.v0.6.4.json",
+      "kind": "contract",
+      "source": "contracts/metrics-aggregation-definition.schema.v0.6.4.json",
+      "sourceDigest": "sha256:91f5ea51e694e6be7566b629da57099441814a30043a71e7c5b79b137ea820e4",
+      "owner": "docs/metrics-export.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/metrics-aggregation-definition.v0.6.4.json",
+      "kind": "contract",
+      "source": "contracts/metrics-aggregation-definition.v0.6.4.json",
+      "sourceDigest": "sha256:22a7e0ba29c1399fccb6f2ab39aba49ab1e2ebd69469acc9ee3ca3d6d905702e",
+      "owner": "docs/metrics-export.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/metrics-export-manifest.schema.v0.6.4.json",
+      "kind": "contract",
+      "source": "contracts/metrics-export-manifest.schema.v0.6.4.json",
+      "sourceDigest": "sha256:245a6258be62289c56e4cfb73c15aae4743d5016aa915e38a2dae60a7293b5f3",
+      "owner": "docs/metrics-export.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/metrics-export-preview.schema.v0.6.4.json",
+      "kind": "contract",
+      "source": "contracts/metrics-export-preview.schema.v0.6.4.json",
+      "sourceDigest": "sha256:e29741afca3893cc926abf572e453b0a466149af023fc4cf31462f78aec6feff",
+      "owner": "docs/metrics-export.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
@@ -2856,6 +2901,15 @@
       "source": "contracts/provider-capabilities.schema.v0.6.4.json",
       "sourceDigest": "sha256:8a32a35933471b81483cd07bcfea0f78aead3ce8d9a0aacae4db1e65a040227e",
       "owner": "docs/provider-contract.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/public-metrics.schema.v0.6.4.json",
+      "kind": "contract",
+      "source": "contracts/public-metrics.schema.v0.6.4.json",
+      "sourceDigest": "sha256:610f6a649aa690662447f8c1d41088e9cb2003f8ca6b871546cda1359b6f18e6",
+      "owner": "docs/metrics-export.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
