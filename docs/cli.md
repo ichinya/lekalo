@@ -1,6 +1,6 @@
 # CLI reference
 
-Status: **Implemented** handlers at product `0.6.4`, source base `a56ee578`. Owner: CLI maintainers. The checked [command index](#command-index) below inventories recursive live help, including groups and nested leaves. Earlier issue-specific sections are historical examples; exact live usage and each specialist owner govern current syntax. Native production execution remains **Planned**; a handler returning unsupported is not target qualification. Model/IR stay `0.2.16`; [diagnostics](diagnostics.md) owns exits and streams.
+Status: **Implemented** handlers at product `0.6.5`. Owner: CLI maintainers. The checked [command index](#command-index) below inventories recursive live help, including groups and nested leaves. Earlier issue-specific sections are historical examples; exact live usage and each specialist owner govern current syntax. Native production execution remains **Planned**; a handler returning unsupported is not target qualification. Model/IR stay `0.2.16`; [diagnostics](diagnostics.md) owns exits and streams.
 
 
 Issue #3 introduces a target-neutral Rust core and the `lekalo` command-line
@@ -1294,3 +1294,7 @@ Status: **Implemented** command handlers for product 0.6.5. Handler existence do
 | `lekalo update` | `lekalo update [OPTIONS]` | [reference](lockfile.md) |
 | `lekalo validate` | `lekalo validate [OPTIONS]` | [reference](validation.md) |
 | `lekalo verify` | `lekalo verify [OPTIONS] [PROGRAM_ARGS]...` | [reference](orchestration.md) |
+| `lekalo waivers` | `lekalo waivers [OPTIONS] <COMMAND>` | [reference](waivers.md) |
+| `lekalo waivers add` | `lekalo waivers add [OPTIONS] --id <ID> --target <TARGET> --owner <OWNER> --approver <APPROVER> --approval-ref <APPROVAL_REF> --reason <REASON> <SELECTOR>` | [reference](waivers.md) |
+| `lekalo waivers audit` | `lekalo waivers audit [OPTIONS]` | [reference](waivers.md) |
+| `lekalo waivers list` | `lekalo waivers list [OPTIONS]` | [reference](waivers.md) |

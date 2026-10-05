@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "productVersion": "0.6.5",
-  "cliSourceDigest": "sha256:d560091cab9776fdf53a2baf5d7158236cedbce77b12ea2622c464c8872f3422",
+  "cliSourceDigest": "sha256:181e7cef1d85b55aa87f8984546ea4a9ee294082b60a6c4f4dbeb8667f05f6e3",
   "p0Pages": [
     {
       "page": "README.md",
@@ -216,7 +216,7 @@
       "kind": "command",
       "command": "ai-lint",
       "usage": "lekalo ai-lint [OPTIONS]",
-      "helpDigest": "sha256:f7f224daa597e31e30ad93431e72f4280191bc6ac83eaec0953e3fd5978838cd",
+      "helpDigest": "sha256:84fa5fc9c6d9ff1d42dab37b938a7ebc03d0b1864718934e23036f7b35232006",
       "summary": "Optional evidence-bound AI readability analysis",
       "leaf": true,
       "owner": "docs/ai-lint.md",
@@ -1906,6 +1906,50 @@
       "status": "implemented"
     },
     {
+      "id": "cli:waivers",
+      "kind": "command",
+      "command": "waivers",
+      "usage": "lekalo waivers [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:64b40317060e44bb8b92c846259c2cfce471d09b3155b47775476274dadc42b2",
+      "summary": "Scoped, justified and expiring diagnostic/capability acceptance",
+      "leaf": false,
+      "owner": "docs/waivers.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:waivers add",
+      "kind": "command",
+      "command": "waivers add",
+      "usage": "lekalo waivers add [OPTIONS] --id <ID> --target <TARGET> --owner <OWNER> --approver <APPROVER> --approval-ref <APPROVAL_REF> --reason <REASON> <SELECTOR>",
+      "helpDigest": "sha256:15432b28bde2dcaf4e50fa709532e9a45e195f24ae682e9f7e61e7c6233a8d86",
+      "summary": "Preview a scoped waiver candidate; --apply writes the exact reviewed plan",
+      "leaf": true,
+      "owner": "docs/waivers.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:waivers audit",
+      "kind": "command",
+      "command": "waivers audit",
+      "usage": "lekalo waivers audit [OPTIONS]",
+      "helpDigest": "sha256:135c80dfe8243a25959e65a7e3c008ae0d3fd6fb488c12431f68f3c6db1859a6",
+      "summary": "Audit immutable supplied facts under an existing resolved profile",
+      "leaf": true,
+      "owner": "docs/waivers.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:waivers list",
+      "kind": "command",
+      "command": "waivers list",
+      "usage": "lekalo waivers list [OPTIONS]",
+      "helpDigest": "sha256:1a790bdeceeb8a150eaeaf8f7f79d016bec6c6c8b70a4d1694d1768131689356",
+      "summary": "List committed waiver entries without claiming current effectiveness",
+      "leaf": true,
+      "owner": "docs/waivers.md",
+      "status": "implemented"
+    },
+    {
       "id": "cli:--help",
       "kind": "global",
       "owner": "docs/cli.md",
@@ -2006,6 +2050,15 @@
       "kind": "contract",
       "source": "contracts/ai-lint-waivers.schema.v0.6.4.json",
       "sourceDigest": "sha256:593404cec8a7a727894d3ba41e060d7a208ac6c24390a870bccb4d0caa983715",
+      "owner": "docs/ai-lint.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/ai-lint-waivers.schema.v0.6.5.json",
+      "kind": "contract",
+      "source": "contracts/ai-lint-waivers.schema.v0.6.5.json",
+      "sourceDigest": "sha256:a8542a1873c114af6fada888fbe6b172d7a41d719fe861aa914beab8772ee7c5",
       "owner": "docs/ai-lint.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3240,6 +3293,24 @@
       "source": "contracts/validation-report.schema.v0.6.4.json",
       "sourceDigest": "sha256:81d63d55a3f69f73f7bd6208cb795e1f4270e5ef4599207d5e0a7fc4ffee3ec5",
       "owner": "docs/validation.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/waiver-audit.schema.v0.6.5.json",
+      "kind": "contract",
+      "source": "contracts/waiver-audit.schema.v0.6.5.json",
+      "sourceDigest": "sha256:079a37a1d3aa3ed3f77b959b56331ade3d19373afdcccd4d261a81ebe6192201",
+      "owner": "docs/waivers.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/waiver-input.schema.v0.6.5.json",
+      "kind": "contract",
+      "source": "contracts/waiver-input.schema.v0.6.5.json",
+      "sourceDigest": "sha256:061d6713a74da631ac2c812efb23c19e30acb6c7a064fb1a4fd011bfce3ae176",
+      "owner": "docs/waivers.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },

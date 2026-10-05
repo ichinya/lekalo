@@ -1,5 +1,10 @@
 # AI readability lint (issue #76)
 
+Product `0.6.5` also accepts the reviewed `ai-lint-waivers` successor and emits
+neutral facts with `--waiver-facts`. See [scoped governance waivers](waivers.md)
+for justified expiry, profile eligibility and machine-readable audit evidence.
+The predecessor report and waiver contracts retain their existing versions.
+
 `lekalo ai-lint` reports optional, evidence-bound readability findings for
 AI-assisted review. It is advisory by default: advisory runs emit findings with
 exit 0, and a report never changes source, updates a baseline, or writes files.

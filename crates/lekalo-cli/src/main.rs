@@ -32,6 +32,7 @@ mod git_input;
 mod metrics_export;
 mod report_git;
 pub(crate) mod report_output;
+mod waivers;
 
 const PROGRAM_NAME: &str = "lekalo";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -167,6 +168,11 @@ enum Commands {
     Metrics {
         #[command(subcommand)]
         command: metrics_export::MetricsCommands,
+    },
+    /// Scoped, justified and expiring diagnostic/capability acceptance.
+    Waivers {
+        #[command(subcommand)]
+        command: Box<waivers::Commands>,
     },
     /// Optional evidence-bound AI readability analysis.
     AiLint {
@@ -2445,6 +2451,7 @@ fn runtime() -> u8 {
             }
             Commands::Compatibility => run_compatibility(),
             Commands::AiLint { args } => ai_lint::run(args),
+            Commands::Waivers { command } => waivers::run(*command),
             Commands::Provider { command } => run_provider(command),
             Commands::Inspect {
                 symbol,

@@ -359,6 +359,16 @@
     {
       "family": "versioning",
       "origin": "synthetic"
+    },
+    {
+      "family": "waiver-audit",
+      "origin": "synthetic",
+      "note": "Issue 88 scoped governance live CLI fixtures."
+    },
+    {
+      "family": "waiver-input",
+      "origin": "synthetic",
+      "note": "Issue 88 scoped governance live CLI fixtures."
     }
   ]
 }
