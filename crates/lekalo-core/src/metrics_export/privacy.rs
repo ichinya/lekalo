@@ -14,13 +14,19 @@ pub(crate) fn decision_template(
 ) -> Result<Value> {
     let ctx = TrustedContext::embedded().map_err(|_| Error::Privacy)?;
     let projection_digest = digest(canon(projection).as_bytes());
-    let resolved = destination.resolve(
-        &format!("repo-sha256:{}", &projection_digest[7..]),
-        &format!(
-            "repo-sha256:{}",
-            &digest(format!("consumer\n{projection_digest}").as_bytes())[7..]
-        ),
+    let consumer_token = format!(
+        "repo-sha256:{}",
+        &digest(format!("consumer\n{projection_digest}").as_bytes())[7..]
     );
+    // Same-origin storage names the same repository at both endpoints.
+    // Transfers retain a distinct destination; the frozen evaluator still
+    // rejects contradictions rather than accepting a claimed relationship.
+    let destination_token = if destination == DestinationSpec::RepositoryStore {
+        consumer_token.clone()
+    } else {
+        format!("repo-sha256:{}", &projection_digest[7..])
+    };
+    let resolved = destination.resolve(&destination_token, &consumer_token);
     let classification = |artifact: &str| {
         types::ClassificationDecisionRef::new(
             refs::CLASSIFICATION_CONTRACT_ID.to_owned(),

@@ -124,6 +124,43 @@ const observation=read('tests/fixtures/run-history/valid/observation.json');
  const ready=metrics('evaluation.json',scope,['--dry-run','--authorization','authorization.json']);
  assert.equal(authorizationSubjectDigest(auth,AUTHORIZATION_SUBJECT_PROFILE),ready.authorizationSubject,'issuer binding matches requested declassification subject');
  assert.equal(ready.status,'ready',JSON.stringify(ready.decision));
+ // Each shipped destination must admit a coherent authorized candidate.
+ // Workspace local-use does not use export-transfer consent; every other
+ // destination requires its own exact subject-bound consent.
+ for(const [destination,operation,boundary,audience] of [
+  ['workspace','local-use','same-local-workspace','operator-only'],
+  ['repository-store','repository-store','same-repository','repository-collaborators'],
+  ['transfer-tenant','transfer','same-tenant','tenant-members'],
+  ['transfer-external','transfer','cross-repository','named-external'],
+  ['transfer-cross-tenant','transfer','cross-tenant','named-external'],
+  ['publish','publish','public','public'],
+ ]) {
+  const candidate=metrics('evaluation.json',scope,['--dry-run','--destination',destination]);
+  const authorization=structuredClone(candidate.decisionTemplate);
+  authorization.derivedArtifact.aggregationDecision.decisionRef=evidence('aggregation-decision','authorize-public-aggregation','approved','a');
+  if(destination!=='workspace')authorization.provenance.exportTransferConsentRef=evidence('export-transfer-consent','authorize-export-transfer-or-storage','granted','b');
+  requestInternalDeclassification(authorization);refreshEvidenceBindings(authorization);
+  write('destination-auth.json',authorization);
+  assert.equal(validateDecisionInput(authorization,ctx),null,`${destination}: frozen authorization shape`);
+  const allowed=metrics('evaluation.json',scope,['--dry-run','--destination',destination,'--authorization','destination-auth.json']);
+  valid('metrics-export-preview',allowed);assert.equal(allowed.status,'ready',`${destination}: ${JSON.stringify(allowed.decision)}`);
+  assert.equal(allowed.decisionTemplate.operation.id,operation);
+  assert.equal(allowed.decisionTemplate.destination.trustBoundary,boundary);
+  assert.equal(allowed.decisionTemplate.audience,audience);
+  if(destination==='repository-store') {
+   assert.equal(authorization.source.repositoryRef,authorization.destination.repositoryRef,'same-origin repository identity');
+   const contradiction=structuredClone(authorization);
+   contradiction.destination.repositoryRef='repo-sha256:'+'0'.repeat(64);refreshEvidenceBindings(contradiction);
+   write('destination-contradiction.json',contradiction);
+   const refused=spawnSync(bin,['privacy','evaluate','--decision','destination-contradiction.json'],{cwd:project,env,encoding:'utf8',timeout:20000});
+   assert.equal(refused.status,3,`${refused.stdout} ${refused.stderr}`);
+   assert.ok(refused.stdout.includes('repository.same-origin-contradiction'),'frozen evaluator still refuses contradictory repository identities');
+  } else if(operation==='transfer') {
+   assert.notEqual(authorization.source.repositoryRef,authorization.destination.repositoryRef,'transfer endpoints stay distinct');
+  }
+ }
+ metrics('evaluation.json',scope,['--dry-run','--destination','not-approved'],1);
+ metrics('evaluation.json',scope,['--dry-run','--destination','transfer-external','--authorization','authorization.json'],3);
  const expired=structuredClone(auth);expired.provenance.exportTransferConsentRef.freshnessState='expired';write('expired.json',expired);
  assert.equal(metrics('evaluation.json',scope,['--dry-run','--authorization','expired.json']).status,'blocked','expired evidence refuses');
  const expiredLowering=structuredClone(auth);expiredLowering.derivedArtifact.declassificationDecision.decisionRef.freshnessState='expired';write('expired-lowering.json',expiredLowering);
