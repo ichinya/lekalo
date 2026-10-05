@@ -54,6 +54,30 @@ try {
  const wrong=structuredClone(a);wrong.profileDigest='sha256:'+'0'.repeat(64);record(wrong,'evaluation.arm-incomparable');
  const leakage=read(fixture('arm','a-retry'));leakage.events.push({sequence:1,kind:'tool-call',tool:'lekalo',evidenceDigest:'sha256:'+'0'.repeat(64)});record(leakage,'evaluation.arm-incomparable');
  const subset=structuredClone(a);subset.metrics.cachedInputTokens.value=41;denied('arm',subset,'evaluation.metric-inconsistent');
+ // F1: the frozen normalizer totals input + output, never cache/reasoning again.
+ const tokenArm=read(fixture('arm','b-neutral'));
+ const rejectTokens=value=>{
+  assert.ok(schemas.get('arm')(value),'contradiction is schema-shaped');
+  denied('arm',value,'evaluation.metric-inconsistent');
+  record(value,'evaluation.metric-inconsistent');
+  run(['compare',...common,'--arm',temp('inconsistent-tokens.json',value),'--consumer-alias','consumer-greenfield-one'],{exit:1,code:'evaluation.metric-inconsistent'});
+ };
+ for(const mutate of [v=>v.metrics.totalTokens.value=0,v=>v.metrics.totalTokens.value=39,v=>v.metrics.totalTokens.value=51,v=>v.metrics.inputTokens.value=t.limits.maxTokens+1,v=>v.metrics.outputTokens.value=t.limits.maxTokens+1]){
+  const inconsistent=structuredClone(tokenArm);mutate(inconsistent);rejectTokens(inconsistent);
+ }
+ const partialBelow=structuredClone(tokenArm);partialBelow.metrics.outputTokens={state:'unknown'};partialBelow.measurementSources=partialBelow.measurementSources.filter(s=>s.metric!=='outputTokens');partialBelow.metrics.totalTokens.value=39;rejectTokens(partialBelow);
+ for(const missingState of ['unknown','unsupported','withheld']){
+  for(const [input,output]of [[t.limits.maxTokens+1,10],[40,t.limits.maxTokens+1],[6000,6000],[40,10]]){
+   const partial=structuredClone(tokenArm);partial.metrics.totalTokens={state:missingState};partial.measurementSources=partial.measurementSources.filter(s=>s.metric!=='totalTokens');partial.metrics.inputTokens.value=input;partial.metrics.outputTokens.value=output;
+   record(partial);const row=compare([temp('partial-tokens.json',partial)]).value.rows.find(r=>r.slot.arm==='B'&&r.slot.pairId==='pair-two');
+   assert.equal(row.status,input+output>t.limits.maxTokens?'task':'unsupported');assert.equal(row.verifiedSuccess,false);assert.deepEqual(row.metrics.totalTokens,{state:missingState});
+  }
+ }
+ const inclusive=structuredClone(tokenArm);inclusive.metrics.inputTokens.value=t.limits.maxTokens-10;inclusive.metrics.totalTokens.value=t.limits.maxTokens;
+ assert.equal(compare([temp('inclusive-token-cap.json',inclusive)]).value.rows.find(r=>r.slot.arm==='B'&&r.slot.pairId==='pair-two').verifiedSuccess,true);
+ const subsets=structuredClone(tokenArm);subsets.metrics.reasoningTokens={state:'known',value:5};subsets.measurementSources.push({...subsets.measurementSources[0],metric:'reasoningTokens'});
+ assert.equal(compare([temp('token-subsets.json',subsets)]).value.rows.find(r=>r.slot.arm==='B'&&r.slot.pairId==='pair-two').verifiedSuccess,true,'cache and reasoning are not charged twice');
+ const forgedTokens=read(fixture('result','negative'));forgedTokens.rows[0].metrics.totalTokens.value=0;denied('result',forgedTokens,'evaluation.metric-inconsistent');
  const string=structuredClone(a);string.failures=[{stage:'provider',class:'provider',reason:'https://private.example',evidenceDigest:'sha256:'+'0'.repeat(64)}];denied('arm',string);
  const unpaired=structuredClone(c);unpaired.slots[0].arm='B';const {approval,...content}=unpaired;unpaired.approval.contentDigest=digest(content);denied('campaign',unpaired);
  const privateBase=structuredClone(b);privateBase.pilot='brownfield-observed';const {approval:bp,...bc}=privateBase;privateBase.approval.contentDigest=digest(bc);

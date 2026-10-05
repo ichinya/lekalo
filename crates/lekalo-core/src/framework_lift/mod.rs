@@ -140,6 +140,29 @@ fn known(v: &Value) -> Option<u64> {
         None
     }
 }
+// Input/output are disjoint under framework-lift-metrics-1. Cache and reasoning
+// only lower-bound their respective parent when that parent is unavailable.
+fn token_lower_bound(m: &Value) -> u64 {
+    known(&m["inputTokens"])
+        .unwrap_or(0)
+        .max(known(&m["cachedInputTokens"]).unwrap_or(0))
+        + known(&m["outputTokens"])
+            .unwrap_or(0)
+            .max(known(&m["reasoningTokens"]).unwrap_or(0))
+}
+fn validate_token_totals(m: &Value) -> Result<(), Failure> {
+    if let Some(total) = known(&m["totalTokens"]) {
+        if total < token_lower_bound(m)
+            || matches!(
+                (known(&m["inputTokens"]), known(&m["outputTokens"])),
+                (Some(input), Some(output)) if total != input + output
+            )
+        {
+            return Err(("evaluation.metric-inconsistent", "token-total"));
+        }
+    }
+    Ok(())
+}
 fn state(v: Option<u64>) -> Value {
     v.map_or_else(
         || json!({"state":"unknown"}),
@@ -190,6 +213,7 @@ fn validate_arm_shape(a: &Value) -> Result<(), Failure> {
         }
     }
     let m = &a["metrics"];
+    validate_token_totals(m)?;
     for (part, total) in [
         ("cachedInputTokens", "inputTokens"),
         ("reasoningTokens", "outputTokens"),
@@ -292,6 +316,9 @@ fn acceptance(t: &Value, a: &Value) -> (&'static str, bool, bool) {
     if f.iter().any(|e| e["class"] == "custody-security") {
         return ("custody-security", false, false);
     }
+    if token_lower_bound(&a["metrics"]) > n(&t["limits"], "maxTokens") {
+        return ("task", false, false);
+    }
     for (metric, limit) in [
         ("totalTokens", "maxTokens"),
         ("toolCalls", "maxToolCalls"),
@@ -364,6 +391,7 @@ fn validate_result(r: &Value) -> Result<(), Failure> {
     let mut attempts = std::collections::BTreeMap::<(&str, &str), Vec<&Value>>::new();
     let mut external = false;
     for row in arr(r, "rows") {
+        validate_token_totals(&row["metrics"])?;
         if !keys.insert((
             s(&row["slot"], "pairId"),
             s(&row["slot"], "arm"),
@@ -707,4 +735,40 @@ pub fn compare(
         .map_err(|_| ("evaluation.metric-inconsistent", "result-bounds"))?;
     validate_result(&result)?;
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unavailable_parents_use_disjoint_subset_bounds_without_double_counting() {
+        let mut m = schema::unknown_metrics();
+        m["cachedInputTokens"] = state(Some(6_000));
+        m["reasoningTokens"] = state(Some(6_000));
+        assert_eq!(token_lower_bound(&m), 12_000);
+        m["inputTokens"] = state(Some(6_000));
+        m["outputTokens"] = state(Some(6_000));
+        assert_eq!(token_lower_bound(&m), 12_000);
+        m["totalTokens"] = state(Some(12_000));
+        assert_eq!(validate_token_totals(&m), Ok(()));
+        m["totalTokens"] = state(Some(12_001));
+        assert_eq!(
+            validate_token_totals(&m),
+            Err(("evaluation.metric-inconsistent", "token-total"))
+        );
+        m["totalTokens"] = json!({"state":"unsupported"});
+        assert_eq!(validate_token_totals(&m), Ok(()));
+    }
+
+    #[test]
+    fn summing_maximum_admitted_components_does_not_overflow_or_hide_excess() {
+        let maximum = 9_007_199_254_740_991;
+        let mut m = schema::unknown_metrics();
+        m["inputTokens"] = state(Some(maximum));
+        m["outputTokens"] = state(Some(maximum));
+        m["totalTokens"] = state(Some(maximum));
+        assert_eq!(token_lower_bound(&m), maximum * 2);
+        assert!(validate_token_totals(&m).is_err());
+    }
 }
