@@ -272,6 +272,14 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-ai-lint-config-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-ai-lint-waivers-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-ai-lint-comparison-contracts.mjs
+      - name: Run scoped governance waiver contracts (issue #88)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-waivers-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-waiver-input-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-waiver-audit-contracts.mjs
       - name: Run the context-budget contract gate (issue #75)
         # Needs the binary built above; the schema-only Ajv list in the
         # contracts job never builds one (R2-B1).

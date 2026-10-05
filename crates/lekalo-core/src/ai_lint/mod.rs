@@ -1,7 +1,7 @@
 //! Optional AI readability analysis over accepted Model/graph and admitted
 //! adapter evidence. This module never parses a target language or executes it.
 pub mod collect;
-mod compare;
+pub(crate) mod compare;
 mod depth;
 pub mod diagnostic;
 pub mod input;

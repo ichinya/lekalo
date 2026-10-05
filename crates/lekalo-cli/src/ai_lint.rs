@@ -26,6 +26,9 @@ pub(crate) struct AiLintArgs {
     pub source_file: Vec<String>,
     #[arg(long)]
     pub waivers: Option<String>,
+    /// Emit neutral immutable waiver facts for list/audit/add workflows.
+    #[arg(long)]
+    pub waiver_facts: bool,
     #[arg(long)]
     pub as_of: Option<String>,
     #[arg(long)]
@@ -68,7 +71,10 @@ fn execute(args: AiLintArgs) -> Result<DomainResult, DomainResult> {
         + usize::from(args.module.is_some())
         + usize::from(args.all)
         != 1
-        || args.as_of.as_deref().is_some_and(|s| !input::date(s))
+        || args
+            .as_of
+            .as_deref()
+            .is_some_and(|s| lekalo_core::waivers::evaluation_time(s).is_err())
         || args.evidence.len().saturating_add(args.scan_target.len()) > 64
     {
         return Err(DomainResult::usage_error());
@@ -147,15 +153,27 @@ fn execute(args: AiLintArgs) -> Result<DomainResult, DomainResult> {
         evidence.push(lint::collect::collect(&ctx.root, target, request)?);
     }
     evidence.sort_by(|a, b| a.target.cmp(&b.target));
+    let mut governance = None;
     let waivers = if let Some(path) = &args.waivers {
-        Some(input::parse_waivers(
-            &read(path)?,
-            &input::hash(&config),
-            args.as_of.as_deref(),
-        )?)
+        let bytes = read(path)?;
+        let value: serde_json::Value = lekalo_core::waivers::parse(&bytes)?;
+        if value["schemaVersion"].as_str() == Some("lekalo/ai-lint-waivers/v0.6.5") {
+            let store = lekalo_core::waivers::parse(&bytes)?;
+            lekalo_core::waivers::validate_store(&store)?;
+            governance = Some(store);
+            None
+        } else {
+            Some(input::parse_waivers(
+                &bytes,
+                &input::hash(&config),
+                args.as_of.as_deref(),
+            )?)
+        }
     } else {
         None
     };
+    // The frozen lint report retains its date wire. Governance carries exact UTC.
+    let lint_date = args.as_of.as_deref().map(|s| s.get(..10).unwrap_or(s));
     let baseline = if let Some(path) = &args.baseline {
         Some(lint::parse_report(&read(path)?)?)
     } else {
@@ -190,7 +208,7 @@ fn execute(args: AiLintArgs) -> Result<DomainResult, DomainResult> {
             })
         })
         .transpose()?;
-    let report = lint::analyze(&lint::Request {
+    let mut report = lint::analyze(&lint::Request {
         compilation: &compilation,
         model_ref: &model_ref,
         artifact_model_ref: &artifact_model_ref,
@@ -199,7 +217,7 @@ fn execute(args: AiLintArgs) -> Result<DomainResult, DomainResult> {
         profile: &args.lint_profile,
         evidence: &evidence,
         waivers: waivers.as_ref(),
-        as_of: args.as_of.as_deref(),
+        as_of: lint_date,
         baseline: baseline.as_ref(),
         check: args.check,
         transitions: transitions.as_ref(),
@@ -208,7 +226,51 @@ fn execute(args: AiLintArgs) -> Result<DomainResult, DomainResult> {
         observed: observed.as_ref(),
         fs: &fs,
     })?;
+    let waiver_input = if governance.is_some() || args.waiver_facts {
+        Some(lekalo_core::waivers::lint::facts(
+            &report,
+            &config,
+            &evidence,
+            &compilation,
+            &fs,
+        )?)
+    } else {
+        None
+    };
+    let audit = if let Some(store) = governance {
+        let time = lekalo_core::waivers::evaluation_time(
+            args.as_of
+                .as_deref()
+                .ok_or_else(|| lekalo_core::waivers::failure("waivers-as-of-required"))?,
+        )?;
+        Some(lekalo_core::waivers::lint::apply(
+            &mut report,
+            &store,
+            waiver_input.as_ref().expect("facts"),
+            &config,
+            &time,
+            baseline.as_ref(),
+        )?)
+    } else {
+        None
+    };
     let mut result = lint::render(&report, &config, args.check);
+    if waiver_input.is_some() {
+        let payload = match &mut result {
+            DomainResult::Valid {
+                payload: lekalo_core::result::SuccessPayload::Graph { json, .. },
+                ..
+            }
+            | DomainResult::DeniedWithEvidence { json, .. } => json,
+            _ => return Ok(result),
+        };
+        let mut value: serde_json::Value = serde_json::from_str(payload).expect("lint payload");
+        value["waiverInput"] = serde_json::to_value(waiver_input).expect("facts");
+        if let Some(a) = audit {
+            value["waiverAudit"] = serde_json::to_value(a).expect("audit");
+        }
+        *payload = value.to_string();
+    }
     if args.spans {
         let sources=evidence.iter().map(|e|serde_json::json!({"evidenceRef":input::hash(e),"sources":e.sources,"locations":e.locations})).collect::<Vec<_>>();
         let projection =
