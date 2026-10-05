@@ -17,6 +17,18 @@ discriminator wire-формата, встроенные константы и с
 Хеши пересчитываются по указанному контрактом алгоритму. Версия
 неизменённого контракта при выпуске новой версии продукта сохраняется.
 
+Issue #34 adds the workflow-provider discovery family
+(`dev.lekalo.workflow-provider`): the AIFHub-consumable
+`lekalo provider describe` handshake emitted as
+`lekalo/workflow-provider/v0.6.4`. Like doctor, it is an independent
+family — separate from the `lekalo.target/v1` adapter protocol, from
+every Model/IR/graph/effect/lock contract, and from the diagnostic
+registry — but unlike the per-command contracts it takes the product
+version of its implementation commit rather than a family-local
+version, and its successor therefore follows the product-version rule
+above. The manifest pins the exact upstream contract versions it
+carries; those pins never drift with a product release.
+
 Проверка `node scripts/check-contract-versions.mjs` сравнивает рабочее дерево
 с HEAD. В CI используется `--base HEAD^`: изменённый контракт должен иметь
 текущую версию продукта. Проверки схем и runtime отдельно контролируют
@@ -41,3 +53,5 @@ discriminator wire-формата, встроенные константы и с
 
 Версии принимаются только в канонической форме SemVer. Поддержка определяется
 точной записью в реестре, а не попаданием в числовой диапазон.
+
+Issue #76 publishes AI lint report/evidence/config/waivers/comparison, registry, validation profile/report, provider and package-manifest successors at `0.6.4`. The frozen `0.3.2` protocol remains the ordinary lock/bootstrap contract; the additive `0.6.4` lint seam is negotiated only after an adapter explicitly advertises it. A base describe response keeps the frozen operation vocabulary, and the upgraded describe publishes lint. Existing Model/IR/effect/observed/trace/transition/lock and context-budget wire contracts keep their accepted versions.

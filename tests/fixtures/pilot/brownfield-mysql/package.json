@@ -1,0 +1,19 @@
+{
+  "name": "brownfield-consumer",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "check": "tsc --noEmit -p tsconfig.runtime.json",
+    "test": "node --test test/http.test.mjs",
+    "test:mysql": "node --test test/mysql.test.mjs"
+  },
+  "dependencies": {
+    "hono": "4.13.12",
+    "drizzle-orm": "0.44.7",
+    "mysql2": "3.24.5"
+  },
+  "devDependencies": {"typescript": "5.9.3", "@types/node": "24.10.1"},
+  "engines": {"node": ">=24"}
+}

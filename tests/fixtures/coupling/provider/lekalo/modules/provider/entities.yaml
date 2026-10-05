@@ -1,0 +1,24 @@
+schema_version: "0.2.16"
+definitions:
+  -
+    id: "provider.text"
+    kind: "scalar"
+    version: 1
+    base: "string"
+  -
+    id: "provider.manifest"
+    kind: "value-object"
+    version: 1
+    fields:
+      -
+        name: "provider_id"
+        type: "provider.text"
+        required: true
+      -
+        name: "protocol_version"
+        type: "provider.text"
+        required: true
+      -
+        name: "operations"
+        type: "list<provider.text>"
+        required: true

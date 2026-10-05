@@ -78,9 +78,13 @@ impl LineIndex {
     }
 
     /// Map a byte offset to a position. Offsets beyond the end of the
-    /// document clamp to the end so that error spans at EOF stay total.
+    /// document clamp to the end; offsets inside a UTF-8 scalar round down
+    /// to its start so that arbitrary parser error offsets stay total.
     pub fn position(&self, text: &str, byte: usize) -> SpanPos {
-        let byte = byte.min(text.len());
+        let mut byte = byte.min(text.len());
+        while !text.is_char_boundary(byte) {
+            byte -= 1;
+        }
         let line = match self.line_starts.binary_search(&byte) {
             Ok(exact) => exact + 1,
             Err(insertion) => insertion,
@@ -90,8 +94,13 @@ impl LineIndex {
         SpanPos { byte, line, column }
     }
 
-    /// Build a half-open span between two byte offsets.
+    /// Build a half-open span between two byte offsets. Round its end up
+    /// to a UTF-8 boundary so a one-byte error span covers the whole scalar.
     pub fn span(&self, text: &str, start: usize, end: usize) -> Span {
+        let mut end = end.min(text.len());
+        while !text.is_char_boundary(end) {
+            end += 1;
+        }
         Span::new(self.position(text, start), self.position(text, end))
     }
 }
@@ -174,6 +183,42 @@ mod tests {
         assert_eq!((pos.line, pos.column, pos.byte), (1, 3, 2));
         let span = index.span(text, 1, 99);
         assert_eq!(span.end.byte, 2);
+    }
+
+    #[test]
+    fn every_byte_offset_rounds_to_a_unicode_scalar_boundary() {
+        let text = "a\u{e9}\u{6f22}\u{1f600}\r\n\u{feff}z";
+        let index = LineIndex::new(text);
+        for byte in 0..=text.len() + 1 {
+            let boundary = text
+                .char_indices()
+                .map(|(offset, _)| offset)
+                .chain(std::iter::once(text.len()))
+                .filter(|offset| *offset <= byte)
+                .max()
+                .unwrap();
+            let prefix = &text[..boundary];
+            let line = prefix.bytes().filter(|b| *b == b'\n').count() + 1;
+            let column = prefix.rsplit('\n').next().unwrap().chars().count() + 1;
+            let pos = index.position(text, byte);
+            assert_eq!((pos.byte, pos.line, pos.column), (boundary, line, column));
+        }
+    }
+
+    #[test]
+    fn error_spans_cover_entire_multibyte_scalars() {
+        for (text, start, end, expected) in [
+            ("\u{e9}", 0, 1, (0, 2)),
+            ("{\"x\":\u{e9}}", 5, 6, (5, 7)),
+            ("\u{feff}{}", 0, 1, (0, 3)),
+            ("a\u{1f600}z", 2, 3, (1, 5)),
+        ] {
+            let index = LineIndex::new(text);
+            let span = index.span(text, start, end);
+            assert_eq!((span.start.byte, span.end.byte), expected);
+            assert!(text.get(span.start.byte..span.end.byte).is_some());
+            assert_eq!(span.end.column, span.start.column + 1);
+        }
     }
 
     #[test]

@@ -140,6 +140,8 @@ fn run_session_with(
                 dry_run: Some(true),
                 plan_id: None,
                 native_request: None,
+
+                lint_request: None,
             },
             &sandbox.project(),
             &fs,
@@ -159,6 +161,8 @@ fn run_session_with(
                 dry_run: Some(false),
                 plan_id: Some(&plan_id),
                 native_request: None,
+
+                lint_request: None,
             },
             &sandbox.project(),
             &fs,
@@ -487,6 +491,8 @@ fn traversal_writes_refuse_before_publication() {
                 dry_run: Some(true),
                 plan_id: None,
                 native_request: None,
+
+                lint_request: None,
             },
             &sandbox.project(),
             &fs,
@@ -622,6 +628,8 @@ fn scope_exceeds_the_manifest_permission_ceiling() {
                 dry_run: None,
                 plan_id: None,
                 native_request: None,
+
+                lint_request: None,
             },
             &pkg,
             &fs,

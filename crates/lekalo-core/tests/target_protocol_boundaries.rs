@@ -69,6 +69,8 @@ fn request(operation: Operation, dry: Option<bool>, id: Option<&str>) -> CallReq
         dry_run: dry,
         plan_id: id,
         native_request: None,
+
+        lint_request: None,
     }
 }
 fn call(

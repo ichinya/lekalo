@@ -468,8 +468,13 @@ fn match_jwts(payload: &str) -> Vec<Match> {
     let bytes = payload.as_bytes();
     let mut index = 0usize;
     while index + 16 <= bytes.len() {
-        if !payload[index..].starts_with("eyJ") {
+        // Never slice into a multi-byte scalar.
+        if !payload.is_char_boundary(index) {
             index += 1;
+            continue;
+        }
+        if !payload[index..].starts_with("eyJ") {
+            index += payload[index..].chars().next().map_or(1, char::len_utf8);
             continue;
         }
         let end = bytes[index..]
@@ -487,7 +492,9 @@ fn match_jwts(payload: &str) -> Vec<Match> {
             });
             index = end;
         } else {
-            index += 3;
+            // Advance one Unicode scalar (the payload is valid UTF-8, so
+            // a multi-byte character is never split mid-scan).
+            index += payload[index..].chars().next().map_or(1, char::len_utf8);
         }
     }
     matches
@@ -509,6 +516,12 @@ fn match_secret_tokens(payload: &str) -> Vec<Match> {
     let bytes = payload.as_bytes();
     let mut index = 0usize;
     while index < bytes.len() {
+        // Never slice into a multi-byte scalar: skip to the next
+        // char boundary first.
+        if !payload.is_char_boundary(index) {
+            index += 1;
+            continue;
+        }
         let rest = &payload[index..];
         let rest_bytes = &bytes[index..];
         let token_end = if rest.starts_with("AKIA")
@@ -540,6 +553,10 @@ fn match_secret_tokens(payload: &str) -> Vec<Match> {
             None
         };
         if let Some(end) = token_end {
+            if !rest.is_char_boundary(end) {
+                index += payload[index..].chars().next().map_or(1, char::len_utf8);
+                continue;
+            }
             matches.push(Match {
                 start: index,
                 end: index + end,
@@ -550,13 +567,14 @@ fn match_secret_tokens(payload: &str) -> Vec<Match> {
             continue;
         }
         // Bearer authorizations.
-        if rest.len() >= 24 && rest[..7].eq_ignore_ascii_case("Bearer ") {
+        if rest.len() >= 24 && rest.is_char_boundary(7) && rest[..7].eq_ignore_ascii_case("Bearer ")
+        {
             let end = rest_bytes[7..]
                 .iter()
                 .position(|byte| !(is_token_char(*byte) || matches!(byte, b'.' | b'=')))
                 .map(|position| 7 + position)
                 .unwrap_or(rest.len());
-            if end >= 23 {
+            if end >= 23 && rest.is_char_boundary(end) {
                 matches.push(Match {
                     start: index,
                     end: index + end,
@@ -572,7 +590,7 @@ fn match_secret_tokens(payload: &str) -> Vec<Match> {
             matches.push(assign);
             continue;
         }
-        index += 1;
+        index += payload[index..].chars().next().map_or(1, char::len_utf8);
     }
     matches
 }
@@ -607,7 +625,10 @@ fn match_credential_assignment(payload: &str, index: usize) -> Option<Match> {
     let rest = &payload[index..];
     let mut key_len = None;
     for key in KEYS {
-        if rest.len() >= key.len() && rest[..key.len()].eq_ignore_ascii_case(key) {
+        if rest.len() >= key.len()
+            && rest.is_char_boundary(key.len())
+            && rest[..key.len()].eq_ignore_ascii_case(key)
+        {
             let boundary = rest.as_bytes().get(key.len());
             let delimited = boundary.map_or(true, |byte| {
                 !(byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
@@ -626,6 +647,9 @@ fn match_credential_assignment(payload: &str, index: usize) -> Option<Match> {
     } else {
         1
     };
+    if !after_key.is_char_boundary(separator_offset) {
+        return None;
+    }
     let between = &after_key[..separator_offset];
     if !between.bytes().all(|byte| matches!(byte, b' ' | b'\t')) || between.len() > 16 {
         return None;
@@ -637,6 +661,9 @@ fn match_credential_assignment(payload: &str, index: usize) -> Option<Match> {
     }
     let value_part = &value_part[spaces..];
     let quote_len = usize::from(value_part.starts_with('"') || value_part.starts_with('\''));
+    if !value_part.is_char_boundary(quote_len) {
+        return None;
+    }
     let value_body = &value_part[quote_len..];
     let value_end = value_body
         .bytes()
@@ -653,6 +680,9 @@ fn match_credential_assignment(payload: &str, index: usize) -> Option<Match> {
         + quote_len
         + value_end
         + quote_len;
+    if !payload.is_char_boundary(total_end) {
+        return None;
+    }
     Some(Match {
         start: index,
         end: total_end,
@@ -736,6 +766,11 @@ fn match_path_fragments(payload: &str) -> Vec<Match> {
     let bytes = payload.as_bytes();
     let mut index = 0usize;
     while index < bytes.len() {
+        // Never slice into a multi-byte scalar.
+        if !payload.is_char_boundary(index) {
+            index += 1;
+            continue;
+        }
         let rest = &payload[index..];
         let drive_relative = rest.len() >= 3
             && rest.as_bytes()[0].is_ascii_alphabetic()
@@ -948,6 +983,11 @@ fn match_tenants(payload: &str) -> Vec<Match> {
     let bytes = payload.as_bytes();
     let mut index = 0usize;
     while index + 36 <= bytes.len() {
+        // Never slice into a multi-byte scalar.
+        if !payload.is_char_boundary(index) {
+            index += 1;
+            continue;
+        }
         let window = &bytes[index..index + 36];
         let is_guid = window
             .iter()

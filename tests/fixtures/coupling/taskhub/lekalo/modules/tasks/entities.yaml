@@ -1,0 +1,72 @@
+schema_version: "0.2.16"
+definitions:
+  -
+    id: "tasks.text"
+    kind: "scalar"
+    version: 1
+    base: "string"
+  -
+    id: "tasks.count"
+    kind: "scalar"
+    version: 1
+    base: "number"
+  -
+    id: "tasks.state"
+    kind: "enum"
+    version: 1
+    values:
+      -
+        value: "backlog"
+      -
+        value: "focused"
+      -
+        value: "done"
+  -
+    id: "tasks.task"
+    kind: "entity"
+    version: 1
+    fields:
+      -
+        name: "task_id"
+        type: "tasks.text"
+        required: true
+      -
+        name: "title"
+        type: "tasks.text"
+        required: true
+      -
+        name: "state"
+        type: "tasks.state"
+        required: true
+    identity:
+      - "task_id"
+  -
+    id: "tasks.new_task_input"
+    kind: "value-object"
+    version: 1
+    fields:
+      -
+        name: "task_id"
+        type: "tasks.text"
+        required: true
+      -
+        name: "title"
+        type: "tasks.text"
+        required: true
+  -
+    id: "tasks.task_page"
+    kind: "value-object"
+    version: 1
+    fields:
+      -
+        name: "total"
+        type: "tasks.count"
+        required: true
+      -
+        name: "open"
+        type: "tasks.count"
+        required: true
+      -
+        name: "items"
+        type: "list<tasks.task>"
+        required: true

@@ -1,0 +1,13 @@
+schema_version: "0.2.16"
+definitions:
+  - id: events.timestamp
+    kind: scalar
+    version: 1
+    description: "Instant of an integration event"
+    base: datetime
+  - id: events.task_ref
+    kind: scalar
+    version: 1
+    description: "Opaque task reference carried by integration events"
+    base: uuid
+    visibility: project

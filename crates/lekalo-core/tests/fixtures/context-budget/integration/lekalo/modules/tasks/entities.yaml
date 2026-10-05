@@ -1,0 +1,40 @@
+schema_version: "0.2.16"
+definitions:
+  - id: tasks.task_id
+    kind: scalar
+    version: 1
+    description: "Stable task identifier"
+    base: uuid
+    visibility: project
+  - id: tasks.payload
+    kind: scalar
+    version: 1
+    description: "Task payload text"
+    base: string
+  - id: tasks.state
+    kind: enum
+    version: 1
+    description: "Task lifecycle state"
+    values:
+      - value: new
+        description: "Freshly created"
+      - value: queued
+        description: "Queued for delivery"
+      - value: delivered
+        description: "Delivered to the external system"
+  - id: tasks.task
+    kind: entity
+    version: 1
+    description: "One syncable task"
+    fields:
+      - name: task_id
+        type: "tasks.task_id"
+        required: true
+      - name: payload
+        type: "tasks.payload"
+        required: true
+      - name: state
+        type: "tasks.state"
+        required: true
+    identity:
+      - task_id

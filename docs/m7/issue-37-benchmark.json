@@ -1,0 +1,94 @@
+{
+  "schema": "lekalo/ai-workspace-context-benchmark/v0.6.3",
+  "upstreamCommit": "8fdf818fee757d24e723d657fc5d38614995e557",
+  "upstreamPackage": "1.5.0",
+  "baseCommit": "1d1f14a79e99fba5c02a9ad75a1b9be6875cea27",
+  "headCommit": "3d7cfcfb87576147ec0b43dcc2380ddfeb677193",
+  "changeFiles": [
+    "crates/lekalo-core/src/run_history/store.rs",
+    "crates/lekalo-core/src/run_history/tests.rs",
+    "crates/lekalo-core/src/run_history/mod.rs"
+  ],
+  "changeScopeDigest": "sha256:79f5c64acc0844efbf39f33d0cc84b9f087500b90c37a03d6c160be5c79e0b32",
+  "repetitions": 5,
+  "retrievalRepetitions": {
+    "perStrategyPerTask": 5,
+    "tasks": 3
+  },
+  "coldReindexMs": {
+    "median": 174,
+    "range": [
+      155,
+      198
+    ]
+  },
+  "warmSyncMs": {
+    "median": 56,
+    "range": [
+      55,
+      61
+    ]
+  },
+  "changedFileSyncMs": {
+    "median": 60,
+    "range": [
+      53,
+      234
+    ],
+    "note": "first sample sees the edit; later samples are the unchanged path on synced bytes"
+  },
+  "retrievalBaselineMs": {
+    "median": 1,
+    "range": [
+      1,
+      2
+    ],
+    "samples": 15
+  },
+  "retrievalCodegraphMs": {
+    "median": 73,
+    "range": [
+      62,
+      97
+    ],
+    "samples": 15
+  },
+  "coverageBaseline": [
+    true,
+    true,
+    false
+  ],
+  "coverageCodegraph": [
+    true,
+    false,
+    true
+  ],
+  "expectedSymbolHits": [
+    "custody-read-verification",
+    "recovery-quarantine",
+    "quarantine-regression-test"
+  ],
+  "returnedContextBytes": {
+    "median": 10283,
+    "range": [
+      9664,
+      10616
+    ]
+  },
+  "tokenEstimate": "unknown",
+  "unresolvedRefCount": 953,
+  "stalenessAfterEditSurfaced": true,
+  "stalenessResolvesAfterSync": true,
+  "deletedFileHandled": true,
+  "revokedScopeDenied": {
+    "codegraphSearch": true,
+    "workspaceRead": true
+  },
+  "limitations": [
+    "regex-parser-provenance",
+    "snippet-free-aggregate",
+    "one-machine-one-run",
+    "scratch-copies-only",
+    "process-spawn-dominated"
+  ]
+}

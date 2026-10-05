@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS tutorial_tasks (
+  id VARCHAR(32) PRIMARY KEY,
+  title VARCHAR(128) NOT NULL,
+  priority INT NOT NULL DEFAULT 0
+);

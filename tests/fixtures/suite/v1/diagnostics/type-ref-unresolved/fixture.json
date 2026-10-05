@@ -1,0 +1,52 @@
+{
+  "fixtureSchema": "dev.lekalo.fixture@1.0.0",
+  "caseId": "diagnostic.type-ref-unresolved.pair",
+  "revision": 1,
+  "class": "diagnostic-pair",
+  "origin": "synthetic",
+  "issue": "90",
+  "purpose": "F06 paired witness for semantic.type-ref-unresolved: trigger names the rule, non-trigger validates clean.",
+  "runner": "cli-validate",
+  "contractPins": [
+    {
+      "identity": "dev.lekalo.model@0.2.16",
+      "role": "model contract"
+    },
+    {
+      "identity": "dev.lekalo.diagnostic-registry@0.6.4",
+      "role": "diagnostics registry"
+    }
+  ],
+  "inputs": [
+    {
+      "role": "project",
+      "path": "tests/fixtures/suite/v1/diagnostics/type-ref-unresolved/trigger"
+    },
+    {
+      "role": "project",
+      "path": "tests/fixtures/suite/v1/diagnostics/type-ref-unresolved/non-trigger"
+    }
+  ],
+  "expectation": {
+    "status": "invalid",
+    "exit": 1,
+    "reasonCodes": [
+      "semantic.type-ref-unresolved"
+    ],
+    "witnessRule": "semantic.type-ref-unresolved",
+    "witnessPolarity": "trigger"
+  },
+  "timeoutMs": 60000,
+  "determinism": {
+    "clockPolicy": "not-applicable-read-only",
+    "idPolicy": "not-applicable-read-only",
+    "locale": "C",
+    "newlineMode": "lf-only",
+    "pathMode": "logical-repository-relative"
+  },
+  "limits": {
+    "maxOutputBytes": 65536,
+    "maxFiles": 32
+  },
+  "updateRecipe": "update-golden-case"
+}

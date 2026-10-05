@@ -1,0 +1,24 @@
+{
+  "centralityDeclarations": [],
+  "domainGroups": [],
+  "gate": {
+    "baselineReadyRef": {
+      "state": "unknown"
+    },
+    "failOn": [],
+    "mode": "advisory"
+  },
+  "identity": "dev.lekalo.coupling-profile@0.6.4",
+  "measurement": {
+    "includeObserved": false,
+    "recipe": "declared-architecture/1"
+  },
+  "modules": [],
+  "profileId": "advisory",
+  "profileRevision": 1,
+  "project": {
+    "limits": [],
+    "regressionLimits": []
+  },
+  "schemaVersion": "lekalo/coupling-profile/v0.6.4"
+}

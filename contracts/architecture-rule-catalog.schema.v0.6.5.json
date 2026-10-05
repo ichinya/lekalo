@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.architecture-rule-catalog-schema@0.6.5",
+  "title": "Lekalo architecture-rule-catalog 0.6.5",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/architecture-rule-catalog/v0.6.5"
+    },
+    "identity": {
+      "const": "dev.lekalo.architecture-rule-catalog@0.6.5"
+    },
+    "recipe": {
+      "const": "architecture-core/1"
+    },
+    "registryRef": {
+      "$ref": "#/$defs/reference"
+    },
+    "rules": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/rule"
+      },
+      "maxItems": 15,
+      "minItems": 15
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "identity",
+    "recipe",
+    "registryRef",
+    "rules"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "reference": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]+$",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]+$",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "digest"
+      ],
+      "additionalProperties": false
+    },
+    "rule": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "enum": [
+            "architecture.bounded-context",
+            "architecture.deterministic-generation",
+            "architecture.errors-as-contracts",
+            "architecture.explicit-dependencies",
+            "architecture.explicit-operation-contracts",
+            "architecture.explicit-target-bindings",
+            "architecture.immutable-defaults",
+            "architecture.justified-abstractions",
+            "architecture.no-hidden-observers",
+            "architecture.no-service-locator-magic",
+            "architecture.scenario-linked-behavior",
+            "architecture.single-entrypoint",
+            "architecture.stable-semantic-ids",
+            "architecture.strict-native-types",
+            "architecture.tracked-duplication"
+          ]
+        },
+        "revision": {
+          "const": 1
+        },
+        "owner": {
+          "const": "lekalo-core"
+        },
+        "producer": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]+$",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "measurement": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]+$",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "coverage": {
+          "enum": [
+            "complete",
+            "partial",
+            "unsupported"
+          ]
+        },
+        "mandatory": {
+          "type": "boolean"
+        },
+        "blockingBasis": {
+          "enum": [
+            "semantic",
+            "measured",
+            "advisory"
+          ]
+        },
+        "severity": {
+          "enum": [
+            "info",
+            "warning",
+            "error"
+          ]
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+        },
+        "alternative": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+        }
+      },
+      "required": [
+        "id",
+        "revision",
+        "owner",
+        "producer",
+        "measurement",
+        "coverage",
+        "mandatory",
+        "blockingBasis",
+        "severity",
+        "rationale",
+        "alternative"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

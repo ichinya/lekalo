@@ -1,0 +1,1544 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.framework-lift-result-schema@0.6.4",
+  "description": "Closed local-only recorded evaluation evidence. Simulation is never live agent evidence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "campaignRef",
+    "taskRef",
+    "baselineRef",
+    "profileDigest",
+    "evidenceStatus",
+    "exportDisposition",
+    "consumerRole",
+    "consumerAlias",
+    "pilot",
+    "analysis",
+    "rows",
+    "summaries",
+    "paired",
+    "liftPercentagePoints",
+    "uncertainty",
+    "claim"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/framework-lift-result/v0.6.4"
+    },
+    "identity": {
+      "const": "dev.lekalo.framework-lift-result@0.6.4"
+    },
+    "campaignRef": {
+      "$ref": "#/$defs/ref"
+    },
+    "taskRef": {
+      "$ref": "#/$defs/ref"
+    },
+    "baselineRef": {
+      "$ref": "#/$defs/ref"
+    },
+    "profileDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "evidenceStatus": {
+      "enum": [
+        "recorded-simulation",
+        "recorded-unverified"
+      ]
+    },
+    "exportDisposition": {
+      "const": "local-private"
+    },
+    "consumerRole": {
+      "const": "consumer-repository"
+    },
+    "consumerAlias": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 96,
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "pilot": {
+      "$ref": "#/$defs/pilot"
+    },
+    "analysis": {
+      "const": "intent-to-run-wilson-95-paired-counts-1"
+    },
+    "rows": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/row"
+      },
+      "minItems": 0,
+      "maxItems": 1024,
+      "uniqueItems": true
+    },
+    "summaries": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/summary"
+      },
+      "minItems": 2,
+      "maxItems": 2,
+      "uniqueItems": true
+    },
+    "paired": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bothSuccess",
+        "aOnly",
+        "bOnly",
+        "neither",
+        "incomplete"
+      ],
+      "properties": {
+        "bothSuccess": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "aOnly": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "bOnly": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "neither": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "incomplete": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "liftPercentagePoints": {
+      "$ref": "#/$defs/lift"
+    },
+    "uncertainty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "minimumLift",
+        "maximumLift"
+      ],
+      "properties": {
+        "method": {
+          "const": "attrition-bounds"
+        },
+        "minimumLift": {
+          "$ref": "#/$defs/lift"
+        },
+        "maximumLift": {
+          "$ref": "#/$defs/lift"
+        }
+      }
+    },
+    "claim": {
+      "const": "tested-task-profile-only"
+    }
+  },
+  "$defs": {
+    "arm": {
+      "enum": [
+        "A",
+        "B"
+      ]
+    },
+    "interval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "unit",
+        "lower",
+        "upper"
+      ],
+      "properties": {
+        "method": {
+          "const": "wilson-95"
+        },
+        "unit": {
+          "const": "parts-per-million"
+        },
+        "lower": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "upper": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        }
+      }
+    },
+    "lift": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "numerator",
+        "denominator"
+      ],
+      "properties": {
+        "numerator": {
+          "type": "integer",
+          "minimum": -12800,
+          "maximum": 12800
+        },
+        "denominator": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 128
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "filesRead",
+        "filesChanged",
+        "unrelatedFiles",
+        "unrelatedAddedLoc",
+        "unrelatedDeletedLoc",
+        "toolCalls",
+        "retryCount",
+        "replanCount",
+        "fixCycles",
+        "escapedRegressions",
+        "durationMs",
+        "humanInterventions",
+        "humanDurationMs",
+        "capsuleBytes",
+        "capsuleEstimatedTokens",
+        "includedFacts",
+        "candidateFacts",
+        "requiredFacts",
+        "includedRequiredFacts",
+        "inputTokens",
+        "outputTokens",
+        "reasoningTokens",
+        "cachedInputTokens",
+        "totalTokens",
+        "costMicros"
+      ],
+      "properties": {
+        "filesRead": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state",
+                "value"
+              ],
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown",
+                    "withheld",
+                    "unsupported"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "filesChanged": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state",
+                "value"
+              ],
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown",
+                    "withheld",
+                    "unsupported"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "unrelatedFiles": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state",
+                "value"
+              ],
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown",
+                    "withheld",
+                    "unsupported"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "unrelatedAddedLoc": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state",
+                "value"
+              ],
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown",
+                    "withheld",
+                    "unsupported"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "unrelatedDeletedLoc": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state",
+                "value"
+              ],
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown",
+                    "withheld",
+                    "unsupported"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "toolCalls": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state",
+                "value"
+              ],
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown",
+                    "withheld",
+                    "unsupported"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "retryCount": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state",
+                "value"
+              ],
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown",
+                    "withheld",
+                    "unsupported"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "replanCount": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state",
+                "value"
+              ],
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown",
+                    "withheld",
+                    "unsupported"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "fixCycles": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state",
+                "value"
+              ],
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown",
+                    "withheld",
+                    "unsupported"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "escapedRegressions": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state",
+                "value"
+              ],
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown",
+                    "withheld",
+                    "unsupported"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "durationMs": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state",
+                "value"
+              ],
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown",
+                    "withheld",
+                    "unsupported"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "humanInterventions": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state",
+                "value"
+              ],
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown",
+                    "withheld",
+                    "unsupported"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "humanDurationMs": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state",
+                "value"
+              ],
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown",
+                    "withheld",
+                    "unsupported"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "capsuleBytes": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state",
+                "value"
+              ],
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown",
+                    "withheld",
+                    "unsupported"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "capsuleEstimatedTokens": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state",
+                "value"
+              ],
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown",
+                    "withheld",
+                    "unsupported"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "includedFacts": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state",
+                "value"
+              ],
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown",
+                    "withheld",
+                    "unsupported"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "candidateFacts": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state",
+                "value"
+              ],
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown",
+                    "withheld",
+                    "unsupported"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "requiredFacts": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state",
+                "value"
+              ],
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown",
+                    "withheld",
+                    "unsupported"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "includedRequiredFacts": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state",
+                "value"
+              ],
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown",
+                    "withheld",
+                    "unsupported"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "inputTokens": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state",
+                "value"
+              ],
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown",
+                    "withheld",
+                    "unsupported"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "outputTokens": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state",
+                "value"
+              ],
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown",
+                    "withheld",
+                    "unsupported"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "reasoningTokens": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state",
+                "value"
+              ],
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown",
+                    "withheld",
+                    "unsupported"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "cachedInputTokens": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state",
+                "value"
+              ],
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown",
+                    "withheld",
+                    "unsupported"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "totalTokens": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state",
+                "value"
+              ],
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown",
+                    "withheld",
+                    "unsupported"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "costMicros": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state",
+                "value"
+              ],
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown",
+                    "withheld",
+                    "unsupported"
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "origin": {
+      "enum": [
+        "recorded-simulation",
+        "recorded-external"
+      ]
+    },
+    "pilot": {
+      "enum": [
+        "greenfield-contracted",
+        "brownfield-observed"
+      ]
+    },
+    "ratio": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "numerator",
+        "denominator"
+      ],
+      "properties": {
+        "numerator": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "denominator": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "digest"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "slot",
+        "attempt",
+        "armDigest",
+        "origin",
+        "status",
+        "verifiedSuccess",
+        "firstPassSuccess",
+        "metrics"
+      ],
+      "properties": {
+        "slot": {
+          "$ref": "#/$defs/slot"
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "armDigest": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state",
+                "value"
+              ],
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown",
+                    "withheld",
+                    "unsupported"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "origin": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state",
+                "value"
+              ],
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "$ref": "#/$defs/origin"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown",
+                    "withheld",
+                    "unsupported"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "success",
+            "task",
+            "provider",
+            "infrastructure",
+            "unsupported",
+            "custody-security",
+            "interrupted",
+            "not-started"
+          ]
+        },
+        "verifiedSuccess": {
+          "type": "boolean"
+        },
+        "firstPassSuccess": {
+          "type": "boolean"
+        },
+        "metrics": {
+          "$ref": "#/$defs/metrics"
+        }
+      }
+    },
+    "slot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pairId",
+        "arm",
+        "repetition"
+      ],
+      "properties": {
+        "pairId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "arm": {
+          "$ref": "#/$defs/arm"
+        },
+        "repetition": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "arm",
+        "scheduled",
+        "started",
+        "attempts",
+        "successes",
+        "firstPassSuccesses",
+        "costKnownRuns",
+        "totalCostMicros",
+        "costPerSuccess",
+        "successRate",
+        "successInterval"
+      ],
+      "properties": {
+        "arm": {
+          "$ref": "#/$defs/arm"
+        },
+        "scheduled": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "started": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "attempts": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "successes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "firstPassSuccesses": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "costKnownRuns": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "totalCostMicros": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state",
+                "value"
+              ],
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown",
+                    "withheld",
+                    "unsupported"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "costPerSuccess": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "reason",
+            "value"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "known",
+                "unknown"
+              ]
+            },
+            "reason": {
+              "enum": [
+                "complete",
+                "no-success",
+                "cost-incomplete"
+              ]
+            },
+            "value": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "state",
+                    "value"
+                  ],
+                  "properties": {
+                    "state": {
+                      "const": "known"
+                    },
+                    "value": {
+                      "$ref": "#/$defs/ratio"
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "state"
+                  ],
+                  "properties": {
+                    "state": {
+                      "enum": [
+                        "unknown",
+                        "withheld",
+                        "unsupported"
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "successRate": {
+          "$ref": "#/$defs/ratio"
+        },
+        "successInterval": {
+          "$ref": "#/$defs/interval"
+        }
+      }
+    }
+  }
+}

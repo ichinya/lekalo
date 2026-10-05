@@ -31,7 +31,10 @@ pub use receipt::{
     TraceSummary, Verdict, VerdictCountsReceipt, VerifyReceipt, WriteReceipt, IDENTITY,
     SCHEMA_VERSION,
 };
-pub use verify::{collect_scenario_trace, verify, VerifyRequest};
+pub use verify::{
+    collect_scenario_trace, verify, verify_with_components, ScenarioEvidenceRow, Verified,
+    VerifyRequest,
+};
 pub use version::{DEFAULT_TIMEOUT_MS, IR_EVIDENCE_DIR, MAX_TARGETS};
 
 use crate::loader::LoadSelection;

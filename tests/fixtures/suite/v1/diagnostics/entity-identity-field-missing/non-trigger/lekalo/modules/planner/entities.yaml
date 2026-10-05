@@ -1,0 +1,41 @@
+{
+  "schema_version": "0.2.16",
+  "definitions": [
+    {
+      "id": "planner.task_id",
+      "kind": "scalar",
+      "version": 1,
+      "base": "uuid"
+    },
+    {
+      "id": "planner.text",
+      "kind": "scalar",
+      "version": 1,
+      "base": "string"
+    },
+    {
+      "id": "planner.task",
+      "kind": "entity",
+      "version": 1,
+      "fields": [
+        {
+          "name": "task_id",
+          "type": {
+            "ref": "planner.task_id"
+          },
+          "required": true
+        },
+        {
+          "name": "title",
+          "type": {
+            "ref": "planner.text"
+          },
+          "required": true
+        }
+      ],
+      "identity": [
+        "task_id"
+      ]
+    }
+  ]
+}

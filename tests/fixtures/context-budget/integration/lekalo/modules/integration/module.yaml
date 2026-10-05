@@ -1,0 +1,11 @@
+schema_version: "0.2.16"
+definitions:
+  - id: integration
+    kind: module
+    version: 1
+    description: "The outward integration boundary"
+    imports:
+      - tasks
+      - events
+      - delivery
+      - auth

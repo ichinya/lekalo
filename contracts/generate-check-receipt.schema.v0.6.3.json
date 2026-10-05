@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/generate-check-receipt.schema.v0.6.3.json",
+  "title": "Lekalo generate --check drift receipt",
+  "description": "Closed contract of the `lekalo generate --check` receipt (issue #34 provider boundary, fix round 1; the workflow `drift` operation). The command embeds no `schemaVersion` member in its payload; this describing schema is the exact output negotiation target advertised as `lekalo/generate-check/v0.6.3` by the workflow-provider manifest. A clean or findings-only check is exit 0 stdout; any blocking drift finding (stale, manual-drift, missing, orphan) fails the run `invalid` (exit 1, stderr) with the typed diagnostic (`lock.stale`, `lock.source-changed`, `structure.document-missing`, `structure.runtime-unexpected-entry`) — those failures are outside this success receipt. This is a read-only drift check: it never applies generation and never needs an adapter program.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status",
+    "operation",
+    "mode",
+    "manifestDigest",
+    "lockDigest",
+    "verdict",
+    "counts",
+    "findings"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": { "verdict": { "const": "clean" } },
+        "required": ["verdict"]
+      },
+      "then": {
+        "properties": { "findings": { "type": "array", "maxItems": 0 } }
+      }
+    },
+    {
+      "if": {
+        "properties": { "verdict": { "const": "reported" } },
+        "required": ["verdict"]
+      },
+      "then": {
+        "properties": { "findings": { "type": "array", "minItems": 1 } }
+      }
+    }
+  ],
+  "properties": {
+    "status": {
+      "description": "Always valid on this success stream.",
+      "const": "valid"
+    },
+    "operation": {
+      "description": "Always the generate operation.",
+      "const": "generate"
+    },
+    "mode": {
+      "description": "Always the read-only check mode.",
+      "const": "check"
+    },
+    "manifestDigest": {
+      "description": "The verified ownership-manifest digest; null for the vacuous no-manifest check. Always emitted.",
+      "oneOf": [
+        { "type": "null" },
+        { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      ]
+    },
+    "lockDigest": {
+      "description": "The exact lock digest the check bound to; the consumer's revision-binding anchor for this observation.",
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "verdict": {
+      "description": "clean when nothing was reported; reported when only non-blocking findings exist.",
+      "enum": ["clean", "reported"]
+    },
+    "counts": { "$ref": "#/$defs/counts" },
+    "findings": {
+      "description": "The sorted non-blocking findings; empty exactly when verdict is clean. The wire bound is the ownership manifest's artifact-entry bound (65536, artifacts/canonical.rs): at most one finding per entry, and orphan findings always block instead of appearing here.",
+      "type": "array",
+      "maxItems": 65536,
+      "items": { "$ref": "#/$defs/finding" }
+    }
+  },
+  "$defs": {
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifacts",
+        "clean",
+        "stale",
+        "manualDrift",
+        "missing",
+        "orphan",
+        "reported"
+      ],
+      "properties": {
+        "artifacts": { "type": "integer", "minimum": 0 },
+        "clean": { "type": "integer", "minimum": 0 },
+        "stale": { "type": "integer", "minimum": 0 },
+        "manualDrift": { "type": "integer", "minimum": 0 },
+        "missing": { "type": "integer", "minimum": 0 },
+        "orphan": { "type": "integer", "minimum": 0 },
+        "reported": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "finding": {
+      "description": "One non-blocking finding. Every success-receipt finding comes from a manifest entry (orphan findings always block, exit 1), so the entry identity is always emitted: owner, kind, and lifecycle are present on every finding.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "owner", "kind", "lifecycle", "verdict"],
+      "properties": {
+        "path": {
+          "description": "The project-relative logical path of the artifact. The wire grammar (ArtifactPath) bounds each segment (≤64, portable lowercase, no dot-trailing or parent segments) with no total-length bound, so no maxLength applies here.",
+          "type": "string",
+          "minLength": 1
+        },
+        "owner": {
+          "description": "The semantic owner of the manifest entry; the Model 0.2.16 symbol-id grammar (two or three `[a-z][a-z0-9_]{0,62}` segments, total 3-191).",
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 191,
+          "pattern": "^[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62}){1,2}$"
+        },
+        "kind": {
+          "description": "The closed artifact kind of the manifest entry.",
+          "type": "string",
+          "enum": ["source", "test", "schema", "config", "docs", "data"]
+        },
+        "lifecycle": {
+          "description": "The artifact lifecycle of the manifest entry. Generated-lifecycle findings always block (exit 1) and never appear here, so a receipt finding carries exactly one of the non-generated lifecycles.",
+          "type": "string",
+          "enum": ["scaffolded", "checked", "external", "custom"]
+        },
+        "verdict": {
+          "description": "The closed non-blocking finding verdict: stale, manual drift, or missing. Orphans always block (exit 1) and clean entries are only counted, so neither ever appears as a finding verdict.",
+          "type": "string",
+          "enum": ["stale", "manual-drift", "missing"]
+        }
+      }
+    }
+  }
+}

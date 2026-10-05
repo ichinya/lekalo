@@ -54,7 +54,7 @@ const PROTOCOL_TOKEN = 'lekalo.target/v1';
 /** The sole protocol version this kernel speaks (the current contract). */
 const VERSION = '0.3.2';
 /** The closed supported-version set: exact membership, never ranges. */
-const SUPPORTED_VERSIONS = ['0.3.2'];
+const SUPPORTED_VERSIONS = ['0.3.2','0.6.4'];
 /** The adapter identity token. */
 const ADAPTER_ID = 'lekalo-target-php-laravel';
 /**
@@ -80,7 +80,7 @@ const MAX_WRITE_FILES = 1024;
 /** The closed v1 operation set (wire spellings). */
 const OPERATIONS = [
     'describe', 'scan', 'bind', 'validate', 'generate',
-    'verify', 'clean', 'plan-clean', 'plan-native',
+    'verify', 'clean', 'plan-clean', 'plan-native', 'lint',
 ];
 /** Operations that consume the compiled IR. */
 const IR_OPERATIONS = ['validate', 'generate', 'verify'];
@@ -88,6 +88,7 @@ const IR_OPERATIONS = ['validate', 'generate', 'verify'];
 const SUPPORT_STATES = ['full', 'partial', 'unsupported', 'unknown'];
 /** The declared named capabilities of this kernel (issue #28 ids). */
 const DECLARED_CAPABILITIES = [
+    'lint.ai-readability' => 'partial',
     'generate.zod' => 'unsupported',
     'generate.openapi' => 'unsupported',
     'generate.ui' => 'unsupported',
@@ -907,6 +908,7 @@ function validate_request_object(array $document): array
         'project_root', 'ir_path', 'target', 'profile', 'profile_digest',
         'profile_capabilities', 'dry_run', 'limits', 'plan_id',
         'native_request',
+        'lint_request',
     ];
     foreach (array_keys($document) as $key) {
         if (!in_array($key, $keys, true)) {
@@ -973,7 +975,7 @@ function validate_request_object(array $document): array
         if (array_key_exists('dry_run', $document) || $hasPlanId) {
             throw new RequestRefusal('plan-id');
         }
-        if ($document['protocol_version'] !== VERSION) {
+        if (!in_array($document['protocol_version'],SUPPORTED_VERSIONS,true)) {
             throw new RequestRefusal('member');
         }
         validate_native_request($document['native_request']);
@@ -1007,7 +1009,7 @@ function validate_request_object(array $document): array
         throw new RequestRefusal('profile-capabilities');
     }
     if ($hasDigest) {
-        if ($document['protocol_version'] !== VERSION) {
+        if (!in_array($document['protocol_version'], SUPPORTED_VERSIONS, true)) {
             throw new RequestRefusal('member');
         }
         if (!array_key_exists('profile', $document)) {
@@ -1022,6 +1024,8 @@ function validate_request_object(array $document): array
         && !is_token($document['target'] ?? null)) {
         throw new RequestRefusal('grammar');
     }
+    if (!function_exists('lint_validate_request')) {require_once __DIR__ . '/ai-lint.php';}
+    lint_validate_request($document);
     return $document;
 }
 
@@ -3068,6 +3072,8 @@ function describe_capabilities(?Analyzer $analyzer = null): array
             '.lekalo/cache/**',
             '.lekalo/ir/**',
             '.lekalo/import/**',
+            'app/**',
+            'src/**',
             'composer.json',
             'composer.lock',
             'lekalo/php-test-port.json',
@@ -3528,9 +3534,14 @@ function dispatch(array $request, ?Analyzer $analyzer = null): array
     $analyzer ??= new FakeAnalyzer();
     $operation = $request['operation'];
     if ($operation === 'describe') {
-        return build_response($request, ['capabilities' => describe_capabilities($analyzer)]);
+        $capabilities=describe_capabilities($analyzer);
+        if ($request['protocol_version']==='0.3.2') { $capabilities['operations']=array_values(array_filter($capabilities['operations'],static fn(string $op): bool => $op!=='lint'));unset($capabilities['capabilities']['lint.ai-readability']); }
+        return build_response($request, ['capabilities' => $capabilities]);
     }
     switch ($operation) {
+        case 'lint':
+            if (!function_exists('lint_collect')) {require_once __DIR__ . '/ai-lint.php';}
+            return build_response($request,['result'=>['lint_evidence'=>lint_collect($request)]]);
         case 'scan':
             return scan_response($request, $analyzer);
         case 'bind':

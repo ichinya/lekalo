@@ -1,0 +1,6 @@
+schema_version: "0.2.16"
+definitions:
+  -
+    id: "taskhub"
+    kind: "project"
+    version: 1

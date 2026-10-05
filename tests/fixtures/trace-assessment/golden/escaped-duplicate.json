@@ -1,0 +1,26 @@
+{
+  "status": "invalid",
+  "diagnostics": [
+    {
+      "schema_version": "lekalo/diagnostic/v0.2.16",
+      "registry_version": "0.6.4",
+      "id": "trace.bridge-input-invalid",
+      "code": "LEK-TRACE-008",
+      "severity": "error",
+      "category": "model",
+      "message_id": "trace.bridge-input-invalid",
+      "message": "The neutral validation evidence document violates its closed contract.",
+      "data": {
+        "detail": "malformed-or-duplicate-json",
+        "subject": "evidence"
+      },
+      "related_locations": [],
+      "causes": [],
+      "fixes": [],
+      "metadata": {}
+    }
+  ],
+  "reasonCodes": [
+    "trace.bridge-input-invalid"
+  ]
+}

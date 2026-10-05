@@ -16,7 +16,7 @@ directory of any command.
 | Execution plan | `lekalo/native-gate-plan/v0.4.0` (`contracts/native-gate-plan.schema.v0.4.0.json`) |
 | Run request/receipt | `lekalo/native-gate-run/v0.4.0` (`contracts/native-gate-run.schema.v0.4.0.json`) |
 | Observed view | `lekalo/native-gate-view/v0.4.0` (`contracts/native-gate-view.schema.v0.4.0.json`) |
-| Diagnostic registry | `dev.lekalo.diagnostic-registry@0.4.0` (the 0.4.0 registry generation; issue #48 added 14 `native-gate.*` rules, `LEK-NGT-001..014`) |
+| Diagnostic registry | `dev.lekalo.diagnostic-registry@0.6.4` (the active successor generation carrying the additive rule families; issue #48 added 14 `native-gate.*` rules, `LEK-NGT-001..014`) |
 | Authority matrix | `dev.lekalo.authority-matrix@0.3.2` (4 new `lekalo.native-gate-*` kinds) |
 | Privacy policy | `dev.lekalo.privacy-export-policy@0.3.2` |
 

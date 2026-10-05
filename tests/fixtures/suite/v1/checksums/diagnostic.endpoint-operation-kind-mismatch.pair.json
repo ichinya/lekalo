@@ -1,0 +1,51 @@
+{
+  "caseId": "diagnostic.endpoint-operation-kind-mismatch.pair",
+  "revision": 1,
+  "algorithm": "sha256",
+  "files": [
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/endpoint-operation-kind-mismatch/expect.json",
+      "sha256": "sha256:f6b2b90607cb1cba0decc8708d48ec6e16d806cc8bb5db7b4f888ea12d21bcee"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/endpoint-operation-kind-mismatch/fixture.json",
+      "sha256": "sha256:29e946201524903473b61d9665d6904f6be4da22bb46100648e308ba5616e465"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/endpoint-operation-kind-mismatch/non-trigger/lekalo/modules/planner/bindings.yaml",
+      "sha256": "sha256:33529cf304acea0276de63fe8a3847ba5e28d3b3bea383125051d1926d2478bb"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/endpoint-operation-kind-mismatch/non-trigger/lekalo/modules/planner/commands.yaml",
+      "sha256": "sha256:15287115259e745420852bdfdafe578357426cafa6f5ef288deb4b066348e4cb"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/endpoint-operation-kind-mismatch/non-trigger/lekalo/modules/planner/entities.yaml",
+      "sha256": "sha256:b210db7cd6c1865de0253972daad47debce400638243e4a83aa3bf8b9fc4bb7f"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/endpoint-operation-kind-mismatch/non-trigger/lekalo/modules/planner/module.yaml",
+      "sha256": "sha256:8da58fa762763f2b89cfa6475d6672bf2dc8ccb9def407dc51c89a76d252352a"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/endpoint-operation-kind-mismatch/non-trigger/lekalo/project.yaml",
+      "sha256": "sha256:2ed52b260e7da8bb56ea5d4f5cb1fa85fef0f886df792fc4ec41e296ec3f60de"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/endpoint-operation-kind-mismatch/trigger/lekalo/modules/planner/bindings.yaml",
+      "sha256": "sha256:101b7e6bace0e2fcecebe1312b5ce7db579090b283f50052b2a39fabbff286d4"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/endpoint-operation-kind-mismatch/trigger/lekalo/modules/planner/entities.yaml",
+      "sha256": "sha256:b210db7cd6c1865de0253972daad47debce400638243e4a83aa3bf8b9fc4bb7f"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/endpoint-operation-kind-mismatch/trigger/lekalo/modules/planner/module.yaml",
+      "sha256": "sha256:8da58fa762763f2b89cfa6475d6672bf2dc8ccb9def407dc51c89a76d252352a"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/endpoint-operation-kind-mismatch/trigger/lekalo/project.yaml",
+      "sha256": "sha256:2ed52b260e7da8bb56ea5d4f5cb1fa85fef0f886df792fc4ec41e296ec3f60de"
+    }
+  ]
+}

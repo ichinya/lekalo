@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.architecture-profile-diff-schema@0.6.5",
+  "title": "Lekalo architecture-profile-diff 0.6.5",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/architecture-profile-diff/v0.6.5"
+    },
+    "identity": {
+      "const": "dev.lekalo.architecture-profile-diff@0.6.5"
+    },
+    "baseRef": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "candidateRef": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "comparable": {
+      "const": true
+    },
+    "changes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/change"
+      },
+      "maxItems": 20000,
+      "minItems": 0
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "identity",
+    "baseRef",
+    "candidateRef",
+    "comparable",
+    "changes"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "change": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]+$",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "ruleId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]+$",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "member": {
+          "enum": [
+            "enabled",
+            "severity",
+            "required",
+            "limit",
+            "membership",
+            "assignments",
+            "document"
+          ]
+        },
+        "strength": {
+          "enum": [
+            "weakened",
+            "strengthened",
+            "incomparable"
+          ]
+        },
+        "before": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "after": {
+          "type": "string",
+          "maxLength": 2000
+        }
+      },
+      "required": [
+        "scope",
+        "ruleId",
+        "member",
+        "strength",
+        "before",
+        "after"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,0 +1,4 @@
+{
+  "rule": "semantic.visibility-boundary-violation",
+  "pair": "visibility-boundary-violation.pair"
+}

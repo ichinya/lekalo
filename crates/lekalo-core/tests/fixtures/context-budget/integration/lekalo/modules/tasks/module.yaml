@@ -1,0 +1,8 @@
+schema_version: "0.2.16"
+definitions:
+  - id: tasks
+    kind: module
+    version: 1
+    description: "Task domain under integration"
+    imports:
+      - events

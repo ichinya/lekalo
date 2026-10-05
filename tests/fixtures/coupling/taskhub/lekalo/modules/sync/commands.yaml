@@ -1,0 +1,24 @@
+schema_version: "0.2.16"
+definitions:
+  -
+    id: "sync.sync_event"
+    kind: "command"
+    version: 1
+    input:
+      -
+        name: "request"
+        type: "sync.local_request"
+        required: true
+      -
+        name: "client"
+        type: "integrations.client"
+        required: true
+  -
+    id: "sync.to_payload"
+    kind: "command"
+    version: 1
+    input:
+      -
+        name: "request"
+        type: "sync.request"
+        required: true

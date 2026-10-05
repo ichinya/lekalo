@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.fixture@1.0.0",
+  "title": "Lekalo golden-suite fixture case descriptor (v1.0.0)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["fixtureSchema", "caseId", "revision", "class", "origin", "runner", "contractPins"],
+  "properties": {
+    "fixtureSchema": { "const": "dev.lekalo.fixture@1.0.0" },
+    "caseId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
+      "maxLength": 128
+    },
+    "revision": { "type": "integer", "minimum": 1 },
+    "class": {
+      "enum": [
+        "minimal-project",
+        "diagnostic-pair",
+        "graph-projection",
+        "query-projection",
+        "diff-witness",
+        "scenario-outcome",
+        "protocol-exchange",
+        "security-recipe",
+        "determinism-perturbation",
+        "integrated-chain"
+      ]
+    },
+    "origin": { "const": "synthetic" },
+    "issue": { "type": "string", "maxLength": 64 },
+    "purpose": { "type": "string", "maxLength": 512 },
+    "runner": {
+      "type": "string",
+      "enum": [
+        "cli-validate",
+        "cli-load",
+        "cli-load-ir",
+        "cli-graph-export",
+        "cli-effects",
+        "cli-inspect",
+        "cli-impact",
+        "cli-context",
+        "cli-diff",
+        "cli-trace-export",
+        "cli-query-model-validate",
+        "node-scenario-runner",
+        "protocol-echo",
+        "static-recipe"
+      ]
+    },
+    "contractPins": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["identity"],
+        "properties": {
+          "identity": { "type": "string", "pattern": "^(dev\\.lekalo\\.[a-z-]+@|lekalo/[a-z-]+/v)[0-9][0-9a-zA-Z.@-]*$" },
+          "role": { "type": "string", "maxLength": 64 }
+        }
+      }
+    },
+    "inputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["role", "path"],
+        "properties": {
+          "role": { "type": "string", "pattern": "^[a-z][a-z-]*$", "maxLength": 32 },
+          "path": { "$ref": "#/$defs/repoPath" },
+          "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+        }
+      }
+    },
+    "expected": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["role", "path", "byteMode"],
+        "properties": {
+          "role": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$", "maxLength": 48 },
+          "path": { "$ref": "#/$defs/repoPath" },
+          "byteMode": {
+            "enum": ["canonical-json-compact", "cli-json-lf", "text-lf", "exact-bytes"]
+          },
+          "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+        }
+      }
+    },
+    "expectation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": { "enum": ["valid", "invalid", "denied", "unsupported-version"] },
+        "exit": { "type": "integer", "minimum": 0, "maximum": 5 },
+        "reasonCodes": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$" }
+        },
+        "witnessRule": {
+          "type": "string", "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$"
+        },
+        "witnessPolarity": { "enum": ["trigger", "non-trigger"] }
+      }
+    },
+    "argv": {
+      "type": "array",
+      "items": { "type": "string", "maxLength": 256 },
+      "maxItems": 32
+    },
+    "timeoutMs": { "type": "integer", "minimum": 1000, "maximum": 300000 },
+    "determinism": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "seed": { "type": "integer" },
+        "clockPolicy": { "type": "string", "maxLength": 64 },
+        "idPolicy": { "type": "string", "maxLength": 64 },
+        "locale": { "const": "C" },
+        "newlineMode": { "enum": ["lf-only", "preserve-input"] },
+        "pathMode": { "enum": ["logical-repository-relative", "sandbox-absolute"] }
+      }
+    },
+    "dependsOn": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$" }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxOutputBytes": { "type": "integer", "minimum": 1 },
+        "maxFiles": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "updateRecipe": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$", "maxLength": 64 }
+  },
+  "$defs": {
+    "repoPath": {
+      "type": "string",
+      "pattern": "^(?!.*(^|/)\\.\\./)(?!^/)[A-Za-z0-9._][A-Za-z0-9._/ -]*$",
+      "maxLength": 256
+    }
+  }
+}

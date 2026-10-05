@@ -1,0 +1,4 @@
+{
+  "rule": "semantic.command-effect-kind-mismatch",
+  "pair": "command-effect-kind-mismatch.pair"
+}

@@ -9,6 +9,11 @@
       "origin": "synthetic"
     },
     {
+      "family": "architecture-profile",
+      "origin": "synthetic",
+      "note": "Issue #84: authored architecture policy, resolution, scope, lock, diff, baseline and adoption goldens over the synthetic context-budget planner. No native runtime or AI task outcome claims."
+    },
+    {
       "family": "adapter-manifest",
       "origin": "synthetic"
     },
@@ -19,6 +24,41 @@
     {
       "family": "adopt",
       "origin": "synthetic"
+    },
+    {
+      "family": "ai-lint",
+      "origin": "synthetic",
+      "note": "Issue #76: authored Model, target source, evidence, policy, waiver and revision fixtures; no private code or executed application behavior."
+    },
+    {
+      "family": "ai-lint-comparison",
+      "origin": "synthetic",
+      "note": "Issue #76 comparison contract: authored fixtures and deterministic live CLI receipts; no private input or executed application behavior."
+    },
+    {
+      "family": "ai-lint-config",
+      "origin": "synthetic",
+      "note": "Issue #76 config contract: authored fixtures and deterministic live CLI receipts; no private input or executed application behavior."
+    },
+    {
+      "family": "ai-lint-evidence",
+      "origin": "synthetic",
+      "note": "Issue #76 evidence contract: authored fixtures and deterministic live CLI receipts; no private input or executed application behavior."
+    },
+    {
+      "family": "ai-lint-report",
+      "origin": "synthetic",
+      "note": "Issue #76 report contract: authored fixtures and deterministic live CLI receipts; no private input or executed application behavior."
+    },
+    {
+      "family": "ai-lint-waivers",
+      "origin": "synthetic",
+      "note": "Issue #76 waivers contract: authored fixtures and deterministic live CLI receipts; no private input or executed application behavior."
+    },
+    {
+      "family": "ai-workspace",
+      "origin": "synthetic",
+      "note": "issue #37 ai-workspace integration: the reviewed routing-manifest example and the change-event envelope example are exclusively synthetic, authored in-repo from public contract identities and neutral role aliases; no private checkout content"
     },
     {
       "family": "artifacts",
@@ -41,6 +81,10 @@
       "origin": "synthetic"
     },
     {
+      "family": "ci-report",
+      "origin": "synthetic"
+    },
+    {
       "family": "classification",
       "origin": "synthetic"
     },
@@ -53,8 +97,17 @@
       "origin": "synthetic"
     },
     {
+      "family": "context-budget",
+      "origin": "synthetic"
+    },
+    {
       "family": "contracted",
       "origin": "synthetic"
+    },
+    {
+      "family": "coupling",
+      "origin": "synthetic",
+      "note": "Issue #77: planner copies and authored Taskhub/provider semantic reference projections, freshly pinned synthetic attachment/golden/negative vectors; source anchors and limitations in tests/fixtures/coupling/README.md."
     },
     {
       "family": "diagnostics",
@@ -63,6 +116,11 @@
     {
       "family": "diff",
       "origin": "synthetic"
+    },
+    {
+      "family": "docs",
+      "origin": "synthetic",
+      "note": "Issue #105 documentation replay metadata: authored in-repo from public command blocks and existing synthetic corpora; no private consumer content. The contracted-module tutorial variant derives only from the synthetic contracted/planner-slice corpus, with explicit Model/declaration limits and real maintained-code tests."
     },
     {
       "family": "doctor",
@@ -83,6 +141,31 @@
     {
       "family": "extended-effects",
       "origin": "synthetic"
+    },
+    {
+      "family": "framework-lift-arm",
+      "origin": "synthetic",
+      "note": "Issue #100: synthetic recorded evidence; no external model run, private code or prompt."
+    },
+    {
+      "family": "framework-lift-baseline",
+      "origin": "synthetic",
+      "note": "Issue #100: synthetic recorded evidence; no external model run, private code or prompt."
+    },
+    {
+      "family": "framework-lift-campaign",
+      "origin": "synthetic",
+      "note": "Issue #100: synthetic recorded evidence; no external model run, private code or prompt."
+    },
+    {
+      "family": "framework-lift-result",
+      "origin": "synthetic",
+      "note": "Issue #100: synthetic recorded evidence; no external model run, private code or prompt."
+    },
+    {
+      "family": "framework-lift-task",
+      "origin": "synthetic",
+      "note": "Issue #100: synthetic recorded evidence; no external model run, private code or prompt."
     },
     {
       "family": "graph",
@@ -123,6 +206,11 @@
     {
       "family": "mago",
       "origin": "synthetic"
+    },
+    {
+      "family": "metrics-export",
+      "origin": "synthetic",
+      "note": "Issue #102: authored paired trial metadata, local recorder observations, aggregate/manifest/preview goldens and hostile lifecycle probes. No private consumer data or #100 evaluation claims."
     },
     {
       "family": "model",
@@ -176,7 +264,7 @@
     {
       "family": "pilot",
       "origin": "synthetic",
-      "note": "issue #49 observed-mode pilot: the taskhub consumer fixture, its pinned scan document, and its native gate plan are exclusively synthetic; issue #118 adds the brownfield-ts workspace fixture (Hono + Drizzle sqliteTable + vitest), equally authored in-repo"
+      "note": "issue #49 observed-mode pilot: the taskhub consumer fixture, its pinned scan document, and its native gate plan are exclusively synthetic; issue #118 adds the brownfield-ts workspace fixture (Hono + Drizzle sqliteTable + vitest), equally authored in-repo Issue #105 adds the separate brownfield-mysql Hono/Drizzle/MySQL 8.4 fixture, authored synthetic; its actual-package native tests and authored offline declarations are distinct from the unchanged SQLite pilot."
     },
     {
       "family": "privacy",
@@ -186,6 +274,10 @@
       "family": "privacy-leaks",
       "origin": "synthetic",
       "note": "synthetic leak markers for the privacy scanner gate; no real values"
+    },
+    {
+      "family": "provider",
+      "origin": "synthetic"
     },
     {
       "family": "query-model",
@@ -232,6 +324,10 @@
       "origin": "synthetic"
     },
     {
+      "family": "suite",
+      "origin": "synthetic"
+    },
+    {
       "family": "target-profile",
       "origin": "synthetic"
     },
@@ -242,6 +338,11 @@
     {
       "family": "trace",
       "origin": "synthetic"
+    },
+    {
+      "family": "trace-assessment",
+      "origin": "synthetic",
+      "note": "Issue #35 neutral evidence/assessment vectors, original-code and custody negative controls; greenfield/adopt HLV-owned sentinels. Synthetic receipts, never live HLV execution."
     },
     {
       "family": "transaction-concurrency",
@@ -258,6 +359,16 @@
     {
       "family": "versioning",
       "origin": "synthetic"
+    },
+    {
+      "family": "waiver-audit",
+      "origin": "synthetic",
+      "note": "Issue 88 scoped governance live CLI fixtures."
+    },
+    {
+      "family": "waiver-input",
+      "origin": "synthetic",
+      "note": "Issue 88 scoped governance live CLI fixtures."
     }
   ]
 }

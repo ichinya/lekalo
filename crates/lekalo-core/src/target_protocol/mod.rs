@@ -93,6 +93,7 @@ pub struct CallRequest<'a> {
     /// `plan-native`, refused elsewhere (issue #48). The borrowed value
     /// is serialized into the envelope; ownership stays with the caller.
     pub native_request: Option<&'a wire::NativeRequest>,
+    pub lint_request: Option<&'a wire::LintRequest>,
 }
 
 /// One completed, verified adapter operation.
@@ -426,9 +427,27 @@ impl TargetClient {
         // sandbox exists; exceeding scopes refuse as
         // `adapter.permission-escalated` (denied) unless the session
         // carries an explicit escalation policy.
+        let (read_claim, write_claim) = if let Some(lint) = request.lint_request {
+            if lint.files.iter().any(|path| {
+                !capabilities
+                    .read_scopes
+                    .iter()
+                    .any(|scope| scopes::scope_covers(scope, path))
+            }) {
+                return Err(TargetFailure::RequestInvalid {
+                    detail: "lint-read-scope",
+                });
+            }
+            (lint.files.clone(), Vec::new())
+        } else {
+            (
+                capabilities.read_scopes.clone(),
+                capabilities.write_scopes.clone(),
+            )
+        };
         let effective = self
             .budget
-            .check_scopes(&capabilities.read_scopes, &capabilities.write_scopes)
+            .check_scopes(&read_claim, &write_claim)
             .map_err(|escalation| TargetFailure::PermissionEscalated {
                 member: escalation.member(),
                 adapter: capabilities.adapter.id.clone(),
@@ -445,7 +464,8 @@ impl TargetClient {
         // A resolved profile (issue #29) is bound to 0.3.1 sessions only:
         // an older session refuses the caller rather than silently
         // dropping the resolution.
-        if request.profile_resolution.is_some() && described.negotiated_version != version::VERSION
+        if request.profile_resolution.is_some()
+            && !version::is_supported_version(described.negotiated_version)
         {
             return Err(TargetFailure::CapabilityUnsupported {
                 detail: "profile-resolution",
@@ -522,6 +542,7 @@ impl TargetClient {
         envelope.profile = request.profile.map(str::to_owned);
         envelope.dry_run = dry_run;
         envelope.plan_id = plan_request;
+        envelope.lint_request = request.lint_request.cloned();
         if let Some(native) = request.native_request {
             envelope.native_request = Some(native.clone());
         }
@@ -770,6 +791,9 @@ impl TargetClient {
         effective_read: &[String],
     ) -> Result<(), TargetFailure> {
         let invalid = |detail| Err(TargetFailure::RequestInvalid { detail });
+        if (request.operation == Operation::Lint) != request.lint_request.is_some() {
+            return invalid("lint-request");
+        }
         if request.operation == Operation::Describe {
             // `describe` travels through `TargetClient::describe` only.
             return invalid("operation");
@@ -902,6 +926,9 @@ impl TargetClient {
             return invalid(ResponseInvalidity::UnexpectedMember);
         }
         if let Some(result) = response.result.as_ref() {
+            if result.lint_evidence.is_some() && request.operation != Operation::Lint {
+                return invalid(ResponseInvalidity::UnexpectedMember);
+            }
             if result.entries.is_some() && request.operation != Operation::Scan {
                 return invalid(ResponseInvalidity::UnexpectedMember);
             }
@@ -937,6 +964,7 @@ impl TargetClient {
             Operation::Bind => result.is_some_and(|r| r.bindings.is_some()),
             Operation::Validate | Operation::Verify => result.is_some_and(|r| r.ok.is_some()),
             Operation::PlanNative => result.is_some_and(|r| r.native_plan.is_some()),
+            Operation::Lint => result.is_some_and(|r| r.lint_evidence.is_some()),
             _ => result.is_none(),
         };
         if !complete {
@@ -1012,6 +1040,8 @@ fn base_envelope(
         limits: Some(limits),
         plan_id: None,
         native_request: None,
+
+        lint_request: None,
     }
 }
 

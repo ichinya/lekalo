@@ -1,0 +1,4 @@
+{
+  "rule": "semantic.query-read-kind-mismatch",
+  "pair": "query-read-kind-mismatch.pair"
+}

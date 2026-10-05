@@ -248,9 +248,9 @@ for (const vector of vectors.vectors) {
 //    active, error-severity, and semantic-category; every one is
 //    preserved from the frozen 1.24.0 line plus exactly its own nine.
 // ---------------------------------------------------------------------------
-const registry = read("contracts/diagnostic-registry.v0.2.16.json");
+const registry = read("contracts/diagnostic-registry.v0.6.4.json");
 const predecessor = read("contracts/diagnostic-registry.v0.2.16.json");
-if (registry.registry_version !== "0.2.16") fail("registry-version", registry.registry_version);
+if (registry.registry_version !== "0.6.4") fail("registry-version", registry.registry_version);
 const expectedExpressionRules = [
   ["expression.input-invalid", "LEK-EXPR-001"],
   ["expression.contract-invalid", "LEK-EXPR-002"],
@@ -274,7 +274,7 @@ for (const [id, code] of expectedExpressionRules) {
 // The registry chain is additive: the current embedded registry (the
 // version Rust compiles via include_bytes!) must still carry every
 // LEK-EXPR rule with the same code/lifecycle/severity/category.
-const currentRegistry = read("contracts/diagnostic-registry.v0.4.0.json");
+const currentRegistry = read("contracts/diagnostic-registry.v0.6.4.json");
 const currentEntries = new Map(currentRegistry.entries.map((entry) => [entry.id, entry]));
 for (const [id, code] of expectedExpressionRules) {
   const entry = currentEntries.get(id);
@@ -315,11 +315,11 @@ for (const constant of [
   if (!versionSource.includes(constant)) fail("rust-constant", constant);
 }
 const diagnosticsVersionSource = readText("crates/lekalo-core/src/diagnostics/version.rs");
-if (!diagnosticsVersionSource.includes('REGISTRY_VERSION: &str = "0.4.0"')) {
-  fail("rust-registry-version", "0.4.0");
+if (!diagnosticsVersionSource.includes('REGISTRY_VERSION: &str = "0.6.4"')) {
+  fail("rust-registry-version", "0.6.4");
 }
-if (!diagnosticsVersionSource.includes('REGISTRY_IDENTITY: &str = "dev.lekalo.diagnostic-registry@0.4.0"')) {
-  fail("rust-registry-identity", "0.4.0");
+if (!diagnosticsVersionSource.includes('REGISTRY_IDENTITY: &str = "dev.lekalo.diagnostic-registry@0.6.4"')) {
+  fail("rust-registry-identity", "0.6.4");
 }
 const builtinSource = readText("crates/lekalo-core/src/expressions/builtin.rs");
 for (const name of builtinNames) {

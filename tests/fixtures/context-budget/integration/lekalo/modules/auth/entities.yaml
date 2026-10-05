@@ -1,0 +1,7 @@
+schema_version: "0.2.16"
+definitions:
+  - id: auth.credential
+    kind: scalar
+    version: 1
+    description: "Opaque credential reference"
+    base: string

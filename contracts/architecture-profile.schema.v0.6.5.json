@@ -1,0 +1,267 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.architecture-profile-schema@0.6.5",
+  "title": "Lekalo architecture-profile 0.6.5",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/architecture-profile/v0.6.5"
+    },
+    "identity": {
+      "const": "dev.lekalo.architecture-profile@0.6.5"
+    },
+    "catalogRef": {
+      "$ref": "#/$defs/reference"
+    },
+    "profiles": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/profile"
+      },
+      "maxItems": 256,
+      "minItems": 1
+    },
+    "assignments": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/assignment"
+      },
+      "maxItems": 256,
+      "minItems": 0
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "identity",
+    "catalogRef",
+    "profiles",
+    "assignments"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "assignment": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "$ref": "#/$defs/scope"
+        },
+        "profileRef": {
+          "$ref": "#/$defs/reference"
+        }
+      },
+      "required": [
+        "scope",
+        "profileRef"
+      ],
+      "additionalProperties": false
+    },
+    "limit": {
+      "type": "object",
+      "properties": {
+        "maximum": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000000
+        },
+        "calibrationRef": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]+$",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "maximum",
+        "calibrationRef"
+      ],
+      "additionalProperties": false
+    },
+    "profile": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]+$",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "version": {
+          "const": "1"
+        },
+        "extends": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "$ref": "#/$defs/reference"
+                }
+              },
+              "required": [
+                "state",
+                "value"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "const": "unknown"
+                }
+              },
+              "required": [
+                "state"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/selection"
+          },
+          "maxItems": 256,
+          "minItems": 0
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "extends",
+        "rules"
+      ],
+      "additionalProperties": false
+    },
+    "reference": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]+$",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]+$",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "digest"
+      ],
+      "additionalProperties": false
+    },
+    "scope": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "project",
+            "module"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]+$",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "kind",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "selection": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "enum": [
+            "architecture.bounded-context",
+            "architecture.deterministic-generation",
+            "architecture.errors-as-contracts",
+            "architecture.explicit-dependencies",
+            "architecture.explicit-operation-contracts",
+            "architecture.explicit-target-bindings",
+            "architecture.immutable-defaults",
+            "architecture.justified-abstractions",
+            "architecture.no-hidden-observers",
+            "architecture.no-service-locator-magic",
+            "architecture.scenario-linked-behavior",
+            "architecture.single-entrypoint",
+            "architecture.stable-semantic-ids",
+            "architecture.strict-native-types",
+            "architecture.tracked-duplication"
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "severity": {
+          "enum": [
+            "info",
+            "warning",
+            "error"
+          ]
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "limit": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "$ref": "#/$defs/limit"
+                }
+              },
+              "required": [
+                "state",
+                "value"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "const": "unknown"
+                }
+              },
+              "required": [
+                "state"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "enabled",
+        "severity",
+        "required",
+        "limit"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

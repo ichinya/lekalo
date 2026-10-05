@@ -1,0 +1,92 @@
+schema_version: "0.2.16"
+definitions:
+  -
+    id: "provider.context"
+    kind: "command"
+    version: 1
+    input:
+      -
+        name: "manifest"
+        type: "provider.manifest"
+        required: true
+  -
+    id: "provider.doctor"
+    kind: "command"
+    version: 1
+    input:
+      -
+        name: "manifest"
+        type: "provider.manifest"
+        required: true
+  -
+    id: "provider.drift"
+    kind: "command"
+    version: 1
+    input:
+      -
+        name: "manifest"
+        type: "provider.manifest"
+        required: true
+  -
+    id: "provider.generate"
+    kind: "command"
+    version: 1
+    input:
+      -
+        name: "manifest"
+        type: "provider.manifest"
+        required: true
+  -
+    id: "provider.impact"
+    kind: "command"
+    version: 1
+    input:
+      -
+        name: "manifest"
+        type: "provider.manifest"
+        required: true
+  -
+    id: "provider.readiness"
+    kind: "command"
+    version: 1
+    input:
+      -
+        name: "manifest"
+        type: "provider.manifest"
+        required: true
+  -
+    id: "provider.status"
+    kind: "command"
+    version: 1
+    input:
+      -
+        name: "manifest"
+        type: "provider.manifest"
+        required: true
+  -
+    id: "provider.trace_export"
+    kind: "command"
+    version: 1
+    input:
+      -
+        name: "manifest"
+        type: "provider.manifest"
+        required: true
+  -
+    id: "provider.validate"
+    kind: "command"
+    version: 1
+    input:
+      -
+        name: "manifest"
+        type: "provider.manifest"
+        required: true
+  -
+    id: "provider.verify"
+    kind: "command"
+    version: 1
+    input:
+      -
+        name: "manifest"
+        type: "provider.manifest"
+        required: true

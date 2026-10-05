@@ -11,10 +11,10 @@ use serde::Serialize;
 pub const SCHEMA_VERSION: &str = "lekalo/diagnostic/v0.2.16";
 
 /// The exact wire discriminator of the diagnostic registry contract.
-pub const REGISTRY_SCHEMA_VERSION: &str = "lekalo/diagnostic-registry/v0.4.0";
+pub const REGISTRY_SCHEMA_VERSION: &str = "lekalo/diagnostic-registry/v0.6.4";
 
 /// The embedded diagnostic registry identity.
-pub const REGISTRY_IDENTITY: &str = "dev.lekalo.diagnostic-registry@0.4.0";
+pub const REGISTRY_IDENTITY: &str = "dev.lekalo.diagnostic-registry@0.6.4";
 
 /// The current diagnostic registry version. The integrated chain is
 /// additive end to end: 1.14.0 (issue #29) -> 1.16.0 (issue #39, the
@@ -39,8 +39,22 @@ pub const REGISTRY_IDENTITY: &str = "dev.lekalo.diagnostic-registry@0.4.0";
 /// all at the reserved 0.4.0 product generation;
 /// issue #45 ships no new diagnostic families) -> issue #47
 /// (the reserved `scenario.*` family LEK-SCN-001..011, additive at the
-/// same 0.4.0 product generation).
-pub const REGISTRY_VERSION: &str = "0.4.0";
+/// same 0.4.0 product generation) -> 0.6.3 (issue #75, the active
+/// `context.*` family LEK-CONTEXT-001..008 of the context-budget
+/// report) -> 0.6.4 (issues #35, #76 and #77: the `trace.bridge-*`
+/// family LEK-TRACE-001..009, the `ai-lint.*` family
+/// LEK-AILINT-001..006, the `ambiguity.*` family LEK-AMBIGUITY-001..003,
+/// the `hidden.*` family LEK-HIDDEN-001..006/009, the `indirection.*`
+/// family LEK-INDIRECTION-001, and the `coupling.*` family
+/// LEK-COUPLING-001..015; the registry takes the product version of
+/// its commit per docs/versioning.md). Issue #100 adds six independent
+/// `evaluation.*` rules LEK-EVAL-001..006 without modifying earlier
+/// entries; issue #102 adds eight `metrics-export.*` rules
+/// LEK-MEXPORT-001..008 the same way.
+pub const REGISTRY_VERSION: &str = "0.6.4";
+
+/// Opt-in issue #84 union successor. Predecessor producers keep their exact pins.
+pub const SUCCESSOR_REGISTRY_VERSION: &str = "0.6.5";
 
 /// The closed diagnostic schema version.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

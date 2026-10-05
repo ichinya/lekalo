@@ -1,0 +1,4 @@
+{
+  "rule": "semantic.effect-emits-kind-mismatch",
+  "pair": "effect-emits-kind-mismatch.pair"
+}

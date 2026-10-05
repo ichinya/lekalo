@@ -355,6 +355,7 @@ const banner = `#!/usr/bin/env node
 async function buildZodArtifact() {
   rmSync(zodScratchRoot, { recursive: true, force: true });
   mkdirSync(join(zodScratchRoot, "src"), { recursive: true });
+  writeFileSync(join(zodScratchRoot,"src","ai-lint.mjs"),readFileSync(join(adapterRoot,"src","ai-lint.mjs"),"utf8"));
   const kernelSource = readFileSync(kernelPath, "utf8").replace(/^#![^[\n]*\n/, "");
   writeFileSync(join(zodScratchRoot, "src", "kernel.mjs"), kernelSource);
   for (const name of ["zod-gen.mjs", "zod-map.mjs", "zod-emit.mjs", "zod-policy.mjs"]) {
@@ -425,6 +426,7 @@ async function buildArtifact() {
   rmSync(scratchRoot, { recursive: true, force: true });
   mkdirSync(join(scratchRoot, "src"), { recursive: true });
   const libFiles = collectLibFiles();
+  writeFileSync(join(scratchRoot,"src","ai-lint.mjs"),readFileSync(join(adapterRoot,"src","ai-lint.mjs"),"utf8"));
   writeFileSync(libsPath, libsModuleText(libFiles));
   writeFileSync(join(scratchRoot, "src", "libs.mjs"), libsModuleText(libFiles));
   const drizzle = collectDrizzleFiles();

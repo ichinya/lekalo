@@ -1,0 +1,25 @@
+schema_version: "0.2.16"
+definitions:
+  - id: tasks.receive_task
+    kind: command
+    version: 1
+    description: "Receive a task for external synchronization"
+    derived_from:
+      - "INTEG-REQ-001"
+    input:
+      - name: task_id
+        type: "tasks.task_id"
+        required: true
+      - name: payload
+        type: "tasks.payload"
+        required: true
+    effects:
+      - "tasks.task_received"
+  - id: tasks.task_received
+    kind: effect
+    version: 1
+    description: "Records the receipt"
+    operation: create
+    entity: "tasks.task"
+    emits:
+      - "events.task_accepted"

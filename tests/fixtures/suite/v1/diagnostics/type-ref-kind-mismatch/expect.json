@@ -1,0 +1,4 @@
+{
+  "rule": "semantic.type-ref-kind-mismatch",
+  "pair": "type-ref-kind-mismatch.pair"
+}

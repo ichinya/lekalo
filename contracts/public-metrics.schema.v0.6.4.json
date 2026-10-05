@@ -1,0 +1,5772 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.public-metrics-schema@0.6.4",
+  "title": "Lekalo public-metrics",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "identity",
+    "artifactKind",
+    "policyRef",
+    "authorityRef",
+    "definitionRef",
+    "evaluationProtocol",
+    "cohorts",
+    "comparisons"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "lekalo/public-metrics/v0.6.4"
+    },
+    "identity": {
+      "const": "dev.lekalo.public-metrics@0.6.4"
+    },
+    "artifactKind": {
+      "const": "aggregate.artifact"
+    },
+    "policyRef": {
+      "$ref": "#/$defs/privacy-policyRef"
+    },
+    "authorityRef": {
+      "$ref": "#/$defs/privacy-authorityRef"
+    },
+    "definitionRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity",
+        "digest"
+      ],
+      "properties": {
+        "identity": {
+          "const": "dev.lekalo.metrics-aggregation-definition@0.6.4"
+        },
+        "digest": {
+          "const": "sha256:22a7e0ba29c1399fccb6f2ab39aba49ab1e2ebd69469acc9ee3ca3d6d905702e"
+        }
+      }
+    },
+    "evaluationProtocol": {
+      "const": "framework-lift-paired-trials/1"
+    },
+    "cohorts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "arm",
+          "pilot",
+          "scopeState",
+          "repositoryRole",
+          "repositoryAlias",
+          "profileAlias",
+          "modelAlias",
+          "harnessAlias",
+          "stack",
+          "contextCoverage",
+          "coreVersion",
+          "profileVersion",
+          "harnessVersion",
+          "sample",
+          "outcomes",
+          "coverage",
+          "metrics",
+          "verifiedSuccess",
+          "successRate",
+          "cost",
+          "confidence"
+        ],
+        "properties": {
+          "arm": {
+            "enum": [
+              "baseline",
+              "lekalo-assisted"
+            ]
+          },
+          "pilot": {
+            "enum": [
+              "greenfield",
+              "brownfield"
+            ]
+          },
+          "scopeState": {
+            "enum": [
+              "observed",
+              "contracted",
+              "hybrid"
+            ]
+          },
+          "repositoryRole": {
+            "enum": [
+              "local-workspace",
+              "consumer-repository",
+              "lekalo-repository",
+              "openspec-repository",
+              "ai-factory-repository",
+              "hlv-repository",
+              "source-native-repository",
+              "external-repository",
+              "public-channel"
+            ]
+          },
+          "repositoryAlias": {
+            "const": "consumer-01"
+          },
+          "profileAlias": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "state",
+                  "value"
+                ],
+                "properties": {
+                  "state": {
+                    "const": "known"
+                  },
+                  "value": {
+                    "type": "string",
+                    "pattern": "^profile-[0-9]{2,3}$",
+                    "maxLength": 16
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "state"
+                ],
+                "properties": {
+                  "state": {
+                    "enum": [
+                      "unknown",
+                      "withheld",
+                      "unsupported"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "modelAlias": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "state",
+                  "value"
+                ],
+                "properties": {
+                  "state": {
+                    "const": "known"
+                  },
+                  "value": {
+                    "type": "string",
+                    "pattern": "^model-[0-9]{2,3}$",
+                    "maxLength": 16
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "state"
+                ],
+                "properties": {
+                  "state": {
+                    "enum": [
+                      "unknown",
+                      "withheld",
+                      "unsupported"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "harnessAlias": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "state",
+                  "value"
+                ],
+                "properties": {
+                  "state": {
+                    "const": "known"
+                  },
+                  "value": {
+                    "type": "string",
+                    "pattern": "^harness-[0-9]{2,3}$",
+                    "maxLength": 16
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "state"
+                ],
+                "properties": {
+                  "state": {
+                    "enum": [
+                      "unknown",
+                      "withheld",
+                      "unsupported"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "stack": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "const": "unknown"
+              }
+            }
+          },
+          "contextCoverage": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "state",
+                  "value"
+                ],
+                "properties": {
+                  "state": {
+                    "const": "known"
+                  },
+                  "value": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "numerator",
+                      "denominator"
+                    ],
+                    "properties": {
+                      "numerator": {
+                        "type": "string",
+                        "pattern": "^-?[0-9]{1,40}$",
+                        "maxLength": 41
+                      },
+                      "denominator": {
+                        "type": "string",
+                        "pattern": "^[1-9][0-9]{0,39}$",
+                        "maxLength": 40
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "state"
+                ],
+                "properties": {
+                  "state": {
+                    "enum": [
+                      "unknown",
+                      "withheld",
+                      "unsupported"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "coreVersion": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "state",
+                  "value"
+                ],
+                "properties": {
+                  "state": {
+                    "const": "known"
+                  },
+                  "value": {
+                    "type": "string",
+                    "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+                    "maxLength": 64
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "state"
+                ],
+                "properties": {
+                  "state": {
+                    "enum": [
+                      "unknown",
+                      "withheld",
+                      "unsupported"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "profileVersion": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "state",
+                  "value"
+                ],
+                "properties": {
+                  "state": {
+                    "const": "known"
+                  },
+                  "value": {
+                    "type": "string",
+                    "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+                    "maxLength": 64
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "state"
+                ],
+                "properties": {
+                  "state": {
+                    "enum": [
+                      "unknown",
+                      "withheld",
+                      "unsupported"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "harnessVersion": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "state",
+                  "value"
+                ],
+                "properties": {
+                  "state": {
+                    "const": "known"
+                  },
+                  "value": {
+                    "type": "string",
+                    "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+                    "maxLength": 64
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "state"
+                ],
+                "properties": {
+                  "state": {
+                    "enum": [
+                      "unknown",
+                      "withheld",
+                      "unsupported"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "sample": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "state",
+                  "value"
+                ],
+                "properties": {
+                  "state": {
+                    "const": "known"
+                  },
+                  "value": {
+                    "type": "integer",
+                    "minimum": 5,
+                    "maximum": 1024
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "state"
+                ],
+                "properties": {
+                  "state": {
+                    "enum": [
+                      "unknown",
+                      "withheld",
+                      "unsupported"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "outcomes": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "state",
+                  "value"
+                ],
+                "properties": {
+                  "state": {
+                    "const": "known"
+                  },
+                  "value": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "pass",
+                      "warn",
+                      "fail",
+                      "unsupported",
+                      "infrastructure"
+                    ],
+                    "properties": {
+                      "pass": {
+                        "oneOf": [
+                          {
+                            "const": 0
+                          },
+                          {
+                            "type": "integer",
+                            "minimum": 5,
+                            "maximum": 1024
+                          }
+                        ]
+                      },
+                      "warn": {
+                        "oneOf": [
+                          {
+                            "const": 0
+                          },
+                          {
+                            "type": "integer",
+                            "minimum": 5,
+                            "maximum": 1024
+                          }
+                        ]
+                      },
+                      "fail": {
+                        "oneOf": [
+                          {
+                            "const": 0
+                          },
+                          {
+                            "type": "integer",
+                            "minimum": 5,
+                            "maximum": 1024
+                          }
+                        ]
+                      },
+                      "unsupported": {
+                        "oneOf": [
+                          {
+                            "const": 0
+                          },
+                          {
+                            "type": "integer",
+                            "minimum": 5,
+                            "maximum": 1024
+                          }
+                        ]
+                      },
+                      "infrastructure": {
+                        "oneOf": [
+                          {
+                            "const": 0
+                          },
+                          {
+                            "type": "integer",
+                            "minimum": 5,
+                            "maximum": 1024
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "state"
+                ],
+                "properties": {
+                  "state": {
+                    "enum": [
+                      "unknown",
+                      "withheld",
+                      "unsupported"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "coverage": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "state",
+                  "value"
+                ],
+                "properties": {
+                  "state": {
+                    "const": "known"
+                  },
+                  "value": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "complete",
+                      "incomplete",
+                      "unknown"
+                    ],
+                    "properties": {
+                      "complete": {
+                        "oneOf": [
+                          {
+                            "const": 0
+                          },
+                          {
+                            "type": "integer",
+                            "minimum": 5,
+                            "maximum": 1024
+                          }
+                        ]
+                      },
+                      "incomplete": {
+                        "oneOf": [
+                          {
+                            "const": 0
+                          },
+                          {
+                            "type": "integer",
+                            "minimum": 5,
+                            "maximum": 1024
+                          }
+                        ]
+                      },
+                      "unknown": {
+                        "oneOf": [
+                          {
+                            "const": 0
+                          },
+                          {
+                            "type": "integer",
+                            "minimum": 5,
+                            "maximum": 1024
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "state"
+                ],
+                "properties": {
+                  "state": {
+                    "enum": [
+                      "unknown",
+                      "withheld",
+                      "unsupported"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "metrics": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "durationMs",
+              "filesRead",
+              "filesChanged",
+              "toolCalls",
+              "retryCount",
+              "replanCount",
+              "inputTokens",
+              "outputTokens",
+              "reasoningTokens",
+              "totalTokens",
+              "contextBytes",
+              "contextTokens",
+              "includedFacts",
+              "candidateFacts",
+              "cachedTokens",
+              "fixCycles",
+              "firstPassSuccess",
+              "humanInterventions"
+            ],
+            "properties": {
+              "durationMs": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "sample",
+                  "sum",
+                  "mean"
+                ],
+                "properties": {
+                  "sample": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "integer",
+                            "minimum": 5,
+                            "maximum": 1024
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "sum": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "string",
+                            "pattern": "^[0-9]{1,40}$",
+                            "maxLength": 40
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "mean": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "numerator",
+                              "denominator"
+                            ],
+                            "properties": {
+                              "numerator": {
+                                "type": "string",
+                                "pattern": "^-?[0-9]{1,40}$",
+                                "maxLength": 41
+                              },
+                              "denominator": {
+                                "type": "string",
+                                "pattern": "^[1-9][0-9]{0,39}$",
+                                "maxLength": 40
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "filesRead": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "sample",
+                  "sum",
+                  "mean"
+                ],
+                "properties": {
+                  "sample": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "integer",
+                            "minimum": 5,
+                            "maximum": 1024
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "sum": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "string",
+                            "pattern": "^[0-9]{1,40}$",
+                            "maxLength": 40
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "mean": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "numerator",
+                              "denominator"
+                            ],
+                            "properties": {
+                              "numerator": {
+                                "type": "string",
+                                "pattern": "^-?[0-9]{1,40}$",
+                                "maxLength": 41
+                              },
+                              "denominator": {
+                                "type": "string",
+                                "pattern": "^[1-9][0-9]{0,39}$",
+                                "maxLength": 40
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "filesChanged": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "sample",
+                  "sum",
+                  "mean"
+                ],
+                "properties": {
+                  "sample": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "integer",
+                            "minimum": 5,
+                            "maximum": 1024
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "sum": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "string",
+                            "pattern": "^[0-9]{1,40}$",
+                            "maxLength": 40
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "mean": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "numerator",
+                              "denominator"
+                            ],
+                            "properties": {
+                              "numerator": {
+                                "type": "string",
+                                "pattern": "^-?[0-9]{1,40}$",
+                                "maxLength": 41
+                              },
+                              "denominator": {
+                                "type": "string",
+                                "pattern": "^[1-9][0-9]{0,39}$",
+                                "maxLength": 40
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "toolCalls": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "sample",
+                  "sum",
+                  "mean"
+                ],
+                "properties": {
+                  "sample": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "integer",
+                            "minimum": 5,
+                            "maximum": 1024
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "sum": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "string",
+                            "pattern": "^[0-9]{1,40}$",
+                            "maxLength": 40
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "mean": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "numerator",
+                              "denominator"
+                            ],
+                            "properties": {
+                              "numerator": {
+                                "type": "string",
+                                "pattern": "^-?[0-9]{1,40}$",
+                                "maxLength": 41
+                              },
+                              "denominator": {
+                                "type": "string",
+                                "pattern": "^[1-9][0-9]{0,39}$",
+                                "maxLength": 40
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "retryCount": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "sample",
+                  "sum",
+                  "mean"
+                ],
+                "properties": {
+                  "sample": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "integer",
+                            "minimum": 5,
+                            "maximum": 1024
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "sum": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "string",
+                            "pattern": "^[0-9]{1,40}$",
+                            "maxLength": 40
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "mean": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "numerator",
+                              "denominator"
+                            ],
+                            "properties": {
+                              "numerator": {
+                                "type": "string",
+                                "pattern": "^-?[0-9]{1,40}$",
+                                "maxLength": 41
+                              },
+                              "denominator": {
+                                "type": "string",
+                                "pattern": "^[1-9][0-9]{0,39}$",
+                                "maxLength": 40
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "replanCount": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "sample",
+                  "sum",
+                  "mean"
+                ],
+                "properties": {
+                  "sample": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "integer",
+                            "minimum": 5,
+                            "maximum": 1024
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "sum": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "string",
+                            "pattern": "^[0-9]{1,40}$",
+                            "maxLength": 40
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "mean": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "numerator",
+                              "denominator"
+                            ],
+                            "properties": {
+                              "numerator": {
+                                "type": "string",
+                                "pattern": "^-?[0-9]{1,40}$",
+                                "maxLength": 41
+                              },
+                              "denominator": {
+                                "type": "string",
+                                "pattern": "^[1-9][0-9]{0,39}$",
+                                "maxLength": 40
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "inputTokens": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "sample",
+                  "sum",
+                  "mean"
+                ],
+                "properties": {
+                  "sample": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "integer",
+                            "minimum": 5,
+                            "maximum": 1024
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "sum": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "string",
+                            "pattern": "^[0-9]{1,40}$",
+                            "maxLength": 40
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "mean": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "numerator",
+                              "denominator"
+                            ],
+                            "properties": {
+                              "numerator": {
+                                "type": "string",
+                                "pattern": "^-?[0-9]{1,40}$",
+                                "maxLength": 41
+                              },
+                              "denominator": {
+                                "type": "string",
+                                "pattern": "^[1-9][0-9]{0,39}$",
+                                "maxLength": 40
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "outputTokens": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "sample",
+                  "sum",
+                  "mean"
+                ],
+                "properties": {
+                  "sample": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "integer",
+                            "minimum": 5,
+                            "maximum": 1024
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "sum": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "string",
+                            "pattern": "^[0-9]{1,40}$",
+                            "maxLength": 40
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "mean": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "numerator",
+                              "denominator"
+                            ],
+                            "properties": {
+                              "numerator": {
+                                "type": "string",
+                                "pattern": "^-?[0-9]{1,40}$",
+                                "maxLength": 41
+                              },
+                              "denominator": {
+                                "type": "string",
+                                "pattern": "^[1-9][0-9]{0,39}$",
+                                "maxLength": 40
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "reasoningTokens": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "sample",
+                  "sum",
+                  "mean"
+                ],
+                "properties": {
+                  "sample": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "integer",
+                            "minimum": 5,
+                            "maximum": 1024
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "sum": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "string",
+                            "pattern": "^[0-9]{1,40}$",
+                            "maxLength": 40
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "mean": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "numerator",
+                              "denominator"
+                            ],
+                            "properties": {
+                              "numerator": {
+                                "type": "string",
+                                "pattern": "^-?[0-9]{1,40}$",
+                                "maxLength": 41
+                              },
+                              "denominator": {
+                                "type": "string",
+                                "pattern": "^[1-9][0-9]{0,39}$",
+                                "maxLength": 40
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "totalTokens": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "sample",
+                  "sum",
+                  "mean"
+                ],
+                "properties": {
+                  "sample": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "integer",
+                            "minimum": 5,
+                            "maximum": 1024
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "sum": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "string",
+                            "pattern": "^[0-9]{1,40}$",
+                            "maxLength": 40
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "mean": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "numerator",
+                              "denominator"
+                            ],
+                            "properties": {
+                              "numerator": {
+                                "type": "string",
+                                "pattern": "^-?[0-9]{1,40}$",
+                                "maxLength": 41
+                              },
+                              "denominator": {
+                                "type": "string",
+                                "pattern": "^[1-9][0-9]{0,39}$",
+                                "maxLength": 40
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "contextBytes": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "sample",
+                  "sum",
+                  "mean"
+                ],
+                "properties": {
+                  "sample": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "integer",
+                            "minimum": 5,
+                            "maximum": 1024
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "sum": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "string",
+                            "pattern": "^[0-9]{1,40}$",
+                            "maxLength": 40
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "mean": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "numerator",
+                              "denominator"
+                            ],
+                            "properties": {
+                              "numerator": {
+                                "type": "string",
+                                "pattern": "^-?[0-9]{1,40}$",
+                                "maxLength": 41
+                              },
+                              "denominator": {
+                                "type": "string",
+                                "pattern": "^[1-9][0-9]{0,39}$",
+                                "maxLength": 40
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "contextTokens": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "sample",
+                  "sum",
+                  "mean"
+                ],
+                "properties": {
+                  "sample": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "integer",
+                            "minimum": 5,
+                            "maximum": 1024
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "sum": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "string",
+                            "pattern": "^[0-9]{1,40}$",
+                            "maxLength": 40
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "mean": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "numerator",
+                              "denominator"
+                            ],
+                            "properties": {
+                              "numerator": {
+                                "type": "string",
+                                "pattern": "^-?[0-9]{1,40}$",
+                                "maxLength": 41
+                              },
+                              "denominator": {
+                                "type": "string",
+                                "pattern": "^[1-9][0-9]{0,39}$",
+                                "maxLength": 40
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "includedFacts": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "sample",
+                  "sum",
+                  "mean"
+                ],
+                "properties": {
+                  "sample": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "integer",
+                            "minimum": 5,
+                            "maximum": 1024
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "sum": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "string",
+                            "pattern": "^[0-9]{1,40}$",
+                            "maxLength": 40
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "mean": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "numerator",
+                              "denominator"
+                            ],
+                            "properties": {
+                              "numerator": {
+                                "type": "string",
+                                "pattern": "^-?[0-9]{1,40}$",
+                                "maxLength": 41
+                              },
+                              "denominator": {
+                                "type": "string",
+                                "pattern": "^[1-9][0-9]{0,39}$",
+                                "maxLength": 40
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "candidateFacts": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "sample",
+                  "sum",
+                  "mean"
+                ],
+                "properties": {
+                  "sample": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "integer",
+                            "minimum": 5,
+                            "maximum": 1024
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "sum": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "string",
+                            "pattern": "^[0-9]{1,40}$",
+                            "maxLength": 40
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "mean": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "numerator",
+                              "denominator"
+                            ],
+                            "properties": {
+                              "numerator": {
+                                "type": "string",
+                                "pattern": "^-?[0-9]{1,40}$",
+                                "maxLength": 41
+                              },
+                              "denominator": {
+                                "type": "string",
+                                "pattern": "^[1-9][0-9]{0,39}$",
+                                "maxLength": 40
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "cachedTokens": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "sample",
+                  "sum",
+                  "mean"
+                ],
+                "properties": {
+                  "sample": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "integer",
+                            "minimum": 5,
+                            "maximum": 1024
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "sum": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "string",
+                            "pattern": "^[0-9]{1,40}$",
+                            "maxLength": 40
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "mean": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "numerator",
+                              "denominator"
+                            ],
+                            "properties": {
+                              "numerator": {
+                                "type": "string",
+                                "pattern": "^-?[0-9]{1,40}$",
+                                "maxLength": 41
+                              },
+                              "denominator": {
+                                "type": "string",
+                                "pattern": "^[1-9][0-9]{0,39}$",
+                                "maxLength": 40
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "fixCycles": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "sample",
+                  "sum",
+                  "mean"
+                ],
+                "properties": {
+                  "sample": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "integer",
+                            "minimum": 5,
+                            "maximum": 1024
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "sum": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "string",
+                            "pattern": "^[0-9]{1,40}$",
+                            "maxLength": 40
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "mean": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "numerator",
+                              "denominator"
+                            ],
+                            "properties": {
+                              "numerator": {
+                                "type": "string",
+                                "pattern": "^-?[0-9]{1,40}$",
+                                "maxLength": 41
+                              },
+                              "denominator": {
+                                "type": "string",
+                                "pattern": "^[1-9][0-9]{0,39}$",
+                                "maxLength": 40
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "firstPassSuccess": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "sample",
+                  "sum",
+                  "mean"
+                ],
+                "properties": {
+                  "sample": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "integer",
+                            "minimum": 5,
+                            "maximum": 1024
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "sum": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "string",
+                            "pattern": "^[0-9]{1,40}$",
+                            "maxLength": 40
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "mean": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "numerator",
+                              "denominator"
+                            ],
+                            "properties": {
+                              "numerator": {
+                                "type": "string",
+                                "pattern": "^-?[0-9]{1,40}$",
+                                "maxLength": 41
+                              },
+                              "denominator": {
+                                "type": "string",
+                                "pattern": "^[1-9][0-9]{0,39}$",
+                                "maxLength": 40
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "humanInterventions": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "sample",
+                  "sum",
+                  "mean"
+                ],
+                "properties": {
+                  "sample": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "integer",
+                            "minimum": 5,
+                            "maximum": 1024
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "sum": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "string",
+                            "pattern": "^[0-9]{1,40}$",
+                            "maxLength": 40
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "mean": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state",
+                          "value"
+                        ],
+                        "properties": {
+                          "state": {
+                            "const": "known"
+                          },
+                          "value": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "numerator",
+                              "denominator"
+                            ],
+                            "properties": {
+                              "numerator": {
+                                "type": "string",
+                                "pattern": "^-?[0-9]{1,40}$",
+                                "maxLength": 41
+                              },
+                              "denominator": {
+                                "type": "string",
+                                "pattern": "^[1-9][0-9]{0,39}$",
+                                "maxLength": 40
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "state"
+                        ],
+                        "properties": {
+                          "state": {
+                            "enum": [
+                              "unknown",
+                              "withheld",
+                              "unsupported"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "verifiedSuccess": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "state",
+                  "value"
+                ],
+                "properties": {
+                  "state": {
+                    "const": "known"
+                  },
+                  "value": {
+                    "oneOf": [
+                      {
+                        "const": 0
+                      },
+                      {
+                        "type": "integer",
+                        "minimum": 5,
+                        "maximum": 1024
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "state"
+                ],
+                "properties": {
+                  "state": {
+                    "enum": [
+                      "unknown",
+                      "withheld",
+                      "unsupported"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "successRate": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "state",
+                  "value"
+                ],
+                "properties": {
+                  "state": {
+                    "const": "known"
+                  },
+                  "value": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "numerator",
+                      "denominator"
+                    ],
+                    "properties": {
+                      "numerator": {
+                        "type": "string",
+                        "pattern": "^-?[0-9]{1,40}$",
+                        "maxLength": 41
+                      },
+                      "denominator": {
+                        "type": "string",
+                        "pattern": "^[1-9][0-9]{0,39}$",
+                        "maxLength": 40
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "state"
+                ],
+                "properties": {
+                  "state": {
+                    "enum": [
+                      "unknown",
+                      "withheld",
+                      "unsupported"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "cost": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "state",
+                  "value"
+                ],
+                "properties": {
+                  "state": {
+                    "const": "known"
+                  },
+                  "value": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "currency",
+                      "basis",
+                      "amount",
+                      "perSuccess"
+                    ],
+                    "properties": {
+                      "currency": {
+                        "type": "string",
+                        "pattern": "^[A-Z]{3}$",
+                        "maxLength": 3
+                      },
+                      "basis": {
+                        "enum": [
+                          "reported",
+                          "estimated"
+                        ]
+                      },
+                      "amount": {
+                        "type": "string",
+                        "pattern": "^[0-9]{1,34}\\.[0-9]{6}$",
+                        "maxLength": 41
+                      },
+                      "perSuccess": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "state",
+                              "value"
+                            ],
+                            "properties": {
+                              "state": {
+                                "const": "known"
+                              },
+                              "value": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                  "numerator",
+                                  "denominator"
+                                ],
+                                "properties": {
+                                  "numerator": {
+                                    "type": "string",
+                                    "pattern": "^-?[0-9]{1,40}$",
+                                    "maxLength": 41
+                                  },
+                                  "denominator": {
+                                    "type": "string",
+                                    "pattern": "^[1-9][0-9]{0,39}$",
+                                    "maxLength": 40
+                                  }
+                                }
+                              }
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "state"
+                            ],
+                            "properties": {
+                              "state": {
+                                "enum": [
+                                  "unknown",
+                                  "withheld",
+                                  "unsupported"
+                                ]
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "state"
+                ],
+                "properties": {
+                  "state": {
+                    "enum": [
+                      "unknown",
+                      "withheld",
+                      "unsupported"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "confidence": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "const": "unknown"
+              }
+            }
+          }
+        }
+      },
+      "maxItems": 64,
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "comparisons": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "baselineCohort",
+          "assistedCohort",
+          "successLift"
+        ],
+        "properties": {
+          "baselineCohort": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1024
+          },
+          "assistedCohort": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1024
+          },
+          "successLift": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "state",
+                  "value"
+                ],
+                "properties": {
+                  "state": {
+                    "const": "known"
+                  },
+                  "value": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "numerator",
+                      "denominator"
+                    ],
+                    "properties": {
+                      "numerator": {
+                        "type": "string",
+                        "pattern": "^-?[0-9]{1,40}$",
+                        "maxLength": 41
+                      },
+                      "denominator": {
+                        "type": "string",
+                        "pattern": "^[1-9][0-9]{0,39}$",
+                        "maxLength": 40
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "state"
+                ],
+                "properties": {
+                  "state": {
+                    "enum": [
+                      "unknown",
+                      "withheld",
+                      "unsupported"
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "maxItems": 32,
+      "minItems": 0,
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "privacy-authorityRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractId",
+        "version",
+        "digest"
+      ],
+      "properties": {
+        "contractId": {
+          "const": "dev.lekalo.authority-matrix"
+        },
+        "version": {
+          "const": "0.3.2"
+        },
+        "digest": {
+          "const": "sha256:7ae6454ea20f7b61202d368411ef9bff4e70af96f1f2a408c209d84fe9722f80"
+        }
+      }
+    },
+    "privacy-policyRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policyId",
+        "version",
+        "digest"
+      ],
+      "properties": {
+        "policyId": {
+          "const": "dev.lekalo.privacy-export-policy"
+        },
+        "version": {
+          "const": "0.3.2"
+        },
+        "digest": {
+          "const": "sha256:5a80966fa628fd4c9452325d34e7191f40ebb7a9cb49185c91d413861fb18384"
+        }
+      }
+    },
+    "privacy-repositoryRole": {
+      "enum": [
+        "local-workspace",
+        "consumer-repository",
+        "lekalo-repository",
+        "openspec-repository",
+        "ai-factory-repository",
+        "hlv-repository",
+        "source-native-repository",
+        "external-repository",
+        "public-channel"
+      ]
+    },
+    "privacy-auditRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "evidenceDigest"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+        },
+        "evidenceDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "privacy-provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "origin",
+        "repositoryRole",
+        "repositoryRef",
+        "synthetic",
+        "derived",
+        "classificationRef",
+        "publicFixturePermissionRef",
+        "publicFixtureLicenseRef",
+        "publicFixtureConsentRef",
+        "consumerAclPermissionRef",
+        "consumerRepositoryConsentRef",
+        "exportTransferConsentRef"
+      ],
+      "properties": {
+        "origin": {
+          "enum": [
+            "synthetic",
+            "consumer-repository",
+            "lekalo-repository",
+            "tool-runtime",
+            "derived",
+            "external"
+          ]
+        },
+        "repositoryRole": {
+          "$ref": "#/$defs/privacy-repositoryRole"
+        },
+        "synthetic": {
+          "type": "boolean"
+        },
+        "derived": {
+          "type": "boolean"
+        },
+        "classificationRef": {
+          "$ref": "#/$defs/privacy-classificationRef"
+        },
+        "repositoryRef": {
+          "$ref": "#/$defs/privacy-repositoryRef"
+        },
+        "publicFixturePermissionRef": {
+          "$ref": "#/$defs/privacy-nullablePublicFixturePermissionEvidence"
+        },
+        "publicFixtureLicenseRef": {
+          "$ref": "#/$defs/privacy-nullablePublicFixtureLicenseEvidence"
+        },
+        "publicFixtureConsentRef": {
+          "$ref": "#/$defs/privacy-nullablePublicFixtureConsentEvidence"
+        },
+        "consumerAclPermissionRef": {
+          "$ref": "#/$defs/privacy-nullableConsumerAclPermissionEvidence"
+        },
+        "consumerRepositoryConsentRef": {
+          "$ref": "#/$defs/privacy-nullableConsumerRepositoryConsentEvidence"
+        },
+        "exportTransferConsentRef": {
+          "$ref": "#/$defs/privacy-nullableExportTransferConsentEvidence"
+        }
+      }
+    },
+    "privacy-pathRepresentation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "value"
+          ],
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "unknown",
+                "withheld",
+                "unsupported"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "privacy-valueState": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "value"
+          ],
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "type": [
+                "number",
+                "string",
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "unknown",
+                "withheld",
+                "unsupported"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "privacy-conflictResolution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "decisionRef"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "none",
+            "resolved-allow",
+            "resolved-deny",
+            "unresolved"
+          ]
+        },
+        "decisionRef": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/privacy-conflictResolutionEvidence"
+            }
+          ]
+        }
+      }
+    },
+    "privacy-constraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "constraintRef",
+        "allowedOperations",
+        "allowedTrustBoundaries",
+        "allowedAudiences"
+      ],
+      "properties": {
+        "scope": {
+          "enum": [
+            "project",
+            "profile",
+            "operation"
+          ]
+        },
+        "constraintRef": {
+          "$ref": "#/$defs/privacy-auditRef"
+        },
+        "allowedOperations": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "local-use",
+              "repository-store",
+              "derive",
+              "transfer",
+              "publish"
+            ]
+          }
+        },
+        "allowedTrustBoundaries": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "same-local-workspace",
+              "same-repository",
+              "same-tenant",
+              "cross-repository",
+              "cross-tenant",
+              "public"
+            ]
+          }
+        },
+        "allowedAudiences": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "operator-only",
+              "repository-collaborators",
+              "tenant-members",
+              "named-external",
+              "public"
+            ]
+          }
+        }
+      }
+    },
+    "privacy-sourceArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceRef",
+        "artifactKind",
+        "authorityRef",
+        "policyRef",
+        "classificationRef",
+        "dataSensitivity",
+        "exportDisposition"
+      ],
+      "properties": {
+        "sourceRef": {
+          "$ref": "#/$defs/privacy-sourceRef"
+        },
+        "artifactKind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "authorityRef": {
+          "$ref": "#/$defs/privacy-authorityRef"
+        },
+        "policyRef": {
+          "$ref": "#/$defs/privacy-policyRef"
+        },
+        "classificationRef": {
+          "$ref": "#/$defs/privacy-classificationRef"
+        },
+        "dataSensitivity": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "public",
+              "internal",
+              "confidential",
+              "personal-pii",
+              "credential-secret",
+              "financial",
+              "health-special-category",
+              "tenant-scoped",
+              "retention-limited"
+            ]
+          }
+        },
+        "exportDisposition": {
+          "enum": [
+            "local-private",
+            "consumer-repository-only",
+            "shareable-with-redaction",
+            "public-aggregate",
+            "public-fixture",
+            "forbidden-to-export"
+          ]
+        }
+      }
+    },
+    "privacy-appliedTransform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "transformId",
+        "version",
+        "evidenceDigest"
+      ],
+      "properties": {
+        "transformId": {
+          "enum": [
+            "redact-content",
+            "redact-secrets",
+            "redact-pii",
+            "aggregate-no-source-rows",
+            "replace-repository-identity",
+            "normalize-project-relative-paths"
+          ]
+        },
+        "version": {
+          "const": "0.2.16"
+        },
+        "evidenceDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "privacy-declassificationDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policyRef",
+        "decisionRef",
+        "version",
+        "outcome",
+        "removedSensitivities"
+      ],
+      "properties": {
+        "policyRef": {
+          "$ref": "#/$defs/privacy-policyRef"
+        },
+        "decisionRef": {
+          "type": "null"
+        },
+        "version": {
+          "const": "0.2.16"
+        },
+        "outcome": {
+          "enum": [
+            "approved",
+            "rejected"
+          ]
+        },
+        "removedSensitivities": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "public",
+              "internal",
+              "confidential",
+              "personal-pii",
+              "credential-secret",
+              "financial",
+              "health-special-category",
+              "tenant-scoped",
+              "retention-limited"
+            ]
+          }
+        }
+      }
+    },
+    "privacy-aggregationDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policyRef",
+        "decisionRef",
+        "version",
+        "outcome",
+        "removesSourceRows",
+        "removesSourceIdentities"
+      ],
+      "properties": {
+        "policyRef": {
+          "$ref": "#/$defs/privacy-policyRef"
+        },
+        "decisionRef": {
+          "type": "null"
+        },
+        "version": {
+          "const": "0.2.16"
+        },
+        "outcome": {
+          "enum": [
+            "approved",
+            "rejected"
+          ]
+        },
+        "removesSourceRows": {
+          "const": true
+        },
+        "removesSourceIdentities": {
+          "const": true
+        }
+      }
+    },
+    "privacy-derivedArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceArtifacts",
+        "appliedTransforms",
+        "declassificationDecision",
+        "aggregationDecision",
+        "containsSourceRows",
+        "containsSourceIdentities",
+        "reevaluated"
+      ],
+      "properties": {
+        "sourceArtifacts": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/privacy-sourceArtifact"
+          }
+        },
+        "appliedTransforms": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/privacy-appliedTransform"
+          }
+        },
+        "declassificationDecision": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/privacy-declassificationDecision"
+            }
+          ]
+        },
+        "aggregationDecision": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/privacy-aggregationDecision"
+            }
+          ]
+        },
+        "containsSourceRows": {
+          "type": "boolean"
+        },
+        "containsSourceIdentities": {
+          "type": "boolean"
+        },
+        "reevaluated": {
+          "type": "boolean"
+        }
+      }
+    },
+    "privacy-repositoryRef": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "pattern": "^repo-sha256:[0-9a-f]{64}$"
+        }
+      ]
+    },
+    "privacy-sourceRef": {
+      "type": "string",
+      "pattern": "^source-sha256:[0-9a-f]{64}$"
+    },
+    "privacy-classificationRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractId",
+        "version",
+        "digest",
+        "decisionId",
+        "evidenceDigest"
+      ],
+      "properties": {
+        "contractId": {
+          "const": "dev.lekalo.privacy-classification-decision"
+        },
+        "version": {
+          "const": "0.2.16"
+        },
+        "digest": {
+          "const": "sha256:78de535f02b6a8065579b43798ed650849aca0b7edf1aa08b2e0219fc744dde6"
+        },
+        "decisionId": {
+          "type": "string",
+          "pattern": "^classification-sha256:[0-9a-f]{64}$"
+        },
+        "evidenceDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "privacy-authorizingEvidenceContractRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractId",
+        "version",
+        "digest"
+      ],
+      "properties": {
+        "contractId": {
+          "const": "dev.lekalo.privacy-authorizing-evidence"
+        },
+        "version": {
+          "const": "0.2.16"
+        },
+        "digest": {
+          "const": "sha256:cba51a4d9ae21a8d6ad7ebcb98f63410d918b0308ebcbdce1a165e084f52957e"
+        }
+      }
+    },
+    "privacy-artifactRef": {
+      "type": "string",
+      "pattern": "^artifact-sha256:[0-9a-f]{64}$"
+    },
+    "privacy-authorizationSubjectProfileRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profileId",
+        "version",
+        "digest"
+      ],
+      "properties": {
+        "profileId": {
+          "const": "dev.lekalo.privacy-authorization-subject-profile"
+        },
+        "version": {
+          "const": "0.2.16"
+        },
+        "digest": {
+          "const": "sha256:11c3c6ddea482ba5cf1bca27f08d602801d7739f1bd57ed5efb15e100584dec0"
+        }
+      }
+    },
+    "privacy-authorizingEvidenceBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subjectProfileRef",
+        "subjectDigest"
+      ],
+      "properties": {
+        "subjectProfileRef": {
+          "$ref": "#/$defs/privacy-authorizationSubjectProfileRef"
+        },
+        "subjectDigest": {
+          "type": "string",
+          "pattern": "^subject-sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "privacy-publicFixturePermissionEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractId",
+        "version",
+        "digest",
+        "evidenceKind",
+        "purpose",
+        "outcome",
+        "evidenceId",
+        "verificationState",
+        "freshnessState",
+        "binding"
+      ],
+      "properties": {
+        "contractId": {
+          "const": "dev.lekalo.privacy-authorizing-evidence"
+        },
+        "version": {
+          "const": "0.2.16"
+        },
+        "digest": {
+          "const": "sha256:cba51a4d9ae21a8d6ad7ebcb98f63410d918b0308ebcbdce1a165e084f52957e"
+        },
+        "evidenceKind": {
+          "const": "public-fixture-permission"
+        },
+        "purpose": {
+          "const": "authorize-public-fixture-permission"
+        },
+        "outcome": {
+          "enum": [
+            "granted",
+            "denied"
+          ]
+        },
+        "evidenceId": {
+          "type": "string",
+          "pattern": "^evidence-sha256:[0-9a-f]{64}$"
+        },
+        "verificationState": {
+          "enum": [
+            "verified",
+            "unverified"
+          ]
+        },
+        "freshnessState": {
+          "enum": [
+            "current",
+            "stale",
+            "expired"
+          ]
+        },
+        "binding": {
+          "$ref": "#/$defs/privacy-authorizingEvidenceBinding"
+        }
+      }
+    },
+    "privacy-publicFixtureLicenseEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractId",
+        "version",
+        "digest",
+        "evidenceKind",
+        "purpose",
+        "outcome",
+        "evidenceId",
+        "verificationState",
+        "freshnessState",
+        "binding"
+      ],
+      "properties": {
+        "contractId": {
+          "const": "dev.lekalo.privacy-authorizing-evidence"
+        },
+        "version": {
+          "const": "0.2.16"
+        },
+        "digest": {
+          "const": "sha256:cba51a4d9ae21a8d6ad7ebcb98f63410d918b0308ebcbdce1a165e084f52957e"
+        },
+        "evidenceKind": {
+          "const": "public-fixture-license"
+        },
+        "purpose": {
+          "const": "authorize-public-fixture-license"
+        },
+        "outcome": {
+          "enum": [
+            "licensed",
+            "unlicensed"
+          ]
+        },
+        "evidenceId": {
+          "type": "string",
+          "pattern": "^evidence-sha256:[0-9a-f]{64}$"
+        },
+        "verificationState": {
+          "enum": [
+            "verified",
+            "unverified"
+          ]
+        },
+        "freshnessState": {
+          "enum": [
+            "current",
+            "stale",
+            "expired"
+          ]
+        },
+        "binding": {
+          "$ref": "#/$defs/privacy-authorizingEvidenceBinding"
+        }
+      }
+    },
+    "privacy-publicFixtureConsentEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractId",
+        "version",
+        "digest",
+        "evidenceKind",
+        "purpose",
+        "outcome",
+        "evidenceId",
+        "verificationState",
+        "freshnessState",
+        "binding"
+      ],
+      "properties": {
+        "contractId": {
+          "const": "dev.lekalo.privacy-authorizing-evidence"
+        },
+        "version": {
+          "const": "0.2.16"
+        },
+        "digest": {
+          "const": "sha256:cba51a4d9ae21a8d6ad7ebcb98f63410d918b0308ebcbdce1a165e084f52957e"
+        },
+        "evidenceKind": {
+          "const": "public-fixture-consent"
+        },
+        "purpose": {
+          "const": "authorize-public-fixture-consent"
+        },
+        "outcome": {
+          "enum": [
+            "granted",
+            "denied"
+          ]
+        },
+        "evidenceId": {
+          "type": "string",
+          "pattern": "^evidence-sha256:[0-9a-f]{64}$"
+        },
+        "verificationState": {
+          "enum": [
+            "verified",
+            "unverified"
+          ]
+        },
+        "freshnessState": {
+          "enum": [
+            "current",
+            "stale",
+            "expired"
+          ]
+        },
+        "binding": {
+          "$ref": "#/$defs/privacy-authorizingEvidenceBinding"
+        }
+      }
+    },
+    "privacy-consumerAclPermissionEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractId",
+        "version",
+        "digest",
+        "evidenceKind",
+        "purpose",
+        "outcome",
+        "evidenceId",
+        "verificationState",
+        "freshnessState",
+        "binding"
+      ],
+      "properties": {
+        "contractId": {
+          "const": "dev.lekalo.privacy-authorizing-evidence"
+        },
+        "version": {
+          "const": "0.2.16"
+        },
+        "digest": {
+          "const": "sha256:cba51a4d9ae21a8d6ad7ebcb98f63410d918b0308ebcbdce1a165e084f52957e"
+        },
+        "evidenceKind": {
+          "const": "consumer-acl-permission"
+        },
+        "purpose": {
+          "const": "authorize-consumer-repository-acl"
+        },
+        "outcome": {
+          "enum": [
+            "granted",
+            "denied"
+          ]
+        },
+        "evidenceId": {
+          "type": "string",
+          "pattern": "^evidence-sha256:[0-9a-f]{64}$"
+        },
+        "verificationState": {
+          "enum": [
+            "verified",
+            "unverified"
+          ]
+        },
+        "freshnessState": {
+          "enum": [
+            "current",
+            "stale",
+            "expired"
+          ]
+        },
+        "binding": {
+          "$ref": "#/$defs/privacy-authorizingEvidenceBinding"
+        }
+      }
+    },
+    "privacy-consumerRepositoryConsentEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractId",
+        "version",
+        "digest",
+        "evidenceKind",
+        "purpose",
+        "outcome",
+        "evidenceId",
+        "verificationState",
+        "freshnessState",
+        "binding"
+      ],
+      "properties": {
+        "contractId": {
+          "const": "dev.lekalo.privacy-authorizing-evidence"
+        },
+        "version": {
+          "const": "0.2.16"
+        },
+        "digest": {
+          "const": "sha256:cba51a4d9ae21a8d6ad7ebcb98f63410d918b0308ebcbdce1a165e084f52957e"
+        },
+        "evidenceKind": {
+          "const": "consumer-repository-consent"
+        },
+        "purpose": {
+          "const": "authorize-consumer-repository-consent"
+        },
+        "outcome": {
+          "enum": [
+            "granted",
+            "denied"
+          ]
+        },
+        "evidenceId": {
+          "type": "string",
+          "pattern": "^evidence-sha256:[0-9a-f]{64}$"
+        },
+        "verificationState": {
+          "enum": [
+            "verified",
+            "unverified"
+          ]
+        },
+        "freshnessState": {
+          "enum": [
+            "current",
+            "stale",
+            "expired"
+          ]
+        },
+        "binding": {
+          "$ref": "#/$defs/privacy-authorizingEvidenceBinding"
+        }
+      }
+    },
+    "privacy-conflictResolutionEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractId",
+        "version",
+        "digest",
+        "evidenceKind",
+        "purpose",
+        "outcome",
+        "evidenceId",
+        "verificationState",
+        "freshnessState",
+        "binding"
+      ],
+      "properties": {
+        "contractId": {
+          "const": "dev.lekalo.privacy-authorizing-evidence"
+        },
+        "version": {
+          "const": "0.2.16"
+        },
+        "digest": {
+          "const": "sha256:cba51a4d9ae21a8d6ad7ebcb98f63410d918b0308ebcbdce1a165e084f52957e"
+        },
+        "evidenceKind": {
+          "const": "conflict-resolution-decision"
+        },
+        "purpose": {
+          "const": "resolve-export-conflict"
+        },
+        "outcome": {
+          "enum": [
+            "allow",
+            "deny"
+          ]
+        },
+        "evidenceId": {
+          "type": "string",
+          "pattern": "^evidence-sha256:[0-9a-f]{64}$"
+        },
+        "verificationState": {
+          "enum": [
+            "verified",
+            "unverified"
+          ]
+        },
+        "freshnessState": {
+          "enum": [
+            "current",
+            "stale",
+            "expired"
+          ]
+        },
+        "binding": {
+          "$ref": "#/$defs/privacy-authorizingEvidenceBinding"
+        }
+      }
+    },
+    "privacy-declassificationEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractId",
+        "version",
+        "digest",
+        "evidenceKind",
+        "purpose",
+        "outcome",
+        "evidenceId",
+        "verificationState",
+        "freshnessState",
+        "binding"
+      ],
+      "properties": {
+        "contractId": {
+          "const": "dev.lekalo.privacy-authorizing-evidence"
+        },
+        "version": {
+          "const": "0.2.16"
+        },
+        "digest": {
+          "const": "sha256:cba51a4d9ae21a8d6ad7ebcb98f63410d918b0308ebcbdce1a165e084f52957e"
+        },
+        "evidenceKind": {
+          "const": "declassification-decision"
+        },
+        "purpose": {
+          "const": "authorize-declassification"
+        },
+        "outcome": {
+          "enum": [
+            "approved",
+            "rejected"
+          ]
+        },
+        "evidenceId": {
+          "type": "string",
+          "pattern": "^evidence-sha256:[0-9a-f]{64}$"
+        },
+        "verificationState": {
+          "enum": [
+            "verified",
+            "unverified"
+          ]
+        },
+        "freshnessState": {
+          "enum": [
+            "current",
+            "stale",
+            "expired"
+          ]
+        },
+        "binding": {
+          "$ref": "#/$defs/privacy-authorizingEvidenceBinding"
+        }
+      }
+    },
+    "privacy-aggregationEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractId",
+        "version",
+        "digest",
+        "evidenceKind",
+        "purpose",
+        "outcome",
+        "evidenceId",
+        "verificationState",
+        "freshnessState",
+        "binding"
+      ],
+      "properties": {
+        "contractId": {
+          "const": "dev.lekalo.privacy-authorizing-evidence"
+        },
+        "version": {
+          "const": "0.2.16"
+        },
+        "digest": {
+          "const": "sha256:cba51a4d9ae21a8d6ad7ebcb98f63410d918b0308ebcbdce1a165e084f52957e"
+        },
+        "evidenceKind": {
+          "const": "aggregation-decision"
+        },
+        "purpose": {
+          "const": "authorize-public-aggregation"
+        },
+        "outcome": {
+          "enum": [
+            "approved",
+            "rejected"
+          ]
+        },
+        "evidenceId": {
+          "type": "string",
+          "pattern": "^evidence-sha256:[0-9a-f]{64}$"
+        },
+        "verificationState": {
+          "enum": [
+            "verified",
+            "unverified"
+          ]
+        },
+        "freshnessState": {
+          "enum": [
+            "current",
+            "stale",
+            "expired"
+          ]
+        },
+        "binding": {
+          "$ref": "#/$defs/privacy-authorizingEvidenceBinding"
+        }
+      }
+    },
+    "privacy-nullablePublicFixturePermissionEvidence": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/privacy-publicFixturePermissionEvidence"
+        }
+      ]
+    },
+    "privacy-nullablePublicFixtureLicenseEvidence": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/privacy-publicFixtureLicenseEvidence"
+        }
+      ]
+    },
+    "privacy-nullablePublicFixtureConsentEvidence": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/privacy-publicFixtureConsentEvidence"
+        }
+      ]
+    },
+    "privacy-nullableConsumerAclPermissionEvidence": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/privacy-consumerAclPermissionEvidence"
+        }
+      ]
+    },
+    "privacy-nullableConsumerRepositoryConsentEvidence": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/privacy-consumerRepositoryConsentEvidence"
+        }
+      ]
+    },
+    "privacy-exportTransferConsentEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractId",
+        "version",
+        "digest",
+        "evidenceKind",
+        "purpose",
+        "outcome",
+        "evidenceId",
+        "verificationState",
+        "freshnessState",
+        "binding"
+      ],
+      "properties": {
+        "contractId": {
+          "const": "dev.lekalo.privacy-authorizing-evidence"
+        },
+        "version": {
+          "const": "0.2.16"
+        },
+        "digest": {
+          "const": "sha256:cba51a4d9ae21a8d6ad7ebcb98f63410d918b0308ebcbdce1a165e084f52957e"
+        },
+        "evidenceKind": {
+          "const": "export-transfer-consent"
+        },
+        "purpose": {
+          "const": "authorize-export-transfer-or-storage"
+        },
+        "outcome": {
+          "enum": [
+            "granted",
+            "denied"
+          ]
+        },
+        "evidenceId": {
+          "type": "string",
+          "pattern": "^evidence-sha256:[0-9a-f]{64}$"
+        },
+        "verificationState": {
+          "enum": [
+            "verified",
+            "unverified"
+          ]
+        },
+        "freshnessState": {
+          "enum": [
+            "current",
+            "stale",
+            "expired"
+          ]
+        },
+        "binding": {
+          "$ref": "#/$defs/privacy-authorizingEvidenceBinding"
+        }
+      }
+    },
+    "privacy-nullableExportTransferConsentEvidence": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/privacy-exportTransferConsentEvidence"
+        }
+      ]
+    },
+    "record-hexToken32": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$",
+      "maxLength": 32
+    },
+    "record-sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "maxLength": 71
+    },
+    "record-timestampUtc": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$",
+      "maxLength": 40
+    },
+    "record-semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$",
+      "maxLength": 64
+    },
+    "record-gitCommit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
+      "maxLength": 64
+    },
+    "record-boundedToken": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+      "maxLength": 128
+    },
+    "record-semanticId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+$",
+      "maxLength": 256
+    },
+    "record-decimalString": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]{1,12})?$",
+      "maxLength": 40
+    },
+    "record-ratioString": {
+      "type": "string",
+      "pattern": "^(0(\\.[0-9]{1,12})?|1(\\.0{1,12})?)$",
+      "maxLength": 14
+    },
+    "record-vsU64": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "value"
+          ],
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "unknown",
+                "withheld",
+                "unsupported"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "record-vsBoolState": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "value"
+          ],
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "unknown",
+                "withheld",
+                "unsupported"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "record-vsGitCommit": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "value"
+          ],
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "$ref": "#/$defs/record-gitCommit"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "unknown",
+                "withheld",
+                "unsupported"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "record-vsSha256": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "value"
+          ],
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "$ref": "#/$defs/record-sha256"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "unknown",
+                "withheld",
+                "unsupported"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "record-vsToken": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "value"
+          ],
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "$ref": "#/$defs/record-boundedToken"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "unknown",
+                "withheld",
+                "unsupported"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "record-vsSemver": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "value"
+          ],
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "$ref": "#/$defs/record-semver"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "unknown",
+                "withheld",
+                "unsupported"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "record-vsDecimal": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "value"
+          ],
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "$ref": "#/$defs/record-decimalString"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "unknown",
+                "withheld",
+                "unsupported"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "record-vsRatio": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "value"
+          ],
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "$ref": "#/$defs/record-ratioString"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "unknown",
+                "withheld",
+                "unsupported"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "record-vsRepresentation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "value"
+          ],
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "enum": [
+                "json",
+                "markdown"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "unknown",
+                "withheld",
+                "unsupported"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "record-vsCostBasis": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "value"
+          ],
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "enum": [
+                "reported",
+                "estimated"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "unknown",
+                "withheld",
+                "unsupported"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "record-recordScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repositoryId",
+        "tenantScopeId",
+        "repositoryRole"
+      ],
+      "properties": {
+        "repositoryId": {
+          "$ref": "#/$defs/record-hexToken32"
+        },
+        "tenantScopeId": {
+          "$ref": "#/$defs/record-hexToken32"
+        },
+        "repositoryRole": {
+          "enum": [
+            "local-workspace",
+            "consumer-repository",
+            "lekalo-repository",
+            "openspec-repository",
+            "ai-factory-repository",
+            "hlv-repository",
+            "source-native-repository",
+            "external-repository",
+            "public-channel"
+          ]
+        }
+      }
+    },
+    "record-provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "git",
+        "model",
+        "lock",
+        "core",
+        "adapters",
+        "profile",
+        "harness"
+      ],
+      "properties": {
+        "git": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "commit",
+            "dirty",
+            "workingSetDigest"
+          ],
+          "properties": {
+            "commit": {
+              "$ref": "#/$defs/record-vsGitCommit"
+            },
+            "dirty": {
+              "$ref": "#/$defs/record-vsBoolState"
+            },
+            "workingSetDigest": {
+              "$ref": "#/$defs/record-vsSha256"
+            }
+          }
+        },
+        "model": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "revision",
+            "digest",
+            "irDigest"
+          ],
+          "properties": {
+            "revision": {
+              "$ref": "#/$defs/record-vsToken"
+            },
+            "digest": {
+              "$ref": "#/$defs/record-vsSha256"
+            },
+            "irDigest": {
+              "$ref": "#/$defs/record-vsSha256"
+            }
+          }
+        },
+        "lock": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "version",
+            "digest"
+          ],
+          "properties": {
+            "version": {
+              "$ref": "#/$defs/record-vsSemver"
+            },
+            "digest": {
+              "$ref": "#/$defs/record-vsSha256"
+            }
+          }
+        },
+        "core": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "version",
+            "buildRevision",
+            "buildDigest"
+          ],
+          "properties": {
+            "version": {
+              "$ref": "#/$defs/record-vsSemver"
+            },
+            "buildRevision": {
+              "$ref": "#/$defs/record-vsToken"
+            },
+            "buildDigest": {
+              "$ref": "#/$defs/record-vsSha256"
+            }
+          }
+        },
+        "adapters": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "version",
+              "manifestDigest",
+              "bundleDigest"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/record-boundedToken"
+              },
+              "version": {
+                "$ref": "#/$defs/record-vsSemver"
+              },
+              "manifestDigest": {
+                "$ref": "#/$defs/record-vsSha256"
+              },
+              "bundleDigest": {
+                "$ref": "#/$defs/record-vsSha256"
+              }
+            }
+          }
+        },
+        "profile": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "version",
+            "digest"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/record-vsToken"
+            },
+            "version": {
+              "$ref": "#/$defs/record-vsSemver"
+            },
+            "digest": {
+              "$ref": "#/$defs/record-vsSha256"
+            }
+          }
+        },
+        "harness": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "version",
+            "modelId",
+            "modelRevision"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/record-vsToken"
+            },
+            "version": {
+              "$ref": "#/$defs/record-vsSemver"
+            },
+            "modelId": {
+              "$ref": "#/$defs/record-vsToken"
+            },
+            "modelRevision": {
+              "$ref": "#/$defs/record-vsToken"
+            }
+          }
+        }
+      }
+    },
+    "record-metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "durationMs",
+        "filesRead",
+        "filesChanged",
+        "toolCalls",
+        "retryCount",
+        "replanCount",
+        "tokens",
+        "cost",
+        "context"
+      ],
+      "properties": {
+        "durationMs": {
+          "$ref": "#/$defs/record-vsU64"
+        },
+        "filesRead": {
+          "$ref": "#/$defs/record-vsU64"
+        },
+        "filesChanged": {
+          "$ref": "#/$defs/record-vsU64"
+        },
+        "toolCalls": {
+          "$ref": "#/$defs/record-vsU64"
+        },
+        "retryCount": {
+          "$ref": "#/$defs/record-vsU64"
+        },
+        "replanCount": {
+          "$ref": "#/$defs/record-vsU64"
+        },
+        "tokens": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "input",
+            "output",
+            "reasoning",
+            "total"
+          ],
+          "properties": {
+            "input": {
+              "$ref": "#/$defs/record-vsU64"
+            },
+            "output": {
+              "$ref": "#/$defs/record-vsU64"
+            },
+            "reasoning": {
+              "$ref": "#/$defs/record-vsU64"
+            },
+            "total": {
+              "$ref": "#/$defs/record-vsU64"
+            }
+          }
+        },
+        "cost": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "amount",
+            "currency",
+            "basis"
+          ],
+          "properties": {
+            "amount": {
+              "$ref": "#/$defs/record-vsDecimal"
+            },
+            "currency": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "state",
+                    "value"
+                  ],
+                  "properties": {
+                    "state": {
+                      "const": "known"
+                    },
+                    "value": {
+                      "type": "string",
+                      "pattern": "^[A-Z]{3}$",
+                      "maxLength": 3
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "state"
+                  ],
+                  "properties": {
+                    "state": {
+                      "enum": [
+                        "unknown",
+                        "withheld",
+                        "unsupported"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "basis": {
+              "$ref": "#/$defs/record-vsCostBasis"
+            }
+          }
+        },
+        "context": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "bytes",
+            "estimatedTokens",
+            "includedFacts",
+            "candidateFacts",
+            "coverageRatio",
+            "representation",
+            "estimatorVersion"
+          ],
+          "properties": {
+            "bytes": {
+              "$ref": "#/$defs/record-vsU64"
+            },
+            "estimatedTokens": {
+              "$ref": "#/$defs/record-vsU64"
+            },
+            "includedFacts": {
+              "$ref": "#/$defs/record-vsU64"
+            },
+            "candidateFacts": {
+              "$ref": "#/$defs/record-vsU64"
+            },
+            "coverageRatio": {
+              "$ref": "#/$defs/record-vsRatio"
+            },
+            "representation": {
+              "$ref": "#/$defs/record-vsRepresentation"
+            },
+            "estimatorVersion": {
+              "$ref": "#/$defs/record-vsToken"
+            }
+          }
+        }
+      }
+    },
+    "record-measurementSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "field",
+        "sourceKind",
+        "sourceId",
+        "sourceVersion"
+      ],
+      "properties": {
+        "field": {
+          "enum": [
+            "metrics.durationMs",
+            "metrics.filesRead",
+            "metrics.filesChanged",
+            "metrics.toolCalls",
+            "metrics.retryCount",
+            "metrics.replanCount",
+            "metrics.tokens.input",
+            "metrics.tokens.output",
+            "metrics.tokens.reasoning",
+            "metrics.tokens.total",
+            "metrics.cost.amount",
+            "metrics.context.bytes",
+            "metrics.context.estimatedTokens",
+            "metrics.context.includedFacts",
+            "metrics.context.candidateFacts",
+            "metrics.context.coverageRatio"
+          ]
+        },
+        "sourceKind": {
+          "enum": [
+            "core",
+            "adapter",
+            "harness",
+            "derived"
+          ]
+        },
+        "sourceId": {
+          "$ref": "#/$defs/record-boundedToken"
+        },
+        "sourceVersion": {
+          "$ref": "#/$defs/record-vsSemver"
+        }
+      }
+    },
+    "record-testGateSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "sourceOutcome",
+        "outcome",
+        "passed",
+        "failed",
+        "unsupported",
+        "infrastructure",
+        "coverageState"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/record-boundedToken"
+        },
+        "kind": {
+          "enum": [
+            "test",
+            "gate",
+            "nfr"
+          ]
+        },
+        "sourceOutcome": {
+          "enum": [
+            "passed",
+            "failed",
+            "degraded",
+            "blocked",
+            "security",
+            "missing",
+            "unsupported",
+            "infrastructure"
+          ]
+        },
+        "outcome": {
+          "enum": [
+            "pass",
+            "warn",
+            "fail",
+            "unsupported",
+            "infrastructure"
+          ]
+        },
+        "passed": {
+          "$ref": "#/$defs/record-vsU64"
+        },
+        "failed": {
+          "$ref": "#/$defs/record-vsU64"
+        },
+        "unsupported": {
+          "$ref": "#/$defs/record-vsU64"
+        },
+        "infrastructure": {
+          "$ref": "#/$defs/record-vsU64"
+        },
+        "coverageState": {
+          "enum": [
+            "complete",
+            "incomplete",
+            "unknown"
+          ]
+        },
+        "evidenceRef": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record-hexToken32"
+            }
+          ]
+        }
+      }
+    },
+    "record-diagnosticEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "severity",
+        "count"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
+          "maxLength": 128
+        },
+        "severity": {
+          "enum": [
+            "info",
+            "warning",
+            "error"
+          ]
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        }
+      }
+    },
+    "record-policyRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policyId",
+        "version",
+        "digest"
+      ],
+      "properties": {
+        "policyId": {
+          "const": "dev.lekalo.privacy-export-policy"
+        },
+        "version": {
+          "const": "0.3.2"
+        },
+        "digest": {
+          "const": "sha256:5a80966fa628fd4c9452325d34e7191f40ebb7a9cb49185c91d413861fb18384"
+        }
+      }
+    },
+    "record-authorityRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractId",
+        "version",
+        "digest"
+      ],
+      "properties": {
+        "contractId": {
+          "const": "dev.lekalo.authority-matrix"
+        },
+        "version": {
+          "const": "0.3.2"
+        },
+        "digest": {
+          "const": "sha256:7ae6454ea20f7b61202d368411ef9bff4e70af96f1f2a408c209d84fe9722f80"
+        }
+      }
+    },
+    "record-privacyBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dataSensitivity",
+        "exportDisposition",
+        "policyRef",
+        "authorityRef",
+        "classificationContractRef",
+        "provenance",
+        "exportEligibility"
+      ],
+      "properties": {
+        "dataSensitivity": {
+          "enum": [
+            "public",
+            "internal",
+            "confidential",
+            "personal-pii",
+            "credential-secret",
+            "financial",
+            "health-special-category",
+            "tenant-scoped",
+            "retention-limited"
+          ]
+        },
+        "exportDisposition": {
+          "const": "local-private"
+        },
+        "policyRef": {
+          "$ref": "#/$defs/record-policyRef"
+        },
+        "authorityRef": {
+          "$ref": "#/$defs/record-authorityRef"
+        },
+        "classificationContractRef": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "contractId",
+            "version"
+          ],
+          "properties": {
+            "contractId": {
+              "const": "dev.lekalo.privacy-classification-decision"
+            },
+            "version": {
+              "const": "0.2.16"
+            }
+          }
+        },
+        "provenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "origin",
+            "repositoryRole",
+            "derived",
+            "sourceRefs"
+          ],
+          "properties": {
+            "origin": {
+              "enum": [
+                "local",
+                "imported"
+              ]
+            },
+            "repositoryRole": {
+              "enum": [
+                "local-workspace",
+                "consumer-repository",
+                "lekalo-repository",
+                "openspec-repository",
+                "ai-factory-repository",
+                "hlv-repository",
+                "source-native-repository",
+                "external-repository",
+                "public-channel"
+              ]
+            },
+            "derived": {
+              "type": "boolean"
+            },
+            "sourceRefs": {
+              "type": "array",
+              "maxItems": 32,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/record-boundedToken"
+              }
+            }
+          }
+        },
+        "exportEligibility": {
+          "const": "ineligible"
+        }
+      }
+    }
+  }
+}

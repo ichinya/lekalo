@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.metrics-aggregation-definition-schema@0.6.4",
+  "title": "Lekalo metrics-aggregation-definition",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "identity",
+    "minimumSamples",
+    "samplingUnit",
+    "recipe",
+    "fields",
+    "aliasRule",
+    "rules"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "lekalo/metrics-aggregation-definition/v0.6.4"
+    },
+    "identity": {
+      "const": "dev.lekalo.metrics-aggregation-definition@0.6.4"
+    },
+    "minimumSamples": {
+      "const": 5
+    },
+    "samplingUnit": {
+      "const": "scheduled-paired-trial"
+    },
+    "recipe": {
+      "const": "complete-population-sums-rationals-microcost/1"
+    },
+    "fields": {
+      "const": [
+        "cachedTokens",
+        "candidateFacts",
+        "contextBytes",
+        "contextTokens",
+        "durationMs",
+        "filesChanged",
+        "filesRead",
+        "firstPassSuccess",
+        "fixCycles",
+        "humanInterventions",
+        "includedFacts",
+        "inputTokens",
+        "outputTokens",
+        "reasoningTokens",
+        "replanCount",
+        "retryCount",
+        "toolCalls",
+        "totalTokens"
+      ]
+    },
+    "aliasRule": {
+      "const": "export-local-ordered-provenance/1"
+    },
+    "rules": {
+      "const": {
+        "population": "all-selected-paired-trials-without-outcome-filtering",
+        "numeric": "checked-u128-sum-and-unreduced-sum-over-n-rational",
+        "cost": "exact-six-decimal-micro-units-no-rounding-no-fx",
+        "uncertainty": "withheld-first-all-unsupported-otherwise-unknown",
+        "smallCells": "suppress-entire-cohort-numeric-values-on-nonzero-bucket-below-five",
+        "comparison": "assisted-success-rate-minus-baseline-only-with-complete-matching-pins",
+        "releaseBudget": "one-confirmed-release-per-scope-lifetime"
+      }
+    }
+  }
+}

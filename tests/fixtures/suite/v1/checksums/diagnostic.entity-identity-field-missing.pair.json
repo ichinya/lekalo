@@ -1,0 +1,39 @@
+{
+  "caseId": "diagnostic.entity-identity-field-missing.pair",
+  "revision": 1,
+  "algorithm": "sha256",
+  "files": [
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/entity-identity-field-missing/expect.json",
+      "sha256": "sha256:db0d9f6108fc9a8cdefbf8bcdfd7efad51120ade19fe36731ffcf04c112644d2"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/entity-identity-field-missing/fixture.json",
+      "sha256": "sha256:dfdbff8ab9086bbec94e590d9b1caaf5555e1ecbed3905faea4288d36d89736c"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/entity-identity-field-missing/non-trigger/lekalo/modules/planner/entities.yaml",
+      "sha256": "sha256:5a050490ded1d2b6812423f553d0fcf8b911208a9fd94e19cda072e7cb46a8d0"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/entity-identity-field-missing/non-trigger/lekalo/modules/planner/module.yaml",
+      "sha256": "sha256:8da58fa762763f2b89cfa6475d6672bf2dc8ccb9def407dc51c89a76d252352a"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/entity-identity-field-missing/non-trigger/lekalo/project.yaml",
+      "sha256": "sha256:2ed52b260e7da8bb56ea5d4f5cb1fa85fef0f886df792fc4ec41e296ec3f60de"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/entity-identity-field-missing/trigger/lekalo/modules/planner/entities.yaml",
+      "sha256": "sha256:3c7c7b46e73fb6d4625eee31390f90cc014176087e8974ae2508ed443ab0716b"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/entity-identity-field-missing/trigger/lekalo/modules/planner/module.yaml",
+      "sha256": "sha256:8da58fa762763f2b89cfa6475d6672bf2dc8ccb9def407dc51c89a76d252352a"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/entity-identity-field-missing/trigger/lekalo/project.yaml",
+      "sha256": "sha256:2ed52b260e7da8bb56ea5d4f5cb1fa85fef0f886df792fc4ec41e296ec3f60de"
+    }
+  ]
+}

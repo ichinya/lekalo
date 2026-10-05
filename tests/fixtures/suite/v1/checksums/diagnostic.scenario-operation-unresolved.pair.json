@@ -1,0 +1,47 @@
+{
+  "caseId": "diagnostic.scenario-operation-unresolved.pair",
+  "revision": 1,
+  "algorithm": "sha256",
+  "files": [
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/scenario-operation-unresolved/expect.json",
+      "sha256": "sha256:91b9bf93aa87b401c86fada06c25ebc75d62aa7f69b483557131c66302b963b2"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/scenario-operation-unresolved/fixture.json",
+      "sha256": "sha256:1bb9e5fa9ff94562f013892ca5d85eca13dd45aae7c5d099dd773f7207ae0530"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/scenario-operation-unresolved/non-trigger/lekalo/modules/planner/commands.yaml",
+      "sha256": "sha256:15287115259e745420852bdfdafe578357426cafa6f5ef288deb4b066348e4cb"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/scenario-operation-unresolved/non-trigger/lekalo/modules/planner/entities.yaml",
+      "sha256": "sha256:b210db7cd6c1865de0253972daad47debce400638243e4a83aa3bf8b9fc4bb7f"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/scenario-operation-unresolved/non-trigger/lekalo/modules/planner/module.yaml",
+      "sha256": "sha256:8da58fa762763f2b89cfa6475d6672bf2dc8ccb9def407dc51c89a76d252352a"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/scenario-operation-unresolved/non-trigger/lekalo/modules/planner/scenarios.yaml",
+      "sha256": "sha256:ba77a0bcf881712d5770328e06677dd1ee42f59c0ba23b8774933486515789ef"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/scenario-operation-unresolved/non-trigger/lekalo/project.yaml",
+      "sha256": "sha256:2ed52b260e7da8bb56ea5d4f5cb1fa85fef0f886df792fc4ec41e296ec3f60de"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/scenario-operation-unresolved/trigger/lekalo/modules/planner/module.yaml",
+      "sha256": "sha256:8da58fa762763f2b89cfa6475d6672bf2dc8ccb9def407dc51c89a76d252352a"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/scenario-operation-unresolved/trigger/lekalo/modules/planner/scenarios.yaml",
+      "sha256": "sha256:4dfadb2404d1beba6d6b383b97d2f608671664acecfc749f7bf5034247cf0eea"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/diagnostics/scenario-operation-unresolved/trigger/lekalo/project.yaml",
+      "sha256": "sha256:2ed52b260e7da8bb56ea5d4f5cb1fa85fef0f886df792fc4ec41e296ec3f60de"
+    }
+  ]
+}

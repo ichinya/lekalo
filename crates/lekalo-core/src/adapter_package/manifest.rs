@@ -737,7 +737,11 @@ impl ManifestWire {
         let invalid = |reason: &str| PackageFailure::ManifestInvalid {
             reason: reason.to_owned(),
         };
-        if self.schema_version != MANIFEST_SCHEMA_VERSION || self.identity != MANIFEST_IDENTITY {
+        let legacy =
+            self.schema_version == MANIFEST_SCHEMA_VERSION && self.identity == MANIFEST_IDENTITY;
+        let lint = self.schema_version == "lekalo/adapter-manifest/v0.6.4"
+            && self.identity == "dev.lekalo.adapter-manifest@0.6.4";
+        if !lint && (!legacy || self.capabilities.operations.iter().any(|op| op == "lint")) {
             return Err(invalid("identity"));
         }
         if self.adapter.id.is_empty()
@@ -1014,7 +1018,7 @@ mod committed_exemplar_tests {
         // exact committed bytes.
         assert_eq!(
             document.package_digest().as_str(),
-            "sha256:0e577009fa09c2e98f1bc2f572c8fb2759704f29d0a293d626ebdc959453e01c"
+            "sha256:bb0459dd683b0d5f0763ead0769f87a3006df4a0d17eeaa7dc7ba6a2fbd59275"
         );
     }
 

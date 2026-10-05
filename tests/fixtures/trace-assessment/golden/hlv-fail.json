@@ -1,0 +1,285 @@
+{
+  "status": "denied",
+  "payload": {
+    "assessment": {
+      "chains": [
+        {
+          "chain": {
+            "artifact": "artifact:apps-api-focus-task",
+            "evidenceRefs": [
+              "receipt:hlv",
+              "receipt:openspec",
+              "receipt:source-native"
+            ],
+            "gate": "gate:hlv-gate-focus",
+            "id": "chain:focus",
+            "occurrence": "focus.primary",
+            "relationRefs": [
+              "sha256:7157a0259771934ff423c5c0ce209984cbe8a29cbfbe0646220b86803045432f",
+              "sha256:8433a38010a1d00e853b2213ff4d872a995c6bcc1e9c9290c6a1d06db118c699",
+              "sha256:8ba280487671afe8059f0a042c93438e922e6048d9b8244a9c4532052f4e7feb",
+              "sha256:8d60e70f554150c202d63f22d632e597bd9e26fb585cae3747785ef8c1d2b994",
+              "sha256:8dee5dbea87e07ec991a9f095005bdaadbbfea6998599da650a4ae17c7c7f178"
+            ],
+            "requirement": "requirement:PLANNER-REQ-002",
+            "scenario": "scenario:planner-scenario-switch-focus",
+            "symbol": "symbol:planner.focus_task",
+            "test": "test:node-focus-task-switch"
+          },
+          "coverage": "complete",
+          "execution": "passed"
+        }
+      ],
+      "coverage": "complete",
+      "diagnostics": [
+        {
+          "category": "adapter",
+          "causes": [],
+          "code": "LEK-TRACE-005",
+          "data": {
+            "detail": "see-assessment-findings",
+            "subject": "planner"
+          },
+          "fixes": [],
+          "id": "trace.bridge-provider-unsupported",
+          "message": "A validation provider did not produce a supported terminal check.",
+          "message_id": "trace.bridge-provider-unsupported",
+          "metadata": {},
+          "registry_version": "0.6.4",
+          "related_locations": [],
+          "schema_version": "lekalo/diagnostic/v0.2.16",
+          "severity": "warning"
+        },
+        {
+          "category": "semantic",
+          "causes": [],
+          "code": "LEK-TRACE-009",
+          "data": {
+            "detail": "required-evidence",
+            "subject": "planner"
+          },
+          "fixes": [],
+          "id": "trace.bridge-policy-denied",
+          "message": "Required neutral trace validation evidence did not satisfy the selected policy.",
+          "message_id": "trace.bridge-policy-denied",
+          "metadata": {},
+          "registry_version": "0.6.4",
+          "related_locations": [],
+          "schema_version": "lekalo/diagnostic/v0.2.16",
+          "severity": "error"
+        }
+      ],
+      "evidence": [
+        {
+          "diagnostics": [
+            {
+              "code": "CTR-030",
+              "severity": "error",
+              "subject": "requirement:PLANNER-REQ-002"
+            },
+            {
+              "code": "GATE-005",
+              "severity": "error",
+              "subject": "gate:hlv-gate-focus"
+            }
+          ],
+          "id": "receipt:hlv",
+          "kind": "check",
+          "modelRef": {
+            "digest": "sha256:357e5d6fafa34d27360fec24b4326d3534905e33c6acdee60198fb078b7b79e5",
+            "schemaVersion": "0.2.16"
+          },
+          "outcome": "fail",
+          "protocol": {
+            "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "id": "org.aifhub/hlv-cli",
+            "version": "1.0.0"
+          },
+          "provider": "hlv",
+          "resultDigest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+          "sourceRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "tool": {
+            "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            "id": "org.hlv/cli",
+            "version": "1.0.0"
+          },
+          "workingSetDigest": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+        },
+        {
+          "diagnostics": [],
+          "id": "receipt:openspec",
+          "kind": "check",
+          "modelRef": {
+            "digest": "sha256:357e5d6fafa34d27360fec24b4326d3534905e33c6acdee60198fb078b7b79e5",
+            "schemaVersion": "0.2.16"
+          },
+          "outcome": "pass",
+          "protocol": {
+            "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+            "id": "org.aifhub/openspec",
+            "version": "1.0.0"
+          },
+          "provider": "openspec",
+          "resultDigest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+          "sourceRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "tool": {
+            "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+            "id": "org.openspec/cli",
+            "version": "1.0.0"
+          },
+          "workingSetDigest": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+        },
+        {
+          "artifact": "artifact:apps-api-focus-task",
+          "artifactDigest": "sha256:b014179b2ee4568dcc81f34c0f41758ed0b8ea121c6a4196617af3eb970e89db",
+          "diagnostics": [],
+          "gate": "gate:hlv-gate-focus",
+          "id": "receipt:source-native",
+          "kind": "execution",
+          "modelRef": {
+            "digest": "sha256:357e5d6fafa34d27360fec24b4326d3534905e33c6acdee60198fb078b7b79e5",
+            "schemaVersion": "0.2.16"
+          },
+          "outcome": "pass",
+          "protocol": {
+            "digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+            "id": "dev.lekalo/native-receipt",
+            "version": "0.4.0"
+          },
+          "provider": "source-native",
+          "resultDigest": "sha256:b89919c0b3f5055ae76433c01dd5780fb5be2196848c459a4764bdd80ffdd2c7",
+          "sourceRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "test": "test:node-focus-task-switch",
+          "tool": {
+            "digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+            "id": "dev.lekalo/native-runner",
+            "version": "1.0.0"
+          },
+          "workingSetDigest": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+        }
+      ],
+      "evidenceDigest": "sha256:f6da435c473c2bd8feac4f9bdfb7e7f4e3b81ff6fb99541cfac3f32e234c0ee3",
+      "expectedTraceDigest": "sha256:5c6740f2855ce3633772caed443ed766ffe68778c2dd58a772686d12aceb007e",
+      "findings": [
+        {
+          "detail": "provider-check-not-passed",
+          "rule": "trace.bridge-provider-unsupported",
+          "subject": "chain:focus"
+        }
+      ],
+      "identity": "dev.lekalo.trace-assessment@0.6.4",
+      "mappingDigest": "sha256:40e926fbf56395ee316d750d9846e40e81a089a1f216187feb92da155fa7236d",
+      "modelRef": {
+        "digest": "sha256:357e5d6fafa34d27360fec24b4326d3534905e33c6acdee60198fb078b7b79e5",
+        "schemaVersion": "0.2.16"
+      },
+      "policy": "required",
+      "projectRef": "planner",
+      "providerPins": [
+        {
+          "protocol": {
+            "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "id": "org.aifhub/hlv-cli",
+            "version": "1.0.0"
+          },
+          "provider": "hlv",
+          "tool": {
+            "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            "id": "org.hlv/cli",
+            "version": "1.0.0"
+          }
+        },
+        {
+          "protocol": {
+            "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+            "id": "org.aifhub/openspec",
+            "version": "1.0.0"
+          },
+          "provider": "openspec",
+          "tool": {
+            "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+            "id": "org.openspec/cli",
+            "version": "1.0.0"
+          }
+        },
+        {
+          "protocol": {
+            "digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+            "id": "dev.lekalo/native-receipt",
+            "version": "0.4.0"
+          },
+          "provider": "source-native",
+          "tool": {
+            "digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+            "id": "dev.lekalo/native-runner",
+            "version": "1.0.0"
+          }
+        }
+      ],
+      "requireExecution": true,
+      "requiredProviders": [
+        "hlv",
+        "openspec"
+      ],
+      "schemaVersion": "lekalo/trace-assessment/v0.6.4",
+      "scope": {
+        "artifacts": [
+          "artifact:apps-api-focus-task"
+        ],
+        "requirements": [
+          "requirement:PLANNER-REQ-002"
+        ],
+        "scenarios": [
+          "scenario:planner-scenario-switch-focus"
+        ]
+      },
+      "sourceRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "traceDigest": "sha256:5c6740f2855ce3633772caed443ed766ffe68778c2dd58a772686d12aceb007e",
+      "verdict": "blocked",
+      "workingSetDigest": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+    },
+    "status": "valid"
+  },
+  "diagnostics": [
+    {
+      "schema_version": "lekalo/diagnostic/v0.2.16",
+      "registry_version": "0.6.4",
+      "id": "trace.bridge-provider-unsupported",
+      "code": "LEK-TRACE-005",
+      "severity": "warning",
+      "category": "adapter",
+      "message_id": "trace.bridge-provider-unsupported",
+      "message": "A validation provider did not produce a supported terminal check.",
+      "data": {
+        "detail": "see-assessment-findings",
+        "subject": "planner"
+      },
+      "related_locations": [],
+      "causes": [],
+      "fixes": [],
+      "metadata": {}
+    },
+    {
+      "schema_version": "lekalo/diagnostic/v0.2.16",
+      "registry_version": "0.6.4",
+      "id": "trace.bridge-policy-denied",
+      "code": "LEK-TRACE-009",
+      "severity": "error",
+      "category": "semantic",
+      "message_id": "trace.bridge-policy-denied",
+      "message": "Required neutral trace validation evidence did not satisfy the selected policy.",
+      "data": {
+        "detail": "required-evidence",
+        "subject": "planner"
+      },
+      "related_locations": [],
+      "causes": [],
+      "fixes": [],
+      "metadata": {}
+    }
+  ],
+  "reasonCodes": [
+    "trace.bridge-provider-unsupported",
+    "trace.bridge-policy-denied"
+  ]
+}

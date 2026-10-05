@@ -1,0 +1,1155 @@
+{
+  "complete": true,
+  "coverage": {
+    "artifacts": {
+      "state": "unknown"
+    },
+    "declared": {
+      "state": "known",
+      "value": "canonical-ir"
+    },
+    "members": {
+      "state": "unknown"
+    },
+    "observed": {
+      "state": "unsupported"
+    },
+    "tests": {
+      "state": "unknown"
+    },
+    "transactions": {
+      "state": "unknown"
+    }
+  },
+  "cycles": [],
+  "findings": [],
+  "identity": "dev.lekalo.coupling-report@0.6.4",
+  "metricVersion": "coupling-metrics/1",
+  "planning": {
+    "contextBudget": {
+      "state": "unknown"
+    },
+    "evidenceGaps": [],
+    "internalSymbols": [
+      "type:sync.local_request"
+    ],
+    "publicContracts": [
+      "entity:tasks.task",
+      "operation:sync.sync_event",
+      "operation:sync.to_payload",
+      "type:sync.request",
+      "type:tasks.task_page"
+    ],
+    "requiredChecks": [],
+    "resources": [],
+    "reviewOverlap": [
+      "entity:tasks.task",
+      "operation:sync.sync_event",
+      "operation:sync.to_payload",
+      "type:sync.request",
+      "type:tasks.task_page"
+    ],
+    "runtimeConflicts": {
+      "state": "unknown"
+    },
+    "transactionGroups": []
+  },
+  "profile": {
+    "centralityDeclarations": [],
+    "domainGroups": [],
+    "gate": {
+      "baselineReadyRef": {
+        "state": "unknown"
+      },
+      "failOn": [],
+      "mode": "advisory"
+    },
+    "identity": "dev.lekalo.coupling-profile@0.6.4",
+    "measurement": {
+      "includeObserved": false,
+      "recipe": "declared-architecture/1"
+    },
+    "modules": [],
+    "profileId": "advisory",
+    "profileRevision": 1,
+    "project": {
+      "limits": [],
+      "regressionLimits": []
+    },
+    "schemaVersion": "lekalo/coupling-profile/v0.6.4"
+  },
+  "projection": {
+    "edges": [
+      {
+        "confidence": "canonical",
+        "from": "entity:tasks.task",
+        "key": "entity:tasks.task|references|type:tasks.state|2",
+        "occurrence": 2,
+        "relation": "references",
+        "role": "entity-field",
+        "to": "type:tasks.state"
+      },
+      {
+        "confidence": "canonical",
+        "from": "entity:tasks.task",
+        "key": "entity:tasks.task|references|type:tasks.text|0",
+        "occurrence": 0,
+        "relation": "references",
+        "role": "entity-field",
+        "to": "type:tasks.text"
+      },
+      {
+        "confidence": "canonical",
+        "from": "entity:tasks.task",
+        "key": "entity:tasks.task|references|type:tasks.text|1",
+        "occurrence": 1,
+        "relation": "references",
+        "role": "entity-field",
+        "to": "type:tasks.text"
+      },
+      {
+        "confidence": "canonical",
+        "from": "operation:integrations.deliver_calendar",
+        "key": "operation:integrations.deliver_calendar|accepts|type:integrations.calendar_payload|0",
+        "occurrence": 0,
+        "relation": "accepts",
+        "role": "command-input",
+        "to": "type:integrations.calendar_payload"
+      },
+      {
+        "confidence": "canonical",
+        "from": "operation:integrations.deliver_webhook",
+        "key": "operation:integrations.deliver_webhook|accepts|type:integrations.webhook_payload|0",
+        "occurrence": 0,
+        "relation": "accepts",
+        "role": "command-input",
+        "to": "type:integrations.webhook_payload"
+      },
+      {
+        "confidence": "canonical",
+        "from": "operation:sync.sync_event",
+        "key": "operation:sync.sync_event|accepts|type:integrations.client|1",
+        "occurrence": 1,
+        "relation": "accepts",
+        "role": "command-input",
+        "to": "type:integrations.client"
+      },
+      {
+        "confidence": "canonical",
+        "from": "operation:sync.sync_event",
+        "key": "operation:sync.sync_event|accepts|type:sync.local_request|0",
+        "occurrence": 0,
+        "relation": "accepts",
+        "role": "command-input",
+        "to": "type:sync.local_request"
+      },
+      {
+        "confidence": "canonical",
+        "from": "operation:sync.to_payload",
+        "key": "operation:sync.to_payload|accepts|type:sync.request|0",
+        "occurrence": 0,
+        "relation": "accepts",
+        "role": "command-input",
+        "to": "type:sync.request"
+      },
+      {
+        "confidence": "canonical",
+        "from": "type:integrations.calendar_payload",
+        "key": "type:integrations.calendar_payload|references|type:integrations.text|0",
+        "occurrence": 0,
+        "relation": "references",
+        "role": "value-object-field",
+        "to": "type:integrations.text"
+      },
+      {
+        "confidence": "canonical",
+        "from": "type:integrations.calendar_payload",
+        "key": "type:integrations.calendar_payload|references|type:integrations.text|1",
+        "occurrence": 1,
+        "relation": "references",
+        "role": "value-object-field",
+        "to": "type:integrations.text"
+      },
+      {
+        "confidence": "canonical",
+        "from": "type:integrations.calendar_payload",
+        "key": "type:integrations.calendar_payload|references|type:integrations.text|2",
+        "occurrence": 2,
+        "relation": "references",
+        "role": "value-object-field",
+        "to": "type:integrations.text"
+      },
+      {
+        "confidence": "canonical",
+        "from": "type:integrations.client",
+        "key": "type:integrations.client|references|type:integrations.target_kind|0",
+        "occurrence": 0,
+        "relation": "references",
+        "role": "value-object-field",
+        "to": "type:integrations.target_kind"
+      },
+      {
+        "confidence": "canonical",
+        "from": "type:integrations.client",
+        "key": "type:integrations.client|references|type:integrations.text|1",
+        "occurrence": 1,
+        "relation": "references",
+        "role": "value-object-field",
+        "to": "type:integrations.text"
+      },
+      {
+        "confidence": "canonical",
+        "from": "type:integrations.delivery_ack",
+        "key": "type:integrations.delivery_ack|references|type:integrations.text|0",
+        "occurrence": 0,
+        "relation": "references",
+        "role": "value-object-field",
+        "to": "type:integrations.text"
+      },
+      {
+        "confidence": "canonical",
+        "from": "type:integrations.delivery_ack",
+        "key": "type:integrations.delivery_ack|references|type:integrations.text|1",
+        "occurrence": 1,
+        "relation": "references",
+        "role": "value-object-field",
+        "to": "type:integrations.text"
+      },
+      {
+        "confidence": "canonical",
+        "from": "type:integrations.webhook_payload",
+        "key": "type:integrations.webhook_payload|references|type:integrations.text|0",
+        "occurrence": 0,
+        "relation": "references",
+        "role": "value-object-field",
+        "to": "type:integrations.text"
+      },
+      {
+        "confidence": "canonical",
+        "from": "type:integrations.webhook_payload",
+        "key": "type:integrations.webhook_payload|references|type:integrations.text|1",
+        "occurrence": 1,
+        "relation": "references",
+        "role": "value-object-field",
+        "to": "type:integrations.text"
+      },
+      {
+        "confidence": "canonical",
+        "from": "type:sync.local_request",
+        "key": "type:sync.local_request|references|type:sync.request|0",
+        "occurrence": 0,
+        "relation": "references",
+        "role": "value-object-field",
+        "to": "type:sync.request"
+      },
+      {
+        "confidence": "canonical",
+        "from": "type:sync.request",
+        "key": "type:sync.request|references|entity:tasks.task|0",
+        "occurrence": 0,
+        "relation": "references",
+        "role": "value-object-field",
+        "to": "entity:tasks.task"
+      },
+      {
+        "confidence": "canonical",
+        "from": "type:sync.request",
+        "key": "type:sync.request|references|type:integrations.target_kind|1",
+        "occurrence": 1,
+        "relation": "references",
+        "role": "value-object-field",
+        "to": "type:integrations.target_kind"
+      },
+      {
+        "confidence": "canonical",
+        "from": "type:tasks.new_task_input",
+        "key": "type:tasks.new_task_input|references|type:tasks.text|0",
+        "occurrence": 0,
+        "relation": "references",
+        "role": "value-object-field",
+        "to": "type:tasks.text"
+      },
+      {
+        "confidence": "canonical",
+        "from": "type:tasks.new_task_input",
+        "key": "type:tasks.new_task_input|references|type:tasks.text|1",
+        "occurrence": 1,
+        "relation": "references",
+        "role": "value-object-field",
+        "to": "type:tasks.text"
+      },
+      {
+        "confidence": "canonical",
+        "from": "type:tasks.task_page",
+        "key": "type:tasks.task_page|references|entity:tasks.task|2",
+        "occurrence": 2,
+        "relation": "references",
+        "role": "value-object-field",
+        "to": "entity:tasks.task"
+      },
+      {
+        "confidence": "canonical",
+        "from": "type:tasks.task_page",
+        "key": "type:tasks.task_page|references|type:tasks.count|0",
+        "occurrence": 0,
+        "relation": "references",
+        "role": "value-object-field",
+        "to": "type:tasks.count"
+      },
+      {
+        "confidence": "canonical",
+        "from": "type:tasks.task_page",
+        "key": "type:tasks.task_page|references|type:tasks.count|1",
+        "occurrence": 1,
+        "relation": "references",
+        "role": "value-object-field",
+        "to": "type:tasks.count"
+      }
+    ],
+    "fields": {
+      "entity:tasks.task": {
+        "state": [
+          "type:tasks.state"
+        ],
+        "task_id": [
+          "type:tasks.text"
+        ],
+        "title": [
+          "type:tasks.text"
+        ]
+      },
+      "operation:integrations.deliver_calendar": {
+        "payload": [
+          "type:integrations.calendar_payload"
+        ]
+      },
+      "operation:integrations.deliver_webhook": {
+        "payload": [
+          "type:integrations.webhook_payload"
+        ]
+      },
+      "operation:sync.sync_event": {
+        "client": [
+          "type:integrations.client"
+        ],
+        "request": [
+          "type:sync.local_request"
+        ]
+      },
+      "operation:sync.to_payload": {
+        "request": [
+          "type:sync.request"
+        ]
+      },
+      "type:integrations.calendar_payload": {
+        "calendar_id": [
+          "type:integrations.text"
+        ],
+        "date": [
+          "type:integrations.text"
+        ],
+        "title": [
+          "type:integrations.text"
+        ]
+      },
+      "type:integrations.client": {
+        "endpoint": [
+          "type:integrations.text"
+        ],
+        "kind": [
+          "type:integrations.target_kind"
+        ]
+      },
+      "type:integrations.delivery_ack": {
+        "accepted_at": [
+          "type:integrations.text"
+        ],
+        "target": [
+          "type:integrations.text"
+        ]
+      },
+      "type:integrations.webhook_payload": {
+        "body": [
+          "type:integrations.text"
+        ],
+        "endpoint": [
+          "type:integrations.text"
+        ]
+      },
+      "type:sync.local_request": {
+        "request": [
+          "type:sync.request"
+        ]
+      },
+      "type:sync.request": {
+        "target": [
+          "type:integrations.target_kind"
+        ],
+        "task": [
+          "entity:tasks.task"
+        ]
+      },
+      "type:tasks.new_task_input": {
+        "task_id": [
+          "type:tasks.text"
+        ],
+        "title": [
+          "type:tasks.text"
+        ]
+      },
+      "type:tasks.task_page": {
+        "items": [
+          "entity:tasks.task"
+        ],
+        "open": [
+          "type:tasks.count"
+        ],
+        "total": [
+          "type:tasks.count"
+        ]
+      }
+    },
+    "symbols": {
+      "entity:tasks.task": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "tasks",
+        "targetSpecific": false
+      },
+      "module:integrations": {
+        "class": "unclassified",
+        "effectOperation": "none",
+        "module": "integrations",
+        "targetSpecific": false
+      },
+      "module:sync": {
+        "class": "unclassified",
+        "effectOperation": "none",
+        "module": "sync",
+        "targetSpecific": false
+      },
+      "module:tasks": {
+        "class": "unclassified",
+        "effectOperation": "none",
+        "module": "tasks",
+        "targetSpecific": false
+      },
+      "operation:integrations.deliver_calendar": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "integrations",
+        "targetSpecific": false
+      },
+      "operation:integrations.deliver_webhook": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "integrations",
+        "targetSpecific": false
+      },
+      "operation:sync.sync_event": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "sync",
+        "targetSpecific": false
+      },
+      "operation:sync.to_payload": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "sync",
+        "targetSpecific": false
+      },
+      "project:taskhub": {
+        "class": "unclassified",
+        "effectOperation": "none",
+        "module": "",
+        "targetSpecific": false
+      },
+      "type:integrations.calendar_payload": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "integrations",
+        "targetSpecific": false
+      },
+      "type:integrations.client": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "integrations",
+        "targetSpecific": false
+      },
+      "type:integrations.delivery_ack": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "integrations",
+        "targetSpecific": false
+      },
+      "type:integrations.target_kind": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "integrations",
+        "targetSpecific": false
+      },
+      "type:integrations.text": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "integrations",
+        "targetSpecific": false
+      },
+      "type:integrations.webhook_payload": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "integrations",
+        "targetSpecific": false
+      },
+      "type:sync.local_request": {
+        "class": "internal",
+        "effectOperation": "none",
+        "module": "sync",
+        "targetSpecific": false
+      },
+      "type:sync.request": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "sync",
+        "targetSpecific": false
+      },
+      "type:tasks.count": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "tasks",
+        "targetSpecific": false
+      },
+      "type:tasks.new_task_input": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "tasks",
+        "targetSpecific": false
+      },
+      "type:tasks.state": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "tasks",
+        "targetSpecific": false
+      },
+      "type:tasks.task_page": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "tasks",
+        "targetSpecific": false
+      },
+      "type:tasks.text": {
+        "class": "public",
+        "effectOperation": "none",
+        "module": "tasks",
+        "targetSpecific": false
+      }
+    }
+  },
+  "provenance": {
+    "evidence": {
+      "state": "unknown"
+    },
+    "inputs": {
+      "effectDigest": "sha256:64133b323eb3a6277f8429f62cf49bd56fe9d60c67f8fd588fde6e6638ed8d39",
+      "graphDigest": "sha256:09bdcfdf17ff53f5c44ff3d0996c42a53dcff36ece2981fb87291e9ff426f3ce",
+      "irDigest": "sha256:eccdfb292ac3d331b9c152e5dbea8335c1525889b9cdd3739877bdfeedb8b8f3",
+      "modelDigest": {
+        "state": "known",
+        "value": "sha256:ac608120dd559f4dfe29ac6365f7f47af6056a245ec32d3f05c9373688e001e8"
+      },
+      "modelVersion": "0.2.16",
+      "project": "taskhub",
+      "semanticDigest": "sha256:160d94c38cc61a9260e24624171441840cc92d5427866e31c7e8795a5664e5c7",
+      "sourceRevision": {
+        "state": "unknown"
+      }
+    },
+    "measurementDigest": "sha256:492bcb6c2193bac297be695ecf6c4ae53718835603bc597659fab74e1686f10b",
+    "profileDigest": "sha256:d6dc425eef456dba1e0240c10ca5832db240d88c4c75ea7ef7c7056e3daeaeb4",
+    "projectionDigest": "sha256:cf5c0333373e12b097779adb683b2758d67d630e09b429c5c4e9f341cb5d7bb9"
+  },
+  "publicContractCounts": {
+    "endpoint": 0,
+    "entity": 1,
+    "event": 0,
+    "operation": 2,
+    "type": 2
+  },
+  "recipe": "declared-architecture/1",
+  "schemaVersion": "lekalo/coupling-report/v0.6.4",
+  "scope": {
+    "changedInput": {
+      "state": "unknown"
+    },
+    "kind": "symbol",
+    "roots": [
+      "entity:tasks.task"
+    ],
+    "selector": "entity:tasks.task"
+  },
+  "subjects": [
+    {
+      "affectedModules": [
+        "sync",
+        "tasks"
+      ],
+      "artifacts": [],
+      "checks": [],
+      "fanIn": [
+        "type:sync.request",
+        "type:tasks.task_page"
+      ],
+      "fanOut": [
+        "type:tasks.state",
+        "type:tasks.text"
+      ],
+      "gaps": [],
+      "impact": {
+        "internalSymbols": [
+          "type:sync.local_request"
+        ],
+        "publicContracts": [
+          "entity:tasks.task",
+          "operation:sync.sync_event",
+          "operation:sync.to_payload",
+          "type:sync.request",
+          "type:tasks.task_page"
+        ],
+        "supportingSymbols": [],
+        "unclassifiedSymbols": []
+      },
+      "importEdgeKeys": [],
+      "lowerBounds": {},
+      "measurementBasis": "exact-declared",
+      "metrics": {
+        "affectedArtifacts": {
+          "state": "unknown"
+        },
+        "affectedTargets": {
+          "state": "unsupported"
+        },
+        "affectedTests": {
+          "state": "unknown"
+        },
+        "crossModuleCycles": {
+          "state": "known",
+          "value": 0
+        },
+        "duplicationDivergence": {
+          "state": "unsupported"
+        },
+        "fanInModules": {
+          "state": "known",
+          "value": 1
+        },
+        "fanInSymbols": {
+          "state": "known",
+          "value": 2
+        },
+        "fanOutModules": {
+          "state": "known",
+          "value": 0
+        },
+        "fanOutSymbols": {
+          "state": "known",
+          "value": 2
+        },
+        "internalSymbolsAffected": {
+          "state": "known",
+          "value": 1
+        },
+        "modulesAffected": {
+          "state": "known",
+          "value": 2
+        },
+        "publicContractsAffected": {
+          "state": "known",
+          "value": 5
+        },
+        "publicTargetExposure": {
+          "state": "known",
+          "value": 0
+        },
+        "requiredChecks": {
+          "state": "unknown"
+        },
+        "semanticSymbolsAffected": {
+          "state": "known",
+          "value": 6
+        },
+        "sharedAbstractionRadius": {
+          "state": "known",
+          "value": 0
+        },
+        "sharedMutableResources": {
+          "state": "known",
+          "value": 0
+        },
+        "transactionSpread": {
+          "state": "unknown"
+        }
+      },
+      "module": "tasks",
+      "possible": [],
+      "replicaObligations": [],
+      "resources": [],
+      "sharedResources": [],
+      "subject": "entity:tasks.task",
+      "targetExposure": [],
+      "targets": [],
+      "tests": [],
+      "transactionGroups": [],
+      "transactionScopes": [],
+      "witnessRefs": [
+        "sha256:03290a5c822b712df73610dc2024495af7736d40cfd7ad06ccda3af6cae4cb41",
+        "sha256:0594079fd33303936d1e868b5f155a0ab90d1435e9dd5a96759cc88b171ea82b",
+        "sha256:1c5cf324907cad7b9a49b4cc073fd64d3ea782f19d861f881558c9369afed400",
+        "sha256:5c28dea53cd7ca8700e7534e5f4aa56296fa62a2c10dd556f84cb4b520ab6c88",
+        "sha256:83b94115209cb4d31ab4c2249f4b08505754ed4bf2fa1d6719abca32a52f37ed",
+        "sha256:89580b373762684209f2fc9d5c8778ad4420cfb662b89b6c243ac8a7ef2e8c91",
+        "sha256:aa7d5de447df52aeb7b958ed4e32180d2e9d13413f87034aee52fdae44475cbf",
+        "sha256:df7496711533adaa29792939f15f52e1aac28d17d67f6c677efd4e78a6d3804f"
+      ]
+    },
+    {
+      "affectedModules": [
+        "sync",
+        "tasks"
+      ],
+      "artifacts": [],
+      "checks": [],
+      "fanIn": [
+        "type:sync.request",
+        "type:tasks.task_page"
+      ],
+      "fanOut": [
+        "type:tasks.state",
+        "type:tasks.text"
+      ],
+      "gaps": [],
+      "impact": {
+        "internalSymbols": [
+          "type:sync.local_request"
+        ],
+        "publicContracts": [
+          "entity:tasks.task",
+          "operation:sync.sync_event",
+          "operation:sync.to_payload",
+          "type:sync.request",
+          "type:tasks.task_page"
+        ],
+        "supportingSymbols": [],
+        "unclassifiedSymbols": []
+      },
+      "importEdgeKeys": [
+        "module:sync|requires|module:tasks|1"
+      ],
+      "lowerBounds": {},
+      "measurementBasis": "aggregate-declared",
+      "metrics": {
+        "affectedArtifacts": {
+          "state": "unknown"
+        },
+        "affectedTargets": {
+          "state": "unknown"
+        },
+        "affectedTests": {
+          "state": "unknown"
+        },
+        "crossModuleCycles": {
+          "state": "known",
+          "value": 0
+        },
+        "duplicationDivergence": {
+          "state": "unknown"
+        },
+        "fanInModules": {
+          "state": "known",
+          "value": 1
+        },
+        "fanInSymbols": {
+          "state": "known",
+          "value": 2
+        },
+        "fanOutModules": {
+          "state": "known",
+          "value": 0
+        },
+        "fanOutSymbols": {
+          "state": "known",
+          "value": 2
+        },
+        "internalSymbolsAffected": {
+          "state": "known",
+          "value": 1
+        },
+        "modulesAffected": {
+          "state": "known",
+          "value": 2
+        },
+        "publicContractsAffected": {
+          "state": "known",
+          "value": 5
+        },
+        "publicTargetExposure": {
+          "state": "unknown"
+        },
+        "requiredChecks": {
+          "state": "unknown"
+        },
+        "semanticSymbolsAffected": {
+          "state": "known",
+          "value": 6
+        },
+        "sharedAbstractionRadius": {
+          "state": "unknown"
+        },
+        "sharedMutableResources": {
+          "state": "known",
+          "value": 0
+        },
+        "transactionSpread": {
+          "state": "unknown"
+        }
+      },
+      "module": "tasks",
+      "possible": [],
+      "replicaObligations": [],
+      "resources": [],
+      "sharedResources": [],
+      "subject": "module:tasks",
+      "targetExposure": [],
+      "targets": [],
+      "tests": [],
+      "transactionGroups": [],
+      "transactionScopes": [],
+      "witnessRefs": [
+        "sha256:03290a5c822b712df73610dc2024495af7736d40cfd7ad06ccda3af6cae4cb41",
+        "sha256:0594079fd33303936d1e868b5f155a0ab90d1435e9dd5a96759cc88b171ea82b",
+        "sha256:1c5cf324907cad7b9a49b4cc073fd64d3ea782f19d861f881558c9369afed400",
+        "sha256:5c28dea53cd7ca8700e7534e5f4aa56296fa62a2c10dd556f84cb4b520ab6c88",
+        "sha256:83b94115209cb4d31ab4c2249f4b08505754ed4bf2fa1d6719abca32a52f37ed",
+        "sha256:89580b373762684209f2fc9d5c8778ad4420cfb662b89b6c243ac8a7ef2e8c91",
+        "sha256:aa7d5de447df52aeb7b958ed4e32180d2e9d13413f87034aee52fdae44475cbf",
+        "sha256:df7496711533adaa29792939f15f52e1aac28d17d67f6c677efd4e78a6d3804f"
+      ]
+    },
+    {
+      "affectedModules": [
+        "sync",
+        "tasks"
+      ],
+      "artifacts": [],
+      "checks": [],
+      "fanIn": [
+        "type:sync.request",
+        "type:tasks.task_page"
+      ],
+      "fanOut": [
+        "type:tasks.state",
+        "type:tasks.text"
+      ],
+      "gaps": [],
+      "impact": {
+        "internalSymbols": [
+          "type:sync.local_request"
+        ],
+        "publicContracts": [
+          "entity:tasks.task",
+          "operation:sync.sync_event",
+          "operation:sync.to_payload",
+          "type:sync.request",
+          "type:tasks.task_page"
+        ],
+        "supportingSymbols": [],
+        "unclassifiedSymbols": []
+      },
+      "importEdgeKeys": [
+        "module:sync|requires|module:tasks|1"
+      ],
+      "lowerBounds": {},
+      "measurementBasis": "aggregate-declared",
+      "metrics": {
+        "affectedArtifacts": {
+          "state": "unknown"
+        },
+        "affectedTargets": {
+          "state": "unknown"
+        },
+        "affectedTests": {
+          "state": "unknown"
+        },
+        "crossModuleCycles": {
+          "state": "known",
+          "value": 0
+        },
+        "duplicationDivergence": {
+          "state": "unknown"
+        },
+        "fanInModules": {
+          "state": "known",
+          "value": 1
+        },
+        "fanInSymbols": {
+          "state": "known",
+          "value": 2
+        },
+        "fanOutModules": {
+          "state": "known",
+          "value": 0
+        },
+        "fanOutSymbols": {
+          "state": "known",
+          "value": 2
+        },
+        "internalSymbolsAffected": {
+          "state": "known",
+          "value": 1
+        },
+        "modulesAffected": {
+          "state": "known",
+          "value": 2
+        },
+        "publicContractsAffected": {
+          "state": "known",
+          "value": 5
+        },
+        "publicTargetExposure": {
+          "state": "unknown"
+        },
+        "requiredChecks": {
+          "state": "unknown"
+        },
+        "semanticSymbolsAffected": {
+          "state": "known",
+          "value": 6
+        },
+        "sharedAbstractionRadius": {
+          "state": "unknown"
+        },
+        "sharedMutableResources": {
+          "state": "known",
+          "value": 0
+        },
+        "transactionSpread": {
+          "state": "unknown"
+        }
+      },
+      "module": "",
+      "possible": [],
+      "replicaObligations": [],
+      "resources": [],
+      "sharedResources": [],
+      "subject": "project:taskhub",
+      "targetExposure": [],
+      "targets": [],
+      "tests": [],
+      "transactionGroups": [],
+      "transactionScopes": [],
+      "witnessRefs": [
+        "sha256:03290a5c822b712df73610dc2024495af7736d40cfd7ad06ccda3af6cae4cb41",
+        "sha256:0594079fd33303936d1e868b5f155a0ab90d1435e9dd5a96759cc88b171ea82b",
+        "sha256:1c5cf324907cad7b9a49b4cc073fd64d3ea782f19d861f881558c9369afed400",
+        "sha256:5c28dea53cd7ca8700e7534e5f4aa56296fa62a2c10dd556f84cb4b520ab6c88",
+        "sha256:83b94115209cb4d31ab4c2249f4b08505754ed4bf2fa1d6719abca32a52f37ed",
+        "sha256:89580b373762684209f2fc9d5c8778ad4420cfb662b89b6c243ac8a7ef2e8c91",
+        "sha256:aa7d5de447df52aeb7b958ed4e32180d2e9d13413f87034aee52fdae44475cbf",
+        "sha256:df7496711533adaa29792939f15f52e1aac28d17d67f6c677efd4e78a6d3804f"
+      ]
+    }
+  ],
+  "suggestions": [],
+  "summary": {
+    "internalSymbols": [
+      "type:sync.local_request"
+    ],
+    "publicContracts": [
+      "entity:tasks.task",
+      "operation:sync.sync_event",
+      "operation:sync.to_payload",
+      "type:sync.request",
+      "type:tasks.task_page"
+    ],
+    "supportingSymbols": [],
+    "unclassifiedSymbols": []
+  },
+  "witnesses": [
+    {
+      "confidence": "canonical",
+      "direction": "reverse",
+      "edges": [
+        {
+          "confidence": "canonical",
+          "from": "type:sync.request",
+          "key": "type:sync.request|references|entity:tasks.task|0",
+          "occurrence": 0,
+          "relation": "references",
+          "role": "value-object-field",
+          "to": "entity:tasks.task"
+        }
+      ],
+      "evidenceRefs": [],
+      "id": "sha256:03290a5c822b712df73610dc2024495af7736d40cfd7ad06ccda3af6cae4cb41",
+      "root": "entity:tasks.task",
+      "subject": "type:sync.request"
+    },
+    {
+      "confidence": "canonical",
+      "direction": "reverse",
+      "edges": [],
+      "evidenceRefs": [],
+      "id": "sha256:0594079fd33303936d1e868b5f155a0ab90d1435e9dd5a96759cc88b171ea82b",
+      "root": "entity:tasks.task",
+      "subject": "entity:tasks.task"
+    },
+    {
+      "confidence": "canonical",
+      "direction": "reverse",
+      "edges": [
+        {
+          "confidence": "canonical",
+          "from": "type:sync.request",
+          "key": "type:sync.request|references|entity:tasks.task|0",
+          "occurrence": 0,
+          "relation": "references",
+          "role": "value-object-field",
+          "to": "entity:tasks.task"
+        },
+        {
+          "confidence": "canonical",
+          "from": "type:sync.local_request",
+          "key": "type:sync.local_request|references|type:sync.request|0",
+          "occurrence": 0,
+          "relation": "references",
+          "role": "value-object-field",
+          "to": "type:sync.request"
+        }
+      ],
+      "evidenceRefs": [],
+      "id": "sha256:1c5cf324907cad7b9a49b4cc073fd64d3ea782f19d861f881558c9369afed400",
+      "root": "entity:tasks.task",
+      "subject": "type:sync.local_request"
+    },
+    {
+      "confidence": "canonical",
+      "direction": "reverse",
+      "edges": [
+        {
+          "confidence": "canonical",
+          "from": "type:sync.request",
+          "key": "type:sync.request|references|entity:tasks.task|0",
+          "occurrence": 0,
+          "relation": "references",
+          "role": "value-object-field",
+          "to": "entity:tasks.task"
+        },
+        {
+          "confidence": "canonical",
+          "from": "operation:sync.to_payload",
+          "key": "operation:sync.to_payload|accepts|type:sync.request|0",
+          "occurrence": 0,
+          "relation": "accepts",
+          "role": "command-input",
+          "to": "type:sync.request"
+        }
+      ],
+      "evidenceRefs": [],
+      "id": "sha256:5c28dea53cd7ca8700e7534e5f4aa56296fa62a2c10dd556f84cb4b520ab6c88",
+      "root": "entity:tasks.task",
+      "subject": "operation:sync.to_payload"
+    },
+    {
+      "confidence": "canonical",
+      "direction": "reverse",
+      "edges": [
+        {
+          "confidence": "canonical",
+          "from": "type:tasks.task_page",
+          "key": "type:tasks.task_page|references|entity:tasks.task|2",
+          "occurrence": 2,
+          "relation": "references",
+          "role": "value-object-field",
+          "to": "entity:tasks.task"
+        }
+      ],
+      "evidenceRefs": [],
+      "id": "sha256:83b94115209cb4d31ab4c2249f4b08505754ed4bf2fa1d6719abca32a52f37ed",
+      "root": "entity:tasks.task",
+      "subject": "type:tasks.task_page"
+    },
+    {
+      "confidence": "canonical",
+      "direction": "reverse",
+      "edges": [
+        {
+          "confidence": "canonical",
+          "from": "type:sync.request",
+          "key": "type:sync.request|references|entity:tasks.task|0",
+          "occurrence": 0,
+          "relation": "references",
+          "role": "value-object-field",
+          "to": "entity:tasks.task"
+        },
+        {
+          "confidence": "canonical",
+          "from": "type:sync.local_request",
+          "key": "type:sync.local_request|references|type:sync.request|0",
+          "occurrence": 0,
+          "relation": "references",
+          "role": "value-object-field",
+          "to": "type:sync.request"
+        },
+        {
+          "confidence": "canonical",
+          "from": "operation:sync.sync_event",
+          "key": "operation:sync.sync_event|accepts|type:sync.local_request|0",
+          "occurrence": 0,
+          "relation": "accepts",
+          "role": "command-input",
+          "to": "type:sync.local_request"
+        }
+      ],
+      "evidenceRefs": [],
+      "id": "sha256:89580b373762684209f2fc9d5c8778ad4420cfb662b89b6c243ac8a7ef2e8c91",
+      "root": "entity:tasks.task",
+      "subject": "operation:sync.sync_event"
+    },
+    {
+      "confidence": "canonical",
+      "direction": "forward",
+      "edges": [
+        {
+          "confidence": "canonical",
+          "from": "entity:tasks.task",
+          "key": "entity:tasks.task|references|type:tasks.state|2",
+          "occurrence": 2,
+          "relation": "references",
+          "role": "entity-field",
+          "to": "type:tasks.state"
+        }
+      ],
+      "evidenceRefs": [],
+      "id": "sha256:aa7d5de447df52aeb7b958ed4e32180d2e9d13413f87034aee52fdae44475cbf",
+      "root": "entity:tasks.task",
+      "subject": "type:tasks.state"
+    },
+    {
+      "confidence": "canonical",
+      "direction": "forward",
+      "edges": [
+        {
+          "confidence": "canonical",
+          "from": "entity:tasks.task",
+          "key": "entity:tasks.task|references|type:tasks.text|0",
+          "occurrence": 0,
+          "relation": "references",
+          "role": "entity-field",
+          "to": "type:tasks.text"
+        }
+      ],
+      "evidenceRefs": [],
+      "id": "sha256:df7496711533adaa29792939f15f52e1aac28d17d67f6c677efd4e78a6d3804f",
+      "root": "entity:tasks.task",
+      "subject": "type:tasks.text"
+    }
+  ]
+}

@@ -213,9 +213,9 @@ check($genAgain['bytes'] === $gen['bytes'] && $genAgain['digest'] === $gen['dige
 
 $caps = describe_capabilities();
 check($caps['adapter']['id'] === ADAPTER_ID, 'identity id');
-check($caps['protocol_versions'] === ['0.3.2'], 'declared protocol versions');
+check($caps['protocol_versions'] === ['0.3.2', '0.6.4'], 'declared protocol versions');
 check($caps['ir_versions'] === [IR_VERSION], 'declared IR versions');
-check(count($caps['operations']) === 9, 'complete v1 operation surface');
+check(count($caps['operations']) === 10, 'complete v1 operation surface');
 foreach ($caps['operations'] as $operation) {
     check(in_array($operation, OPERATIONS, true), "operation {$operation} in the closed set");
 }

@@ -1,0 +1,806 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.ci-report@0.6.3",
+  "title": "Lekalo CI report v0.6.3",
+  "description": "Closed wire shape of one headless-CI run report (issue #103). One document binds the exact git/model/lock/profile provenance, the command result, the policy evaluation, every check and suite row, and the source diagnostics of validate/generate-check/verify/readiness. Canonical form is compact JSON with byte-sorted keys and one trailing LF; emitted bytes are deterministic (no timestamps, durations, absolute paths, host or user identity, or raw child output).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "identity",
+    "producer",
+    "invocation",
+    "provenance",
+    "commandResult",
+    "evaluation",
+    "checks",
+    "suites",
+    "diagnosticIndexes",
+    "diagnostics",
+    "publication"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "lekalo/ci-report/v0.6.3"
+    },
+    "identity": {
+      "const": "dev.lekalo.ci-report@0.6.3"
+    },
+    "producer": {
+      "$ref": "#/$defs/producer"
+    },
+    "invocation": {
+      "$ref": "#/$defs/invocation"
+    },
+    "provenance": {
+      "$ref": "#/$defs/provenance"
+    },
+    "commandResult": {
+      "$ref": "#/$defs/outcome"
+    },
+    "evaluation": {
+      "$ref": "#/$defs/evaluation"
+    },
+    "checks": {
+      "$ref": "#/$defs/checks"
+    },
+    "suites": {
+      "$ref": "#/$defs/suites"
+    },
+    "diagnosticIndexes": {
+      "description": "Sorted unique indexes into the diagnostics array referenced by check, suite, and case rows; dangling indexes are refused.",
+      "type": "array",
+      "items": { "type": "integer", "minimum": 0 },
+      "maxItems": 4096
+    },
+    "diagnostics": {
+      "description": "The source diagnostics in normalized order, in the closed lekalo/diagnostic wire; CI formatting never rewrites them.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/diagnosticItem" },
+      "maxItems": 256
+    },
+    "publication": {
+      "$ref": "#/$defs/publication"
+    }
+  },
+  "$defs": {
+    "boundedToken": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "safePath": {
+      "description": "Forward-slash repository-relative path; no absolute, drive, UNC, backslash, percent-escape, traversal, or control spelling is representable.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9._-]+)*$",
+      "maxLength": 1024,
+      "not": { "pattern": "(^|/)\\.\\.?(/|$)" }
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "hexRevision": {
+      "description": "A resolved Git revision identity: 40 or 64 lowercase hex characters.",
+      "type": "string",
+      "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+    },
+    "date": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "semVer": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "maxLength": 32
+    },
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version"],
+      "properties": {
+        "id": { "const": "lekalo" },
+        "version": { "$ref": "#/$defs/semVer" }
+      }
+    },
+    "commandName": {
+      "enum": ["validate", "generate-check", "verify", "readiness"]
+    },
+    "invocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command", "mode", "targets", "modules", "locked"],
+      "properties": {
+        "command": { "$ref": "#/$defs/commandName" },
+        "mode": {
+          "description": "`full` or `changed` for verify; `default` or `strict` for validate; `check` for generate-check; the phase name for readiness.",
+          "$ref": "#/$defs/boundedToken"
+        },
+        "targets": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/boundedToken" },
+          "maxItems": 64
+        },
+        "modules": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/boundedToken" },
+          "maxItems": 64
+        },
+        "locked": { "type": "boolean" },
+        "asOf": {
+          "description": "The explicit evaluated policy date, present only when a policy was evaluated.",
+          "oneOf": [{ "$ref": "#/$defs/date" }, { "type": "null" }]
+        }
+      }
+    },
+    "valueState": {
+      "description": "A provenance leaf: `known` requires the complete pin; `unknown` carries only the closed reason.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "value"],
+          "properties": {
+            "state": { "const": "known" },
+            "value": {
+              "anyOf": [
+                { "$ref": "#/$defs/hexRevision" },
+                { "type": "boolean" },
+                { "$ref": "#/$defs/sha256" },
+                { "$ref": "#/$defs/semVer" },
+                { "$ref": "#/$defs/safePath" }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "reason"],
+          "properties": {
+            "state": { "const": "unknown" },
+            "reason": {
+              "enum": [
+                "not-a-repository",
+                "git-unavailable",
+                "unreadable",
+                "invalid",
+                "absent",
+                "not-applicable"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "revisionState": {
+  "description": "A provenance leaf whose known value is exactly a 40/64 lowercase-hex revision.",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "value"],
+      "properties": {
+        "state": { "const": "known" },
+        "value": { "$ref": "#/$defs/hexRevision" }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "reason"],
+      "properties": {
+        "state": { "const": "unknown" },
+        "reason": { "$ref": "#/$defs/unknownReason" }
+      }
+    }
+  ]
+},
+"flagState": {
+  "description": "A provenance leaf whose known value is a boolean fact.",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "value"],
+      "properties": {
+        "state": { "const": "known" },
+        "value": { "type": "boolean" }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "reason"],
+      "properties": {
+        "state": { "const": "unknown" },
+        "reason": { "$ref": "#/$defs/unknownReason" }
+      }
+    }
+  ]
+},
+"digestState": {
+  "description": "A provenance leaf whose known value is exactly a sha256 spelling.",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "value"],
+      "properties": {
+        "state": { "const": "known" },
+        "value": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "reason"],
+      "properties": {
+        "state": { "const": "unknown" },
+        "reason": { "$ref": "#/$defs/unknownReason" }
+      }
+    }
+  ]
+},
+"versionState": {
+  "description": "A provenance leaf whose known value is exactly a semver spelling.",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "value"],
+      "properties": {
+        "state": { "const": "known" },
+        "value": { "$ref": "#/$defs/semVer" }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "reason"],
+      "properties": {
+        "state": { "const": "unknown" },
+        "reason": { "$ref": "#/$defs/unknownReason" }
+      }
+    }
+  ]
+},
+"unknownReason": {
+  "enum": [
+    "not-a-repository",
+    "git-unavailable",
+    "unreadable",
+    "invalid",
+    "absent",
+    "not-applicable"
+  ]
+},
+"gitProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit", "dirty", "workingSetDigest"],
+      "properties": {
+        "commit": { "$ref": "#/$defs/revisionState" },
+        "dirty": { "$ref": "#/$defs/flagState" },
+        "workingSetDigest": { "$ref": "#/$defs/digestState" }
+      }
+    },
+    "inputProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "digest"],
+      "properties": {
+        "version": { "$ref": "#/$defs/versionState" },
+        "digest": { "$ref": "#/$defs/digestState" }
+      }
+    },
+    "profileProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "digest"],
+      "properties": {
+        "id": { "$ref": "#/$defs/boundedToken" },
+        "version": { "$ref": "#/$defs/versionState" },
+        "digest": { "$ref": "#/$defs/digestState" }
+      }
+    },
+    "adapterProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "digest"],
+      "properties": {
+        "id": { "$ref": "#/$defs/boundedToken" },
+        "version": { "$ref": "#/$defs/versionState" },
+        "digest": { "$ref": "#/$defs/digestState" }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["git", "model", "ir", "lock", "profiles", "adapters"],
+      "properties": {
+        "git": { "$ref": "#/$defs/gitProvenance" },
+        "model": { "$ref": "#/$defs/inputProvenance" },
+        "ir": { "$ref": "#/$defs/inputProvenance" },
+        "lock": { "$ref": "#/$defs/inputProvenance" },
+        "profiles": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/profileProvenance" },
+          "maxItems": 64
+        },
+        "adapters": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/adapterProvenance" },
+          "maxItems": 64
+        }
+      }
+    },
+    "exitCode": {
+      "description": "The stable process exit of the domain status (0, 1, 3, 4, 5).",
+      "enum": [0, 1, 3, 4, 5]
+    },
+    "outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "exitCode"],
+      "properties": {
+        "status": {
+          "enum": [
+            "valid",
+            "invalid",
+            "denied",
+            "unsupported",
+            "unavailable",
+            "unsupported-version"
+          ]
+        },
+        "exitCode": { "$ref": "#/$defs/exitCode" }
+      }
+    },
+    "evaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "exitCode", "verdict", "coverage", "complete"],
+      "properties": {
+        "status": {
+          "enum": [
+            "valid",
+            "invalid",
+            "denied",
+            "unsupported",
+            "unavailable",
+            "unsupported-version"
+          ]
+        },
+        "exitCode": { "$ref": "#/$defs/exitCode" },
+        "verdict": { "enum": ["ready", "degraded", "blocked"] },
+        "coverage": { "enum": ["complete", "incomplete", "unknown"] },
+        "complete": { "type": "boolean" }
+      }
+    },
+    "failureClass": {
+      "enum": [
+        "assertion",
+        "static-analysis",
+        "boot",
+        "missing-component",
+        "incompatible",
+        "infrastructure",
+        "security",
+        "policy",
+        "evidence-invalid",
+        "output",
+        "none"
+      ]
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "required",
+        "sourceOutcome",
+        "failureClass",
+        "effectiveOutcome",
+        "diagnosticIndexes",
+        "detail"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/boundedToken" },
+        "required": { "type": "boolean" },
+        "sourceOutcome": {
+          "enum": [
+            "pass",
+            "fail",
+            "unavailable",
+            "unsupported",
+            "degraded",
+            "denied",
+            "cancelled",
+            "not-run"
+          ]
+        },
+        "failureClass": { "$ref": "#/$defs/failureClass" },
+        "effectiveOutcome": {
+          "enum": ["pass", "fail", "warn", "skip", "error"]
+        },
+        "diagnosticIndexes": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 0 },
+          "maxItems": 256
+        },
+        "detail": {
+          "description": "The closed registered reason token (a diagnostic id) or the empty string.",
+          "type": "string",
+          "maxLength": 256
+        }
+      }
+    },
+    "checks": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/check" },
+      "maxItems": 256
+    },
+    "suiteCase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "required",
+        "sourceOutcome",
+        "failureClass",
+        "diagnosticIndexes",
+        "detail",
+        "effectiveOutcome"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/boundedToken" },
+        "required": { "type": "boolean" },
+        "sourceOutcome": {
+          "enum": [
+            "pass",
+            "fail",
+            "unavailable",
+            "unsupported",
+            "degraded",
+            "denied",
+            "cancelled",
+            "not-run"
+          ]
+        },
+        "failureClass": { "$ref": "#/$defs/failureClass" },
+        "diagnosticIndexes": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 0 },
+          "maxItems": 256
+        },
+        "detail": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "effectiveOutcome": {
+          "description": "The policy-effective outcome computed once at build time; the JUnit projection is a pure function of it.",
+          "$ref": "#/$defs/effectiveOutcome"
+        }
+      }
+    },
+    "effectiveOutcome": {
+      "enum": ["pass", "fail", "warn", "skip", "error"]
+    },
+    "suite": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "target", "cases"],
+      "properties": {
+        "id": { "$ref": "#/$defs/boundedToken" },
+        "kind": {
+          "enum": ["scenario", "conformance", "native", "script", "adapter"]
+        },
+        "target": {
+          "oneOf": [{ "$ref": "#/$defs/boundedToken" }, { "type": "null" }]
+        },
+        "cases": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/suiteCase" },
+          "maxItems": 10000
+        }
+      }
+    },
+    "suites": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/suite" },
+      "maxItems": 64
+    },
+    "diagnosticItem": {
+      "description": "The closed lekalo/diagnostic/v0.2.16 item (embedded copy of its published surface).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "registry_version",
+        "id",
+        "code",
+        "severity",
+        "category",
+        "message_id",
+        "message",
+        "data",
+        "related_locations",
+        "causes",
+        "fixes",
+        "metadata"
+      ],
+      "properties": {
+        "schema_version": { "const": "lekalo/diagnostic/v0.2.16" },
+        "registry_version": { "$ref": "#/$defs/semVer" },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
+          "maxLength": 128
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^LEK-[A-Z][A-Z0-9]{1,11}-[0-9]{3}$"
+        },
+        "severity": { "enum": ["info", "warning", "error"] },
+        "category": {
+          "enum": [
+            "model",
+            "semantic",
+            "compatibility",
+            "adapter",
+            "infrastructure",
+            "security"
+          ]
+        },
+        "message_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
+          "maxLength": 128
+        },
+        "message": { "$ref": "#/$defs/boundedToken" },
+        "symbol": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){1,2}$",
+              "maxLength": 256
+            },
+            { "type": "null" }
+          ]
+        },
+        "source": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "minProperties": 1,
+              "properties": {
+                "path": { "$ref": "#/$defs/safePath" },
+                "range": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["start", "end"],
+                  "properties": {
+                    "start": { "$ref": "#/$defs/position" },
+                    "end": { "$ref": "#/$defs/position" }
+                  }
+                }
+              }
+            },
+            { "type": "null" }
+          ]
+        },
+        "data": {
+          "description": "The closed diagnostic data payload: registry-declared keys with typed scalar/nested values only (the lekalo/diagnostic dataObject surface; arbitrary nested payloads are not representable).",
+          "$ref": "#/$defs/diagnosticDataObject"
+        },
+        "related_locations": {
+          "type": "array",
+          "maxItems": 32,
+          "items": { "$ref": "#/$defs/relatedLocation" }
+        },
+        "causes": {
+          "type": "array",
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/cause" }
+        },
+        "fixes": {
+          "type": "array",
+          "maxItems": 16,
+          "items": { "$ref": "#/$defs/fix" }
+        },
+        "metadata": {
+          "description": "Provider metadata: a key-sorted map of namespaces to namespaced original codes only.",
+          "type": "object",
+          "maxProperties": 8,
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9-]{1,31}$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "maxProperties": 8,
+            "propertyNames": {
+              "pattern": "^[A-Za-z][A-Za-z0-9]{0,31}$"
+            },
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 128
+            }
+          }
+        }
+      }
+    },
+    "diagnosticDataObject": {
+      "type": "object",
+      "maxProperties": 16,
+      "propertyNames": {
+        "pattern": "^[A-Za-z][A-Za-z0-9]{0,31}$"
+      },
+      "additionalProperties": { "$ref": "#/$defs/diagnosticDataValue" }
+    },
+    "diagnosticDataValue": {
+      "oneOf": [
+        { "$ref": "#/$defs/diagnosticScalar" },
+        {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/diagnosticScalar" }
+        },
+        {
+          "type": "object",
+          "maxProperties": 16,
+          "propertyNames": {
+            "pattern": "^[A-Za-z][A-Za-z0-9]{0,31}$"
+          },
+          "additionalProperties": { "$ref": "#/$defs/diagnosticNestedValue" }
+        }
+      ]
+    },
+    "diagnosticNestedValue": {
+      "oneOf": [
+        { "$ref": "#/$defs/diagnosticScalar" },
+        {
+          "type": "object",
+          "maxProperties": 16,
+          "propertyNames": {
+            "pattern": "^[A-Za-z][A-Za-z0-9]{0,31}$"
+          },
+          "additionalProperties": { "$ref": "#/$defs/diagnosticScalar" }
+        }
+      ]
+    },
+    "diagnosticScalar": {
+      "oneOf": [
+        {
+          "type": "string",
+          "maxLength": 256
+        },
+        {
+          "type": "integer",
+          "minimum": 0
+        },
+        { "type": "boolean" }
+      ]
+    },
+    "relatedLocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relation", "message_id", "location"],
+      "properties": {
+        "relation": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
+          "maxLength": 128
+        },
+        "message_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
+          "maxLength": 128
+        },
+        "location": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "path": { "$ref": "#/$defs/safePath" },
+            "range": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["start", "end"],
+              "properties": {
+                "start": { "$ref": "#/$defs/position" },
+                "end": { "$ref": "#/$defs/position" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "cause": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "code",
+        "message_id",
+        "message",
+        "data"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
+          "maxLength": 128
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^LEK-[A-Z][A-Z0-9]{1,11}-[0-9]{3}$"
+        },
+        "message_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
+          "maxLength": 128
+        },
+        "message": { "$ref": "#/$defs/boundedToken" },
+        "data": { "$ref": "#/$defs/diagnosticDataObject" }
+      }
+    },
+    "fix": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fix_id", "applicability", "message"],
+      "properties": {
+        "fix_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
+          "maxLength": 128
+        },
+        "applicability": { "enum": ["safe", "unsafe", "breaking"] },
+        "message": { "$ref": "#/$defs/boundedToken" },
+        "target": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "path": { "$ref": "#/$defs/safePath" },
+            "range": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["start", "end"],
+              "properties": {
+                "start": { "$ref": "#/$defs/position" },
+                "end": { "$ref": "#/$defs/position" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "position": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["byte", "line", "column"],
+      "properties": {
+        "byte": { "type": "integer", "minimum": 0 },
+        "line": { "type": "integer", "minimum": 1 },
+        "column": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "publication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["classification", "decision"],
+      "properties": {
+        "classification": {
+          "description": "The #120 privacy classification of a CI report artifact.",
+          "const": "ci-derived"
+        },
+        "decision": {
+          "enum": ["allowed", "publication-unavailable"]
+        }
+      }
+    }
+  }
+}

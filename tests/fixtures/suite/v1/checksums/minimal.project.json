@@ -1,0 +1,23 @@
+{
+  "caseId": "minimal.project",
+  "revision": 1,
+  "algorithm": "sha256",
+  "files": [
+    {
+      "path": "tests/fixtures/suite/v1/minimal/project/fixture.json",
+      "sha256": "sha256:5d96b450ee0734c0962d85020252beb742b7d314da602aaaeae87ae46b2e1496"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/minimal/project/lekalo/modules/solo/entities.yaml",
+      "sha256": "sha256:14ed4cd782294854901f8bc100d70672c5aa135cb232053ca77491a5c04f6e67"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/minimal/project/lekalo/modules/solo/module.yaml",
+      "sha256": "sha256:4c36dc8552e1920aef643823aa65136f4c264552f9046b75691ce20c3d3914e2"
+    },
+    {
+      "path": "tests/fixtures/suite/v1/minimal/project/lekalo/project.yaml",
+      "sha256": "sha256:918b1cbc7743bc7366e77fff7b0edef981ddeb278c6bfd8534b4519b712c74c6"
+    }
+  ]
+}

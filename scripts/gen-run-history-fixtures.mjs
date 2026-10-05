@@ -86,7 +86,7 @@ function provenance() {
     profile: {
       digest: { state: "known", value: "sha256:2222222222222222222222222222222222222222222222222222222222222222" },
       id: { state: "known", value: "validation-profile.default" },
-      version: { state: "known", value: "0.4.0" },
+      version: { state: "known", value: "0.6.3" },
     },
   };
 }

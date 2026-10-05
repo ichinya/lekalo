@@ -230,16 +230,20 @@ impl ExportOutcome {
 /// members, and the coherent source/provenance custody (transfers and
 /// repository stores are repository-backed; local use and publication
 /// run from the workspace).
-struct ResolvedDestination {
-    operation: input::Operation,
-    source: input::Endpoint,
-    provenance_ref: Option<String>,
-    destination: input::Destination,
-    audience: Audience,
+pub(crate) struct ResolvedDestination {
+    pub(crate) operation: input::Operation,
+    pub(crate) source: input::Endpoint,
+    pub(crate) provenance_ref: Option<String>,
+    pub(crate) destination: input::Destination,
+    pub(crate) audience: Audience,
 }
 
 impl DestinationSpec {
-    fn resolve(self, repository_token: &str, consumer_token: &str) -> ResolvedDestination {
+    pub(crate) fn resolve(
+        self,
+        repository_token: &str,
+        consumer_token: &str,
+    ) -> ResolvedDestination {
         let operation = |id| input::Operation::new(id, refs::DECISION_FAMILY_VERSION.to_owned());
         let destination = |role, reference, boundary, relation, tenant| {
             input::Destination::new(role, reference, boundary, relation, tenant)
