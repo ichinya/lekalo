@@ -1,0 +1,679 @@
+{
+  "assignments": [],
+  "catalogRef": {
+    "digest": "sha256:88ef69ad4dc3c673a168b26834a7e86ee1068da26412f889322da528a89806fb",
+    "id": "architecture-core",
+    "version": "0.6.5"
+  },
+  "documentDigest": "sha256:8f29147b7cf9f90d77a7210fdc83ec7d6d990549ea1332f3a66c0c441c3ca084",
+  "identity": "dev.lekalo.architecture-profile-lock@0.6.5",
+  "profiles": [
+    {
+      "catalogRef": {
+        "digest": "sha256:88ef69ad4dc3c673a168b26834a7e86ee1068da26412f889322da528a89806fb",
+        "id": "architecture-core",
+        "version": "0.6.5"
+      },
+      "chain": [
+        {
+          "digest": "sha256:2a3dc28a2ea6ae88d45a9ad119abff4df2e40fd1b991fa24364910f333b7858a",
+          "id": "legacy-observed",
+          "version": "1"
+        },
+        {
+          "digest": "sha256:93e767e6844b34e8318bcb5d9506c817bf55408b468875b6d0ade046a93f13e2",
+          "id": "contracted-standard",
+          "version": "1"
+        },
+        {
+          "digest": "sha256:685eef3e568dad477903554cdd5496f34f6dd2dce4338a2f22454138e9fe02a1",
+          "id": "ai-strict",
+          "version": "1"
+        }
+      ],
+      "identity": "dev.lekalo.architecture-profile-resolved@0.6.5",
+      "profileRef": {
+        "digest": "sha256:685eef3e568dad477903554cdd5496f34f6dd2dce4338a2f22454138e9fe02a1",
+        "id": "ai-strict",
+        "version": "1"
+      },
+      "rules": [
+        {
+          "enabled": true,
+          "id": "architecture.bounded-context",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": true,
+          "severity": "warning"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.deterministic-generation",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.errors-as-contracts",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.explicit-dependencies",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": true,
+          "severity": "warning"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.explicit-operation-contracts",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.explicit-target-bindings",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.immutable-defaults",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.justified-abstractions",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.no-hidden-observers",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.no-service-locator-magic",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.scenario-linked-behavior",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.single-entrypoint",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.stable-semantic-ids",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": true,
+          "severity": "error"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.strict-native-types",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.tracked-duplication",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        }
+      ],
+      "schemaVersion": "lekalo/architecture-profile-resolved/v0.6.5",
+      "sourceDigest": "sha256:8f29147b7cf9f90d77a7210fdc83ec7d6d990549ea1332f3a66c0c441c3ca084"
+    },
+    {
+      "catalogRef": {
+        "digest": "sha256:88ef69ad4dc3c673a168b26834a7e86ee1068da26412f889322da528a89806fb",
+        "id": "architecture-core",
+        "version": "0.6.5"
+      },
+      "chain": [
+        {
+          "digest": "sha256:2a3dc28a2ea6ae88d45a9ad119abff4df2e40fd1b991fa24364910f333b7858a",
+          "id": "legacy-observed",
+          "version": "1"
+        },
+        {
+          "digest": "sha256:93e767e6844b34e8318bcb5d9506c817bf55408b468875b6d0ade046a93f13e2",
+          "id": "contracted-standard",
+          "version": "1"
+        }
+      ],
+      "identity": "dev.lekalo.architecture-profile-resolved@0.6.5",
+      "profileRef": {
+        "digest": "sha256:93e767e6844b34e8318bcb5d9506c817bf55408b468875b6d0ade046a93f13e2",
+        "id": "contracted-standard",
+        "version": "1"
+      },
+      "rules": [
+        {
+          "enabled": true,
+          "id": "architecture.bounded-context",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.deterministic-generation",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.errors-as-contracts",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.explicit-dependencies",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.explicit-operation-contracts",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.explicit-target-bindings",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.immutable-defaults",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.justified-abstractions",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.no-hidden-observers",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.no-service-locator-magic",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.scenario-linked-behavior",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.single-entrypoint",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.stable-semantic-ids",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": true,
+          "severity": "error"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.strict-native-types",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.tracked-duplication",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        }
+      ],
+      "schemaVersion": "lekalo/architecture-profile-resolved/v0.6.5",
+      "sourceDigest": "sha256:8f29147b7cf9f90d77a7210fdc83ec7d6d990549ea1332f3a66c0c441c3ca084"
+    },
+    {
+      "catalogRef": {
+        "digest": "sha256:88ef69ad4dc3c673a168b26834a7e86ee1068da26412f889322da528a89806fb",
+        "id": "architecture-core",
+        "version": "0.6.5"
+      },
+      "chain": [
+        {
+          "digest": "sha256:2a3dc28a2ea6ae88d45a9ad119abff4df2e40fd1b991fa24364910f333b7858a",
+          "id": "legacy-observed",
+          "version": "1"
+        }
+      ],
+      "identity": "dev.lekalo.architecture-profile-resolved@0.6.5",
+      "profileRef": {
+        "digest": "sha256:2a3dc28a2ea6ae88d45a9ad119abff4df2e40fd1b991fa24364910f333b7858a",
+        "id": "legacy-observed",
+        "version": "1"
+      },
+      "rules": [
+        {
+          "enabled": false,
+          "id": "architecture.bounded-context",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": false,
+          "id": "architecture.deterministic-generation",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": false,
+          "id": "architecture.errors-as-contracts",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": false,
+          "id": "architecture.explicit-dependencies",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": false,
+          "id": "architecture.explicit-operation-contracts",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": false,
+          "id": "architecture.explicit-target-bindings",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": false,
+          "id": "architecture.immutable-defaults",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": false,
+          "id": "architecture.justified-abstractions",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": false,
+          "id": "architecture.no-hidden-observers",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": false,
+          "id": "architecture.no-service-locator-magic",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": false,
+          "id": "architecture.scenario-linked-behavior",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": false,
+          "id": "architecture.single-entrypoint",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.stable-semantic-ids",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": true,
+          "severity": "error"
+        },
+        {
+          "enabled": false,
+          "id": "architecture.strict-native-types",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": false,
+          "id": "architecture.tracked-duplication",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        }
+      ],
+      "schemaVersion": "lekalo/architecture-profile-resolved/v0.6.5",
+      "sourceDigest": "sha256:8f29147b7cf9f90d77a7210fdc83ec7d6d990549ea1332f3a66c0c441c3ca084"
+    },
+    {
+      "catalogRef": {
+        "digest": "sha256:88ef69ad4dc3c673a168b26834a7e86ee1068da26412f889322da528a89806fb",
+        "id": "architecture-core",
+        "version": "0.6.5"
+      },
+      "chain": [
+        {
+          "digest": "sha256:2a3dc28a2ea6ae88d45a9ad119abff4df2e40fd1b991fa24364910f333b7858a",
+          "id": "legacy-observed",
+          "version": "1"
+        },
+        {
+          "digest": "sha256:93e767e6844b34e8318bcb5d9506c817bf55408b468875b6d0ade046a93f13e2",
+          "id": "contracted-standard",
+          "version": "1"
+        },
+        {
+          "digest": "sha256:685eef3e568dad477903554cdd5496f34f6dd2dce4338a2f22454138e9fe02a1",
+          "id": "ai-strict",
+          "version": "1"
+        },
+        {
+          "digest": "sha256:a63d7d634893322457bd87cac2a19b2df926eeda89d3d33ab63c38a3b363b255",
+          "id": "managed-generated",
+          "version": "1"
+        }
+      ],
+      "identity": "dev.lekalo.architecture-profile-resolved@0.6.5",
+      "profileRef": {
+        "digest": "sha256:a63d7d634893322457bd87cac2a19b2df926eeda89d3d33ab63c38a3b363b255",
+        "id": "managed-generated",
+        "version": "1"
+      },
+      "rules": [
+        {
+          "enabled": true,
+          "id": "architecture.bounded-context",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": true,
+          "severity": "warning"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.deterministic-generation",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": true,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.errors-as-contracts",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.explicit-dependencies",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": true,
+          "severity": "warning"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.explicit-operation-contracts",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.explicit-target-bindings",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.immutable-defaults",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.justified-abstractions",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.no-hidden-observers",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.no-service-locator-magic",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.scenario-linked-behavior",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.single-entrypoint",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.stable-semantic-ids",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": true,
+          "severity": "error"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.strict-native-types",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        },
+        {
+          "enabled": true,
+          "id": "architecture.tracked-duplication",
+          "limit": {
+            "state": "unknown"
+          },
+          "required": false,
+          "severity": "info"
+        }
+      ],
+      "schemaVersion": "lekalo/architecture-profile-resolved/v0.6.5",
+      "sourceDigest": "sha256:8f29147b7cf9f90d77a7210fdc83ec7d6d990549ea1332f3a66c0c441c3ca084"
+    }
+  ],
+  "schemaVersion": "lekalo/architecture-profile-lock/v0.6.5"
+}

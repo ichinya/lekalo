@@ -12,12 +12,15 @@ use serde::Deserialize;
 
 use super::id::{DiagnosticCode, DiagnosticId, MessageId};
 use super::types::{Category, DataFieldType, LocationRequirement, Severity};
-use super::version::{REGISTRY_IDENTITY, REGISTRY_SCHEMA_VERSION, REGISTRY_VERSION};
+use super::version::REGISTRY_VERSION;
 use crate::result::Status;
 
 /// The exact embedded registry bytes.
 pub const REGISTRY_BYTES: &[u8] =
     include_bytes!("../../../../contracts/diagnostic-registry.v0.6.4.json");
+
+pub const SUCCESSOR_REGISTRY_BYTES: &[u8] =
+    include_bytes!("../../../../contracts/diagnostic-registry.v0.6.5.json");
 
 /// Why the embedded registry could not be trusted.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -141,10 +144,34 @@ impl DiagnosticRegistry {
 
     /// Parse and validate registry bytes.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, RegistryError> {
+        Self::parse_version(bytes, REGISTRY_VERSION)
+    }
+
+    /// The independently admitted union successor, never a runtime extension.
+    pub fn successor() -> Result<&'static Self, RegistryError> {
+        static REGISTRY: LazyLock<Result<DiagnosticRegistry, RegistryError>> =
+            LazyLock::new(|| {
+                DiagnosticRegistry::parse_version(
+                    SUCCESSOR_REGISTRY_BYTES,
+                    super::version::SUCCESSOR_REGISTRY_VERSION,
+                )
+            });
+        REGISTRY.as_ref().map_err(Clone::clone)
+    }
+
+    pub fn for_version(version: &str) -> Result<&'static Self, RegistryError> {
+        match version {
+            REGISTRY_VERSION => Self::embedded(),
+            super::version::SUCCESSOR_REGISTRY_VERSION => Self::successor(),
+            _ => Err(RegistryError::Unsupported),
+        }
+    }
+
+    fn parse_version(bytes: &[u8], version: &str) -> Result<Self, RegistryError> {
         let wire: RegistryWire =
             serde_json::from_slice(bytes).map_err(|_| RegistryError::Malformed)?;
-        if wire.schema_version != REGISTRY_SCHEMA_VERSION
-            || wire.identity != REGISTRY_IDENTITY
+        if wire.schema_version != format!("lekalo/diagnostic-registry/v{version}")
+            || wire.identity != format!("dev.lekalo.diagnostic-registry@{version}")
             || !wire.closed
         {
             return Err(RegistryError::Unsupported);
@@ -173,7 +200,7 @@ impl DiagnosticRegistry {
             let entry = wire_entry.convert().ok_or(RegistryError::Invariant)?;
             entries.insert(entry.id.as_str().to_owned(), entry);
         }
-        if wire.registry_version != REGISTRY_VERSION {
+        if wire.registry_version != version {
             return Err(RegistryError::Invariant);
         }
         Ok(Self {

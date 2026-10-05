@@ -1,0 +1,351 @@
+{
+  "schemaVersion": "lekalo/architecture-profile/v0.6.5",
+  "identity": "dev.lekalo.architecture-profile@0.6.5",
+  "catalogRef": {
+    "id": "architecture-core",
+    "version": "0.6.5",
+    "digest": "sha256:88ef69ad4dc3c673a168b26834a7e86ee1068da26412f889322da528a89806fb"
+  },
+  "profiles": [
+    {
+      "id": "ai-strict",
+      "version": "1",
+      "extends": {
+        "state": "known",
+        "value": {
+          "id": "contracted-standard",
+          "version": "1",
+          "digest": "sha256:93e767e6844b34e8318bcb5d9506c817bf55408b468875b6d0ade046a93f13e2"
+        }
+      },
+      "rules": [
+        {
+          "id": "architecture.bounded-context",
+          "enabled": true,
+          "severity": "warning",
+          "required": true,
+          "limit": {
+            "state": "unknown"
+          }
+        },
+        {
+          "id": "architecture.explicit-dependencies",
+          "enabled": true,
+          "severity": "warning",
+          "required": true,
+          "limit": {
+            "state": "unknown"
+          }
+        }
+      ]
+    },
+    {
+      "id": "contracted-standard",
+      "version": "1",
+      "extends": {
+        "state": "known",
+        "value": {
+          "id": "legacy-observed",
+          "version": "1",
+          "digest": "sha256:2a3dc28a2ea6ae88d45a9ad119abff4df2e40fd1b991fa24364910f333b7858a"
+        }
+      },
+      "rules": [
+        {
+          "id": "architecture.bounded-context",
+          "enabled": true,
+          "severity": "info",
+          "required": false,
+          "limit": {
+            "state": "unknown"
+          }
+        },
+        {
+          "id": "architecture.deterministic-generation",
+          "enabled": true,
+          "severity": "info",
+          "required": false,
+          "limit": {
+            "state": "unknown"
+          }
+        },
+        {
+          "id": "architecture.errors-as-contracts",
+          "enabled": true,
+          "severity": "info",
+          "required": false,
+          "limit": {
+            "state": "unknown"
+          }
+        },
+        {
+          "id": "architecture.explicit-dependencies",
+          "enabled": true,
+          "severity": "info",
+          "required": false,
+          "limit": {
+            "state": "unknown"
+          }
+        },
+        {
+          "id": "architecture.explicit-operation-contracts",
+          "enabled": true,
+          "severity": "info",
+          "required": false,
+          "limit": {
+            "state": "unknown"
+          }
+        },
+        {
+          "id": "architecture.explicit-target-bindings",
+          "enabled": true,
+          "severity": "info",
+          "required": false,
+          "limit": {
+            "state": "unknown"
+          }
+        },
+        {
+          "id": "architecture.immutable-defaults",
+          "enabled": true,
+          "severity": "info",
+          "required": false,
+          "limit": {
+            "state": "unknown"
+          }
+        },
+        {
+          "id": "architecture.justified-abstractions",
+          "enabled": true,
+          "severity": "info",
+          "required": false,
+          "limit": {
+            "state": "unknown"
+          }
+        },
+        {
+          "id": "architecture.no-hidden-observers",
+          "enabled": true,
+          "severity": "info",
+          "required": false,
+          "limit": {
+            "state": "unknown"
+          }
+        },
+        {
+          "id": "architecture.no-service-locator-magic",
+          "enabled": true,
+          "severity": "info",
+          "required": false,
+          "limit": {
+            "state": "unknown"
+          }
+        },
+        {
+          "id": "architecture.scenario-linked-behavior",
+          "enabled": true,
+          "severity": "info",
+          "required": false,
+          "limit": {
+            "state": "unknown"
+          }
+        },
+        {
+          "id": "architecture.single-entrypoint",
+          "enabled": true,
+          "severity": "info",
+          "required": false,
+          "limit": {
+            "state": "unknown"
+          }
+        },
+        {
+          "id": "architecture.strict-native-types",
+          "enabled": true,
+          "severity": "info",
+          "required": false,
+          "limit": {
+            "state": "unknown"
+          }
+        },
+        {
+          "id": "architecture.tracked-duplication",
+          "enabled": true,
+          "severity": "info",
+          "required": false,
+          "limit": {
+            "state": "unknown"
+          }
+        }
+      ]
+    },
+    {
+      "id": "legacy-observed",
+      "version": "1",
+      "extends": {
+        "state": "unknown"
+      },
+      "rules": [
+        {
+          "id": "architecture.bounded-context",
+          "enabled": false,
+          "severity": "info",
+          "required": false,
+          "limit": {
+            "state": "unknown"
+          }
+        },
+        {
+          "id": "architecture.deterministic-generation",
+          "enabled": false,
+          "severity": "info",
+          "required": false,
+          "limit": {
+            "state": "unknown"
+          }
+        },
+        {
+          "id": "architecture.errors-as-contracts",
+          "enabled": false,
+          "severity": "info",
+          "required": false,
+          "limit": {
+            "state": "unknown"
+          }
+        },
+        {
+          "id": "architecture.explicit-dependencies",
+          "enabled": false,
+          "severity": "info",
+          "required": false,
+          "limit": {
+            "state": "unknown"
+          }
+        },
+        {
+          "id": "architecture.explicit-operation-contracts",
+          "enabled": false,
+          "severity": "info",
+          "required": false,
+          "limit": {
+            "state": "unknown"
+          }
+        },
+        {
+          "id": "architecture.explicit-target-bindings",
+          "enabled": false,
+          "severity": "info",
+          "required": false,
+          "limit": {
+            "state": "unknown"
+          }
+        },
+        {
+          "id": "architecture.immutable-defaults",
+          "enabled": false,
+          "severity": "info",
+          "required": false,
+          "limit": {
+            "state": "unknown"
+          }
+        },
+        {
+          "id": "architecture.justified-abstractions",
+          "enabled": false,
+          "severity": "info",
+          "required": false,
+          "limit": {
+            "state": "unknown"
+          }
+        },
+        {
+          "id": "architecture.no-hidden-observers",
+          "enabled": false,
+          "severity": "info",
+          "required": false,
+          "limit": {
+            "state": "unknown"
+          }
+        },
+        {
+          "id": "architecture.no-service-locator-magic",
+          "enabled": false,
+          "severity": "info",
+          "required": false,
+          "limit": {
+            "state": "unknown"
+          }
+        },
+        {
+          "id": "architecture.scenario-linked-behavior",
+          "enabled": false,
+          "severity": "info",
+          "required": false,
+          "limit": {
+            "state": "unknown"
+          }
+        },
+        {
+          "id": "architecture.single-entrypoint",
+          "enabled": false,
+          "severity": "info",
+          "required": false,
+          "limit": {
+            "state": "unknown"
+          }
+        },
+        {
+          "id": "architecture.stable-semantic-ids",
+          "enabled": true,
+          "severity": "error",
+          "required": true,
+          "limit": {
+            "state": "unknown"
+          }
+        },
+        {
+          "id": "architecture.strict-native-types",
+          "enabled": false,
+          "severity": "info",
+          "required": false,
+          "limit": {
+            "state": "unknown"
+          }
+        },
+        {
+          "id": "architecture.tracked-duplication",
+          "enabled": false,
+          "severity": "info",
+          "required": false,
+          "limit": {
+            "state": "unknown"
+          }
+        }
+      ]
+    },
+    {
+      "id": "managed-generated",
+      "version": "1",
+      "extends": {
+        "state": "known",
+        "value": {
+          "id": "ai-strict",
+          "version": "1",
+          "digest": "sha256:685eef3e568dad477903554cdd5496f34f6dd2dce4338a2f22454138e9fe02a1"
+        }
+      },
+      "rules": [
+        {
+          "id": "architecture.deterministic-generation",
+          "enabled": true,
+          "severity": "info",
+          "required": true,
+          "limit": {
+            "state": "unknown"
+          }
+        }
+      ]
+    }
+  ],
+  "assignments": []
+}

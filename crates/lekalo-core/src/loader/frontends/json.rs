@@ -286,8 +286,8 @@ impl<'text> Parser<'text> {
                             let high = self.parse_hex4()?;
                             let scalar = if (0xD800..0xDC00).contains(&high) {
                                 // Require a low surrogate pair.
-                                if self.bytes.get(self.position + 1) != Some(&b'\\')
-                                    || self.bytes.get(self.position + 2) != Some(&b'u')
+                                if self.bytes.get(self.position) != Some(&b'\\')
+                                    || self.bytes.get(self.position + 1) != Some(&b'u')
                                 {
                                     return Err(self.fail(
                                         "loader.json-parse",
@@ -296,7 +296,7 @@ impl<'text> Parser<'text> {
                                         "unpaired-surrogate",
                                     ));
                                 }
-                                self.position += 2;
+                                self.position += 1;
                                 let low = self.parse_hex4()?;
                                 if !(0xDC00..0xE000).contains(&low) {
                                     return Err(self.fail(
@@ -510,6 +510,53 @@ pub fn parse(text: &str, index: &LineIndex) -> std::result::Result<Parsed, Vec<D
                 return Err(diagnostics);
             }
             Ok(Parsed::Root(Box::new(node)))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn escaped_surrogate_pairs_decode_the_same_as_literal_scalars() {
+        for (text, expected) in [
+            (r#""\ud83d\ude00""#, "\u{1f600}"),
+            (r#""\ud800\udc00""#, "\u{10000}"),
+            (r#""\udbff\udfff""#, "\u{10ffff}"),
+            (r#""\u00e9\u6f22\ud83d\ude00""#, "\u{e9}\u{6f22}\u{1f600}"),
+        ] {
+            let parsed = parse(text, &LineIndex::new(text)).unwrap();
+            let Parsed::Root(node) = parsed else {
+                panic!("string root");
+            };
+            assert!(matches!(node.value, Value::Scalar(Scalar::Str(value)) if value == expected));
+        }
+    }
+
+    #[test]
+    fn malformed_surrogate_pairs_and_unicode_escapes_still_refuse() {
+        for text in [
+            r#""\ud800""#,
+            r#""\udc00""#,
+            r#""\ud800\u0041""#,
+            r#""\ud800\ud800""#,
+            r#""\ud800\u""#,
+            "\"\\u12\u{e9}\"",
+        ] {
+            let diagnostics = parse(text, &LineIndex::new(text)).unwrap_err();
+            assert_eq!(diagnostics[0].code, "loader.json-parse");
+        }
+    }
+
+    #[test]
+    fn malformed_multibyte_tokens_have_valid_error_spans() {
+        for text in ["\u{e9}", "{\"x\":\u{e9}}", "\u{feff}{}"] {
+            let diagnostics = parse(text, &LineIndex::new(text)).unwrap_err();
+            assert_eq!(diagnostics[0].code, "loader.json-parse");
+            let span = diagnostics[0].span.as_ref().unwrap();
+            assert!(text.get(span.start.byte..span.end.byte).is_some());
+            assert_eq!(span.end.column, span.start.column + 1);
         }
     }
 }
