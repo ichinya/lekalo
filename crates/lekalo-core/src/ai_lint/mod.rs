@@ -118,6 +118,18 @@ fn confidence(r: &Record) -> Confidence {
     };
     std::cmp::min(original, cap)
 }
+pub(crate) const MODEL_DEPTH_RULE: &str = "indirection.depth-exceeded";
+
+fn finding_id(rule: &str, subject: &str, target: &str, symbol: &State<String>) -> String {
+    hash(&(rule, subject, target, symbol))
+}
+
+/// Identity of the core Model producer, also preserved by derived gap facts.
+/// Native findings of this rule bind their own target through `finding_id`.
+pub(crate) fn model_finding_id(subject: &str, symbol: &State<String>) -> String {
+    finding_id(MODEL_DEPTH_RULE, subject, "model", symbol)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn make(
     rule: &str,
@@ -158,7 +170,7 @@ fn make(
         "warning"
     };
     Finding {
-        id: hash(&(rule, subject, target, &symbol)),
+        id: finding_id(rule, subject, target, &symbol),
         rule_id: rule.into(),
         code: entry.code().into(),
         subject: subject.into(),
@@ -442,7 +454,7 @@ pub fn analyze(request: &Request<'_>) -> Result<Report, DomainResult> {
             )
         })
         .collect::<Vec<_>>();
-    if enabled(p, "indirection.depth-exceeded") {
+    if enabled(p, MODEL_DEPTH_RULE) {
         let roots = request
             .compilation
             .project
@@ -464,7 +476,7 @@ pub fn analyze(request: &Request<'_>) -> Result<Report, DomainResult> {
         ) {
             if value > limit {
                 report.findings.push(make(
-                    "indirection.depth-exceeded",
+                    MODEL_DEPTH_RULE,
                     d.witness.first().map_or("model", String::as_str),
                     State::Known(
                         d.witness

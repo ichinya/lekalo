@@ -1,5 +1,5 @@
 //! The #84 seam consumes resolved profile state; it never guesses future wires.
-use super::wire::{Fact, ProfileRef, Selector, SelectorKind};
+use super::wire::{Fact, ProfileRef, Selector, SelectorKind, State};
 use crate::ai_lint::{input, wire::Config};
 use crate::diagnostics::{registry::DiagnosticRegistry, types::Severity};
 use crate::validator::ValidationProfile;
@@ -45,15 +45,33 @@ pub struct RuleState {
     pub waivable: bool,
 }
 
+fn admitted_producer_domain(fact: &Fact) -> bool {
+    if fact.target != "model" {
+        return true;
+    }
+    let (Some(model), Some(ir)) = (fact.fingerprint.model.known(), fact.fingerprint.ir.known())
+    else {
+        return false;
+    };
+    fact.id == crate::ai_lint::model_finding_id(&fact.subject, &fact.symbol)
+        && fact.fingerprint.revision.known() == Some(&input::hash(&(model, ir)))
+        && fact.fingerprint.adapter == State::Unsupported
+        && fact.fingerprint.capabilities == State::Unsupported
+        && fact.path == State::Unknown
+}
+
 /// Future architecture-profile owners implement this over their resolved state.
 /// Unknown selectors return None and cannot grant acceptance.
 pub trait ProfileState {
     fn reference(&self) -> ProfileRef;
     fn rule(&self, selector: &Selector, fact: &Fact) -> Option<RuleState>;
+    /// Establish reserved producer claims from bound identity and provenance.
+    /// A supplied target label alone cannot admit Model-only applicability.
+    fn producer_domain_admitted(&self, fact: &Fact) -> bool {
+        admitted_producer_domain(fact)
+    }
     fn fingerprint_requirements(&self, fact: &Fact) -> FingerprintRequirements {
-        // Native evidence admission forbids the reserved Model producer target.
-        // Other targets, including aggregates, cannot claim Model inapplicability.
-        if fact.target == "model" {
+        if fact.target == "model" && self.producer_domain_admitted(fact) {
             FingerprintRequirements::model_only()
         } else {
             FingerprintRequirements::native()
@@ -100,6 +118,12 @@ pub struct LintState<'a> {
     pub id: &'a str,
 }
 impl ProfileState for LintState<'_> {
+    fn producer_domain_admitted(&self, fact: &Fact) -> bool {
+        // Lint obligations retain the rule of their emitted occurrence. Other
+        // profile families may derive their own selectors from a Model fact.
+        admitted_producer_domain(fact)
+            && (fact.target != "model" || fact.selector.id == crate::ai_lint::MODEL_DEPTH_RULE)
+    }
     fn reference(&self) -> ProfileRef {
         // Pin the whole configuration, including coverage/regression policy.
         ProfileRef {

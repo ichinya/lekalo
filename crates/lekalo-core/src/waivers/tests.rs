@@ -149,6 +149,11 @@ fn waivers_model_inapplicability_does_not_hide_required_pins() {
     let policy = TargetState { profile: &target };
     let mut model = fact("transport.streaming");
     model.target = "model".into();
+    model.id = crate::ai_lint::model_finding_id(&model.subject, &model.symbol);
+    model.fingerprint.revision = State::Known(input::hash(&(
+        model.fingerprint.model.known().unwrap(),
+        model.fingerprint.ir.known().unwrap(),
+    )));
     model.fingerprint.adapter = State::Unsupported;
     model.fingerprint.capabilities = State::Unsupported;
     let (s, i) = pair(model.clone(), &policy);
@@ -166,6 +171,105 @@ fn waivers_model_inapplicability_does_not_hide_required_pins() {
             let a = audit(&s, &i, &policy, "2026-10-04T00:00:00Z", 0, None).unwrap();
             assert_eq!(a.entries[0].status, "unverifiable", "{name}");
             assert_eq!(a.summary.waived, 0);
+        }
+    }
+}
+#[test]
+fn waivers_model_domain_cannot_be_claimed_by_relabelling_a_native_fact() {
+    let target = target(false);
+    let policy = TargetState { profile: &target };
+    for missing in [false, true] {
+        let mut native = fact("transport.streaming");
+        native.id = input::hash(&(
+            "hidden.string-reference",
+            &native.subject,
+            &native.target,
+            &native.symbol,
+        ));
+        if missing {
+            native.fingerprint.capabilities = State::Unsupported;
+        }
+        native.target = "model".into();
+        let (s, i) = pair(native, &policy);
+        let a = audit(&s, &i, &policy, "2026-10-04T00:00:00Z", 0, None).unwrap();
+        assert_eq!(a.entries[0].status, "unverifiable");
+        assert_eq!(a.entries[0].reason_codes, ["fingerprint-unverifiable"]);
+        assert_eq!(a.summary.waived, 0);
+        assert!(!a.entries[0].effective);
+        assert_eq!(a.findings[0].fact, i.facts[0]);
+    }
+}
+#[test]
+fn waivers_model_domain_requires_the_complete_producer_binding() {
+    let target = target(false);
+    let policy = TargetState { profile: &target };
+    let mut model = fact("transport.streaming");
+    model.target = "model".into();
+    model.id = crate::ai_lint::model_finding_id(&model.subject, &model.symbol);
+    model.fingerprint.revision = State::Known(input::hash(&(
+        model.fingerprint.model.known().unwrap(),
+        model.fingerprint.ir.known().unwrap(),
+    )));
+    model.fingerprint.adapter = State::Unsupported;
+    model.fingerprint.capabilities = State::Unsupported;
+    for changed in ["id", "subject", "symbol", "revision", "adapter", "path"] {
+        let mut f = model.clone();
+        match changed {
+            "id" => f.id = input::hash(&"native finding"),
+            "subject" => f.subject = "planner.other".into(),
+            "symbol" => f.symbol = State::Known("planner.other".into()),
+            "revision" => f.fingerprint.revision = State::Known(input::hash(&"native revision")),
+            "adapter" => f.fingerprint.adapter = State::Known(input::hash(&"native adapter")),
+            "path" => f.path = State::Known("src/events.ts".into()),
+            _ => unreachable!(),
+        }
+        // Approval and whole-fact digest agree with the changed claim: only the
+        // producer-domain binding prevents acceptance, including known pins.
+        let (mut s, i) = pair(f, &policy);
+        s.entries[0].scope = Scope {
+            kind: ScopeKind::Project,
+            id: "planner".into(),
+        };
+        s.entries[0].approval_ref.subject_digest = approval_subject(&s.entries[0]);
+        let a = audit(&s, &i, &policy, "2026-10-04T00:00:00Z", 0, None).unwrap();
+        assert_eq!(a.entries[0].status, "unverifiable", "{changed}");
+        assert_eq!(a.summary.waived, 0, "{changed}");
+    }
+}
+#[test]
+fn waivers_model_lint_binding_cannot_claim_a_native_only_selector() {
+    let config: crate::ai_lint::Config = input::parse(include_bytes!(
+        "../../../../tests/fixtures/ai-lint-config/golden/config.json"
+    ))
+    .unwrap();
+    let policy = policy::LintState {
+        config: &config,
+        id: "ci",
+    };
+    let mut f = fact("unused");
+    f.target = "model".into();
+    f.id = crate::ai_lint::model_finding_id(&f.subject, &f.symbol);
+    f.fingerprint.revision = State::Known(input::hash(&(
+        f.fingerprint.model.known().unwrap(),
+        f.fingerprint.ir.known().unwrap(),
+    )));
+    f.fingerprint.adapter = State::Unsupported;
+    f.fingerprint.capabilities = State::Unsupported;
+    f.source_confidence = State::Known("high".into());
+    f.selector.kind = SelectorKind::Rule;
+    for (id, accepted) in [
+        ("hidden.string-reference", false),
+        (crate::ai_lint::MODEL_DEPTH_RULE, true),
+    ] {
+        f.selector.id = id.into();
+        let (s, i) = pair(f.clone(), &policy);
+        let a = audit(&s, &i, &policy, "2026-10-04T00:00:00Z", 0, None).unwrap();
+        assert_eq!(a.entries[0].effective, accepted);
+        assert_eq!(a.summary.waived, u64::from(accepted));
+        assert_eq!(a.findings[0].fact, f);
+        if !accepted {
+            assert_eq!(a.entries[0].status, "unverifiable");
+            assert_eq!(a.entries[0].reason_codes, ["fingerprint-unverifiable"]);
         }
     }
 }

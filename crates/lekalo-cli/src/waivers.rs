@@ -110,6 +110,17 @@ enum Loaded {
     Target(lekalo_core::target_profile::resolution::ResolvedProfile),
 }
 impl ProfileState for Loaded {
+    fn producer_domain_admitted(&self, f: &Fact) -> bool {
+        match self {
+            Self::Validation(p, d) => policy::ValidationState {
+                profile: p,
+                digest: d.clone(),
+            }
+            .producer_domain_admitted(f),
+            Self::Lint(c, id) => policy::LintState { config: c, id }.producer_domain_admitted(f),
+            Self::Target(p) => policy::TargetState { profile: p }.producer_domain_admitted(f),
+        }
+    }
     fn fingerprint_requirements(&self, f: &Fact) -> policy::FingerprintRequirements {
         match self {
             Self::Validation(p, d) => policy::ValidationState {

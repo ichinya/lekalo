@@ -89,15 +89,22 @@ fingerprints plus profile/condition. Known differences are stale. Unknown or
 withheld pins do not grant acceptance. Two explicit `unsupported` states agree
 only when the admitted policy marks that dimension inapplicable to the producer.
 Model-only lint requires known Model, IR and revision pins, uses unsupported
-adapter and capabilities, and pins revision to canonical Model/IR. Native facts
-require all five dimensions to be known, including source revision and capability
-digest; a producer's unsupported state cannot waive that requirement. Native
+adapter and capabilities, and pins revision to canonical Model/IR. Its reserved
+`model` claim must match the core Model producer's target-bound finding identity,
+canonical revision and path/pin states. Lint selectors must also belong to that
+producer recipe; derived capability facts retain their Model source identity.
+A relabelled native fact is `unverifiable` (`fingerprint-unverifiable`) in audit
+and refuses add preview/apply, including when all its native pins are known.
+These checks apply to pre-existing stored decisions as well as new candidates.
+Native facts require all five dimensions to be known, including source revision
+and capability digest; a producer's unsupported state cannot waive that requirement. Native
 evidence admission forbids the reserved `model` target. Native lint pins the
 admitted producer identity/artifact, source manifest and revision. Git HEAD and waiver-store
 bytes are excluded from source revision to avoid self-invalidating commits.
 
 The public `waivers::policy::ProfileState` seam consumes current profile state,
-including fingerprint applicability through `fingerprint_requirements`.
+including producer-domain admission through `producer_domain_admitted` and
+fingerprint applicability through `fingerprint_requirements`.
 Validation profiles use `validator/profile.rs` selections and effective severity:
 errors cannot be waived. Lint profiles use configured severity/gate and required
 coverage. Target profiles use resolved component capability requirements; required
