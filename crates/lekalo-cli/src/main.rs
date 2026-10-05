@@ -27,6 +27,7 @@ mod ai_lint;
 mod coupling;
 mod doctor_git;
 mod git_input;
+mod metrics_export;
 mod report_git;
 pub(crate) mod report_output;
 
@@ -160,6 +161,11 @@ struct ContextBudgetArgs {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    /// Privacy-safe public metrics from versioned local run history.
+    Metrics {
+        #[command(subcommand)]
+        command: metrics_export::MetricsCommands,
+    },
     /// Optional evidence-bound AI readability analysis.
     AiLint {
         #[command(flatten)]
@@ -2595,6 +2601,7 @@ fn runtime() -> u8 {
             }
             Commands::Cache { command } => run_cache(*command),
             Commands::History { command } => run_history(*command),
+            Commands::Metrics { command } => metrics_export::run(command),
             Commands::Scan {
                 target,
                 profile,

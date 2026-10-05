@@ -1,0 +1,87 @@
+// Explicit schema/recipe authoring for #102. Never invoked as a CI repair.
+import {readFileSync,writeFileSync,mkdirSync,existsSync} from 'node:fs';
+import {createHash} from 'node:crypto';
+import {fileURLToPath} from 'node:url';
+import {join,dirname,resolve} from 'node:path';
+const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
+const read=p=>JSON.parse(readFileSync(join(root,p),'utf8'));
+const write=(p,v)=>writeFileSync(join(root,p),JSON.stringify(v,null,2)+'\n');
+const sha=v=>'sha256:'+createHash('sha256').update(v).digest('hex');
+const canon=v=>Array.isArray(v)?`[${v.map(canon).join(',')}]`:v&&typeof v==='object'?`{${Object.keys(v).sort().map(k=>`${JSON.stringify(k)}:${canon(v[k])}`).join(',')}}`:JSON.stringify(v);
+const golden=(p,v)=>writeFileSync(join(root,p),canon(v)+'\n');
+const obj=(properties,required=Object.keys(properties))=>({type:'object',additionalProperties:false,required,properties});
+const str=(pattern,maxLength=128)=>({type:'string',pattern,maxLength});
+const c=constant=>({const:constant});
+const en=(...values)=>({enum:values});
+const arr=(items,maxItems,minItems=0)=>({type:'array',items,maxItems,minItems,uniqueItems:true});
+const uint={type:'integer',minimum:0,maximum:1024};
+const samples={type:'integer',minimum:5,maximum:1024};
+const bucket={oneOf:[c(0),samples]};
+const hex=str('^sha256:[0-9a-f]{64}$',71),runId=str('^[0-9a-f]{32}$',32),token=str('^[a-z0-9][a-z0-9._-]{0,127}$');
+const vs=value=>({oneOf:[obj({state:c('known'),value}),obj({state:en('unknown','withheld','unsupported')})]});
+const rational=obj({numerator:str('^-?[0-9]{1,40}$',41),denominator:str('^[1-9][0-9]{0,39}$',40)});
+const head=family=>({schema_version:c(`lekalo/${family}/v0.6.4`),identity:c(`dev.lekalo.${family}@0.6.4`)});
+const families={};
+function schema(family,body,defs={}){families[family]={$schema:'https://json-schema.org/draft/2020-12/schema',$id:`dev.lekalo.${family}-schema@0.6.4`,title:`Lekalo ${family}`,...body,...(Object.keys(defs).length?{$defs:defs}:{})};}
+function embedded(path,prefix){
+ const value=read(path),defs={};
+ const rewrite=v=>JSON.parse(JSON.stringify(v).replaceAll('#/$defs/',`#/$defs/${prefix}`));
+ for(const [key,definition]of Object.entries(value.$defs??{}))defs[prefix+key]=rewrite(definition);
+ return {shape:obj(rewrite(value.properties),value.required),defs};
+}
+const p=embedded('contracts/privacy-export.schema.v0.3.2.json','privacy-');
+const output=embedded('contracts/privacy-export.schema.v0.3.2.output.json','output-');
+const rec=embedded('contracts/run-record.schema.v0.4.0.json','record-');
+const defs={...p.defs,...output.defs,...rec.defs};
+// This is a non-authorizing TEMPLATE, not a relaxed decision input.
+// Evidence is exactly null here; the runtime always validates actual
+// authorizations with the untouched #119 decision-input machinery.
+defs['privacy-aggregationDecision'].properties.decisionRef={type:'null'};
+defs['privacy-declassificationDecision'].properties.decisionRef={type:'null'};
+const template=structuredClone(p.shape);
+template.required=[...new Set([...template.required,'derivedArtifact'])];
+template.properties.derivedArtifact={$ref:'#/$defs/privacy-derivedArtifact'};
+const role=read('contracts/privacy-policy.v0.3.2.json').vocabularies.repositoryRole;
+const policy=p.shape.properties.policyRef,authority=p.shape.properties.authorityRef;
+const trial=obj({unit:token,arm:en('baseline','lekalo-assisted'),runId,requiredAssertions:arr(token,64)});
+const evaluation=obj({...head('evaluation-export-input'),protocol:c('framework-lift-paired-trials/1'),approved:{type:'boolean'},trials:arr(trial,1024,2)});
+schema('evaluation-export-input',evaluation);
+const fields=['durationMs','filesRead','filesChanged','toolCalls','retryCount','replanCount','inputTokens','outputTokens','reasoningTokens','totalTokens','contextBytes','contextTokens','includedFacts','candidateFacts'];
+const unavailable=['cachedTokens','fixCycles','firstPassSuccess','humanInterventions'];
+const definition={schema_version:'lekalo/metrics-aggregation-definition/v0.6.4',identity:'dev.lekalo.metrics-aggregation-definition@0.6.4',minimumSamples:5,samplingUnit:'scheduled-paired-trial',recipe:'complete-population-sums-rationals-microcost/1',fields:[...fields,...unavailable].sort(),aliasRule:'export-local-ordered-provenance/1',rules:{population:'all-selected-paired-trials-without-outcome-filtering',numeric:'checked-u128-sum-and-unreduced-sum-over-n-rational',cost:'exact-six-decimal-micro-units-no-rounding-no-fx',uncertainty:'withheld-first-all-unsupported-otherwise-unknown',smallCells:'suppress-entire-cohort-numeric-values-on-nonzero-bucket-below-five',comparison:'assisted-success-rate-minus-baseline-only-with-complete-matching-pins',releaseBudget:'one-confirmed-release-per-scope-lifetime'}};
+schema('metrics-aggregation-definition',obj(Object.fromEntries(Object.entries(definition).map(([key,value])=>[key,c(value)]))));
+write('contracts/metrics-aggregation-definition.v0.6.4.json',definition);
+const ref=obj({identity:c(definition.identity),digest:c(sha(readFileSync(join(root,'contracts/metrics-aggregation-definition.v0.6.4.json'))))});
+const statistic=obj({sample:vs(samples),sum:vs(str('^[0-9]{1,40}$',40)),mean:vs(rational)});
+const outcomes=vs(obj(Object.fromEntries(['pass','warn','fail','unsupported','infrastructure'].map(key=>[key,bucket]))));
+const coverage=vs(obj(Object.fromEntries(['complete','incomplete','unknown'].map(key=>[key,bucket]))));
+const version=vs(str('^[0-9]+\\.[0-9]+\\.[0-9]+$',64));
+const cohort=obj({arm:en('baseline','lekalo-assisted'),pilot:en('greenfield','brownfield'),scopeState:en('observed','contracted','hybrid'),repositoryRole:en(...role),repositoryAlias:c('consumer-01'),profileAlias:vs(str('^profile-[0-9]{2,3}$',16)),modelAlias:vs(str('^model-[0-9]{2,3}$',16)),harnessAlias:vs(str('^harness-[0-9]{2,3}$',16)),stack:obj({state:c('unknown')}),contextCoverage:vs(rational),coreVersion:version,profileVersion:version,harnessVersion:version,sample:vs(samples),outcomes,coverage,metrics:obj(Object.fromEntries([...fields,...unavailable].map(key=>[key,statistic]))),verifiedSuccess:vs(bucket),successRate:vs(rational),cost:vs(obj({currency:str('^[A-Z]{3}$',3),basis:en('reported','estimated'),amount:str('^[0-9]{1,34}\\.[0-9]{6}$',41),perSuccess:vs(rational)})),confidence:obj({state:c('unknown')})});
+schema('public-metrics',obj({...head('public-metrics'),artifactKind:c('aggregate.artifact'),policyRef:policy,authorityRef:authority,definitionRef:ref,evaluationProtocol:c('framework-lift-paired-trials/1'),cohorts:arr(cohort,64,1),comparisons:arr(obj({baselineCohort:uint,assistedCohort:uint,successLift:vs(rational)}),32)}),defs);
+const redaction=obj({appliedTransforms:arr({type:'string'},0),findings:arr({type:'string'},0)});
+const leakScan=obj({scannerVersion:c('119/1'),representation:c('typed-public-string-values/1'),residuals:arr({type:'string'},0)});
+const pins=Object.fromEntries(Object.entries({policyFile:'privacy-policy.v0.3.2.json',policyManifest:'privacy-policy.v0.3.2.manifest.json',classification:'privacy-policy.v0.2.16.classification.json',authorizingEvidence:'privacy-authorizing-evidence.v0.2.16.json',authorizationSubjectProfile:'privacy-authorization-subject-profile.v0.2.16.json',privacyInputSchema:'privacy-export.schema.v0.3.2.json',privacyOutputSchema:'privacy-export.schema.v0.3.2.output.json'}).map(([key,path])=>[key,c(sha(readFileSync(join(root,'contracts',path))))]));
+const manifest=obj({...head('metrics-export-manifest'),view:c('public'),artifactKind:c('aggregate.artifact'),payloadDigest:hex,payloadBytes:{type:'integer',minimum:1,maximum:1048576},policyRef:policy,authorityRef:authority,privacyBytePins:obj(pins),definitionRef:ref,canonicalization:c('sorted-utf8-compact-json-lf/1'),validityProtocol:c('live-history-and-current-privacy/1'),offlineStatus:c('unverified'),minimumSamples:c(5),redactionDiff:redaction,leakScan,status:en('valid-at-export','invalidated','unverified')});
+const projection=obj({artifactKind:c('aggregate.decision'),operation:c('derive-run-history-aggregates'),generation:{type:'integer',minimum:0,maximum:Number.MAX_SAFE_INTEGER},evaluation,policyRef:policy,sources:arr(obj({runId,recordDigest:hex,assertionDigest:{oneOf:[hex,{type:'null'}]},privacy:{$ref:'#/$defs/record-privacyBlock'}}),1024,2)});
+const local=obj({...head('metrics-export-manifest'),view:c('local'),tenantScopeId:runId,generation:{type:'integer',minimum:0,maximum:Number.MAX_SAFE_INTEGER},dependentId:str('^mx-[0-9a-f]{64}$',67),evaluation,projection,payloadDigest:hex,manifestDigest:hex,decisionTemplate:template});
+schema('metrics-export-manifest',{oneOf:[manifest,local]},defs);
+const pending=obj({decision:c('deny'),reasonCodes:c(['derived.aggregation-decision-required'])});
+const previewProps={...head('metrics-export-preview'),status:en('ready','blocked','written'),dryRun:{type:'boolean'},written:{type:'boolean'},payload:{type:'string',maxLength:1048576},payloadDigest:hex,manifest,manifestDigest:hex,packageDigest:hex,previewDigest:hex,destination:en('workspace','repository-store','transfer-tenant','transfer-external','transfer-cross-tenant','publish'),decisionTemplate:template,authorizationSubject:str('^subject-sha256:[0-9a-f]{64}$',79),decision:{oneOf:[pending,output.shape]},redactionDiff:redaction,leakScan,exportId:str('^mx-[0-9a-f]{64}$',67)};
+schema('metrics-export-preview',{...obj(previewProps,Object.keys(previewProps).filter(key=>key!=='exportId')),oneOf:[{properties:{status:en('ready','blocked'),dryRun:c(true),written:c(false)},not:{properties:{exportId:previewProps.exportId},required:['exportId']}},{properties:{status:c('written'),dryRun:c(false),written:c(true),exportId:previewProps.exportId},required:['exportId']}]},defs);
+for(const [family,value]of Object.entries(families))write(`contracts/${family}.schema.v0.6.4.json`,value);
+const registryPath='contracts/diagnostic-registry.v0.6.4.json',registry=read(registryPath);
+const baseline=registry.entries.filter(e=>!e.id.startsWith('metrics-export.'));
+if(baseline.length!==500)throw new Error('unexpected registry successor base');
+if(existsSync(join(root,'tests/fixtures/metrics-export/registry-baseline.json'))&&read('tests/fixtures/metrics-export/registry-baseline.json').digest!==sha(JSON.stringify(baseline)))throw new Error('predecessor registry changed; authoring cannot bless it');
+const rules=[['input-invalid','Invalid aggregate export input.'],['evaluation-required','An approved paired evaluation selection is required.'],['source-invalidated','Aggregate source evidence is unavailable or invalidated.'],['authorization-refused','Aggregate export authorization was refused.'],['leak-refused','Aggregate export contains a residual disclosure.'],['preview-stale','The confirmed aggregate preview is stale.'],['storage-refused','Aggregate export storage confinement refused the operation.'],['overlap-refused','Overlapping aggregate release was refused.']];
+registry.entries=[...baseline,...rules.map(([id,message],i)=>({id:`metrics-export.${id}`,code:`LEK-MEXPORT-${String(i+1).padStart(3,'0')}`,category:'security',default_severity:'error',allowed_statuses:['invalid','denied'],message_id:`metrics-export.${id}`,default_message:message,location_requirement:'none',data_fields:[],allowed_fix_ids:[],lifecycle:'active'}))].sort((a,b)=>a.id<b.id?-1:a.id>b.id?1:0);
+write(registryPath,registry);
+mkdirSync(join(root,'tests/fixtures/metrics-export/goldens'),{recursive:true});
+write('tests/fixtures/metrics-export/registry-baseline.json',{entries:500,digest:sha(JSON.stringify(baseline))});
+golden('tests/fixtures/metrics-export/goldens/metrics-aggregation-definition.json',definition);
+golden('tests/fixtures/metrics-export/goldens/evaluation-export-input.json',{schema_version:'lekalo/evaluation-export-input/v0.6.4',identity:'dev.lekalo.evaluation-export-input@0.6.4',protocol:'framework-lift-paired-trials/1',approved:true,trials:['baseline','lekalo-assisted'].map((arm,i)=>({unit:'trial-01',arm,runId:String(i+1).repeat(32),requiredAssertions:[]}))});
+const provenance=read('tests/fixtures/fixture-provenance.json');
+if(!provenance.families.some(row=>row.family==='metrics-export'))provenance.families.push({family:'metrics-export',origin:'synthetic',note:'Issue #102: authored paired trial metadata, local recorder observations, aggregate/manifest/preview goldens and hostile lifecycle probes. No private consumer data or #100 evaluation claims.'});
+provenance.families.sort((a,b)=>a.family<b.family?-1:a.family>b.family?1:0);
+write('tests/fixtures/fixture-provenance.json',provenance);
+console.log(JSON.stringify({ok:true,families:Object.keys(families),registryEntries:registry.entries.length}));

@@ -292,6 +292,14 @@ jobs:
         run: |
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-run-history-cli.mjs
+      - name: Run the public metrics contract and live CLI gates (issue #102)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+        run: |
+          set -euo pipefail
+          for family in evaluation-export-input metrics-aggregation-definition public-metrics metrics-export-manifest metrics-export-preview; do
+            NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-metrics-export-contracts.mjs --family "$family"
+          done
       - name: Run the workflow-provider discovery boundary gate (issue #34)
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules

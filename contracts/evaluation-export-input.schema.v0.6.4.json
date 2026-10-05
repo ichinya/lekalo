@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.evaluation-export-input-schema@0.6.4",
+  "title": "Lekalo evaluation-export-input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "identity",
+    "protocol",
+    "approved",
+    "trials"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "lekalo/evaluation-export-input/v0.6.4"
+    },
+    "identity": {
+      "const": "dev.lekalo.evaluation-export-input@0.6.4"
+    },
+    "protocol": {
+      "const": "framework-lift-paired-trials/1"
+    },
+    "approved": {
+      "type": "boolean"
+    },
+    "trials": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "unit",
+          "arm",
+          "runId",
+          "requiredAssertions"
+        ],
+        "properties": {
+          "unit": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+            "maxLength": 128
+          },
+          "arm": {
+            "enum": [
+              "baseline",
+              "lekalo-assisted"
+            ]
+          },
+          "runId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$",
+            "maxLength": 32
+          },
+          "requiredAssertions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+              "maxLength": 128
+            },
+            "maxItems": 64,
+            "minItems": 0,
+            "uniqueItems": true
+          }
+        }
+      },
+      "maxItems": 1024,
+      "minItems": 2,
+      "uniqueItems": true
+    }
+  }
+}

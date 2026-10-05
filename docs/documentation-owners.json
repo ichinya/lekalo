@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "productVersion": "0.6.4",
-  "cliSourceDigest": "sha256:4bbbf255e7e4c95e99fcf17d6d24b353fbc898d28ac2be1872358072f117bcbe",
+  "cliSourceDigest": "sha256:a7359c9443ac1ca344f9335b965456ec47fc444fba9c28422fc5713543547792",
   "p0Pages": [
     {
       "page": "README.md",
@@ -880,6 +880,39 @@
       "summary": "Create the committed project lock, or check an existing one",
       "leaf": true,
       "owner": "docs/lockfile.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:metrics",
+      "kind": "command",
+      "command": "metrics",
+      "usage": "lekalo metrics [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:7b76d4bc3e2d91378dc639ef7ba6cfd297ee17e0a808b74b5afb2c07d93f7aec",
+      "summary": "Privacy-safe public metrics from versioned local run history",
+      "leaf": false,
+      "owner": "docs/metrics-export.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:metrics export",
+      "kind": "command",
+      "command": "metrics export",
+      "usage": "lekalo metrics export [OPTIONS] --evaluation <FILE> --scope <TOKEN>",
+      "helpDigest": "sha256:3817c8f8c79df1271b15ab2ffc34f4dee6ee3182c911d865493e8167e804ac32",
+      "summary": "Preview or confirm a privacy-safe aggregate from live local history",
+      "leaf": true,
+      "owner": "docs/metrics-export.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:metrics status",
+      "kind": "command",
+      "command": "metrics status",
+      "usage": "lekalo metrics status [OPTIONS] --scope <TOKEN> <EXPORT_ID>",
+      "helpDigest": "sha256:ead494425fb380efff5b0c330afe76eaa8ad2081f10c24e8fcfd302635928949",
+      "summary": "Recheck source deletion, byte integrity and current declared authorization",
+      "leaf": true,
+      "owner": "docs/metrics-export.md",
       "status": "implemented"
     },
     {
@@ -2121,7 +2154,7 @@
       "id": "contract:contracts/diagnostic-registry.v0.6.4.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.6.4.json",
-      "sourceDigest": "sha256:5b6ff37667ef2f125c1a9657273117ff938598d4db39304259ed14e5d32d8704",
+      "sourceDigest": "sha256:ef3e6f1b36760e67ec05d96ca64dc0f9fc67cc75336d4849de8030a228934446",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2177,6 +2210,15 @@
       "source": "contracts/error-registry.v0.2.16.json",
       "sourceDigest": "sha256:d8e3689a2fca44b55d05944e4387789d978613eac87f211623e6611cd694797b",
       "owner": "docs/error-contracts.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/evaluation-export-input.schema.v0.6.4.json",
+      "kind": "contract",
+      "source": "contracts/evaluation-export-input.schema.v0.6.4.json",
+      "sourceDigest": "sha256:6ab131ac0c6d61edb789a4fe90127da331c4c88c7f174c302d7de8b5897a363b",
+      "owner": "docs/metrics-export.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
@@ -2285,6 +2327,42 @@
       "source": "contracts/lock.schema.v0.3.2.json",
       "sourceDigest": "sha256:b322338b131db7b9c61ef91ea4457036aa001139f31877a229d9a49c80bca3d8",
       "owner": "docs/lockfile.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/metrics-aggregation-definition.schema.v0.6.4.json",
+      "kind": "contract",
+      "source": "contracts/metrics-aggregation-definition.schema.v0.6.4.json",
+      "sourceDigest": "sha256:91f5ea51e694e6be7566b629da57099441814a30043a71e7c5b79b137ea820e4",
+      "owner": "docs/metrics-export.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/metrics-aggregation-definition.v0.6.4.json",
+      "kind": "contract",
+      "source": "contracts/metrics-aggregation-definition.v0.6.4.json",
+      "sourceDigest": "sha256:22a7e0ba29c1399fccb6f2ab39aba49ab1e2ebd69469acc9ee3ca3d6d905702e",
+      "owner": "docs/metrics-export.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/metrics-export-manifest.schema.v0.6.4.json",
+      "kind": "contract",
+      "source": "contracts/metrics-export-manifest.schema.v0.6.4.json",
+      "sourceDigest": "sha256:245a6258be62289c56e4cfb73c15aae4743d5016aa915e38a2dae60a7293b5f3",
+      "owner": "docs/metrics-export.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/metrics-export-preview.schema.v0.6.4.json",
+      "kind": "contract",
+      "source": "contracts/metrics-export-preview.schema.v0.6.4.json",
+      "sourceDigest": "sha256:e29741afca3893cc926abf572e453b0a466149af023fc4cf31462f78aec6feff",
+      "owner": "docs/metrics-export.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
@@ -2591,6 +2669,15 @@
       "source": "contracts/provider-capabilities.schema.v0.6.4.json",
       "sourceDigest": "sha256:8a32a35933471b81483cd07bcfea0f78aead3ce8d9a0aacae4db1e65a040227e",
       "owner": "docs/provider-contract.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/public-metrics.schema.v0.6.4.json",
+      "kind": "contract",
+      "source": "contracts/public-metrics.schema.v0.6.4.json",
+      "sourceDigest": "sha256:610f6a649aa690662447f8c1d41088e9cb2003f8ca6b871546cda1359b6f18e6",
+      "owner": "docs/metrics-export.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },

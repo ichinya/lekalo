@@ -48,6 +48,14 @@ for (const slug of pairDirs) {
 // ---------------------------------------------------------------------------
 const FIX = "tests/fixtures";
 const familyFixture = {
+  "metrics-export.input-invalid": ["tests/fixtures/metrics-export"],
+  "metrics-export.evaluation-required": ["tests/fixtures/metrics-export"],
+  "metrics-export.source-invalidated": ["tests/fixtures/metrics-export"],
+  "metrics-export.authorization-refused": ["tests/fixtures/metrics-export"],
+  "metrics-export.leak-refused": ["tests/fixtures/metrics-export"],
+  "metrics-export.preview-stale": ["tests/fixtures/metrics-export"],
+  "metrics-export.storage-refused": ["tests/fixtures/metrics-export"],
+  "metrics-export.overlap-refused": ["tests/fixtures/metrics-export"],
   "trace.bridge-mapping-missing": [`${FIX}/trace-assessment/golden/missing-mapping.json`],
   "trace.bridge-reference-unresolved": [`${FIX}/trace-assessment/golden/dangling-mapping.json`],
   "trace.bridge-conflict": [`${FIX}/trace-assessment/golden/duplicate-mapping.json`],

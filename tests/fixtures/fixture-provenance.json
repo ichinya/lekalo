@@ -178,6 +178,11 @@
       "origin": "synthetic"
     },
     {
+      "family": "metrics-export",
+      "origin": "synthetic",
+      "note": "Issue #102: authored paired trial metadata, local recorder observations, aggregate/manifest/preview goldens and hostile lifecycle probes. No private consumer data or #100 evaluation claims."
+    },
+    {
       "family": "model",
       "origin": "synthetic"
     },

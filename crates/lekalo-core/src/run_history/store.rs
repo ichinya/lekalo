@@ -148,6 +148,32 @@ pub(crate) struct Store {
 }
 
 impl Store {
+    /// Bounded read/activation custody for #102. BEGIN IMMEDIATE holds
+    /// deletion/retention writers out until the callback has completed.
+    /// The callback cannot change the store; filesystem activation is
+    /// conditional on the same live generation and rehashed source bytes.
+    pub(crate) fn export_locked<T>(
+        &self,
+        generation: Option<u64>,
+        operation: impl FnOnce(&Self) -> Result<T, StoreError>,
+    ) -> Result<T, StoreError> {
+        self.connection
+            .execute_batch("BEGIN IMMEDIATE")
+            .map_err(StoreError::classify)?;
+        let result = (|| {
+            if generation.is_some_and(|expected| self.generation().ok() != Some(expected)) {
+                return Err(StoreError::CursorStale);
+            }
+            operation(self)
+        })();
+        let released = self
+            .connection
+            .execute_batch("ROLLBACK")
+            .map_err(StoreError::classify);
+        released?;
+        result
+    }
+
     /// Open (creating when absent) with the production clock and the
     /// SQLite PRNG identifier source.
     pub(crate) fn open(project_root: &Path) -> Result<Self, StoreError> {
@@ -1082,6 +1108,44 @@ impl Store {
         run_sources: &[String],
         dependent_sources: &[String],
     ) -> Result<(), StoreError> {
+        self.register_dependent_checked(
+            scope_token,
+            dependent_id,
+            kind,
+            run_sources,
+            dependent_sources,
+            None,
+        )
+    }
+
+    /// One metrics release per scope lifetime, including invalidated releases:
+    /// deletion cannot enable a complementary query against earlier public bytes.
+    pub(crate) fn register_metrics_export(
+        &mut self,
+        scope_token: &str,
+        dependent_id: &str,
+        run_sources: &[String],
+        generation: u64,
+    ) -> Result<(), StoreError> {
+        self.register_dependent_checked(
+            scope_token,
+            dependent_id,
+            DependentKind::AggregateInput,
+            run_sources,
+            &[],
+            Some(generation),
+        )
+    }
+
+    fn register_dependent_checked(
+        &mut self,
+        scope_token: &str,
+        dependent_id: &str,
+        kind: DependentKind,
+        run_sources: &[String],
+        dependent_sources: &[String],
+        metrics_generation: Option<u64>,
+    ) -> Result<(), StoreError> {
         let scope_id = self.scope_id(scope_token)?;
         if !validate::is_token(dependent_id) {
             return Err(StoreError::Invalid {
@@ -1094,6 +1158,18 @@ impl Store {
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
             .map_err(StoreError::classify)?;
         let result = (|| {
+            if let Some(expected) = metrics_generation {
+                if current_generation(&transaction)? != expected {
+                    return Err(StoreError::CursorStale);
+                }
+                let exists:i64=transaction.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM dependents WHERE tenant_scope_id=?1 AND kind='aggregate-input' AND dependent_id LIKE 'mx-%')",
+                    rusqlite::params![scope_id],|row|row.get(0),
+                ).map_err(StoreError::classify)?;
+                if exists != 0 {
+                    return Err(StoreError::DependentExists);
+                }
+            }
             if dependent_exists(&transaction, &scope_id, dependent_id)? {
                 return Err(StoreError::DependentExists);
             }
@@ -2257,4 +2333,36 @@ pub(crate) fn normalize_provenance_for_fingerprint(
 
 fn normalize<T>(leaf: Option<super::value::Vs<T>>) -> super::value::Vs<T> {
     super::value::Vs::normalize(leaf)
+}
+
+#[cfg(test)]
+mod metrics_export_tests {
+    use super::*;
+    #[test]
+    fn activation_lock_excludes_other_writers_and_releases_on_refusal() {
+        let root = tempfile::tempdir().unwrap();
+        let reader = Store::open(root.path()).unwrap();
+        let mut writer = Store::open(root.path()).unwrap();
+        writer
+            .connection
+            .busy_timeout(std::time::Duration::ZERO)
+            .unwrap();
+        let generation = reader.generation().unwrap();
+        reader
+            .export_locked(Some(generation), |_| {
+                assert!(matches!(writer.scope_create(), Err(StoreError::Busy)));
+                Ok(())
+            })
+            .unwrap();
+        assert!(matches!(
+            reader.export_locked(Some(generation + 1), |_| Ok(())),
+            Err(StoreError::CursorStale)
+        ));
+        writer.scope_create().unwrap();
+        assert!(matches!(
+            reader.export_locked(None, |_| Err::<(), _>(StoreError::Io)),
+            Err(StoreError::Io)
+        ));
+        writer.scope_create().unwrap();
+    }
 }
