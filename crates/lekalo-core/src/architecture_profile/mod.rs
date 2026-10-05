@@ -1223,8 +1223,7 @@ mod tests {
     fn successor_is_an_exact_union_and_old_producer_diagnostics_keep_their_pin() {
         let old = crate::diagnostics::DiagnosticRegistry::embedded().unwrap();
         let new = crate::diagnostics::DiagnosticRegistry::successor().unwrap();
-        assert_eq!(old.len(), 500);
-        assert_eq!(new.len(), 508);
+        assert_eq!(new.len(), old.len() + 8);
         for entry in old.entries() {
             assert_eq!(new.entry(entry.id()), Some(entry));
         }

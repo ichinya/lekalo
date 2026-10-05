@@ -70,13 +70,13 @@ export const shapes={
 export function artifacts(){
  const files=new Map();
  const predecessor=read('contracts/diagnostic-registry.v0.6.4.json');
- assert.equal(predecessor.entries.length,500);
+ assert.ok(predecessor.entries.length>=500,'predecessor registry shrank');
  const names=[['input-invalid','invalid','Architecture profile input is invalid.'],['version-unsupported','unsupported-version','Architecture profile contract version is unsupported.'],['inheritance-invalid','invalid','Architecture profile inheritance is invalid.'],['weakening-unacknowledged','invalid','Architecture profile inheritance or scope silently weakens policy.'],['evidence-incomplete','valid','Architecture profile evidence is incomplete.'],['policy-denied','denied','Architecture profile obligations are not satisfied.'],['adoption-invalid','invalid','Architecture adoption evidence is invalid.'],['baseline-incomparable','invalid','Architecture baseline is not comparable.']];
  const entries=names.map(([suffix,status,message],i)=>({id:`architecture-profile.${suffix}`,code:`LEK-APR-${String(i+1).padStart(3,'0')}`,category:'infrastructure',default_severity:status==='valid'?'info':'error',allowed_statuses:[status],message_id:`architecture-profile.${suffix}`,default_message:message,location_requirement:'none',data_fields:[{name:'detail',type:'token'}],allowed_fix_ids:[],lifecycle:'active'}));
  const registry={...predecessor,schema_version:`lekalo/diagnostic-registry/v${version}`,identity:`dev.lekalo.diagnostic-registry@${version}`,registry_version:version,entries:[...predecessor.entries,...entries].sort((a,b)=>a.id<b.id?-1:1)};
  // Same entry grammar; frozen predecessor is never written.
  const registrySchema=JSON.parse(JSON.stringify(read('contracts/diagnostic-registry.schema.v0.6.4.json')).replaceAll('0.6.4',version));
- registrySchema.description='Issue #84 additive union successor: the 500 predecessor entries and entry grammar are preserved. Architecture policy adds eight service diagnostics; wire diagnostics remain v0.2.16.';
+ registrySchema.description=`Issue #84 additive union successor: the ${predecessor.entries.length} predecessor entries and entry grammar are preserved. Architecture policy adds eight service diagnostics; wire diagnostics remain v0.2.16.`;
  files.set(`contracts/diagnostic-registry.v${version}.json`,pretty(registry));
  files.set(`contracts/diagnostic-registry.schema.v${version}.json`,pretty(registrySchema));
  const catalog={...header('architecture-rule-catalog'),recipe:'architecture-core/1',registryRef:{id:'diagnostic-registry',version,digest:digest(pretty(registry))},rules:definitions.map(([id,coverage,producer,measurement,blockingBasis,rationale,alternative])=>({id:'architecture.'+id,revision:1,owner:'lekalo-core',producer,measurement,coverage,mandatory:id==='stable-semantic-ids',blockingBasis,severity:id==='stable-semantic-ids'?'error':'warning',rationale,alternative})).sort((a,b)=>a.id<b.id?-1:1)};

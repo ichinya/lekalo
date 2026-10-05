@@ -3461,6 +3461,126 @@
       "lifecycle": "active"
     },
     {
+      "id": "evaluation.arm-incomparable",
+      "code": "LEK-EVAL-003",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "evaluation.arm-incomparable",
+      "default_message": "Evaluation arms do not share the approved provenance.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "evaluation.baseline-drift",
+      "code": "LEK-EVAL-002",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "evaluation.baseline-drift",
+      "default_message": "Approved evaluation baseline or schedule bytes changed.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "evaluation.metric-inconsistent",
+      "code": "LEK-EVAL-005",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "evaluation.metric-inconsistent",
+      "default_message": "Recorded evaluation measurements do not reconcile.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "evaluation.private-egress-denied",
+      "code": "LEK-EVAL-006",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "evaluation.private-egress-denied",
+      "default_message": "The private evaluation requires a local-only executor.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "evaluation.protocol-invalid",
+      "code": "LEK-EVAL-001",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "evaluation.protocol-invalid",
+      "default_message": "The evaluation document violates its closed protocol.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "evaluation.required-evidence-missing",
+      "code": "LEK-EVAL-004",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "evaluation.required-evidence-missing",
+      "default_message": "Current required candidate assertion evidence is missing.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "event.contract-invalid",
       "code": "LEK-XE-002",
       "category": "compatibility",

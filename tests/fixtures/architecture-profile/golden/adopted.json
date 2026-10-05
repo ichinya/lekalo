@@ -2,16 +2,16 @@
   "assessment": "adopting",
   "baselineRef": {
     "state": "known",
-    "value": "sha256:120f9a39bca63fa8df068782cd689f8e2cf1311dbaccd1fe1b575c62d6943bc7"
+    "value": "sha256:21c2d39d3e420518d66f4468b13a1ecd542fd5adf2a1230f386fce86d493dda5"
   },
-  "documentDigest": "sha256:806f7486b7e8273c56d3e3fc101b533e23202227f7359997793bcdf84e6195bf",
+  "documentDigest": "sha256:345e3ac1c65902a0e4210da0ee189974074ad1805e8932cd733169201c8eaa49",
   "identity": "dev.lekalo.architecture-profile-report@0.6.5",
   "irRef": "sha256:2ed11578a45ee61635c51cc4ad5ff758db3bc2a23a867f0c70547c75188df8f7",
   "modelRef": "sha256:7707ddf7e9b435a58c1a4d9fd6df7d8bbf09856519958e30762eec5c3c6c96de",
   "profiles": [
     {
       "catalogRef": {
-        "digest": "sha256:88ef69ad4dc3c673a168b26834a7e86ee1068da26412f889322da528a89806fb",
+        "digest": "sha256:984abde21fa810f0fbe9169ea28d22ced39d5b0bcafafbe36e8c5b216d0141f3",
         "id": "architecture-core",
         "version": "0.6.5"
       },
@@ -170,7 +170,7 @@
         }
       ],
       "schemaVersion": "lekalo/architecture-profile-resolved/v0.6.5",
-      "sourceDigest": "sha256:806f7486b7e8273c56d3e3fc101b533e23202227f7359997793bcdf84e6195bf"
+      "sourceDigest": "sha256:345e3ac1c65902a0e4210da0ee189974074ad1805e8932cd733169201c8eaa49"
     }
   ],
   "recipe": "architecture-core/1",
@@ -868,5 +868,5 @@
     "id": "planner",
     "kind": "project"
   },
-  "snapshotRef": "sha256:a0d277d6bca7231fd25eb16f8b52f05ec856bc6f0a765d48f7430e4215056b4c"
+  "snapshotRef": "sha256:d1d6e468369757f09c5f9247836a4d138d7343d9501fad039157231ee8142bfd"
 }

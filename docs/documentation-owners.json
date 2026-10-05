@@ -597,6 +597,61 @@
       "status": "implemented"
     },
     {
+      "id": "cli:evaluation",
+      "kind": "command",
+      "command": "evaluation",
+      "usage": "lekalo evaluation [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:28d058a1a864b496d92aa6189d647e9ca308293a0d9208825e7d0c94276024a1",
+      "summary": "Validate preregistered Framework Lift protocols and compare local recorded evidence. Never launches an agent/provider or exports private artifacts (issue #100)",
+      "leaf": false,
+      "owner": "docs/framework-lift.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:evaluation compare",
+      "kind": "command",
+      "command": "evaluation compare",
+      "usage": "lekalo evaluation compare [OPTIONS] --baseline <BASELINE> --task <TASK> --campaign <CAMPAIGN> --consumer-alias <CONSUMER_ALIAS>",
+      "helpDigest": "sha256:360aa7967d520cadba13fbc9015730237c8e3b676c5dd9137f3755253cf4d7fd",
+      "summary": "Compare all scheduled slots; retains missing, failed and retried attempts",
+      "leaf": true,
+      "owner": "docs/framework-lift.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:evaluation preflight",
+      "kind": "command",
+      "command": "evaluation preflight",
+      "usage": "lekalo evaluation preflight [OPTIONS] --baseline <BASELINE> --task <TASK> --campaign <CAMPAIGN> --workspace <WORKSPACE>",
+      "helpDigest": "sha256:95af7dab876437e07578c6d9bc09cdce465454dc9d42828aee443323340cf140",
+      "summary": "Verify approved protocol pins and baseline file bytes before an executor call",
+      "leaf": true,
+      "owner": "docs/framework-lift.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:evaluation record-arm",
+      "kind": "command",
+      "command": "evaluation record-arm",
+      "usage": "lekalo evaluation record-arm [OPTIONS] --baseline <BASELINE> --task <TASK> --campaign <CAMPAIGN> --input <INPUT>",
+      "helpDigest": "sha256:3f15743b604d56fc4c090501a8111e7f9a86c81cf9c0f4c3959e9e4e1b62a9c8",
+      "summary": "Admit one recorded arm against its exact preregistration (no execution)",
+      "leaf": true,
+      "owner": "docs/framework-lift.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:evaluation validate",
+      "kind": "command",
+      "command": "evaluation validate",
+      "usage": "lekalo evaluation validate [OPTIONS] --family <FAMILY> --input <INPUT>",
+      "helpDigest": "sha256:f1ca5c369d0cb9a76296d9bf98459dfb18f01762b368d0b9a1a3b1bcba4f6a72",
+      "summary": "Validate one closed local evaluation document; does not attest execution",
+      "leaf": true,
+      "owner": "docs/framework-lift.md",
+      "status": "implemented"
+    },
+    {
       "id": "cli:expressions",
       "kind": "command",
       "command": "expressions",
@@ -1989,7 +2044,7 @@
       "id": "contract:contracts/architecture-profile.v0.6.5.json",
       "kind": "contract",
       "source": "contracts/architecture-profile.v0.6.5.json",
-      "sourceDigest": "sha256:58bd8c11eb4b0c4c3148412683539dd8735bacf16bf096c930ca6073475c9ec9",
+      "sourceDigest": "sha256:387f34e8e1014b794905e07ab6a43b38f8fe79d5bc7630829c91b330bd427427",
       "owner": "docs/architecture-profile.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2007,7 +2062,7 @@
       "id": "contract:contracts/architecture-rule-catalog.v0.6.5.json",
       "kind": "contract",
       "source": "contracts/architecture-rule-catalog.v0.6.5.json",
-      "sourceDigest": "sha256:88ef69ad4dc3c673a168b26834a7e86ee1068da26412f889322da528a89806fb",
+      "sourceDigest": "sha256:984abde21fa810f0fbe9169ea28d22ced39d5b0bcafafbe36e8c5b216d0141f3",
       "owner": "docs/architecture-profile.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2250,7 +2305,7 @@
       "id": "contract:contracts/diagnostic-registry.schema.v0.6.5.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.schema.v0.6.5.json",
-      "sourceDigest": "sha256:b393880fabde9425d33e632d97c904dcf4c8765330bf6271ff68e7584c141519",
+      "sourceDigest": "sha256:b29fa7c7972bf34a97458189ebef6e0f01a8d2730ac4153252966333bf617db3",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2286,7 +2341,7 @@
       "id": "contract:contracts/diagnostic-registry.v0.6.5.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.6.5.json",
-      "sourceDigest": "sha256:c0ec3b923751c226d388b071ffcff78b023c86d820c83105ce204e469a9dd212",
+      "sourceDigest": "sha256:c2eed26a5426f169667cacf0e8f2099e6a739858d966fdf1ed824292f7435f49",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

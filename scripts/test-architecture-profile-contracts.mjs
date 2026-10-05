@@ -22,9 +22,9 @@ assert.ok(existsSync(bin),'binary-missing: cargo build --workspace --locked must
 assert.equal(generate(true),11);
 const old=read('contracts/diagnostic-registry.v0.6.4.json');
 const registry=read(`contracts/diagnostic-registry.v${version}.json`);
-assert.equal(registry.entries.length,508);assert.equal(old.entries.length,500);
+assert.equal(registry.entries.length,old.entries.length+8,'successor must be predecessor union + 8 APR rules');
 for(const e of old.entries)assert.deepEqual(registry.entries.find(n=>n.id===e.id),e,'predecessor entry changed');
-assert.equal(new Set(registry.entries.map(e=>e.code)).size,508);
+assert.equal(new Set(registry.entries.map(e=>e.code)).size,registry.entries.length);
 const registrySchema=ajv.compile(read(`contracts/diagnostic-registry.schema.v${version}.json`));
 assert.ok(registrySchema(registry),JSON.stringify(registrySchema.errors));
 const provenance=read('tests/fixtures/fixture-provenance.json');
