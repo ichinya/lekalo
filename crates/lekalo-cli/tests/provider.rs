@@ -58,7 +58,7 @@ fn describe_emits_a_valid_manifest_receipt_on_stdout() {
         document["manifest"]["identity"],
         "dev.lekalo.workflow-provider@0.6.4"
     );
-    assert_eq!(document["manifest"]["productVersion"], "0.6.5");
+    assert_eq!(document["manifest"]["productVersion"], "0.6.4");
     assert_eq!(
         document["manifest"]["targetProtocolIdentity"], "dev.lekalo.target-protocol@0.3.2",
         "the target protocol stays a separate negotiated family"
@@ -306,7 +306,7 @@ fn human_projection_is_one_stable_summary_line() {
     assert_eq!(output.status.code(), Some(0));
     assert_eq!(
         stdout_text(&output),
-        "provider dev.lekalo.workflow-provider@0.6.4 product 0.6.5 operations \
+        "provider dev.lekalo.workflow-provider@0.6.4 product 0.6.4 operations \
          context,doctor,drift,generate,impact,readiness,status,trace.assess,trace.export,validate,verify\n"
     );
 }

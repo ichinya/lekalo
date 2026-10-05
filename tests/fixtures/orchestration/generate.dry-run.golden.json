@@ -4,7 +4,7 @@
   "mode": "dry-run",
   "identity": "dev.lekalo.orchestration-report@0.2.16",
   "project": "planner",
-  "lockDigest": "sha256:39e6524505a9128ccaf2270c86db5362dd41e07115eaa3f03efa77e46db788bd",
+  "lockDigest": "sha256:262dbb4914837c94effe69e1cbe473acf45681302f2aa746ea55814bd50f4b88",
   "locked": false,
   "inputs": {
     "modelVersion": "0.2.16",
