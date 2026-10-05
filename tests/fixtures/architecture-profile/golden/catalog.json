@@ -22,7 +22,7 @@
     },
     {
       "alternative": "Derive paths from stable IDs and declare nondeterministic inputs, then compare repeated generation receipts.",
-      "blockingBasis": "advisory",
+      "blockingBasis": "semantic",
       "coverage": "unsupported",
       "id": "architecture.deterministic-generation",
       "mandatory": false,

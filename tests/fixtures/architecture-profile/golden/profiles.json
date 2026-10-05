@@ -4,7 +4,7 @@
   "catalogRef": {
     "id": "architecture-core",
     "version": "0.6.5",
-    "digest": "sha256:947c4f675b3dde6f538edeae92230bf9a0b2f0865e3ce79cac69454806e1f6ff"
+    "digest": "sha256:88ef69ad4dc3c673a168b26834a7e86ee1068da26412f889322da528a89806fb"
   },
   "profiles": [
     {

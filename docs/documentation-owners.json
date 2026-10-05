@@ -1989,7 +1989,7 @@
       "id": "contract:contracts/architecture-profile.v0.6.5.json",
       "kind": "contract",
       "source": "contracts/architecture-profile.v0.6.5.json",
-      "sourceDigest": "sha256:28b18f815827fe4201bacd302f47608051655b88c8c2734966a7abe85714facf",
+      "sourceDigest": "sha256:58bd8c11eb4b0c4c3148412683539dd8735bacf16bf096c930ca6073475c9ec9",
       "owner": "docs/architecture-profile.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2007,7 +2007,7 @@
       "id": "contract:contracts/architecture-rule-catalog.v0.6.5.json",
       "kind": "contract",
       "source": "contracts/architecture-rule-catalog.v0.6.5.json",
-      "sourceDigest": "sha256:947c4f675b3dde6f538edeae92230bf9a0b2f0865e3ce79cac69454806e1f6ff",
+      "sourceDigest": "sha256:88ef69ad4dc3c673a168b26834a7e86ee1068da26412f889322da528a89806fb",
       "owner": "docs/architecture-profile.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

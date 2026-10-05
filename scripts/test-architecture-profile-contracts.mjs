@@ -32,6 +32,7 @@ assert.equal(provenance.families.filter(f=>f.family==='architecture-profile'&&f.
 const fixture='tests/fixtures/architecture-profile';
 const project=mkdtempSync(join(tmpdir(),'lekalo-issue-84-'));
 const emitted=new Set();const goldenNames=[];let probes=0;
+const fixProbes={multibyteRefusals:0,unicodeSuccesses:0,advisoryRequiredRefusals:0};
 function file(name,value){const path=join(project,name);writeFileSync(path,typeof value==='string'?value:pretty(value));return path;}
 function invoke(args,status='valid',cwd=project){
  const child=spawnSync(bin,['--json','--no-cache','architecture-profile',...args],{cwd,encoding:'utf8',timeout:60000,maxBuffer:32*1024*1024});
@@ -59,6 +60,8 @@ try{
  assert.equal(catalog.rules.length,15);assert.equal(catalog.rules.filter(r=>r.mandatory).length,1);
  assert.equal(catalog.registryRef.digest,digest(readFileSync(join(root,`contracts/diagnostic-registry.v${version}.json`))));
  assert.ok(catalog.rules.every(r=>r.owner==='lekalo-core'&&r.rationale&&r.alternative));
+ assert.equal(catalog.rules.find(r=>r.id==='architecture.deterministic-generation').blockingBasis,'semantic');
+ for(const id of ['architecture.justified-abstractions','architecture.immutable-defaults'])assert.equal(catalog.rules.find(r=>r.id===id).blockingBasis,'advisory');
  assert.ok(!JSON.stringify(catalog).match(/\bPHP\b|Laravel|Mago/),'core has no target-specific rule coupling');
  gold('catalog','architecture-rule-catalog',catalog);
  const doc=read(`contracts/architecture-profile.v${version}.json`);
@@ -162,6 +165,24 @@ try{
  rejected(pretty(doc).replace('"assignments": []','"assignments": [], "assignments": []'));
  for(const badLimit of [known({maximum:-1,calibrationRef:'fixture'}),known({maximum:0,calibrationRef:''}),{state:'known'}]){const d=structuredClone(measured);d.profiles.find(p=>p.id==='measured').rules.find(r=>r.id==='architecture.explicit-dependencies').limit=badLimit;rejected(d);schema('architecture-profile',d,false);}
  const subjective=structuredClone(measured);subjective.profiles.find(p=>p.id==='measured').rules.find(r=>r.id==='architecture.justified-abstractions').limit=known({maximum:0,calibrationRef:'fixture/style'});rejected(subjective);
+ // F2: schema shape cannot grant a subjective rule blocking evidence authority.
+ // Test all advisory catalog rules in both a child and an independent root.
+ const parent=lock.profiles.find(p=>p.profileRef.id==='contracted-standard');
+ const refuseRequired=args=>{const result=invoke(args,'invalid');assert.ok(result.envelope.reasonCodes.includes('architecture-profile.input-invalid'));fixProbes.advisoryRequiredRefusals++;};
+ for(const advisory of catalog.rules.filter(r=>r.blockingBasis==='advisory')){
+  const selection={...structuredClone(parent.rules.find(r=>r.id===advisory.id)),required:true};
+  const child=structuredClone(doc);child.profiles.push({id:'required-advisory',version:'1',extends:known(parent.profileRef),rules:[selection]});child.profiles.sort((a,b)=>a.id<b.id?-1:1);schema('architecture-profile',child);
+  const childPath=file('required-advisory.json',child);
+  refuseRequired(['resolve','--architecture-profile','required-advisory','--architecture-profiles',childPath]);
+  refuseRequired(['assess','--module','planner','--architecture-profile','required-advisory','--architecture-profiles',childPath,'--check']);
+  const rootPolicy={...structuredClone(doc),assignments:[],profiles:[{id:'required-root',version:'1',extends:unknown(),rules:parent.rules.map(r=>r.id===advisory.id?selection:structuredClone(r))}]};schema('architecture-profile',rootPolicy);
+  refuseRequired(['resolve','--architecture-profile','required-root','--architecture-profiles',file('required-root.json',rootPolicy)]);
+  if(advisory.id==='architecture.justified-abstractions'){
+   refuseRequired(['lock','--architecture-profiles',childPath]);
+   refuseRequired(['diff','--base-profiles',file('advisory-base.json',doc),'--candidate-profiles',childPath]);
+   refuseRequired(['assess','--module','planner','--architecture-profile','required-advisory','--architecture-profiles',childPath]);
+  }
+ }
  for(const limit of [unknown(),known({maximum:1,calibrationRef:'fixture/relax'})]){
   const d=structuredClone(measured),parent=d.profiles.find(p=>p.id==='measured');
   d.profiles.push({id:'child-measured',version:'1',extends:known({id:parent.id,version:'1',digest:hash(parent.rules)}),rules:[{...measurement,limit}]});d.profiles.sort((a,b)=>a.id<b.id?-1:1);
@@ -178,6 +199,35 @@ try{
  const badDate=invoke([...adoptArgs.slice(0,-1),'2026-02-30'],'invalid');assert.ok(badDate.envelope.reasonCodes.includes('architecture-profile.adoption-invalid'));
  const emptyInput=invoke(['resolve','--architecture-profile','ai-strict','--architecture-profiles',file('empty.json','')],'invalid');assert.ok(emptyInput.envelope.reasonCodes.includes('architecture-profile.input-invalid'));
  const huge=invoke(['resolve','--architecture-profile','ai-strict','--architecture-profiles',file('huge.json',' '.repeat(8*1024*1024+1))],'invalid');assert.ok(huge.envelope.reasonCodes.includes('architecture-profile.input-invalid'));
+ // F1: every externally supplied document path shares strict UTF-8 admission.
+ const goodDoc=file('utf8-control-profiles.json',doc);
+ for(const [variant,malformed] of [
+  ['bare',()=> '\u00e9'],
+  ['ascii-prefix',()=> '{"x":\u00e9}'],
+  ['bom',value=> '\ufeff'+pretty(value)],
+ ]){
+  const vectors=[
+   ['resolve',doc,p=>['resolve','--architecture-profile','ai-strict','--architecture-profiles',p]],
+   ['lock',doc,p=>['lock','--architecture-profiles',p]],
+   ['diff-base',doc,p=>['diff','--base-profiles',p,'--candidate-profiles',goodDoc]],
+   ['diff-candidate',doc,p=>['diff','--base-profiles',goodDoc,'--candidate-profiles',p]],
+   ['assess-profiles',doc,p=>['assess','--all','--architecture-profiles',p]],
+   ['assess-lock',lock,p=>['assess','--all','--architecture-lock',p]],
+   ['assess-baseline',violated,p=>[...measuredArgs,'--baseline',p]],
+   ['assess-adoption',ledger,p=>adoptArgs.map(a=>a===ledgerPath?p:a)],
+  ];
+  for(const [name,value,args] of vectors){
+   const result=invoke(args(file(`malformed-${variant}-${name}.json`,malformed(value))),'invalid');
+   assert.ok(result.envelope.reasonCodes.includes('architecture-profile.input-invalid'));
+   assert.ok(Buffer.byteLength(result.raw,'utf8')<=4096,'bounded structured refusal');
+   fixProbes.multibyteRefusals++;
+  }
+ }
+ // Legal literal and escaped Unicode prose still traverses the same decoder.
+ const unicodeLedger=structuredClone(ledger);unicodeLedger.entries[0].reason='Reviewed \u00e9 / \u6f22 / \ud83d\ude00 debt.';schema('architecture-adoption',unicodeLedger);
+ for(const bytes of [pretty(unicodeLedger),pretty(unicodeLedger).replace('\u00e9','\\u00e9').replace('\u6f22','\\u6f22').replace('\ud83d\ude00','\\ud83d\\ude00')]){
+  const result=invoke(adoptArgs.map(a=>a===ledgerPath?file('legal-unicode-adoption.json',bytes):a));assert.equal(result.value.assessment,'adopting');fixProbes.unicodeSuccesses++;
+ }
  // No regression to mandatory semantic errors across a selected module boundary.
  const badModel=join(project,'lekalo/modules/notify/commands.yaml');const saved=readFileSync(badModel);
  writeFileSync(badModel,saved.toString().replace('notify.rename_user"','notify.missing_effect"'));
@@ -201,7 +251,8 @@ try{
   fault('fixture-provenance.json');
  }finally{assert.ok(isolated.startsWith(join(tmpdir(),'lekalo-84-gate-fault-')));rmSync(isolated,{recursive:true,force:true});}
  if(write)writeFileSync(join(root,fixture,'golden/index.json'),pretty(goldenNames));else assert.deepEqual(read(`${fixture}/golden/index.json`),goldenNames);
- console.log(JSON.stringify({ok:true,product:version,ajv:'8.17.1',families:schemas.size,goldens:goldenNames.length,registryEntries:registry.entries.length,diagnostics:emitted.size,liveProbes:probes,artifactFaults:4,mode:write?'authoring':'read-only'}));
+ assert.deepEqual(fixProbes,{multibyteRefusals:24,unicodeSuccesses:2,advisoryRequiredRefusals:36});
+ console.log(JSON.stringify({ok:true,product:version,ajv:'8.17.1',families:schemas.size,goldens:goldenNames.length,registryEntries:registry.entries.length,diagnostics:emitted.size,liveProbes:probes,artifactFaults:4,fixProbes,mode:write?'authoring':'read-only'}));
 }finally{
  // One native shell/process owns this fully resolved, freshly created temporary root.
  assert.ok(project.startsWith(join(tmpdir(),'lekalo-issue-84-')));

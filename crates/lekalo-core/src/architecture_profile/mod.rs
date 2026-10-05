@@ -154,7 +154,8 @@ fn selection_valid(s: &Selection, rule: &Rule) -> bool {
     s.id == rule.id
         && (!rule.mandatory || (s.enabled && s.required && s.severity == rule.severity))
         && s.severity <= rule.severity
-        && (!s.required || s.enabled)
+        && (!s.required
+            || (s.enabled && matches!(rule.blocking_basis.as_str(), "semantic" | "measured")))
         && matches!(s.limit, State::Unknown | State::Known { .. })
         && s.limit.value().map_or(true, |l| {
             rule.blocking_basis == "measured"
@@ -1064,6 +1065,80 @@ mod tests {
                 .value()
                 .is_none());
         }
+    }
+    #[test]
+    fn advisory_rules_cannot_be_required_by_documents_or_typed_callers() {
+        let d = embedded();
+        let standard = resolve(&d, "contracted-standard").unwrap();
+        for rule in catalog()
+            .rules
+            .iter()
+            .filter(|r| r.blocking_basis == "advisory")
+        {
+            let mut document = d.clone();
+            let mut selection = standard
+                .rules
+                .iter()
+                .find(|s| s.id == rule.id)
+                .unwrap()
+                .clone();
+            selection.required = true;
+            document.profiles.push(Profile {
+                id: "required-advisory".into(),
+                version: "1".into(),
+                extends: State::known(standard.profile_ref.clone()),
+                rules: vec![selection],
+            });
+            document.profiles.sort_by(|a, b| a.id.cmp(&b.id));
+            assert!(
+                parse(&serde_json::to_vec(&document).unwrap()).is_err(),
+                "{}",
+                rule.id
+            );
+            assert!(
+                resolve(&document, "required-advisory").is_err(),
+                "{}",
+                rule.id
+            );
+            assert!(snapshot(&document).is_err(), "{}", rule.id);
+            assert!(policy_diff(&d, &document).is_err(), "{}", rule.id);
+        }
+        let managed = resolve(&d, "managed-generated").unwrap();
+        let generation = catalog()
+            .rules
+            .into_iter()
+            .find(|r| r.id == "architecture.deterministic-generation")
+            .unwrap();
+        assert_eq!(generation.blocking_basis, "semantic");
+        assert_eq!(generation.coverage, Coverage::Unsupported);
+        assert!(
+            managed
+                .rules
+                .iter()
+                .find(|r| r.id == generation.id)
+                .unwrap()
+                .required
+        );
+    }
+
+    #[test]
+    fn multibyte_json_errors_are_structured_and_legal_strings_still_decode() {
+        for text in ["\u{e9}", "{\"x\":\u{e9}}", "\u{feff}{}"] {
+            let result = parse(text.as_bytes()).unwrap_err();
+            assert_eq!(result.status(), Status::Invalid);
+            assert_eq!(result.diagnostics().len(), 1);
+            assert_eq!(
+                result.diagnostics()[0].id(),
+                "architecture-profile.input-invalid"
+            );
+        }
+        let text = format!(
+            "{{\"schemaVersion\":\"{}\",\"identity\":\"{}\",\"text\":\"\\u00e9\u{6f22}\u{1f600}\"}}",
+            header("unicode-control").0,
+            header("unicode-control").1
+        );
+        let value: serde_json::Value = decode(text.as_bytes(), "unicode-control").unwrap();
+        assert_eq!(value["text"], "\u{e9}\u{6f22}\u{1f600}");
     }
     #[test]
     fn error_selection_and_every_inherited_weakening_dimension_fail_closed() {

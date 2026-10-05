@@ -29,7 +29,7 @@
       "measurement": "repeatedGenerationEquality",
       "coverage": "unsupported",
       "mandatory": false,
-      "blockingBasis": "advisory",
+      "blockingBasis": "semantic",
       "severity": "warning",
       "rationale": "Determinism requires independent repeated outputs with pinned inputs and generator identity; content ownership alone is insufficient.",
       "alternative": "Derive paths from stable IDs and declare nondeterministic inputs, then compare repeated generation receipts."
