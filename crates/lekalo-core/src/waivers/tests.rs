@@ -100,6 +100,75 @@ fn waivers_optional_capability_keeps_the_unsupported_fact() {
     assert_eq!(a.findings[0].fact.source_outcome, "unsupported");
     assert_eq!(a.findings[0].effective_gate, "accepted-risk");
 }
+fn fingerprint_pin<'a>(f: &'a mut Fingerprint, name: &str) -> &'a mut State<String> {
+    match name {
+        "model" => &mut f.model,
+        "ir" => &mut f.ir,
+        "adapter" => &mut f.adapter,
+        "revision" => &mut f.revision,
+        "capabilities" => &mut f.capabilities,
+        _ => unreachable!(),
+    }
+}
+#[test]
+fn waivers_native_applicable_pins_cannot_be_declared_unavailable() {
+    let target = target(false);
+    let policy = TargetState { profile: &target };
+    for name in ["model", "ir", "adapter", "revision", "capabilities"] {
+        for missing in [State::Unsupported, State::Unknown, State::Withheld] {
+            let mut f = fact("transport.streaming");
+            *fingerprint_pin(&mut f.fingerprint, name) = missing;
+            // Bind the approval to the actual incomplete fact, so refusal cannot
+            // be explained by a changed fact/approval rather than applicability.
+            let (s, i) = pair(f, &policy);
+            let a = audit(&s, &i, &policy, "2026-10-04T00:00:00Z", 0, None).unwrap();
+            assert_eq!(a.entries[0].status, "unverifiable", "{name}");
+            assert!(!a.entries[0].effective, "{name}");
+            assert_eq!(a.entries[0].reason_codes, ["fingerprint-unverifiable"]);
+            assert_eq!(a.summary.waived, 0);
+            assert_eq!(a.findings[0].fact, i.facts[0]);
+            assert_eq!(a.findings[0].waiver, State::Unknown);
+        }
+    }
+    let mut all_missing = fact("transport.streaming");
+    for name in ["model", "ir", "adapter", "revision", "capabilities"] {
+        *fingerprint_pin(&mut all_missing.fingerprint, name) = State::Unsupported;
+    }
+    let (s, i) = pair(all_missing, &policy);
+    assert_eq!(
+        audit(&s, &i, &policy, "2026-10-04T00:00:00Z", 0, None)
+            .unwrap()
+            .summary
+            .waived,
+        0
+    );
+}
+#[test]
+fn waivers_model_inapplicability_does_not_hide_required_pins() {
+    let target = target(false);
+    let policy = TargetState { profile: &target };
+    let mut model = fact("transport.streaming");
+    model.target = "model".into();
+    model.fingerprint.adapter = State::Unsupported;
+    model.fingerprint.capabilities = State::Unsupported;
+    let (s, i) = pair(model.clone(), &policy);
+    let a = audit(&s, &i, &policy, "2026-10-04T00:00:00Z", 0, None).unwrap();
+    assert_eq!(a.summary.waived, 1);
+    assert_eq!(a.findings[0].fact, model);
+    for name in ["model", "ir", "revision", "adapter", "capabilities"] {
+        for missing in [State::Unknown, State::Withheld, State::Unsupported] {
+            if matches!(missing, State::Unsupported) && matches!(name, "adapter" | "capabilities") {
+                continue;
+            }
+            let mut f = model.clone();
+            *fingerprint_pin(&mut f.fingerprint, name) = missing;
+            let (s, i) = pair(f, &policy);
+            let a = audit(&s, &i, &policy, "2026-10-04T00:00:00Z", 0, None).unwrap();
+            assert_eq!(a.entries[0].status, "unverifiable", "{name}");
+            assert_eq!(a.summary.waived, 0);
+        }
+    }
+}
 #[test]
 fn waivers_capability_requirement_comes_from_resolved_components() {
     for (serverless, accepted) in [(false, true), (true, false)] {

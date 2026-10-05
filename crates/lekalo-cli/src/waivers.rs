@@ -110,6 +110,17 @@ enum Loaded {
     Target(lekalo_core::target_profile::resolution::ResolvedProfile),
 }
 impl ProfileState for Loaded {
+    fn fingerprint_requirements(&self, f: &Fact) -> policy::FingerprintRequirements {
+        match self {
+            Self::Validation(p, d) => policy::ValidationState {
+                profile: p,
+                digest: d.clone(),
+            }
+            .fingerprint_requirements(f),
+            Self::Lint(c, id) => policy::LintState { config: c, id }.fingerprint_requirements(f),
+            Self::Target(p) => policy::TargetState { profile: p }.fingerprint_requirements(f),
+        }
+    }
     fn reference(&self) -> ProfileRef {
         match self {
             Self::Validation(p, d) => policy::ValidationState {

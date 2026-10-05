@@ -4,6 +4,37 @@ use crate::ai_lint::{input, wire::Config};
 use crate::diagnostics::{registry::DiagnosticRegistry, types::Severity};
 use crate::validator::ValidationProfile;
 
+/// Applicable provenance dimensions must be known in both the decision and fact.
+/// Inapplicability is admitted by policy, never inferred from a pin's value state.
+#[derive(Clone, Copy, Debug)]
+pub struct FingerprintRequirements {
+    pub model: bool,
+    pub ir: bool,
+    pub adapter: bool,
+    pub revision: bool,
+    pub capabilities: bool,
+}
+impl FingerprintRequirements {
+    pub fn model_only() -> Self {
+        Self {
+            model: true,
+            ir: true,
+            adapter: false,
+            revision: true,
+            capabilities: false,
+        }
+    }
+    pub fn native() -> Self {
+        Self {
+            model: true,
+            ir: true,
+            adapter: true,
+            revision: true,
+            capabilities: true,
+        }
+    }
+}
+
 /// An admitted rule's effective policy, separate from its diagnostic fact.
 #[derive(Clone, Debug)]
 pub struct RuleState {
@@ -19,6 +50,15 @@ pub struct RuleState {
 pub trait ProfileState {
     fn reference(&self) -> ProfileRef;
     fn rule(&self, selector: &Selector, fact: &Fact) -> Option<RuleState>;
+    fn fingerprint_requirements(&self, fact: &Fact) -> FingerprintRequirements {
+        // Native evidence admission forbids the reserved Model producer target.
+        // Other targets, including aggregates, cannot claim Model inapplicability.
+        if fact.target == "model" {
+            FingerprintRequirements::model_only()
+        } else {
+            FingerprintRequirements::native()
+        }
+    }
 }
 
 /// Existing validation profiles preserve their error/non-downgrade rules.

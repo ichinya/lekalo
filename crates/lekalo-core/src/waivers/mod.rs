@@ -287,16 +287,28 @@ fn scope_matches(e: &Entry, f: &Fact, i: &Input) -> bool {
         ScopeKind::Profile => i.profile_ref.id == e.scope.id,
     }
 }
-fn pin_differences(a: &Fingerprint, b: &Fingerprint) -> (Vec<String>, bool) {
+fn pin_differences(
+    a: &Fingerprint,
+    b: &Fingerprint,
+    required: policy::FingerprintRequirements,
+) -> (Vec<String>, bool) {
     let mut mismatch = Vec::new();
     let mut unknown = false;
-    for (name, a, b) in [
-        ("model", &a.model, &b.model),
-        ("ir", &a.ir, &b.ir),
-        ("adapter", &a.adapter, &b.adapter),
-        ("revision", &a.revision, &b.revision),
-        ("capabilities", &a.capabilities, &b.capabilities),
+    for (name, a, b, required) in [
+        ("model", &a.model, &b.model, required.model),
+        ("ir", &a.ir, &b.ir, required.ir),
+        ("adapter", &a.adapter, &b.adapter, required.adapter),
+        ("revision", &a.revision, &b.revision, required.revision),
+        (
+            "capabilities",
+            &a.capabilities,
+            &b.capabilities,
+            required.capabilities,
+        ),
     ] {
+        if required && (a.known().is_none() || b.known().is_none()) {
+            unknown = true;
+        }
         match (a, b) {
             (State::Known(a), State::Known(b)) if a != b => mismatch.push(name.into()),
             (State::Known(_), State::Unsupported) | (State::Unsupported, State::Known(_)) => {
@@ -400,7 +412,11 @@ pub fn audit(
             if e.condition_digest != f.condition_digest {
                 mismatch.push("condition".into());
             }
-            let (mut pins, unknown) = pin_differences(&e.fingerprint, &f.fingerprint);
+            let (mut pins, unknown) = pin_differences(
+                &e.fingerprint,
+                &f.fingerprint,
+                p.fingerprint_requirements(f),
+            );
             mismatch.append(&mut pins);
             if unknown {
                 reasons.push("fingerprint-unverifiable".into());

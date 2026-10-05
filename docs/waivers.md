@@ -86,14 +86,18 @@ unverifiable, orphan, unexamined, revoked and superseded inventory states.
 
 Acceptance requires equality of Model, IR, adapter, revision and capability
 fingerprints plus profile/condition. Known differences are stale. Unknown or
-withheld pins do not grant acceptance; two explicit `unsupported` states mean
-that dimension is inapplicable. Model-only lint uses unsupported adapter and
-capabilities and pins revision to canonical Model/IR. Native lint pins the
-admitted producer identity/artifact, source manifest and revision; a native
-capability digest must be known to grant acceptance. Git HEAD and waiver-store
+withheld pins do not grant acceptance. Two explicit `unsupported` states agree
+only when the admitted policy marks that dimension inapplicable to the producer.
+Model-only lint requires known Model, IR and revision pins, uses unsupported
+adapter and capabilities, and pins revision to canonical Model/IR. Native facts
+require all five dimensions to be known, including source revision and capability
+digest; a producer's unsupported state cannot waive that requirement. Native
+evidence admission forbids the reserved `model` target. Native lint pins the
+admitted producer identity/artifact, source manifest and revision. Git HEAD and waiver-store
 bytes are excluded from source revision to avoid self-invalidating commits.
 
-The public `waivers::policy::ProfileState` seam consumes current profile state.
+The public `waivers::policy::ProfileState` seam consumes current profile state,
+including fingerprint applicability through `fingerprint_requirements`.
 Validation profiles use `validator/profile.rs` selections and effective severity:
 errors cannot be waived. Lint profiles use configured severity/gate and required
 coverage. Target profiles use resolved component capability requirements; required

@@ -18,6 +18,70 @@ function approval(entry){const value=structuredClone(entry);delete value.approva
 function entry(facts,f,id='waiver-depth',scope={kind:'symbol',id:f.symbol.value}){return approval({id,findingId:f.id,factDigest:hash(f),selector:f.selector,scope,subject:f.subject,target:f.target,profileRef:facts.profileRef,conditionDigest:f.conditionDigest,owner:'fixture-owner',approver:'fixture-reviewer',approvalRef:{id:'decision/88/approval',subjectDigest:digest('pending')},reason:'Temporary synthetic capability risk with a tracked replacement.',createdAt:now,expiresAt:known('2026-11-01T12:00:00Z'),reviewAfter:unknown(),sourceRef:{kind:'issue',id:'ichinya/lekalo#88',digest:unknown()},acceptedRisk:'correctness',fingerprint:f.fingerprint,lifecycle:'active',supersedes:unknown()});}
 function store(facts,entries){return {schemaVersion:'lekalo/ai-lint-waivers/v0.6.5',identity:'dev.lekalo.ai-lint-waivers@0.6.5',projectId:facts.projectId,registryRef:JSON.parse(readFileSync(join(root,'tests/fixtures/ai-lint-config/golden/config.json'))).registryRef,entries};}
 function golden(f,name,v,update){check(f,v);const dir=f==='ai-lint-waivers'?'golden-v0.6.5':'golden';const path=join(root,'tests/fixtures',f,dir,name+'.json');if(update){mkdirSync(dirname(path),{recursive:true});writeFileSync(path,canonical(v)+'\n');}else assert.equal(readFileSync(path,'utf8'),canonical(v)+'\n',`fresh binary golden drift: ${path}`);}
+function nativePinCases(env, evidence) {
+ const config=structuredClone(env.policy);
+ for(const profile of config.profiles)for(const rule of profile.rules)
+  rule.enabled=profile.id!=='off'&&rule.id==='hidden.string-reference';
+ file(env,'native-pin-config.json',config);
+ const args=['ai-lint','--module','planner','--config','native-pin-config.json','--lint-profile','ci','--waiver-facts','--evidence','native-pin-evidence.json'];
+ const common=['--facts','native-pin-facts.json','--profile-kind','ai-lint','--lint-config','native-pin-config.json','--profile','ci'];
+ const produce=e=>{
+  file(env,'native-pin-evidence.json',e);
+  const raw=cli(env,[...args,'--check'],3);
+  check('waiver-input',raw.waiverInput);
+  assert.equal(raw.report.summary.raw,1);
+  assert.equal(raw.waiverInput.facts[0].target,e.target);
+  file(env,'native-pin-facts.json',raw.waiverInput);
+  return raw;
+ };
+ const add=f=>['waivers','add',f.selector.id,...common,'--id','native-pin-control','--symbol',f.symbol.value,'--subject',f.subject,'--target',f.target,'--owner','fixture-owner','--approver','fixture-reviewer','--approval-ref','decision/88/native-pin','--reason','Synthetic native provenance admission control.','--source-issue','ichinya/lekalo#88','--expires','2026-11-01T12:00:00Z'];
+ const raw=produce(evidence),facts=raw.waiverInput;
+ file(env,'lekalo.waivers.json',store(facts,[]));
+ const preview=cli(env,add(facts.facts[0]));
+ check('ai-lint-waivers',preview.candidate);
+ const applied=cli(env,[...add(facts.facts[0]),'--apply',preview.planId]);
+ assert.equal(applied.applied,true);
+ const known=cli(env,[...args,'--waivers',join(env.project,'lekalo.waivers.json'),'--as-of',now,'--check']);
+ assert.equal(known.report.summary.waived,1);
+ assert.equal(known.report.summary.active,0);
+ for(const pin of ['capabilities','revision'])for(const state of ['unsupported','unknown','withheld']){
+  const missing=structuredClone(evidence);missing.pins[pin]={state};
+  const raw=produce(missing),facts=raw.waiverInput,f=facts.facts[0];
+  assert.equal(f.fingerprint[pin].state,state);
+  file(env,'lekalo.waivers.json',store(facts,[]));
+  const before=readFileSync(join(env.project,'lekalo.waivers.json'));
+  for(const extra of [[],['--apply',preview.planId]]){
+   const rejected=cli(env,[...add(f),...extra],1);
+   assert.ok(canonical(rejected).includes('waivers-ineligible-candidate'));
+   assert.deepEqual(readFileSync(join(env.project,'lekalo.waivers.json')),before);
+  }
+  // Bind a structurally valid store to these very facts, not the old known-pin
+  // facts. This isolates applicability from ordinary stale/fact-hash refusal.
+  const matching=store(facts,[entry(facts,f,'missing-native-pin')]);
+  check('ai-lint-waivers',matching);
+  file(env,'lekalo.waivers.json',matching);
+  const audit=cli(env,['waivers','audit',...common,'--check'],3).audit;
+  check('waiver-audit',audit);
+  assert.equal(audit.entries[0].status,'unverifiable');
+  assert.equal(audit.entries[0].effective,false);
+  assert.ok(audit.entries[0].reasonCodes.includes('fingerprint-unverifiable'));
+  assert.equal(audit.summary.waived,0);
+  assert.deepEqual(audit.findings[0].fact,f);
+  assert.equal(audit.findings[0].effectiveGate,'denied');
+  const live=cli(env,[...args,'--waivers',join(env.project,'lekalo.waivers.json'),'--as-of',now,'--check'],3);
+  check('waiver-audit',live.waiverAudit);
+  assert.deepEqual(live.report.findings,raw.report.findings);
+  assert.equal(live.report.summary.waived,0);
+  assert.equal(live.report.summary.active,1);
+  assert.equal(live.waiverAudit.entries[0].status,'unverifiable');
+ }
+ // Producer admission prevents native evidence from claiming Model-only pins.
+ const disguised=structuredClone(evidence);disguised.target='model';
+ for(const row of disguised.coverage)row.target='model';
+ file(env,'native-pin-evidence.json',disguised);
+ cli(env,args,1);
+ return 7;
+}
 export function gate(family){
  assert.ok(validators.has(family));const update=process.argv.includes('--update');
  const ci=readFileSync(join(root,'.github/workflows/ci.yml'),'utf8').split('  build-test:')[1];assert.ok(ci.indexOf('node scripts/test-waivers-contracts.mjs')>ci.indexOf('cargo build --workspace --locked'));
@@ -71,6 +135,7 @@ export function gate(family){
   const e=allEvidence(env);e.pins.capabilities=known(digest('synthetic-capability-map'));const nativeArgs=[...lintArgs,'--evidence',env.file('native.json',e)],native=cli(env,nativeArgs);const nf=native.waiverInput.facts.find(f=>f.target===e.target&&f.path.state==='known');assert.ok(nf);const pathStore=store(native.waiverInput,[entry(native.waiverInput,nf,'path-waiver',{kind:'path',id:nf.path.value})]);file(env,'path-store.json',pathStore);const pathResult=cli(env,[...nativeArgs,'--waivers',join(env.project,'path-store.json'),'--as-of',now]);assert.equal(pathResult.report.summary.waived,1);if(family==='waiver-input')golden(family,'native-facts',native.waiverInput,update);
   const newer=structuredClone(e);newer.producer.version='0.6.5';const staleNative=cli(env,[...lintArgs,'--evidence',env.file('new-adapter.json',newer),'--waivers',join(env.project,'path-store.json'),'--as-of',now]);assert.equal(staleNative.waiverAudit.entries[0].status,'stale');assert.ok(staleNative.waiverAudit.entries[0].mismatchedPins.includes('adapter'));
   const newRevision=structuredClone(e);newRevision.pins.revision=known('b'.repeat(40));const changedRevision=cli(env,[...lintArgs,'--evidence',env.file('new-revision.json',newRevision),'--waivers',join(env.project,'path-store.json'),'--as-of',now]);assert.equal(changedRevision.waiverAudit.entries[0].status,'stale');assert.ok(changedRevision.waiverAudit.entries[0].mismatchedPins.includes('revision'));
+  const nativePinControls=nativePinCases(env,e);
   // Preview/write/stale plan and root-home refusal, exercised through the real CLI.
   file(env,'lekalo.waivers.json',store(facts,[]));file(env,'facts.json',facts);
   const add=['waivers','add',f.selector.id,...common,'--id','added','--symbol',f.symbol.value,'--subject',f.subject,'--target',f.target,'--owner','fixture-owner','--approver','fixture-reviewer','--approval-ref','decision/88/add','--reason','Reviewed temporary synthetic risk.','--source-issue','ichinya/lekalo#88','--expires','2026-11-01T12:00:00Z'];
@@ -80,6 +145,6 @@ export function gate(family){
   const linked=join(env.project,'hardlink.json');linkSync(join(env.project,'lekalo.waivers.json'),linked);cli(env,['waivers','list'],1);unlinkSync(linked);
   // Lock proof is a source-run prerequisite, not an implicit waiver pin in v0.3.2.
   cli(env,['lock']);const lock=digest(readFileSync(join(env.project,'lekalo.lock'),'utf8').trimEnd());const lockedFacts={...facts,lockRef:known(lock)};file(env,'lekalo.waivers.json',waivers);file(env,'facts.json',lockedFacts);const locked=cli(env,['waivers','audit',...common,'--locked']).audit;assert.equal(locked.lockRef.value,lock);lockedFacts.lockRef=known(digest('other-lock'));file(env,'facts.json',lockedFacts);cli(env,['waivers','audit',...common,'--locked'],1);
-  console.log(JSON.stringify({ok:true,family,version:'0.6.5',ajv:'8.17.1',live:true,audits:assertions}));
+  console.log(JSON.stringify({ok:true,family,version:'0.6.5',ajv:'8.17.1',live:true,audits:assertions,nativePinControls}));
  }finally{env.close();}
 }
