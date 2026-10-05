@@ -72,7 +72,9 @@ required assertions, stale candidate/oracle pins, resource-cap violations and
 hard failures cannot be hidden by the separate optional judge score.
 
 Result rows preserve failure precedence: custody-security, task regression,
-provider, infrastructure, unsupported, interruption. Missing slots appear as
+provider, infrastructure, unsupported, interruption. Admitted infrastructure
+assertion outcomes supply that class directly, without a duplicate failure
+sidecar; hard regressions retain precedence. Missing slots appear as
 `not-started`. Primary success counts use every scheduled slot; all attempts and
 their costs remain visible. Results expose marginal Wilson 95% intervals, paired
 discordant counts, attrition bounds and task/profile-scoped claims. Marginal

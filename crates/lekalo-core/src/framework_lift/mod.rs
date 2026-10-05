@@ -338,7 +338,12 @@ fn acceptance(t: &Value, a: &Value) -> (&'static str, bool, bool) {
         return ("task", false, false);
     }
     for class in ["provider", "infrastructure", "unsupported", "interrupted"] {
-        if f.iter().any(|e| e["class"] == class) {
+        if f.iter().any(|e| e["class"] == class)
+            || (class == "infrastructure"
+                && arr(a, "assertions")
+                    .iter()
+                    .any(|e| e["outcome"] == "infrastructure"))
+        {
             return (class, false, false);
         }
     }
@@ -770,5 +775,27 @@ mod tests {
         m["totalTokens"] = state(Some(maximum));
         assert_eq!(token_lower_bound(&m), maximum * 2);
         assert!(validate_token_totals(&m).is_err());
+    }
+
+    #[test]
+    fn assertion_infrastructure_preserves_custody_task_and_provider_precedence() {
+        let t: Value = serde_json::from_str(include_str!(
+            "../../../../tests/fixtures/framework-lift-task/golden/priority.json"
+        ))
+        .unwrap();
+        let mut a: Value = serde_json::from_str(include_str!(
+            "../../../../tests/fixtures/framework-lift-arm/golden/b-neutral.json"
+        ))
+        .unwrap();
+        a["assertions"][0]["outcome"] = json!("infrastructure");
+        assert_eq!(acceptance(&t, &a), ("infrastructure", false, false));
+        a["failures"] = json!([{"class":"unsupported"}]);
+        assert_eq!(acceptance(&t, &a), ("infrastructure", false, false));
+        a["failures"] = json!([{"class":"provider"}]);
+        assert_eq!(acceptance(&t, &a), ("provider", false, false));
+        a["assertions"][1]["outcome"] = json!("fail");
+        assert_eq!(acceptance(&t, &a), ("task", false, false));
+        a["failures"] = json!([{"class":"custody-security"}]);
+        assert_eq!(acceptance(&t, &a), ("custody-security", false, false));
     }
 }

@@ -98,6 +98,18 @@ try {
  const missed=structuredClone(a);missed.assertions=[];const incomplete=compare([temp('missed.json',missed)]).value;assert.equal(incomplete.rows.find(r=>r.slot.arm==='B'&&r.slot.pairId==='pair-one').verifiedSuccess,false);
  const unknownCap=read(fixture('arm','b-neutral'));unknownCap.metrics.totalTokens={state:'unknown'};unknownCap.measurementSources=unknownCap.measurementSources.filter(s=>s.metric!=='totalTokens');assert.equal(compare([temp('unknown-cap.json',unknownCap)]).value.rows.find(r=>r.slot.arm==='B'&&r.slot.pairId==='pair-two').status,'unsupported');
  const providerAndTask=structuredClone(a);providerAndTask.failures=read(fixture('arm','a-provider')).failures;assert.equal(compare([temp('provider-and-task.json',providerAndTask)]).value.rows.find(r=>r.slot.arm==='B'&&r.slot.pairId==='pair-one').status,'task');
+ // F2: an infrastructure assertion is already evidence of that failure class.
+ const infrastructureAssertion=read(fixture('arm','b-neutral'));infrastructureAssertion.assertions[0].outcome='infrastructure';
+ assert.deepEqual(infrastructureAssertion.failures,[]);record(infrastructureAssertion);
+ const infrastructureResult=compare([temp('infrastructure-assertion.json',infrastructureAssertion)]).value;
+ const infrastructureRow=infrastructureResult.rows.find(r=>r.slot.arm==='B'&&r.slot.pairId==='pair-two');
+ assert.equal(infrastructureRow.status,'infrastructure');assert.equal(infrastructureRow.verifiedSuccess,false);assert.equal(infrastructureRow.firstPassSuccess,false);assert.equal(infrastructureResult.paired.incomplete,2);
+ const hardAndInfrastructure=structuredClone(a);hardAndInfrastructure.assertions[1].outcome='infrastructure';record(hardAndInfrastructure);
+ assert.equal(compare([temp('hard-and-infrastructure.json',hardAndInfrastructure)]).value.rows.find(r=>r.slot.arm==='B'&&r.slot.pairId==='pair-one').status,'task','hard regression takes priority over verifier infrastructure');
+ for(const [failureClass,expected]of [['provider','provider'],['custody-security','custody-security'],['unsupported','infrastructure'],['interrupted','infrastructure']]){
+  const combined=structuredClone(infrastructureAssertion);combined.failures=[{stage:'verifier',class:failureClass,reason:'synthetic-failure',evidenceDigest:digest({failureClass})}];
+  assert.equal(compare([temp('infrastructure-precedence.json',combined)]).value.rows.find(r=>r.slot.arm==='B'&&r.slot.pairId==='pair-two').status,expected);
+ }
  const afterTerminal=structuredClone(a);afterTerminal.attempt=1;afterTerminal.runId='after-terminal';run(['compare',...common,'--arm',armPaths[2],'--arm',temp('after-terminal.json',afterTerminal),'--consumer-alias','consumer-greenfield-one'],{exit:1,code:'evaluation.protocol-invalid'});
  const external=read(fixture('arm','b-neutral'));external.origin='recorded-external';assert.equal(compare([temp('external.json',external)]).value.evidenceStatus,'recorded-unverified');
  const forgedTrust=structuredClone(first.value);forgedTrust.rows[0].origin.value='recorded-external';denied('result',forgedTrust,'evaluation.metric-inconsistent');
