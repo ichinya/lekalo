@@ -41,6 +41,19 @@ fn fact(id: &str) -> Fact {
         evidence_refs: vec![input::hash(&"producer")],
     }
 }
+fn model_fact(id: &str) -> Fact {
+    let mut f = fact(id);
+    f.target = "model".into();
+    f.id = crate::ai_lint::model_finding_id(&f.subject, &f.symbol);
+    f.fingerprint.revision = State::Known(input::hash(&(
+        f.fingerprint.model.known().unwrap(),
+        f.fingerprint.ir.known().unwrap(),
+    )));
+    f.fingerprint.adapter = State::Unsupported;
+    f.fingerprint.capabilities = State::Unsupported;
+    f.source_confidence = State::Known("exact".into());
+    f
+}
 fn pair(f: Fact, p: &dyn ProfileState) -> (Store, Input) {
     let i = Input {
         schema_version: format!("lekalo/waiver-input/v{VERSION}"),
@@ -147,15 +160,7 @@ fn waivers_native_applicable_pins_cannot_be_declared_unavailable() {
 fn waivers_model_inapplicability_does_not_hide_required_pins() {
     let target = target(false);
     let policy = TargetState { profile: &target };
-    let mut model = fact("transport.streaming");
-    model.target = "model".into();
-    model.id = crate::ai_lint::model_finding_id(&model.subject, &model.symbol);
-    model.fingerprint.revision = State::Known(input::hash(&(
-        model.fingerprint.model.known().unwrap(),
-        model.fingerprint.ir.known().unwrap(),
-    )));
-    model.fingerprint.adapter = State::Unsupported;
-    model.fingerprint.capabilities = State::Unsupported;
+    let model = model_fact("transport.streaming");
     let (s, i) = pair(model.clone(), &policy);
     let a = audit(&s, &i, &policy, "2026-10-04T00:00:00Z", 0, None).unwrap();
     assert_eq!(a.summary.waived, 1);
@@ -203,15 +208,7 @@ fn waivers_model_domain_cannot_be_claimed_by_relabelling_a_native_fact() {
 fn waivers_model_domain_requires_the_complete_producer_binding() {
     let target = target(false);
     let policy = TargetState { profile: &target };
-    let mut model = fact("transport.streaming");
-    model.target = "model".into();
-    model.id = crate::ai_lint::model_finding_id(&model.subject, &model.symbol);
-    model.fingerprint.revision = State::Known(input::hash(&(
-        model.fingerprint.model.known().unwrap(),
-        model.fingerprint.ir.known().unwrap(),
-    )));
-    model.fingerprint.adapter = State::Unsupported;
-    model.fingerprint.capabilities = State::Unsupported;
+    let model = model_fact("transport.streaming");
     for changed in ["id", "subject", "symbol", "revision", "adapter", "path"] {
         let mut f = model.clone();
         match changed {
@@ -246,16 +243,7 @@ fn waivers_model_lint_binding_cannot_claim_a_native_only_selector() {
         config: &config,
         id: "ci",
     };
-    let mut f = fact("unused");
-    f.target = "model".into();
-    f.id = crate::ai_lint::model_finding_id(&f.subject, &f.symbol);
-    f.fingerprint.revision = State::Known(input::hash(&(
-        f.fingerprint.model.known().unwrap(),
-        f.fingerprint.ir.known().unwrap(),
-    )));
-    f.fingerprint.adapter = State::Unsupported;
-    f.fingerprint.capabilities = State::Unsupported;
-    f.source_confidence = State::Known("high".into());
+    let mut f = model_fact("unused");
     f.selector.kind = SelectorKind::Rule;
     for (id, accepted) in [
         ("hidden.string-reference", false),
@@ -272,6 +260,140 @@ fn waivers_model_lint_binding_cannot_claim_a_native_only_selector() {
             assert_eq!(a.entries[0].reason_codes, ["fingerprint-unverifiable"]);
         }
     }
+}
+#[test]
+fn waivers_recomputed_model_identity_still_requires_the_emitted_shape() {
+    let target = target(false);
+    let policy = TargetState { profile: &target };
+    for changed in [
+        "symbol-unknown",
+        "symbol-unsupported",
+        "symbol-withheld",
+        "native-subject",
+        "unrelated-subject",
+        "module-unknown",
+        "module-unrelated",
+        "confidence-high",
+        "confidence-unknown",
+        "confidence-withheld",
+    ] {
+        let mut f = model_fact("transport.streaming");
+        match changed {
+            "symbol-unknown" => f.symbol = State::Unknown,
+            "symbol-unsupported" => f.symbol = State::Unsupported,
+            "symbol-withheld" => f.symbol = State::Withheld,
+            "native-subject" => f.subject = input::hash(&"native depth witness"),
+            "unrelated-subject" => f.subject = "planner.other".into(),
+            "module-unknown" => f.module = State::Unknown,
+            "module-unrelated" => f.module = State::Known("other".into()),
+            "confidence-high" => f.source_confidence = State::Known("high".into()),
+            "confidence-unknown" => f.source_confidence = State::Unknown,
+            "confidence-withheld" => f.source_confidence = State::Withheld,
+            _ => unreachable!(),
+        }
+        // Recompute the public identity and bind approval to the changed fact:
+        // neither an old ID, stale fact digest nor scope mismatch can mask this.
+        f.id = crate::ai_lint::model_finding_id(&f.subject, &f.symbol);
+        let (mut s, i) = pair(f, &policy);
+        s.entries[0].scope = Scope {
+            kind: ScopeKind::Project,
+            id: "planner".into(),
+        };
+        s.entries[0].approval_ref.subject_digest = approval_subject(&s.entries[0]);
+        let a = audit(&s, &i, &policy, "2026-10-04T00:00:00Z", 0, None).unwrap();
+        assert_eq!(a.entries[0].status, "unverifiable", "{changed}");
+        assert_eq!(a.entries[0].reason_codes, ["fingerprint-unverifiable"]);
+        assert_eq!(a.summary.waived, 0, "{changed}");
+        assert!(!a.entries[0].effective, "{changed}");
+        assert_eq!(a.findings[0].fact, i.facts[0]);
+    }
+}
+#[test]
+fn waivers_profile_defaults_never_opt_into_model_inapplicability() {
+    struct NativeOnly;
+    impl ProfileState for NativeOnly {
+        fn reference(&self) -> ProfileRef {
+            ProfileRef {
+                id: "native-only".into(),
+                version: "1".into(),
+                digest: input::hash(&"native-only profile"),
+            }
+        }
+        fn rule(&self, selector: &Selector, _fact: &Fact) -> Option<policy::RuleState> {
+            (selector.kind == SelectorKind::Rule && selector.id == "hidden.string-reference")
+                .then_some(policy::RuleState {
+                    enabled: true,
+                    severity: crate::diagnostics::types::Severity::Warning,
+                    required_evidence: false,
+                    blocking: true,
+                    waivable: true,
+                })
+        }
+    }
+    let p = NativeOnly;
+    let mut f = model_fact("hidden.string-reference");
+    f.selector.kind = SelectorKind::Rule;
+    f.source_outcome = "warning".into();
+    assert!(!p.producer_domain_admitted(&f));
+    let requirements = p.fingerprint_requirements(&f);
+    assert!(requirements.adapter && requirements.capabilities);
+    let (s, i) = pair(f, &p);
+    let a = audit(&s, &i, &p, "2026-10-04T00:00:00Z", 0, None).unwrap();
+    assert_eq!(a.entries[0].status, "unverifiable");
+    assert_eq!(a.summary.waived, 0);
+    assert!(a.denied);
+}
+#[test]
+fn waivers_shared_effectiveness_rechecks_model_shape_after_profile_opt_in() {
+    struct AdmitsModel;
+    impl ProfileState for AdmitsModel {
+        fn reference(&self) -> ProfileRef {
+            ProfileRef {
+                id: "admits-model".into(),
+                version: "1".into(),
+                digest: input::hash(&"admits-model profile"),
+            }
+        }
+        fn rule(&self, _selector: &Selector, _fact: &Fact) -> Option<policy::RuleState> {
+            Some(policy::RuleState {
+                enabled: true,
+                severity: crate::diagnostics::types::Severity::Warning,
+                required_evidence: false,
+                blocking: true,
+                waivable: true,
+            })
+        }
+        fn producer_domain_admitted(&self, _fact: &Fact) -> bool {
+            true
+        }
+        fn fingerprint_requirements(&self, _fact: &Fact) -> policy::FingerprintRequirements {
+            policy::FingerprintRequirements::model_only()
+        }
+    }
+    let p = AdmitsModel;
+    let mut f = model_fact(crate::ai_lint::MODEL_DEPTH_RULE);
+    f.selector.kind = SelectorKind::Rule;
+    f.source_outcome = "warning".into();
+    let (s, i) = pair(f.clone(), &p);
+    assert_eq!(
+        audit(&s, &i, &p, "2026-10-04T00:00:00Z", 0, None)
+            .unwrap()
+            .summary
+            .waived,
+        1
+    );
+    f.symbol = State::Unknown;
+    f.id = crate::ai_lint::model_finding_id(&f.subject, &f.symbol);
+    let (mut s, i) = pair(f, &p);
+    s.entries[0].scope = Scope {
+        kind: ScopeKind::Project,
+        id: "planner".into(),
+    };
+    s.entries[0].approval_ref.subject_digest = approval_subject(&s.entries[0]);
+    let a = audit(&s, &i, &p, "2026-10-04T00:00:00Z", 0, None).unwrap();
+    assert_eq!(a.entries[0].status, "unverifiable");
+    assert_eq!(a.summary.waived, 0);
+    assert!(a.denied);
 }
 #[test]
 fn waivers_capability_requirement_comes_from_resolved_components() {

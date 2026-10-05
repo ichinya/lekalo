@@ -45,15 +45,26 @@ pub struct RuleState {
     pub waivable: bool,
 }
 
-fn admitted_producer_domain(fact: &Fact) -> bool {
+/// Check the reserved core producer's emitted shape, not just a caller's hash.
+/// Native depth uses the same rule but binds an unknown symbol and an opaque
+/// subject; core Model depth binds its known dependency-witness symbol.
+pub(crate) fn admitted_producer_domain(fact: &Fact) -> bool {
     if fact.target != "model" {
         return true;
     }
-    let (Some(model), Some(ir)) = (fact.fingerprint.model.known(), fact.fingerprint.ir.known())
-    else {
+    let (Some(model), Some(ir), Some(symbol), Some(module)) = (
+        fact.fingerprint.model.known(),
+        fact.fingerprint.ir.known(),
+        fact.symbol.known(),
+        fact.module.known(),
+    ) else {
         return false;
     };
-    fact.id == crate::ai_lint::model_finding_id(&fact.subject, &fact.symbol)
+    (2..=3).any(|n| super::semantic_id(symbol, n))
+        && fact.subject == *symbol
+        && symbol.split('.').next() == Some(module.as_str())
+        && fact.source_confidence.known().is_some_and(|c| c == "exact")
+        && fact.id == crate::ai_lint::model_finding_id(&fact.subject, &fact.symbol)
         && fact.fingerprint.revision.known() == Some(&input::hash(&(model, ir)))
         && fact.fingerprint.adapter == State::Unsupported
         && fact.fingerprint.capabilities == State::Unsupported
@@ -65,13 +76,16 @@ fn admitted_producer_domain(fact: &Fact) -> bool {
 pub trait ProfileState {
     fn reference(&self) -> ProfileRef;
     fn rule(&self, selector: &Selector, fact: &Fact) -> Option<RuleState>;
-    /// Establish reserved producer claims from bound identity and provenance.
-    /// A supplied target label alone cannot admit Model-only applicability.
+    /// Owners must explicitly admit reserved Model claims over their producer
+    /// state. Inheriting the default cannot relax native provenance requirements.
     fn producer_domain_admitted(&self, fact: &Fact) -> bool {
-        admitted_producer_domain(fact)
+        fact.target != "model"
     }
     fn fingerprint_requirements(&self, fact: &Fact) -> FingerprintRequirements {
-        if fact.target == "model" && self.producer_domain_admitted(fact) {
+        if fact.target == "model"
+            && admitted_producer_domain(fact)
+            && self.producer_domain_admitted(fact)
+        {
             FingerprintRequirements::model_only()
         } else {
             FingerprintRequirements::native()
@@ -85,6 +99,12 @@ pub struct ValidationState<'a> {
     pub digest: String,
 }
 impl ProfileState for ValidationState<'_> {
+    fn producer_domain_admitted(&self, fact: &Fact) -> bool {
+        // Validation rules may consume a core Model occurrence, retaining its
+        // source identity/shape while resolved validation policy owns severity.
+        admitted_producer_domain(fact)
+            && (fact.target != "model" || fact.selector.kind == SelectorKind::Rule)
+    }
     fn reference(&self) -> ProfileRef {
         ProfileRef {
             id: self.profile.profile_id().into(),
@@ -174,6 +194,12 @@ pub struct TargetState<'a> {
     pub profile: &'a crate::target_profile::resolution::ResolvedProfile,
 }
 impl ProfileState for TargetState<'_> {
+    fn producer_domain_admitted(&self, fact: &Fact) -> bool {
+        // A derived gap retains the admitted core Model source occurrence.
+        // Its capability selector never establishes that source domain alone.
+        admitted_producer_domain(fact)
+            && (fact.target != "model" || fact.selector.kind == SelectorKind::Capability)
+    }
     fn reference(&self) -> ProfileRef {
         ProfileRef {
             id: self.profile.id.clone(),

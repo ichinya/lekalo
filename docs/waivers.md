@@ -91,8 +91,12 @@ only when the admitted policy marks that dimension inapplicable to the producer.
 Model-only lint requires known Model, IR and revision pins, uses unsupported
 adapter and capabilities, and pins revision to canonical Model/IR. Its reserved
 `model` claim must match the core Model producer's target-bound finding identity,
-canonical revision and path/pin states. Lint selectors must also belong to that
-producer recipe; derived capability facts retain their Model source identity.
+canonical revision and emitted shape: a known semantic symbol, the same
+dependency-witness subject, its known owning module and exact source confidence,
+with unknown path and unsupported adapter/capabilities. Recomputing a hash for
+an unknown symbol or opaque native-witness subject does not establish that
+producer domain. Lint selectors must also belong to that producer recipe;
+derived capability facts retain their Model source identity and emitted shape.
 A relabelled native fact is `unverifiable` (`fingerprint-unverifiable`) in audit
 and refuses add preview/apply, including when all its native pins are known.
 These checks apply to pre-existing stored decisions as well as new candidates.
@@ -105,6 +109,11 @@ bytes are excluded from source revision to avoid self-invalidating commits.
 The public `waivers::policy::ProfileState` seam consumes current profile state,
 including producer-domain admission through `producer_domain_admitted` and
 fingerprint applicability through `fingerprint_requirements`.
+The trait default refuses reserved Model-domain claims and keeps native pins
+required. Owners must explicitly admit Model producers; the shared matcher
+independently rechecks the reserved producer's emitted shape even after such
+an opt-in. The existing lint, validation and target owners explicitly consume
+the recognized Model occurrence or its derived rule/capability obligation.
 Validation profiles use `validator/profile.rs` selections and effective severity:
 errors cannot be waived. Lint profiles use configured severity/gate and required
 coverage. Target profiles use resolved component capability requirements; required

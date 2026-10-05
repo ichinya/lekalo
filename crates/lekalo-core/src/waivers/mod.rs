@@ -418,7 +418,7 @@ pub fn audit(
                 p.fingerprint_requirements(f),
             );
             mismatch.append(&mut pins);
-            if unknown || !p.producer_domain_admitted(f) {
+            if unknown || !policy::admitted_producer_domain(f) || !p.producer_domain_admitted(f) {
                 reasons.push("fingerprint-unverifiable".into());
             }
         }
