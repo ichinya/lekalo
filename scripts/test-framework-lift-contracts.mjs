@@ -34,6 +34,27 @@ try {
   const unknown=structuredClone(value);unknown.rawPrompt='private';assert.equal(schemas.get(family)(unknown),false);denied(family,unknown);
  }
  for(const name of ['a-provider','a-retry','b-neutral']){const value=read(fixture('arm',name));assert.ok(schemas.get('arm')(value));assert.deepEqual(run(['validate','--family','arm','--input',join(root,fixture('arm',name))]).value,value);}
+ // F3: pass raw numeric lexemes to the binary; JSON.stringify would erase them.
+ for(const [family,name,key,integer]of [['baseline','approved','revision',1],['task','priority','taskVersion',1],['campaign','scheduled','randomizationSeed',1],['arm','b-neutral','attempt',0],['result','negative','attempt',0]]){
+  const raw=readFileSync(join(root,fixture(family,name)),'utf8'),expected=JSON.parse(raw),needle=`"${key}":${integer}`;
+  const original=run(['validate','--family',family,'--input',join(root,fixture(family,name))]);
+  for(const lexeme of [`${integer}.0`,`${integer}e0`,`${integer}E+0`,integer===0?'0.00e-2':'100e-2']){
+   const encoded=raw.replace(needle,`"${key}":${lexeme}`);assert.notEqual(encoded,raw);assert.ok(schemas.get(family)(JSON.parse(encoded)),`Ajv admits ${family} ${lexeme}`);
+   const live=run(['validate','--family',family,'--input',temp('integer-lexeme.json',encoded)]);assert.deepEqual(live.value,expected);assert.equal(live.bytes,original.bytes,'exact CLI bytes agree with integral spelling');assert.equal(digest(live.value),digest(expected));
+  }
+  for(const lexeme of ['1.5','-1.0','9007199254740992.0','1e309']){
+   const encoded=raw.replace(needle,`"${key}":${lexeme}`);assert.equal(schemas.get(family)(JSON.parse(encoded)),false);denied(family,encoded);
+  }
+  for(const lexeme of ['NaN','Infinity','01.0','1.','1e','1e+','1.000000000000000000001'])denied(family,raw.replace(needle,`"${key}":${lexeme}`));
+ }
+ const taskBytes=readFileSync(join(root,task),'utf8');
+ for(const lexeme of ['9007199254740991.0','9007199254740991e0','90071992547409910e-1']){
+  const encoded=taskBytes.replace('"taskVersion":1',`"taskVersion":${lexeme}`),expected=JSON.parse(encoded);assert.ok(schemas.get('task')(expected));
+  const integral=run(['validate','--family','task','--input',temp('maximum-integral.json',expected)]);
+  assert.equal(run(['validate','--family','task','--input',temp('maximum-integer.json',encoded)]).bytes,integral.bytes);
+ }
+ const signedBytes=readFileSync(join(root,fixture('result','negative')),'utf8').replace('"numerator":-100','"numerator":-1.00e2');
+ assert.deepEqual(run(['validate','--family','result','--input',temp('signed-integer.json',signedBytes)]).value,read(fixture('result','negative')));
  const provenance=read('tests/fixtures/fixture-provenance.json');for(const family of families)assert.ok(provenance.families.some(f=>f.family===`framework-lift-${family}`&&f.origin==='synthetic'));
  const registry=read('contracts/diagnostic-registry.v0.6.4.json'),predecessor=read('tests/fixtures/framework-lift-baseline/registry-predecessor.json');
  assert.equal(registry.entries.length,506);assert.equal(predecessor.entries,500);assert.equal(digest(registry.entries.filter(e=>!e.id.startsWith('evaluation.'))),predecessor.digest,'all predecessor entries unchanged');

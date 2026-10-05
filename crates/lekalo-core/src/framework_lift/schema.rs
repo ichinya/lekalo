@@ -30,10 +30,9 @@ impl<'de> Deserialize<'de> for Unique {
             fn visit_u64<E: de::Error>(self, v: u64) -> Result<Unique, E> {
                 Ok(Unique(v.into()))
             }
-            fn visit_f64<E: de::Error>(self, v: f64) -> Result<Unique, E> {
-                serde_json::Number::from_f64(v)
-                    .map(|n| Unique(n.into()))
-                    .ok_or_else(|| E::custom("number"))
+            fn visit_f64<E: de::Error>(self, _: f64) -> Result<Unique, E> {
+                // All literal numbers must have been normalized exactly first.
+                Err(E::custom("integer"))
             }
             fn visit_str<E: de::Error>(self, v: &str) -> Result<Unique, E> {
                 Ok(Unique(v.into()))
@@ -67,9 +66,118 @@ impl<'de> Deserialize<'de> for Unique {
     }
 }
 pub fn decode(bytes: &[u8]) -> Result<Value, ()> {
-    serde_json::from_slice::<Unique>(bytes)
+    serde_json::from_slice::<Unique>(&normalize_integers(bytes)?)
         .map(|v| v.0)
         .map_err(|_| ())
+}
+// These five families only admit bounded integer numbers. Normalize their raw
+// decimal/exponent spellings before serde can round a fraction to an integer.
+// Strings are copied verbatim; serde still owns structure and duplicate keys.
+fn normalize_integers(bytes: &[u8]) -> Result<Vec<u8>, ()> {
+    if bytes.len() > super::MAX_BYTES {
+        return Err(());
+    }
+    let mut out = Vec::with_capacity(bytes.len());
+    let (mut quoted, mut escaped, mut i) = (false, false, 0);
+    while i < bytes.len() {
+        let b = bytes[i];
+        if quoted {
+            out.push(b);
+            if escaped {
+                escaped = false;
+            } else if b == b'\\' {
+                escaped = true;
+            } else if b == b'"' {
+                quoted = false;
+            }
+            i += 1;
+        } else if b == b'"' {
+            quoted = true;
+            out.push(b);
+            i += 1;
+        } else if b == b'-' || b.is_ascii_digit() {
+            let start = i;
+            while i < bytes.len() && (bytes[i].is_ascii_digit() || b".eE+-".contains(&bytes[i])) {
+                i += 1;
+            }
+            out.extend_from_slice(integer_literal(&bytes[start..i])?.to_string().as_bytes());
+        } else {
+            out.push(b);
+            i += 1;
+        }
+        if out.len() > super::MAX_BYTES {
+            return Err(());
+        }
+    }
+    Ok(out)
+}
+fn integer_literal(raw: &[u8]) -> Result<i64, ()> {
+    const MAXIMUM: u64 = 9_007_199_254_740_991;
+    let negative = raw.first() == Some(&b'-');
+    let raw = if negative { &raw[1..] } else { raw };
+    let (mantissa, exponent) = match raw.iter().position(|b| b"eE".contains(b)) {
+        Some(i) => {
+            let exp = &raw[i + 1..];
+            let minus = exp.first() == Some(&b'-');
+            let digits = if matches!(exp.first(), Some(b'-' | b'+')) {
+                &exp[1..]
+            } else {
+                exp
+            };
+            if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
+                return Err(());
+            }
+            // Saturation is safe: a nonzero bounded input cannot compensate an
+            // exponent this large. Zero is handled after grammar validation.
+            let exp = digits.iter().fold(0i64, |n, b| {
+                n.saturating_mul(10).saturating_add((b - b'0') as i64)
+            });
+            (&raw[..i], if minus { -exp } else { exp })
+        }
+        None => (raw, 0),
+    };
+    let (integer, fraction) = match mantissa.iter().position(|b| *b == b'.') {
+        Some(i) => {
+            let fraction = &mantissa[i + 1..];
+            if fraction.is_empty() || !fraction.iter().all(u8::is_ascii_digit) {
+                return Err(());
+            }
+            (&mantissa[..i], fraction)
+        }
+        None => (mantissa, &[][..]),
+    };
+    if integer.is_empty()
+        || !integer.iter().all(u8::is_ascii_digit)
+        || (integer.len() > 1 && integer[0] == b'0')
+    {
+        return Err(());
+    }
+    let mut digits = integer.to_vec();
+    digits.extend_from_slice(fraction);
+    let Some(first) = digits.iter().position(|b| *b != b'0') else {
+        return Ok(0);
+    };
+    let last = digits.iter().rposition(|b| *b != b'0').unwrap();
+    let shift = exponent
+        .saturating_sub(fraction.len() as i64)
+        .saturating_add((digits.len() - last - 1) as i64);
+    if !(0..=16).contains(&shift) || (last - first + 1) as i64 + shift > 16 {
+        return Err(());
+    }
+    let mut magnitude = digits[first..=last]
+        .iter()
+        .fold(0u64, |n, b| n * 10 + (b - b'0') as u64);
+    for _ in 0..shift {
+        magnitude *= 10;
+    }
+    if magnitude > MAXIMUM {
+        return Err(());
+    }
+    Ok(if negative {
+        -(magnitude as i64)
+    } else {
+        magnitude as i64
+    })
 }
 fn schema(family: &str) -> Result<Value, ()> {
     let bytes = match family {
@@ -225,4 +333,86 @@ fn check(root: &Value, s: &Value, v: &Value, depth: usize) -> Result<(), ()> {
         _ => return Err(()),
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn signed_integral_lexemes_round_trip_through_the_exact_decoder() {
+        for n in -12_800..=12_800i64 {
+            for literal in [
+                format!("{n}.0"),
+                format!("{n}e0"),
+                format!("{}e-2", n * 100),
+            ] {
+                assert_eq!(decode(literal.as_bytes()), Ok(json!(n)), "{literal}");
+            }
+        }
+    }
+
+    #[test]
+    fn safe_integer_endpoints_and_zero_canonicalize_without_float_rounding() {
+        for literal in [
+            "9007199254740991.0",
+            "9007199254740991e0",
+            "90071992547409910e-1",
+            "9007199254740991000e-3",
+        ] {
+            assert_eq!(
+                decode(literal.as_bytes()),
+                Ok(json!(9_007_199_254_740_991u64))
+            );
+        }
+        for literal in [
+            "-0.0",
+            "0e999999999999999999999999",
+            "0e-999999999999999999999999",
+        ] {
+            assert_eq!(decode(literal.as_bytes()), Ok(json!(0)));
+        }
+    }
+
+    #[test]
+    fn fractions_nonfinite_oversized_and_malformed_literals_are_never_repaired() {
+        for literal in [
+            "1.5",
+            "1.000000000000000000001",
+            "9007199254740991.1",
+            "1e-999",
+            "1e309",
+            "9007199254740992.0",
+            "-9007199254740992e0",
+            "01.0",
+            "1.",
+            "1e",
+            "1e+",
+            "NaN",
+            "Infinity",
+            "1+2",
+            "--1",
+            "+1",
+        ] {
+            assert!(decode(literal.as_bytes()).is_err(), "{literal}");
+        }
+    }
+
+    #[test]
+    fn normalization_preserves_strings_and_duplicate_key_and_structure_refusals() {
+        let encoded = br#"{"s":"1.0 -2e4 \"9007199254740992\" \\1.5","n":1.0}"#;
+        assert_eq!(
+            decode(encoded),
+            Ok(json!({"s":"1.0 -2e4 \"9007199254740992\" \\1.5","n":1}))
+        );
+        for encoded in [
+            &br#"{"n":1.0,"\u006e":1e0}"#[..],
+            &br#"{"n":1e0}[]"#[..],
+            &br#"{"n":1e0,}"#[..],
+            &br#"{"s":"unterminated 1.0}"#[..],
+        ] {
+            assert!(decode(encoded).is_err());
+        }
+    }
 }

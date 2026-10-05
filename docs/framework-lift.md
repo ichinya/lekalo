@@ -25,6 +25,12 @@ baseline/task/campaign and verifies listed baseline file bytes; `record-arm` adm
 candidate record against those pins; `compare` derives every scheduled slot and
 retains all supplied attempts, including missing slots.
 
+Integral decimal/exponent number spellings canonicalize to bounded integers
+before approval and reference digests are checked. Fractional, non-finite and
+oversized literals refuse without floating-point rounding; signed counts remain
+subject to each field's existing bounds. Strings and duplicate-key checks are
+preserved.
+
 Lift and attrition bounds use exact signed numerator/denominator ratios in
 percentage points. Wilson endpoints use conservative integer parts per million
 (lower rounded down, upper rounded up), so receipt JSON has no floating-point
