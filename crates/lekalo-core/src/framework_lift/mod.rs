@@ -150,7 +150,8 @@ fn token_lower_bound(m: &Value) -> u64 {
             .unwrap_or(0)
             .max(known(&m["reasoningTokens"]).unwrap_or(0))
 }
-fn validate_token_totals(m: &Value) -> Result<(), Failure> {
+// One token normalizer authority for arm admission and imported result rows.
+fn validate_token_consistency(m: &Value) -> Result<(), Failure> {
     if let Some(total) = known(&m["totalTokens"]) {
         if total < token_lower_bound(m)
             || matches!(
@@ -159,6 +160,16 @@ fn validate_token_totals(m: &Value) -> Result<(), Failure> {
             )
         {
             return Err(("evaluation.metric-inconsistent", "token-total"));
+        }
+    }
+    for (part, parent) in [
+        ("cachedInputTokens", "inputTokens"),
+        ("reasoningTokens", "outputTokens"),
+    ] {
+        if let (Some(part), Some(parent)) = (known(&m[part]), known(&m[parent])) {
+            if part > parent {
+                return Err(("evaluation.metric-inconsistent", "subset-count"));
+            }
         }
     }
     Ok(())
@@ -213,10 +224,8 @@ fn validate_arm_shape(a: &Value) -> Result<(), Failure> {
         }
     }
     let m = &a["metrics"];
-    validate_token_totals(m)?;
+    validate_token_consistency(m)?;
     for (part, total) in [
-        ("cachedInputTokens", "inputTokens"),
-        ("reasoningTokens", "outputTokens"),
         ("includedFacts", "candidateFacts"),
         ("includedRequiredFacts", "requiredFacts"),
         ("unrelatedFiles", "filesChanged"),
@@ -396,7 +405,7 @@ fn validate_result(r: &Value) -> Result<(), Failure> {
     let mut attempts = std::collections::BTreeMap::<(&str, &str), Vec<&Value>>::new();
     let mut external = false;
     for row in arr(r, "rows") {
-        validate_token_totals(&row["metrics"])?;
+        validate_token_consistency(&row["metrics"])?;
         if !keys.insert((
             s(&row["slot"], "pairId"),
             s(&row["slot"], "arm"),
@@ -756,14 +765,14 @@ mod tests {
         m["outputTokens"] = state(Some(6_000));
         assert_eq!(token_lower_bound(&m), 12_000);
         m["totalTokens"] = state(Some(12_000));
-        assert_eq!(validate_token_totals(&m), Ok(()));
+        assert_eq!(validate_token_consistency(&m), Ok(()));
         m["totalTokens"] = state(Some(12_001));
         assert_eq!(
-            validate_token_totals(&m),
+            validate_token_consistency(&m),
             Err(("evaluation.metric-inconsistent", "token-total"))
         );
         m["totalTokens"] = json!({"state":"unsupported"});
-        assert_eq!(validate_token_totals(&m), Ok(()));
+        assert_eq!(validate_token_consistency(&m), Ok(()));
     }
 
     #[test]
@@ -774,7 +783,58 @@ mod tests {
         m["outputTokens"] = state(Some(maximum));
         m["totalTokens"] = state(Some(maximum));
         assert_eq!(token_lower_bound(&m), maximum * 2);
-        assert!(validate_token_totals(&m).is_err());
+        assert!(validate_token_consistency(&m).is_err());
+    }
+
+    #[test]
+    fn known_token_subsets_cannot_exceed_known_parents_even_with_unavailable_totals() {
+        for (part, parent, opposite, parent_count) in [
+            ("cachedInputTokens", "inputTokens", "outputTokens", 40),
+            ("reasoningTokens", "outputTokens", "inputTokens", 10),
+        ] {
+            let mut m = schema::unknown_metrics();
+            m[parent] = state(Some(parent_count));
+            m[part] = state(Some(parent_count + 1));
+            m[opposite] = state(None);
+            for total in [
+                state(Some(50)),
+                state(None),
+                json!({"state":"unsupported"}),
+                json!({"state":"withheld"}),
+            ] {
+                m["totalTokens"] = total;
+                assert_eq!(
+                    validate_token_consistency(&m),
+                    Err(("evaluation.metric-inconsistent", "subset-count"))
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn token_subsets_admit_equal_counts_and_unavailable_parents_or_parts() {
+        for (part, parent, count) in [
+            ("cachedInputTokens", "inputTokens", 40),
+            ("reasoningTokens", "outputTokens", 10),
+        ] {
+            let mut m = schema::unknown_metrics();
+            m["totalTokens"] = state(Some(50));
+            m[parent] = state(Some(count));
+            m[part] = state(Some(count));
+            assert_eq!(validate_token_consistency(&m), Ok(()));
+            for unavailable in [
+                state(None),
+                json!({"state":"unsupported"}),
+                json!({"state":"withheld"}),
+            ] {
+                m[parent] = state(Some(count));
+                m[part] = unavailable.clone();
+                assert_eq!(validate_token_consistency(&m), Ok(()));
+                m[parent] = unavailable;
+                m[part] = state(Some(count));
+                assert_eq!(validate_token_consistency(&m), Ok(()));
+            }
+        }
     }
 
     #[test]

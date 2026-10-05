@@ -99,6 +99,39 @@ try {
  const subsets=structuredClone(tokenArm);subsets.metrics.reasoningTokens={state:'known',value:5};subsets.measurementSources.push({...subsets.measurementSources[0],metric:'reasoningTokens'});
  assert.equal(compare([temp('token-subsets.json',subsets)]).value.rows.find(r=>r.slot.arm==='B'&&r.slot.pairId==='pair-two').verifiedSuccess,true,'cache and reasoning are not charged twice');
  const forgedTokens=read(fixture('result','negative'));forgedTokens.rows[0].metrics.totalTokens.value=0;denied('result',forgedTokens,'evaluation.metric-inconsistent');
+ // R2: known token subsets must fit their known parents in arms and imported rows.
+ const setTokenMetric=(value,key,measurement)=>{
+  value.metrics[key]=structuredClone(measurement);value.measurementSources=value.measurementSources.filter(s=>s.metric!==key);
+  if(measurement.state==='known')value.measurementSources.push({...tokenArm.measurementSources[0],metric:key});
+ };
+ const subsetParity=(value,refuse=false)=>{
+  assert.ok(schemas.get('arm')(value),'subset vector is schema-shaped');
+  const imported=read(fixture('result','negative'));const target=r=>r.rows.find(row=>row.slot.arm==='B'&&row.slot.pairId==='pair-two');
+  target(imported).metrics=structuredClone(value.metrics);assert.equal(target(imported).verifiedSuccess,true);assert.equal(target(imported).firstPassSuccess,true);
+  assert.ok(schemas.get('result')(imported),'imported subset vector is schema-shaped');
+  const armPath=temp('subset-arm.json',value),resultPath=temp('subset-result.json',imported);
+  for(const [kind,args]of [
+   ['result',['validate','--family','result','--input',resultPath]],
+   ['arm',['validate','--family','arm','--input',armPath]],
+   ['arm',['record-arm',...common,'--input',armPath]],
+   ['result',['compare',...common,'--arm',armPath,'--consumer-alias','consumer-greenfield-one']]
+  ]){
+   const live=run(args,refuse?{exit:1,code:'evaluation.metric-inconsistent'}:{});
+   if(refuse)assert.ok(live.value.diagnostics.some(d=>d.id==='evaluation.metric-inconsistent'&&d.data.detail==='subset-count'),'same subset refusal on every admission path');
+   else {
+    const observed=kind==='arm'?live.value:target(live.value);assert.deepEqual(observed.metrics,value.metrics,'unavailable token states are preserved');
+    if(kind==='result'){assert.equal(observed.status,'success');assert.equal(observed.verifiedSuccess,true);assert.equal(observed.firstPassSuccess,true);}
+   }
+  }
+ };
+ for(const [part,parent,opposite,inverted]of [['cachedInputTokens','inputTokens','outputTokens',41],['reasoningTokens','outputTokens','inputTokens',11]]){
+  const invalid=structuredClone(tokenArm);setTokenMetric(invalid,opposite,{state:'unknown'});setTokenMetric(invalid,part,{state:'known',value:inverted});subsetParity(invalid,true);
+  const equal=structuredClone(tokenArm);setTokenMetric(equal,part,{state:'known',value:equal.metrics[parent].value});subsetParity(equal);
+  for(const unavailable of ['unknown','unsupported','withheld']){
+   const missingSubset=structuredClone(tokenArm);setTokenMetric(missingSubset,part,{state:unavailable});subsetParity(missingSubset);
+   const missingParent=structuredClone(tokenArm);setTokenMetric(missingParent,parent,{state:unavailable});setTokenMetric(missingParent,part,{state:'known',value:part==='cachedInputTokens'?20:5});subsetParity(missingParent);
+  }
+ }
  const string=structuredClone(a);string.failures=[{stage:'provider',class:'provider',reason:'https://private.example',evidenceDigest:'sha256:'+'0'.repeat(64)}];denied('arm',string);
  const unpaired=structuredClone(c);unpaired.slots[0].arm='B';const {approval,...content}=unpaired;unpaired.approval.contentDigest=digest(content);denied('campaign',unpaired);
  const privateBase=structuredClone(b);privateBase.pilot='brownfield-observed';const {approval:bp,...bc}=privateBase;privateBase.approval.contentDigest=digest(bc);
