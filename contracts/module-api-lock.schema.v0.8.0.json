@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lekalo.dev/contracts/module-api-lock.schema.v0.8.0.json",
+  "title": "Module API consumer lock 0.8.0",
+  "description": "Consumer resolutions of one public module API (issue #113): the selected public digest, optional independent API SemVer, exact transitive public dependency pins, the declared range policy, and the selected public IDs. Independent of the adapter `lekalo.lock` contract.",
+  "$ref": "#/$defs/lock",
+  "$defs": {
+    "lock": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": { "const": "lekalo/module-api-lock/v0.8.0" },
+        "identity": { "const": "dev.lekalo.module-api-lock@0.8.0" },
+        "consumer": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "producer": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "project": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 192,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+            },
+            "module": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 192,
+              "pattern": "^[a-z][a-z0-9-]*$"
+            }
+          },
+          "required": ["project", "module"]
+        },
+        "apiVersion": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+              "maxLength": 32
+            }
+          ]
+        },
+        "digest": { "$ref": "#/$defs/digest" },
+        "policy": { "$ref": "#/$defs/policy" },
+        "publicDependencies": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/dependencyPin" },
+          "maxItems": 256
+        },
+        "selected": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 192,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]*$"
+          },
+          "minItems": 1,
+          "maxItems": 4096,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "identity",
+        "consumer",
+        "producer",
+        "apiVersion",
+        "digest",
+        "policy",
+        "publicDependencies",
+        "selected"
+      ]
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "policy": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "exact-digest" },
+            "digest": { "$ref": "#/$defs/digest" }
+          },
+          "required": ["type", "digest"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "exact-version" },
+            "version": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+              "maxLength": 32
+            }
+          },
+          "required": ["type", "version"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "version-range" },
+            "lower": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+              "maxLength": 32
+            },
+            "lowerInclusive": { "type": "boolean" },
+            "upper": {
+              "oneOf": [
+                { "type": "null" },
+                {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+                  "maxLength": 32
+                }
+              ]
+            },
+            "upperInclusive": { "type": "boolean" }
+          },
+          "required": ["type", "lower", "lowerInclusive", "upper", "upperInclusive"]
+        }
+      ]
+    },
+    "dependencyPin": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "moduleId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "digest": { "$ref": "#/$defs/digest" },
+        "apiVersion": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+              "maxLength": 32
+            }
+          ]
+        }
+      },
+      "required": ["moduleId", "digest", "apiVersion"]
+    }
+  }
+}

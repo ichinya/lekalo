@@ -1,0 +1,377 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lekalo.dev/contracts/module-api.schema.v0.8.0.json",
+  "title": "Module API attachment 0.8.0",
+  "description": "Closed source attachment (issue #113): explicit export allowlists, consumer declarations, shared-aggregate grants, ports, capabilities, and deprecation windows keyed by exact semantic module ID. Project visibility alone never creates an export; every wire member is closed and bounded.",
+  "$ref": "#/$defs/attachment",
+  "$defs": {
+    "attachment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": { "const": "lekalo/module-api/v0.8.0" },
+        "identity": { "const": "dev.lekalo.module-api@0.8.0" },
+        "project": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+        },
+        "modules": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/modulePolicy" },
+          "maxItems": 2000
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "identity",
+        "project",
+        "modules"
+      ]
+    },
+    "modulePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "moduleId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "apiVersion": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+              "maxLength": 32
+            }
+          ]
+        },
+        "exports": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/exportEntry" },
+          "maxItems": 4096
+        },
+        "imports": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/importPolicy" },
+          "maxItems": 256
+        },
+        "consumers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/consumerDeclaration" },
+          "maxItems": 4096
+        },
+        "ports": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/port" },
+          "maxItems": 256
+        },
+        "capabilities": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/capability" },
+          "maxItems": 256
+        },
+        "grants": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/grant" },
+          "maxItems": 256
+        },
+        "deprecations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/deprecation" },
+          "maxItems": 1024
+        }
+      },
+      "required": ["moduleId", "apiVersion", "exports"]
+    },
+    "semanticId": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 192,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]*$"
+    },
+    "exportEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "export": { "$ref": "#/$defs/semanticId" },
+        "kind": {
+          "enum": [
+            "scalar",
+            "enum",
+            "value-object",
+            "entity",
+            "command",
+            "query",
+            "policy",
+            "event",
+            "effect",
+            "endpoint",
+            "error"
+          ]
+        },
+        "since": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+              "maxLength": 32
+            }
+          ]
+        },
+        "aliasOf": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/semanticId" }
+          ]
+        }
+      },
+      "required": ["export", "kind", "since", "aliasOf"]
+    },
+    "importPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "moduleId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "uses": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/semanticId" },
+          "maxItems": 4096,
+          "uniqueItems": true
+        }
+      },
+      "required": ["moduleId", "uses"]
+    },
+    "consumerDeclaration": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "consumer": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "uses": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/semanticId" },
+          "minItems": 1,
+          "maxItems": 4096,
+          "uniqueItems": true
+        },
+        "mode": { "enum": ["source", "wire"] },
+        "policy": { "$ref": "#/$defs/versionPolicy" }
+      },
+      "required": ["consumer", "uses", "mode", "policy"]
+    },
+    "versionPolicy": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "exact-digest" },
+            "digest": { "$ref": "#/$defs/digest" }
+          },
+          "required": ["type", "digest"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "exact-version" },
+            "version": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+              "maxLength": 32
+            }
+          },
+          "required": ["type", "version"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "version-range" },
+            "lower": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+              "maxLength": 32
+            },
+            "lowerInclusive": { "type": "boolean" },
+            "upper": {
+              "oneOf": [
+                { "type": "null" },
+                {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+                  "maxLength": 32
+                }
+              ]
+            },
+            "upperInclusive": { "type": "boolean" }
+          },
+          "required": ["type", "lower", "lowerInclusive", "upper", "upperInclusive"]
+        }
+      ]
+    },
+    "port": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "port": { "$ref": "#/$defs/semanticId" },
+        "operations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/semanticId" },
+          "minItems": 1,
+          "maxItems": 4096,
+          "uniqueItems": true
+        }
+      },
+      "required": ["port", "operations"]
+    },
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "capability": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9._-]*$"
+        },
+        "obligation": { "enum": ["required", "optional"] },
+        "owner": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 192,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+            }
+          ]
+        },
+        "version": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "string",
+              "maxLength": 32,
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+            }
+          ]
+        }
+      },
+      "required": ["capability", "obligation", "owner", "version"]
+    },
+    "grant": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "grant": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "consumer": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "aggregate": { "$ref": "#/$defs/semanticId" },
+        "operations": {
+          "type": "array",
+          "items": { "enum": ["create", "update", "delete"] },
+          "minItems": 1,
+          "maxItems": 3,
+          "uniqueItems": true
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              { "const": "*" },
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 192,
+                "pattern": "^[a-z][a-z0-9_]*$"
+              }
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true
+        },
+        "invariant": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      },
+      "required": [
+        "grant",
+        "consumer",
+        "aggregate",
+        "operations",
+        "fields",
+        "rationale"
+      ]
+    },
+    "deprecation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "export": { "$ref": "#/$defs/semanticId" },
+        "introducedIn": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+          "maxLength": 32
+        },
+        "removedIn": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+              "maxLength": 32
+            }
+          ]
+        },
+        "replacement": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/semanticId" }
+          ]
+        },
+        "hint": {
+          "type": "string",
+          "maxLength": 512
+        }
+      },
+      "required": ["export", "introducedIn", "removedIn", "replacement", "hint"]
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  }
+}
