@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "productVersion": "0.6.5",
+  "productVersion": "0.8.0",
   "cliSourceDigest": "sha256:181e7cef1d85b55aa87f8984546ea4a9ee294082b60a6c4f4dbeb8667f05f6e3",
   "p0Pages": [
     {
@@ -2006,6 +2006,24 @@
       "source": "contracts/adapter-manifest.schema.v0.6.4.json",
       "sourceDigest": "sha256:11bf3333146a4023fa0ddd7903ea308e69cc1d96a431290939bd48cf7f3f6daf",
       "owner": "docs/adapter-manifest.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/adapter-sdk-compatibility.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/adapter-sdk-compatibility.schema.v0.8.0.json",
+      "sourceDigest": "sha256:f841dd9e0f5db465887af5198935eedd0858580986677df2e5629450b4120af5",
+      "owner": "docs/adapter-sdk.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/adapter-sdk-generation.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/adapter-sdk-generation.schema.v0.8.0.json",
+      "sourceDigest": "sha256:db46e0883e303a848d87fb472f5c9721e620ba2114db2b0c23dbb56f91bde00b",
+      "owner": "docs/adapter-sdk.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
