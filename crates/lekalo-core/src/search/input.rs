@@ -1,0 +1,368 @@
+//! The closed `search-inputs` manifest (issue #93): the project-scoped,
+//! caller-validated list of typed producer inputs an index build or an
+//! explicit cold query admits.
+//!
+//! Only explicitly supported typed producers are legal: requirements
+//! attachments/resolved reports, neutral trace manifests, observed
+//! binding indexes, detected-effect evidence envelopes, extended-effect
+//! error contracts, and waivers. A generic arbitrary JSON row is never
+//! searchable evidence. The manifest carries relative project paths plus
+//! exact contract identity and digest expectations; it never selects a
+//! cache home and never widens an authority boundary.
+
+use serde::{Deserialize, Serialize};
+
+use crate::diagnostics::normalize::build;
+use crate::diagnostics::types::{bound_token, token_value, DataObject};
+use crate::diagnostics::DiagnosticSet;
+use crate::result::Status;
+
+use super::version::{
+    is_sha256, INPUTS_IDENTITY, INPUTS_SCHEMA_VERSION, MAX_PATH_BYTES, MAX_POSTINGS,
+};
+
+/// The registered rule reused for a malformed manifest or producer.
+pub(crate) const INPUT_INVALID: &str = "search.input-invalid";
+/// The registered rule reused for an unsupported contract version.
+pub(crate) const VERSION_UNSUPPORTED: &str = "search.version-unsupported";
+
+/// Finalize one registered diagnostic; a registry failure collapses to
+/// the registry-invariant set (double developer fault).
+pub(crate) fn one(
+    id: &str,
+    symbol: Option<String>,
+    data: DataObject,
+) -> Result<crate::diagnostics::Diagnostic, crate::diagnostics::normalize::BuildError> {
+    build(id, symbol, None, data)
+}
+
+pub(crate) fn invalid_set(diagnostics: Vec<crate::diagnostics::Diagnostic>) -> DiagnosticSet {
+    DiagnosticSet::try_from_unsorted(diagnostics, Status::Invalid)
+        .unwrap_or_else(|_| crate::result::singleton_set("diagnostics.registry-invalid"))
+}
+
+/// The bounded echo a diagnostic carries for a failed producer.
+pub(crate) fn producer_detail(detail: &str) -> DiagnosticSet {
+    let mut data = DataObject::new();
+    data.insert("detail".to_owned(), token_value(detail));
+    match one(INPUT_INVALID, None, data) {
+        Ok(diagnostic) => invalid_set(vec![diagnostic]),
+        Err(_) => crate::result::singleton_set("diagnostics.registry-invalid"),
+    }
+}
+
+/// The closed typed producer kinds this issue admits.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ProducerKind {
+    /// The neutral trace manifest (`lekalo/trace-manifest/v0.2.16`).
+    Trace,
+    /// The observed binding index (`lekalo/observed-index/v0.4.0`).
+    ObservedIndex,
+    /// The detected-effect evidence envelope (`lekalo/extended-effects/v0.4.0`).
+    Effects,
+    /// The AI-lint waiver set (`lekalo/ai-lint-waivers/v0.6.5`).
+    Waivers,
+}
+
+impl ProducerKind {
+    /// The closed kinds in canonical byte order.
+    pub const KEYS: [Self; 4] = [
+        Self::Effects,
+        Self::ObservedIndex,
+        Self::Trace,
+        Self::Waivers,
+    ];
+
+    /// The exact wire spelling.
+    pub const fn key(self) -> &'static str {
+        match self {
+            Self::Trace => "trace",
+            Self::ObservedIndex => "observed-index",
+            Self::Effects => "effects",
+            Self::Waivers => "waivers",
+        }
+    }
+
+    /// Registry lookup by exact key.
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::KEYS.iter().copied().find(|kind| kind.key() == text)
+    }
+
+    /// The exact contract identity the producer must carry.
+    pub const fn identity(self) -> &'static str {
+        match self {
+            Self::Trace => "dev.lekalo.trace-manifest@0.2.16",
+            Self::ObservedIndex => "dev.lekalo.observed-index@0.4.0",
+            Self::Effects => "dev.lekalo.extended-effects@0.4.0",
+            Self::Waivers => "dev.lekalo.ai-lint-waivers@0.6.5",
+        }
+    }
+}
+
+/// One admitted producer input: kind, relative path, and the exact
+/// identity/digest expectations (when pinned).
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InputEntry {
+    /// The closed producer kind.
+    pub kind: ProducerKind,
+    /// The project-relative path of the saved producer document.
+    pub path: String,
+    /// The exact contract identity the document must carry (when pinned).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity: Option<String>,
+    /// The exact `sha256:<hex>` of the document bytes (when pinned).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub digest: Option<String>,
+}
+
+impl InputEntry {
+    fn validate(&self) -> Result<(), DiagnosticSet> {
+        if self.path.is_empty() || self.path.len() > MAX_PATH_BYTES {
+            return Err(producer_detail("path-bounds"));
+        }
+        if self.path.starts_with('/')
+            || self.path.starts_with('\\')
+            || self.path.split(['/', '\\']).any(|part| part == "..")
+        {
+            // Traversal and absolute paths are refused, never rewritten.
+            return Err(producer_detail("path-traversal"));
+        }
+        if let Some(identity) = &self.identity {
+            if identity != self.kind.identity() {
+                return Err(
+                    match one(VERSION_UNSUPPORTED, None, {
+                        let mut data = DataObject::new();
+                        data.insert("detail".to_owned(), token_value("identity-pin"));
+                        data.insert("contract".to_owned(), token_value(&bound_token(identity)));
+                        data
+                    }) {
+                        Ok(diagnostic) => invalid_set(vec![diagnostic]),
+                        Err(_) => crate::result::singleton_set("diagnostics.registry-invalid"),
+                    },
+                );
+            }
+        }
+        if let Some(digest) = &self.digest {
+            if !is_sha256(digest) {
+                return Err(producer_detail("digest-grammar"));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// The parsed, validated input manifest.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SearchInputs {
+    identity: String,
+    project_id: String,
+    entries: Vec<InputEntry>,
+    max_postings: usize,
+}
+
+impl SearchInputs {
+    /// Parse manifest bytes (exact UTF-8 JSON) into the validated typed
+    /// manifest, or return the terminal rejection set.
+    pub fn parse(bytes: &[u8]) -> Result<Self, DiagnosticSet> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Wire {
+            #[serde(rename = "schemaVersion")]
+            schema_version: String,
+            identity: String,
+            #[serde(rename = "projectId")]
+            project_id: String,
+            inputs: Vec<WireEntry>,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            limits: Option<WireLimits>,
+        }
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct WireEntry {
+            kind: String,
+            path: String,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            identity: Option<String>,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            digest: Option<String>,
+        }
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct WireLimits {
+            #[serde(
+                rename = "maxPostings",
+                default,
+                skip_serializing_if = "Option::is_none"
+            )]
+            max_postings: Option<u64>,
+        }
+        // Duplicate JSON keys are rejected before decoding.
+        let text = std::str::from_utf8(bytes).map_err(|_| producer_detail("invalid-encoding"))?;
+        crate::search::wire::reject_duplicate_keys(text)
+            .map_err(|_| producer_detail("duplicate-key"))?;
+        let wire: Wire = serde_json::from_str(text).map_err(|_| producer_detail("malformed"))?;
+        if wire.schema_version != INPUTS_SCHEMA_VERSION {
+            return Err(version_failure("inputs-schema"));
+        }
+        if wire.identity != INPUTS_IDENTITY {
+            return Err(version_failure("inputs-identity"));
+        }
+        if wire.project_id.is_empty() || wire.project_id.len() > 192 {
+            return Err(producer_detail("project-id-bounds"));
+        }
+        if wire.inputs.len() > 64 {
+            return Err(producer_detail("input-count"));
+        }
+        let mut entries: Vec<InputEntry> = Vec::with_capacity(wire.inputs.len());
+        let mut seen: Vec<(ProducerKind, String)> = Vec::new();
+        for input in wire.inputs {
+            let kind = ProducerKind::parse(&input.kind)
+                .ok_or_else(|| producer_detail("producer-unknown"))?;
+            let entry = InputEntry {
+                kind,
+                path: input.path,
+                identity: input.identity,
+                digest: input.digest,
+            };
+            entry.validate()?;
+            let key = (kind, entry.path.clone());
+            if seen.contains(&key) {
+                return Err(producer_detail("duplicate-input"));
+            }
+            seen.push(key);
+            entries.push(entry);
+        }
+        let max_postings = wire
+            .limits
+            .and_then(|limits| limits.max_postings)
+            .unwrap_or(MAX_POSTINGS as u64);
+        if max_postings == 0 || max_postings > MAX_POSTINGS as u64 {
+            return Err(producer_detail("limit-bounds"));
+        }
+        entries.sort_by(|left, right| {
+            (left.kind.key(), left.path.as_bytes()).cmp(&(right.kind.key(), right.path.as_bytes()))
+        });
+        Ok(Self {
+            identity: wire.identity,
+            project_id: wire.project_id,
+            entries,
+            max_postings: max_postings as usize,
+        })
+    }
+
+    /// The manifest contract identity.
+    pub fn identity(&self) -> &str {
+        &self.identity
+    }
+
+    /// The project the manifest is scoped to.
+    pub fn project_id(&self) -> &str {
+        &self.project_id
+    }
+
+    /// The validated, canonically sorted entries.
+    pub fn entries(&self) -> &[InputEntry] {
+        &self.entries
+    }
+
+    /// The posting cap the manifest selected (bounded).
+    pub fn max_postings(&self) -> usize {
+        self.max_postings
+    }
+
+    /// The canonical manifest bytes of this parsed manifest: compact,
+    /// byte-sorted keys, sorted entries, no trailing LF.
+    pub fn canonical_bytes(&self) -> String {
+        let mut json = String::from("{\"identity\":");
+        json.push_str(&serde_json::to_string(&self.identity).expect("identity serializes"));
+        json.push_str(",\"inputs\":[");
+        for (index, entry) in self.entries.iter().enumerate() {
+            if index > 0 {
+                json.push(',');
+            }
+            json.push_str("{\"digest\":");
+            json.push_str(&match &entry.digest {
+                Some(digest) => serde_json::to_string(digest).expect("digest serializes"),
+                None => "null".to_owned(),
+            });
+            json.push_str(",\"identity\":");
+            json.push_str(&match &entry.identity {
+                Some(identity) => serde_json::to_string(identity).expect("identity serializes"),
+                None => "null".to_owned(),
+            });
+            json.push_str(",\"kind\":");
+            json.push_str(&serde_json::to_string(entry.kind.key()).expect("kind serializes"));
+            json.push_str(",\"path\":");
+            json.push_str(&serde_json::to_string(&entry.path).expect("path serializes"));
+            json.push('}');
+        }
+        json.push_str("],\"limits\":{\"maxPostings\":");
+        json.push_str(&self.max_postings.to_string());
+        json.push_str("},\"projectId\":");
+        json.push_str(&serde_json::to_string(&self.project_id).expect("project serializes"));
+        json.push_str(",\"schemaVersion\":");
+        json.push_str(&serde_json::to_string(INPUTS_SCHEMA_VERSION).expect("const serializes"));
+        json.push('}');
+        json
+    }
+}
+
+/// The `search.version-unsupported` invalid failure for an unsupported
+/// embedded contract spelling.
+pub(crate) fn version_failure(detail: &'static str) -> DiagnosticSet {
+    let mut data = DataObject::new();
+    data.insert("detail".to_owned(), token_value(detail));
+    match one(VERSION_UNSUPPORTED, None, data) {
+        Ok(diagnostic) => invalid_set(vec![diagnostic]),
+        Err(_) => crate::result::singleton_set("diagnostics.registry-invalid"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_and_canonicalizes_the_closed_manifest() {
+        let text = r#"{
+            "schemaVersion": "lekalo/search-inputs/v0.8.0",
+            "identity": "dev.lekalo.search-inputs@0.8.0",
+            "projectId": "planner",
+            "inputs": [
+                {"kind": "trace", "path": ".ai-factory/traces/plan.json"},
+                {"kind": "effects", "path": "evidence/effects.json",
+                 "identity": "dev.lekalo.extended-effects@0.4.0",
+                 "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"}
+            ]
+        }"#;
+        let manifest = SearchInputs::parse(text.as_bytes()).expect("parses");
+        assert_eq!(manifest.entries().len(), 2);
+        assert_eq!(manifest.entries()[0].kind.key(), "effects");
+        let canonical = manifest.canonical_bytes();
+        assert_eq!(
+            SearchInputs::parse(canonical.as_bytes()).expect("reparses"),
+            manifest
+        );
+    }
+
+    #[test]
+    fn rejects_traversal_duplicates_and_unknown_kinds() {
+        let ok = |body: &str| {
+            format!(
+                r#"{{"schemaVersion":"lekalo/search-inputs/v0.8.0","identity":"dev.lekalo.search-inputs@0.8.0","projectId":"planner","inputs":[{body}]}}"#
+            )
+        };
+        assert!(
+            SearchInputs::parse(ok(r#"{"kind":"trace","path":"../escape"}"#).as_bytes()).is_err()
+        );
+        assert!(SearchInputs::parse(ok(r#"{"kind":"trace","path":"/abs"}"#).as_bytes()).is_err());
+        assert!(SearchInputs::parse(ok(r#"{"kind":"who","path":"x"}"#).as_bytes()).is_err());
+        let duplicated_inputs = r#"{"schemaVersion":"lekalo/search-inputs/v0.8.0","identity":"dev.lekalo.search-inputs@0.8.0","projectId":"planner","inputs":[{"kind":"trace","path":"a"},{"kind":"trace","path":"a"}]}"#;
+        assert!(SearchInputs::parse(duplicated_inputs.as_bytes()).is_err());
+        // Duplicate JSON keys are rejected before decoding.
+        let duplicated = r#"{"schemaVersion":"lekalo/search-inputs/v0.8.0","schemaVersion":"lekalo/search-inputs/v0.8.0","identity":"dev.lekalo.search-inputs@0.8.0","projectId":"planner","inputs":[]}"#;
+        assert!(SearchInputs::parse(duplicated.as_bytes()).is_err());
+    }
+}

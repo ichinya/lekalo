@@ -53,6 +53,7 @@ pub mod result;
 pub mod run_history;
 pub mod scenario;
 pub mod scenario_evidence;
+pub mod search;
 pub mod storage_engine;
 pub mod storage_engine_profile;
 pub mod storage_introspection;
