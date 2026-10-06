@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://dev.lekalo/refactor-plan.schema.v0.8.0.json",
   "title": "Lekalo adoption refactor plan (v0.8.0)",
-  "description": "Issue #136 scoped brownfield adoption, selective refactoring, and hybrid mode. Closed Draft 2020-12 contract at the 0.8.0 product generation; the exact discriminator is lekalo/adoption-{family}/v0.8.0 and the schema identity is dev.lekalo.adoption-{family}@0.8.0. The exact, revision-bound selective refactor plan for one selected scope: every recommendation names its reason, files, risk, verification obligations, and uncertainty across the contract/API/effect/policy/test/binding discrepancy classes; unsupported transformations stay advice. The plan binds the optional candidate patch digest, the read and mutation scopes, the preservation obligations, and the rollback inventory. A plan without a concrete patch is non-applicable advice and cannot apply.",
+  "description": "Issue #136 scoped brownfield adoption, selective refactoring, and hybrid mode. Closed Draft 2020-12 contract at the 0.8.0 product generation; the exact discriminator is lekalo/adoption-{family}/v0.8.0 and the schema identity is dev.lekalo.adoption-{family}@0.8.0. The exact, revision-bound selective refactor plan for one selected scope: every recommendation names its reason, files, risk, verification obligations, and uncertainty across the contract/API/effect/policy/test/binding discrepancy classes; unsupported transformations stay advice. The plan binds the optional candidate patch digest, the pinned verification specification digest, the read and mutation scopes, the preservation obligations, and the rollback inventory. A plan without a concrete patch is non-applicable advice and cannot apply.",
   "type": "object",
   "additionalProperties": false,
   "unevaluatedProperties": false,
@@ -14,6 +14,7 @@
     "analysis",
     "selection",
     "patch",
+    "verification",
     "recommendations",
     "unsupported",
     "read_scope",
@@ -42,6 +43,20 @@
       "$ref": "#/$defs/scope"
     },
     "patch": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "oneOf": [
+        {
+          "$ref": "#/$defs/sha256"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "verification": {
       "type": [
         "string",
         "null"
@@ -202,10 +217,20 @@
       "pattern": "^[a-z][a-z0-9_]{0,62}$"
     },
     "relPath": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 1024,
-      "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+      "allOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^[a-z0-9.][a-z0-9._-]*(/[a-z0-9.][a-z0-9._-]*)*$"
+        },
+        {
+          "not": {
+            "type": "string",
+            "pattern": "(^|/)\\.\\.?(/|$)"
+          }
+        }
+      ]
     },
     "nativeId": {
       "type": "string",
@@ -404,10 +429,20 @@
             ],
             "properties": {
               "path": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 1024,
-                "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+                "allOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024,
+                    "pattern": "^[a-z0-9.][a-z0-9._-]*(/[a-z0-9.][a-z0-9._-]*)*$"
+                  },
+                  {
+                    "not": {
+                      "type": "string",
+                      "pattern": "(^|/)\\.\\.?(/|$)"
+                    }
+                  }
+                ]
               },
               "sha256": {
                 "type": "string",
@@ -430,10 +465,20 @@
         ],
         "properties": {
           "path": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 1024,
-            "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+            "allOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024,
+                "pattern": "^[a-z0-9.][a-z0-9._-]*(/[a-z0-9.][a-z0-9._-]*)*$"
+              },
+              {
+                "not": {
+                  "type": "string",
+                  "pattern": "(^|/)\\.\\.?(/|$)"
+                }
+              }
+            ]
           },
           "sha256": {
             "type": "string",
@@ -454,10 +499,20 @@
       ],
       "properties": {
         "path": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 1024,
-          "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+          "allOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^[a-z0-9.][a-z0-9._-]*(/[a-z0-9.][a-z0-9._-]*)*$"
+            },
+            {
+              "not": {
+                "type": "string",
+                "pattern": "(^|/)\\.\\.?(/|$)"
+              }
+            }
+          ]
         },
         "action": {
           "enum": [
@@ -497,16 +552,36 @@
       ],
       "properties": {
         "journal": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 1024,
-          "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+          "allOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^[a-z0-9.][a-z0-9._-]*(/[a-z0-9.][a-z0-9._-]*)*$"
+            },
+            {
+              "not": {
+                "type": "string",
+                "pattern": "(^|/)\\.\\.?(/|$)"
+              }
+            }
+          ]
         },
         "snapshots": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 1024,
-          "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+          "allOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^[a-z0-9.][a-z0-9._-]*(/[a-z0-9.][a-z0-9._-]*)*$"
+            },
+            {
+              "not": {
+                "type": "string",
+                "pattern": "(^|/)\\.\\.?(/|$)"
+              }
+            }
+          ]
         }
       }
     },

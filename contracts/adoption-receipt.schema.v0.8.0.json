@@ -135,10 +135,20 @@
       "pattern": "^[a-z][a-z0-9_]{0,62}$"
     },
     "relPath": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 1024,
-      "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+      "allOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^[a-z0-9.][a-z0-9._-]*(/[a-z0-9.][a-z0-9._-]*)*$"
+        },
+        {
+          "not": {
+            "type": "string",
+            "pattern": "(^|/)\\.\\.?(/|$)"
+          }
+        }
+      ]
     },
     "nativeId": {
       "type": "string",
@@ -337,10 +347,20 @@
             ],
             "properties": {
               "path": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 1024,
-                "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+                "allOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024,
+                    "pattern": "^[a-z0-9.][a-z0-9._-]*(/[a-z0-9.][a-z0-9._-]*)*$"
+                  },
+                  {
+                    "not": {
+                      "type": "string",
+                      "pattern": "(^|/)\\.\\.?(/|$)"
+                    }
+                  }
+                ]
               },
               "sha256": {
                 "type": "string",
@@ -363,10 +383,20 @@
         ],
         "properties": {
           "path": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 1024,
-            "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+            "allOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024,
+                "pattern": "^[a-z0-9.][a-z0-9._-]*(/[a-z0-9.][a-z0-9._-]*)*$"
+              },
+              {
+                "not": {
+                  "type": "string",
+                  "pattern": "(^|/)\\.\\.?(/|$)"
+                }
+              }
+            ]
           },
           "sha256": {
             "type": "string",
@@ -387,10 +417,20 @@
       ],
       "properties": {
         "path": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 1024,
-          "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+          "allOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^[a-z0-9.][a-z0-9._-]*(/[a-z0-9.][a-z0-9._-]*)*$"
+            },
+            {
+              "not": {
+                "type": "string",
+                "pattern": "(^|/)\\.\\.?(/|$)"
+              }
+            }
+          ]
         },
         "action": {
           "enum": [
@@ -430,16 +470,36 @@
       ],
       "properties": {
         "journal": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 1024,
-          "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+          "allOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^[a-z0-9.][a-z0-9._-]*(/[a-z0-9.][a-z0-9._-]*)*$"
+            },
+            {
+              "not": {
+                "type": "string",
+                "pattern": "(^|/)\\.\\.?(/|$)"
+              }
+            }
+          ]
         },
         "snapshots": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 1024,
-          "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+          "allOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^[a-z0-9.][a-z0-9._-]*(/[a-z0-9.][a-z0-9._-]*)*$"
+            },
+            {
+              "not": {
+                "type": "string",
+                "pattern": "(^|/)\\.\\.?(/|$)"
+              }
+            }
+          ]
         }
       }
     },
