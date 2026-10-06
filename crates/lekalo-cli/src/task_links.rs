@@ -110,25 +110,26 @@ fn check_profile(profile: &str) -> Result<(), DomainResult> {
     Ok(())
 }
 
-/// One minimal target/component profile document: id plus digest pin.
-#[derive(Clone, Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct TargetProfile {
-    /// The profile id.
-    #[serde(rename = "profileId")]
-    profile_id: String,
-}
-
 fn profile_ref(path: &str) -> Result<tl::portability::ProfileRef, DomainResult> {
     let bytes = read_bounded(path)?;
     let digest = format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes));
-    let profile: TargetProfile =
+    // The profile document is a closed single-member object: unknown
+    // members and shape drift fail closed before any row is built.
+    let value: serde_json::Value =
         serde_json::from_slice(&bytes).map_err(|_| invalid("profile-shape"))?;
-    if profile.profile_id.is_empty() || profile.profile_id.len() > 256 {
+    let object = value.as_object().ok_or_else(|| invalid("profile-shape"))?;
+    if object.len() != 1 || !object.contains_key("profileId") {
+        return Err(invalid("profile-shape"));
+    }
+    let profile_id = object
+        .get("profileId")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| invalid("profile-shape"))?;
+    if profile_id.is_empty() || profile_id.len() > 256 {
         return Err(invalid("profile-shape"));
     }
     Ok(tl::portability::ProfileRef {
-        profile_id: profile.profile_id,
+        profile_id: profile_id.to_owned(),
         digest,
     })
 }

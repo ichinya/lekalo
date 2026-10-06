@@ -1,0 +1,16 @@
+{
+  "scenarioId": "tasklinks.scenario.retry_echo_crash",
+  "issueVerbatim": "retry does not create loop/duplicate;",
+  "origin": "mock",
+  "steps": [
+    { "command": "tasklinks.dispatch_outbox", "providerOutcome": "accepted", "note": "acceptance before acknowledgement" },
+    { "note": "simulated crash inside the lease window" },
+    { "command": "tasklinks.dispatch_outbox", "note": "retry with the same key; reconcile or report unknown" },
+    { "command": "tasklinks.ingest_event", "causation": "own-intent", "note": "echo of our own outbound write" }
+  ],
+  "expects": [
+    { "kind": "retry-keeps-key", "value": true },
+    { "kind": "no-new-intent-on-echo", "value": true },
+    { "kind": "unknown-delivery-or-reconcile", "value": true }
+  ]
+}

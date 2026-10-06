@@ -1,0 +1,14 @@
+{
+  "scenarioId": "tasklinks.scenario.attributed_inbound",
+  "issueVerbatim": "inbound events aggregate with attribution;",
+  "origin": "mock",
+  "steps": [
+    { "command": "tasklinks.ingest_event", "actor": "provider.event", "eventIdentity": "evt-a-1", "revision": "r7", "allowedFields": ["title", "state"] },
+    { "command": "tasklinks.ingest_event", "actor": "provider.event", "eventIdentity": "evt-a-1", "revision": "r7", "note": "duplicate" },
+    { "command": "tasklinks.ingest_event", "actor": "provider.event", "eventIdentity": "evt-b-1", "revision": "2026-10-06T00:00:07Z" }
+  ],
+  "expects": [
+    { "kind": "dedup", "value": true, "note": "duplicate events do not repeat effects" },
+    { "kind": "attribution-keys", "value": ["provider", "installation", "event-identity", "revision"] }
+  ]
+}

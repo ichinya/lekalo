@@ -9,11 +9,6 @@
       "origin": "synthetic"
     },
     {
-      "family": "architecture-profile",
-      "origin": "synthetic",
-      "note": "Issue #84: authored architecture policy, resolution, scope, lock, diff, baseline and adoption goldens over the synthetic context-budget planner. No native runtime or AI task outcome claims."
-    },
-    {
       "family": "adapter-manifest",
       "origin": "synthetic"
     },
@@ -59,6 +54,11 @@
       "family": "ai-workspace",
       "origin": "synthetic",
       "note": "issue #37 ai-workspace integration: the reviewed routing-manifest example and the change-event envelope example are exclusively synthetic, authored in-repo from public contract identities and neutral role aliases; no private checkout content"
+    },
+    {
+      "family": "architecture-profile",
+      "origin": "synthetic",
+      "note": "Issue #84: authored architecture policy, resolution, scope, lock, diff, baseline and adoption goldens over the synthetic context-budget planner. No native runtime or AI task outcome claims."
     },
     {
       "family": "artifacts",
@@ -334,6 +334,11 @@
     {
       "family": "target-protocol",
       "origin": "synthetic"
+    },
+    {
+      "family": "task-external-links",
+      "origin": "synthetic",
+      "note": "Issue #52 multi-provider TaskExternalLink pilot: authored synthetic planner/tasklinks model, integration attachment, mock provider snapshots, scenario docs and evidence; the GitHub-Issues provider row is public-contract metadata with a reviewed upstream pin and synthetic fixtures only. No consumer application name, repository URL, token, or private payload."
     },
     {
       "family": "trace",

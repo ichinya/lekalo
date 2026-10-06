@@ -75,6 +75,7 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-client-sdk-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-extended-effects-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-invariant-transition-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-task-links-contracts.mjs --schema-only
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-reference-evaluation-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-storage-projection-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-storage-engine-profile-contracts.mjs
@@ -347,6 +348,17 @@ jobs:
         run: |
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-provider-contracts.mjs
+      - name: Run the task-links pilot gates (issue #52)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-task-links-contracts.mjs
+          node scripts/test-task-links-scenarios.mjs
+          node scripts/test-task-links-outbox.mjs
+          node scripts/test-task-links-impact-portability.mjs
+          node scripts/test-task-links-native.mjs
+          node scripts/test-task-links-public-evidence.mjs
       - name: Run the privacy evaluator parity gate (issue #119)
         run: node scripts/test-privacy-evaluator-parity.mjs
       - name: Run the privacy runtime CLI gate (issue #119)

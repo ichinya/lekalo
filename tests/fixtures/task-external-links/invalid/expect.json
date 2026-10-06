@@ -1,0 +1,83 @@
+{
+  "comment": "Diagnostic trigger matrix for the LEK-TASKLINK family. Each entry names the mutated attachment, the exact registered rule, and the command/polarity that must reach the rule. Controls are the unmutated contracts/integration.json and evidence/mock-run.json.",
+  "pairs": [
+    {
+      "rule": "tasklink.relation-identity-invalid",
+      "code": "LEK-TASKLINK-001",
+      "trigger": "invalid/relation-cardinality.json",
+      "command": "validate",
+      "detailTag": "relation-cardinality"
+    },
+    {
+      "rule": "tasklink.relation-identity-invalid",
+      "code": "LEK-TASKLINK-001",
+      "trigger": "invalid/relation-field-missing.json",
+      "command": "validate",
+      "detailTag": "relation-field-missing"
+    },
+    {
+      "rule": "tasklink.relation-identity-invalid",
+      "code": "LEK-TASKLINK-001",
+      "trigger": "invalid/constraint-field-missing.json",
+      "command": "validate",
+      "detailTag": "constraint-field-missing"
+    },
+    {
+      "rule": "tasklink.relation-identity-invalid",
+      "code": "LEK-TASKLINK-001",
+      "trigger": "invalid/identity-member-missing.json",
+      "command": "validate",
+      "detailTag": "identity-member-missing"
+    },
+    {
+      "rule": "tasklink.decision-incomplete",
+      "code": "LEK-TASKLINK-002",
+      "trigger": "invalid/decision-incomplete.json",
+      "command": "validate",
+      "detailTag": "policy-ref-unresolved"
+    },
+    {
+      "rule": "tasklink.fanout-not-admitted",
+      "code": "LEK-TASKLINK-003",
+      "trigger": "invalid/fanout-not-admitted.json",
+      "command": "validate",
+      "detailTag": "binding-effect-unresolved"
+    },
+    {
+      "rule": "tasklink.delivery-contract-invalid",
+      "code": "LEK-TASKLINK-004",
+      "trigger": "invalid/delivery-contract-invalid.json",
+      "command": "validate",
+      "detailTag": "retry-guarantee-missing"
+    },
+    {
+      "rule": "tasklink.conflict-resolution-invalid",
+      "code": "LEK-TASKLINK-005",
+      "trigger": "invalid/conflict-resolution-invalid.json",
+      "command": "validate",
+      "detailTag": "resolution-transition-invalid"
+    },
+    {
+      "rule": "tasklink.history-or-ownership-violation",
+      "code": "LEK-TASKLINK-006",
+      "trigger": "invalid/history-ownership-violation.json",
+      "command": "validate",
+      "detailTag": "protected-planning-field"
+    },
+    {
+      "rule": "tasklink.required-guarantee-unsupported",
+      "code": "LEK-TASKLINK-007",
+      "trigger": "invalid/required-guarantee-unsupported.json",
+      "command": "portability-strict",
+      "control": "portability-permissive",
+      "detailTag": "required-guarantee-unknown"
+    },
+    {
+      "rule": "tasklink.evidence-invalid",
+      "code": "LEK-TASKLINK-008",
+      "trigger": "invalid/evidence-stale.json",
+      "command": "inspect",
+      "detailTag": "evidence-stale-pin"
+    }
+  ]
+}

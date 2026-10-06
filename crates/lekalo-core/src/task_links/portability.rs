@@ -134,40 +134,44 @@ pub fn report(
     let revision = attachment.attachment_revision().as_str().to_owned();
     let project_id = attachment.project_id().to_owned();
     let ir_digest = attachment.ir_digest().as_str().to_owned();
+    // Declared core facts are pinned to the contract family identity,
+    // not to the input revision: a provider-only change never moves a
+    // core semantics row.
+    let family_pin = super::version::IDENTITY.to_owned();
     let core_semantics = vec![
         Row {
             fact: "external-identity-exact-tuple",
             requirement: Requirement::Required,
             provided: Provided::Supported,
-            pin: revision.clone(),
+            pin: family_pin.clone(),
             evidence_source: EvidenceSource::AttachmentDeclaration,
         },
         Row {
             fact: "task-links-0-n",
             requirement: Requirement::Required,
             provided: Provided::Supported,
-            pin: revision.clone(),
+            pin: family_pin.clone(),
             evidence_source: EvidenceSource::AttachmentDeclaration,
         },
         Row {
             fact: "detach-preserves-history",
             requirement: Requirement::Required,
             provided: Provided::Supported,
-            pin: revision.clone(),
+            pin: family_pin.clone(),
             evidence_source: EvidenceSource::AttachmentDeclaration,
         },
         Row {
             fact: "actor-and-field-policy",
             requirement: Requirement::Required,
             provided: Provided::Supported,
-            pin: revision.clone(),
+            pin: family_pin.clone(),
             evidence_source: EvidenceSource::AttachmentDeclaration,
         },
         Row {
             fact: "version-conflict-detection",
             requirement: Requirement::Required,
             provided: Provided::Supported,
-            pin: revision.clone(),
+            pin: ir_digest.clone(),
             evidence_source: EvidenceSource::MockEvidence,
         },
         Row {

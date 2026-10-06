@@ -1,0 +1,15 @@
+{
+  "scenarioId": "tasklinks.scenario.stale_conflict",
+  "issueVerbatim": "stale/conflicting update;",
+  "origin": "mock",
+  "steps": [
+    { "command": "tasklinks.ingest_event", "revision": "zz-unrelated", "note": "incomparable with cursor r7", "expectOutcome": "conflict" },
+    { "command": "tasklinks.resolve_conflict", "expectedLinkVersion": "stale", "expectOutcome": "stale-refusal" },
+    { "command": "tasklinks.resolve_conflict", "expectedLinkVersion": "fresh", "resolution": "accept_remote", "expectOutcome": "applied", "audit": true }
+  ],
+  "expects": [
+    { "kind": "cursor-unchanged-on-conflict", "value": "r7" },
+    { "kind": "stale-refusal", "note": "stale resolver cannot overwrite" },
+    { "kind": "audit-event", "note": "fresh explicit resolution records audit and permitted effects" }
+  ]
+}

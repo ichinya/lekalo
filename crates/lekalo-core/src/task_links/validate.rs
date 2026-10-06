@@ -164,7 +164,8 @@ pub fn validate(
     check_relations(attachment, &entities, &mut findings);
     check_unique_constraints(attachment, &entities, &mut findings);
     check_decisions(attachment, &model_policies, &mut findings);
-    check_bindings(attachment, &mut findings);
+    let effects = ir_effects(compilation);
+    check_bindings(attachment, &effects, &mut findings);
     check_delivery(attachment, &mut findings);
     findings.sort();
     findings.dedup();
@@ -449,7 +450,11 @@ fn check_decisions(
     }
 }
 
-fn check_bindings(attachment: &Attachment, findings: &mut Vec<Finding>) {
+fn check_bindings(
+    attachment: &Attachment,
+    ir_effects: &BTreeMap<String, (String, String)>,
+    findings: &mut Vec<Finding>,
+) {
     let capabilities: BTreeSet<&str> = attachment
         .capability_requirements()
         .iter()
@@ -475,8 +480,25 @@ fn check_bindings(attachment: &Attachment, findings: &mut Vec<Finding>) {
         .iter()
         .map(|policy| policy.policy_id.as_str())
         .collect();
-    let effects = declared_effects(attachment);
     for binding in attachment.operation_bindings() {
+        // Conflict resolution is audited by construction: its bound
+        // effect must be a declared update on the conflict entity (a
+        // valid, immutable transition), not an unrelated write.
+        if binding.action == "tasklinks.resolve_conflict" {
+            let audited = ir_effects.get(binding.effect_ref.as_str());
+            let valid = matches!(
+                audited,
+                Some((entity, operation)) if entity == "tasklinks.conflict" && operation == "update"
+            );
+            if !valid {
+                finding(
+                    findings,
+                    diagnostic::CONFLICT_RESOLUTION_INVALID,
+                    binding.operation.clone(),
+                    "resolution-transition-invalid",
+                );
+            }
+        }
         if !capabilities.contains(binding.capability_ref.as_str()) {
             finding(
                 findings,
@@ -493,7 +515,7 @@ fn check_bindings(attachment: &Attachment, findings: &mut Vec<Finding>) {
                 "binding-policy-unresolved",
             );
         }
-        if !effects.contains(binding.effect_ref.as_str()) {
+        if !ir_effects.contains_key(binding.effect_ref.as_str()) {
             finding(
                 findings,
                 diagnostic::FANOUT_NOT_ADMITTED,
@@ -512,11 +534,22 @@ fn check_bindings(attachment: &Attachment, findings: &mut Vec<Finding>) {
     }
 }
 
-fn declared_effects(attachment: &Attachment) -> BTreeSet<String> {
-    attachment
-        .operation_bindings()
+/// The declared Model effects of the compilation: id -> (entity, operation).
+fn ir_effects(compilation: &Compilation) -> BTreeMap<String, (String, String)> {
+    compilation
+        .project
+        .definitions
         .iter()
-        .map(|binding| binding.effect_ref.clone())
+        .filter_map(|definition| match definition {
+            Definition::Effect(effect) => Some((
+                effect.id.as_str().to_owned(),
+                (
+                    effect.entity.as_str().to_owned(),
+                    effect.operation.as_str().to_owned(),
+                ),
+            )),
+            _ => None,
+        })
         .collect()
 }
 

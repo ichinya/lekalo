@@ -1,0 +1,56 @@
+{
+  "comment": "Provider-contract change pair for the impact gate: exactly one upstream pin moves; the model, policies, and core facts stay byte-identical.",
+  "base": {
+    "contractId": "tasklinks.provider_contract.primary",
+    "upstreamPin": "github-rest/2022-11-28",
+    "revision": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "changed": {
+    "contractId": "tasklinks.provider_contract.primary",
+    "upstreamPin": "github-rest/2026-01-01",
+    "revision": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "mutatedMembers": [
+    "attachmentRevision",
+    "upstreamPin"
+  ],
+  "mustRemainIdentical": [
+    "coreSemantics rows",
+    "project model",
+    "policies",
+    "field policies",
+    "action policies"
+  ],
+  "mustMove": [
+    "providerAdapters rows pinned to the moved upstream pin"
+  ],
+  "consumers": [
+    {
+      "symbol": "tasklinks.request_action",
+      "role": "bound operation (Model command)"
+    },
+    {
+      "symbol": "tasklinks.scenario.two_providers",
+      "role": "verification scenario (Model scenario)"
+    },
+    {
+      "symbol": "tasklinks.task_external_link",
+      "role": "link aggregate (Model entity)"
+    }
+  ],
+  "changedRevision": "sha256:52524a4f1c8e0e5e05ee1e51d3dbb986a2a1e5d51b3a3b2f8e6f5f3b3f6b6a02",
+  "attachmentLevelConsumers": [
+    {
+      "symbol": "tasklinks.cap.issue_write",
+      "role": "capability requirement (attachment join)"
+    },
+    {
+      "symbol": "tasklinks.policy.ap.request_action",
+      "role": "action policy (attachment join)"
+    },
+    {
+      "symbol": "tasklinks.provider_contract.primary",
+      "role": "provider contract (attachment join)"
+    }
+  ]
+}
