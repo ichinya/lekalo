@@ -56,6 +56,11 @@ pub const REGISTRY_VERSION: &str = "0.6.4";
 /// Opt-in issue #84 union successor. Predecessor producers keep their exact pins.
 pub const SUCCESSOR_REGISTRY_VERSION: &str = "0.6.5";
 
+/// Issue #41 managed union successor: the full integrated allocation union
+/// plus the closed `managed.*` family. Predecessor producer pins are
+/// unchanged; managed producers pin this registry.
+pub const MANAGED_REGISTRY_VERSION: &str = "0.8.0";
+
 /// The closed diagnostic schema version.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DiagnosticSchemaVersion {
