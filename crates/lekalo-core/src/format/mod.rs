@@ -82,8 +82,12 @@ struct Planned {
     losses: Vec<wire::LossRow>,
     /// The verified replacement text in editor mode.
     stdin_replacement: Option<String>,
+    /// Whether any enumerated loss rows exist (the stdin refusal data).
+    stdin_losses: bool,
     /// The verified candidate bytes, parallel to `changed` rows.
     after_bytes: Vec<Vec<u8>>,
+    /// The held ownership guard in apply mode (recovery + transaction).
+    guard: std::cell::RefCell<Option<transaction::FormatGuard>>,
 }
 
 /// One rendered candidate pinned beside its source bytes.
@@ -94,6 +98,8 @@ struct RenderedFile {
 }
 
 /// Load, pin, render, verify, and build the bounded report. No writes.
+/// In apply mode the returned plan carries the held ownership guard; the
+/// caller must drop it only after the transaction outcome is decided.
 fn plan(request: &FormatRequest, stdin_bytes: Option<&[u8]>) -> Result<Planned, DomainResult> {
     let policy = Policy::embedded().map_err(|_policy_error| policy_failure())?;
     let selection = LoadSelection {
@@ -101,20 +107,42 @@ fn plan(request: &FormatRequest, stdin_bytes: Option<&[u8]>) -> Result<Planned, 
     };
 
     // Fail-closed recovery state: check and editor modes refuse; the
-    // explicit mutating mode recovers to verified original bytes first.
-    if request.mode != FormatMode::Apply {
-        if let Some(plan_id) = transaction::pending_plan(&selection) {
-            return Err(failure_recovery(&plan_id, "active-transaction"));
+    // explicit mutating mode acquires the real ownership lock and
+    // recovers to verified original bytes before its own load.
+    let guard = if request.mode == FormatMode::Apply {
+        match transaction::recover_pending(&selection) {
+            Ok(guard) => Some(guard),
+            Err(transaction::RecoveryFailure::LiveWriter) => {
+                return Err(transaction::ApplyFailure::Locked.into_result());
+            }
+            Err(transaction::RecoveryFailure::Conflict {
+                path,
+                expected,
+                current,
+            }) => {
+                return Err(transaction::ApplyFailure::RecoverConflict {
+                    path,
+                    expected,
+                    current,
+                }
+                .into_result());
+            }
+            Err(transaction::RecoveryFailure::Recovery(error)) => {
+                return Err(failure_recovery(&error.plan_id, error.reason));
+            }
         }
-    } else if let Err(error) = transaction::recover_pending(&selection) {
-        return Err(failure_recovery(&error.plan_id, error.reason));
-    }
+    } else if let Some(plan_id) = transaction::pending_plan(&selection) {
+        return Err(failure_recovery(&plan_id, "active-transaction"));
+    } else {
+        None
+    };
 
     let load = crate::loader::load_with_snapshot(&selection)?;
     let model_version = load.model.model_version;
 
     // Resolve the scope against the closed inventory. Stdin mode is bound
-    // to its declared document path.
+    // to its declared document path, and the unsaved buffer is the
+    // original state the whole overlay is built from (finding G).
     let mut rendered: Vec<RenderedFile> = Vec::new();
     let selected: Vec<(&crate::loader::LoadedDocument, Option<Vec<u8>>)> = match &request.scope {
         FormatScope::All => load.documents.iter().map(|d| (d, None)).collect(),
@@ -208,13 +236,31 @@ fn plan(request: &FormatRequest, stdin_bytes: Option<&[u8]>) -> Result<Planned, 
     rendered.sort_by(|left, right| left.path.as_bytes().cmp(right.path.as_bytes()));
 
     // Verify the whole candidate overlay through the real loader/IR oracle
-    // before any report or write exists.
+    // before any report or write exists. In editor mode the overlay is
+    // built over the unsaved buffer, so the oracle compares against the
+    // buffer's state — not the stale saved file (finding G).
     let replacements: Vec<(String, Vec<u8>)> = rendered
         .iter()
         .filter(|file| file.row.action == "changed")
         .map(|file| (file.path.clone(), file.candidate.clone()))
         .collect();
-    semantic::verify(&load.documents, model_version, &replacements)?;
+    let original_state: Vec<crate::loader::LoadedDocument> = load
+        .documents
+        .iter()
+        .map(|document| {
+            let bytes = selected
+                .iter()
+                .find(|(pinned, _)| pinned.document.path == document.document.path)
+                .and_then(|(_, override_bytes)| override_bytes.as_ref())
+                .cloned()
+                .unwrap_or_else(|| document.bytes.clone());
+            crate::loader::LoadedDocument {
+                document: document.document.clone(),
+                bytes,
+            }
+        })
+        .collect();
+    semantic::verify(&original_state, model_version, &replacements)?;
 
     let rows: Vec<wire::FileRow> = rendered.iter().map(|file| file.row.clone()).collect();
     let losses: Vec<wire::LossRow> = rows
@@ -253,6 +299,7 @@ fn plan(request: &FormatRequest, stdin_bytes: Option<&[u8]>) -> Result<Planned, 
     } else {
         None
     };
+    let stdin_losses = request.mode == FormatMode::Stdin && !losses.is_empty();
     let unchanged = rows.iter().filter(|row| !row.is_changed()).count();
     let report = wire::Report {
         schema_version: wire::SCHEMA_VERSION,
@@ -294,12 +341,16 @@ fn plan(request: &FormatRequest, stdin_bytes: Option<&[u8]>) -> Result<Planned, 
         changed,
         losses,
         stdin_replacement,
+        stdin_losses,
         after_bytes,
+        guard: std::cell::RefCell::new(guard),
     })
 }
 
 /// Project a verified plan onto its terminal envelope and (for apply) the
-/// confined transaction.
+/// confined transaction. The apply arm holds the ownership guard across
+/// the transaction; the transaction itself re-acquires it, so the lock
+/// ownership window is one unbroken mutating run.
 fn dispatch(request: &FormatRequest, planned: Planned) -> DomainResult {
     match request.mode {
         FormatMode::Check => {
@@ -364,11 +415,13 @@ fn dispatch(request: &FormatRequest, planned: Planned) -> DomainResult {
                 })
                 .collect();
             let after_bytes = planned.after_bytes.clone();
+            let guard = planned.guard.borrow_mut().take();
             match transaction::apply(
                 &request.project,
                 &planned.policy_digest,
                 &plan_files,
                 &after_bytes,
+                guard,
             ) {
                 Ok(()) => {
                     let mut report = planned.report.clone();
@@ -387,6 +440,20 @@ fn dispatch(request: &FormatRequest, planned: Planned) -> DomainResult {
             }
         }
         FormatMode::Stdin => {
+            // Comment loss refuses the editor return outright (finding F):
+            // the buffer is the only copy of the text, so the registered
+            // loss diagnostic must gate the replacement exactly like the
+            // disk path, never exit 0 with a comment-dropped buffer.
+            if planned.stdin_losses {
+                let mut diagnostics: Vec<Wire> = Vec::new();
+                push_loss_diagnostic(&mut diagnostics, &planned.losses, "blocked");
+                let set = DomainResult::from_wire_set(Status::Denied, diagnostics);
+                return DomainResult::denied_json(
+                    planned.report_json.clone(),
+                    human_lossy(&planned),
+                    set,
+                );
+            }
             // The single row carries the authorized replacement text; the
             // normal envelope owns status/diagnostics, and nothing is
             // written anywhere.

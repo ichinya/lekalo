@@ -27,14 +27,18 @@ use std::path::{Path, PathBuf};
 use crate::loader::LoadSelection;
 use crate::result::{DomainResult, Status};
 
-use super::failure_semantic;
-
 /// The closed runtime home of formatter state under `.lekalo/cache`.
 pub(crate) const FORMAT_HOME: &str = ".lekalo/cache/format";
 /// The exclusive runtime formatter lock (distinct from `lekalo.lock`).
 const ACTIVE_LOCK: &str = "active.lock";
 /// The durable journal inside one plan home.
 const JOURNAL: &str = "journal.json";
+/// The maximum journal/manifest record bytes admitted for parsing.
+const RECORD_BOUND: u64 = 256 * 1024;
+/// The maximum admitted file count of one journal/manifest record.
+const RECORD_MAX_FILES: usize = 4096;
+/// The maximum attempt suffix of one plan identity.
+const ATTEMPT_BOUND: usize = 8;
 /// The immutable backup manifest inside one plan home.
 const MANIFEST: &str = "manifest.json";
 /// The internal, versioned runtime-record identity (never a public
@@ -42,6 +46,7 @@ const MANIFEST: &str = "manifest.json";
 const RUNTIME_SCHEMA: &str = "lekalo/format-transaction/v0.8.0";
 
 /// Why an interrupted transaction could not be recovered.
+#[derive(Debug)]
 pub(crate) struct RecoveryError {
     pub plan_id: String,
     pub reason: &'static str,
@@ -54,10 +59,63 @@ impl RecoveryError {
     }
 }
 
+/// The two failure families recovery can end a run with: the material
+/// disagrees with itself (or a live writer holds the home), or a source
+/// moved somewhere the pinned plan never authorized. The second is the
+/// explicit conflict decision and is never reported as the general
+/// recovery refusal.
+#[derive(Debug)]
+pub(crate) enum RecoveryFailure {
+    /// A live formatter owns the runtime home right now.
+    LiveWriter,
+    /// The recovery material refused recovery; state stays.
+    Recovery(RecoveryError),
+    /// A source's current bytes diverge from the pinned plan before any
+    /// restore; the journal stays and the conflict names the divergence.
+    Conflict {
+        path: String,
+        expected: String,
+        current: String,
+    },
+}
+
+/// The process-death-released formatter ownership lock: an exclusive
+/// advisory OS lock on one runtime file. Ownership lives in the open
+/// descriptor (POSIX `flock`) or the share-mode-zero handle (Windows);
+/// the kernel releases it when the process dies. The file is never
+/// removed — deleting a held lock file would let a second owner lock a
+/// fresh inode — so its presence alone is not a reader signal; the
+/// durable journal is.
+pub(crate) struct FormatGuard {
+    // Held for RAII: dropping the file releases the OS lock.
+    #[allow(dead_code)]
+    file: std::fs::File,
+}
+
+impl FormatGuard {
+    /// Best-effort advisory stamp of the owned plan identity. The stamp
+    /// never gates anything; diagnostics read it only as a hint.
+    fn stamp(&self, plan_id: &str) {
+        use std::io::{Seek, Write};
+        let mut file = &self.file;
+        if file.set_len(0).is_ok() {
+            let _ = file.seek(std::io::SeekFrom::Start(0));
+            let _ = file.write_all(format!("{plan_id}\n").as_bytes());
+        }
+    }
+}
+
 /// One write failure of the apply pipeline.
 pub(crate) enum ApplyFailure {
     /// Another mutating formatter holds the runtime lock.
     Locked,
+    /// A recovered plan needs the explicit conflict decision: a source's
+    /// current bytes diverge from the pinned plan before any restore.
+    RecoverConflict {
+        path: String,
+        expected: String,
+        current: String,
+    },
     /// A pinned preimage changed before its replacement.
     SourceChanged {
         path: String,
@@ -79,34 +137,19 @@ impl ApplyFailure {
     /// Project onto the terminal domain result.
     pub fn into_result(self) -> DomainResult {
         match self {
-            Self::Locked => failure_semantic("lock", "locked"),
+            // The registered infrastructure denial of a busy formatter
+            // transaction — never the semantic family.
+            Self::Locked => failure_locked(),
+            Self::RecoverConflict {
+                path,
+                expected,
+                current,
+            } => failure_source_changed(&path, &expected, &current),
             Self::SourceChanged {
                 path,
                 expected,
                 current,
-            } => {
-                let mut data = crate::diagnostics::DataObject::new();
-                data.insert(
-                    "expectedDigest".to_owned(),
-                    crate::diagnostics::types::DataValue::Token(expected),
-                );
-                data.insert(
-                    "currentDigest".to_owned(),
-                    crate::diagnostics::types::DataValue::Token(current),
-                );
-                let source =
-                    crate::diagnostics::normalize::source_location(Some(path.clone()), None);
-                let diagnostics = crate::diagnostics::normalize::build(
-                    "format.source-changed",
-                    None,
-                    source,
-                    data,
-                )
-                .map(|diagnostic| vec![diagnostic])
-                .unwrap_or_default();
-                let set = DomainResult::from_wire_set(Status::Denied, diagnostics);
-                DomainResult::denied(set)
-            }
+            } => failure_source_changed(&path, &expected, &current),
             Self::WriteFailed { stage, rollback } => {
                 let mut data = crate::diagnostics::DataObject::new();
                 data.insert(
@@ -117,8 +160,14 @@ impl ApplyFailure {
                     "rollback".to_owned(),
                     crate::diagnostics::types::DataValue::Token(rollback.to_owned()),
                 );
+                // The registered path guarantee of a replacement-stage
+                // failure: the transaction root document.
+                let source = crate::diagnostics::normalize::source_location(
+                    Some("lekalo/project.yaml".to_owned()),
+                    None,
+                );
                 let diagnostics =
-                    crate::diagnostics::normalize::build("format.write-failed", None, None, data)
+                    crate::diagnostics::normalize::build("format.write-failed", None, source, data)
                         .map(|diagnostic| vec![diagnostic])
                         .unwrap_or_default();
                 let set = DomainResult::from_wire_set(Status::Invalid, diagnostics);
@@ -129,12 +178,44 @@ impl ApplyFailure {
     }
 }
 
-/// The fail-closed loader gate: any active formatter lock or journal
-/// blocks reads exactly like a migration journal does.
+/// The registered `format.locked` denial: another mutating formatter
+/// holds the runtime ownership lock (deny, exit 3, stdout).
+fn failure_locked() -> DomainResult {
+    let data = crate::diagnostics::DataObject::new();
+    let diagnostics = crate::diagnostics::normalize::build("format.locked", None, None, data)
+        .map(|diagnostic| vec![diagnostic])
+        .unwrap_or_default();
+    let set = DomainResult::from_wire_set(Status::Denied, diagnostics);
+    DomainResult::denied(set)
+}
+
+/// The registered `format.source-changed` denial with its guaranteed
+/// path location: the exact pin that diverged.
+fn failure_source_changed(path: &str, expected: &str, current: &str) -> DomainResult {
+    let mut data = crate::diagnostics::DataObject::new();
+    data.insert(
+        "expectedDigest".to_owned(),
+        crate::diagnostics::types::DataValue::Token(expected.to_owned()),
+    );
+    data.insert(
+        "currentDigest".to_owned(),
+        crate::diagnostics::types::DataValue::Token(current.to_owned()),
+    );
+    let source = crate::diagnostics::normalize::source_location(Some(path.to_owned()), None);
+    let diagnostics =
+        crate::diagnostics::normalize::build("format.source-changed", None, source, data)
+            .map(|diagnostic| vec![diagnostic])
+            .unwrap_or_default();
+    let set = DomainResult::from_wire_set(Status::Denied, diagnostics);
+    DomainResult::denied(set)
+}
+
+/// The fail-closed loader gate: a durable journal blocks reads exactly
+/// like a migration journal does. The ownership lock file is not a
+/// reader signal: between acquiring ownership and writing the journal
+/// nothing has been replaced, so readers see consistent originals, and
+/// a crashed run in that window leaves no partially written source.
 pub(crate) fn recovery_code(fs: &crate::project_fs::Fs) -> Option<&'static str> {
-    if let Ok(crate::project_fs::EntryType::File) = fs.entry_type(FORMAT_HOME, ACTIVE_LOCK) {
-        return Some("format.recovery-required");
-    }
     let entries = fs.entries(FORMAT_HOME).ok()?;
     for (name, entry_type) in entries {
         if entry_type != crate::project_fs::EntryType::Directory {
@@ -150,67 +231,80 @@ pub(crate) fn recovery_code(fs: &crate::project_fs::Fs) -> Option<&'static str> 
     None
 }
 
-/// The plan identity of an active interrupted transaction, if any.
+/// The plan identity of an active interrupted transaction, if any: the
+/// first journaled plan home's pinned id, bounded before use.
 pub(crate) fn pending_plan(selection: &LoadSelection) -> Option<String> {
     let root = crate::loader::root_for_selection(selection).ok()?;
     let fs = crate::project_fs::Fs::open(&root).ok()?;
     recovery_code(&fs)?;
-    if matches!(
-        fs.entry_type(FORMAT_HOME, ACTIVE_LOCK),
-        Ok(crate::project_fs::EntryType::File)
-    ) {
-        if let Ok(Some(bytes)) = fs.read_file_opt(FORMAT_HOME, ACTIVE_LOCK, 256) {
+    let write = FormatWrite::new(root);
+    for plan_id in plan_directories_from(&write) {
+        if !write.file_exists(&format!("{FORMAT_HOME}/{plan_id}/{JOURNAL}")) {
+            continue;
+        }
+        if let Ok(Some(bytes)) =
+            fs.read_file_opt(&format!("{FORMAT_HOME}/{plan_id}"), JOURNAL, 4096)
+        {
             if let Ok(text) = String::from_utf8(bytes) {
-                let trimmed = text.trim();
-                if !trimmed.is_empty() {
-                    return Some(trimmed.to_owned());
+                if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
+                    if let Some(id) = value
+                        .get("plan_id")
+                        .or_else(|| value.get("planId"))
+                        .and_then(|found| found.as_str())
+                    {
+                        return Some(id.chars().take(64).collect());
+                    }
                 }
             }
         }
+        return Some("unknown".to_owned());
     }
-    plan_directories(&root)
-        .first()
-        .cloned()
-        .or_else(|| Some("unknown".to_owned()))
+    Some("unknown".to_owned())
 }
 
-/// Recover every interrupted plan (those still carrying a journal) under
-/// the selection's root before new mutating work. Completed plan homes —
-/// journal removed at commit — are rollback material, never recovery
-/// targets. No-op when no recovery state exists.
-pub(crate) fn recover_pending(selection: &LoadSelection) -> Result<(), RecoveryError> {
-    let root = crate::loader::root_for_selection(selection).map_err(|_| RecoveryError {
-        plan_id: "unknown".to_owned(),
-        reason: "root-unresolved",
+/// Acquire the exclusive formatter ownership of one selection's root
+/// and recover every interrupted plan (those still carrying a journal)
+/// before new mutating work. The same real ownership lock serializes
+/// recovery and the apply that follows, so a live writer is refused as
+/// busy instead of being rolled back as if crashed (finding C).
+/// Completed plan homes — journal removed at commit — are rollback
+/// material, never recovery targets; homes with neither journal nor
+/// manifest are crashed partial attempts and are swept. The guard is
+/// held by the caller across the load/plan/apply window.
+pub(crate) fn recover_pending(selection: &LoadSelection) -> Result<FormatGuard, RecoveryFailure> {
+    let root = crate::loader::root_for_selection(selection).map_err(|_| {
+        RecoveryFailure::Recovery(RecoveryError {
+            plan_id: "unknown".to_owned(),
+            reason: "root-unresolved",
+        })
     })?;
-    let fs = crate::project_fs::Fs::open(&root).map_err(|_| RecoveryError {
-        plan_id: "unknown".to_owned(),
-        reason: "root-unreadable",
-    })?;
-    if recovery_code(&fs).is_none() {
-        return Ok(());
-    }
     let write = FormatWrite::new(root);
+    let guard = write
+        .acquire_ownership()
+        .map_err(|_| RecoveryFailure::LiveWriter)?;
     let plans = plan_directories_from(&write);
-    for plan_id in plans {
+    for plan_id in &plans {
         // Only interrupted plans (durable journal present) recover;
         // completed homes hold immutable backups for explicit rollback.
         if !write.file_exists(&format!("{FORMAT_HOME}/{plan_id}/{JOURNAL}")) {
             continue;
         }
-        recover_plan(&write, &plan_id)?;
+        recover_plan(&write, plan_id)?;
     }
-    // The lock outlives plan homes on a crash between lock and journal.
-    let _ = write.remove_file(&format!("{FORMAT_HOME}/{ACTIVE_LOCK}"));
-    Ok(())
+    for plan_id in &plans {
+        // A home with neither journal nor manifest is a crashed attempt
+        // between ownership and the manifest write; its unpinned partial
+        // backups are swept so a later identical retry cannot collide.
+        if !write.file_exists(&format!("{FORMAT_HOME}/{plan_id}/{JOURNAL}"))
+            && !write.file_exists(&format!("{FORMAT_HOME}/{plan_id}/{MANIFEST}"))
+        {
+            let _ = write.remove_dir(&format!("{FORMAT_HOME}/{plan_id}"));
+        }
+    }
+    Ok(guard)
 }
 
 /// The plan directories beneath the formatter home (sorted).
-fn plan_directories(root: &Path) -> Vec<String> {
-    let write = FormatWrite::new(root.to_path_buf());
-    plan_directories_from(&write)
-}
-
 fn plan_directories_from(write: &FormatWrite) -> Vec<String> {
     let Ok(home) = write.physical(FORMAT_HOME, false) else {
         return Vec::new();
@@ -232,80 +326,186 @@ fn plan_directories_from(write: &FormatWrite) -> Vec<String> {
     names
 }
 
+/// Whether one text is the runtime plan-home spelling: 47 hex digits,
+/// `-`, and a decimal attempt counter (`[a-z0-9][a-z0-9._-]{0,63}` fits
+/// the governed path grammar with room for the attempt suffix).
+fn valid_plan_id(text: &str) -> bool {
+    let Some((base, attempt)) = text.rsplit_once('-') else {
+        return false;
+    };
+    let digits = base.len() == 47 && base.bytes().all(|byte| byte.is_ascii_hexdigit());
+    let count = !attempt.is_empty()
+        && attempt.len() <= 3
+        && attempt.bytes().all(|byte| byte.is_ascii_digit())
+        && attempt != "0";
+    digits && count
+}
+
+/// The attempt suffix of a plan home spelling.
+fn plan_attempt(plan_id: &str) -> usize {
+    plan_id
+        .rsplit_once('-')
+        .and_then(|(_, attempt)| attempt.parse().ok())
+        .unwrap_or(1)
+}
+
+/// The runtime plan-home spelling of one base identity and attempt.
+fn plan_home(base: &str, attempt: usize) -> String {
+    format!("{}-{attempt}", &base[..47.min(base.len())])
+}
+
+/// The admitted-Model-path grammar of one recovery pin (finding A): the
+/// loader's exact enumeration — the project document, module manifests,
+/// and the closed definition-kind stems — under the portable path
+/// grammar. No other path can ever be restored.
+fn valid_plan_file(path: &str) -> bool {
+    if crate::project_fs::path_violation(path).is_some() {
+        return false;
+    }
+    if path == "lekalo/project.yaml" {
+        return true;
+    }
+    let Some(rest) = path.strip_prefix("lekalo/modules/") else {
+        return false;
+    };
+    let mut parts = rest.split('/');
+    let directory = parts.next().unwrap_or_default();
+    let file = parts.next().unwrap_or_default();
+    if parts.next().is_some() || directory.is_empty() || file.is_empty() {
+        return false;
+    }
+    file == "module.yaml"
+        || crate::project_fs::KIND_STEMS
+            .iter()
+            .any(|stem| file == format!("{stem}.yaml"))
+}
+
+/// Whether one text is a plain 64-hex-digit SHA-256 spelling.
+fn valid_digest(text: &str) -> bool {
+    text.len() == 64 && text.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+/// Parse and fully validate one bounded recovery record (finding A).
+macro_rules! validated_record {
+    ($write:expr, $path:expr, $plan_id:expr, $reason:literal, $type:ty) => {{
+        let bytes = $write.read_file_bounded($path, RECORD_BOUND).map_err(|_| {
+            RecoveryFailure::Recovery(RecoveryError {
+                plan_id: $plan_id.to_owned(),
+                reason: concat!($reason, "-unreadable"),
+            })
+        })?;
+        let record: $type = serde_json::from_slice(&bytes).map_err(|_| {
+            RecoveryFailure::Recovery(RecoveryError {
+                plan_id: $plan_id.to_owned(),
+                reason: concat!($reason, "-malformed"),
+            })
+        })?;
+        record.validate($plan_id).map_err(|reason| {
+            RecoveryFailure::Recovery(RecoveryError {
+                plan_id: $plan_id.to_owned(),
+                reason,
+            })
+        })?;
+        record
+    }};
+}
+
 /// Restore one plan's manifest files to their verified before digests and
-/// clear the journal. Fails closed on any disagreement, keeping state.
-fn recover_plan(write: &FormatWrite, plan_id: &str) -> Result<(), RecoveryError> {
+/// clear the journal. Every record is fully validated (finding A) and
+/// every current source digest is checked before the first restore
+/// (finding B): a post-crash user edit leaves the journal and all
+/// sources untouched and surfaces as the explicit conflict decision.
+fn recover_plan(write: &FormatWrite, plan_id: &str) -> Result<(), RecoveryFailure> {
     let home = format!("{FORMAT_HOME}/{plan_id}");
     let manifest_path = format!("{home}/{MANIFEST}");
-    let manifest_bytes = write.read_file(&manifest_path).map_err(|_| RecoveryError {
-        plan_id: plan_id.to_owned(),
-        reason: "manifest-unreadable",
-    })?;
     let manifest: Manifest =
-        serde_json::from_slice(&manifest_bytes).map_err(|_| RecoveryError {
-            plan_id: plan_id.to_owned(),
-            reason: "manifest-malformed",
-        })?;
-    if manifest.plan_id != plan_id || manifest.schema_version != RUNTIME_SCHEMA {
-        return Err(RecoveryError {
-            plan_id: plan_id.to_owned(),
-            reason: "manifest-identity",
-        });
-    }
+        validated_record!(write, manifest_path.as_str(), plan_id, "manifest", Manifest);
     let journal_path = format!("{home}/{JOURNAL}");
-    let journal_bytes = write.read_file(&journal_path).map_err(|_| RecoveryError {
-        plan_id: plan_id.to_owned(),
-        reason: "journal-unreadable",
-    })?;
-    let journal: Journal = serde_json::from_slice(&journal_bytes).map_err(|_| RecoveryError {
-        plan_id: plan_id.to_owned(),
-        reason: "journal-malformed",
-    })?;
-    if journal.manifest_sha256 != manifest.digest() || journal.plan_id != plan_id {
-        return Err(RecoveryError {
+    let journal: Journal =
+        validated_record!(write, journal_path.as_str(), plan_id, "journal", Journal);
+    if journal.manifest_sha256 != manifest.digest() {
+        return Err(RecoveryFailure::Recovery(RecoveryError {
             plan_id: plan_id.to_owned(),
             reason: "journal-mismatch",
-        });
+        }));
     }
-    // Full conservative restore: every manifest file back to its before
-    // digest, reverse order, backups verified on read.
-    for file in manifest.files.iter().rev() {
+    // Preflight EVERY source+backup pair before the first restore
+    // (finding B). A source whose current digest is neither the before
+    // nor the after pin is a post-crash edit; recovery must never erase
+    // it, so the run ends in the explicit conflict decision with the
+    // journal and every source untouched.
+    for file in &manifest.files {
+        let current = write.read_file(&file.path).map_err(|_| {
+            RecoveryFailure::Recovery(RecoveryError {
+                plan_id: plan_id.to_owned(),
+                reason: "verify-failed",
+            })
+        })?;
+        let digest = crate::digest::sha256_hex(&current);
+        if digest != file.before_sha256 && digest != file.after_sha256 {
+            return Err(RecoveryFailure::Conflict {
+                path: file.path.clone(),
+                expected: file.before_sha256.clone(),
+                current: digest,
+            });
+        }
         let backup_path = format!("{home}/before/{}", backup_logical(&file.path));
-        let backup = write.read_file(&backup_path).map_err(|_| RecoveryError {
-            plan_id: plan_id.to_owned(),
-            reason: "backup-unreadable",
+        let backup = write.read_file(&backup_path).map_err(|_| {
+            RecoveryFailure::Recovery(RecoveryError {
+                plan_id: plan_id.to_owned(),
+                reason: "backup-unreadable",
+            })
         })?;
         if crate::digest::sha256_hex(&backup) != file.before_sha256 {
-            return Err(RecoveryError {
+            return Err(RecoveryFailure::Recovery(RecoveryError {
                 plan_id: plan_id.to_owned(),
                 reason: "backup-mismatch",
-            });
+            }));
         }
-        write
-            .replace_file(&file.path, &backup)
-            .map_err(|_| RecoveryError {
+    }
+    // Verified restore: every manifest file back to its before digest,
+    // reverse order, from the preflight-verified backups.
+    for file in manifest.files.iter().rev() {
+        let backup_path = format!("{home}/before/{}", backup_logical(&file.path));
+        let backup = write.read_file(&backup_path).map_err(|_| {
+            RecoveryFailure::Recovery(RecoveryError {
+                plan_id: plan_id.to_owned(),
+                reason: "backup-unreadable",
+            })
+        })?;
+        if crate::digest::sha256_hex(&backup) != file.before_sha256 {
+            return Err(RecoveryFailure::Recovery(RecoveryError {
+                plan_id: plan_id.to_owned(),
+                reason: "backup-mismatch",
+            }));
+        }
+        write.replace_file(&file.path, &backup).map_err(|_| {
+            RecoveryFailure::Recovery(RecoveryError {
                 plan_id: plan_id.to_owned(),
                 reason: "restore-failed",
-            })?;
+            })
+        })?;
     }
     for file in &manifest.files {
-        let current = write.read_file(&file.path).map_err(|_| RecoveryError {
-            plan_id: plan_id.to_owned(),
-            reason: "verify-failed",
+        let current = write.read_file(&file.path).map_err(|_| {
+            RecoveryFailure::Recovery(RecoveryError {
+                plan_id: plan_id.to_owned(),
+                reason: "verify-failed",
+            })
         })?;
         if crate::digest::sha256_hex(&current) != file.before_sha256 {
-            return Err(RecoveryError {
+            return Err(RecoveryFailure::Recovery(RecoveryError {
                 plan_id: plan_id.to_owned(),
                 reason: "verify-mismatch",
-            });
+            }));
         }
     }
-    write
-        .remove_file(&journal_path)
-        .map_err(|_| RecoveryError {
+    write.remove_file(&journal_path).map_err(|_| {
+        RecoveryFailure::Recovery(RecoveryError {
             plan_id: plan_id.to_owned(),
             reason: "journal-cleanup",
-        })?;
+        })
+    })?;
     Ok(())
 }
 
@@ -317,6 +517,7 @@ pub(crate) fn apply(
     policy_digest: &str,
     files: &[(String, String, String)],
     after_bytes: &[Vec<u8>],
+    guard: Option<FormatGuard>,
 ) -> Result<(), ApplyFailure> {
     let selection = LoadSelection {
         project: project.clone(),
@@ -327,22 +528,60 @@ pub(crate) fn apply(
             rollback: "not-started",
         })?;
     let write = FormatWrite::new(root);
-    let plan_id = plan_identity(policy_digest, files);
 
-    // Phase 1: the exclusive runtime lock.
+    // Phase 1: the exclusive OS ownership lock over the whole mutating
+    // window. The kernel releases it on process death, so a second
+    // formatter sees the busy denial instead of mistaking a live writer
+    // for a crashed one (finding C). Recovery and apply share one
+    // unbroken window: the guard the caller already holds (or a fresh
+    // acquisition when entering through the transaction directly).
     write
         .ensure_dir(FORMAT_HOME)
         .map_err(|_| ApplyFailure::Locked)?;
-    let lock_path = format!("{FORMAT_HOME}/{ACTIVE_LOCK}");
-    match write.write_new(&lock_path, format!("{plan_id}\n").as_bytes()) {
-        Ok(()) => {}
-        Err(_) => return Err(ApplyFailure::Locked),
+    let guard = match guard {
+        Some(held) => held,
+        None => write
+            .acquire_ownership()
+            .map_err(|_| ApplyFailure::Locked)?,
+    };
+
+    // The stable content identity plus the attempt suffix resolved under
+    // the lock: a retry of an already-completed plan (external revert to
+    // identical bytes, interrupted-then-recovered material) gets a fresh
+    // home instead of colliding with the completed one on exclusive
+    // writes (finding D). Bound the chain; a full chain is a bug, not a
+    // condition to spin on.
+    let base = plan_identity(policy_digest, files);
+    let mut attempt = 1usize;
+    while write.file_exists(&format!(
+        "{FORMAT_HOME}/{}/{}",
+        plan_home(&base, attempt),
+        MANIFEST
+    )) || write.file_exists(&format!(
+        "{FORMAT_HOME}/{}/{}",
+        plan_home(&base, attempt),
+        JOURNAL
+    )) {
+        attempt += 1;
+        if attempt > ATTEMPT_BOUND {
+            drop(guard);
+            return Err(ApplyFailure::WriteFailed {
+                stage: "plan",
+                rollback: "not-started",
+            });
+        }
     }
+    let plan_id = plan_home(&base, attempt);
+
+    // The durable marker with the owned identity (reader-gate state for
+    // diagnostics; the OS lock above is the real exclusion).
+    guard.stamp(&plan_id);
     let outcome = apply_locked(&write, &plan_id, policy_digest, files, after_bytes);
     let journal_present = write.file_exists(&format!("{FORMAT_HOME}/{plan_id}/{JOURNAL}"));
     if !journal_present {
-        let _ = write.remove_file(&lock_path);
+        let _ = write.remove_file(&format!("{FORMAT_HOME}/{ACTIVE_LOCK}"));
     }
+    drop(guard);
     outcome
 }
 
@@ -543,7 +782,13 @@ fn restore_prefix(
     Ok(())
 }
 
-/// The deterministic plan identity of one verified change set.
+/// The stable plan identity of one verified change set: policy digest
+/// and pinned pins only. Transaction-attempt storage is decided
+/// separately (the attempt suffix resolved under the ownership lock),
+/// so two attempts of one change set never share a home (finding D).
+/// The runtime home spelling is the first 47 hex digits of this digest
+/// plus the attempt suffix, so every plan home satisfies the governed
+/// segment grammar (at most 64 portable characters).
 fn plan_identity(policy_digest: &str, files: &[(String, String, String)]) -> String {
     let mut material = String::with_capacity(128 + files.len() * 80);
     material.push_str(policy_digest);
@@ -573,8 +818,32 @@ fn split_logical(logical: &str) -> (&str, &str) {
     }
 }
 
-/// The immutable backup manifest persisted before the first replacement.
+/// One validated plan file pin. Exact field set, validated digest
+/// spellings, and an admitted Model path (finding A).
 #[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PlanFile {
+    path: String,
+    before_sha256: String,
+    after_sha256: String,
+}
+
+impl PlanFile {
+    fn validate(&self) -> Result<(), &'static str> {
+        if !valid_plan_file(&self.path) {
+            return Err("manifest-path");
+        }
+        if !valid_digest(&self.before_sha256) || !valid_digest(&self.after_sha256) {
+            return Err("manifest-digest");
+        }
+        Ok(())
+    }
+}
+
+/// The immutable backup manifest persisted before the first replacement.
+/// Exact closed field set; fully validated on read (finding A).
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Manifest {
     schema_version: String,
     plan_id: String,
@@ -587,22 +856,87 @@ impl Manifest {
         let bytes = serde_json::to_vec(self).unwrap_or_default();
         crate::digest::sha256_hex(&bytes)
     }
-}
 
-#[derive(serde::Serialize, serde::Deserialize)]
-struct PlanFile {
-    path: String,
-    before_sha256: String,
-    after_sha256: String,
+    /// The exact closed-schema validation (finding A): identity pins,
+    /// recomputed plan identity, unique admitted Model paths, bounded
+    /// non-empty file set, and pinned digest spellings.
+    fn validate(&self, plan_id: &str) -> Result<(), &'static str> {
+        if self.schema_version != RUNTIME_SCHEMA || self.plan_id != plan_id {
+            return Err("manifest-identity");
+        }
+        if !valid_plan_id(plan_id) {
+            return Err("manifest-identity");
+        }
+        if !valid_digest(
+            self.policy_digest
+                .strip_prefix("sha256:")
+                .unwrap_or_default(),
+        ) {
+            return Err("manifest-policy");
+        }
+        if self.files.is_empty() || self.files.len() > RECORD_MAX_FILES {
+            return Err("manifest-limit");
+        }
+        let mut paths: Vec<&str> = self.files.iter().map(|file| file.path.as_str()).collect();
+        paths.sort_unstable();
+        if paths.windows(2).any(|window| window[0] == window[1]) {
+            return Err("manifest-duplicate");
+        }
+        for file in &self.files {
+            file.validate()?;
+        }
+        // The record only ever passes when its pins recompute the exact
+        // plan base identity it claims (the home name carries the attempt
+        // suffix; the record re-derives the full 64-hex digest and checks
+        // the home spelling against it), so a drifted path/pin pair
+        // cannot be re-signed into acceptance.
+        let base = plan_identity(&self.policy_digest, &self.plan_order());
+        if plan_home(&base, plan_attempt(plan_id)) != plan_id {
+            return Err("manifest-identity");
+        }
+        Ok(())
+    }
+
+    /// The pins in plan (sorted-by-path) order.
+    fn plan_order(&self) -> Vec<(String, String, String)> {
+        let mut files: Vec<(String, String, String)> = self
+            .files
+            .iter()
+            .map(|file| {
+                (
+                    file.path.clone(),
+                    file.before_sha256.clone(),
+                    file.after_sha256.clone(),
+                )
+            })
+            .collect();
+        files.sort_by(|left, right| left.0.as_bytes().cmp(right.0.as_bytes()));
+        files
+    }
 }
 
 /// The durable journal: written before the first replacement, removed at
-/// commit. Its presence is the fail-closed reader signal.
+/// commit. Its presence is the fail-closed reader signal. Exact closed
+/// field set; fully validated on read (finding A).
 #[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Journal {
     schema_version: String,
     plan_id: String,
     manifest_sha256: String,
+}
+
+impl Journal {
+    /// The exact closed-schema validation (finding A).
+    fn validate(&self, plan_id: &str) -> Result<(), &'static str> {
+        if self.schema_version != RUNTIME_SCHEMA || self.plan_id != plan_id {
+            return Err("journal-identity");
+        }
+        if !valid_plan_id(plan_id) || !valid_digest(&self.manifest_sha256) {
+            return Err("journal-identity");
+        }
+        Ok(())
+    }
 }
 
 /// The write capability derived from the validated project root. Opaque
@@ -615,6 +949,42 @@ struct FormatWrite {
 impl FormatWrite {
     fn new(root: PathBuf) -> Self {
         Self { root }
+    }
+
+    /// Acquire the process-death-released ownership lock: an exclusive
+    /// advisory OS lock on the runtime lock file (POSIX `flock`, Windows
+    /// share-mode zero). The file is created once and never removed, so
+    /// every owner locks the same inode; a held lock refuses a second
+    /// owner immediately (non-blocking).
+    fn acquire_ownership(&self) -> Result<FormatGuard, ()> {
+        self.ensure_dir(FORMAT_HOME)?;
+        let path = self.root.join(format!("{FORMAT_HOME}/{ACTIVE_LOCK}"));
+        #[cfg(unix)]
+        {
+            use rustix::fs::{flock, FlockOperation};
+            let file = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(false)
+                .open(&path)
+                .map_err(|_| ())?;
+            flock(&file, FlockOperation::NonBlockingLockExclusive).map_err(|_| ())?;
+            Ok(FormatGuard { file })
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            let file = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(false)
+                .share_mode(0)
+                .open(&path)
+                .map_err(|_| ())?;
+            Ok(FormatGuard { file })
+        }
     }
 
     /// Physical path of one logical path, rejecting symlink/junction/
@@ -744,6 +1114,17 @@ impl FormatWrite {
         std::fs::read(&path).map_err(|_| ())
     }
 
+    /// Read one file's exact bytes bounded by `max` bytes: recovery
+    /// records are parsed only within a closed bound.
+    fn read_file_bounded(&self, logical: &str, max: u64) -> Result<Vec<u8>, ()> {
+        let path = self.physical(logical, true)?;
+        let metadata = std::fs::metadata(&path).map_err(|_| ())?;
+        if !metadata.is_file() || metadata.len() > max {
+            return Err(());
+        }
+        std::fs::read(&path).map_err(|_| ())
+    }
+
     /// Whether one file exists as a reparse-free regular file.
     fn file_exists(&self, logical: &str) -> bool {
         self.physical(logical, true).is_ok()
@@ -756,6 +1137,14 @@ impl FormatWrite {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
             Err(_) => Err(()),
         }
+    }
+
+    /// Remove one directory tree if present; the logical path must
+    /// resolve to a real reparse-free directory. Used only for crashed
+    /// partial attempt homes inside the runtime home (no journal, no
+    /// manifest — never recovery material).
+    fn remove_dir(&self, logical: &str) -> Result<(), ()> {
+        std::fs::remove_dir_all(self.physical(logical, false)?).map_err(|_| ())
     }
 
     /// The validated parent directory path of one logical file path.

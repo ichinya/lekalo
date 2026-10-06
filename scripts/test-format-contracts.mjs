@@ -107,6 +107,8 @@ const expectedFamily = [
   ["format.recovery-required", "LEK-FORMAT-007", "invalid"],
   ["format.limit-exceeded", "LEK-FORMAT-008", "invalid"],
   ["format.unsupported-surface", "LEK-FORMAT-009", "unsupported"],
+  ["format.locked", "LEK-FORMAT-010", "denied"],
+  ["format.stdin-loss", "LEK-FORMAT-011", "denied"],
 ];
 if (formatEntries.length !== expectedFamily.length) {
   fail("format-family-size", formatEntries.length);

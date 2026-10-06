@@ -3926,6 +3926,21 @@
       "lifecycle": "active"
     },
     {
+      "id": "format.locked",
+      "code": "LEK-FORMAT-010",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "format.locked",
+      "default_message": "Another mutating formatter holds the runtime ownership lock; the run was refused without any recovery or write.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "format.recovery-required",
       "code": "LEK-FORMAT-007",
       "category": "infrastructure",
@@ -4019,6 +4034,30 @@
         },
         {
           "name": "currentDigest",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "format.stdin-loss",
+      "code": "LEK-FORMAT-011",
+      "category": "model",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "format.stdin-loss",
+      "default_message": "Editor mode returned no replacement: the enumerated comment losses would drop buffer content irrecoverably.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "losses",
+          "type": "count"
+        },
+        {
+          "name": "disposition",
           "type": "token"
         }
       ],

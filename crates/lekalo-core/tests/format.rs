@@ -400,12 +400,33 @@ fn real_recovery_restores_the_pinned_preimages_and_formats() {
         fs::write(&module_path, after).expect("after bytes");
         let after_digest = lekalo_core::digest::sha256_hex(after);
 
-        let home = root.join(".lekalo/cache/format/cafe1111");
+        // The runtime record family is closed and pinned (finding A): the
+        // plan home carries the 47-hex base identity plus the attempt
+        // suffix, and the manifest's pins must recompute exactly that
+        // base identity before recovery accepts the material.
+        let base = {
+            let policy_digest = format!("sha256:{}", "0".repeat(64));
+            let mut material = String::new();
+            material.push_str(&policy_digest);
+            material.push('\u{1F}');
+            material.push_str("lekalo/modules/scheduling/module.yaml");
+            material.push('\u{1F}');
+            material.push_str(&before_digest);
+            material.push('\u{1F}');
+            material.push_str(&after_digest);
+            (
+                policy_digest,
+                lekalo_core::digest::sha256_hex(material.as_bytes()),
+            )
+        };
+        let (policy_digest, base_digest) = base;
+        let plan_id = format!("{}-1", &base_digest[..47]);
+        let home = root.join(".lekalo/cache/format").join(&plan_id);
         fs::create_dir_all(home.join("before/modules/scheduling")).expect("backup dirs");
         fs::write(home.join("before/modules/scheduling/module.yaml"), &before)
             .expect("backup bytes");
         let manifest = format!(
-            "{{\"schema_version\":\"lekalo/format-transaction/v0.8.0\",\"plan_id\":\"cafe1111\",\"policy_digest\":\"sha256:0000\",\"files\":[{{\"path\":\"lekalo/modules/scheduling/module.yaml\",\"before_sha256\":\"{before_digest}\",\"after_sha256\":\"{after_digest}\"}}]}}\n"
+            "{{\"schema_version\":\"lekalo/format-transaction/v0.8.0\",\"plan_id\":\"{plan_id}\",\"policy_digest\":\"{policy_digest}\",\"files\":[{{\"path\":\"lekalo/modules/scheduling/module.yaml\",\"before_sha256\":\"{before_digest}\",\"after_sha256\":\"{after_digest}\"}}]}}\n"
         );
         fs::write(home.join("manifest.json"), &manifest).expect("manifest");
         let manifest_digest =
@@ -413,7 +434,7 @@ fn real_recovery_restores_the_pinned_preimages_and_formats() {
         fs::write(
             home.join("journal.json"),
             format!(
-                "{{\"schema_version\":\"lekalo/format-transaction/v0.8.0\",\"plan_id\":\"cafe1111\",\"manifest_sha256\":\"{manifest_digest}\"}}\n"
+                "{{\"schema_version\":\"lekalo/format-transaction/v0.8.0\",\"plan_id\":\"{plan_id}\",\"manifest_sha256\":\"{manifest_digest}\"}}\n"
             ),
         )
         .expect("journal");
