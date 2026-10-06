@@ -247,9 +247,7 @@ fn previous_content_is_comment(bytes: &[u8], offset: usize) -> bool {
             return trimmed.trim_start().starts_with('#');
         }
         cursor = line_start;
-        if cursor > 0 {
-            cursor -= 1;
-        }
+        cursor = cursor.saturating_sub(1);
     }
     false
 }

@@ -95,13 +95,14 @@ impl ChangeError {
         match self {
             Self::RequestInvalid { .. }
             | Self::SubjectConflict { .. }
-            | Self::UnsupportedMember { .. }
             | Self::CommitFailed { .. }
             | Self::HistoryInvalid { .. }
             | Self::PolicyInvalid { .. }
             | Self::LoadFailed(_) => Status::Invalid,
             Self::UnsupportedVersion { .. } => Status::UnsupportedVersion,
-            Self::OperationUnsupported { .. } => Status::Unsupported,
+            Self::OperationUnsupported { .. } | Self::UnsupportedMember { .. } => {
+                Status::Unsupported
+            }
             Self::CompatibilityDenied { .. }
             | Self::PreconditionFailed { .. }
             | Self::IdempotencyConflict

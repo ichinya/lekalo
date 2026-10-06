@@ -146,7 +146,11 @@ pub struct GenerationProjection {
 /// The sealed prepared change: every field is pinned and deterministic.
 #[derive(Clone, Debug)]
 pub struct PreparedChange {
-    /// The request the plan was prepared from (exact bytes).
+    /// The canonical request the plan was prepared from: the decoded
+    /// request re-serialized with sorted object keys and compact
+    /// separators, so one request presented as pretty file JSON and as
+    /// compact CLI-sugar bytes carries the same identity (the research
+    /// contract binds replay to the same normalized request intent).
     pub(crate) request_bytes: Vec<u8>,
     /// The effective policy.
     pub(crate) policy: Policy,
@@ -180,7 +184,7 @@ pub struct PreparedChange {
 }
 
 impl PreparedChange {
-    /// The exact `sha256:` digest of the request bytes.
+    /// The exact `sha256:` digest of the canonical request bytes.
     pub fn request_digest(&self) -> String {
         format!("sha256:{}", sha256_hex(&self.request_bytes))
     }

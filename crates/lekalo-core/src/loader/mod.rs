@@ -285,7 +285,9 @@ pub(crate) fn load_validated_root(root: PathBuf) -> Result<ProjectLoad, DomainRe
         return failure(Status::Invalid, vec![Diagnostic::new(code)]);
     }
     if let Some(code) = crate::change::recovery_barrier_code(&fs) {
-        return failure(Status::Invalid, vec![Diagnostic::new(code)]);
+        // The change rule is admitted for the denied class: the barrier
+        // outcome is denied (exit 3) instead of invalid.
+        return failure(Status::Denied, vec![Diagnostic::new(code)]);
     }
 
     // Phase 3: capability-safe enumeration and reads.

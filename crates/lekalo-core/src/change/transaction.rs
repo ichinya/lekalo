@@ -210,7 +210,7 @@ impl Transaction {
     pub(crate) fn replace_all(&mut self) -> Result<(), ChangeError> {
         let mut replaced = 0usize;
         for staged in &self.staged {
-            if let Err(_) = write_same_dir(&staged.target, &staged.after_bytes) {
+            if write_same_dir(&staged.target, &staged.after_bytes).is_err() {
                 self.restore_prefix(replaced);
                 return Err(ChangeError::CommitFailed {
                     transaction: self.id.clone(),

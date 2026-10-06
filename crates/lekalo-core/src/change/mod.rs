@@ -21,7 +21,7 @@ pub mod request;
 pub mod transaction;
 pub mod version;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde_json::Value as Json;
 
@@ -53,6 +53,26 @@ use transaction::ReplacementPlan;
 
 /// The maximum type-reference depth, shared with the accepted Model grammar.
 pub use crate::ir::MAX_TYPE_LEVELS;
+
+impl From<request::RequestInvalid> for ChangeError {
+    fn from(invalid: request::RequestInvalid) -> Self {
+        match invalid {
+            request::RequestInvalid::OverLimit => ChangeError::RequestInvalid {
+                detail: "over-limit",
+            },
+            request::RequestInvalid::Malformed => ChangeError::RequestInvalid {
+                detail: "malformed",
+            },
+            request::RequestInvalid::UnsupportedVersion => ChangeError::UnsupportedVersion {
+                version: String::new(),
+            },
+            request::RequestInvalid::Shape(detail)
+            | request::RequestInvalid::Operation { detail, .. } => {
+                ChangeError::RequestInvalid { detail }
+            }
+        }
+    }
+}
 
 /// The literal request discriminator carried by a wrong-version refusal.
 fn request_version_literal(bytes: &[u8]) -> String {
@@ -145,11 +165,6 @@ pub struct ApplyRequestOptions<'a> {
     /// The expected plan identity; a mismatch refuses before mutation.
     pub expect_plan: Option<&'a str>,
 }
-
-/// Apply raw request bytes with ledger-first idempotency: a repeated key
-/// with the same request digest returns the original committed receipt
-/// without another mutation, even though the Model already carries the
-/// change and a fresh preparation would refuse it as a duplicate.
 
 /// Prepare one request batch: pure, read-only, deterministic.
 pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> {
@@ -481,7 +496,10 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
     file_diffs.sort_by(|left, right| left.path.as_bytes().cmp(right.path.as_bytes()));
 
     let prepared = PreparedChange {
-        request_bytes: options.request.to_vec(),
+        // The canonical re-serialization pins the request intent, not its
+        // presentation: pretty file JSON and compact sugar bytes of one
+        // request carry the same digest and the same plan identity.
+        request_bytes: request.to_canonical_json_string().into_bytes(),
         policy,
         operations: resolved_rows,
         inputs,
@@ -526,7 +544,17 @@ pub fn apply_request(options: &ApplyRequestOptions) -> Result<Receipt, ChangeErr
     if !history_bytes.is_empty() {
         let history = History::decode(&history_bytes)?;
         if let Some(record) = history.by_key(&key) {
-            let request_digest = format!("sha256:{}", crate::digest::sha256_hex(options.request));
+            // The ledger binds canonical request bytes, so a repeated key
+            // presented as pretty file JSON and as compact sugar bytes of
+            // one request replays instead of conflicting.
+            let request_digest = ChangeRequest::decode(options.request)
+                .map(|request| {
+                    format!(
+                        "sha256:{}",
+                        crate::digest::sha256_hex(request.to_canonical_json_string().as_bytes())
+                    )
+                })
+                .map_err(ChangeError::from)?;
             if record.request_digest != request_digest {
                 return Err(ChangeError::IdempotencyConflict);
             }
@@ -735,10 +763,10 @@ pub fn apply_prepared(
     let mut transaction =
         transaction::Transaction::begin(&root, &transaction_id, &prepared.plan_id(), &plans)?;
     for (index, plan) in plans.iter().enumerate() {
-        transaction.stage(index, plan).map_err(|error| {
+        if let Err(error) = transaction.stage(index, plan) {
             transaction.cleanup_after_restore();
-            error
-        })?;
+            return Err(error);
+        }
     }
     if let Err(error) = transaction.replace_all() {
         transaction.cleanup_after_restore();
@@ -763,7 +791,7 @@ pub fn lookup_receipt(
     }
     let history = History::decode(&history_bytes)?;
     let key = receipt::key_digest(idempotency_key);
-    Ok(history.by_key(&key).map(|record| stored_receipt(record)))
+    Ok(history.by_key(&key).map(stored_receipt))
 }
 
 /// Recover one interrupted transaction explicitly; readers stay blocked
@@ -1232,7 +1260,7 @@ fn build_candidate(
         .map(|document| document.document.clone())
         .collect();
     crate::loader::build_normalized_model(load.model.model_version, parsed)
-        .map_err(|outcome| ChangeError::LoadFailed(outcome))
+        .map_err(ChangeError::LoadFailed)
 }
 
 /// Plan the exact byte edits of one operation over the declaring document.
@@ -1394,7 +1422,7 @@ struct ClosureOutcome {
 }
 
 /// The declared target stems of the project (generation projection input).
-fn declared_targets(root: &PathBuf) -> Result<Vec<String>, ChangeError> {
+fn declared_targets(root: &Path) -> Result<Vec<String>, ChangeError> {
     let home = root.join("lekalo").join("targets");
     let Ok(entries) = std::fs::read_dir(&home) else {
         return Ok(Vec::new());
@@ -1424,7 +1452,7 @@ fn resolve_root(project: Option<&str>) -> Result<PathBuf, ChangeError> {
 }
 
 /// Refuse while any change journal awaits recovery (the reader barrier).
-fn refuse_while_recovery_pending(root: &PathBuf) -> Result<(), ChangeError> {
+fn refuse_while_recovery_pending(root: &Path) -> Result<(), ChangeError> {
     match transaction::pending_transactions(root).first() {
         Some(transaction) => Err(ChangeError::RecoveryRequired {
             transaction: transaction.clone(),

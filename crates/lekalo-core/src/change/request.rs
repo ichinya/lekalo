@@ -75,6 +75,39 @@ impl Operation {
             Self::Unsupported { subject, .. } => subject.as_deref(),
         }
     }
+
+    /// The canonical closed JSON of this operation (sorted keys, compact).
+    pub fn to_canonical_json(&self) -> Json {
+        let mut map = serde_json::Map::new();
+        map.insert(
+            "operation".to_owned(),
+            Json::String(self.operation().to_owned()),
+        );
+        match self {
+            Self::EntityFieldAdd { entity, field } => {
+                map.insert("entity".to_owned(), Json::String(entity.clone()));
+                map.insert("field".to_owned(), field.to_canonical_json());
+            }
+            Self::EntityFieldRemove { entity, name } => {
+                map.insert("entity".to_owned(), Json::String(entity.clone()));
+                map.insert("name".to_owned(), Json::String(name.clone()));
+            }
+            Self::EntityFieldRename { entity, name, to } => {
+                map.insert("entity".to_owned(), Json::String(entity.clone()));
+                map.insert("name".to_owned(), Json::String(name.clone()));
+                map.insert("to".to_owned(), Json::String(to.clone()));
+            }
+            Self::EnumCaseAdd { enum_id, case } => {
+                map.insert("enum".to_owned(), Json::String(enum_id.clone()));
+                map.insert("case".to_owned(), case.to_canonical_json());
+            }
+            Self::Unsupported { .. } => {
+                // Unsupported rows never carry canonical bytes: they are
+                // refused before any plan is sealed.
+            }
+        }
+        Json::Object(map)
+    }
 }
 
 /// One closed field declaration of `entity-field:add`.
@@ -89,6 +122,25 @@ pub struct FieldDecl {
     pub default: Option<Literal>,
 }
 
+impl FieldDecl {
+    /// The canonical closed JSON of this declaration (sorted keys).
+    pub(crate) fn to_canonical_json(&self) -> Json {
+        let mut map = serde_json::Map::new();
+        map.insert("name".to_owned(), Json::String(self.name.clone()));
+        map.insert("type".to_owned(), self.r#type.to_canonical_json());
+        if self.required {
+            map.insert("required".to_owned(), Json::Bool(true));
+        }
+        if let Some(description) = &self.description {
+            map.insert("description".to_owned(), Json::String(description.clone()));
+        }
+        if let Some(default) = &self.default {
+            map.insert("default".to_owned(), default.to_json_value());
+        }
+        Json::Object(map)
+    }
+}
+
 /// One closed enum-case declaration of `enum-case:add`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CaseDecl {
@@ -97,6 +149,21 @@ pub struct CaseDecl {
     /// Declared wire value. Wire values require the reviewed Model
     /// successor; presence is decoded and preparation refuses explicitly.
     pub value: Option<Literal>,
+}
+
+impl CaseDecl {
+    /// The canonical closed JSON of this declaration (sorted keys).
+    pub(crate) fn to_canonical_json(&self) -> Json {
+        let mut map = serde_json::Map::new();
+        map.insert("name".to_owned(), Json::String(self.name.clone()));
+        if let Some(description) = &self.description {
+            map.insert("description".to_owned(), Json::String(description.clone()));
+        }
+        if let Some(value) = &self.value {
+            map.insert("value".to_owned(), value.to_json_value());
+        }
+        Json::Object(map)
+    }
 }
 
 /// The closed type reference, at most four levels deep including the leaf.
@@ -123,6 +190,17 @@ impl TypeRef {
             Self::Ref(id) => id.clone(),
             Self::List(inner) => format!("list<{}>", inner.to_spelling()),
             Self::Optional(inner) => format!("{}?", inner.to_spelling()),
+        }
+    }
+
+    /// The canonical closed JSON of this type reference.
+    pub(crate) fn to_canonical_json(&self) -> Json {
+        match self {
+            Self::Ref(id) => serde_json::json!({ "ref": id }),
+            Self::List(inner) => serde_json::json!({ "list": inner.to_canonical_json() }),
+            Self::Optional(inner) => {
+                serde_json::json!({ "optional": inner.to_canonical_json() })
+            }
         }
     }
 }
@@ -167,6 +245,26 @@ impl Literal {
             }
         }
     }
+
+    /// The literal as a `serde_json` value with sorted object keys.
+    pub(crate) fn to_json_value(&self) -> Json {
+        match self {
+            Self::Null => Json::Null,
+            Self::Bool(value) => Json::Bool(*value),
+            Self::Int(value) => Json::Number((*value).into()),
+            Self::Str(value) => Json::String(value.clone()),
+            Self::Seq(items) => Json::Array(items.iter().map(Literal::to_json_value).collect()),
+            Self::Map(entries) => {
+                let mut sorted = entries.clone();
+                sorted.sort_by(|left, right| left.0.as_bytes().cmp(right.0.as_bytes()));
+                let mut map = serde_json::Map::new();
+                for (key, value) in sorted {
+                    map.insert(key, value.to_json_value());
+                }
+                Json::Object(map)
+            }
+        }
+    }
 }
 
 /// Why one request refused to decode.
@@ -185,6 +283,31 @@ pub enum RequestInvalid {
 }
 
 impl ChangeRequest {
+    /// The canonical compact request bytes: sorted object keys, compact
+    /// separators, operations in semantic order. Pretty file JSON and
+    /// compact CLI-sugar bytes of one request canonicalize identically,
+    /// so the request digest pins the intent, not its presentation.
+    pub fn to_canonical_json_string(&self) -> String {
+        let operations: Vec<Json> = self
+            .operations
+            .iter()
+            .map(|operation| operation.to_canonical_json())
+            .collect();
+        let mut root = serde_json::Map::new();
+        root.insert(
+            "schemaVersion".to_owned(),
+            Json::String(version::REQUEST_SCHEMA_VERSION.to_owned()),
+        );
+        if let Some(expect_model) = &self.expect_model {
+            root.insert("expectModel".to_owned(), Json::String(expect_model.clone()));
+        }
+        root.insert("operations".to_owned(), Json::Array(operations));
+        // serde_json Map iteration follows insertion order here, and the
+        // members above are inserted sorted; literal trees sort inside
+        // `to_canonical_json`.
+        serde_json::to_string(&Json::Object(root)).unwrap_or_default()
+    }
+
     /// Decode request bytes: duplicate keys refused, bounds enforced, the
     /// closed surface enforced, and every discriminator catalog-checked.
     pub fn decode(bytes: &[u8]) -> Result<Self, RequestInvalid> {
@@ -230,7 +353,7 @@ impl ChangeRequest {
         let mut decoded = Vec::with_capacity(operations.len());
         for (index, operation) in operations.iter().enumerate() {
             decoded.push(
-                decode_operation(&catalog, operation)
+                decode_operation(catalog, operation)
                     .map_err(|detail| RequestInvalid::Operation { index, detail })?,
             );
         }
