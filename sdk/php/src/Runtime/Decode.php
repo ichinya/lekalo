@@ -1001,9 +1001,6 @@ final class Decode {
         if ($apply && $evidencePlan !== ($request['plan_id'] ?? null)) {
             return $invalid('plan-id');
         }
-        if ($operation === 'generate' && isset($request['dry_run']) && $request['dry_run'] === true && $evidencePlan !== null) {
-            return $invalid('plan-id');
-        }
         if (($response['status'] ?? '') === 'error') {
             if (!array_key_exists('error', $response)) {
                 return $invalid('error-pairing');

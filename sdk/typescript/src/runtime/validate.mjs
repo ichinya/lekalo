@@ -104,7 +104,6 @@ export function validateResponsePayload(request, response) {
   if (request.operation === "describe" && response.status === "ok" && response.capabilities === undefined) return invalid("member");
   const apply = request.operation === "clean" || (request.operation === "generate" && request.dry_run === false);
   if (apply && response.evidence.plan_id !== request.plan_id) return invalid("plan-id");
-  if (request.operation === "generate" && request.dry_run === true && response.evidence.plan_id !== undefined) return invalid("plan-id");
   if (response.status === "error") {
     if (response.error === undefined) return invalid("error-pairing");
     if (response.result !== undefined || response.writes !== undefined || response.progress !== undefined) return invalid("error-pairing");
@@ -135,7 +134,6 @@ export function validateResponsePayload(request, response) {
   } else if (response.writes !== undefined) {
     return invalid("member");
   }
-  if (request.operation === "generate" && request.dry_run === true && response.evidence.plan_id !== undefined) return invalid("plan-id");
   return { ok: true };
 }
 

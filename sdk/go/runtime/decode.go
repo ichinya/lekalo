@@ -1068,12 +1068,8 @@ func ValidateResponsePayload(request, response Value) *Refusal {
 		return refuse(stageValidate, "member")
 	}
 	apply := operation == "clean" || (operation == "generate" && requestHasDryRun(request, false))
-	dryRunTrue := requestHasDryRun(request, true)
 	evidencePlan := planIDOf(response)
 	if apply && evidencePlan != GetString(request, "plan_id") {
-		return refuse(stageValidate, "plan-id")
-	}
-	if operation == "generate" && dryRunTrue && evidencePlan != "" {
 		return refuse(stageValidate, "plan-id")
 	}
 	if GetString(response, "status") == "error" {

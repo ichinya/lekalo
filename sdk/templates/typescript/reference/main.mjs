@@ -91,12 +91,12 @@ serve({
         writes,
       };
     },
-    async planClean() {
+    async "plan-clean"() {
       const { writes } = deterministicWrites({ target: "sdk-reference", profile: "default", ir_path: ".lekalo/ir/planner.json" });
       const plan = sortWritePlan(writes.map(({ path }) => ({ action: "delete", path })));
       return { planId: planId(plan), writes: plan };
     },
-    async planNative() {
+    async "plan-native"() {
       return {
         error: {
           errorClass: "unsupported",

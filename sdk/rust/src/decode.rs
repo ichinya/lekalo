@@ -1061,9 +1061,6 @@ pub fn validate_response_payload(request: &Value, response: &Value) -> Result<()
     if apply && response.get("evidence").and_then(|e| e.get("plan_id")).map(Value::as_str) != request.get("plan_id").map(Value::as_str) {
         return refuse("plan-id");
     }
-    if operation == "generate" && request.get("dry_run").and_then(Value::as_bool) == Some(true) && response.get("evidence").and_then(|e| e.get("plan_id")).is_some() {
-        return refuse("plan-id");
-    }
     if response.get("status").and_then(Value::as_str) == Some("error") {
         if response.get("error").is_none() {
             return refuse("error-pairing");
