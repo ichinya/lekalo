@@ -28,6 +28,7 @@ mod architecture_profile;
 mod coupling;
 mod doctor_git;
 mod evaluation;
+mod format;
 mod git_input;
 mod metrics_export;
 mod report_git;
@@ -214,6 +215,13 @@ enum Commands {
         /// and emit its canonical bytes instead of the preserved model.
         #[arg(long)]
         ir: bool,
+    },
+    /// Format admitted YAML/JSON sources into the pinned canonical text
+    /// form (issue #94): deterministic ordering, comment preservation,
+    /// and a read-only `--check` gate; apply is transactional.
+    Format {
+        #[command(flatten)]
+        args: format::FormatArgs,
     },
     /// Migrate the Model contract version to a registered target, or roll
     /// back one recorded migration.
@@ -2428,6 +2436,7 @@ fn runtime() -> u8 {
                 offline: _,
             } => run_update(project, dry_run, apply),
             Commands::Load { project, spans, ir } => run_load(project, spans, ir, cli.no_cache),
+            Commands::Format { args } => format::run(args),
             Commands::Migrate { migrate } => run_migrate(migrate),
             Commands::Validate {
                 project,

@@ -297,6 +297,12 @@ impl Session {
             return failure(Status::Invalid, vec![Diagnostic::new(code)]);
         }
 
+        // Phase 2c (issue #94): an interrupted formatter transaction
+        // blocks cached reads exactly like it blocks the loader.
+        if let Some(code) = crate::format::transaction::recovery_code(&fs) {
+            return failure(Status::Invalid, vec![Diagnostic::new(code)]);
+        }
+
         // The structure gates have passed: now — and only now — the store
         // opens, so the cache never races the scan that governs its home.
         self.ensure_store();

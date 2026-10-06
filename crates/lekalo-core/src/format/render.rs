@@ -134,34 +134,50 @@ struct Ordered {
 impl<'a> Renderer<'a> {
     // ---------- ordering ----------
 
-    /// The blank-line group partition of consecutive owner lines.
-    fn group_of(
-        &self,
-        owner_line: usize,
-        previous_line: Option<usize>,
-        previous_group: usize,
-    ) -> usize {
-        match previous_line {
-            Some(previous) => {
-                if self.trivia.blank_between(previous, owner_line) {
-                    previous_group + 1
-                } else {
-                    previous_group
-                }
-            }
-            None => 0,
+    /// The last source line owned by one node's subtree. Block-collection
+    /// spans carry only their start position, so the extent is derived
+    /// recursively; blank lines inside an extent never split the
+    /// surrounding container's groups.
+    fn extent(&self, node: &Node) -> usize {
+        match &node.value {
+            Value::Scalar(_) => node.span.end.line.max(node.span.start.line),
+            Value::Seq(items) => items
+                .iter()
+                .map(|item| self.extent(item))
+                .max()
+                .unwrap_or(node.span.start.line),
+            Value::Map(entries) => entries
+                .iter()
+                .map(|entry| {
+                    self.extent(&entry.value)
+                        .max(entry.key_span.end.line)
+                })
+                .max()
+                .unwrap_or(node.span.start.line),
         }
     }
 
-    fn groups_of(&self, lines: impl Iterator<Item = usize>) -> Vec<(usize, usize)> {
+    /// The blank-line group partition of consecutive owner lines. A group
+    /// boundary is a blank line strictly between the previous member's
+    /// subtree extent and the next member's start line.
+    fn groups_of(&self, members: &[(usize, usize)]) -> Vec<(usize, usize)> {
         let mut result: Vec<(usize, usize)> = Vec::new();
-        let mut previous_line: Option<usize> = None;
+        let mut previous_extent: Option<usize> = None;
         let mut previous_group = 0usize;
-        for line in lines {
-            let group = self.group_of(line, previous_line, previous_group);
-            previous_line = Some(line);
+        for &(start, extent) in members {
+            let group = match previous_extent {
+                Some(previous) => {
+                    if self.trivia.blank_between(previous, start) {
+                        previous_group + 1
+                    } else {
+                        previous_group
+                    }
+                }
+                None => 0,
+            };
+            previous_extent = Some(extent);
             previous_group = group;
-            result.push((line, group));
+            result.push((start, group));
         }
         result
     }
@@ -169,8 +185,16 @@ impl<'a> Renderer<'a> {
     /// Mapping entries: byte-ascending keys within retained groups; groups
     /// keep their original relative order.
     fn ordered_entries(&self, entries: &[MapEntry]) -> Vec<Ordered> {
-        let lines = entries.iter().map(|entry| entry.key_span.start.line);
-        let groups = self.groups_of(lines);
+        let members: Vec<(usize, usize)> = entries
+            .iter()
+            .map(|entry| {
+                (
+                    entry.key_span.start.line,
+                    self.extent(&entry.value).max(entry.key_span.end.line),
+                )
+            })
+            .collect();
+        let groups = self.groups_of(&members);
         let mut ordered: Vec<Ordered> = groups
             .into_iter()
             .enumerate()
@@ -197,8 +221,11 @@ impl<'a> Renderer<'a> {
             Some("definitions") => SeqOrder::SortByItemId,
             _ => SeqOrder::Preserve,
         };
-        let lines = items.iter().map(|item| item.span.start.line);
-        let groups = self.groups_of(lines);
+        let members: Vec<(usize, usize)> = items
+            .iter()
+            .map(|item| (item.span.start.line, self.extent(item)))
+            .collect();
+        let groups = self.groups_of(&members);
         let mut ordered: Vec<Ordered> = groups
             .into_iter()
             .enumerate()
@@ -237,6 +264,9 @@ impl<'a> Renderer<'a> {
     // ---------- trivia ----------
 
     fn write_comment_line(&mut self, index: usize, indent: usize) {
+        if self.consumed[index] {
+            return;
+        }
         let text = self.trivia.comments[index].text.clone();
         self.push_indent(indent);
         if text.is_empty() {
