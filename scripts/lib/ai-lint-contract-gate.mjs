@@ -13,7 +13,7 @@ const binary = join(root, 'target/debug', process.platform === 'win32' ? 'lekalo
 // Product-qualified successor snapshots preserve the original exact goldens.
 // Lock productVersion changes artifact/trace/condition pins, not this wire family.
 const product = readFileSync(join(root,'Cargo.toml'),'utf8').match(/\[workspace.package\][\s\S]*?version = "([^"]+)"/)?.[1];
-assert.ok(['0.6.4','0.6.5'].includes(product),'explicit product golden admission');
+assert.ok(['0.6.4','0.6.5','0.8.0'].includes(product),'explicit product golden admission');
 const productPinnedGoldens = new Set(['report','report-waived','waivers','comparison','comparison-incomparable']);
 const require = createRequire((process.env.LEKALO_AJV_NODE_PATH || dirname(fileURLToPath(import.meta.url))) + '/');
 assert.equal(require('ajv/package.json').version, '8.17.1', 'exact Ajv gate dependency');
@@ -96,8 +96,8 @@ export function attachments(env) {
 export function golden(name,value,update) {
   const family=['report','evidence','config','waivers','comparison'].find(f=>name===f||name.startsWith(f+'-'));
   const legacyPath=family?join(root,'tests/fixtures',`ai-lint-${family}`,'golden',name+'.json'):join(fixture,'golden',name+'.json');
-  const qualified=product==='0.6.5' && productPinnedGoldens.has(name);
-  const path=qualified?legacyPath.replace(/\.json$/,'.product-0.6.5.json'):legacyPath;
+  const qualified=productPinnedGoldens.has(name)&&(product==='0.6.5'||product==='0.8.0');
+  const path=qualified?legacyPath.replace(/\.json$/,`.product-${product}.json`):legacyPath;
   if(qualified) schema(family,JSON.parse(readFileSync(legacyPath,'utf8')));
   if(update) {mkdirSync(dirname(path),{recursive:true});writeFileSync(path,canonical(value)+'\n');}
   else assert.equal(readFileSync(path,'utf8'),canonical(value)+'\n',`golden drift: ${name}`);

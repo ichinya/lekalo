@@ -1,0 +1,50 @@
+{
+  "assessment": "pass",
+  "command": "check",
+  "complete": true,
+  "cycles": [],
+  "findings": [],
+  "gaps": [],
+  "identity": "dev.lekalo.module-api-report@0.8.0",
+  "moduleFilter": null,
+  "modules": [
+    {
+      "apiVersion": null,
+      "attachment": true,
+      "consumers": 0,
+      "exports": 0,
+      "imports": [
+        "tasks"
+      ],
+      "moduleId": "planner",
+      "publicDigest": null
+    },
+    {
+      "apiVersion": null,
+      "attachment": false,
+      "consumers": 0,
+      "exports": 0,
+      "imports": [],
+      "moduleId": "provider",
+      "publicDigest": null
+    },
+    {
+      "apiVersion": "1.2.0",
+      "attachment": true,
+      "consumers": 1,
+      "exports": 9,
+      "imports": [],
+      "moduleId": "tasks",
+      "publicDigest": "sha256:0e258ab140e6a10bdfd4b87fb6ee84060c7415c0dc686225a59d7a4f7084c0aa"
+    }
+  ],
+  "pins": {
+    "attachmentDigest": "sha256:dce21400fb4e43b49ae062204b6d5b6e3a6cef4bcabe8a651f2552719a40d128",
+    "irDigest": "sha256:f60bad30f53d2b660eaeeafcc4cabb55a529f5baa0e69e7cf9a4160199a8614e",
+    "modelVersion": "0.2.16",
+    "project": "tasks",
+    "registryVersion": "0.8.0"
+  },
+  "schemaVersion": "lekalo/module-api-report/v0.8.0",
+  "strict": false
+}

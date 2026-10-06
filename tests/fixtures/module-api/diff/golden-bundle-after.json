@@ -9,7 +9,7 @@
     }
   ],
   "deprecations": [],
-  "digest": "sha256:c4ed25964e9b49c62e982d066725d9c0b7a9206885b741bed9e00765b2ed490a",
+  "digest": "sha256:eb4533a82ff9b225e5cd2664656adde78327fef164cc23b045e1a910bf10033d",
   "exports": [
     {
       "base": "uuid",
@@ -40,18 +40,14 @@
           "name": "task_id",
           "required": true,
           "type": {
-            "ref": {
-              "ref": "tasks.task_id"
-            }
+            "ref": "tasks.task_id"
           }
         },
         {
           "name": "title",
           "required": true,
           "type": {
-            "ref": {
-              "ref": "tasks.title"
-            }
+            "ref": "tasks.title"
           }
         }
       ],
@@ -74,9 +70,7 @@
           "name": "title",
           "required": true,
           "type": {
-            "ref": {
-              "ref": "tasks.title"
-            }
+            "ref": "tasks.title"
           }
         }
       ],
@@ -97,9 +91,7 @@
           "name": "task_id",
           "required": true,
           "type": {
-            "ref": {
-              "ref": "tasks.task_id"
-            }
+            "ref": "tasks.task_id"
           }
         }
       ],
@@ -113,9 +105,7 @@
         "tasks.task"
       ],
       "returns": {
-        "ref": {
-          "ref": "tasks.task_view"
-        }
+        "ref": "tasks.task_view"
       },
       "version": 1
     },
@@ -127,11 +117,7 @@
       ],
       "returns": {
         "list": {
-          "list": {
-            "ref": {
-              "ref": "tasks.task_view"
-            }
-          }
+          "ref": "tasks.task_view"
         }
       },
       "version": 1
@@ -144,9 +130,7 @@
           "name": "task_id",
           "required": true,
           "type": {
-            "ref": {
-              "ref": "tasks.task_id"
-            }
+            "ref": "tasks.task_id"
           }
         }
       ],

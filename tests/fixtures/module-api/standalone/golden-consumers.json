@@ -1,0 +1,66 @@
+{
+  "complete": false,
+  "consumers": [
+    {
+      "consumer": "planner",
+      "declared": true,
+      "mode": "source",
+      "policy": {
+        "lower": "1.0.0",
+        "lowerInclusive": true,
+        "type": "version-range",
+        "upper": "2.0.0",
+        "upperInclusive": false
+      },
+      "uses": [
+        {
+          "edges": [],
+          "export": "tasks.get_task",
+          "member": null,
+          "origin": "declared",
+          "sensitivity": "whole-shape",
+          "transitive": false
+        },
+        {
+          "edges": [],
+          "export": "tasks.task_id",
+          "member": null,
+          "origin": "declared",
+          "sensitivity": "whole-shape",
+          "transitive": false
+        },
+        {
+          "edges": [],
+          "export": "tasks.task_view",
+          "member": null,
+          "origin": "declared",
+          "sensitivity": "whole-shape",
+          "transitive": false
+        },
+        {
+          "edges": [
+            "planner.focus->tasks.title"
+          ],
+          "export": "tasks.title",
+          "member": null,
+          "origin": "resolved",
+          "sensitivity": "whole-shape",
+          "transitive": false
+        }
+      ]
+    }
+  ],
+  "digest": "sha256:6caf6a60cb6ebf8f2fb37675f5fd007711aac7c2624e4ce65933b10cdda84a1c",
+  "identity": "dev.lekalo.module-api-consumers@0.8.0",
+  "pins": {
+    "apiDigest": "sha256:dce21400fb4e43b49ae062204b6d5b6e3a6cef4bcabe8a651f2552719a40d128",
+    "irDigest": "sha256:f60bad30f53d2b660eaeeafcc4cabb55a529f5baa0e69e7cf9a4160199a8614e",
+    "modelVersion": "0.2.16",
+    "project": "tasks"
+  },
+  "producer": {
+    "module": "tasks",
+    "project": "tasks"
+  },
+  "schemaVersion": "lekalo/module-api-consumers/v0.8.0"
+}
