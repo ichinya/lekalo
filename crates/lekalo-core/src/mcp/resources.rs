@@ -108,15 +108,56 @@ pub fn decode_component(component: &str) -> Option<String> {
 
 /// Build one logical resource URI.
 pub fn resource_uri(project: &str, family: Family, qualifier: Option<&str>) -> String {
-    match qualifier {
-        Some(qualifier) => format!(
-            "lekalo://{}/{}/{}",
-            encode_component(project),
-            family.key(),
-            encode_component(qualifier)
+    build_uri(
+        &UriScope {
+            project: project.to_owned(),
+            group: None,
+        },
+        family,
+        qualifier,
+    )
+}
+
+/// Build one group-qualified logical resource URI.
+pub fn group_resource_uri(
+    project: &str,
+    group: &str,
+    family: Family,
+    qualifier: Option<&str>,
+) -> String {
+    build_uri(
+        &UriScope {
+            project: project.to_owned(),
+            group: Some(group.to_owned()),
+        },
+        family,
+        qualifier,
+    )
+}
+
+/// Assemble one URI from a parsed scope (also the resource dispatcher's
+/// re-projection seam).
+pub fn build_uri(scope: &UriScope, family: Family, qualifier: Option<&str>) -> String {
+    let prefix = match &scope.group {
+        Some(group) => format!(
+            "lekalo://{}/g/{}",
+            encode_component(&scope.project),
+            encode_component(group)
         ),
-        None => format!("lekalo://{}/{}", encode_component(project), family.key()),
+        None => format!("lekalo://{}", encode_component(&scope.project)),
+    };
+    match qualifier {
+        Some(qualifier) => format!("{prefix}/{}/{}", family.key(), encode_component(qualifier)),
+        None => format!("{prefix}/{}", family.key()),
     }
+}
+
+/// The semantic scope of one resource URI: the project plus an optional
+/// catalog-defined group qualifier.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UriScope {
+    pub project: String,
+    pub group: Option<String>,
 }
 
 /// Why one URI failed resource admission.
@@ -133,11 +174,29 @@ pub enum UriRefusal {
 }
 
 /// Parse and admit one logical resource URI against the closed grammar.
-pub fn parse_uri(uri: &str) -> Result<(String, Family, Option<String>), UriRefusal> {
+///
+/// Group-qualified identities use the reserved `g/<groupId>` segment:
+/// `lekalo://P/g/G/family[/qualifier]`; the group id must satisfy the
+/// closed grammar, and membership is checked against the catalog by the
+/// caller before any read.
+pub fn parse_uri(uri: &str) -> Result<(UriScope, Family, Option<String>), UriRefusal> {
     let rest = uri.strip_prefix("lekalo://").ok_or(UriRefusal::Scheme)?;
     let (project, remainder) = rest.split_once('/').ok_or(UriRefusal::Family)?;
     if policy::admit_id(project).is_err() {
         return Err(UriRefusal::Project);
+    }
+    let mut scope = UriScope {
+        project: project.to_owned(),
+        group: None,
+    };
+    let mut remainder = remainder;
+    if let Some(after_g) = remainder.strip_prefix("g/") {
+        let (group, rest) = after_g.split_once('/').ok_or(UriRefusal::Family)?;
+        if policy::admit_id(group).is_err() {
+            return Err(UriRefusal::Qualifier);
+        }
+        scope.group = Some(group.to_owned());
+        remainder = rest;
     }
     let (family_key, qualifier) = match remainder.split_once('/') {
         Some((key, qualifier)) => (key, Some(qualifier)),
@@ -153,11 +212,11 @@ pub fn parse_uri(uri: &str) -> Result<(String, Family, Option<String>), UriRefus
             if qualifier.contains('/') || qualifier.contains('\\') || qualifier.contains("..") {
                 return Err(UriRefusal::Qualifier);
             }
-            Ok((project.to_owned(), family, Some(qualifier)))
+            Ok((scope, family, Some(qualifier)))
         }
         (true, None) => Err(UriRefusal::Qualifier),
         (false, Some(_)) => Err(UriRefusal::Qualifier),
-        (false, None) => Ok((project.to_owned(), family, None)),
+        (false, None) => Ok((scope, family, None)),
     }
 }
 
@@ -280,7 +339,10 @@ mod tests {
         assert_eq!(
             parse_uri(&uri),
             Ok((
-                "planner".to_owned(),
+                UriScope {
+                    project: "planner".to_owned(),
+                    group: None
+                },
                 Family::SymbolMetadata,
                 Some("planner.focus_task".to_owned())
             ))
@@ -288,6 +350,22 @@ mod tests {
         let encoded = resource_uri("planner", Family::SymbolMetadata, Some("mod:weird id"));
         assert!(encoded.contains("%3A"), "{encoded}");
         assert!(parse_uri(&encoded).is_ok());
+    }
+
+    #[test]
+    fn group_qualified_uris_round_trip() {
+        let uri = group_resource_uri("planner", "planner-review", Family::ProjectSummary, None);
+        assert_eq!(uri, "lekalo://planner/g/planner-review/project-summary");
+        let parsed = parse_uri("lekalo://planner/g/planner-review/summary").expect("group uri");
+        assert_eq!(parsed.0.project, "planner");
+        assert_eq!(parsed.0.group.as_deref(), Some("planner-review"));
+        assert_eq!(parsed.1, Family::ProjectSummary);
+        // The reserved segment stays closed: an invalid group id refuses.
+        assert_eq!(
+            parse_uri("lekalo://p/g/Not_Valid/summary"),
+            Err(UriRefusal::Qualifier)
+        );
+        assert_eq!(parse_uri("lekalo://p/g"), Err(UriRefusal::Family));
     }
 
     #[test]

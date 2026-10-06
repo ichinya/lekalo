@@ -29,6 +29,7 @@ mod coupling;
 mod doctor_git;
 mod evaluation;
 mod git_input;
+pub(crate) mod mcp;
 mod metrics_export;
 mod report_git;
 pub(crate) mod report_output;
@@ -223,6 +224,13 @@ enum Commands {
     },
     /// Print the embedded contract version registry.
     Compatibility,
+    /// The issue #33 read-only MCP surface: the embedded capability
+    /// manifest, or one stdio server over an explicitly granted project.
+    /// Write/generate tools do not exist on this surface.
+    Mcp {
+        #[command(subcommand)]
+        command: mcp::McpCommands,
+    },
     /// Emit the issue #34 workflow-provider discovery manifest for
     /// AIFHub `/aif-*` consumers: a closed, deterministic receipt that
     /// works outside any project, reads nothing, launches nothing, and
@@ -2450,6 +2458,7 @@ fn runtime() -> u8 {
                 run_validate_reported(project, module, strict, cli.no_cache, &request)
             }
             Commands::Compatibility => run_compatibility(),
+            Commands::Mcp { command } => mcp::run(command, json_requested),
             Commands::AiLint { args } => ai_lint::run(args),
             Commands::Waivers { command } => waivers::run(*command),
             Commands::Provider { command } => run_provider(command),
