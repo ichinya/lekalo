@@ -1,0 +1,377 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.worklog-changelog-evidence.schema@0.8.0",
+  "title": "Lekalo worklog-changelog pilot evidence report",
+  "description": "Issue #51 closed evidence report: exact input and toolchain pins, stable scenario ids, per-effect outcomes and assertions, requirement-to-test and gate references, completeness and consumer witnesses, and per-target portability verdicts. No raw bodies, logs, host paths, or credentials.",
+  "type": "object",
+  "additionalProperties": false,
+  "unevaluatedProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "reportVersion",
+    "compositionRef",
+    "toolchain",
+    "profiles",
+    "targets",
+    "scenarios",
+    "consumers",
+    "completeness",
+    "verdict"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/worklog-changelog-evidence/v0.8.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.worklog-changelog-evidence@0.8.0"
+    },
+    "reportVersion": {
+      "const": "0.8.0"
+    },
+    "compositionRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity",
+        "digest"
+      ],
+      "properties": {
+        "identity": {
+          "const": "dev.lekalo.worklog-changelog-pilot@0.8.0"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      }
+    },
+    "toolchain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "harness",
+        "node",
+        "ajv"
+      ],
+      "properties": {
+        "harness": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]+$",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "node": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]+$",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "ajv": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]+$",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "profiles": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "strict",
+          "permissive"
+        ]
+      }
+    },
+    "targets": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/targetReport"
+      }
+    },
+    "scenarios": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/scenarioResult"
+      }
+    },
+    "consumers": {
+      "type": "array",
+      "maxItems": 128,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "consumer",
+          "witness",
+          "relation"
+        ],
+        "properties": {
+          "consumer": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
+            "minLength": 3,
+            "maxLength": 256
+          },
+          "witness": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.:/@-]+$",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "relation": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.:/@-]+$",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        }
+      }
+    },
+    "completeness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "consumerClosure",
+        "coverage",
+        "unknownExternalConsumers"
+      ],
+      "properties": {
+        "consumerClosure": {
+          "enum": [
+            "complete",
+            "incomplete"
+          ]
+        },
+        "coverage": {
+          "enum": [
+            "full",
+            "partial"
+          ]
+        },
+        "unknownExternalConsumers": {
+          "const": true
+        }
+      }
+    },
+    "verdict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "strict",
+        "permissive",
+        "degraded"
+      ],
+      "properties": {
+        "strict": {
+          "enum": [
+            "pass",
+            "denied",
+            "unsupported"
+          ]
+        },
+        "permissive": {
+          "enum": [
+            "pass",
+            "degraded"
+          ]
+        },
+        "degraded": {
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "targetReport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "backend",
+        "execution",
+        "capabilities",
+        "assertions",
+        "blocking"
+      ],
+      "properties": {
+        "target": {
+          "enum": [
+            "php",
+            "go"
+          ]
+        },
+        "backend": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "bound",
+                "absent"
+              ]
+            },
+            "identity": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 128
+            },
+            "digest": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            }
+          }
+        },
+        "execution": {
+          "enum": [
+            "executed",
+            "not_executed"
+          ]
+        },
+        "capabilities": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "capability",
+              "support",
+              "blocking",
+              "note"
+            ],
+            "properties": {
+              "capability": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_.:/@-]+$",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "support": {
+                "enum": [
+                  "supported",
+                  "partial",
+                  "unsupported",
+                  "unknown"
+                ]
+              },
+              "approval": {
+                "enum": [
+                  "not_required",
+                  "reviewed"
+                ]
+              },
+              "blocking": {
+                "type": "boolean"
+              },
+              "note": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+              }
+            }
+          }
+        },
+        "assertions": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "scenario",
+              "status"
+            ],
+            "properties": {
+              "scenario": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
+                "minLength": 3,
+                "maxLength": 256
+              },
+              "status": {
+                "enum": [
+                  "pass",
+                  "fail",
+                  "unsupported",
+                  "not_executed"
+                ]
+              }
+            }
+          }
+        },
+        "blocking": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.:/@-]+$",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        }
+      }
+    },
+    "scenarioResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scenario",
+        "status",
+        "targets"
+      ],
+      "properties": {
+        "scenario": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
+          "minLength": 3,
+          "maxLength": 256
+        },
+        "status": {
+          "enum": [
+            "pass",
+            "fail",
+            "unsupported",
+            "not_executed"
+          ]
+        },
+        "targets": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "php",
+              "go",
+              "fake-reference"
+            ]
+          }
+        }
+      }
+    }
+  }
+}
