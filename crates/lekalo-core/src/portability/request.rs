@@ -139,7 +139,7 @@ pub fn parse_evidence(
     {
         return Err(diagnostic::unsupported_version("evidence-version"));
     }
-    if document.recipe_ref.id != version::RECIPE_IDENTITY
+    if document.recipe_ref.id != version::RECIPE_REF_ID
         || document.recipe_ref.version != recipe.document_version()
         || document.recipe_ref.digest != recipe.digest
     {
@@ -153,8 +153,7 @@ pub fn parse_evidence(
         .unwrap_or_default();
     if document.project_ref.project_id != expected_id
         || document.project_ref.model_version != project.model_version.as_str()
-        || document.project_ref.ir_digest
-            != format!("sha256:{}", crate::implementation::ir_digest(project))
+        || document.project_ref.ir_digest != crate::implementation::ir_digest(project).as_str()
     {
         return Err(diagnostic::invalid("project-pin"));
     }

@@ -1,0 +1,17 @@
+{
+  "schema_version": "lekalo/target-profile/v0.2.16",
+  "profiles": [
+    {
+      "id": "go-postgres-http",
+      "version": "0.2.16",
+      "components": {
+        "runtime": "go-standard",
+        "storage": "postgres-sql",
+        "transport": "http-json",
+        "testing": "go-native",
+        "analysis": "go-vet",
+        "deployment": "container"
+      }
+    }
+  ]
+}

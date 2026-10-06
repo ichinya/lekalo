@@ -267,14 +267,16 @@ pub fn assess(input: &Assessment) -> Result<Report, DiagnosticSet> {
         schema_version: super::version::REPORT_SCHEMA_VERSION.to_owned(),
         identity: super::version::REPORT_IDENTITY.to_owned(),
         recipe_ref: wire::RecipeRef {
-            id: "dev.lekalo.portability-recipe".to_owned(),
+            id: super::version::RECIPE_REF_ID.to_owned(),
             version: recipe.document_version().to_owned(),
             digest: recipe.digest.clone(),
         },
         project_ref: wire::ProjectRef {
             project_id,
             model_version: project.model_version.as_str().to_owned(),
-            ir_digest: format!("sha256:{}", crate::implementation::ir_digest(project)),
+            ir_digest: crate::implementation::ir_digest(project)
+                .as_str()
+                .to_owned(),
         },
         scope: Scope {
             kind: scope_kind(input.request),

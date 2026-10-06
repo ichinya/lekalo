@@ -62,10 +62,10 @@
     "precedence": [
       "unsupported",
       "partial",
+      "unknown",
       "target-specific",
       "supported-with-mapping",
-      "portable",
-      "unknown"
+      "portable"
     ],
     "denominatorBasis": "eligible-applicable-subjects",
     "ratioBasis": {

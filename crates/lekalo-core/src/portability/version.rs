@@ -30,6 +30,9 @@ pub const RECIPE_SCHEMA_VERSION: &str = "lekalo/portability-recipe/v0.8.0";
 /// The exact recipe identity.
 pub const RECIPE_IDENTITY: &str = "dev.lekalo.portability-recipe@0.8.0";
 
+/// The recipe identity used inside references (no version suffix).
+pub const RECIPE_REF_ID: &str = "dev.lekalo.portability-recipe";
+
 /// The embedded reviewed recipe instance: the extraction, aggregation,
 /// and mapping definitions the report binds to.
 pub const RECIPE_BYTES: &[u8] =

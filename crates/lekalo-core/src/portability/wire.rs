@@ -100,10 +100,10 @@ impl Classification {
         match self {
             Self::Unsupported => 0,
             Self::Partial => 1,
-            Self::TargetSpecific => 2,
-            Self::SupportedWithMapping => 3,
-            Self::Portable => 4,
-            Self::Unknown => 5,
+            Self::Unknown => 2,
+            Self::TargetSpecific => 3,
+            Self::SupportedWithMapping => 4,
+            Self::Portable => 5,
             Self::NonApplicable => 6,
         }
     }

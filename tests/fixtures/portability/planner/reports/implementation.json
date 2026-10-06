@@ -1,0 +1,91 @@
+{
+  "schemaVersion": "lekalo/implementation/v0.2.16",
+  "identity": "dev.lekalo.implementation@0.2.16",
+  "projectId": "planner",
+  "modelRef": {
+    "modelVersion": "0.2.16",
+    "digest": "sha256:88387b42af6ba5aa08bee420fc5adb1e3e98fc1ba732347f470f2b22b22dacdb"
+  },
+  "irRef": {
+    "identity": "dev.lekalo.ir@0.2.16",
+    "digest": "sha256:ece56c7c27111acde7db1785800cc31d3343938a893a0e6492d1939482f4f26f"
+  },
+  "contracts": [
+    {
+      "symbol": "planner.calculate_schedule",
+      "contract": "planner.scheduler/v1",
+      "targets": [
+        {
+          "target": "node-typescript",
+          "kind": "foreign",
+          "symbol": "@planner/core-domain#calculateSchedule"
+        },
+        {
+          "target": "php-laravel",
+          "kind": "foreign",
+          "symbol": "App\\Schedule\\CalculateSchedule::__invoke"
+        },
+        {
+          "target": "go-service",
+          "kind": "unsupported"
+        }
+      ]
+    },
+    {
+      "symbol": "planner.focus_task",
+      "contract": "planner.focusing/v1",
+      "targets": [
+        {
+          "target": "node-typescript",
+          "kind": "generated"
+        },
+        {
+          "target": "php-laravel",
+          "kind": "custom"
+        },
+        {
+          "target": "go-service",
+          "kind": "generated"
+        }
+      ]
+    },
+    {
+      "symbol": "planner.archive_task_cmd",
+      "contract": "planner.archiving/v1",
+      "targets": [
+        {
+          "target": "node-typescript",
+          "kind": "generated"
+        },
+        {
+          "target": "php-laravel",
+          "kind": "generated"
+        },
+        {
+          "target": "go-service",
+          "kind": "external",
+          "port": "archsvc-lekalo-archive"
+        }
+      ]
+    },
+    {
+      "symbol": "planner.count_focused",
+      "contract": "planner.reading/v1",
+      "targets": [
+        {
+          "target": "node-typescript",
+          "kind": "generated"
+        },
+        {
+          "target": "php-laravel",
+          "kind": "generated"
+        },
+        {
+          "target": "go-service",
+          "kind": "foreign",
+          "symbol": "plannerquery.CountFocused"
+        }
+      ]
+    }
+  ]
+}

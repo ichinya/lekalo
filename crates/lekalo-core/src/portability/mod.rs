@@ -83,6 +83,7 @@ pub fn verify_profile_pin(
 
 /// The resolved target selection of one run: exact pins when the
 /// configuration supplies them, derived declarations otherwise.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolvedTargets {
     pub source: TargetInput,
     pub destinations: Vec<TargetInput>,
