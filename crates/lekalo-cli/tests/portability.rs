@@ -207,7 +207,6 @@ fn unknown_target_selection_is_invalid_on_stderr() {
 
 #[test]
 fn a_stale_profile_pin_is_refused_before_any_assessment() {
-    let project = fixture_path();
     // The same-name incompatible snapshot: bump the declared version in
     // a copied configuration while keeping the old digest pins.
     let mut config: serde_json::Value = serde_json::from_str(
