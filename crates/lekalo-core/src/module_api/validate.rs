@@ -1,0 +1,414 @@
+//! The boundary check: binding validation, export closure, undeclared
+//! imports, cross-owner writes, and cycle witnesses (issue #113).
+//!
+//! `check` is the pure core of `module api check` and the `validate
+//! --module-api` seam. Advisory mode records well-formed boundary findings
+//! as evidence; strict mode rejects exact semantic violations. Malformed
+//! inputs always fail invalid; policy verdicts ride the dedicated denied
+//! seam of the caller. The report retains every finding and witness so a
+//! denied run never hides its rows.
+
+use super::diagnostic::Evidence;
+use super::effects;
+use super::graph;
+use super::public::export_public;
+use super::resolve::{resolve, Resolved};
+use super::wire::{self, ModuleSummary, PublicBundle, Report};
+use crate::diagnostics::DiagnosticSet;
+use crate::ir::{Compilation, Portability, Visibility};
+
+/// One boundary finding classification.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FindingClass {
+    /// Malformed input: always invalid regardless of mode.
+    Invalid,
+    /// A semantic boundary violation: advisory in default mode, invalid
+    /// under strict.
+    Boundary,
+    /// A required evidence gap: advisory `indeterminate`, unavailable when
+    /// required by the command.
+    Evidence,
+}
+
+/// The typed verdict of one boundary run.
+pub struct Verdict {
+    pub report: Report,
+    pub evidence: Vec<Evidence>,
+    /// The most severe classification among the recorded findings.
+    pub class: FindingClass,
+}
+
+/// Run the complete boundary check over one compilation plus attachment.
+pub fn check(
+    attachment_bytes: &[u8],
+    compilation: &Compilation,
+    strict: bool,
+    module_filter: Option<&str>,
+) -> Result<Verdict, DiagnosticSet> {
+    let resolved = resolve(attachment_bytes, compilation)?;
+    let mut evidence: Vec<Evidence> = Vec::new();
+    let project = &compilation.project;
+    let ir_digest = format!(
+        "sha256:{}",
+        crate::digest::sha256_hex(project.to_canonical_json().as_bytes())
+    );
+    // 1. Declared import cycles, before any graph construction.
+    let edges = graph::import_edges(&project.modules);
+    let cycles = graph::import_sccs(&edges);
+    for cycle in &cycles {
+        let mut finding = Evidence::new(
+            "module-api.dependency-cycle",
+            cycle.members.first().map(String::as_str).unwrap_or_default(),
+            "boundary-dependency-scc",
+        );
+        finding.path = cycle.path.clone();
+        evidence.push(finding);
+    }
+    // 2. Cross-module references against the export allowlists.
+    let mut exports_of: std::collections::BTreeMap<&str, Vec<&str>> =
+        std::collections::BTreeMap::new();
+    for module in resolved.modules.values() {
+        let list = exports_of.entry(module.module_id.as_str()).or_default();
+        for entry in &module.exports {
+            list.push(entry.export.as_str());
+        }
+    }
+    let by_id: std::collections::BTreeMap<&str, &crate::ir::Definition> = project
+        .definitions
+        .iter()
+        .map(|definition| (definition.id().as_str(), definition))
+        .collect();
+    let declared_imports: std::collections::BTreeMap<&str, Vec<&str>> = project
+        .modules
+        .iter()
+        .map(|module| {
+            (
+                module.id.as_str(),
+                module
+                    .imports
+                    .iter()
+                    .map(|import| import.as_str())
+                    .collect(),
+            )
+        })
+        .collect();
+    for definition in project.definitions.iter() {
+        let consumer = match definition.id().as_str().split_once('.') {
+            Some((owner, _)) => owner,
+            None => continue,
+        };
+        for reference in effects::references_of(definition) {
+            let Some(producer) = reference.split_once('.').map(|(owner, _)| owner) else {
+                continue;
+            };
+            if producer == consumer {
+                continue;
+            }
+            // Existing direct private-reference findings keep their rule;
+            // this seam reports only the new project-visible-but-unexported
+            // violation, once per (consumer, reference).
+            if let Some(target) = by_id.get(reference) {
+                if target.common().visibility == Some(Visibility::Module) {
+                    continue;
+                }
+            }
+            if let Some(exported) = exports_of.get(producer) {
+                if !exported.contains(&reference) {
+                    let mut finding = Evidence::new(
+                        "module-api.symbol-not-exported",
+                        definition.id().as_str(),
+                        "unexported-cross-module-reference",
+                    );
+                    finding.consumer = Some(consumer.to_owned());
+                    finding.producer = Some(producer.to_owned());
+                    finding.export = Some(reference.to_owned());
+                    finding.path = vec![
+                        format!("{consumer}->{producer}"),
+                        format!("import:{reference}"),
+                        format!("export:{reference}"),
+                    ];
+                    evidence.push(finding);
+                }
+            }
+            // Declared imports: every resolved cross-module use edge must
+            // agree with the Model imports (unused imports stay visible,
+            // never an error).
+            let imports = declared_imports
+                .get(consumer)
+                .cloned()
+                .unwrap_or_default();
+            if !imports.contains(&producer) {
+                let mut finding = Evidence::new(
+                    "module-api.import-undeclared",
+                    definition.id().as_str(),
+                    "undeclared-import",
+                );
+                finding.producer = Some(producer.to_owned());
+                finding.export = Some(reference.to_owned());
+                finding.path = vec![format!("{consumer}->{producer}")];
+                evidence.push(finding);
+            }
+            // Target-specific exposure inside the portable closure is a
+            // direct portability finding for the owner rule; the boundary
+            // adds the public closure path only for exported signatures.
+        }
+    }
+    // 3. Public closure of every exported signature: private and
+    // target-specific exposure with exact member paths.
+    for module in resolved.modules.values() {
+        if module.exports.is_empty() {
+            continue;
+        }
+        closure_findings(&resolved, compilation, &module.module_id, &mut evidence)?;
+    }
+    // 4. Cross-owner writes over typed effect facts.
+    let effect_graph = crate::effects::build(project)?;
+    for finding in effects::check_writes(&resolved, compilation, &effect_graph) {
+        evidence.push(finding);
+    }
+    // Public dependency projection cycles (module-level public bundles).
+    let mut bundles = std::collections::BTreeMap::new();
+    let mut public_cycle_evidence = Vec::new();
+    for module in resolved.modules.values() {
+        if module.exports.is_empty() {
+            continue;
+        }
+        match export_public(&resolved, compilation, &module.module_id) {
+            Ok(bundle) => {
+                bundles.insert(module.module_id.clone(), bundle);
+            }
+            Err(_) => {
+                let mut finding = Evidence::new(
+                    "module-api.evidence-incomplete",
+                    &module.module_id,
+                    "public-closure-incomplete",
+                );
+                finding.gaps = vec!["public-closure-incomplete".to_owned()];
+                public_cycle_evidence.push(finding);
+            }
+        }
+    }
+    let public_edges = graph::public_edges(&bundles);
+    for cycle in graph::import_sccs(&public_edges) {
+        let mut finding = Evidence::new(
+            "module-api.dependency-cycle",
+            cycle.members.first().map(String::as_str).unwrap_or_default(),
+            "public-dependency-scc",
+        );
+        finding.path = cycle.path.clone();
+        public_cycle_evidence.push(finding);
+    }
+    evidence.extend(public_cycle_evidence);
+    // Filter owned diagnostics when --module scopes the report; mandatory
+    // cross-module errors (cycles, writes with foreign producers) stay.
+    if let Some(scope) = module_filter {
+        evidence.retain(|finding| match finding.rule {
+            "module-api.symbol-not-exported" | "module-api.import-undeclared" => {
+                finding.consumer.as_deref() == Some(scope)
+            }
+            "module-api.public-private-exposure" | "module-api.public-target-exposure" => {
+                finding.producer.as_deref() == Some(scope)
+                    || finding.subject.starts_with(&format!("{scope}."))
+            }
+            "module-api.cross-module-write-forbidden" => {
+                finding.consumer.as_deref() == Some(scope)
+                    || finding.producer.as_deref() == Some(scope)
+            }
+            _ => true,
+        });
+    }
+    evidence.sort_by(|left, right| {
+        (left.rule, left.subject.as_str(), left.detail.as_str())
+            .cmp(&(right.rule, right.subject.as_str(), right.detail.as_str()))
+    });
+    evidence.dedup_by(|left, right| {
+        left.rule == right.rule
+            && left.subject == right.subject
+            && left.detail == right.detail
+            && left.export == right.export
+            && left.member == right.member
+            && left.path == right.path
+    });
+    // Summary rows per module with public digests.
+    let mut modules = Vec::new();
+    let mut gaps = Vec::new();
+    for module in project.modules.iter() {
+        let id = module.id.as_str();
+        let policy = resolved.modules.get(id);
+        let bundle_digest = bundles.get(id).map(|bundle| bundle.digest.clone());
+        modules.push(ModuleSummary {
+            module_id: id.to_owned(),
+            api_version: policy.and_then(|policy| policy.api_version.clone()),
+            attachment: policy.is_some(),
+            exports: policy
+                .map(|policy| policy.exports.len() as u64)
+                .unwrap_or(0),
+            imports: module
+                .imports
+                .iter()
+                .map(|import| import.as_str().to_owned())
+                .collect(),
+            consumers: policy
+                .map(|policy| policy.consumers.len() as u64)
+                .unwrap_or(0),
+            public_digest: bundle_digest,
+        });
+        modules.sort_by(|left, right| left.module_id.cmp(&right.module_id));
+        modules.dedup_by(|left, right| left.module_id == right.module_id);
+    }
+    modules.sort_by(|left, right| left.module_id.cmp(&right.module_id));
+    if bundles.len() < resolved.modules.values().filter(|m| !m.exports.is_empty()).count() {
+        gaps.push("public-closure-incomplete".to_owned());
+    }
+    // The verdict: exact semantic violations are invalid under strict;
+    // advisory default keeps the run valid with explicit findings.
+    let boundary_violations = evidence
+        .iter()
+        .filter(|finding| {
+            matches!(
+                finding.rule,
+                "module-api.symbol-not-exported"
+                    | "module-api.import-undeclared"
+                    | "module-api.public-private-exposure"
+                    | "module-api.public-target-exposure"
+                    | "module-api.cross-module-write-forbidden"
+                    | "module-api.dependency-cycle"
+            )
+        })
+        .count();
+    let (assessment, class) = if boundary_violations > 0 {
+        ("fail", if strict { FindingClass::Invalid } else { FindingClass::Boundary })
+    } else if !gaps.is_empty() {
+        ("indeterminate", FindingClass::Evidence)
+    } else {
+        ("pass", FindingClass::Boundary)
+    };
+    let report = Report {
+        schema_version: format!("{}v{}", wire::REPORT_SCHEMA, wire::VERSION),
+        identity: format!("{}@{}", wire::REPORT_IDENTITY, wire::VERSION),
+        assessment: assessment.to_owned(),
+        command: "check".to_owned(),
+        strict,
+        module_filter: module_filter.map(str::to_owned),
+        pins: wire::ReportPins {
+            project: resolved.project.clone(),
+            model_version: wire::MODEL_VERSION.to_owned(),
+            ir_digest,
+            attachment_digest: resolved.digest.clone(),
+            registry_version: wire::REGISTRY_VERSION.to_owned(),
+        },
+        modules,
+        findings: evidence.iter().map(super::diagnostic::finding).collect(),
+        cycles,
+        gaps: gaps.clone(),
+        complete: gaps.is_empty(),
+    };
+    Ok(Verdict {
+        report,
+        evidence,
+        class,
+    })
+}
+
+/// Walk the public closure of one module's exports: every reachable local
+/// symbol must be exported (or a legal private helper outside the public
+/// signature), and no target-specific type may enter the portable path.
+fn closure_findings(
+    resolved: &Resolved,
+    compilation: &Compilation,
+    module: &str,
+    evidence: &mut Vec<Evidence>,
+) -> Result<(), DiagnosticSet> {
+    let project = &compilation.project;
+    let by_id: std::collections::BTreeMap<&str, &crate::ir::Definition> = project
+        .definitions
+        .iter()
+        .map(|definition| (definition.id().as_str(), definition))
+        .collect();
+    let exported: Vec<String> = resolved
+        .modules
+        .get(module)
+        .map(|policy| policy.exports.iter().map(|entry| entry.export.clone()).collect())
+        .unwrap_or_default();
+    // Bounded worklist over (symbol, path) pairs with a visited set.
+    let mut visited: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut work: Vec<(String, Vec<String>)> = exported
+        .iter()
+        .map(|symbol| (symbol.clone(), vec![symbol.clone()]))
+        .collect();
+    while let Some((symbol, path)) = work.pop() {
+        if !visited.insert(symbol.clone()) {
+            continue;
+        }
+        if path.len() > wire::MAX_DEPENDENCY_NESTING {
+            continue;
+        }
+        let Some(definition) = by_id.get(symbol.as_str()) else {
+            continue;
+        };
+        if definition.common().visibility == Some(Visibility::Module) {
+            continue;
+        }
+        // The root export itself is admitted; anything reachable beyond it
+        // must be exported too.
+        if path.len() > 1
+            && owner_of(&symbol) == Some(module)
+            && !exported.contains(&symbol)
+        {
+            let mut finding = Evidence::new(
+                "module-api.public-private-exposure",
+                module,
+                "nonexported-type-in-public-closure",
+            );
+            finding.producer = Some(module.to_owned());
+            finding.export = path.first().cloned();
+            finding.member = Some(symbol.clone());
+            finding.path = path.clone();
+            evidence.push(finding);
+            continue;
+        }
+        if definition.common().portability == Some(Portability::TargetSpecific)
+            && !exported.is_empty()
+        {
+            let mut finding = Evidence::new(
+                "module-api.public-target-exposure",
+                module,
+                "target-specific-type-in-public-closure",
+            );
+            finding.producer = Some(module.to_owned());
+            finding.export = path.first().cloned();
+            finding.member = Some(symbol.clone());
+            finding.path = path.clone();
+            evidence.push(finding);
+            continue;
+        }
+        for reference in effects::references_of(definition) {
+            let Some(owner) = reference.split_once('.').map(|(owner, _)| owner) else {
+                continue;
+            };
+            let mut next_path = path.clone();
+            next_path.push(reference.to_owned());
+            if owner == module {
+                work.push((reference.to_owned(), next_path));
+            } else {
+                // Foreign references are the public dependency seam; the
+                // pin check happens in the bundle export.
+                let _ = next_path;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn owner_of(symbol: &str) -> Option<&str> {
+    symbol.split_once('.').map(|(owner, _)| owner)
+}
+
+/// Bundle accessor used by the export command.
+pub fn bundle(
+    resolved: &Resolved,
+    compilation: &Compilation,
+    module: &str,
+) -> Result<PublicBundle, DiagnosticSet> {
+    export_public(resolved, compilation, module)
+}

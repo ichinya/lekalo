@@ -36,6 +36,7 @@ pub mod ir;
 pub mod loader;
 pub mod lockfile;
 pub mod metrics_export;
+pub mod module_api;
 pub mod native_gate;
 pub mod nfr;
 pub mod observed;

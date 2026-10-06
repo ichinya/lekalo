@@ -56,6 +56,11 @@ pub const REGISTRY_VERSION: &str = "0.6.4";
 /// Opt-in issue #84 union successor. Predecessor producers keep their exact pins.
 pub const SUCCESSOR_REGISTRY_VERSION: &str = "0.6.5";
 
+/// Issue #113 union successor: the accepted 0.6.5 entries plus the
+/// fourteen `module-api.*` rules (`LEK-MODULE-001..014`). Predecessor
+/// producers keep their exact pins; the union is additive end to end.
+pub const MODULE_REGISTRY_VERSION: &str = "0.8.0";
+
 /// The closed diagnostic schema version.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DiagnosticSchemaVersion {

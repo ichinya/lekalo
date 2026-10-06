@@ -22,6 +22,10 @@ pub const REGISTRY_BYTES: &[u8] =
 pub const SUCCESSOR_REGISTRY_BYTES: &[u8] =
     include_bytes!("../../../../contracts/diagnostic-registry.v0.6.5.json");
 
+/// The issue #113 union successor bytes (0.6.5 union plus `module-api.*`).
+pub const MODULE_REGISTRY_BYTES: &[u8] =
+    include_bytes!("../../../../contracts/diagnostic-registry.v0.8.0.json");
+
 /// Why the embedded registry could not be trusted.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RegistryError {
@@ -159,10 +163,23 @@ impl DiagnosticRegistry {
         REGISTRY.as_ref().map_err(Clone::clone)
     }
 
+    /// The issue #113 union successor: 0.6.5 entries plus `module-api.*`.
+    pub fn module_successor() -> Result<&'static Self, RegistryError> {
+        static REGISTRY: LazyLock<Result<DiagnosticRegistry, RegistryError>> =
+            LazyLock::new(|| {
+                DiagnosticRegistry::parse_version(
+                    MODULE_REGISTRY_BYTES,
+                    super::version::MODULE_REGISTRY_VERSION,
+                )
+            });
+        REGISTRY.as_ref().map_err(Clone::clone)
+    }
+
     pub fn for_version(version: &str) -> Result<&'static Self, RegistryError> {
         match version {
             REGISTRY_VERSION => Self::embedded(),
             super::version::SUCCESSOR_REGISTRY_VERSION => Self::successor(),
+            super::version::MODULE_REGISTRY_VERSION => Self::module_successor(),
             _ => Err(RegistryError::Unsupported),
         }
     }

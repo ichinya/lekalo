@@ -54,7 +54,12 @@ pub(crate) fn build(
     let registry = if predecessor.entry(id).is_some() {
         predecessor
     } else {
-        DiagnosticRegistry::successor().map_err(|_| BuildError::Registry)?
+        let first_successor = DiagnosticRegistry::successor().map_err(|_| BuildError::Registry)?;
+        if first_successor.entry(id).is_some() {
+            first_successor
+        } else {
+            DiagnosticRegistry::module_successor().map_err(|_| BuildError::Registry)?
+        }
     };
     let entry = registry
         .entry(id)
