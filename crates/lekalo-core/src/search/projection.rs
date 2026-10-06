@@ -407,7 +407,7 @@ pub(crate) fn bound_path(text: &str) -> String {
 }
 
 /// Push one ref into a bounded preview, counting omissions.
-pub(crate) fn bounded_push(list: &mut Vec<String>, omitted: &mut u32, item: String) {
+pub fn bounded_push(list: &mut Vec<String>, omitted: &mut u32, item: String) {
     if list.len() < MAX_PREVIEWS {
         list.push(item);
     } else {
@@ -672,7 +672,7 @@ fn type_leaf(reference: &crate::ir::TypeRef) -> String {
 }
 
 /// Insert one card, then build its postings (byte-sorted key sets).
-pub(crate) fn add_card(projection: &mut Projection, card: Card, cap: usize) {
+pub fn add_card(projection: &mut Projection, card: Card, cap: usize) {
     let key = card.key.clone();
     let id_terms = card.id.as_deref().map(tokenize).unwrap_or_default();
     let name_terms = card.name_terms();

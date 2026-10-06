@@ -33,11 +33,31 @@ pub mod version;
 pub mod wire;
 
 pub use cursor::{Cursor, CursorBinding, CursorError, LastTuple};
-pub use index::{IndexStatus, SearchIndex, SearchStore};
+pub use index::{digest_of, pins_of, sha256_of, IndexDocument, IndexStatus, SearchIndex, SearchStore};
 pub use input::{InputEntry, ProducerKind, SearchInputs};
-pub use projection::{Card, CardKind, Completeness, Confidence, Freshness, Projection};
-pub use query::{execute, EffectScope, FilterSet, QueryRequest, SearchOutcome, SearchResult};
-pub use version::DEFAULT_LIMIT;
+pub use projection::{
+    add_card, attach_effects, bounded_push, project_ir, Card, CardKind, Completeness, Confidence,
+    Freshness, NativeBinding, Projection, RelationWitness, SignatureRef, Trust,
+};
+pub use query::{
+    execute, CoverageRow, EffectScope, FilterSet, QueryRequest, SearchOutcome, SearchResult,
+};
+pub use version::{
+    DEFAULT_LIMIT, INDEX_IDENTITY, INDEX_SCHEMA_VERSION, MAX_POSTINGS, RECIPE,
+};
+
+/// `search.input-invalid` rejection with a bounded reason (and producer).
+pub fn diagnostic_input_invalid(
+    detail: &'static str,
+    producer: Option<&str>,
+) -> crate::diagnostics::DiagnosticSet {
+    input::input_invalid(detail, producer)
+}
+
+/// `search.query-invalid` rejection with a bounded member and reason.
+pub fn diagnostic_query_invalid(member: &str, detail: &'static str) -> crate::diagnostics::DiagnosticSet {
+    diagnostic::query_invalid(member, detail)
+}
 
 /// The exact `sha256:<64 lowercase hex>` spelling.
 pub fn is_sha256_digest(text: &str) -> bool {

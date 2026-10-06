@@ -41,10 +41,15 @@ pub(crate) fn invalid_set(diagnostics: Vec<crate::diagnostics::Diagnostic>) -> D
         .unwrap_or_else(|_| crate::result::singleton_set("diagnostics.registry-invalid"))
 }
 
-/// The bounded echo a diagnostic carries for a failed producer.
-pub(crate) fn producer_detail(detail: &str) -> DiagnosticSet {
+/// The `search.input-invalid` rejection: malformed, duplicate-key, or
+/// mixed project/revision/digest input (reason only; where a specific
+/// upstream parse diagnostic exists, the producer keeps its own).
+pub fn input_invalid(detail: &str, producer: Option<&str>) -> DiagnosticSet {
     let mut data = DataObject::new();
     data.insert("detail".to_owned(), token_value(detail));
+    if let Some(producer) = producer {
+        data.insert("producer".to_owned(), token_value(&bound_token(producer)));
+    }
     match one(INPUT_INVALID, None, data) {
         Ok(diagnostic) => invalid_set(vec![diagnostic]),
         Err(_) => crate::result::singleton_set("diagnostics.registry-invalid"),
@@ -93,8 +98,8 @@ impl ProducerKind {
     pub const fn identity(self) -> &'static str {
         match self {
             Self::Trace => "dev.lekalo.trace-manifest@0.2.16",
-            Self::ObservedIndex => "dev.lekalo.observed-index@0.4.0",
-            Self::Effects => "dev.lekalo.extended-effects@0.4.0",
+            Self::ObservedIndex => "dev.lekalo.observed-index@0.2.16",
+            Self::Effects => "dev.lekalo.effects@0.2.16",
             Self::Waivers => "dev.lekalo.ai-lint-waivers@0.6.5",
         }
     }
@@ -120,14 +125,14 @@ pub struct InputEntry {
 impl InputEntry {
     fn validate(&self) -> Result<(), DiagnosticSet> {
         if self.path.is_empty() || self.path.len() > MAX_PATH_BYTES {
-            return Err(producer_detail("path-bounds"));
+            return Err(input_invalid("path-bounds", None));
         }
         if self.path.starts_with('/')
             || self.path.starts_with('\\')
             || self.path.split(['/', '\\']).any(|part| part == "..")
         {
             // Traversal and absolute paths are refused, never rewritten.
-            return Err(producer_detail("path-traversal"));
+            return Err(input_invalid("path-traversal", None));
         }
         if let Some(identity) = &self.identity {
             if identity != self.kind.identity() {
@@ -146,7 +151,7 @@ impl InputEntry {
         }
         if let Some(digest) = &self.digest {
             if !is_sha256(digest) {
-                return Err(producer_detail("digest-grammar"));
+                return Err(input_invalid("digest-grammar", None));
             }
         }
         Ok(())
@@ -199,10 +204,10 @@ impl SearchInputs {
             max_postings: Option<u64>,
         }
         // Duplicate JSON keys are rejected before decoding.
-        let text = std::str::from_utf8(bytes).map_err(|_| producer_detail("invalid-encoding"))?;
+        let text = std::str::from_utf8(bytes).map_err(|_| input_invalid("invalid-encoding", None))?;
         crate::search::wire::reject_duplicate_keys(text)
-            .map_err(|_| producer_detail("duplicate-key"))?;
-        let wire: Wire = serde_json::from_str(text).map_err(|_| producer_detail("malformed"))?;
+            .map_err(|_| input_invalid("duplicate-key", None))?;
+        let wire: Wire = serde_json::from_str(text).map_err(|_| input_invalid("malformed", None))?;
         if wire.schema_version != INPUTS_SCHEMA_VERSION {
             return Err(version_failure("inputs-schema"));
         }
@@ -210,16 +215,16 @@ impl SearchInputs {
             return Err(version_failure("inputs-identity"));
         }
         if wire.project_id.is_empty() || wire.project_id.len() > 192 {
-            return Err(producer_detail("project-id-bounds"));
+            return Err(input_invalid("project-id-bounds", None));
         }
         if wire.inputs.len() > 64 {
-            return Err(producer_detail("input-count"));
+            return Err(input_invalid("input-count", None));
         }
         let mut entries: Vec<InputEntry> = Vec::with_capacity(wire.inputs.len());
         let mut seen: Vec<(ProducerKind, String)> = Vec::new();
         for input in wire.inputs {
             let kind = ProducerKind::parse(&input.kind)
-                .ok_or_else(|| producer_detail("producer-unknown"))?;
+                .ok_or_else(|| input_invalid("producer-unknown", None))?;
             let entry = InputEntry {
                 kind,
                 path: input.path,
@@ -229,7 +234,7 @@ impl SearchInputs {
             entry.validate()?;
             let key = (kind, entry.path.clone());
             if seen.contains(&key) {
-                return Err(producer_detail("duplicate-input"));
+                return Err(input_invalid("duplicate-input", None));
             }
             seen.push(key);
             entries.push(entry);
@@ -239,7 +244,7 @@ impl SearchInputs {
             .and_then(|limits| limits.max_postings)
             .unwrap_or(MAX_POSTINGS as u64);
         if max_postings == 0 || max_postings > MAX_POSTINGS as u64 {
-            return Err(producer_detail("limit-bounds"));
+            return Err(input_invalid("limit-bounds", None));
         }
         entries.sort_by(|left, right| {
             (left.kind.key(), left.path.as_bytes()).cmp(&(right.kind.key(), right.path.as_bytes()))
@@ -333,7 +338,7 @@ mod tests {
             "inputs": [
                 {"kind": "trace", "path": ".ai-factory/traces/plan.json"},
                 {"kind": "effects", "path": "evidence/effects.json",
-                 "identity": "dev.lekalo.extended-effects@0.4.0",
+                 "identity": "dev.lekalo.effects@0.2.16",
                  "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"}
             ]
         }"#;

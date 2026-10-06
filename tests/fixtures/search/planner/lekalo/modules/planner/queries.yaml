@@ -1,0 +1,23 @@
+schema_version: "0.2.16"
+definitions:
+  - id: planner.get_focused_task
+    kind: query
+    version: 1
+    description: "Read the focused timestamp of one planning record"
+    reads:
+      - "planner.user_task_planning"
+    returns: "planner.timestamp"
+  - id: planner.count_focused
+    kind: query
+    version: 1
+    description: "Count focused planning records"
+    reads:
+      - "planner.user_task_planning"
+    returns: "planner.task_state"
+  - id: planner.get_status
+    kind: query
+    version: 1
+    description: "Load the status of one planning record"
+    reads:
+      - "planner.user_task_planning"
+    returns: "planner.task_state"

@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use crate::search::input::SearchInputs;
 use crate::search::projection::{Card, Projection};
 use crate::search::version::{
-    is_sha256, INDEX_IDENTITY, INDEX_SCHEMA_VERSION, MAX_CARDS, MAX_INDEX_BYTES, MAX_POSTINGS,
+    INDEX_IDENTITY, INDEX_SCHEMA_VERSION, MAX_CARDS, MAX_INDEX_BYTES, MAX_POSTINGS,
     RECIPE,
 };
 use crate::search::wire::{canonical_json, sha256_digest};
@@ -65,7 +65,7 @@ pub struct SearchIndex {
 
 /// The durable wire snapshot of one generation.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct IndexDocument {
     #[serde(rename = "schemaVersion")]
     pub schema_version: String,
@@ -93,7 +93,7 @@ pub struct IndexDocument {
 
 /// One consumed producer pin recorded in the snapshot.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct InputPin {
     pub kind: String,
     pub path: String,
@@ -190,9 +190,11 @@ impl SearchStore {
         self.root.join("current.json")
     }
 
-    /// A generation payload path from its digest.
+    /// A generation payload path from its digest: exactly the 64 hex
+    /// characters, so every path segment satisfies the project path
+    /// policy (segments at most 64 bytes).
     fn generation_path(&self, digest: &str) -> PathBuf {
-        self.root.join(format!("{digest}.json"))
+        self.root.join(digest)
     }
 
     /// Read the published current generation digest, if any.
@@ -208,7 +210,14 @@ impl SearchStore {
             digest: String,
         }
         let current: Current = serde_json::from_slice(&bytes).map_err(|_| StoreError::Corrupt)?;
-        if !is_sha256(&current.digest) {
+        // The pointer stores the bare hex generation name (the path
+        // policy limits path segments); consumers spell `sha256:`.
+        if current.digest.len() != 64
+            || !current
+                .digest
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        {
             return Err(StoreError::Corrupt);
         }
         Ok(Some(current.digest))
@@ -216,7 +225,12 @@ impl SearchStore {
 
     /// Read one generation snapshot.
     pub fn load(&self, digest: &str) -> Result<Option<IndexDocument>, StoreError> {
-        if !is_sha256(digest) {
+        // The generation name is exactly 64 lowercase hex characters.
+        if digest.len() != 64
+            || !digest
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        {
             return Err(StoreError::Corrupt);
         }
         let bytes = match std::fs::read(self.generation_path(digest)) {
@@ -233,14 +247,17 @@ impl SearchStore {
             serde_json::from_str(text).map_err(|_| StoreError::Corrupt)?;
         // Canonical-bytes custody: the stored digest must equal the
         // digest of exactly these canonical bytes.
-        let recorded = document.digest.clone();
+        let Some(recorded) = document.digest.strip_prefix("sha256:") else {
+            return Err(StoreError::Corrupt);
+        };
+        let recorded = recorded.to_owned();
         document.digest = String::new();
         let canonical =
             canonical_json(&serde_json::to_value(&document).map_err(|_| StoreError::Corrupt)?);
         if sha256_digest(canonical.as_bytes()) != recorded {
             return Err(StoreError::Corrupt);
         }
-        document.digest = recorded;
+        document.digest = format!("sha256:{recorded}");
         if document.schema_version != INDEX_SCHEMA_VERSION
             || document.identity != INDEX_IDENTITY
             || document.recipe != RECIPE
@@ -255,31 +272,31 @@ impl SearchStore {
     /// pointer move leaves the previous generation serving.
     pub fn publish(&self, document: &IndexDocument) -> Result<(), StoreError> {
         let mut record = document.clone();
-        let digest = {
-            record.digest = String::new();
-            let canonical =
-                canonical_json(&serde_json::to_value(&record).map_err(|_| StoreError::Io)?);
-            let digest = sha256_digest(canonical.as_bytes());
-            if canonical.len() > MAX_INDEX_BYTES {
-                return Err(StoreError::Io);
-            }
-            let final_path = self.generation_path(&digest);
-            if final_path.exists() {
-                digest
-            } else {
-                let temp = self.root.join(format!(
-                    ".tmp-{}-{}.json",
-                    std::process::id(),
-                    &digest[..12.min(digest.len())]
-                ));
-                std::fs::create_dir_all(&self.root).map_err(|_| StoreError::Io)?;
-                std::fs::write(&temp, canonical.as_bytes()).map_err(|_| StoreError::Io)?;
-                std::fs::rename(&temp, &final_path).map_err(|_| StoreError::Io)?;
-                digest
-            }
-        };
-        record.digest = digest.clone();
-        let pointer = format!("{{\"digest\":\"{}\"}}", digest);
+        // The content digest covers exactly the canonical bytes of the
+        // snapshot with an empty digest field; the stored payload then
+        // carries the digest itself.
+        record.digest = String::new();
+        let canonical =
+            canonical_json(&serde_json::to_value(&record).map_err(|_| StoreError::Io)?);
+        if canonical.len() > MAX_INDEX_BYTES {
+            return Err(StoreError::Io);
+        }
+        let digest = sha256_digest(canonical.as_bytes());
+        record.digest = format!("sha256:{digest}");
+        let payload =
+            canonical_json(&serde_json::to_value(&record).map_err(|_| StoreError::Io)?);
+        let final_path = self.generation_path(&digest);
+        if !final_path.exists() {
+            let temp = self.root.join(format!(
+                "tmp-{}-{}",
+                std::process::id(),
+                &digest[..12.min(digest.len())]
+            ));
+            std::fs::create_dir_all(&self.root).map_err(|_| StoreError::Io)?;
+            std::fs::write(&temp, payload.as_bytes()).map_err(|_| StoreError::Io)?;
+            std::fs::rename(&temp, &final_path).map_err(|_| StoreError::Io)?;
+        }
+        let pointer = format!("{{\"digest\":\"{digest}\"}}");
         std::fs::create_dir_all(&self.root).map_err(|_| StoreError::Io)?;
         let temp = self.current_path().with_extension("tmp");
         std::fs::write(&temp, pointer.as_bytes()).map_err(|_| StoreError::Io)?;
@@ -338,6 +355,22 @@ pub fn pins_of(manifest: &SearchInputs) -> Vec<InputPin> {
             digest: entry.digest.clone(),
         })
         .collect()
+}
+
+/// The exact content digest of one snapshot: SHA-256 over the canonical
+/// JSON of the document with an empty digest field.
+pub fn digest_of(document: &IndexDocument) -> String {
+    let mut record = document.clone();
+    record.digest = String::new();
+    match serde_json::to_value(&record) {
+        Ok(value) => sha256_digest(canonical_json(&value).as_bytes()),
+        Err(_) => String::new(),
+    }
+}
+
+/// SHA-256 over the exact bytes, spelled bare lowercase hex.
+pub fn sha256_of(bytes: &[u8]) -> String {
+    sha256_digest(bytes)
 }
 
 #[cfg(test)]

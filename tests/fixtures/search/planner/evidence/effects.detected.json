@@ -1,0 +1,130 @@
+{
+  "schemaVersion": "lekalo/effects/v0.2.16",
+  "identity": "dev.lekalo.effects@0.2.16",
+  "modelVersion": "0.2.16",
+  "project": "planner",
+  "metadata": {
+    "declaredCount": 0,
+    "detectedCount": 5,
+    "effectCount": 5,
+    "envelopeCount": 1,
+    "operationCount": 5
+  },
+  "effects": [
+    {
+      "action": "set",
+      "confidence": "extracted",
+      "effect": "#1",
+      "field": "focused_at",
+      "kind": "write-field",
+      "occurrence": 0,
+      "operation": "operation:planner.focus_task",
+      "provenance": {
+        "type": "evidence",
+        "adapterId": "vendor.example/scan",
+        "targetId": "vendor.example/node-typescript",
+        "protocolVersion": "0.2.16",
+        "evidenceDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "trust": "current"
+      },
+      "resource": {
+        "id": "planner.user_task_planning",
+        "kind": "canonical"
+      },
+      "sensitivity": null,
+      "transactionGroup": null
+    },
+    {
+      "action": "set",
+      "confidence": "extracted",
+      "effect": "#2",
+      "field": "focused_at",
+      "kind": "write-field",
+      "occurrence": 0,
+      "operation": "operation:planner.refocus_task",
+      "provenance": {
+        "type": "evidence",
+        "adapterId": "vendor.example/scan",
+        "targetId": "vendor.example/node-typescript",
+        "protocolVersion": "0.2.16",
+        "evidenceDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "trust": "current"
+      },
+      "resource": {
+        "id": "planner.user_task_planning",
+        "kind": "canonical"
+      },
+      "sensitivity": null,
+      "transactionGroup": null
+    },
+    {
+      "action": null,
+      "confidence": "extracted",
+      "effect": "#3",
+      "field": "focused_at",
+      "kind": "read",
+      "occurrence": 0,
+      "operation": "operation:planner.get_focused_task",
+      "provenance": {
+        "type": "evidence",
+        "adapterId": "vendor.example/scan",
+        "targetId": "vendor.example/node-typescript",
+        "protocolVersion": "0.2.16",
+        "evidenceDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "trust": "current"
+      },
+      "resource": {
+        "id": "planner.user_task_planning",
+        "kind": "canonical"
+      },
+      "sensitivity": null,
+      "transactionGroup": null
+    },
+    {
+      "action": "set",
+      "confidence": "extracted",
+      "effect": "#4",
+      "field": "state",
+      "kind": "write-field",
+      "occurrence": 0,
+      "operation": "operation:planner.archive_task_cmd",
+      "provenance": {
+        "type": "evidence",
+        "adapterId": "vendor.example/scan",
+        "targetId": "vendor.example/node-typescript",
+        "protocolVersion": "0.2.16",
+        "evidenceDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "trust": "current"
+      },
+      "resource": {
+        "id": "planner.user_task_planning",
+        "kind": "canonical"
+      },
+      "sensitivity": null,
+      "transactionGroup": null
+    },
+    {
+      "action": null,
+      "confidence": "extracted",
+      "effect": "#5",
+      "field": null,
+      "kind": "update",
+      "occurrence": 0,
+      "operation": "operation:planner.import_planning_cmd",
+      "provenance": {
+        "type": "evidence",
+        "adapterId": "vendor.example/scan",
+        "targetId": "vendor.example/node-typescript",
+        "protocolVersion": "0.2.16",
+        "evidenceDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "trust": "current"
+      },
+      "resource": {
+        "id": "planner.user_task_planning",
+        "kind": "canonical"
+      },
+      "sensitivity": null,
+      "transactionGroup": null
+    }
+  ]
+}

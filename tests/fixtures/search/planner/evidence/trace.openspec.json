@@ -1,0 +1,171 @@
+{
+  "schemaVersion": "lekalo/trace-manifest/v0.2.16",
+  "identity": "dev.lekalo.trace-manifest@0.2.16",
+  "manifestId": "search-trace-openspec-full",
+  "projectRef": "planner",
+  "completeness": "full",
+  "sourceRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "modelRef": {
+    "schemaVersion": "0.2.16",
+    "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+  },
+  "exportProfile": "requirement-to-gate",
+  "nodes": [
+    {
+      "nodeId": "requirement:PLANNER-REQ-001",
+      "nodeKind": "requirement",
+      "requirementId": "PLANNER-REQ-001",
+      "externalRefs": [
+        {
+          "system": "openspec",
+          "originalId": "PLANNER-REQ-001"
+        }
+      ]
+    },
+    {
+      "nodeId": "symbol:planner.focus_task",
+      "nodeKind": "symbol",
+      "semanticId": "planner.focus_task"
+    },
+    {
+      "nodeId": "artifact:apps-api-focus-task",
+      "nodeKind": "artifact",
+      "artifactId": "apps-api-focus-task",
+      "ownership": "checked",
+      "path": "apps/api/src/planner/focus-task.ts",
+      "contentDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    {
+      "nodeId": "scenario:planner-focus-flow",
+      "nodeKind": "scenario",
+      "scenarioId": "planner.focus_flow",
+      "contractVersion": "0.2.16",
+      "evidenceDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+    },
+    {
+      "nodeId": "test:node-focus-task",
+      "nodeKind": "native_test",
+      "testId": "node.focus-task",
+      "contractVersion": "0.2.16",
+      "evidenceDigest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "externalRefs": [
+        {
+          "system": "source-native",
+          "originalId": "node.test.focus-task"
+        }
+      ]
+    },
+    {
+      "nodeId": "gate:hlv-gate-focus",
+      "nodeKind": "gate",
+      "gateId": "hlv.gate.focus",
+      "contractVersion": "0.2.16",
+      "evidenceDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "externalRefs": [
+        {
+          "system": "hlv",
+          "originalId": "hlv.native.gate.focus"
+        }
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "relationId": "sha256:2aaf2ab4f8c792c062140632f7a2c12d27b0594ed51b7ef8eaa1aab7e8932c74",
+      "relationKind": "implements",
+      "fromNode": "symbol:planner.focus_task",
+      "toNode": "requirement:PLANNER-REQ-001",
+      "occurrence": "requirements.focus_task",
+      "provenance": {
+        "origin": "declared",
+        "sourceSystem": "openspec",
+        "sourceRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "sourceDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "recordedBy": "lekalo.core"
+      },
+      "confidence": "exact",
+      "status": "confirmed",
+      "evidenceRefs": [
+        "gate:hlv-gate-focus"
+      ]
+    },
+    {
+      "relationId": "sha256:7157a0259771934ff423c5c0ce209984cbe8a29cbfbe0646220b86803045432f",
+      "relationKind": "binds",
+      "fromNode": "symbol:planner.focus_task",
+      "toNode": "artifact:apps-api-focus-task",
+      "occurrence": "bindings.focus_task",
+      "provenance": {
+        "origin": "declared",
+        "sourceSystem": "openspec",
+        "sourceRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "sourceDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "recordedBy": "lekalo.core"
+      },
+      "confidence": "exact",
+      "status": "confirmed",
+      "evidenceRefs": [
+        "gate:hlv-gate-focus"
+      ]
+    },
+    {
+      "relationId": "sha256:f4f146aa1695f636c2771dbb7b2dc245a1028270019b14aa5c12ca28d5c447e8",
+      "relationKind": "covers",
+      "fromNode": "scenario:planner-focus-flow",
+      "toNode": "symbol:planner.focus_task",
+      "occurrence": "scenarios.focus_flow",
+      "provenance": {
+        "origin": "declared",
+        "sourceSystem": "openspec",
+        "sourceRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "sourceDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "recordedBy": "lekalo.core"
+      },
+      "confidence": "exact",
+      "status": "confirmed",
+      "evidenceRefs": [
+        "gate:hlv-gate-focus"
+      ]
+    },
+    {
+      "relationId": "sha256:e1231dc93fd1ecaa599efa403197c914446d578d360ed4e34ba257b45299d240",
+      "relationKind": "verifies",
+      "fromNode": "test:node-focus-task",
+      "toNode": "scenario:planner-focus-flow",
+      "occurrence": "tests.focus_flow",
+      "provenance": {
+        "origin": "declared",
+        "sourceSystem": "openspec",
+        "sourceRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "sourceDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "recordedBy": "lekalo.core"
+      },
+      "confidence": "exact",
+      "status": "confirmed",
+      "evidenceRefs": [
+        "gate:hlv-gate-focus"
+      ]
+    },
+    {
+      "relationId": "sha256:33b486654be13247441c7bc83831f4287aef4ceff75e867b00b7f9d515463b57",
+      "relationKind": "evidences",
+      "fromNode": "gate:hlv-gate-focus",
+      "toNode": "test:node-focus-task",
+      "occurrence": "gates.focus",
+      "provenance": {
+        "origin": "declared",
+        "sourceSystem": "openspec",
+        "sourceRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "sourceDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "recordedBy": "lekalo.core"
+      },
+      "confidence": "exact",
+      "status": "confirmed",
+      "evidenceRefs": [
+        "gate:hlv-gate-focus"
+      ]
+    }
+  ],
+  "gaps": []
+}

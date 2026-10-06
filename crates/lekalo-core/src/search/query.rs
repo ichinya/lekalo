@@ -213,7 +213,7 @@ impl QueryRequest {
 
 /// One result item: the bounded selection card plus its match/explanation.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct Item {
     pub card: Card,
     /// The matched fields, exactness tier, and token/edit facts.
@@ -222,7 +222,7 @@ pub struct Item {
 
 /// The closed match explanation of one item.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct MatchFacts {
     /// The closed tier (`exact-id` | ... | `fuzzy`).
     pub tier: String,
@@ -242,7 +242,7 @@ pub struct MatchFacts {
 
 /// The per-domain coverage row.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct CoverageRow {
     /// The allowlisted domain (`ir` | `effects` | `trace` |
     /// `requirements` | `bindings` | `diagnostics` | `waivers`).
@@ -253,20 +253,17 @@ pub struct CoverageRow {
 
 /// The closed result payload.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct SearchResult {
-    #[serde(rename = "schemaVersion")]
     pub schema_version: String,
     pub identity: String,
     /// The project semantic id, when known.
-    #[serde(rename = "projectId")]
     pub project_id: Option<String>,
     /// The versioned recipe (`semantic-search/1`).
     pub recipe: String,
     /// The normalized query (empty for pure filter runs).
     pub query: String,
     /// The immutable index content digest the answer was computed over.
-    #[serde(rename = "indexDigest")]
     pub index_digest: String,
     /// `none` | `unique` | `multiple` | `ambiguous`.
     pub selection: &'static str,
@@ -280,7 +277,7 @@ pub struct SearchResult {
 
 /// The closed page state.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct Page {
     pub limit: u32,
     /// How many rows this page returned.
@@ -373,7 +370,7 @@ pub fn execute(
                 .get(&card.key)
                 .cloned()
                 .unwrap_or_default();
-            let facts = match_facts(
+            match match_facts(
                 card.id
                     .as_deref()
                     .unwrap_or(card.key.trim_start_matches("def:")),
@@ -383,20 +380,11 @@ pub fn execute(
                 query_text,
                 &terms,
                 request.fuzzy,
-            );
-            match facts {
+            ) {
                 Some(facts) => facts,
-                None => {
-                    // A filter-only match stays admitted at the tier
-                    // of its filters (below every lexical tier).
-                    RankFacts {
-                        tier: Tier::Prefix,
-                        field: FieldPriority::Id,
-                        exact_terms: 0,
-                        total_terms: terms.len(),
-                        edits: 0,
-                    }
-                }
+                // A lexical query never admits non-matching cards; the
+                // tuple fallback above exists for `find` alone.
+                None => continue,
             }
         };
         if facts.tier == Tier::Fuzzy && !fuzzy_budget.take() {
@@ -411,35 +399,37 @@ pub fn execute(
             .cmp(&right.1.sort_key())
             .then_with(|| left.0.key.as_bytes().cmp(right.0.key.as_bytes()))
     });
-    // 3. Ambiguity: ties inside the final pre-key tuple (equal tier,
-    //    field, coverage, edits) with more than one distinct key are
-    //    ambiguous and every tied candidate is retained.
+    // 3. Ambiguity: ties inside the TOP rank group (equal tier, field,
+    //    coverage, and edits before the final key tie-break) with more
+    //    than one distinct key are equally supported interpretations:
+    //    the answer is ambiguous and every tied candidate is retained.
+    //    A weak tail below a determinate best answer is not an
+    //    interpretation, so only the top group decides. Deterministic
+    //    sorting never erases pre-sort ambiguity.
     let mut diagnostics: Vec<crate::diagnostics::Diagnostic> = Vec::new();
-    let mut ambiguous_groups: BTreeSet<String> = BTreeSet::new();
-    {
-        let mut index = 0usize;
-        while index < ranked.len() {
-            let mut end = index + 1;
-            while end < ranked.len()
-                && ranked[end - 1].1.sort_key() == ranked[end].1.sort_key()
-                && ranked[end].1.sort_key() == ranked[index].1.sort_key()
-            {
-                end += 1;
-            }
-            if end - index > 1 && !query_text.is_empty() {
-                ambiguous_groups.insert(ranked[index].0.key.clone());
-                ambiguous_groups.insert(ranked[end - 1].0.key.clone());
-                for (_, facts) in &ranked[index..end] {
-                    let _ = facts;
-                }
-            }
-            index = end;
-        }
+    let mut top_tied = false;
+    if !query_text.is_empty() && ranked.len() > 1 {
+        top_tied = ranked[0].1.sort_key() == ranked[1].1.sort_key();
     }
     // The selection verdict over the whole visible set (not the page).
+    // A `--requirement` selector without `--requirement-source` that
+    // names several equally supported provider-qualified identities is
+    // ambiguous: every qualified candidate stays visible, none is taken.
+    let mut requirement_ambiguous = false;
+    if !request.filters.requirements.is_empty() && request.filters.requirement_sources.is_empty() {
+        let mut qualified: BTreeSet<&str> = BTreeSet::new();
+        for (card, _) in &ranked {
+            if card.kind == CardKind::Requirement {
+                qualified.insert(card.key.as_str());
+            }
+        }
+        if qualified.len() > 1 {
+            requirement_ambiguous = true;
+        }
+    }
     let selection = if ranked.is_empty() {
         "none"
-    } else if ambiguous_groups.len() > 1 {
+    } else if top_tied || requirement_ambiguous {
         "ambiguous"
     } else if ranked.len() == 1 {
         "unique"
@@ -447,7 +437,18 @@ pub fn execute(
         "multiple"
     };
     if selection == "ambiguous" {
-        diagnostics.extend(set_items(emit::ambiguous(ambiguous_groups.len() as u64)));
+        let tied = if requirement_ambiguous {
+            ranked
+                .iter()
+                .filter(|(card, _)| card.kind == CardKind::Requirement)
+                .count() as u64
+        } else {
+            ranked
+                .iter()
+                .take_while(|(_, facts)| facts.sort_key() == ranked[0].1.sort_key())
+                .count() as u64
+        };
+        diagnostics.extend(set_items(emit::ambiguous(tied)));
     }
     if fuzzy_exhausted {
         diagnostics.extend(set_items(emit::result_limit("fuzzy-candidates", false)));
@@ -540,10 +541,15 @@ fn set_items(set: crate::diagnostics::DiagnosticSet) -> Vec<crate::diagnostics::
     set.as_slice().to_vec()
 }
 
-/// Serialize the exact compact response bytes (bounded).
+/// Serialize the exact compact response bytes (bounded): the stable
+/// envelope status first, then the closed payload fields.
 fn response_bytes(result: &SearchResult) -> Result<String, crate::diagnostics::DiagnosticSet> {
     let value = serde_json::to_value(result).map_err(|_| emit::result_limit("response", true))?;
-    let json = canonical_json(&value);
+    let payload = canonical_json(&value);
+    let json = format!(
+        "{{\"status\":\"valid\",{}",
+        &payload[1..]
+    );
     if json.len() > MAX_RESPONSE_BYTES {
         return Err(emit::result_limit("response-bytes", false));
     }
@@ -636,16 +642,20 @@ fn admits(index: &SearchIndex, card: &Card, filters: &FilterSet) -> bool {
         return false;
     }
     if !any_of(&filters.requirements, |requirement| {
-        card.requirements.iter().any(|reference| {
-            reference == requirement || reference.ends_with(&format!(":{requirement}"))
-        })
+        (card.kind == CardKind::Requirement
+            && card.id.as_deref() == Some(requirement))
+            || card.requirements.iter().any(|reference| {
+                reference == requirement || reference.ends_with(&format!(":{requirement}"))
+            })
     }) {
         return false;
     }
     if !any_of(&filters.requirement_sources, |source| {
-        card.requirements
-            .iter()
-            .any(|reference| reference.starts_with(&format!("req:{source}:")))
+        (card.kind == CardKind::Requirement && card.key.starts_with(&format!("req:{source}:")))
+            || card
+                .requirements
+                .iter()
+                .any(|reference| reference.starts_with(&format!("req:{source}:")))
     }) {
         return false;
     }
@@ -728,16 +738,20 @@ fn admits(index: &SearchIndex, card: &Card, filters: &FilterSet) -> bool {
         return false;
     }
     if !any_of(&filters.diagnostics, |rule| {
-        card.relations.iter().any(|witness| {
-            witness.relation == "diagnostic" && witness.other == format!("diag:{rule}")
-        })
+        (card.kind == CardKind::Diagnostic && card.id.as_deref() == Some(rule))
+            || card
+                .relations
+                .iter()
+                .any(|witness| witness.other == format!("diag:{rule}"))
     }) {
         return false;
     }
     if !any_of(&filters.waivers, |waiver| {
-        card.relations
-            .iter()
-            .any(|witness| witness.other == format!("waiv:{waiver}"))
+        (card.kind == CardKind::Waiver && card.id.as_deref() == Some(waiver))
+            || card
+                .relations
+                .iter()
+                .any(|witness| witness.other == format!("waiv:{waiver}"))
     }) {
         return false;
     }
@@ -759,11 +773,11 @@ fn witness_matches(card: &Card, action: &str, selector: &str, scope: EffectScope
             return false;
         }
         let subject = &witness.relation[action.len() + 1..];
-        let (resource, field) = match subject.split_once(':') {
+        let (resource, field) = match subject.rsplit_once(':') {
             Some((resource, field)) => (resource, Some(field)),
             None => (subject, None),
         };
-        match selector.split_once('.') {
+        match selector.rsplit_once('.') {
             Some((wanted_resource, wanted_field)) => {
                 // An exact field selector admits only the exact field,
                 // except where overlapping scope accepts an entity-wide
