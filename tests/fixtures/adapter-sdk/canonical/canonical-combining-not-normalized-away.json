@@ -1,5 +1,5 @@
 {
-  "canonical": "{\"e\":\"combining\",\"n\":\"cafe\\u0301\"}",
+  "canonical": "{\"e\":\"combining\",\"n\":\"café\"}",
   "name": "canonical-combining-not-normalized-away",
   "value": {
     "n": "café",

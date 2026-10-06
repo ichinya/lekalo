@@ -1,5 +1,6 @@
 {
   "covers": false,
+  "logical": true,
   "name": "scope-recursive-not-itself",
   "path": "src",
   "scope": "src/**"

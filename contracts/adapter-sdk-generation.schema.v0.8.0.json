@@ -156,7 +156,7 @@
             "maxLength": 256,
             "anyOf": [
               {
-                "pattern": "^(generated|templates)(/[A-Za-z0-9._-]+)+$"
+                "pattern": "^(?:(?:src/)?[Gg]enerated|templates)(/[A-Za-z0-9._-]+)+$"
               },
               {
                 "const": "compatibility.json"

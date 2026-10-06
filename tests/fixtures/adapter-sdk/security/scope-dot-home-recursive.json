@@ -1,5 +1,5 @@
 {
-  "logical": true,
+  "logical": false,
   "name": "scope-dot-home-recursive",
   "scopeGrammar": true,
   "scopeOk": true,
