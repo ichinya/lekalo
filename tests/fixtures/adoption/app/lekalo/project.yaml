@@ -1,0 +1,6 @@
+schema_version: "0.2.16"
+definitions:
+  - id: taskboard
+    kind: project
+    version: 1
+    description: "Issue #136 adoption fixture project (synthetic)"

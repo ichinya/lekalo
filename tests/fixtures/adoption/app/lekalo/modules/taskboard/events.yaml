@@ -1,0 +1,6 @@
+schema_version: "0.2.16"
+definitions:
+  - id: taskboard.audit_event
+    kind: event
+    version: 1
+    description: "New contracted feature (authored canonically, maintained by hand)"

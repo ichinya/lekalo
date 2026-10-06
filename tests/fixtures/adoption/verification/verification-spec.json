@@ -1,0 +1,38 @@
+{
+  "schema_version": "lekalo/adoption-verification/v0.8.0",
+  "identity": "dev.lekalo.adoption-verification@0.8.0",
+  "variant": "specification",
+  "verification": "complete-task-preservation",
+  "spec": null,
+  "plan": null,
+  "tool": {
+    "program": "node",
+    "args": [
+      "tools/verify.mjs"
+    ],
+    "digest": null
+  },
+  "baseline_source": "sha256:7896025ed0e81c4264d147c21f57e51609273ca12e24ebbab8cbc70ac9ade11c",
+  "checks": [
+    {
+      "id": "tasks.native-test",
+      "kind": "native-test",
+      "expect_exit": 0,
+      "expect_stdout": [
+        "TASK-TEST-OK"
+      ]
+    },
+    {
+      "id": "complete-task.behavior-oracle",
+      "kind": "behavior-oracle",
+      "expect_exit": 0,
+      "expect_stdout": [
+        "ORACLE-OK"
+      ]
+    }
+  ],
+  "confinement": [
+    "disposable-copy",
+    "bounded-output"
+  ]
+}

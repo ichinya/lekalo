@@ -224,7 +224,7 @@ pub fn apply(
 
 /// The fixed eligibility decision for one record; `Err` is the bounded
 /// refusal reason.
-fn eligibility(
+pub(crate) fn eligibility(
     record: &types::SymbolRecord,
     index: &types::ObservedIndex,
 ) -> Result<(), &'static str> {
@@ -286,7 +286,7 @@ fn eligibility(
 
 /// Render the canonical YAML block for one record; `None` when a
 /// reference resolves neither canonically nor inside the plan.
-fn render_definition(
+pub(crate) fn render_definition(
     record: &types::SymbolRecord,
     index: &types::ObservedIndex,
     canonical_ids: &BTreeSet<String>,
@@ -445,7 +445,7 @@ fn selection_label(selection: &PromotionSelection) -> &str {
     }
 }
 
-fn canonical_id_set(ctx: &super::ObservedContext) -> BTreeSet<String> {
+pub(crate) fn canonical_id_set(ctx: &super::ObservedContext) -> BTreeSet<String> {
     let mut ids: BTreeSet<String> = BTreeSet::new();
     for definition in &ctx.model.definitions {
         ids.insert(definition.id.clone());
@@ -459,7 +459,7 @@ fn canonical_id_set(ctx: &super::ObservedContext) -> BTreeSet<String> {
     ids
 }
 
-fn document_path(record: &types::SymbolRecord) -> String {
+pub(crate) fn document_path(record: &types::SymbolRecord) -> String {
     let module = types::ObservedIndex::module_of(&record.id).unwrap_or_default();
     format!("lekalo/modules/{module}/{}.yaml", record.kind.stem())
 }

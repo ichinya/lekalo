@@ -1,0 +1,698 @@
+//! The `lekalo adoption` command surface (issue #136): the thin
+//! handoff to the core adoption service. Every decision — scope
+//! resolution, pin admission, plan digests, verification execution,
+//! transactional installation, and rollback conflict detection — lives
+//! in the core; this layer only selects inputs, renders documents, and
+//! maps exits per the result contract.
+
+use clap::Subcommand;
+use lekalo_core::result::DomainResult;
+
+use crate::selection_for;
+
+/// The `adoption` subcommands.
+#[derive(Debug, Subcommand)]
+pub enum AdoptionCommands {
+    /// Read-only scoped analysis: a minimal starter plan for exactly one
+    /// use case, module, or symbol, with per-fact provenance and
+    /// confidence, explicit unknowns and ambiguities, and no writes.
+    Analyze {
+        /// One stable observed or canonical symbol id.
+        #[arg(long, value_name = "ID", conflicts_with_all = ["module", "use_case"])]
+        symbol: Option<String>,
+        /// One exact module id (no wildcards).
+        #[arg(long, value_name = "ID", conflicts_with_all = ["symbol", "use_case"])]
+        module: Option<String>,
+        /// One reviewed use-case scope record id.
+        #[arg(long, value_name = "ID", conflicts_with_all = ["symbol", "module"])]
+        use_case: Option<String>,
+        /// The declared adapter target the analysis pins.
+        #[arg(long, value_name = "TARGET")]
+        target: Option<String>,
+        /// The declared adapter profile the analysis pins.
+        #[arg(long, value_name = "PROFILE")]
+        profile: Option<String>,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Selective confirmation: preview the canonical write plan from an
+    /// analysis plus explicit selections, or apply exactly a reviewed
+    /// plan digest.
+    Confirm {
+        /// The saved analysis document (preview input).
+        #[arg(long, value_name = "FILE", requires = "definition")]
+        analysis: Option<String>,
+        /// One reviewed definition id (repeatable).
+        #[arg(long = "definition", value_name = "ID")]
+        definition: Vec<String>,
+        /// The binding proposal resolved for the selected definition.
+        #[arg(long, value_name = "PROPOSAL_ID", requires = "candidate")]
+        binding: Option<String>,
+        /// The native candidate the proposal resolves to.
+        #[arg(long, value_name = "NATIVE_ID", requires = "binding")]
+        candidate: Option<String>,
+        /// Preview only; nothing is written.
+        #[arg(long, requires = "analysis")]
+        dry_run: bool,
+        /// The saved confirmation plan and its reviewed digest (apply
+        /// input; exclusive with the preview inputs).
+        #[arg(long, value_name = "FILE", conflicts_with_all = ["analysis", "dry_run"], requires = "confirm")]
+        plan: Option<String>,
+        /// The reviewed confirmation plan digest.
+        #[arg(long, value_name = "DIGEST", conflicts_with = "dry_run")]
+        confirm: Option<String>,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Selective refactor preview: recommendations with reason, files,
+    /// risk, and verification for one scope; a supplied reviewed
+    /// candidate patch makes the plan applicable.
+    Refactor {
+        /// One stable symbol id.
+        #[arg(long, value_name = "ID", conflicts_with_all = ["module", "use_case"])]
+        symbol: Option<String>,
+        /// One exact module id.
+        #[arg(long, value_name = "ID", conflicts_with_all = ["symbol", "use_case"])]
+        module: Option<String>,
+        /// One reviewed use-case scope record id.
+        #[arg(long, value_name = "ID", conflicts_with_all = ["symbol", "module"])]
+        use_case: Option<String>,
+        /// The declared adapter target.
+        #[arg(long, value_name = "TARGET")]
+        target: Option<String>,
+        /// The declared adapter profile.
+        #[arg(long, value_name = "PROFILE")]
+        profile: Option<String>,
+        /// The closed verification specification (required).
+        #[arg(long, value_name = "FILE")]
+        verification: String,
+        /// The supplied reviewed candidate patch (advice only when
+        /// absent).
+        #[arg(long, value_name = "FILE")]
+        candidate: Option<String>,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Really execute the pinned verification: baseline and candidate
+    /// runs in disposable copies with the behavior oracle. Read-only
+    /// for the project tree.
+    Verify {
+        /// The saved refactor plan.
+        #[arg(long, value_name = "FILE")]
+        plan: String,
+        /// The closed verification specification.
+        #[arg(long, value_name = "FILE")]
+        verification: String,
+        /// The supplied reviewed candidate patch (required when the
+        /// plan carries one).
+        #[arg(long, value_name = "FILE")]
+        candidate: Option<String>,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Apply one confirmed refactor plan: snapshots, a durable journal,
+    /// per-path compare-and-swap writes, and the phase receipt.
+    Apply {
+        /// The saved refactor plan.
+        #[arg(long, value_name = "FILE")]
+        plan: String,
+        /// The saved execution evidence concluding `preserved`.
+        #[arg(long, value_name = "FILE")]
+        verification: String,
+        /// The reviewed candidate patch bytes (required when the plan
+        /// carries a patch digest).
+        #[arg(long, value_name = "FILE")]
+        candidate: Option<String>,
+        /// Required explicit confirmation of the exact plan digest.
+        #[arg(long, value_name = "DIGEST")]
+        confirm: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Roll one completed apply or confirmation back to its exact prior
+    /// state; later edits refuse as conflicts.
+    Rollback {
+        /// The saved apply or confirmation receipt.
+        #[arg(long, value_name = "FILE")]
+        receipt: String,
+        /// Preview the exact restoration without touching bytes.
+        #[arg(long)]
+        dry_run: bool,
+        /// Required explicit confirmation of the exact receipt digest.
+        #[arg(long, value_name = "DIGEST", conflicts_with = "dry_run")]
+        confirm: Option<String>,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// The hybrid coverage join: effective mode, freshness, and gaps
+    /// for exactly one selected scope.
+    Coverage {
+        /// One stable symbol id.
+        #[arg(long, value_name = "ID", conflicts_with = "module")]
+        symbol: Option<String>,
+        /// One exact module id.
+        #[arg(long, value_name = "ID", conflicts_with = "symbol")]
+        module: Option<String>,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+}
+
+fn read_input(name: &str, path: &str) -> Result<Vec<u8>, DomainResult> {
+    std::fs::read(path).map_err(|error| {
+        let detail = match error.kind() {
+            std::io::ErrorKind::NotFound => "file-missing",
+            _ => "file-unreadable",
+        };
+        DomainResult::invalid(lekalo_core::adoption::diagnostic_input_invalid(
+            name, detail,
+        ))
+    })
+}
+
+fn emit(json: String, human: String) -> DomainResult {
+    DomainResult::receipt(json, human)
+}
+
+fn selector(
+    symbol: Option<String>,
+    module: Option<String>,
+    use_case: Option<String>,
+) -> Result<lekalo_core::adoption::AnalysisScope, DomainResult> {
+    match (symbol, module, use_case) {
+        (Some(symbol), None, None) => Ok(lekalo_core::adoption::AnalysisScope::Symbol(symbol)),
+        (None, Some(module), None) => Ok(lekalo_core::adoption::AnalysisScope::Module(module)),
+        (None, None, Some(use_case)) => Ok(lekalo_core::adoption::AnalysisScope::UseCase(use_case)),
+        _ => Err(DomainResult::usage_error()),
+    }
+}
+
+/// Dispatch one `adoption` subcommand.
+pub fn run(command: AdoptionCommands) -> DomainResult {
+    match command {
+        AdoptionCommands::Analyze {
+            symbol,
+            module,
+            use_case,
+            target,
+            profile,
+            project,
+        } => {
+            let Ok(scope) = selector(symbol, module, use_case) else {
+                return DomainResult::usage_error();
+            };
+            run_analyze(scope, target, profile, &project)
+        }
+        AdoptionCommands::Confirm {
+            analysis,
+            definition,
+            binding,
+            candidate,
+            dry_run,
+            plan,
+            confirm,
+            project,
+        } => match (plan, confirm) {
+            (Some(plan), Some(confirm)) if analysis.is_none() && !dry_run => {
+                run_confirm_apply(&plan, &confirm, &project)
+            }
+            (None, None) if analysis.is_some() && !definition.is_empty() => run_confirm_preview(
+                analysis.as_deref().expect("checked"),
+                definition,
+                binding,
+                candidate,
+                dry_run,
+                &project,
+            ),
+            _ => DomainResult::usage_error(),
+        },
+        AdoptionCommands::Refactor {
+            symbol,
+            module,
+            use_case,
+            target,
+            profile,
+            verification,
+            candidate,
+            project,
+        } => {
+            let Ok(scope) = selector(symbol, module, use_case) else {
+                return DomainResult::usage_error();
+            };
+            run_refactor(
+                scope,
+                target,
+                profile,
+                &verification,
+                candidate.as_deref(),
+                &project,
+            )
+        }
+        AdoptionCommands::Verify {
+            plan,
+            verification,
+            candidate,
+            project,
+        } => run_verify(&plan, &verification, candidate.as_deref(), &project),
+        AdoptionCommands::Apply {
+            plan,
+            verification,
+            candidate,
+            confirm,
+            project,
+        } => run_apply(
+            &plan,
+            &verification,
+            candidate.as_deref(),
+            &confirm,
+            &project,
+        ),
+        AdoptionCommands::Rollback {
+            receipt,
+            dry_run,
+            confirm,
+            project,
+        } => {
+            if dry_run == confirm.is_some() {
+                return DomainResult::usage_error();
+            }
+            run_rollback(&receipt, dry_run, confirm.as_deref(), &project)
+        }
+        AdoptionCommands::Coverage {
+            symbol,
+            module,
+            project,
+        } => {
+            let scope = match (symbol, module) {
+                (Some(symbol), None) => lekalo_core::adoption::AnalysisScope::Symbol(symbol),
+                (None, Some(module)) => lekalo_core::adoption::AnalysisScope::Module(module),
+                _ => return DomainResult::usage_error(),
+            };
+            run_coverage(scope, &project)
+        }
+    }
+}
+
+fn run_analyze(
+    scope: lekalo_core::adoption::AnalysisScope,
+    target: Option<String>,
+    profile: Option<String>,
+    project: &Option<String>,
+) -> DomainResult {
+    let selection = selection_for(project);
+    let context = match lekalo_core::adoption::context(&selection) {
+        Ok(context) => context,
+        Err(result) => return result,
+    };
+    let index = match lekalo_core::observed::context(&selection) {
+        Ok(observed) => lekalo_core::observed::index::load_index(&observed)
+            .ok()
+            .flatten(),
+        Err(_) => None,
+    };
+    match lekalo_core::adoption::analyze(
+        &context,
+        index.as_ref(),
+        &scope,
+        target.as_deref(),
+        profile.as_deref(),
+    ) {
+        Ok(document) => emit(
+            serde_json::to_string_pretty(&document).expect("adoption document serializes"),
+            format!(
+                "adoption analyze {} {} : {} definitions ({} confirmed), {} unknowns, {} \
+                 ambiguities; no writes",
+                scope.wire().kind,
+                scope.wire().id,
+                document.definitions.len(),
+                document
+                    .definitions
+                    .iter()
+                    .filter(|definition| definition.status == "confirmed")
+                    .count(),
+                document.unknowns.len(),
+                document.ambiguities.len()
+            ),
+        ),
+        Err(result) => result,
+    }
+}
+
+fn run_confirm_preview(
+    analysis: &str,
+    definitions: Vec<String>,
+    binding: Option<String>,
+    candidate: Option<String>,
+    dry_run: bool,
+    project: &Option<String>,
+) -> DomainResult {
+    let _ = dry_run;
+    let selection = selection_for(project);
+    let context = match lekalo_core::adoption::context(&selection) {
+        Ok(context) => context,
+        Err(result) => return result,
+    };
+    let observed = match lekalo_core::observed::context(&selection) {
+        Ok(observed) => observed,
+        Err(result) => return result,
+    };
+    let index = match lekalo_core::observed::index::load_index(&observed) {
+        Ok(index) => index,
+        Err(set) => return DomainResult::invalid(set),
+    };
+    let analysis_bytes = match read_input("analysis", analysis) {
+        Ok(bytes) => bytes,
+        Err(result) => return result,
+    };
+    let request = lekalo_core::adoption::ConfirmRequest {
+        analysis: analysis_bytes,
+        definitions,
+        binding: binding.zip(candidate),
+    };
+    match lekalo_core::adoption::confirm_plan(&context, index.as_ref(), &request) {
+        Ok(document) => emit(
+            serde_json::to_string_pretty(&document).expect("adoption document serializes"),
+            format!(
+                "adoption confirm : plan {} writes {} definitions ({} unresolved); preview \
+                 only, apply with --confirm",
+                document.plan,
+                document.writes.len(),
+                document.unresolved.len()
+            ),
+        ),
+        Err(result) => result,
+    }
+}
+
+fn run_confirm_apply(plan_path: &str, confirm: &str, project: &Option<String>) -> DomainResult {
+    let selection = selection_for(project);
+    let context = match lekalo_core::adoption::context(&selection) {
+        Ok(context) => context,
+        Err(result) => return result,
+    };
+    let observed = match lekalo_core::observed::context(&selection) {
+        Ok(observed) => observed,
+        Err(result) => return result,
+    };
+    let index = match lekalo_core::observed::index::load_index(&observed) {
+        Ok(index) => index,
+        Err(set) => return DomainResult::invalid(set),
+    };
+    let plan_bytes = match read_input("plan", plan_path) {
+        Ok(bytes) => bytes,
+        Err(result) => return result,
+    };
+    match lekalo_core::adoption::confirm_apply(&context, index.as_ref(), &plan_bytes, confirm) {
+        Ok(receipt) => emit(
+            serde_json::to_string_pretty(&receipt).expect("adoption receipt serializes"),
+            format!(
+                "adoption confirm apply : {} ({} writes); receipt {}",
+                receipt.outcome,
+                receipt.writes.len(),
+                receipt.receipt
+            ),
+        ),
+        Err(result) => result,
+    }
+}
+
+fn run_refactor(
+    scope: lekalo_core::adoption::AnalysisScope,
+    target: Option<String>,
+    profile: Option<String>,
+    verification: &str,
+    candidate: Option<&str>,
+    project: &Option<String>,
+) -> DomainResult {
+    let selection = selection_for(project);
+    let context = match lekalo_core::adoption::context(&selection) {
+        Ok(context) => context,
+        Err(result) => return result,
+    };
+    let observed = match lekalo_core::observed::context(&selection) {
+        Ok(observed) => observed,
+        Err(result) => return result,
+    };
+    let index = match lekalo_core::observed::index::load_index(&observed) {
+        Ok(index) => index,
+        Err(set) => return DomainResult::invalid(set),
+    };
+    let verification_bytes = match read_input("verification", verification) {
+        Ok(bytes) => bytes,
+        Err(result) => return result,
+    };
+    let candidate_bytes = match candidate {
+        Some(path) => match read_input("candidate", path) {
+            Ok(bytes) => Some(bytes),
+            Err(result) => return result,
+        },
+        None => None,
+    };
+    let request = lekalo_core::adoption::RefactorRequest {
+        scope,
+        target,
+        profile,
+        verification: verification_bytes,
+        candidate: candidate_bytes,
+    };
+    match lekalo_core::adoption::refactor_plan(&context, index.as_ref(), &request) {
+        Ok(document) => emit(
+            serde_json::to_string_pretty(&document).expect("adoption document serializes"),
+            format!(
+                "adoption refactor {} : plan {} ({} recommendations, {} unsupported, patch: \
+                 {}); preview only, decline writes nothing",
+                document.selection.id,
+                document.plan,
+                document.recommendations.len(),
+                document.unsupported.len(),
+                document.patch.as_deref().unwrap_or("none")
+            ),
+        ),
+        Err(result) => result,
+    }
+}
+
+fn run_verify(
+    plan_path: &str,
+    verification: &str,
+    candidate: Option<&str>,
+    project: &Option<String>,
+) -> DomainResult {
+    let selection = selection_for(project);
+    let context = match lekalo_core::adoption::context(&selection) {
+        Ok(context) => context,
+        Err(result) => return result,
+    };
+    let plan_bytes = match read_input("plan", plan_path) {
+        Ok(bytes) => bytes,
+        Err(result) => return result,
+    };
+    let plan = match lekalo_core::adoption::wire::refactor_plan_of_bytes(&plan_bytes) {
+        Ok(plan) => plan,
+        Err(error) => return DomainResult::invalid(error.set()),
+    };
+    let patch = match (&plan.patch, candidate) {
+        (Some(_), Some(path)) => match read_input("candidate", path) {
+            Ok(bytes) => {
+                let patch = lekalo_core::adoption::wire::patch_of_bytes(&bytes);
+                match patch {
+                    Ok(patch) => Some(patch),
+                    Err(error) => return DomainResult::invalid(error.set()),
+                }
+            }
+            Err(result) => return result,
+        },
+        (Some(_), None) => {
+            return DomainResult::invalid(lekalo_core::adoption::diagnostic_input_invalid(
+                "candidate",
+                "required-by-plan",
+            ));
+        }
+        (None, _) => None,
+    };
+    let verification_bytes = match read_input("verification", verification) {
+        Ok(bytes) => bytes,
+        Err(result) => return result,
+    };
+    match lekalo_core::adoption::verify(&context.root, &plan, &verification_bytes, patch.as_ref()) {
+        Ok(execution) => emit(
+            serde_json::to_string_pretty(&execution).expect("verification serializes"),
+            format!(
+                "adoption verify : conclusion {} (baseline {}, candidate {}, oracle {})",
+                execution.conclusion.as_deref().unwrap_or("-"),
+                execution
+                    .baseline
+                    .as_ref()
+                    .map(|side| side.checks.iter().filter(|c| c.status == "passed").count())
+                    .unwrap_or(0),
+                execution
+                    .candidate
+                    .as_ref()
+                    .map(|side| side.checks.iter().filter(|c| c.status == "passed").count())
+                    .unwrap_or(0),
+                execution
+                    .oracle
+                    .as_ref()
+                    .map(|oracle| oracle.status.as_str())
+                    .unwrap_or("-")
+            ),
+        ),
+        Err(result) => result,
+    }
+}
+
+fn run_apply(
+    plan_path: &str,
+    execution_path: &str,
+    candidate: Option<&str>,
+    confirm: &str,
+    project: &Option<String>,
+) -> DomainResult {
+    let selection = selection_for(project);
+    let context = match lekalo_core::adoption::context(&selection) {
+        Ok(context) => context,
+        Err(result) => return result,
+    };
+    let observed = match lekalo_core::observed::context(&selection) {
+        Ok(observed) => observed,
+        Err(result) => return result,
+    };
+    let index = match lekalo_core::observed::index::load_index(&observed) {
+        Ok(index) => index,
+        Err(set) => return DomainResult::invalid(set),
+    };
+    let plan_bytes = match read_input("plan", plan_path) {
+        Ok(bytes) => bytes,
+        Err(result) => return result,
+    };
+    let execution_bytes = match read_input("verification", execution_path) {
+        Ok(bytes) => bytes,
+        Err(result) => return result,
+    };
+    let plan = match lekalo_core::adoption::wire::refactor_plan_of_bytes(&plan_bytes) {
+        Ok(plan) => plan,
+        Err(error) => return DomainResult::invalid(error.set()),
+    };
+    let patch_bytes = match (&plan.patch, candidate) {
+        (Some(_), Some(path)) => match read_input("candidate", path) {
+            Ok(bytes) => Some(bytes),
+            Err(result) => return result,
+        },
+        (Some(_), None) => {
+            return DomainResult::invalid(lekalo_core::adoption::diagnostic_input_invalid(
+                "candidate",
+                "required-by-plan",
+            ));
+        }
+        (None, _) => None,
+    };
+    let empty: Vec<u8> = Vec::new();
+    match lekalo_core::adoption::apply_refactor(
+        &context,
+        index.as_ref(),
+        &plan_bytes,
+        patch_bytes.as_deref().unwrap_or(&empty),
+        &execution_bytes,
+        confirm,
+    ) {
+        Ok(receipt) => emit(
+            serde_json::to_string_pretty(&receipt).expect("adoption receipt serializes"),
+            format!(
+                "adoption apply : {} ({} writes); receipt {}",
+                receipt.outcome,
+                receipt.writes.len(),
+                receipt.receipt
+            ),
+        ),
+        Err(result) => result,
+    }
+}
+
+fn run_rollback(
+    receipt_path: &str,
+    dry_run: bool,
+    confirm: Option<&str>,
+    project: &Option<String>,
+) -> DomainResult {
+    let selection = selection_for(project);
+    let context = match lekalo_core::adoption::context(&selection) {
+        Ok(context) => context,
+        Err(result) => return result,
+    };
+    let receipt_bytes = match read_input("receipt", receipt_path) {
+        Ok(bytes) => bytes,
+        Err(result) => return result,
+    };
+    if dry_run {
+        match lekalo_core::adoption::rollback_preview(&context, &receipt_bytes) {
+            Ok(receipt) => emit(
+                serde_json::to_string_pretty(&receipt).expect("adoption receipt serializes"),
+                format!(
+                    "adoption rollback : would restore {} paths of plan {}; nothing written",
+                    receipt.writes.len(),
+                    receipt.plan
+                ),
+            ),
+            Err(result) => result,
+        }
+    } else {
+        let Some(confirm) = confirm else {
+            return DomainResult::usage_error();
+        };
+        match lekalo_core::adoption::rollback(&context, &receipt_bytes, confirm) {
+            Ok(receipt) => emit(
+                serde_json::to_string_pretty(&receipt).expect("adoption receipt serializes"),
+                format!(
+                    "adoption rollback : {} ({} paths restored)",
+                    receipt.outcome,
+                    receipt.writes.len()
+                ),
+            ),
+            Err(result) => result,
+        }
+    }
+}
+
+fn run_coverage(
+    scope: lekalo_core::adoption::AnalysisScope,
+    project: &Option<String>,
+) -> DomainResult {
+    let selection = selection_for(project);
+    let context = match lekalo_core::adoption::context(&selection) {
+        Ok(context) => context,
+        Err(result) => return result,
+    };
+    let observed = match lekalo_core::observed::context(&selection) {
+        Ok(observed) => observed,
+        Err(result) => return result,
+    };
+    let index = match lekalo_core::observed::index::load_index(&observed) {
+        Ok(index) => index,
+        Err(set) => return DomainResult::invalid(set),
+    };
+    match lekalo_core::adoption::coverage(&context, index.as_ref(), &scope) {
+        Ok(document) => emit(
+            serde_json::to_string_pretty(&document).expect("adoption document serializes"),
+            format!(
+                "adoption coverage {} {} : observed {}, contracted-legacy {}, contracted-new \
+                 {}, unbound {}, conflicting {}; {} gaps",
+                scope.wire().kind,
+                scope.wire().id,
+                document.counts.observed,
+                document.counts.contracted_legacy,
+                document.counts.contracted_new,
+                document.counts.unbound,
+                document.counts.conflicting,
+                document.gaps.len()
+            ),
+        ),
+        Err(result) => result,
+    }
+}
