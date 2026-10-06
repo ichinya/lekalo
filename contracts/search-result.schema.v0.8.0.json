@@ -1,0 +1,519 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.search-result-schema@0.8.0",
+  "title": "Lekalo Search Result",
+  "description": "Closed success payload of the issue #93 search service (dev.lekalo.search-result@0.8.0, wire lekalo/search-result/v0.8.0). Bounded selection cards with provenance, coverage, and ranking explanations, computed under the frozen semantic-search/1 recipe over one immutable index generation. `selection` is none|unique|multiple|ambiguous; unique means one returned qualified identity within complete relevant coverage, never a runtime binding confirmation; a page containing one row is not a singleton answer. Zero matches is valid. Cards carry no source snippets: descriptions are bounded privacy-admitted metadata, previews are capped at eight refs with an explicit omitted count. The CLI envelope prepends the stable `status` field and may append `diagnostics`/`reasonCodes`.",
+  "type": "object",
+  "additionalProperties": false,
+  "unevaluatedProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "recipe",
+    "query",
+    "indexDigest",
+    "selection",
+    "coverage",
+    "items",
+    "page"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/search-result/v0.8.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.search-result@0.8.0"
+    },
+    "projectId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.:-]*$"
+    },
+    "recipe": {
+      "const": "semantic-search/1"
+    },
+    "query": {
+      "type": "string",
+      "maxLength": 512,
+      "description": "The normalized query; empty for pure filter runs."
+    },
+    "indexDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "The immutable content digest of the index generation the answer was computed over."
+    },
+    "selection": {
+      "enum": [
+        "none",
+        "unique",
+        "multiple",
+        "ambiguous"
+      ]
+    },
+    "coverage": {
+      "type": "array",
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/coverageRow"
+      }
+    },
+    "items": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "$ref": "#/$defs/item"
+      }
+    },
+    "page": {
+      "$ref": "#/$defs/page"
+    }
+  },
+  "$defs": {
+    "coverageRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "domain",
+        "state"
+      ],
+      "properties": {
+        "domain": {
+          "enum": [
+            "ir",
+            "effects",
+            "trace",
+            "requirements",
+            "bindings",
+            "diagnostics",
+            "waivers"
+          ]
+        },
+        "state": {
+          "enum": [
+            "complete",
+            "partial",
+            "unknown",
+            "unsupported",
+            "withheld"
+          ],
+          "description": "Unknown is never zero: absence of admitted evidence is not proof of absence."
+        }
+      }
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "card",
+        "match"
+      ],
+      "properties": {
+        "card": {
+          "$ref": "#/$defs/card"
+        },
+        "match": {
+          "$ref": "#/$defs/matchFacts"
+        }
+      }
+    },
+    "matchFacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tier",
+        "field",
+        "exactTerms",
+        "totalTerms",
+        "edits"
+      ],
+      "properties": {
+        "tier": {
+          "enum": [
+            "exact-id",
+            "exact-qualified",
+            "exact-name",
+            "all-terms",
+            "prefix",
+            "fuzzy"
+          ]
+        },
+        "field": {
+          "enum": [
+            "id",
+            "name",
+            "description"
+          ]
+        },
+        "exactTerms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 32
+        },
+        "totalTerms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 32
+        },
+        "edits": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 64
+        },
+        "label": {
+          "const": "lexical-fuzzy",
+          "description": "Present only on fuzzy-tier hits."
+        }
+      }
+    },
+    "card": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "kind",
+        "confidence",
+        "freshness",
+        "completeness",
+        "provenance"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.:/#-]*$",
+          "description": "The stable qualified key (`def:x`, `req:source:id`, `bind:x`, `waiv:x`, `gate:x`, `target:x`)."
+        },
+        "kind": {
+          "enum": [
+            "module",
+            "scalar",
+            "enum",
+            "value-object",
+            "entity",
+            "command",
+            "query",
+            "policy",
+            "event",
+            "effect",
+            "endpoint",
+            "scenario",
+            "target-binding",
+            "requirement",
+            "binding",
+            "diagnostic",
+            "waiver",
+            "gate"
+          ]
+        },
+        "subkind": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "module": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "id": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "description": "Privacy-admitted description metadata; bounded to 512 Unicode scalar values."
+        },
+        "signatures": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/signatureRef"
+          }
+        },
+        "relations": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/relationWitness"
+          }
+        },
+        "effects": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/relationWitness"
+          }
+        },
+        "bindings": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/nativeBinding"
+          }
+        },
+        "locations": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/sourceSpan"
+          }
+        },
+        "requirements": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          }
+        },
+        "scenarios": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          }
+        },
+        "gates": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          }
+        },
+        "portability": {
+          "enum": [
+            "portable",
+            "target-specific"
+          ]
+        },
+        "visibility": {
+          "enum": [
+            "module",
+            "project"
+          ]
+        },
+        "confidence": {
+          "enum": [
+            "canonical",
+            "verified",
+            "extracted",
+            "inferred",
+            "unknown"
+          ]
+        },
+        "freshness": {
+          "enum": [
+            "current",
+            "stale",
+            "as-recorded",
+            "unknown"
+          ]
+        },
+        "completeness": {
+          "enum": [
+            "complete",
+            "partial",
+            "unknown",
+            "unsupported",
+            "withheld"
+          ]
+        },
+        "omitted": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "How many refs were omitted by the preview bounds; a stable fact, never a silent drop."
+        },
+        "provenance": {
+          "enum": [
+            "ir",
+            "effects",
+            "trace",
+            "requirements",
+            "observed",
+            "diagnostics",
+            "waivers"
+          ]
+        }
+      }
+    },
+    "signatureRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "id"
+      ],
+      "properties": {
+        "role": {
+          "enum": [
+            "input",
+            "output",
+            "error",
+            "type",
+            "external"
+          ]
+        },
+        "id": {
+          "$ref": "#/$defs/semanticId"
+        }
+      }
+    },
+    "relationWitness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relation",
+        "other",
+        "direction",
+        "trust",
+        "confidence"
+      ],
+      "properties": {
+        "relation": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192
+        },
+        "other": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "direction": {
+          "enum": [
+            "outgoing",
+            "incoming"
+          ]
+        },
+        "trust": {
+          "enum": [
+            "declared",
+            "detected"
+          ]
+        },
+        "confidence": {
+          "enum": [
+            "canonical",
+            "verified",
+            "extracted",
+            "inferred",
+            "unknown"
+          ]
+        }
+      }
+    },
+    "nativeBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "target",
+        "path",
+        "status"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "path": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 512,
+          "pattern": "^[A-Za-z0-9._/-]*$"
+        },
+        "symbol": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "status": {
+          "enum": [
+            "explicit",
+            "confirmed",
+            "inferred"
+          ]
+        }
+      }
+    },
+    "sourceSpan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/logicalPath"
+        },
+        "start": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "end": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "limit",
+        "returned"
+      ],
+      "properties": {
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "returned": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "visibleTotal": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Exact only for a fully computed visible set."
+        },
+        "next": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "description": "Opaque bounded cursor; carries no paths or snippets and grants no read authority."
+        },
+        "truncated": {
+          "type": "boolean",
+          "description": "Explicit work-limit truncation; ordinary pagination never sets it."
+        }
+      }
+    },
+    "semanticId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.:-]*$"
+    },
+    "logicalPath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+    }
+  }
+}

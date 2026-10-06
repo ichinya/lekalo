@@ -279,7 +279,7 @@ fn snapshot_document(service: &Service) -> lekalo_core::search::IndexDocument {
         project_id: service.project_id.clone(),
         digest: String::new(),
         inputs: Vec::new(),
-        policy_digest: String::new(),
+        policy_digest: service.policy_digest(),
         cards,
         postings,
         qualified_ids,

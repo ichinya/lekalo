@@ -159,7 +159,7 @@ impl Completeness {
 /// The closed freshness vocabulary: evidence states are as-recorded;
 /// query-time native state stays `unknown` unless revalidated.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "kebab-case")]
 pub enum Freshness {
     Current,
     Stale,
