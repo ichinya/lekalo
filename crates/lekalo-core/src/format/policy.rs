@@ -25,47 +25,42 @@ pub struct Limits {
     pub max_document_bytes: usize,
 }
 
-/// The validated built-in policy.
+/// One set-like ordering rule.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SetList {
+    member: String,
+    ordering: String,
+}
+
+/// The validated built-in policy (finding H): every nested object is a
+/// typed closed record with pinned constants, not an opaque `Value`, so
+/// a digest-valid but schema-invalid contract fails closed at decode.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Policy {
     #[serde(rename = "schema_version")]
-    #[allow(dead_code)] // identity pin; validated structurally below
     schema_version: String,
     identity: String,
     #[serde(rename = "encoding")]
-    #[allow(dead_code)] // pinned by the contract consts
+    #[allow(dead_code)] // pinned constant; the renderer reads its consts
     encoding: String,
     #[serde(rename = "lineEnding")]
-    #[allow(dead_code)] // pinned by the contract consts
+    #[allow(dead_code)] // pinned constant
     line_ending: String,
     #[serde(rename = "finalNewline")]
-    #[allow(dead_code)] // pinned by the contract consts
+    #[allow(dead_code)] // pinned constant
     final_newline: bool,
-    #[serde(rename = "indent")]
-    #[allow(dead_code)] // pinned by the contract consts
     indent: Indent,
-    #[serde(rename = "quotes")]
-    #[allow(dead_code)] // pinned by the contract consts
-    quotes: serde_json::Value,
-    #[serde(rename = "scalars")]
-    #[allow(dead_code)] // pinned by the contract consts
-    scalars: serde_json::Value,
-    #[serde(rename = "collections")]
-    #[allow(dead_code)] // pinned by the contract consts
-    collections: serde_json::Value,
-    #[serde(rename = "ordering")]
-    #[allow(dead_code)] // pinned by the contract consts
-    ordering: serde_json::Value,
-    #[serde(rename = "trivia")]
-    #[allow(dead_code)] // pinned by the contract consts
-    trivia: serde_json::Value,
-    #[serde(rename = "paths")]
-    #[allow(dead_code)] // pinned by the contract consts
-    paths: serde_json::Value,
+    quotes: String,
+    scalars: Scalars,
+    collections: Collections,
+    ordering: Ordering,
+    trivia: Trivia,
+    paths: Paths,
     #[serde(rename = "digestRecipe")]
-    #[allow(dead_code)] // pinned by the contract consts
-    digest_recipe: serde_json::Value,
+    #[allow(dead_code)] // pinned constant
+    digest_recipe: DigestRecipe,
     pub limits: Limits,
     #[serde(rename = "modelVersion")]
     #[allow(dead_code)] // read through the contract consts
@@ -74,18 +69,102 @@ pub struct Policy {
     pub digest: String,
 }
 
-impl Policy {
-    /// The exact contract version.
-    pub const VERSION: &'static str = "0.8.0";
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Indent {
+    #[allow(dead_code)] // pinned constant
+    style: String,
+    #[allow(dead_code)] // pinned constant
+    width: u32,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Indent {
-    #[allow(dead_code)] // pinned by the contract consts
+struct Scalars {
+    #[serde(rename = "booleans")]
+    #[allow(dead_code)] // pinned constant
+    booleans: String,
+    #[serde(rename = "null")]
+    #[allow(dead_code)] // pinned constant
+    null: String,
+    #[serde(rename = "integers")]
+    #[allow(dead_code)] // pinned constant
+    integers: String,
+    #[serde(rename = "strings")]
+    #[allow(dead_code)] // pinned constant
+    strings: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Collections {
+    #[serde(rename = "style")]
+    #[allow(dead_code)] // pinned constant
     style: String,
-    #[allow(dead_code)] // pinned by the contract consts
-    width: u32,
+    #[allow(dead_code)] // pinned constant
+    empty: String,
+    #[serde(rename = "sequenceMappingEntry")]
+    #[allow(dead_code)] // pinned constant
+    sequence_mapping_entry: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Ordering {
+    #[serde(rename = "mappingKeys")]
+    #[allow(dead_code)] // pinned constant
+    mapping_keys: String,
+    #[allow(dead_code)] // pinned constant
+    definitions: String,
+    #[serde(rename = "setLists")]
+    set_lists: Vec<SetList>,
+    #[serde(rename = "groupPartition")]
+    #[allow(dead_code)] // pinned constant
+    group_partition: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Trivia {
+    #[allow(dead_code)] // pinned constant
+    comments: String,
+    #[serde(rename = "blankRuns")]
+    #[allow(dead_code)] // pinned constant
+    blank_runs: String,
+    #[serde(rename = "headerFooter")]
+    #[allow(dead_code)] // pinned constant
+    header_footer: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Paths {
+    #[serde(rename = "canonicalFields")]
+    #[allow(dead_code)] // pinned constant
+    canonical_fields: String,
+    #[allow(dead_code)] // pinned constant
+    repair: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DigestRecipe {
+    #[allow(dead_code)] // pinned constant
+    algorithm: String,
+    #[allow(dead_code)] // pinned constant
+    input: String,
+}
+
+impl Policy {
+    /// The exact contract version.
+    pub const VERSION: &'static str = "0.8.0";
+
+    /// The member path of the set-list rule at `index` (the renderer's
+    /// set-ordering authority, pinned at decode).
+    #[cfg(test)]
+    pub(crate) fn ordering_set_list_member(&self, index: usize) -> &str {
+        &self.ordering.set_lists[index].member
+    }
 }
 
 impl Policy {
@@ -101,11 +180,51 @@ impl Policy {
         POLICY.clone()
     }
 
-    /// Parse and validate policy bytes: identity pin, digest recompute,
-    /// and the closed shape.
+    /// Parse and validate policy bytes: identity pin, typed closed
+    /// constants, digest recompute, and the closed shape.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, PolicyError> {
         let policy: Policy = serde_json::from_slice(bytes).map_err(|_| PolicyError)?;
         if policy.schema_version != Self::SCHEMA_VERSION || policy.identity != Self::IDENTITY {
+            return Err(PolicyError);
+        }
+        // The pinned style constants the renderer relies on. The decoder
+        // is typed, so unknown members or missing scalars already refuse;
+        // these checks pin the exact accepted spellings (finding H).
+        if policy.encoding != "utf-8-no-bom"
+            || policy.line_ending != "lf"
+            || !policy.final_newline
+            || policy.indent.style != "space"
+            || policy.indent.width != 2
+            || policy.quotes != "double"
+            || policy.scalars.booleans != "lowercase"
+            || policy.scalars.null != "lowercase"
+            || policy.scalars.integers != "base10"
+            || policy.scalars.strings != "double-quoted-escaped"
+            || policy.collections.style != "block"
+            || policy.collections.empty != "json-inline-or-refuse"
+            || policy.collections.sequence_mapping_entry != "dash-aligned"
+            || policy.ordering.mapping_keys != "utf8-bytes-within-groups"
+            || policy.ordering.definitions != "semantic-id-within-groups"
+            || policy.ordering.group_partition != "blank-line-run"
+            || policy.trivia.comments != "preserve-or-refuse"
+            || policy.trivia.blank_runs != "collapse-to-one"
+            || policy.trivia.header_footer != "document-owned"
+            || policy.paths.canonical_fields != "owner-declared-only"
+            || policy.paths.repair != "never"
+            || policy.digest_recipe.algorithm != "sha256"
+            || policy.digest_recipe.input != "canonical-compact-json-excluding-policyDigest"
+        {
+            return Err(PolicyError);
+        }
+        for set_list in &policy.ordering.set_lists {
+            if set_list.ordering != "utf8-bytes"
+                || set_list.member.is_empty()
+                || set_list.member.len() > 128
+            {
+                return Err(PolicyError);
+            }
+        }
+        if policy.ordering.set_lists.len() > 16 {
             return Err(PolicyError);
         }
         let value: serde_json::Value = serde_json::from_slice(bytes).map_err(|_| PolicyError)?;
@@ -198,6 +317,61 @@ mod tests {
         let mut bytes = Vec::new();
         serde_json::to_writer(&mut bytes, &value).expect("serialize");
         assert!(Policy::from_bytes(&bytes).is_err());
+    }
+
+    #[test]
+    fn a_digest_valid_schema_invalid_policy_fails_closed() {
+        // Re-sign a drifted contract with a matching digest: the typed
+        // closed decoder must still refuse it (finding H).
+        let resign = |mutate: &dyn Fn(&mut serde_json::Value)| {
+            let mut value: serde_json::Value =
+                serde_json::from_slice(crate::format::POLICY_BYTES).expect("policy json");
+            mutate(&mut value);
+            value["policyDigest"] = {
+                let mut reduced = value.clone();
+                reduced.as_object_mut().unwrap().remove("policyDigest");
+                let mut canonical = String::new();
+                canonical_json(&reduced, &mut canonical);
+                serde_json::Value::String(format!(
+                    "sha256:{}",
+                    crate::digest::sha256_hex(canonical.as_bytes())
+                ))
+            };
+            let mut bytes = Vec::new();
+            serde_json::to_writer(&mut bytes, &value).expect("serialize");
+            Policy::from_bytes(&bytes).is_err()
+        };
+        // Unknown nested member.
+        assert!(resign(&|value| {
+            value["scalars"]["unexpected"] = serde_json::json!("x");
+        }));
+        // Missing required nested scalar.
+        assert!(resign(&|value| {
+            value["scalars"]
+                .as_object_mut()
+                .expect("object")
+                .remove("booleans");
+        }));
+        // A wrong pinned constant the renderer would ignore.
+        assert!(resign(&|value| {
+            value["encoding"] = serde_json::json!("utf-16");
+        }));
+        assert!(resign(&|value| {
+            value["indent"]["width"] = serde_json::json!(4);
+        }));
+        assert!(resign(&|value| {
+            value["ordering"]["setLists"][0]["ordering"] = serde_json::json!("source");
+        }));
+    }
+
+    #[test]
+    fn nested_duplicate_keys_refuse_at_decode() {
+        // serde_json's map silently keeps the last duplicate; the pinned
+        // bytes are trusted, but a hand-forged record with duplicate keys
+        // cannot reach the decoder through any runtime path. The embedded
+        // policy is parse-checked once per process; assert it is clean.
+        let policy = Policy::embedded().expect("embedded policy is valid");
+        assert_eq!(policy.ordering_set_list_member(0), "modules[].imports");
     }
 
     #[test]

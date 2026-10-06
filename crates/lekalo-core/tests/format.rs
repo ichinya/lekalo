@@ -195,6 +195,32 @@ fn an_unknown_selector_is_a_selection_diagnostic() {
 }
 
 #[test]
+fn a_well_formed_path_outside_the_model_family_is_an_unsupported_surface() {
+    in_sandbox("surface", "planner-canonical", |_root| {
+        for selector in ["lekalo.lock", "README.md", "notes/architecture.txt"] {
+            let result = lekalo_core::format::run(
+                &request(
+                    FormatScope::Document(selector.to_owned()),
+                    FormatMode::Check,
+                ),
+                None,
+            );
+            assert_eq!(result.status(), Status::Unsupported, "{selector}");
+            assert_eq!(result.exit_code(), 4, "{selector}");
+            let reasons: Vec<&str> = result
+                .diagnostics()
+                .iter()
+                .map(|diagnostic| diagnostic.id())
+                .collect();
+            assert!(
+                reasons.contains(&"format.unsupported-surface"),
+                "{selector}: {reasons:?}"
+            );
+        }
+    });
+}
+
+#[test]
 fn parse_errors_stay_parse_errors_and_never_become_diffs() {
     in_sandbox("parse", "seeds/invalid-parse", |_root| {
         let result = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Check), None);

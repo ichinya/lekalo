@@ -147,6 +147,17 @@ fn plan(request: &FormatRequest, stdin_bytes: Option<&[u8]>) -> Result<Planned, 
     let selected: Vec<(&crate::loader::LoadedDocument, Option<Vec<u8>>)> = match &request.scope {
         FormatScope::All => load.documents.iter().map(|d| (d, None)).collect(),
         FormatScope::Document(selector) => {
+            // A well-formed selector clearly outside the admitted Model
+            // source family (lockfiles, runtime trees, docs, invented
+            // names) is the registered unsupported-surface refusal
+            // (finding J). A selector inside the family shape that names
+            // nothing admitted stays the selection-miss refusal.
+            if !admitted_model_family(selector) {
+                return Err(failure_unsupported_surface(
+                    "model-source",
+                    "not-admitted-family",
+                ));
+            }
             let document = load
                 .documents
                 .iter()
@@ -522,6 +533,66 @@ fn scope_selector(scope: &FormatScope) -> Option<String> {
     }
 }
 
+/// Whether one selector is inside the admitted Model source family's
+/// shape: the project document, a module directory or manifest, or a
+/// definition-kind document (finding J). A selector of this shape that
+/// names nothing admitted is a selection miss; anything else is outside
+/// the formatter surface entirely.
+fn admitted_model_family(selector: &str) -> bool {
+    // Uppercase, NFC, and other Unicode spellings are legal file names
+    // outside the governed tree — they are simply not Model sources. The
+    // selector-grammar gate stays authoritative only for actual escape
+    // attempts (traversal, absolute, device, percent). Traversal etc.
+    // refuse at the loader before this check, so they never reach here
+    // in a real run; everything well-formed is judged by family.
+    if crate::project_fs::selection_violation(selector).is_some() {
+        // The loader owns the structure.* denial for escape attempts;
+        // keep this seam's answer neutral (true) for them so the loader's
+        // diagnostic wins.
+        return true;
+    }
+    if selector == "lekalo/project.yaml" {
+        return true;
+    }
+    // Other canonical `lekalo/` declaration homes (targets, transport,
+    // attachments, types, ...) are governed project files of other
+    // owners: a formatter request naming one is a selection miss inside
+    // the governed tree, not a foreign surface.
+    if let Some(rest) = selector.strip_prefix("lekalo/") {
+        if crate::project_fs::CANONICAL_ROOT_ENTRIES
+            .iter()
+            .any(|entry| rest == *entry || rest.starts_with(&format!("{entry}/")))
+        {
+            return true;
+        }
+        // Any other path under the governed tree (invented `lekalo/...`)
+        // also stays inside the project surface; a module-family path is
+        // judged by its exact file-name grammar.
+        if let Some(rest) = rest.strip_prefix("modules/") {
+            let mut parts = rest.split('/');
+            let directory = parts.next().unwrap_or_default();
+            if directory.is_empty() {
+                return false;
+            }
+            return match parts.next() {
+                None => true,
+                Some(file) => {
+                    !file.is_empty()
+                        && parts.next().is_none()
+                        && (file == "module.yaml"
+                            || crate::project_fs::KIND_STEMS
+                                .iter()
+                                .any(|stem| file == format!("{stem}.yaml")))
+                }
+            };
+        }
+        if !rest.is_empty() {
+            return true;
+        }
+    }
+    false
+}
+
 /// `lekalo/modules/<dir>` -> `lekalo/modules/<dir>/`; anything else is
 /// not a module-directory selector.
 fn module_prefix(selector: &str) -> Option<String> {
@@ -609,6 +680,20 @@ fn failure_selection(selector_kind: &str, detail: &str) -> DomainResult {
         .unwrap_or_default();
     let set = DomainResult::from_wire_set(Status::Invalid, diagnostics);
     DomainResult::invalid(set)
+}
+
+/// The registered `format.unsupported-surface` refusal (exit 4): the
+/// declared document is a well-formed path outside the admitted Model
+/// source family — never a formatter input, in any mode.
+fn failure_unsupported_surface(family: &str, reason: &str) -> DomainResult {
+    let mut data = DataObject::new();
+    data.insert("family".to_owned(), DataValue::Token(family.to_owned()));
+    data.insert("reason".to_owned(), DataValue::Token(reason.to_owned()));
+    let diagnostics = build("format.unsupported-surface", None, None, data)
+        .map(|diagnostic| vec![diagnostic])
+        .unwrap_or_default();
+    let set = DomainResult::from_wire_set(Status::Unsupported, diagnostics);
+    DomainResult::UnsupportedOperation { diagnostics: set }
 }
 
 fn failure_limit(limit: &str, measured: u64, allowed: u64) -> DomainResult {
