@@ -22,10 +22,13 @@ pub struct CompatibilityCase {
 pub const COMPATIBILITY_MATRIX: &[CompatibilityCase] = &[
     CompatibilityCase { admitted: true, operation: None, protocol_version: "0.3.2", reason: None, wire_token: Some("lekalo.target/v1") },
     CompatibilityCase { admitted: true, operation: None, protocol_version: "0.6.4", reason: None, wire_token: Some("lekalo.target/v1") },
-    CompatibilityCase { admitted: false, operation: None, protocol_version: "0.3.1", reason: Some("retired-version"), wire_token: Some("lekalo.target/v1") },
-    CompatibilityCase { admitted: false, operation: None, protocol_version: "0.9.0", reason: Some("future-version"), wire_token: Some("lekalo.target/v1") },
-    CompatibilityCase { admitted: false, operation: None, protocol_version: "1.0.0", reason: Some("future-version"), wire_token: Some("lekalo.target/v1") },
-    CompatibilityCase { admitted: false, operation: None, protocol_version: "0.6.4", reason: Some("foreign-token"), wire_token: Some("lekalo.target/v0") },
-    CompatibilityCase { admitted: false, operation: Some("lint"), protocol_version: "0.3.2", reason: Some("operation-not-in-version"), wire_token: Some("lekalo.target/v1") },
+    CompatibilityCase { admitted: false, operation: None, protocol_version: "0.3.1", reason: Some("version"), wire_token: Some("lekalo.target/v1") },
+    CompatibilityCase { admitted: false, operation: None, protocol_version: "0.9.0", reason: Some("version"), wire_token: Some("lekalo.target/v1") },
+    CompatibilityCase { admitted: false, operation: None, protocol_version: "1.0.0", reason: Some("version"), wire_token: Some("lekalo.target/v1") },
+    CompatibilityCase { admitted: false, operation: None, protocol_version: "0.6.4", reason: Some("token"), wire_token: Some("lekalo.target/v0") },
+    CompatibilityCase { admitted: true, operation: Some("lint"), protocol_version: "0.6.4", reason: None, wire_token: Some("lekalo.target/v1") },
+    CompatibilityCase { admitted: false, operation: Some("lint"), protocol_version: "0.3.2", reason: Some("lint-request"), wire_token: Some("lekalo.target/v1") },
+    CompatibilityCase { admitted: false, operation: Some("plan-native"), protocol_version: "0.3.2", reason: Some("native-request"), wire_token: Some("lekalo.target/v1") },
+    CompatibilityCase { admitted: false, operation: Some("transpile"), protocol_version: "0.6.4", reason: Some("operation"), wire_token: Some("lekalo.target/v1") },
 ];
 

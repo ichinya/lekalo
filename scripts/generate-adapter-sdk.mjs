@@ -325,21 +325,14 @@ function renderCompatibilityTests(lang) {
     // The exact-version matrix refusal rows: unknown and future versions,
     // foreign tokens, and cross-version operations fail before any IR
     // disclosure or callback execution.
-    { admitted: false, protocolVersion: "0.3.1", reason: "retired-version", wireToken: config.wireToken },
-    { admitted: false, protocolVersion: "0.9.0", reason: "future-version", wireToken: config.wireToken },
-    { admitted: false, protocolVersion: "1.0.0", reason: "future-version", wireToken: config.wireToken },
-    { admitted: false, protocolVersion: "0.6.4", reason: "foreign-token", wireToken: "lekalo.target/v0" },
-    ...protocolVersions.flatMap((version) =>
-      latestOperations
-        .filter((operation) => !config.operations[version].includes(operation))
-        .map((operation) => ({
-          admitted: false,
-          operation,
-          protocolVersion: version,
-          reason: "operation-not-in-version",
-          wireToken: config.wireToken,
-        })),
-    ),
+    { admitted: false, protocolVersion: "0.3.1", reason: "version", wireToken: config.wireToken },
+    { admitted: false, protocolVersion: "0.9.0", reason: "version", wireToken: config.wireToken },
+    { admitted: false, protocolVersion: "1.0.0", reason: "version", wireToken: config.wireToken },
+    { admitted: false, protocolVersion: "0.6.4", reason: "token", wireToken: "lekalo.target/v0" },
+    { admitted: true, operation: "lint", protocolVersion: "0.6.4", wireToken: config.wireToken },
+    { admitted: false, operation: "lint", protocolVersion: "0.3.2", reason: "lint-request", wireToken: config.wireToken },
+    { admitted: false, operation: "plan-native", protocolVersion: "0.3.2", reason: "native-request", wireToken: config.wireToken },
+    { admitted: false, operation: "transpile", protocolVersion: "0.6.4", reason: "operation", wireToken: config.wireToken },
   ];
   const lines = [
     generatedHeader(lang),

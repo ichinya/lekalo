@@ -22,10 +22,13 @@ type CompatibilityCase struct {
 var CompatibilityMatrix = []CompatibilityCase{
 	{Admitted: true, Operation: nil, ProtocolVersion: "0.3.2", Reason: nil, WireToken: &[]string{"lekalo.target/v1"}[0]},
 	{Admitted: true, Operation: nil, ProtocolVersion: "0.6.4", Reason: nil, WireToken: &[]string{"lekalo.target/v1"}[0]},
-	{Admitted: false, Operation: nil, ProtocolVersion: "0.3.1", Reason: &[]string{"retired-version"}[0], WireToken: &[]string{"lekalo.target/v1"}[0]},
-	{Admitted: false, Operation: nil, ProtocolVersion: "0.9.0", Reason: &[]string{"future-version"}[0], WireToken: &[]string{"lekalo.target/v1"}[0]},
-	{Admitted: false, Operation: nil, ProtocolVersion: "1.0.0", Reason: &[]string{"future-version"}[0], WireToken: &[]string{"lekalo.target/v1"}[0]},
-	{Admitted: false, Operation: nil, ProtocolVersion: "0.6.4", Reason: &[]string{"foreign-token"}[0], WireToken: &[]string{"lekalo.target/v0"}[0]},
-	{Admitted: false, Operation: &[]string{"lint"}[0], ProtocolVersion: "0.3.2", Reason: &[]string{"operation-not-in-version"}[0], WireToken: &[]string{"lekalo.target/v1"}[0]},
+	{Admitted: false, Operation: nil, ProtocolVersion: "0.3.1", Reason: &[]string{"version"}[0], WireToken: &[]string{"lekalo.target/v1"}[0]},
+	{Admitted: false, Operation: nil, ProtocolVersion: "0.9.0", Reason: &[]string{"version"}[0], WireToken: &[]string{"lekalo.target/v1"}[0]},
+	{Admitted: false, Operation: nil, ProtocolVersion: "1.0.0", Reason: &[]string{"version"}[0], WireToken: &[]string{"lekalo.target/v1"}[0]},
+	{Admitted: false, Operation: nil, ProtocolVersion: "0.6.4", Reason: &[]string{"token"}[0], WireToken: &[]string{"lekalo.target/v0"}[0]},
+	{Admitted: true, Operation: &[]string{"lint"}[0], ProtocolVersion: "0.6.4", Reason: nil, WireToken: &[]string{"lekalo.target/v1"}[0]},
+	{Admitted: false, Operation: &[]string{"lint"}[0], ProtocolVersion: "0.3.2", Reason: &[]string{"lint-request"}[0], WireToken: &[]string{"lekalo.target/v1"}[0]},
+	{Admitted: false, Operation: &[]string{"plan-native"}[0], ProtocolVersion: "0.3.2", Reason: &[]string{"native-request"}[0], WireToken: &[]string{"lekalo.target/v1"}[0]},
+	{Admitted: false, Operation: &[]string{"transpile"}[0], ProtocolVersion: "0.6.4", Reason: &[]string{"operation"}[0], WireToken: &[]string{"lekalo.target/v1"}[0]},
 }
 
