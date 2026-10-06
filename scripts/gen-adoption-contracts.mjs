@@ -24,10 +24,18 @@ const semanticId = {
 };
 const moduleId = { type: "string", pattern: "^[a-z][a-z0-9_]{0,62}$" };
 const relPath = {
-  type: "string",
-  minLength: 1,
-  maxLength: 1024,
-  pattern: "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$",
+  allOf: [
+    {
+      type: "string",
+      minLength: 1,
+      maxLength: 1024,
+      pattern: "^[a-z0-9.][a-z0-9._-]*(/[a-z0-9.][a-z0-9._-]*)*$",
+    },
+    {
+      // Dotted runtime homes are admitted; `.` and `..` segments never are.
+      not: { type: "string", pattern: "(^|/)\\.\\.?(/|$)" },
+    },
+  ],
 };
 const nativeId = {
   type: "string",
@@ -329,13 +337,14 @@ const schemas = {
     "refactor-plan",
     "Lekalo adoption refactor plan (v0.8.0)",
     base +
-      "The exact, revision-bound selective refactor plan for one selected scope: every recommendation names its reason, files, risk, verification obligations, and uncertainty across the contract/API/effect/policy/test/binding discrepancy classes; unsupported transformations stay advice. The plan binds the optional candidate patch digest, the read and mutation scopes, the preservation obligations, and the rollback inventory. A plan without a concrete patch is non-applicable advice and cannot apply.",
+      "The exact, revision-bound selective refactor plan for one selected scope: every recommendation names its reason, files, risk, verification obligations, and uncertainty across the contract/API/effect/policy/test/binding discrepancy classes; unsupported transformations stay advice. The plan binds the optional candidate patch digest, the pinned verification specification digest, the read and mutation scopes, the preservation obligations, and the rollback inventory. A plan without a concrete patch is non-applicable advice and cannot apply.",
     {
       plan: { $ref: "#/$defs/sha256" },
       project: { $ref: "#/$defs/moduleId" },
       analysis: { $ref: "#/$defs/sha256" },
       selection: { $ref: "#/$defs/scope" },
       patch: { type: ["string", "null"], oneOf: [{ $ref: "#/$defs/sha256" }, { type: "null" }] },
+      verification: { type: ["string", "null"], oneOf: [{ $ref: "#/$defs/sha256" }, { type: "null" }] },
       recommendations: {
         type: "array",
         maxItems: 1000,
@@ -379,7 +388,7 @@ const schemas = {
       pins: { $ref: "#/$defs/pins" },
       rollback: { $ref: "#/$defs/rollback" },
     },
-    ["plan", "project", "analysis", "selection", "patch", "recommendations", "unsupported", "read_scope", "mutation_scope", "preservation", "pins", "rollback"],
+    ["plan", "project", "analysis", "selection", "patch", "verification", "recommendations", "unsupported", "read_scope", "mutation_scope", "preservation", "pins", "rollback"],
   ),
 
   "adoption-verification": schema(
@@ -467,7 +476,7 @@ const schemas = {
       },
       conclusion: { enum: ["preserved", "failed", "unavailable", null] },
     },
-    ["variant", "verification", "spec", "plan", "tool", "baseline_source", "checks", "confinement", "baseline", "candidate", "oracle", "conclusion"],
+    ["variant", "verification", "spec", "plan", "tool", "baseline_source", "checks", "confinement"],
     {
       checkOutcomes: {
         type: "array",

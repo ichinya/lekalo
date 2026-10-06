@@ -29,6 +29,14 @@ pub enum WireError {
 }
 
 impl WireError {
+    /// The refusing result: version errors keep their exit-5 class.
+    pub fn domain_result(&self) -> crate::result::DomainResult {
+        match self {
+            Self::Version(_) => crate::result::DomainResult::unsupported_version(self.set()),
+            _ => crate::result::DomainResult::invalid(self.set()),
+        }
+    }
+
     /// The refusing diagnostic set.
     pub fn set(&self) -> crate::diagnostics::DiagnosticSet {
         match self {

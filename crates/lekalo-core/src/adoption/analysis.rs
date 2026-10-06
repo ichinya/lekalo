@@ -435,6 +435,20 @@ pub fn analyze(
                 detail: "confirmed-definition-stale-evidence".to_owned(),
             });
         }
+        // Re-fingerprint the recorded location against the real bytes:
+        // drifted evidence is reported, never silently refreshed.
+        if let (Some(fingerprint), Some(location)) = (&record.fingerprint, &record.location) {
+            if let Ok(bytes) = std::fs::read(ctx.root.join(&location.path)) {
+                let actual = crate::digest::sha256_hex(&bytes);
+                if fingerprint != &actual && fingerprint != &format!("sha256:{actual}") {
+                    discrepancies.push(Discrepancy {
+                        symbol: record.id.clone(),
+                        kind: "evidence".to_owned(),
+                        detail: "fingerprint-drift".to_owned(),
+                    });
+                }
+            }
+        }
         contracts.push(AnalysisContract {
             symbol: record.id.clone(),
             tests: record.native_tests.clone(),
@@ -511,8 +525,7 @@ pub fn analysis_digest(document: &AnalysisDocument) -> String {
 /// Decode a saved analysis file and recompute its pinned digest; the
 /// file bytes are never trusted without the recomputed content address.
 pub fn load_analysis(bytes: &[u8]) -> Outcome<(AnalysisDocument, String)> {
-    let document =
-        wire::analysis_of_bytes(bytes).map_err(|error| DomainResult::invalid(error.set()))?;
+    let document = wire::analysis_of_bytes(bytes).map_err(|error| error.domain_result())?;
     let digest = analysis_digest(&document);
     Ok((document, digest))
 }

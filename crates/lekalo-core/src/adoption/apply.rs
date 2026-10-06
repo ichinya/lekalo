@@ -189,8 +189,7 @@ fn load_patch_for(
     patch_bytes: &[u8],
     patch_digest: &str,
 ) -> Outcome<PatchDocument> {
-    let patch =
-        wire::patch_of_bytes(patch_bytes).map_err(|error| DomainResult::invalid(error.set()))?;
+    let patch = wire::patch_of_bytes(patch_bytes).map_err(|error| error.domain_result())?;
     let value = serde_json::to_value(&patch).expect("patch serializes");
     let recomputed = wire::digest("adoption-patch", &wire::without_member(&value, "patch"));
     if recomputed != patch_digest {
