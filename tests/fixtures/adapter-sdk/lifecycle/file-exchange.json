@@ -1,0 +1,5 @@
+{
+  "adapterMode": "cooperative",
+  "case": "file-exchange",
+  "expectedTerminal": "ok"
+}

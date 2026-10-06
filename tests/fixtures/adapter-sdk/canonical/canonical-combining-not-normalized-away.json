@@ -1,0 +1,8 @@
+{
+  "canonical": "{\"e\":\"combining\",\"n\":\"cafe\\u0301\"}",
+  "name": "canonical-combining-not-normalized-away",
+  "value": {
+    "n": "café",
+    "e": "combining"
+  }
+}

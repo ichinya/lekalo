@@ -1,0 +1,7 @@
+{
+  "logical": false,
+  "name": "token-plain",
+  "scopeGrammar": false,
+  "token": "node-typescript",
+  "tokenOk": true
+}

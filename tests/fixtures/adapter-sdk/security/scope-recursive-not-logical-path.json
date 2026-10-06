@@ -1,0 +1,7 @@
+{
+  "logical": false,
+  "name": "scope-recursive-not-logical-path",
+  "path": "src/**",
+  "scope": null,
+  "scopeGrammar": true
+}

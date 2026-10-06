@@ -1,0 +1,303 @@
+{
+  "schemaVersion": "lekalo/adapter-sdk-inputs/v0.8.0",
+  "identity": "dev.lekalo.adapter-sdk-inputs@0.8.0",
+  "description": "Reviewed generator configuration (issue #106): the ordered local inputs the SDK generator consumes, the exact per-version operation vocabulary, the package identities, the toolchain pins, and the semantic-coverage obligations. Digests are computed by the generator over exact file bytes at run time and recorded in the emitted generation records; this file pins order and roles, not bytes.",
+  "wireToken": "lekalo.target/v1",
+  "protocolVersions": [
+    "0.3.2",
+    "0.6.4"
+  ],
+  "irVersions": [
+    "0.2.16"
+  ],
+  "operations": {
+    "0.3.2": [
+      "bind",
+      "clean",
+      "describe",
+      "generate",
+      "plan-clean",
+      "plan-native",
+      "scan",
+      "validate",
+      "verify"
+    ],
+    "0.6.4": [
+      "bind",
+      "clean",
+      "describe",
+      "generate",
+      "lint",
+      "plan-clean",
+      "plan-native",
+      "scan",
+      "validate",
+      "verify"
+    ]
+  },
+  "inputs": [
+    {
+      "path": "contracts/target-protocol.schema.v0.3.2.json",
+      "role": "protocol-schema"
+    },
+    {
+      "path": "contracts/target-protocol.schema.v0.6.4.json",
+      "role": "protocol-schema"
+    },
+    {
+      "path": "contracts/diagnostic-registry.v0.6.4.json",
+      "role": "diagnostic-registry"
+    },
+    {
+      "path": "sdk/capability-definitions.json",
+      "role": "capability-definitions"
+    }
+  ],
+  "packages": {
+    "go": {
+      "name": "lekalo-adapter-sdk-go",
+      "version": "0.1.0",
+      "toolchain": {
+        "name": "go",
+        "version": "1.23.0"
+      }
+    },
+    "php": {
+      "name": "lekalo/adapter-sdk-php",
+      "version": "0.1.0",
+      "toolchain": {
+        "name": "php",
+        "version": "8.3.0"
+      }
+    },
+    "rust": {
+      "name": "lekalo-adapter-sdk-rust",
+      "version": "0.1.0",
+      "toolchain": {
+        "name": "rust",
+        "version": "1.80.0"
+      }
+    },
+    "typescript": {
+      "name": "@lekalo/adapter-sdk",
+      "version": "0.1.0",
+      "toolchain": {
+        "name": "node",
+        "version": "24.0.0"
+      }
+    }
+  },
+  "options": {
+    "canonicalOutput": true,
+    "emitCompatibilityTests": true,
+    "strictDecoders": true
+  },
+  "testVectorFamilies": [
+    "canonical",
+    "codec",
+    "semantic",
+    "upgrade"
+  ],
+  "semanticCoverage": [
+    {
+      "definition": "AdapterConstraints",
+      "obligation": "hand-maintained",
+      "vectors": [
+        "valid/describe-response-constraints.json",
+        "valid/describe-response.json"
+      ]
+    },
+    {
+      "definition": "AdapterIdentity",
+      "obligation": "hand-maintained",
+      "vectors": [
+        "valid/describe-response.json",
+        "invalid/identity-bad-digest.json",
+        "invalid/identity-bad-version.json"
+      ]
+    },
+    {
+      "definition": "Binding",
+      "obligation": "hand-maintained",
+      "vectors": [
+        "valid/bind-response.json",
+        "invalid/bind-response-bad-token.json"
+      ]
+    },
+    {
+      "definition": "Capabilities",
+      "obligation": "hand-maintained",
+      "vectors": [
+        "valid/describe-response.json",
+        "valid/describe-response-unsorted-operations.json",
+        "valid/describe-response-constraints.json"
+      ]
+    },
+    {
+      "definition": "Evidence",
+      "obligation": "hand-maintained",
+      "vectors": [
+        "valid/describe-response.json",
+        "invalid/evidence-bad-plan-id.json"
+      ]
+    },
+    {
+      "definition": "Finding",
+      "obligation": "hand-maintained",
+      "vectors": [
+        "valid/validate-response-findings.json",
+        "valid/verify-response-findings.json",
+        "invalid/finding-oversize-code.json"
+      ]
+    },
+    {
+      "definition": "Limits",
+      "obligation": "hand-maintained",
+      "vectors": [
+        "valid/generate-request-dry-run.json",
+        "invalid/limits-zero-timeout.json"
+      ]
+    },
+    {
+      "definition": "LintBinding",
+      "obligation": "hand-maintained",
+      "vectors": [
+        "valid/lint-request.json",
+        "invalid/lint-request-unsorted-files.json"
+      ]
+    },
+    {
+      "definition": "LintRequest",
+      "obligation": "hand-maintained",
+      "vectors": [
+        "valid/lint-request.json",
+        "invalid/lint-request-empty-scope.json"
+      ]
+    },
+    {
+      "definition": "NativeChanges",
+      "obligation": "hand-maintained",
+      "vectors": [
+        "valid/plan-native-request.json",
+        "invalid/native-changes-overflow.json"
+      ]
+    },
+    {
+      "definition": "NativeContentRef",
+      "obligation": "hand-maintained",
+      "vectors": [
+        "valid/plan-native-request.json",
+        "invalid/native-ref-bad-digest.json"
+      ]
+    },
+    {
+      "definition": "NativeFileChange",
+      "obligation": "hand-maintained",
+      "vectors": [
+        "valid/plan-native-request.json",
+        "invalid/native-file-change-bad-path.json"
+      ]
+    },
+    {
+      "definition": "NativePlanRef",
+      "obligation": "hand-maintained",
+      "vectors": [
+        "valid/plan-native-response.json",
+        "invalid/native-plan-ref-bad-digest.json"
+      ]
+    },
+    {
+      "definition": "NativeRequest",
+      "obligation": "hand-maintained",
+      "vectors": [
+        "valid/plan-native-request.json",
+        "invalid/native-request-bad-manifest-digest.json"
+      ]
+    },
+    {
+      "definition": "OperationError",
+      "obligation": "hand-maintained",
+      "vectors": [
+        "valid/verify-response-error.json",
+        "invalid/operation-error-oversize-message.json"
+      ]
+    },
+    {
+      "definition": "OperationResult",
+      "obligation": "hand-maintained",
+      "vectors": [
+        "valid/scan-response.json",
+        "semantic/semantic-generate-cannot-claim-ok.json"
+      ]
+    },
+    {
+      "definition": "ProfileCapability",
+      "obligation": "hand-maintained",
+      "vectors": [
+        "valid/generate-request-profile.json",
+        "invalid/profile-capabilities-unsorted.json"
+      ]
+    },
+    {
+      "definition": "ProgressStep",
+      "obligation": "hand-maintained",
+      "vectors": [
+        "valid/generate-response-apply.json",
+        "invalid/progress-oversize-step.json"
+      ]
+    },
+    {
+      "definition": "RequestEnvelope",
+      "obligation": "hand-maintained",
+      "vectors": [
+        "valid/describe-request.json",
+        "invalid/request-duplicate-key.json",
+        "invalid/request-explicit-null.json",
+        "invalid/request-unknown-member.json",
+        "invalid/request-unknown-version.json"
+      ]
+    },
+    {
+      "definition": "ResponseEnvelope",
+      "obligation": "hand-maintained",
+      "vectors": [
+        "valid/describe-response.json",
+        "semantic/semantic-status-ok-with-error-member.json",
+        "semantic/semantic-generate-cannot-claim-ok.json",
+        "semantic/semantic-wrong-request-echo.json"
+      ]
+    },
+    {
+      "definition": "ScanEntry",
+      "obligation": "hand-maintained",
+      "vectors": [
+        "valid/scan-response.json",
+        "invalid/scan-entry-bad-path.json"
+      ]
+    },
+    {
+      "definition": "ScanEntryEvidence",
+      "obligation": "hand-maintained",
+      "vectors": [
+        "valid/scan-response-evidence.json",
+        "invalid/scan-entry-evidence-bad-digest.json"
+      ]
+    },
+    {
+      "definition": "ScanEntryReference",
+      "obligation": "hand-maintained",
+      "vectors": [
+        "valid/scan-response-evidence.json",
+        "invalid/scan-entry-reference-bad-role.json"
+      ]
+    },
+    {
+      "definition": "WriteEntry",
+      "obligation": "hand-maintained",
+      "vectors": [
+        "valid/generate-response-dry-run.json",
+        "semantic/semantic-create-without-digest.json"
+      ]
+    }
+  ]
+}

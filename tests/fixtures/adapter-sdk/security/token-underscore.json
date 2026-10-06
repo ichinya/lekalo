@@ -1,0 +1,7 @@
+{
+  "logical": false,
+  "name": "token-underscore",
+  "scopeGrammar": false,
+  "token": "a_b",
+  "tokenOk": false
+}

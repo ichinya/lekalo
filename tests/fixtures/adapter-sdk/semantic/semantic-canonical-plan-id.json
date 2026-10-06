@@ -1,0 +1,13 @@
+{
+  "expect": "accept",
+  "kind": "canonical-plan",
+  "name": "semantic-canonical-plan-id",
+  "planId": "plan-0c96a080ee78a0ea1ff3956a953187348fe0c9bbf0cc9c0ee8140c46ba4c4534",
+  "writes": [
+    {
+      "action": "create",
+      "path": ".lekalo/generated/sdk-reference/model.ts",
+      "sha256": "sha256:6ab3c02e8166a0d8b5ed06ad620c2bc19b5d401e256d661e10324f300db78120"
+    }
+  ]
+}

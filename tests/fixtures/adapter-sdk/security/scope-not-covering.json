@@ -1,0 +1,6 @@
+{
+  "covers": false,
+  "name": "scope-not-covering",
+  "path": "srcx/a",
+  "scope": "src/**"
+}

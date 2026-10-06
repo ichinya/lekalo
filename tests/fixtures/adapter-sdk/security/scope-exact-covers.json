@@ -1,0 +1,6 @@
+{
+  "covers": true,
+  "name": "scope-exact-covers",
+  "path": "gen/out.txt",
+  "scope": "gen/out.txt"
+}

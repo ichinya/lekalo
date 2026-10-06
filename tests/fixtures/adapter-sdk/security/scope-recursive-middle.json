@@ -1,0 +1,7 @@
+{
+  "logical": false,
+  "name": "scope-recursive-middle",
+  "scopeGrammar": true,
+  "scopeOk": false,
+  "value": "src/**/x"
+}

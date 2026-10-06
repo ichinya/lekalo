@@ -1,0 +1,6 @@
+{
+  "covers": true,
+  "name": "scope-recursive-covers",
+  "path": "src/a/b.ts",
+  "scope": "src/**"
+}

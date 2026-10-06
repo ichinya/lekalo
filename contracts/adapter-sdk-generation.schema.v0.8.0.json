@@ -1,0 +1,241 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/adapter-sdk-generation.schema.v0.8.0.json",
+  "title": "Lekalo Adapter SDK Generation Record",
+  "description": "Closed reproducibility contract (issue #106) of one adapter-SDK generation run: the generator identity and byte digest, the ordered reviewed local inputs with SHA-256 digests, the language/toolchain/options pins, the emitted output relative paths with digests, the compatibility-descriptor digest, and the semantic-validation coverage mapping that names every generated type or explicit bounded hand-maintained codec obligation. The record is deterministic — no host roots, timestamps, secrets, or network facts — and it records build inputs only: it is not proof that a publisher signed a release, that a package passed host trust, or that a runtime qualified outside its own gates.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "generator",
+    "language",
+    "toolchain",
+    "inputs",
+    "options",
+    "outputs",
+    "compatibility",
+    "semanticCoverage"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "description": "The wire-format discriminator of this record generation.",
+      "const": "lekalo/adapter-sdk-generation/v0.8.0"
+    },
+    "identity": {
+      "description": "The stable contract identity of this record generation.",
+      "const": "dev.lekalo.adapter-sdk-generation@0.8.0"
+    },
+    "generator": {
+      "description": "The one generator program that produced the run, pinned by exact bytes.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version",
+        "digest"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "const": "scripts/generate-adapter-sdk.mjs"
+        },
+        "version": {
+          "$ref": "#/$defs/contractVersion"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "language": {
+      "description": "The one SDK language the run rendered.",
+      "enum": [
+        "go",
+        "php",
+        "rust",
+        "typescript"
+      ]
+    },
+    "toolchain": {
+      "description": "The minimum supported toolchain the generated output targets; an explicit pin, never an ambient local version.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version"
+      ],
+      "properties": {
+        "name": {
+          "enum": [
+            "go",
+            "node",
+            "php",
+            "rust"
+          ]
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        }
+      }
+    },
+    "inputs": {
+      "description": "The ordered reviewed local inputs of the run, sorted by path; every entry is content-addressed and resolvable only inside the checkout, never fetched over a network.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "digest",
+          "role"
+        ],
+        "properties": {
+          "path": {
+            "description": "Checkout-relative input path.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "digest": {
+            "$ref": "#/$defs/sha256"
+          },
+          "role": {
+            "enum": [
+              "capability-definitions",
+              "diagnostic-registry",
+              "generator-config",
+              "protocol-schema"
+            ]
+          }
+        }
+      }
+    },
+    "options": {
+      "description": "The closed generation option set of the run; absent options are false, never implied.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "canonicalOutput",
+        "emitCompatibilityTests",
+        "strictDecoders"
+      ],
+      "properties": {
+        "canonicalOutput": {
+          "const": true
+        },
+        "emitCompatibilityTests": {
+          "const": true
+        },
+        "strictDecoders": {
+          "const": true
+        }
+      }
+    },
+    "outputs": {
+      "description": "The emitted generated files, sorted by package-relative path; every digest pins exact bytes so `--check` can detect any drift, including a deliberately stale generated file.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "digest"
+        ],
+        "properties": {
+          "path": {
+            "description": "Path relative to the generated SDK package root (`sdk/<language>/`): generated package modules, the emitted standalone template bundles, or the compatibility descriptor itself.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "anyOf": [
+              {
+                "pattern": "^(generated|templates)(/[A-Za-z0-9._-]+)+$"
+              },
+              {
+                "const": "compatibility.json"
+              }
+            ]
+          },
+          "digest": {
+            "$ref": "#/$defs/sha256"
+          }
+        }
+      }
+    },
+    "compatibility": {
+      "description": "The emitted compatibility descriptor of the same run, pinned by exact bytes.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "digest"
+      ],
+      "properties": {
+        "path": {
+          "const": "compatibility.json"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "semanticCoverage": {
+      "description": "The coverage mapping of every closed wire definition to its codec obligation: a generated type or an explicit bounded hand-maintained codec, with the shared vectors that prove the obligation. Every envelope definition appears exactly once, sorted by definition.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "definition",
+          "obligation",
+          "vectors"
+        ],
+        "properties": {
+          "definition": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z][A-Za-z0-9]*$"
+          },
+          "obligation": {
+            "enum": [
+              "generated",
+              "hand-maintained"
+            ]
+          },
+          "vectors": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 64,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "contractVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "maxLength": 32
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "maxLength": 71
+    }
+  }
+}
