@@ -36,6 +36,9 @@ const INVALID_PARAMS: i64 = -32602;
 pub struct Session {
     pub catalog: ServerCatalog,
     pub limits: Limits,
+    /// The trusted launcher group: the default disclosure scope of every
+    /// tool call that does not name one explicitly.
+    pub default_group: Option<String>,
     pub writer: Writer,
     initialized: Mutex<bool>,
     cancelled: Mutex<BTreeSet<String>>,
@@ -45,10 +48,16 @@ pub struct Session {
 
 impl Session {
     /// One admitted session over the resolved catalog.
-    pub fn new(catalog: ServerCatalog, limits: Limits, writer: Writer) -> Self {
+    pub fn new(
+        catalog: ServerCatalog,
+        limits: Limits,
+        default_group: Option<String>,
+        writer: Writer,
+    ) -> Self {
         Self {
             catalog,
             limits,
+            default_group,
             writer,
             initialized: Mutex::new(false),
             cancelled: Mutex::new(BTreeSet::new()),
@@ -254,7 +263,13 @@ fn tools_call(session: &Arc<Session>, incoming: &Incoming) -> String {
         return error_response(&incoming.id, INVALID_PARAMS, "unknown-tool");
     }
     let request = match parse_request(name, &arguments) {
-        Ok(request) => request,
+        Ok(mut request) => {
+            // The trusted launcher group is the default disclosure scope;
+            // a client may narrow it with an explicit groupId, never widen
+            // past it (the closure check runs against the effective one).
+            request.set_default_group(session.default_group.as_deref());
+            request
+        }
         Err(RequestError::Params(field)) => {
             return error_response(&incoming.id, INVALID_PARAMS, field.field);
         }

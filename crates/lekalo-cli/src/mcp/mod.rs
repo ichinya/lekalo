@@ -193,10 +193,10 @@ fn serve_start(
     // The group flag rides every tool request as the default scope only
     // when the caller supplied one; the session serves exactly the
     // catalog the launcher granted.
-    let _ = group;
     let session = std::sync::Arc::new(dispatch::Session::new(
         catalog,
         limits,
+        group,
         stdio::Writer::new(Box::new(std::io::stdout())),
     ));
     dispatch::serve(session);

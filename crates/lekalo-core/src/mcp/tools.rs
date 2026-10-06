@@ -225,6 +225,24 @@ impl ToolRequest {
         }
     }
 
+    /// Apply a trusted launcher group only when the caller did not supply
+    /// one. A client can narrow this default further, never widen it.
+    pub fn set_default_group(&mut self, group: Option<&str>) {
+        let Some(group) = group else { return };
+        let common = match self {
+            Self::Inspect { common, .. }
+            | Self::Impact { common, .. }
+            | Self::Context { common, .. }
+            | Self::Graph { common, .. }
+            | Self::Validate { common, .. }
+            | Self::TargetStatus { common, .. }
+            | Self::TraceExport { common, .. } => common,
+        };
+        if common.group_id.is_none() {
+            common.group_id = Some(group.to_owned());
+        }
+    }
+
     /// The exact tool name of this request.
     pub fn tool_name(&self) -> &'static str {
         match self {
