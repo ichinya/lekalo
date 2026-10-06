@@ -44,7 +44,7 @@ export function discoverCommands(bin) {
   return rows.sort((a,b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 }
 const commandOwners = {
-  "architecture-profile":"architecture-profile", evaluation:"framework-lift", metrics:"metrics-export", waivers:"waivers",
+  "architecture-profile":"architecture-profile", evaluation:"framework-lift", metrics:"metrics-export", waivers:"waivers", managed:"managed-mode",
   load:"loader", migrate:"versioning", compatibility:"versioning", provider:"provider-contract", validate:"validation", inspect:"inspect", impact:"impact", context:"context", "context-budget":"context-budget", coupling:"coupling", "ai-lint":"ai-lint", diff:"semantic-diff", graph:"graph", effects:"effect-graph", lock:"lockfile", update:"lockfile", trace:"trace-manifest", requirements:"requirements", transport:"transport-http", openapi:"openapi", "query-model":"query-model", expressions:"expressions", "storage-profile":"storage-engine-profile", classification:"classification", dataflow:"classification", privacy:"privacy-runtime", generate:"orchestration", verify:"orchestration", init:"bootstrap", module:"bootstrap", adapter:"adapter-install", cache:"cache", history:"run-history", doctor:"doctor", status:"doctor", readiness:"doctor", observe:"observed-mode", scan:"observed-mode", bindings:"bindings", contract:"contracted-mode", native:"native-gates", nfr:"nfr",
 };
 export function commandOwner(command) {
@@ -58,6 +58,7 @@ export function commandOwner(command) {
   return `docs/${commandOwners[top]}.md`;
 }
 const families = {
+  "managed-ownership":"managed-mode", "managed-coverage":"managed-mode", "managed-generation-plan":"managed-mode", "managed-generation-record":"managed-mode", "managed-transaction":"managed-mode", "managed-rollback-plan":"managed-mode", "managed-equivalence":"managed-mode",
   "architecture-rule-catalog":"architecture-profile", "architecture-profile":"architecture-profile", "architecture-profile-resolved":"architecture-profile", "architecture-profile-lock":"architecture-profile", "architecture-profile-report":"architecture-profile", "architecture-profile-diff":"architecture-profile", "architecture-adoption":"architecture-profile",
   "framework-lift-baseline":"framework-lift", "framework-lift-task":"framework-lift", "framework-lift-campaign":"framework-lift", "framework-lift-arm":"framework-lift", "framework-lift-result":"framework-lift",
   "evaluation-export-input":"metrics-export", "metrics-aggregation-definition":"metrics-export", "public-metrics":"metrics-export", "metrics-export-manifest":"metrics-export", "metrics-export-preview":"metrics-export",

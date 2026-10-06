@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
-  "productVersion": "0.6.5",
-  "cliSourceDigest": "sha256:181e7cef1d85b55aa87f8984546ea4a9ee294082b60a6c4f4dbeb8667f05f6e3",
+  "productVersion": "0.8.0",
+  "cliSourceDigest": "sha256:f8828747fc93e6a2406c29fc68d855bbdecc82468ff2cc185706104c245712e0",
   "p0Pages": [
     {
       "page": "README.md",
@@ -1001,6 +1001,94 @@
       "summary": "Create the committed project lock, or check an existing one",
       "leaf": true,
       "owner": "docs/lockfile.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:managed",
+      "kind": "command",
+      "command": "managed",
+      "usage": "lekalo managed [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:a768b502a9288c72718388fae3271e5e33e778e5bdb07683d18c96f3fa2a7058",
+      "summary": "Explicit managed ownership, planning, and custody (issue #41)",
+      "leaf": false,
+      "owner": "docs/managed-mode.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:managed apply",
+      "kind": "command",
+      "command": "managed apply",
+      "usage": "lekalo managed apply [OPTIONS] --plan <FILE> --coverage <FILE> --ownership <FILE>",
+      "helpDigest": "sha256:7816d1f4633b859dccfe479431e0f18c0ebc12515499e4e4f7f8f58f08cd684c",
+      "summary": "Consume a caller-saved plan with its exact digest confirmation",
+      "leaf": true,
+      "owner": "docs/managed-mode.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:managed check",
+      "kind": "command",
+      "command": "managed check",
+      "usage": "lekalo managed check [OPTIONS] --ownership <FILE>",
+      "helpDigest": "sha256:b5f27a9d73e1d4ef3dd137c81270b86c7c8840296e05c8f0686aafa842460913",
+      "summary": "Inspect ownership and semantic coverage without any write",
+      "leaf": true,
+      "owner": "docs/managed-mode.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:managed equivalence",
+      "kind": "command",
+      "command": "managed equivalence",
+      "usage": "lekalo managed equivalence [OPTIONS] --evidence <FILE>",
+      "helpDigest": "sha256:de24963b885c9ed75f5fc0d2b8bae5386d2d34d9d6cc3dc0328bd84b8bceca8c",
+      "summary": "Adjudicate one neutral behavioral-equivalence evidence document",
+      "leaf": true,
+      "owner": "docs/managed-mode.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:managed plan",
+      "kind": "command",
+      "command": "managed plan",
+      "usage": "lekalo managed plan [OPTIONS] --to <MODE> --ownership <FILE> --coverage <FILE> --module <MODULE> --target <TARGET>",
+      "helpDigest": "sha256:28044ad8341bbf4141f0bd13f4a2e124e3c3e1b29fb713edf31e219187ebbb72",
+      "summary": "Preview a reviewed generation plan; the result rides stdout only",
+      "leaf": true,
+      "owner": "docs/managed-mode.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:managed resolve",
+      "kind": "command",
+      "command": "managed resolve",
+      "usage": "lekalo managed resolve [OPTIONS] --path <PATH>",
+      "helpDigest": "sha256:632cfc28f28a1fda2463e6b2426de7cd80faae5df5ab474adedefd4d3f0e7903",
+      "summary": "Restore one drifted generated path from recorded bytes",
+      "leaf": true,
+      "owner": "docs/managed-mode.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:managed rollback",
+      "kind": "command",
+      "command": "managed rollback",
+      "usage": "lekalo managed rollback [OPTIONS] --to <DIGEST>",
+      "helpDigest": "sha256:c8f837046037234657d2a038cee0690441185014e82f60e2948aa99f865805c9",
+      "summary": "Preview or confirm restoration of a previous generation",
+      "leaf": true,
+      "owner": "docs/managed-mode.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:managed upgrade-plan",
+      "kind": "command",
+      "command": "managed upgrade-plan",
+      "usage": "lekalo managed upgrade-plan [OPTIONS] --module <MODULE> --target <TARGET> --base <FILE> --candidate <FILE>",
+      "helpDigest": "sha256:731f6fa91de9ad1ea36690263f631532a3a0f3b6fd030585fd15e08bdd2c7546",
+      "summary": "Diff the exact adapter/coverage pins of a candidate upgrade",
+      "leaf": true,
+      "owner": "docs/managed-mode.md",
       "status": "implemented"
     },
     {
@@ -2397,6 +2485,15 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/diagnostic-registry.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/diagnostic-registry.schema.v0.8.0.json",
+      "sourceDigest": "sha256:3369ff76ecd8a53c5c67a9da899967c70272a0e5ec6ce48f12852e6032cc0fa5",
+      "owner": "docs/diagnostics.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/diagnostic-registry.v0.2.16.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.2.16.json",
@@ -2428,6 +2525,15 @@
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.6.5.json",
       "sourceDigest": "sha256:7b2be768be48050057682980b240f109d33adc56b1b4cb4b27848507df22b130",
+      "owner": "docs/diagnostics.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/diagnostic-registry.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/diagnostic-registry.v0.8.0.json",
+      "sourceDigest": "sha256:724bbdd765284e9d16fce7b1556f6b132bbc59733c6e438712baf9381620cf3c",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2645,6 +2751,69 @@
       "source": "contracts/lock.schema.v0.3.2.json",
       "sourceDigest": "sha256:b322338b131db7b9c61ef91ea4457036aa001139f31877a229d9a49c80bca3d8",
       "owner": "docs/lockfile.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/managed-coverage.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/managed-coverage.schema.v0.8.0.json",
+      "sourceDigest": "sha256:bfef37767b3fd40fcca428d9c472bfe6a234dd945775f7fbaa7d3295a1cf5c41",
+      "owner": "docs/managed-mode.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/managed-equivalence.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/managed-equivalence.schema.v0.8.0.json",
+      "sourceDigest": "sha256:c36c856859b43a93697bc1159198421f8926d0a5eee4c3ad2068748c5da25bb5",
+      "owner": "docs/managed-mode.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/managed-generation-plan.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/managed-generation-plan.schema.v0.8.0.json",
+      "sourceDigest": "sha256:a9f972e86dbc4b15f61b917f2709c08117346ec8ca17f80dec517a59b43c3257",
+      "owner": "docs/managed-mode.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/managed-generation-record.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/managed-generation-record.schema.v0.8.0.json",
+      "sourceDigest": "sha256:655c0c621adba48a7efb0aa9d734df3fb783ca160bb22c0e7395a1177e769ad7",
+      "owner": "docs/managed-mode.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/managed-ownership.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/managed-ownership.schema.v0.8.0.json",
+      "sourceDigest": "sha256:d02a8b8d66346aa94dd19925b494286e99d03fe6812e57992077be63a1f8a391",
+      "owner": "docs/managed-mode.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/managed-rollback-plan.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/managed-rollback-plan.schema.v0.8.0.json",
+      "sourceDigest": "sha256:290724ec23c20852563d33041242e1a60ad7af58562bbc19b79357456c95259f",
+      "owner": "docs/managed-mode.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/managed-transaction.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/managed-transaction.schema.v0.8.0.json",
+      "sourceDigest": "sha256:7df28839f5e65b9a9364ae88a5490eb4d6a76b454f9feb3f00d94a196a14a8f2",
+      "owner": "docs/managed-mode.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },

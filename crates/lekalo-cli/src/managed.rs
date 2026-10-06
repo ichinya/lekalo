@@ -5,6 +5,9 @@
 
 use clap::{Args, Subcommand};
 use lekalo_core::managed as core;
+use lekalo_core::managed::receipts::{
+    AssignmentView, CheckReceipt, PlanReceipt, UpgradeChange, UpgradeReceipt,
+};
 use lekalo_core::DomainResult;
 use std::io::Read;
 
@@ -186,26 +189,6 @@ fn root(project: &Option<String>) -> std::path::PathBuf {
     }
 }
 
-/// The admission receipt of one managed module/target assignment.
-#[derive(Clone, Debug, PartialEq, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AssignmentView {
-    pub module: String,
-    pub target: String,
-    pub mode: String,
-    pub generated_root: String,
-    pub extensions: usize,
-}
-
-#[derive(Clone, Debug, PartialEq, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CheckReceipt {
-    pub project: String,
-    pub assignments: Vec<AssignmentView>,
-    pub admitted: Vec<String>,
-    pub coverage_digest: Option<String>,
-}
-
 fn run_check(args: CheckArgs) -> Outcome {
     let ownership = core::parse_ownership(&read(&args.ownership)?)?;
     let mut assignments = Vec::new();
@@ -259,15 +242,6 @@ fn run_check(args: CheckArgs) -> Outcome {
         admitted,
         coverage_digest,
     }))
-}
-
-#[derive(Clone, Debug, PartialEq, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PlanReceipt {
-    pub action: String,
-    pub module: String,
-    pub target: String,
-    pub plan: core::GenerationPlan,
 }
 
 fn run_plan(args: PlanArgs) -> Outcome {
@@ -390,26 +364,6 @@ fn run_apply(args: ApplyArgs) -> Outcome {
         args.confirm.as_deref(),
         args.dry_run,
     ))
-}
-
-/// One exact pin difference between two coverage documents.
-#[derive(Clone, Debug, PartialEq, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UpgradeChange {
-    pub field: String,
-    pub before: String,
-    pub after: String,
-}
-
-#[derive(Clone, Debug, PartialEq, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UpgradeReceipt {
-    pub module: String,
-    pub target: String,
-    pub comparable: bool,
-    pub changes: Vec<UpgradeChange>,
-    pub requirements_added: Vec<String>,
-    pub requirements_removed: Vec<String>,
 }
 
 fn run_upgrade_plan(args: UpgradePlanArgs) -> Outcome {

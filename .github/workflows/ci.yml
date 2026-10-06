@@ -333,6 +333,15 @@ jobs:
         run: |
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-architecture-profile-contracts.mjs
+      - name: Run the managed ownership, custody and planner gates (issue #41)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/gen-managed-contracts.mjs --check
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-managed-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-managed-cli.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-managed-planner-e2e.mjs
       - name: Run the public metrics contract and live CLI gates (issue #102)
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules

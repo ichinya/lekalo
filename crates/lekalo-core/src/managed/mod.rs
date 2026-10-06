@@ -14,6 +14,7 @@ pub mod diagnostic;
 pub mod equivalence;
 pub mod history;
 pub mod plan;
+pub mod receipts;
 pub mod rollback;
 #[cfg(test)]
 mod tests;
