@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.managed-ownership-schema@0.8.0",
+  "title": "Lekalo managed-ownership 0.8.0",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/managed-ownership/v0.8.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.managed-ownership@0.8.0"
+    },
+    "project": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.:/@-]+$",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "modules": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/assignment"
+      },
+      "maxItems": 64,
+      "minItems": 1
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "identity",
+    "project",
+    "modules"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "assignment": {
+      "type": "object",
+      "properties": {
+        "module": {
+          "$ref": "#/$defs/moduleRef"
+        },
+        "mode": {
+          "enum": [
+            "observed",
+            "contracted",
+            "managed"
+          ]
+        },
+        "targets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/targetAssignment"
+          },
+          "maxItems": 8,
+          "minItems": 1
+        }
+      },
+      "required": [
+        "module",
+        "mode",
+        "targets"
+      ],
+      "additionalProperties": false
+    },
+    "extension": {
+      "type": "object",
+      "properties": {
+        "symbol": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]+$",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "binding": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]+$",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "contractDigest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "symbol",
+        "binding",
+        "contractDigest"
+      ],
+      "additionalProperties": false
+    },
+    "moduleRef": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.:/@-]+$",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "reference": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]+$",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]+$",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "digest"
+      ],
+      "additionalProperties": false
+    },
+    "targetAssignment": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/targetRef"
+        },
+        "profileRef": {
+          "$ref": "#/$defs/reference"
+        },
+        "implementationRef": {
+          "$ref": "#/$defs/reference"
+        },
+        "generatedRoot": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.@-]*(/[A-Za-z0-9][A-Za-z0-9_.@-]*)*$",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "extensions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/extension"
+          },
+          "maxItems": 64,
+          "minItems": 0
+        }
+      },
+      "required": [
+        "target",
+        "profileRef",
+        "implementationRef",
+        "generatedRoot",
+        "extensions"
+      ],
+      "additionalProperties": false
+    },
+    "targetRef": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.:/@-]+$",
+      "minLength": 1,
+      "maxLength": 256
+    }
+  }
+}

@@ -1,0 +1,269 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.managed-generation-record-schema@0.8.0",
+  "title": "Lekalo managed-generation-record 0.8.0",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/managed-generation-record/v0.8.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.managed-generation-record@0.8.0"
+    },
+    "planDigest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "generationDigest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "previousGeneration": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "generationDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[a-f0-9]{64}$"
+                }
+              },
+              "required": [
+                "generationDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "state",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "const": "absent"
+            }
+          },
+          "required": [
+            "state"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "inputClosure": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.@-]*(/[A-Za-z0-9][A-Za-z0-9_.@-]*)*$",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "digest": {
+            "type": "string",
+            "pattern": "^sha256:[a-f0-9]{64}$"
+          }
+        },
+        "required": [
+          "path",
+          "digest"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 4096,
+      "minItems": 0
+    },
+    "outputs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/recordOutput"
+      },
+      "maxItems": 8192,
+      "minItems": 1
+    },
+    "ownershipDigest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "lockPin": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            }
+          },
+          "required": [
+            "state",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "const": "absent"
+            }
+          },
+          "required": [
+            "state"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "identity",
+    "planDigest",
+    "generationDigest",
+    "previousGeneration",
+    "inputClosure",
+    "outputs",
+    "ownershipDigest",
+    "lockPin"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "artifactRole": {
+      "enum": [
+        "custody",
+        "implementation",
+        "manifest",
+        "map",
+        "test"
+      ]
+    },
+    "moduleRef": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.:/@-]+$",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "recordOutput": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.@-]*(/[A-Za-z0-9][A-Za-z0-9_.@-]*)*$",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "role": {
+          "$ref": "#/$defs/artifactRole"
+        },
+        "ownerModule": {
+          "$ref": "#/$defs/moduleRef"
+        },
+        "ownerTarget": {
+          "$ref": "#/$defs/targetRef"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "beforeRef": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "type": "string",
+                  "pattern": "^sha256:[a-f0-9]{64}$"
+                }
+              },
+              "required": [
+                "state",
+                "value"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "const": "absent"
+                }
+              },
+              "required": [
+                "state"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "afterRef": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "type": "string",
+                  "pattern": "^sha256:[a-f0-9]{64}$"
+                }
+              },
+              "required": [
+                "state",
+                "value"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "const": "absent"
+                }
+              },
+              "required": [
+                "state"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "path",
+        "role",
+        "ownerModule",
+        "ownerTarget",
+        "digest",
+        "beforeRef",
+        "afterRef"
+      ],
+      "additionalProperties": false
+    },
+    "targetRef": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.:/@-]+$",
+      "minLength": 1,
+      "maxLength": 256
+    }
+  }
+}

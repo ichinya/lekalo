@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.managed-equivalence-schema@0.8.0",
+  "title": "Lekalo managed-equivalence 0.8.0",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/managed-equivalence/v0.8.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.managed-equivalence@0.8.0"
+    },
+    "module": {
+      "$ref": "#/$defs/moduleRef"
+    },
+    "target": {
+      "$ref": "#/$defs/targetRef"
+    },
+    "implementationDigest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "referenceDigest": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            }
+          },
+          "required": [
+            "state",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "const": "absent"
+            }
+          },
+          "required": [
+            "state"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "scenarios": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/scenarioVerdict"
+      },
+      "maxItems": 4096,
+      "minItems": 1
+    },
+    "gaps": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_.:/@-]+$",
+        "minLength": 1,
+        "maxLength": 256
+      },
+      "maxItems": 4096,
+      "minItems": 0
+    },
+    "verdict": {
+      "enum": [
+        "match",
+        "mismatch",
+        "incomplete"
+      ]
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "identity",
+    "module",
+    "target",
+    "implementationDigest",
+    "referenceDigest",
+    "scenarios",
+    "gaps",
+    "verdict"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "moduleRef": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.:/@-]+$",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "scenarioVerdict": {
+      "type": "object",
+      "properties": {
+        "scenario": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]+$",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "verdict": {
+          "enum": [
+            "match",
+            "mismatch",
+            "unsupported"
+          ]
+        }
+      },
+      "required": [
+        "scenario",
+        "digest",
+        "verdict"
+      ],
+      "additionalProperties": false
+    },
+    "targetRef": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.:/@-]+$",
+      "minLength": 1,
+      "maxLength": 256
+    }
+  }
+}
