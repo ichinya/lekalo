@@ -477,7 +477,7 @@ pub struct PublicField {
 
 /// The closed public type expression: `ref`, `list`, or `optional`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(untagged, rename_all = "camelCase", deny_unknown_fields)]
 pub enum TypeExpr {
     Ref { r#ref: String },
     List { list: Box<TypeExpr> },

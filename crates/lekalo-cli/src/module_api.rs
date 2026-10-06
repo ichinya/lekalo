@@ -238,14 +238,13 @@ pub struct ValidateSeam {
     pub lock: Option<String>,
 }
 
-/// Run the explicit validator handoff.
+/// Run the explicit validator handoff. The boundary check runs regardless
+/// of the base verdict: exact strict boundary violations invalidate (exit
+/// 1) and take precedence over a base policy denial, a stale checked lock
+/// denies with full evidence, and otherwise the base result (including its
+/// own strict-profile denial) is returned unchanged.
 pub fn run_validate_seam(seam: ValidateSeam) -> DomainResult {
     let base = crate::run_validate(seam.project.clone(), seam.module.clone(), seam.strict, true);
-    // A base failure settles the run: the boundary seam never masks an
-    // already-invalid model.
-    if base.status() != Status::Valid {
-        return base;
-    }
     let execution = || -> Result<DomainResult, Failure> {
         let compilation = compilation(&seam.project)?;
         let attachment = read(&seam.attachment)?;
@@ -295,13 +294,13 @@ pub fn run_validate_seam(seam: ValidateSeam) -> DomainResult {
                 .map_err(|_| invalid("diagnostic-bound"))?;
             return Ok(DomainResult::denied(all));
         }
+        if base.status() != Status::Valid {
+            return Ok(base);
+        }
         // The receipt keeps its accepted shape: the success envelope rides
         // the base validation payload with advisory boundary evidence.
         let set = lekalo_core::module_api::diagnostic::set(&evidence, Status::Valid)?;
-        Ok(base_with_diagnostics(
-            base,
-            set.as_slice().to_vec(),
-        ))
+        Ok(base_with_diagnostics(base, set.as_slice().to_vec()))
     };
     match execution() {
         Ok(result) => result,
