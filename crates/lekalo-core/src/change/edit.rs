@@ -59,21 +59,6 @@ fn line_start_at(bytes: &[u8], offset: usize) -> usize {
     0
 }
 
-/// Whether the open byte range `[start, end)` carries only blank content:
-/// any comment line inside or adjoining the gap makes the edit ambiguous.
-fn range_is_blank(bytes: &[u8], start: usize, end: usize) -> bool {
-    if start > end || end > bytes.len() {
-        return false;
-    }
-    let Ok(text) = std::str::from_utf8(&bytes[start..end]) else {
-        return false;
-    };
-    text.lines().all(|line| {
-        let trimmed = line.trim_start();
-        trimmed.is_empty() || !trimmed.starts_with('#')
-    })
-}
-
 /// Quote a YAML scalar with the double-quoted style used by the checked-in
 /// fixtures; only the two YAML double-quote escapes are produced.
 fn quote_yaml(value: &str) -> String {
@@ -294,6 +279,43 @@ pub fn plan_seq_insert(
     })
 }
 
+/// Build the YAML block of one field item at the anchor of the named
+/// member sequence of one spanned definition.
+pub fn field_item_block(
+    bytes: &[u8],
+    definition: &Node,
+    member: &str,
+    name: &str,
+    type_spelling: &str,
+    required: bool,
+    description: Option<&str>,
+) -> Result<String, ChangeError> {
+    let items = member_sequence(definition, member)?;
+    let (anchor, _) = seq_anchor(items)?;
+    Ok(yaml_field_item(
+        bytes,
+        anchor,
+        name,
+        type_spelling,
+        required,
+        description,
+    ))
+}
+
+/// Build the YAML block of one enum-case item at the anchor of the named
+/// member sequence of one spanned definition.
+pub fn case_item_block(
+    bytes: &[u8],
+    definition: &Node,
+    member: &str,
+    name: &str,
+    description: Option<&str>,
+) -> Result<String, ChangeError> {
+    let items = member_sequence(definition, member)?;
+    let (anchor, _) = seq_anchor(items)?;
+    Ok(yaml_case_item(bytes, anchor, name, description))
+}
+
 /// Plan the removal of one sequence item by exact member identity.
 pub fn plan_seq_item_remove(
     bytes: &[u8],
@@ -326,29 +348,24 @@ pub fn plan_seq_item_remove(
             detail: "comment-adjacent",
         });
     }
-    let mut start = dash;
-    let mut end = item_end;
-    // Consume the line break that terminates the item (never the previous
-    // content); the removal must not join two unrelated lines.
-    if bytes.get(end) == Some(&b'\r') {
-        end += 1;
+    // The removal consumes the line break BEFORE the item (its line
+    // terminator) through the end of its last value; the trailing break
+    // stays with the following line. A dash not alone on its line is a
+    // layout this planner refuses.
+    let line_start = line_start_at(bytes, dash);
+    if line_start == 0 || bytes[line_start..dash].iter().any(|byte| *byte != b' ') {
+        return Err(ChangeError::SourcePreservation {
+            subject: name.to_owned(),
+            detail: "item-layout",
+        });
     }
-    if bytes.get(end) == Some(&b'\n') {
-        end += 1;
-    } else if position > 0 {
-        // Last item without a trailing break: consume the preceding break
-        // instead so the previous item's line terminator stays intact.
-        start = line_start_at(bytes, start);
-        if start > 0 {
-            start -= 1;
-            if start > 0 && bytes[start - 1] == b'\r' {
-                start -= 1;
-            }
-        }
+    let mut start = line_start - 1;
+    if start > 0 && bytes[start - 1] == b'\r' {
+        start -= 1;
     }
     Ok(ByteEdit {
         start,
-        end,
+        end: item_end,
         replacement: String::new(),
     })
 }

@@ -153,10 +153,6 @@ pub struct TransactionWire {
     pub state: String,
 }
 
-pub(crate) fn transaction_wire(id: &str, state: TransactionState) -> Json {
-    serde_json::json!({ "id": id, "state": state.as_str() })
-}
-
 /// The validated canonical history document.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct History {

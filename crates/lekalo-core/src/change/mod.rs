@@ -129,6 +129,28 @@ pub struct ApplyOptions<'a> {
     pub expect_plan: Option<&'a str>,
 }
 
+/// The options of one full apply run over raw request bytes.
+#[derive(Clone, Debug)]
+pub struct ApplyRequestOptions<'a> {
+    /// The explicit project selection (`None` discovers upward).
+    pub project: Option<&'a str>,
+    /// The exact request bytes.
+    pub request: &'a [u8],
+    /// The optional policy bytes.
+    pub policy: Option<&'a [u8]>,
+    /// Explicit acknowledgement of reported breaking classes.
+    pub allow_breaking: bool,
+    /// The durable idempotency key.
+    pub idempotency_key: &'a str,
+    /// The expected plan identity; a mismatch refuses before mutation.
+    pub expect_plan: Option<&'a str>,
+}
+
+/// Apply raw request bytes with ledger-first idempotency: a repeated key
+/// with the same request digest returns the original committed receipt
+/// without another mutation, even though the Model already carries the
+/// change and a fresh preparation would refuse it as a duplicate.
+
 /// Prepare one request batch: pure, read-only, deterministic.
 pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> {
     let request = ChangeRequest::decode(options.request).map_err(|invalid| match invalid {
@@ -182,7 +204,9 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
         apply_tree_edit(&mut documents, operation)?;
     }
 
-    // Plan the exact byte edits for every changed document.
+    // Plan the exact byte edits for every changed document. The edits are
+    // planned against the ORIGINAL pinned bytes and spans; the mutated
+    // candidate trees above exist only for the semantic comparison.
     let mut changed_documents: Vec<LoadedDocument> = Vec::new();
     for operation in &request.operations {
         let subject = operation
@@ -207,7 +231,8 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
         {
             continue;
         }
-        let document = documents
+        let document = load
+            .documents
             .iter()
             .find(|document| document.document.path == path)
             .ok_or(ChangeError::SubjectConflict {
@@ -480,6 +505,49 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
     Ok(prepared)
 }
 
+/// Apply raw request bytes with ledger-first idempotency (see
+/// [`ApplyRequestOptions`]).
+pub fn apply_request(options: &ApplyRequestOptions) -> Result<Receipt, ChangeError> {
+    if options.idempotency_key.is_empty() || options.idempotency_key.len() > 128 {
+        return Err(ChangeError::RequestInvalid {
+            detail: "idempotency-key-bounds",
+        });
+    }
+    let root = resolve_root(options.project)?;
+    refuse_while_recovery_pending(&root)?;
+    // The durable ledger answers before any preparation runs: the Model
+    // already carries the committed change, so a fresh resolve would refuse
+    // as a duplicate. Replay must still work.
+    let key = receipt::key_digest(options.idempotency_key);
+    let history_bytes = std::fs::read(
+        root.join(version::HISTORY_LOGICAL_PATH.replace('/', std::path::MAIN_SEPARATOR_STR)),
+    )
+    .unwrap_or_default();
+    if !history_bytes.is_empty() {
+        let history = History::decode(&history_bytes)?;
+        if let Some(record) = history.by_key(&key) {
+            let request_digest = format!("sha256:{}", crate::digest::sha256_hex(options.request));
+            if record.request_digest != request_digest {
+                return Err(ChangeError::IdempotencyConflict);
+            }
+            return replayed_receipt(record);
+        }
+    }
+    let prepared = prepare(&PrepareOptions {
+        project: options.project,
+        request: options.request,
+        policy: options.policy,
+        allow_breaking: options.allow_breaking,
+    })?;
+    apply_prepared(
+        &prepared,
+        &ApplyOptions {
+            idempotency_key: options.idempotency_key,
+            expect_plan: options.expect_plan,
+        },
+    )
+}
+
 /// Apply one sealed plan: the only writer of the change service.
 pub fn apply_prepared(
     prepared: &PreparedChange,
@@ -586,7 +654,9 @@ pub fn apply_prepared(
         ReceiptState::Committed
     };
     let sequence = history.next_sequence;
-    let transaction_id = format!("change-{}-{}", &prepared.plan_id()[6..14], sequence);
+    // Eight hex characters after the `sha256:` prefix: the transaction id
+    // must stay a portable directory name.
+    let transaction_id = format!("change-{}-{}", &prepared.plan_id()[7..15], sequence);
     let anchor = HistoryAnchor {
         sequence,
         record_digest: format!(
@@ -1186,15 +1256,15 @@ fn plan_source_edits(
     let node = &definition.node;
     let edit = match operation {
         Operation::EntityFieldAdd { field, .. } => {
-            let anchor = member_anchor(bytes, node, "fields")?;
-            let item = edit::yaml_field_item(
+            let item = edit::field_item_block(
                 bytes,
-                anchor,
+                node,
+                "fields",
                 &field.name,
                 &field.r#type.to_spelling(),
                 field.required,
                 field.description.as_deref(),
-            );
+            )?;
             edit::plan_seq_insert(bytes, node, "fields", &item)?
         }
         Operation::EntityFieldRemove { name, .. } => {
@@ -1204,32 +1274,18 @@ fn plan_source_edits(
             edit::plan_seq_item_rename(bytes, node, "fields", name, to)?
         }
         Operation::EnumCaseAdd { case, .. } => {
-            let anchor = member_anchor(bytes, node, "values")?;
-            let item = edit::yaml_case_item(bytes, anchor, &case.name, case.description.as_deref());
+            let item = edit::case_item_block(
+                bytes,
+                node,
+                "values",
+                &case.name,
+                case.description.as_deref(),
+            )?;
             edit::plan_seq_insert(bytes, node, "values", &item)?
         }
         Operation::Unsupported { .. } => return Ok(Vec::new()),
     };
     Ok(vec![edit])
-}
-
-/// The anchor column of the last item of one member sequence.
-fn member_anchor(bytes: &[u8], node: &Node, member: &str) -> Result<usize, ChangeError> {
-    let items = node
-        .get(member)
-        .and_then(|sequence| sequence.as_seq())
-        .ok_or(ChangeError::SourcePreservation {
-            subject: member.to_owned(),
-            detail: "member-not-sequence",
-        })?;
-    let Some(last) = items.last() else {
-        return Err(ChangeError::SourcePreservation {
-            subject: member.to_owned(),
-            detail: "sequence-empty",
-        });
-    };
-    let _ = bytes;
-    Ok(last.span.start.column - 1)
 }
 
 /// The typed impact projection: every diff seed analyzed on its own graph

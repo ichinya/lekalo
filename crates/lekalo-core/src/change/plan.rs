@@ -200,9 +200,7 @@ impl PreparedChange {
     /// The deterministic plan identity: the digest of the canonical wire
     /// bytes without the `planId` field itself.
     pub fn plan_id(&self) -> String {
-        let mut wire = self.wire();
-        wire.plan_id = String::new();
-        let bytes = serde_json::to_string(&wire).unwrap_or_default();
+        let bytes = serde_json::to_string(&self.wire_content()).unwrap_or_default();
         format!("sha256:{}", sha256_hex(bytes.as_bytes()))
     }
 
@@ -221,6 +219,11 @@ impl PreparedChange {
         &self.operations
     }
 
+    /// The planned file replacements (sorted by logical path).
+    pub fn file_edits(&self) -> &[FileEdit] {
+        &self.file_edits
+    }
+
     /// The exact wire bytes of the plan projection (pretty, no status).
     pub fn to_json_string(&self) -> String {
         let wire = self.wire();
@@ -228,6 +231,14 @@ impl PreparedChange {
     }
 
     fn wire(&self) -> PlanWire {
+        let mut wire = self.wire_content();
+        wire.plan_id = self.plan_id();
+        wire
+    }
+
+    /// The canonical wire content with the plan identity left empty (the
+    /// digest input of [`Self::plan_id`]).
+    fn wire_content(&self) -> PlanWire {
         let breaking: Vec<String> = self
             .semantic_diff
             .classification
@@ -242,7 +253,7 @@ impl PreparedChange {
         PlanWire {
             schema_version: version::PLAN_SCHEMA_VERSION.to_owned(),
             identity: version::PLAN_IDENTITY.to_owned(),
-            plan_id: self.plan_id(),
+            plan_id: String::new(),
             request_digest: self.request_digest(),
             catalog_digest: self.catalog_digest(),
             policy_digest: self.policy_digest(),
@@ -270,16 +281,22 @@ impl PreparedChange {
 /// The closed wire projection of one plan.
 #[derive(Serialize)]
 struct PlanWire {
+    #[serde(rename = "schemaVersion")]
     schema_version: String,
     identity: String,
+    #[serde(rename = "planId")]
     plan_id: String,
+    #[serde(rename = "requestDigest")]
     request_digest: String,
+    #[serde(rename = "catalogDigest")]
     catalog_digest: String,
+    #[serde(rename = "policyDigest")]
     policy_digest: Option<String>,
     mode: String,
     equal: bool,
     operations: Vec<ResolvedOperation>,
     inputs: Vec<InputPin>,
+    #[serde(rename = "fileEdits")]
     file_edits: Vec<FileEdit>,
     #[serde(rename = "fileDiff")]
     file_diff: Vec<FileDiff>,

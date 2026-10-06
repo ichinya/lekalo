@@ -16,7 +16,17 @@ const MODULE_FILES = new Set(["module", ...KIND_FILES]);
 const CANONICAL_ROOT_ENTRIES = new Set([
   "project.yaml", "modules", "targets", "authorization.yaml",
   "transport.yaml", "scenarios", "test-port.json",
-  "classification.json", "classification-policy.json"
+  "classification.json", "classification-policy.json",
+  // Issue #72: the conventional query-model home (optional).
+  "query-model.yaml",
+  // Issue #58: the PHP type-generation input home (optional).
+  "types",
+  // Issue #59: the PHP operations-generation input home (optional).
+  "operations",
+  // Issue #60: the PHP routes-generation input home (optional).
+  "routes",
+  // Issue #73: the canonical change audit history sidecar (optional).
+  "change-history.json"
 ]);
 const RUNTIME_ENTRIES = new Set(["import", "cache", "generated", "consumer", "privacy", "adapters"]);
 // The governed issue #32 adapter store (docs/canonical-structure.md).

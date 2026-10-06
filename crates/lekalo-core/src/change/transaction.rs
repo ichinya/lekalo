@@ -20,7 +20,6 @@ const JOURNAL_NAME: &str = "journal.json";
 /// One staged replacement: the target logical path, its verified backup,
 /// and the exact prospective bytes.
 struct StagedFile {
-    logical: String,
     target: PathBuf,
     backup: Option<PathBuf>,
     after_bytes: Vec<u8>,
@@ -105,14 +104,6 @@ pub(crate) fn pending_transactions(root: &Path) -> Vec<String> {
     }
     pending.sort();
     pending
-}
-
-/// Plan the byte replacement of one file for staging.
-pub(crate) struct Replacement {
-    pub logical: String,
-    pub before_digest: String,
-    pub after_digest: String,
-    pub edits: Vec<ByteEdit>,
 }
 
 impl Transaction {
@@ -206,7 +197,6 @@ impl Transaction {
             Some(path)
         };
         self.staged.push(StagedFile {
-            logical: plan.logical.clone(),
             target,
             backup,
             after_bytes,
@@ -288,21 +278,9 @@ impl Transaction {
         Ok(())
     }
 
-    /// The transaction id.
-    pub(crate) fn id(&self) -> &str {
-        &self.id
-    }
-
     /// Abandon the transaction after restoration: remove the journal.
     pub(crate) fn cleanup_after_restore(&self) {
         let _ = std::fs::remove_dir_all(&self.journal_dir);
-    }
-
-    /// Leave the journal in place (recovery required) and report.
-    pub(crate) fn leave_for_recovery(&self) -> ChangeError {
-        ChangeError::RecoveryRequired {
-            transaction: self.id.clone(),
-        }
     }
 }
 

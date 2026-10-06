@@ -328,8 +328,6 @@ const SUBJECT_MEMBERS: [&str; 9] = [
     "step",
 ];
 
-use crate::result::Status;
-
 /// Reject any member outside the closed member set.
 fn require_members(
     map: &serde_json::Map<String, Json>,

@@ -697,7 +697,7 @@ impl Fs {
 }
 
 /// The closed set of canonical `lekalo/` root entries.
-const CANONICAL_ROOT_ENTRIES: [&str; 13] = [
+const CANONICAL_ROOT_ENTRIES: [&str; 14] = [
     "project.yaml",
     "modules",
     "targets",
@@ -714,6 +714,10 @@ const CANONICAL_ROOT_ENTRIES: [&str; 13] = [
     // Issue #72: the conventional query-model home the client-SDK
     // evidence derivation binds (optional).
     "query-model.yaml",
+    // Issue #73: the canonical change audit history sidecar (optional).
+    // The change service owns it; the loader never decodes it as model
+    // input (docs/canonical-structure.md).
+    "change-history.json",
     // Issue #58: the PHP type-generation input home (optional).
     "types",
     // Issue #59: the PHP operations-generation input home (optional).
