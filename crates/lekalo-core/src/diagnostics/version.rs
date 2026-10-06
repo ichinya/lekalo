@@ -56,6 +56,11 @@ pub const REGISTRY_VERSION: &str = "0.6.4";
 /// Opt-in issue #84 union successor. Predecessor producers keep their exact pins.
 pub const SUCCESSOR_REGISTRY_VERSION: &str = "0.6.5";
 
+/// The issue #51 union successor: the pilot composition family
+/// (`worklog-changelog.*`, LEK-WC-001..007) on top of both earlier
+/// generations. Predecessor producers keep their exact pins.
+pub const PILOT_REGISTRY_VERSION: &str = "0.8.0";
+
 /// The closed diagnostic schema version.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DiagnosticSchemaVersion {

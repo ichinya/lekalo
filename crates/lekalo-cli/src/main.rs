@@ -380,6 +380,12 @@ enum Commands {
         #[command(subcommand)]
         command: RequirementsCommands,
     },
+    /// Validate the issue #51 worklog-changelog pilot composition
+    /// against its pinned project: the pure composition contract.
+    Pilot {
+        #[command(subcommand)]
+        command: PilotCommands,
+    },
     /// Validate, inspect, project or compare HTTP/JSON transport
     /// attachments (issue #70). The core owns every decision; this
     /// binary only selects, renders, and maps exits.
@@ -2518,6 +2524,7 @@ fn runtime() -> u8 {
             Commands::Effects { command } => run_effects(command, cli.no_cache),
             Commands::Trace { command } => run_trace(command),
             Commands::Requirements { command } => run_requirements(command),
+            Commands::Pilot { command } => run_pilot(command, cli.no_cache),
             Commands::Generate {
                 project,
                 check,
@@ -6414,6 +6421,126 @@ fn matched_kind_label(selection: &lekalo_core::trace::QuerySelection) -> &'stati
 
 /// The selected requirements operation, resolved before the attachment
 /// is read.
+/// The `pilot` subcommands (issue #51): the worklog-changelog pilot
+/// composition contract. `validate` is the gate (exit 0 valid, 1
+/// invalid); `admit` checks one evidence report against the strict or
+/// permissive profile and refuses honestly (exit 4) when required
+/// evidence is missing.
+#[derive(Debug, Subcommand)]
+enum PilotCommands {
+    /// Validate one composition document against its pinned project:
+    /// custody, role resolution, effect separation, approval binding,
+    /// snapshot immutability, public allowlist, replay scopes, and
+    /// capability coverage.
+    Validate {
+        /// Path to the composition document JSON.
+        path: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+    /// Admit one evidence report under the selected profile: strict
+    /// refuses any required unsupported or unknown row (exit 4) while
+    /// keeping the report; permissive emits the degraded verdict.
+    Admit {
+        /// Path to the evidence report JSON.
+        path: String,
+        /// The closed admission profile.
+        #[arg(long, value_enum, default_value = "strict")]
+        profile: PilotProfileArg,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
+}
+
+/// The closed evidence admission profile.
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+enum PilotProfileArg {
+    /// Every required row must be supported and executed.
+    Strict,
+    /// Gaps degrade the verdict but keep every row visible.
+    Permissive,
+}
+
+impl PilotProfileArg {
+    /// The core profile value.
+    const fn core(self) -> lekalo_core::worklog_changelog::AdmissionProfile {
+        match self {
+            Self::Strict => lekalo_core::worklog_changelog::AdmissionProfile::Strict,
+            Self::Permissive => lekalo_core::worklog_changelog::AdmissionProfile::Permissive,
+        }
+    }
+}
+
+/// Run one `lekalo pilot` operation: read the document, load and
+/// compile the selected project, and hand both to the core. Load and
+/// compile failures pass through unchanged; this binary only selects,
+/// renders, and maps exits.
+fn run_pilot(command: PilotCommands, no_cache: bool) -> DomainResult {
+    let (path, project, step) = match command {
+        PilotCommands::Validate { path, project } => (path, project, None),
+        PilotCommands::Admit {
+            path,
+            profile,
+            project,
+        } => (path, project, Some(profile.core())),
+    };
+    let bytes = match std::fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let detail = match error.kind() {
+                io::ErrorKind::NotFound => "file-missing",
+                _ => "file-unreadable",
+            };
+            return DomainResult::invalid(lekalo_core::worklog_changelog::io_failure(detail));
+        }
+    };
+    let compilation = match lekalo_core::cache::load_compiled(&selection_for(&project), no_cache) {
+        Ok((_, compilation)) => compilation,
+        Err(result) => return result,
+    };
+    match step {
+        None => {
+            let composition =
+                match lekalo_core::worklog_changelog::validate_document(&bytes, &compilation) {
+                    Ok(composition) => composition,
+                    Err(result) => return result,
+                };
+            DomainResult::receipt(
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "pilot": {
+                        "schemaVersion": lekalo_core::worklog_changelog::version::SCHEMA_VERSION,
+                        "identity": lekalo_core::worklog_changelog::version::IDENTITY,
+                        "projectId": composition.project_id(),
+                        "operations": composition.operations().len(),
+                        "consumed": composition.consumed().len(),
+                        "status": "valid",
+                    }
+                }))
+                .expect("pilot receipt serializes"),
+                format!(
+                    "pilot {}: {} operation roles, {} consumed attachments",
+                    lekalo_core::worklog_changelog::version::IDENTITY,
+                    composition.operations().len(),
+                    composition.consumed().len(),
+                ),
+            )
+        }
+        Some(profile) => match lekalo_core::worklog_changelog::admit(&bytes, profile) {
+            Ok(receipt) => {
+                let verdict = receipt.verdict;
+                DomainResult::receipt(
+                    serde_json::to_string_pretty(&serde_json::json!({ "pilot": receipt }))
+                        .expect("pilot receipt serializes"),
+                    format!("pilot evidence {}: {}", profile.wire_name(), verdict),
+                )
+            }
+            Err(result) => result,
+        },
+    }
+}
+
 enum RequirementsStep {
     Validate,
     Report,
