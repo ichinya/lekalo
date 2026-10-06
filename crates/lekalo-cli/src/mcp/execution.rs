@@ -26,6 +26,7 @@ use lekalo_core::DomainResult;
 use super::catalog::ServerCatalog;
 use super::read;
 use super::snapshot::{domain_digest, snapshot_ref, Inputs};
+use super::stdio::compact_json;
 
 /// A completed tool execution: the closed output-contract envelope and
 /// whether the transport must mark it as an error result.
@@ -119,14 +120,21 @@ pub(crate) fn family_of(tool: &str) -> Family {
 #[derive(Deserialize)]
 pub(crate) struct EnvelopeView<'a> {
     status: &'a str,
-    payload: Option<&'a RawValue>,
+    #[serde(default, borrow)]
     inspect: Option<&'a RawValue>,
+    #[serde(default, borrow)]
     impact: Option<&'a RawValue>,
+    #[serde(default, borrow)]
     context: Option<&'a RawValue>,
+    #[serde(default, borrow)]
     graph: Option<&'a RawValue>,
+    #[serde(default, rename = "modelVersion")]
     model_version: Option<serde_json::Value>,
+    #[serde(default, borrow)]
     validation: Option<&'a RawValue>,
+    #[serde(default, borrow)]
     diagnostics: Option<&'a RawValue>,
+    #[serde(default, borrow, rename = "reasonCodes")]
     reason_codes: Option<&'a RawValue>,
 }
 
@@ -137,7 +145,9 @@ impl<'a> EnvelopeView<'a> {
         serde_json::from_str(raw).map_err(|error| error.to_string())
     }
 
-    /// The raw payload member for one tool family.
+    /// The raw payload member for one tool family. The doctor document
+    /// is the whole Valid envelope, so the target-status family reads it
+    /// through 'member_full' instead.
     pub(crate) fn payload_for(&self, family: &Family) -> Option<&RawValue> {
         match family.slug {
             "inspect" => self.inspect,
@@ -145,8 +155,6 @@ impl<'a> EnvelopeView<'a> {
             "context" => self.context,
             "graph" => self.graph,
             "validate" => self.validation,
-            // The doctor document is the whole status envelope.
-            "target-status" => self.payload,
             _ => None,
         }
     }
@@ -166,7 +174,7 @@ fn envelope(
     scope: &Scope,
     snapshot: &str,
     status: &str,
-    diagnostics_raw: Option<&str>,
+    diagnostics_raw: Option<String>,
     tail: Option<String>,
 ) -> String {
     let mut out = String::with_capacity(1024);
@@ -198,7 +206,7 @@ fn envelope(
     out.push_str("\",\"contractPins\":{\"diagnostic\":\"0.2.16\",\"diagnosticRegistry\":\"0.8.0\",\"protocolProfile\":\"2025-11-25\",");
     out.push_str(family.pin);
     out.push_str("},\"diagnostics\":");
-    out.push_str(diagnostics_raw.unwrap_or("[]"));
+    out.push_str(&diagnostics_raw.unwrap_or_else(|| "[]".to_owned()));
     if let Some(tail) = tail {
         out.push(',');
         out.push_str(&tail);
@@ -242,7 +250,7 @@ fn refusal(
             scope,
             &snapshot_ref(&Inputs::new()),
             status,
-            Some(&diagnostics),
+            Some(diagnostics),
             Some(refusal_tail(class, detail)),
         ),
         is_error: true,
@@ -277,7 +285,6 @@ pub(crate) fn refusal_envelope(
     refusal(&family, tool, &scope, set, status, class, detail).envelope
 }
 
-/// Map one reused CLI `DomainResult` onto the closed output envelope.
 fn finish_envelope(
     family: &Family,
     tool: &str,
@@ -289,17 +296,15 @@ fn finish_envelope(
     let view = EnvelopeView::parse(&raw)?;
     match result {
         DomainResult::Valid { .. } => {
-            let Some(payload) = view.payload_for(family) else {
-                let set = lekalo_core::mcp::diagnostic::result_invalid_set("missing-payload");
-                return Ok(refusal(
-                    family,
-                    tool,
-                    scope,
-                    set,
-                    "invalid",
-                    "result-invalid",
-                    "mcp.result-invalid",
-                ));
+            // The doctor document is the whole Valid envelope; every
+            // other family reads its own raw payload member.
+            let spliced = if family.slug == "target-status" {
+                compact_json(&raw)
+            } else {
+                let payload = view
+                    .payload_for(family)
+                    .ok_or_else(|| "missing-payload".to_owned())?;
+                payload.get().to_owned()
             };
             let tail = if family.slug == "validate" {
                 // The exact validation success receipt: status,
@@ -310,20 +315,20 @@ fn finish_envelope(
                     view.model_version
                         .clone()
                         .unwrap_or(serde_json::Value::Null),
-                    payload.get()
+                    spliced
                 );
                 if let Some(diagnostics) = view.diagnostics {
                     receipt.push_str(",\"diagnostics\":");
-                    receipt.push_str(diagnostics.get());
+                    receipt.push_str(&compact_json(diagnostics.get()));
                 }
                 if let Some(reasons) = view.reason_codes {
                     receipt.push_str(",\"reasonCodes\":");
-                    receipt.push_str(reasons.get());
+                    receipt.push_str(&compact_json(reasons.get()));
                 }
-                receipt.push_str("}}");
+                receipt.push('}');
                 receipt
             } else {
-                pinned_result(family, payload.get())
+                pinned_result(family, &spliced)
             };
             Ok(ToolOutput {
                 envelope: envelope(
@@ -332,7 +337,7 @@ fn finish_envelope(
                     scope,
                     &snapshot_ref(&inputs),
                     "valid",
-                    view.diagnostics.map(|raw| raw.get()),
+                    view.diagnostics.map(|raw| compact_json(raw.get())),
                     Some(tail),
                 ),
                 is_error: false,
@@ -344,8 +349,7 @@ fn finish_envelope(
             let detail = view
                 .reason_codes
                 .map(|codes| {
-                    codes
-                        .get()
+                    compact_json(codes.get())
                         .trim_matches(|c| c == '[' || c == ']' || c == '"' || c == ' ')
                         .to_owned()
                 })
@@ -357,7 +361,7 @@ fn finish_envelope(
                     scope,
                     &snapshot_ref(&inputs),
                     status,
-                    view.diagnostics.map(|raw| raw.get()),
+                    view.diagnostics.map(|raw| compact_json(raw.get())),
                     Some(refusal_tail(class, &detail)),
                 ),
                 is_error: true,
@@ -580,7 +584,7 @@ fn run(
             "mcp.scope-denied",
         ));
     };
-    let project = Some(entry.root.to_string_lossy().to_string());
+    let project = Some(entry.selector.clone());
     let digest_before = model_digest(&project);
     let result = match request {
         ToolRequest::Inspect {

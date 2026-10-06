@@ -25,6 +25,36 @@ pub enum FrameError {
     Eof,
 }
 
+/// Compact one JSON text without re-ordering or re-escaping members:
+/// whitespace outside strings is removed, so an embedded pretty-printed
+/// contract or a reused envelope's diagnostics splice into a one-line LF
+/// frame with the exact wire member order preserved.
+pub(crate) fn compact_json(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut in_string = false;
+    let mut escaped = false;
+    for character in text.chars() {
+        if escaped {
+            out.push(character);
+            escaped = false;
+            continue;
+        }
+        match character {
+            '\\' if in_string => {
+                out.push(character);
+                escaped = true;
+            }
+            '"' => {
+                in_string = !in_string;
+                out.push(character);
+            }
+            ' ' | '\t' | '\n' | '\r' if !in_string => {}
+            _ => out.push(character),
+        }
+    }
+    out
+}
+
 /// Read one LF-delimited frame from the reader, bounded by the recorded
 /// frame cap. A missing final LF at EOF still yields the frame.
 pub fn read_frame(reader: &mut impl BufRead) -> Result<String, FrameError> {

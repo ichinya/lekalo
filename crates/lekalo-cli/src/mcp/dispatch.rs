@@ -218,7 +218,7 @@ fn tools_list(incoming: &Incoming) -> String {
                 table
                     .iter()
                     .find(|(name, _)| *name == slug)
-                    .map(|(_, bytes)| String::from_utf8_lossy(bytes).to_string())
+                    .map(|(_, bytes)| super::stdio::compact_json(&String::from_utf8_lossy(bytes)))
                     .unwrap_or_default()
             };
             let input_schema = find(&lekalo_core::mcp::schemas::INPUT_SCHEMAS);
@@ -575,7 +575,7 @@ fn build_resource(
         .projects
         .get(&scope.project)
         .ok_or_else(|| refused(scope, "project", "unregistered"))?;
-    let project = Some(entry.root.to_string_lossy().to_string());
+    let project = Some(entry.selector.clone());
     let (revision, data) = match family {
         Family::ProjectSummary => {
             let selection = lekalo_core::loader::LoadSelection {

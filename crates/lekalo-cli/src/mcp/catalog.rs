@@ -19,11 +19,15 @@ use lekalo_core::mcp::version::{
 };
 use lekalo_core::DomainResult;
 
-/// One admitted project: the opaque id and its resolved physical root.
+/// One admitted project: the opaque id, the resolved physical root for
+/// the no-follow read seam, and the loader-facing selector (the trusted
+/// operand spelling, which the core selection policy keeps relative to
+/// the server's working directory — MCP never widens core policy).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProjectEntry {
     pub id: String,
     pub root: PathBuf,
+    pub selector: String,
 }
 
 /// The resolved server catalog.
@@ -38,7 +42,7 @@ impl ServerCatalog {
     /// The single-project startup catalog: one admitted project under the
     /// fixed opaque id `project`, no groups, no manifest grants, and no
     /// changed-mode Git admission.
-    pub fn single(root: &Path) -> Self {
+    pub fn single(selector: &str, root: &Path) -> Self {
         let core = Catalog::empty()
             .with_project("project")
             .expect("literal id");
@@ -48,6 +52,7 @@ impl ServerCatalog {
             ProjectEntry {
                 id: "project".to_owned(),
                 root: root.to_path_buf(),
+                selector: selector.to_owned(),
             },
         );
         Self {
@@ -167,12 +172,19 @@ pub fn from_bytes(bytes: &[u8]) -> Result<ServerCatalog, CatalogError> {
         if !root.is_dir() {
             return Err(CatalogError::Root);
         }
+        // The loader-facing selector: the project's spelling relative to
+        // the server's working directory, or `.` when the root is the
+        // working directory itself. A root outside the working directory
+        // would widen the core selection policy, so it refuses at
+        // startup instead of serving restricted tools.
+        let selector = relative_selector(&root).ok_or(CatalogError::Root)?;
         if projects
             .insert(
                 project.id.clone(),
                 ProjectEntry {
                     id: project.id.clone(),
                     root,
+                    selector,
                 },
             )
             .is_some()
@@ -232,6 +244,32 @@ pub fn from_bytes(bytes: &[u8]) -> Result<ServerCatalog, CatalogError> {
         projects,
         limits,
     })
+}
+
+/// The loader-facing selector of one resolved root: the canonical root
+/// spelled relative to the current directory with / separators, or None
+/// when the root is not inside the working directory.
+fn relative_selector(root: &Path) -> Option<String> {
+    let canonical_root = strip_verbatim(&root.canonicalize().ok()?);
+    let cwd = strip_verbatim(&std::env::current_dir().ok()?);
+    let relative = canonical_root.strip_prefix(&cwd).ok()?;
+    if relative.as_os_str().is_empty() {
+        return Some(".".to_owned());
+    }
+    Some(relative.to_string_lossy().replace('\\', "/"))
+}
+
+#[cfg(windows)]
+fn strip_verbatim(path: &Path) -> std::path::PathBuf {
+    match path.to_string_lossy().strip_prefix(r"\\?\") {
+        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => std::path::PathBuf::from(rest),
+        _ => path.to_path_buf(),
+    }
+}
+
+#[cfg(not(windows))]
+fn strip_verbatim(path: &Path) -> std::path::PathBuf {
+    path.to_path_buf()
 }
 
 /// Load the trusted catalog from a launcher-supplied path operand.
@@ -304,7 +342,7 @@ mod tests {
 
     #[test]
     fn single_project_startup_admits_one_fixed_identity() {
-        let catalog = ServerCatalog::single(Path::new("."));
+        let catalog = ServerCatalog::single(".", Path::new("."));
         assert!(catalog.core.admits_project("project"));
         assert_eq!(catalog.projects.len(), 1);
         assert!(!catalog.core.admits_git_changed_mode());

@@ -48,12 +48,21 @@ pub(crate) enum McpCommands {
     },
 }
 
+/// The selected MCP subcommand outcome: `describe` rides the ordinary
+/// status-owned envelope stream; `serve` owns stdout exclusively as
+/// protocol frames, so its terminal receipt never prints (the AdapterRun
+/// ownership pattern).
+pub(crate) enum McpRun {
+    Envelope(DomainResult),
+    Owned(DomainResult),
+}
+
 /// Run the selected MCP subcommand. `json` is the global `--json` flag;
 /// `serve` rejects it with the ordinary pre-server usage diagnostics
 /// because stdout is protocol property from the first frame.
-pub(crate) fn run(command: McpCommands, json: bool) -> DomainResult {
+pub(crate) fn run(command: McpCommands, json: bool) -> McpRun {
     match command {
-        McpCommands::Describe => describe(json),
+        McpCommands::Describe => McpRun::Envelope(describe(json)),
         McpCommands::Serve {
             stdio,
             project,
@@ -61,7 +70,7 @@ pub(crate) fn run(command: McpCommands, json: bool) -> DomainResult {
             catalog_config,
             timeout_ms,
             max_response_bytes,
-        } => serve_start(
+        } => McpRun::Owned(serve_start(
             stdio,
             project,
             group,
@@ -69,7 +78,7 @@ pub(crate) fn run(command: McpCommands, json: bool) -> DomainResult {
             timeout_ms,
             max_response_bytes,
             json,
-        ),
+        )),
     }
 }
 
@@ -144,12 +153,16 @@ fn serve_start(
         }
         (None, Some(root)) => {
             // Single-project startup: one admitted project, no groups, no
-            // manifest grants, no changed-mode Git admission.
+            // manifest grants, no changed-mode Git admission. The operand
+            // spelling stays the loader-facing selector: the core
+            // selection policy still applies to every load, so a spelling
+            // it refuses surfaces its own registered diagnostic on the
+            // first tool call instead of a widened MCP grant.
             let resolved = match resolve_root(root) {
                 Ok(resolved) => resolved,
                 Err(result) => return result,
             };
-            catalog::ServerCatalog::single(&resolved)
+            catalog::ServerCatalog::single(root, &resolved)
         }
         (None, None) => {
             // `serve` requires explicit project selection.

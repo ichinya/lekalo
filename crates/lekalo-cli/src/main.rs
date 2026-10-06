@@ -2458,7 +2458,14 @@ fn runtime() -> u8 {
                 run_validate_reported(project, module, strict, cli.no_cache, &request)
             }
             Commands::Compatibility => run_compatibility(),
-            Commands::Mcp { command } => mcp::run(command, json_requested),
+            Commands::Mcp { command } => match mcp::run(command, json_requested) {
+                mcp::McpRun::Envelope(result) => result,
+                mcp::McpRun::Owned(result) => {
+                    // The served session owned stdout exclusively; no
+                    // trailing envelope may follow the protocol frames.
+                    return result.exit_code();
+                }
+            },
             Commands::AiLint { args } => ai_lint::run(args),
             Commands::Waivers { command } => waivers::run(*command),
             Commands::Provider { command } => run_provider(command),
