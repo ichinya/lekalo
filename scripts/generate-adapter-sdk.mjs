@@ -71,6 +71,30 @@ export function canonicalJson(value) {
 
 const read = (relative) => readFileSync(join(ROOT, relative), "utf8");
 
+/** Render one value as a PHP array literal (single-quoted strings). */
+export function phpArray(value) {
+  if (Array.isArray(value)) {
+    return "[" + value.map((item) => phpArray(item)).join(",") + "]";
+  }
+  if (value !== null && typeof value === "object") {
+    const body = Object.keys(value)
+      .sort()
+      .map((key) => phpString(key) + " => " + phpArray(value[key]))
+      .join(",");
+    return "[" + body + "]";
+  }
+  if (typeof value === "number") return String(value);
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (value === null) return "null";
+  return phpString(String(value));
+}
+
+const phpProlog = "<?php\ndeclare(strict_types=1);\n\n";
+
+function phpString(text) {
+  return "'" + String(text).replace(/[\']/g, "\\$&") + "'";
+}
+
 // ---------------------------------------------------------------------------
 // Pinned configuration and cross-checked model extraction
 // ---------------------------------------------------------------------------
@@ -346,7 +370,7 @@ function renderCompatibilityTests(lang) {
     }
     lines.push("}", "");
   } else {
-    lines.push(`namespace Lekalo\\AdapterSdk\\Generated;`, "", `final class CompatibilityTests {`, "    /** The generated exact-version matrix as canonical rows. */", `    public const MATRIX = ${body};`, "}", "");
+    lines.push(`namespace Lekalo\\AdapterSdk\\Generated;`, "", `final class CompatibilityTests {`, "    /** The generated exact-version matrix as canonical rows. */", `    public const MATRIX = ${phpArray(matrix)};`, "}", "");
   }
   return lines.join("\n") + "\n";
 }
@@ -415,7 +439,7 @@ function renderCapabilities(lang) {
       "final class Capabilities {",
       `    public const IDENTITY = ${JSON.stringify(capabilityExport.identity)};`,
       `    public const ENTRIES_DIGEST = ${JSON.stringify(capabilityExport.entriesDigest)};`,
-      `    public const DEFINITIONS = ${body};`,
+      `    public const DEFINITIONS = ${phpArray(capabilityEntries)};`,
       "}",
       "",
     );
@@ -477,7 +501,7 @@ function renderDiagnostics(lang) {
       "final class Diagnostics {",
       `    public const REGISTRY_IDENTITY = ${JSON.stringify(registry.identity)};`,
       `    public const REGISTRY_DIGEST = ${JSON.stringify(registryInput.digest)};`,
-      `    public const CODES = ${canonicalJson(diagnosticCodes)};`,
+      `    public const CODES = ${phpArray(diagnosticCodes)};`,
       "}",
       "",
     );
@@ -627,10 +651,10 @@ function renderProtocol(lang) {
       `    public const REQUEST_ID_PREFIX = 'req-';`,
       `    public const PLAN_ID_PREFIX = 'plan-';`,
       "    /** The semantic bounds the runtime codec enforces. */",
-      `    public const BOUNDS = ${canonicalJson(SEMANTIC_BOUNDS).replace(/"([a-z_]+)":/g, "'$1' => ").replace(/"([0-9]+)"/g, "$1")};`,
+      `    public const BOUNDS = ${phpArray(Object.fromEntries(BOUNDS_PAIRS))};`,
       "    /** The closed enum vocabularies (stable wire spellings). */",
-      "    public const ENUMS = " + canonicalJson(Object.fromEntries(ENUM_TABLE.map(([name, values]) => [name, values]))).replace(/"([a-z_]+)":/g, "'$1' => ").replace(/"/g, "'") + ";",
-      `    public const OPERATIONS_BY_VERSION = ${canonicalJson(protocolVersions.map((version) => ({ operations: config.operations[version], protocolVersion: version })))};`,
+      `    public const ENUMS = ${phpArray(Object.fromEntries(ENUM_TABLE))};`,
+      `    public const OPERATIONS_BY_VERSION = ${phpArray(protocolVersions.map((version) => ({ operations: config.operations[version], protocolVersion: version })))};`,
       "}",
       "",
     );
@@ -806,7 +830,6 @@ function bundlePhpTemplate(template, generatedFiles) {
     "src/Runtime/Canonical.php",
     "src/Runtime/Logger.php",
     "src/Runtime/Decode.php",
-    "src/Runtime/Validate.php",
     "src/Runtime/Build.php",
     "src/Runtime/Serve.php",
   ];
@@ -818,9 +841,24 @@ function bundlePhpTemplate(template, generatedFiles) {
     "declare(strict_types=1);",
     "",
   ];
+  const useLines = new Set();
   for (const relative of order) {
     const generatedKey = relative.includes("/Generated/") ? relative : null;
-    const text = (generatedKey && generatedFiles.get(generatedKey)) ?? read(join("sdk/php", relative));
+    const raw = (generatedKey && generatedFiles.get(generatedKey)) ?? read(join("sdk/php", relative));
+    // Same-namespace references need no imports; collect the cross-namespace
+    // use statements and emit each exactly once at the bundle top.
+    for (const match of raw.matchAll(/^use ([^;]+);$/gm)) {
+      useLines.add(match[1]);
+    }
+  }
+  for (const useLine of [...useLines].sort()) {
+    parts.push(`use ${useLine};`);
+  }
+  if (useLines.size > 0) parts.push("");
+  for (const relative of order) {
+    const generatedKey = relative.includes("/Generated/") ? relative : null;
+    const raw = (generatedKey && generatedFiles.get(generatedKey)) ?? read(join("sdk/php", relative));
+    const text = raw.replace(/^use [^;]+;$/gm, "");
     const stripped = text
       .replace(/^<\?php\s*/,"")
       .replace(/^declare\(strict_types=1\);\s*$/m, "")
@@ -831,7 +869,7 @@ function bundlePhpTemplate(template, generatedFiles) {
   const glue = read(join("sdk/templates/php", template.name, "main.php"))
     .replace(/^<\?php\s*/, "")
     .replace(/^declare\(strict_types=1\);\s*$/m, "")
-    .replace(/^require .+;\s*$/gm, "")
+    .replace(/^use [^;]+;$/gm, "")
     .replace(/\n{3,}/g, "\n\n");
   parts.push(`// ---- sdk/templates/php/${template.name}/main.php ----`, glue.trimEnd(), "");
   return parts.join("\n");
@@ -855,10 +893,13 @@ function renderFor(lang) {
   const files = new Map();
   const ext = languageExtension[lang];
   const gen = generatedDirectory[lang];
-  files.set(`${gen}/protocol.${ext}`, renderProtocol(lang));
-  files.set(`${gen}/capabilities.${ext}`, renderCapabilities(lang));
-  files.set(`${gen}/diagnostics.${ext}`, renderDiagnostics(lang));
-  files.set(`${gen}/compatibility_tests.${ext}`, renderCompatibilityTests(lang));
+  const capitalized = lang === "php" ? (name) => name.split("_").map((part) => part[0].toUpperCase() + part.slice(1)).join("") : (name) => name;
+  // PHP files carry the strict_types prolog as the very first statement.
+  const prefix = lang === "php" ? phpProlog : "";
+  files.set(`${gen}/${capitalized("protocol")}.${ext}`, prefix + renderProtocol(lang));
+  files.set(`${gen}/${capitalized("capabilities")}.${ext}`, prefix + renderCapabilities(lang));
+  files.set(`${gen}/${capitalized("diagnostics")}.${ext}`, prefix + renderDiagnostics(lang));
+  files.set(`${gen}/${capitalized("compatibility_tests")}.${ext}`, prefix + renderCompatibilityTests(lang));
   files.set("compatibility.json", canonicalJson(compatibility));
   const outputs = [...files.entries()]
     .map(([path, text]) => ({ digest: sha256(text), path }))

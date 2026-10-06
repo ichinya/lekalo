@@ -1,0 +1,514 @@
+// Strict JSON admission for the adapter SDK (issue #106): closed
+// parsing with duplicate-key, trailing-document, explicit-null, and
+// non-finite refusals, plus the canonical byte serializer the wire
+// requires (byte-sorted keys, compact, no trailing LF).
+package runtime
+
+import (
+	"fmt"
+	"sort"
+	"strings"
+)
+
+// Value is a parsed JSON value: nil, bool, int64, float64, string,
+// []any, or map[string]any.
+type Value = any
+
+// ParseReason is the closed safe token of a strict parse refusal.
+type ParseReason string
+
+const (
+	ReasonNotJSON          ParseReason = "not-json"
+	ReasonTrailingDocument ParseReason = "trailing-document"
+	ReasonDuplicateKey     ParseReason = "duplicate-key"
+	ReasonOversize         ParseReason = "oversize"
+)
+
+type parser struct {
+	bytes []byte
+	index int
+}
+
+// StrictParse parses one complete JSON document with closed admission.
+func StrictParse(text string) (Value, ParseReason) {
+	p := &parser{bytes: []byte(text)}
+	if len(p.bytes) >= 3 && p.bytes[0] == 0xEF && p.bytes[1] == 0xBB && p.bytes[2] == 0xBF {
+		return nil, ReasonNotJSON
+	}
+	p.skipWhitespace()
+	value, reason := p.parseValue()
+	if reason != "" {
+		return nil, reason
+	}
+	p.skipWhitespace()
+	if p.index != len(p.bytes) {
+		return nil, ReasonTrailingDocument
+	}
+	return value, ""
+}
+
+// ReadSingleObject reads exactly one bounded JSON object document.
+func ReadSingleObject(text string, maxBytes int) (Value, ParseReason) {
+	if len(text) > maxBytes {
+		return nil, ReasonOversize
+	}
+	value, reason := StrictParse(text)
+	if reason != "" {
+		return nil, reason
+	}
+	if _, ok := value.(map[string]any); !ok {
+		return nil, ReasonNotJSON
+	}
+	return value, ""
+}
+
+func (p *parser) skipWhitespace() {
+	for p.index < len(p.bytes) {
+		switch p.bytes[p.index] {
+		case ' ', '\t', '\r', '\n':
+			p.index++
+		default:
+			return
+		}
+	}
+}
+
+func (p *parser) peek() (byte, bool) {
+	if p.index < len(p.bytes) {
+		return p.bytes[p.index], true
+	}
+	return 0, false
+}
+
+func (p *parser) parseValue() (Value, ParseReason) {
+	c, ok := p.peek()
+	if !ok {
+		return nil, ReasonNotJSON
+	}
+	switch {
+	case c == '{':
+		return p.parseObject()
+	case c == '[':
+		return p.parseArray()
+	case c == '"':
+		text, reason := p.parseString()
+		if reason != "" {
+			return nil, reason
+		}
+		return text, ""
+	case c == 't':
+		return p.parseLiteral("true", true)
+	case c == 'f':
+		return p.parseLiteral("false", false)
+	case c == 'n':
+		return p.parseLiteral("null", nil)
+	case c == '-' || (c >= '0' && c <= '9'):
+		return p.parseNumber()
+	default:
+		return nil, ReasonNotJSON
+	}
+}
+
+func (p *parser) parseLiteral(literal string, value Value) (Value, ParseReason) {
+	if strings.HasPrefix(string(p.bytes[p.index:]), literal) {
+		p.index += len(literal)
+		return value, ""
+	}
+	return nil, ReasonNotJSON
+}
+
+func (p *parser) parseObject() (Value, ParseReason) {
+	p.index++
+	members := map[string]any{}
+	p.skipWhitespace()
+	if c, _ := p.peek(); c == '}' {
+		p.index++
+		return members, ""
+	}
+	for {
+		p.skipWhitespace()
+		if c, _ := p.peek(); c != '"' {
+			return nil, ReasonNotJSON
+		}
+		key, reason := p.parseString()
+		if reason != "" {
+			return nil, reason
+		}
+		p.skipWhitespace()
+		if c, _ := p.peek(); c != ':' {
+			return nil, ReasonNotJSON
+		}
+		p.index++
+		p.skipWhitespace()
+		value, reason := p.parseValue()
+		if reason != "" {
+			return nil, reason
+		}
+		if _, duplicate := members[key]; duplicate {
+			return nil, ReasonDuplicateKey
+		}
+		members[key] = value
+		p.skipWhitespace()
+		next, _ := p.peek()
+		switch next {
+		case ',':
+			p.index++
+		case '}':
+			p.index++
+			return members, ""
+		default:
+			return nil, ReasonNotJSON
+		}
+	}
+}
+
+func (p *parser) parseArray() (Value, ParseReason) {
+	p.index++
+	items := []any{}
+	p.skipWhitespace()
+	if c, _ := p.peek(); c == ']' {
+		p.index++
+		return items, ""
+	}
+	for {
+		p.skipWhitespace()
+		value, reason := p.parseValue()
+		if reason != "" {
+			return nil, reason
+		}
+		items = append(items, value)
+		p.skipWhitespace()
+		next, _ := p.peek()
+		switch next {
+		case ',':
+			p.index++
+		case ']':
+			p.index++
+			return items, ""
+		default:
+			return nil, ReasonNotJSON
+		}
+	}
+}
+
+func (p *parser) parseString() (string, ParseReason) {
+	p.index++
+	var out strings.Builder
+	for {
+		if p.index >= len(p.bytes) {
+			return "", ReasonNotJSON
+		}
+		c := p.bytes[p.index]
+		p.index++
+		switch {
+		case c == '"':
+			return out.String(), ""
+		case c == '\\':
+			if p.index >= len(p.bytes) {
+				return "", ReasonNotJSON
+			}
+			escape := p.bytes[p.index]
+			p.index++
+			switch escape {
+			case '"':
+				out.WriteByte('"')
+			case '\\':
+				out.WriteByte('\\')
+			case '/':
+				out.WriteByte('/')
+			case 'b':
+				out.WriteByte(0x08)
+			case 'f':
+				out.WriteByte(0x0C)
+			case 'n':
+				out.WriteByte('\n')
+			case 'r':
+				out.WriteByte('\r')
+			case 't':
+				out.WriteByte('\t')
+			case 'u':
+				if p.index+4 > len(p.bytes) {
+					return "", ReasonNotJSON
+				}
+				var high int
+				if _, err := fmt.Sscanf(string(p.bytes[p.index:p.index+4]), "%04x", &high); err != nil {
+					return "", ReasonNotJSON
+				}
+				p.index += 4
+				if high >= 0xD800 && high < 0xDC00 {
+					if p.index+6 <= len(p.bytes) && p.bytes[p.index] == '\\' && p.bytes[p.index+1] == 'u' {
+						var low int
+						if _, err := fmt.Sscanf(string(p.bytes[p.index+2:p.index+6]), "%04x", &low); err != nil {
+							return "", ReasonNotJSON
+						}
+						p.index += 6
+						combined := rune(0x10000 + (rune(high)-0xD800)<<10 + (rune(low) - 0xDC00))
+						out.WriteRune(combined)
+					} else {
+						return "", ReasonNotJSON
+					}
+				} else {
+					out.WriteRune(rune(high))
+				}
+			default:
+				return "", ReasonNotJSON
+			}
+		case c <= 0x1F:
+			return "", ReasonNotJSON
+		default:
+			width := utf8Width(c)
+			if width == 0 || p.index-1+width > len(p.bytes) {
+				return "", ReasonNotJSON
+			}
+			chunk := string(p.bytes[p.index-1 : p.index-1+width])
+			if strings.ContainsRune(chunk, 0xFFFD) {
+				return "", ReasonNotJSON
+			}
+			out.WriteString(chunk)
+			p.index += width - 1
+		}
+	}
+}
+
+func utf8Width(byte byte) int {
+	switch {
+	case byte < 0x80:
+		return 1
+	case byte >= 0xC2 && byte < 0xE0:
+		return 2
+	case byte >= 0xE0 && byte < 0xF0:
+		return 3
+	case byte >= 0xF0 && byte < 0xF5:
+		return 4
+	default:
+		return 0
+	}
+}
+
+func (p *parser) parseNumber() (Value, ParseReason) {
+	start := p.index
+	if c, _ := p.peek(); c == '-' {
+		p.index++
+	}
+	for {
+		if c, ok := p.peek(); ok && c >= '0' && c <= '9' {
+			p.index++
+			continue
+		}
+		break
+	}
+	isFloat := false
+	if c, _ := p.peek(); c == '.' {
+		isFloat = true
+		p.index++
+		for {
+			if c, ok := p.peek(); ok && c >= '0' && c <= '9' {
+				p.index++
+				continue
+			}
+			break
+		}
+	}
+	if c, _ := p.peek(); c == 'e' || c == 'E' {
+		isFloat = true
+		p.index++
+		if c, _ := p.peek(); c == '+' || c == '-' {
+			p.index++
+		}
+		for {
+			if c, ok := p.peek(); ok && c >= '0' && c <= '9' {
+				p.index++
+				continue
+			}
+			break
+		}
+	}
+	text := string(p.bytes[start:p.index])
+	if text == "" || text == "-" {
+		return nil, ReasonNotJSON
+	}
+	if isFloat {
+		var value float64
+		if _, err := fmt.Sscanf(text, "%g", &value); err != nil {
+			return nil, ReasonNotJSON
+		}
+		return value, ""
+	}
+	var value int64
+	if _, err := fmt.Sscanf(text, "%d", &value); err != nil {
+		var fallback float64
+		if _, err := fmt.Sscanf(text, "%g", &fallback); err != nil {
+			return nil, ReasonNotJSON
+		}
+		return fallback, ""
+	}
+	return value, ""
+}
+
+// Canonical renders the byte-sorted compact JSON form (no trailing LF).
+func Canonical(value Value) string {
+	var out strings.Builder
+	writeCanonical(&out, value)
+	return out.String()
+}
+
+func writeCanonical(out *strings.Builder, value Value) {
+	switch typed := value.(type) {
+	case nil:
+		out.WriteString("null")
+	case bool:
+		if typed {
+			out.WriteString("true")
+		} else {
+			out.WriteString("false")
+		}
+	case int:
+		out.WriteString(fmt.Sprintf("%d", typed))
+	case int64:
+		out.WriteString(fmt.Sprintf("%d", typed))
+	case float64:
+		if typed == float64(int64(typed)) {
+			out.WriteString(fmt.Sprintf("%d", int64(typed)))
+		} else {
+			out.WriteString(fmt.Sprintf("%g", typed))
+		}
+	case string:
+		out.WriteString(Quote(typed))
+	case []any:
+		out.WriteByte('[')
+		for index, item := range typed {
+			if index > 0 {
+				out.WriteByte(',')
+			}
+			writeCanonical(out, item)
+		}
+		out.WriteByte(']')
+	case map[string]any:
+		keys := make([]string, 0, len(typed))
+		for key := range typed {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		out.WriteByte('{')
+		for index, key := range keys {
+			if index > 0 {
+				out.WriteByte(',')
+			}
+			out.WriteString(Quote(key))
+			out.WriteByte(':')
+			writeCanonical(out, typed[key])
+		}
+		out.WriteByte('}')
+	default:
+		out.WriteString("null")
+	}
+}
+
+// Quote renders one JSON string literal with the closed escape set.
+func Quote(text string) string {
+	var out strings.Builder
+	out.WriteByte('"')
+	for _, c := range text {
+		switch c {
+		case '"':
+			out.WriteString("\\\"")
+		case '\\':
+			out.WriteString("\\\\")
+		case '\n':
+			out.WriteString("\\n")
+		case '\r':
+			out.WriteString("\\r")
+		case '\t':
+			out.WriteString("\\t")
+		case 0x08:
+			out.WriteString("\\b")
+		case 0x0C:
+			out.WriteString("\\f")
+		default:
+			if c < 0x20 {
+				out.WriteString(fmt.Sprintf("\\u%04x", c))
+			} else {
+				out.WriteRune(c)
+			}
+		}
+	}
+	out.WriteByte('"')
+	return out.String()
+}
+
+// Members returns the object member keys (nil when not an object).
+func Members(value Value) map[string]Value {
+	if object, ok := value.(map[string]any); ok {
+		result := make(map[string]Value, len(object))
+		for key, member := range object {
+			result[key] = member
+		}
+		return result
+	}
+	return nil
+}
+
+// GetString returns the string member or "".
+func GetString(object Value, key string) string {
+	if object, ok := object.(map[string]any); ok {
+		if text, ok := object[key].(string); ok {
+			return text
+		}
+	}
+	return ""
+}
+
+// GetArray returns the array member or nil.
+func GetArray(object Value, key string) []any {
+	if object, ok := object.(map[string]any); ok {
+		if items, ok := object[key].([]any); ok {
+			return items
+		}
+	}
+	return nil
+}
+
+// Has reports whether the member exists (including explicit null).
+func Has(object Value, key string) bool {
+	object_, ok := object.(map[string]any)
+	if !ok {
+		return false
+	}
+	_, exists := object_[key]
+	return exists
+}
+
+// IsNull reports an explicit null member.
+func IsNull(object Value, key string) bool {
+	object_, ok := object.(map[string]any)
+	if !ok {
+		return false
+	}
+	value, exists := object_[key]
+	return exists && value == nil
+}
+
+// GetNumber returns the non-negative integer member value.
+func GetNumber(object Value, key string) (int64, bool) {
+	if object, ok := object.(map[string]any); ok {
+		switch typed := object[key].(type) {
+		case int64:
+			return typed, true
+		case float64:
+			if typed == float64(int64(typed)) {
+				return int64(typed), true
+			}
+		}
+	}
+	return 0, false
+}
+
+// GetBool returns the boolean member.
+func GetBool(object Value, key string) (bool, bool) {
+	if object, ok := object.(map[string]any); ok {
+		if value, ok := object[key].(bool); ok {
+			return value, true
+		}
+	}
+	return false, false
+}
