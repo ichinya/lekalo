@@ -1,0 +1,19 @@
+schema_version: "0.2.16"
+definitions:
+  - id: tasks.get_task
+    kind: query
+    version: 1
+    description: "Read one task view"
+    reads:
+      - "tasks.task"
+    returns:
+      ref: "tasks.task_view"
+  - id: tasks.list_tasks
+    kind: query
+    version: 1
+    description: "List task views"
+    reads:
+      - "tasks.task"
+    returns:
+      list:
+        ref: "tasks.task_view"

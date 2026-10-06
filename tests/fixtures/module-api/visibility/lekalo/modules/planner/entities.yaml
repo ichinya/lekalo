@@ -1,0 +1,20 @@
+schema_version: "0.2.16"
+definitions:
+  - id: planner.focus
+    kind: entity
+    version: 1
+    description: "One focus decision referencing an unexported tasks symbol"
+    fields:
+      - name: title
+        type: "tasks.title"
+        required: true
+      - name: state
+        type: "tasks.task_state"
+        required: true
+    identity:
+      - title
+  - id: planner.internal_note
+    kind: scalar
+    version: 1
+    description: "A module-private helper symbol"
+    base: string

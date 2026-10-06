@@ -21,6 +21,13 @@ pub(crate) fn owner_of(symbol: &str) -> Option<&str> {
     symbol.split_once('.').map(|(owner, _)| owner)
 }
 
+/// The owner module of one kind-qualified graph id
+/// (`operation:module.symbol`, `entity:module.symbol`).
+pub(crate) fn owner_of_qualified(qualified: &str) -> Option<&str> {
+    let symbol = qualified.split_once(':').map(|(_, id)| id).unwrap_or(qualified);
+    owner_of(symbol)
+}
+
 /// One checked grant: the typed selection scope.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct GrantScope {
@@ -55,10 +62,10 @@ pub fn check_writes(
         };
         let resource = edge.key().subject().resource().as_str();
         let operation = edge.key().operation().as_str();
-        let Some(consumer) = owner_of(operation) else {
+        let Some(consumer) = owner_of_qualified(operation) else {
             continue;
         };
-        let Some(producer) = owner_of(resource) else {
+        let Some(producer) = owner_of_qualified(resource) else {
             continue;
         };
         if consumer == producer {

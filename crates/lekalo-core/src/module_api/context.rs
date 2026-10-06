@@ -155,7 +155,7 @@ pub fn plan_consumer_context(
     let producer = bundle.producer.clone();
     let producer_digest = bundle.digest.clone();
     let capsule = ContextCapsule {
-        schema_version: format!("{}v{}", wire::CONTEXT_SCHEMA, wire::VERSION),
+        schema_version: format!("{}/v{}", wire::CONTEXT_SCHEMA, wire::VERSION),
         identity: format!("{}@{}", wire::CONTEXT_IDENTITY, wire::VERSION),
         consumer: consumer.to_owned(),
         producer,

@@ -55,7 +55,7 @@ const EXPORT_KINDS: &[(&str, DefinitionKind)] = &[
 /// is one invalid set; nothing partial is ever returned.
 pub fn resolve(bytes: &[u8], compilation: &Compilation) -> Result<Resolved, DiagnosticSet> {
     let attachment: Attachment = wire::decode(bytes, invalid)?;
-    if attachment.schema_version != format!("{}v{}", wire::API_SCHEMA, wire::VERSION)
+    if attachment.schema_version != format!("{}/v{}", wire::API_SCHEMA, wire::VERSION)
         || attachment.identity != format!("{}@{}", wire::API_IDENTITY, wire::VERSION)
     {
         return Err(super::diagnostic::unsupported_version(
@@ -219,10 +219,11 @@ pub fn resolve(bytes: &[u8], compilation: &Compilation) -> Result<Resolved, Diag
             }
         }
     }
-    // Cross-module consumer declarations must name a declared producer.
+    // Cross-module consumer declarations: source-mode consumers must be
+    // in-project modules; wire-mode consumers may be external callers.
     for module in modules.values() {
         for consumer in &module.consumers {
-            if !modules.contains_key(&consumer.consumer) {
+            if consumer.mode == "source" && !modules.contains_key(&consumer.consumer) {
                 return Err(invalid("unknown-consumer"));
             }
         }

@@ -189,7 +189,7 @@ pub fn compare_public(
         "compatible"
     };
     let report = DiffReport {
-        schema_version: format!("{}v{}", wire::DIFF_SCHEMA, wire::VERSION),
+        schema_version: format!("{}/v{}", wire::DIFF_SCHEMA, wire::VERSION),
         identity: format!("{}@{}", wire::DIFF_IDENTITY, wire::VERSION),
         before: DiffSide {
             module: module.clone(),

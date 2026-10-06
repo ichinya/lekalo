@@ -104,6 +104,12 @@ pub fn check(
             if producer == consumer {
                 continue;
             }
+            // The dedicated cross-owner-write rule owns effect-entity write
+            // sites; the export allowlist rule never double-reports them.
+            if matches!(definition, crate::ir::Definition::Effect(effect) if effect.entity.as_str() == reference)
+            {
+                continue;
+            }
             // Existing direct private-reference findings keep their rule;
             // this seam reports only the new project-visible-but-unexported
             // violation, once per (consumer, reference).
@@ -284,7 +290,7 @@ pub fn check(
         ("pass", FindingClass::Boundary)
     };
     let report = Report {
-        schema_version: format!("{}v{}", wire::REPORT_SCHEMA, wire::VERSION),
+        schema_version: format!("{}/v{}", wire::REPORT_SCHEMA, wire::VERSION),
         identity: format!("{}@{}", wire::REPORT_IDENTITY, wire::VERSION),
         assessment: assessment.to_owned(),
         command: "check".to_owned(),
@@ -382,7 +388,7 @@ fn closure_findings(
             evidence.push(finding);
             continue;
         }
-        for reference in effects::references_of(definition) {
+        for reference in shape_references_of(definition) {
             let Some(owner) = reference.split_once('.').map(|(owner, _)| owner) else {
                 continue;
             };
@@ -398,6 +404,52 @@ fn closure_findings(
         }
     }
     Ok(())
+}
+
+/// The public *shape* references of one definition: exported type closure
+/// walks field/return/payload types only. Query reads stay private query
+/// plans; command effect obligations name entities by identity without
+/// forcing their internal aggregate shapes into the public closure; and
+/// policy/endpoint/scenario wiring is not a type shape.
+fn shape_references_of(definition: &crate::ir::Definition) -> Vec<&str> {
+    let mut references = Vec::new();
+    fn push_type<'a>(type_ref: &'a crate::ir::TypeRef, references: &mut Vec<&'a str>) {
+        match type_ref {
+            crate::ir::TypeRef::Ref(symbol) => references.push(symbol.as_str()),
+            crate::ir::TypeRef::List(inner) | crate::ir::TypeRef::Optional(inner) => {
+                push_type(inner, references)
+            }
+        }
+    }
+    match definition {
+        crate::ir::Definition::ValueObject(value_object) => {
+            for field in &value_object.fields {
+                push_type(&field.r#type, &mut references);
+            }
+        }
+        crate::ir::Definition::Entity(entity) => {
+            for field in &entity.fields {
+                push_type(&field.r#type, &mut references);
+            }
+        }
+        crate::ir::Definition::Command(command) => {
+            for field in &command.input {
+                push_type(&field.r#type, &mut references);
+            }
+        }
+        crate::ir::Definition::Query(query) => {
+            if let Some(returns) = &query.returns {
+                push_type(returns, &mut references);
+            }
+        }
+        crate::ir::Definition::Event(event) => {
+            for field in &event.payload {
+                push_type(&field.r#type, &mut references);
+            }
+        }
+        _ => {}
+    }
+    references
 }
 
 fn owner_of(symbol: &str) -> Option<&str> {

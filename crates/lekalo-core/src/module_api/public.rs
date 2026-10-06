@@ -103,7 +103,7 @@ pub fn export_public(
         0,
     )?;
     let partial = PublicBundle {
-        schema_version: format!("{}v{}", wire::PUBLIC_SCHEMA, wire::VERSION),
+        schema_version: format!("{}/v{}", wire::PUBLIC_SCHEMA, wire::VERSION),
         identity: format!("{}@{}", wire::PUBLIC_IDENTITY, wire::VERSION),
         producer,
         api_version: api_version.clone(),
@@ -490,7 +490,7 @@ fn convert_error_type(expression: &crate::error_contract::types::TypeExpr) -> Ty
 /// Parse and validate a public bundle document (the diff/context seam).
 pub fn parse_bundle(bytes: &[u8]) -> Result<PublicBundle, DiagnosticSet> {
     let bundle: PublicBundle = wire::decode(bytes, invalid)?;
-    if bundle.schema_version != format!("{}v{}", wire::PUBLIC_SCHEMA, wire::VERSION)
+    if bundle.schema_version != format!("{}/v{}", wire::PUBLIC_SCHEMA, wire::VERSION)
         || bundle.identity != format!("{}@{}", wire::PUBLIC_IDENTITY, wire::VERSION)
     {
         return Err(super::diagnostic::unsupported_version(&bundle.schema_version));

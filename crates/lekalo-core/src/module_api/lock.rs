@@ -47,7 +47,7 @@ pub fn resolve_lock(
         .cloned()
         .collect();
     Ok(ConsumerLock {
-        schema_version: format!("{}v{}", wire::LOCK_SCHEMA, wire::VERSION),
+        schema_version: format!("{}/v{}", wire::LOCK_SCHEMA, wire::VERSION),
         identity: format!("{}@{}", wire::LOCK_IDENTITY, wire::VERSION),
         consumer: consumer.to_owned(),
         producer: ProducerPin {
@@ -97,7 +97,7 @@ fn type_uses(expression: &super::wire::TypeExpr, exports: &[String]) -> bool {
 /// Parse and validate a consumer lock document.
 pub fn parse_lock(bytes: &[u8]) -> Result<ConsumerLock, DiagnosticSet> {
     let lock: ConsumerLock = super::wire::decode(bytes, super::diagnostic::invalid)?;
-    if lock.schema_version != format!("{}v{}", wire::LOCK_SCHEMA, wire::VERSION)
+    if lock.schema_version != format!("{}/v{}", wire::LOCK_SCHEMA, wire::VERSION)
         || lock.identity != format!("{}@{}", wire::LOCK_IDENTITY, wire::VERSION)
     {
         return Err(super::diagnostic::unsupported_version(&lock.schema_version));

@@ -133,7 +133,7 @@ pub fn consumer_snapshot(
         module: producer.to_owned(),
     };
     let partial = ConsumerSnapshot {
-        schema_version: format!("{}v{}", wire::CONSUMERS_SCHEMA, wire::VERSION),
+        schema_version: format!("{}/v{}", wire::CONSUMERS_SCHEMA, wire::VERSION),
         identity: format!("{}@{}", wire::CONSUMERS_IDENTITY, wire::VERSION),
         producer: producer_pin,
         pins,
@@ -151,7 +151,7 @@ pub fn consumer_snapshot(
 /// Parse and validate a consumer snapshot document (the diff seam).
 pub fn parse_snapshot(bytes: &[u8]) -> Result<ConsumerSnapshot, DiagnosticSet> {
     let snapshot: ConsumerSnapshot = wire::decode(bytes, invalid)?;
-    if snapshot.schema_version != format!("{}v{}", wire::CONSUMERS_SCHEMA, wire::VERSION)
+    if snapshot.schema_version != format!("{}/v{}", wire::CONSUMERS_SCHEMA, wire::VERSION)
         || snapshot.identity != format!("{}@{}", wire::CONSUMERS_IDENTITY, wire::VERSION)
     {
         return Err(super::diagnostic::unsupported_version(&snapshot.schema_version));

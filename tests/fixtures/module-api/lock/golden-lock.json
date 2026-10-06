@@ -1,0 +1,24 @@
+{
+  "apiVersion": "1.2.0",
+  "consumer": "planner",
+  "digest": "sha256:d4a665255fdf29a072123fd493239d93db40bce0de7482bf63da1d5f36c4115e",
+  "identity": "dev.lekalo.module-api-lock@0.8.0",
+  "policy": {
+    "lower": "1.0.0",
+    "lowerInclusive": true,
+    "type": "version-range",
+    "upper": "2.0.0",
+    "upperInclusive": false
+  },
+  "producer": {
+    "module": "tasks",
+    "project": "tasks"
+  },
+  "publicDependencies": [],
+  "schemaVersion": "lekalo/module-api-lock/v0.8.0",
+  "selected": [
+    "tasks.task_view",
+    "tasks.get_task",
+    "tasks.task_id"
+  ]
+}
