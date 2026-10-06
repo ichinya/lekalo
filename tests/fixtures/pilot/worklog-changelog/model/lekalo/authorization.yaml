@@ -1,0 +1,251 @@
+schema_version: "lekalo/authorization/v0.2.16"
+identity: "dev.lekalo.authorization@0.2.16"
+model_ref:
+  schema_version: "0.2.16"
+  ir_digest: "sha256:d3691b23b33e7d4dd9764671ec1040f8ec3080fa2b3d1b8e2857a4547fb56d41"
+profile_ref: "dev.lekalo.authorization-profile@0.2.16"
+capabilities:
+  - id: taskhub.cap.task_write
+  - id: taskhub.cap.worklog_write
+    implies:
+      - "taskhub.cap.task_write"
+  - id: taskhub.cap.provider_request
+  - id: taskhub.cap.changelog_publish
+roles:
+  - id: taskhub.role.public_reader
+  - id: taskhub.role.member
+  - id: taskhub.role.service_worker
+    implies:
+      - "taskhub.role.member"
+  - id: taskhub.role.publishing_authority
+    implies:
+      - "taskhub.role.member"
+policies:
+  - id: taskhub.policy.complete_own_task
+    actor: identity.user
+    decision: allow
+    error_ref: "taskhub.error.forbidden"
+    applies_to:
+      - "worklog.complete_task"
+    scope:
+      tenant:
+        source: "actor.tenant_id"
+        relation: equality
+        anchor: "resource.tenant_id"
+      workspace:
+        source: "actor.workspace_id"
+        relation: equality
+        anchor: "resource.workspace_id"
+    roles:
+      - "taskhub.role.member"
+    capabilities:
+      - "taskhub.cap.task_write"
+    fields:
+      read:
+        - state
+        - task_id
+        - tenant_id
+        - workspace_id
+        - record_revision
+      write:
+        - state
+        - record_revision
+  - id: taskhub.policy.write_own_worklog
+    actor: identity.user
+    decision: allow
+    error_ref: "taskhub.error.forbidden"
+    applies_to:
+      - "worklog.write_worklog"
+      - "worklog.edit_worklog"
+    scope:
+      tenant:
+        source: "actor.tenant_id"
+        relation: equality
+        anchor: "resource.tenant_id"
+      workspace:
+        source: "actor.workspace_id"
+        relation: equality
+        anchor: "resource.workspace_id"
+      user:
+        source: "actor.id"
+        relation: ownership
+        anchor: "resource.author_id"
+    roles:
+      - "taskhub.role.member"
+    capabilities:
+      - "taskhub.cap.worklog_write"
+    fields:
+      read:
+        - author_id
+        - body
+        - record_revision
+        - task_id
+        - tenant_id
+        - workspace_id
+      write:
+        - author_id
+        - body
+        - record_revision
+  - id: taskhub.policy.request_provider_comment
+    actor: identity.user
+    decision: allow
+    error_ref: "taskhub.error.forbidden"
+    applies_to:
+      - "worklog.request_provider_comment"
+    scope:
+      tenant:
+        source: "actor.tenant_id"
+        relation: equality
+        anchor: "resource.tenant_id"
+    roles:
+      - "taskhub.role.member"
+    capabilities:
+      - "taskhub.cap.provider_request"
+    fields:
+      read:
+        - correlation_key
+        - payload_digest
+        - task_id
+        - tenant_id
+      write:
+        - correlation_key
+        - delivery_state
+        - payload_digest
+        - record_revision
+  - id: taskhub.policy.service_delivers_provider
+    actor: identity.service
+    decision: allow
+    error_ref: "taskhub.error.forbidden"
+    applies_to:
+      - "worklog.deliver_provider_comment"
+    scope:
+      tenant:
+        source: "resource.tenant_id"
+        relation: equality
+        anchor: "resource.tenant_id"
+    roles:
+      - "taskhub.role.service_worker"
+    fields:
+      read:
+        - action_id
+        - payload_digest
+        - tenant_id
+      write:
+        - delivery_state
+        - record_revision
+  - id: taskhub.policy.changelog_opt_in
+    actor: identity.user
+    decision: allow
+    error_ref: "taskhub.error.forbidden"
+    applies_to:
+      - "changelog.create_draft"
+      - "changelog.edit_draft"
+    scope:
+      tenant:
+        source: "actor.tenant_id"
+        relation: equality
+        anchor: "resource.tenant_id"
+      workspace:
+        source: "actor.workspace_id"
+        relation: equality
+        anchor: "resource.workspace_id"
+    roles:
+      - "taskhub.role.member"
+    fields:
+      read:
+        - draft_body
+        - entry_id
+        - record_revision
+        - tenant_id
+      write:
+        - draft_body
+        - record_revision
+  - id: taskhub.policy.changelog_review
+    actor: identity.user
+    decision: allow
+    error_ref: "taskhub.error.forbidden"
+    applies_to:
+      - "changelog.preview_entry"
+    scope:
+      tenant:
+        source: "actor.tenant_id"
+        relation: equality
+        anchor: "resource.tenant_id"
+    roles:
+      - "taskhub.role.member"
+    fields:
+      read:
+        - body
+        - draft_body
+        - entry_id
+        - record_revision
+        - tenant_id
+      write:
+        - body
+        - record_revision
+  - id: taskhub.policy.changelog_authority
+    actor: identity.user
+    decision: allow
+    error_ref: "taskhub.error.forbidden"
+    applies_to:
+      - "changelog.approve_entry"
+      - "changelog.publish_entry"
+      - "changelog.withdraw_entry"
+    scope:
+      tenant:
+        source: "actor.tenant_id"
+        relation: equality
+        anchor: "resource.tenant_id"
+    roles:
+      - "taskhub.role.publishing_authority"
+    capabilities:
+      - "taskhub.cap.changelog_publish"
+    fields:
+      read:
+        - approval_id
+        - body
+        - content_digest
+        - destination
+        - entry_id
+        - lifecycle
+        - policy_revision
+        - preview_digest
+        - preview_revision
+        - publishing_authority
+        - record_revision
+        - revision
+        - tenant_id
+        - visibility
+      write:
+        - content_digest
+        - lifecycle
+        - record_revision
+        - revision
+        - snapshot_schema_version
+        - visibility
+  - id: taskhub.policy.public_read_snapshot
+    actor: public
+    decision: allow
+    error_ref: "taskhub.error.unauthorized"
+    applies_to:
+      - "changelog.public_entry"
+      - "changelog.public_entries"
+    fields:
+      read:
+        - body
+        - content_digest
+        - entry_id
+        - published_at
+        - revision
+        - snapshot_schema_version
+compositions:
+  - id: taskhub.comp.publish_gate
+    all_of:
+      - "taskhub.policy.changelog_authority"
+mappings:
+  - target: "rest/gateway"
+    authorization_contract_ref: "dev.lekalo.authorization@0.2.16"
+    semantic_policy_ref: "taskhub.policy.complete_own_task"
+    mapping_state: full
+    evidence_ref: "lekalo/targets/pilot.yaml"
+    observed_revision: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
