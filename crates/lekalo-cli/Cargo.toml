@@ -20,4 +20,5 @@ lekalo-core.workspace = true
 [dependencies]
 clap.workspace = true
 lekalo-core.workspace = true
+serde.workspace = true
 serde_json.workspace = true
