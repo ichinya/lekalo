@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.mcp-tool-trace-export-output@0.8.0",
+  "title": "Lekalo MCP tool output: trace-export",
+  "description": "Issue #33 closed result envelope of the trace-export tool. status \"valid\" carries the preserved core receipt in \"result\"; every other status carries the typed \"failure\" branch and never a fabricated payload. Presence of result/failure per status, and refusal classes, are enforced semantically by the server and by scripts/test-mcp-contracts.mjs.",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/mcp-tool-trace-export-output/v0.8.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.mcp-tool-trace-export-output@0.8.0"
+    },
+    "tool": {
+      "const": "lekalo_trace_export"
+    },
+    "scope": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,63}$"
+        },
+        "groupId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-z][a-z0-9-]{0,63}$"
+        }
+      },
+      "required": [
+        "projectId",
+        "groupId"
+      ],
+      "additionalProperties": false
+    },
+    "snapshotRef": {
+      "type": "string",
+      "pattern": "^sha256-[0-9a-f]{64}$"
+    },
+    "status": {
+      "enum": [
+        "valid",
+        "invalid",
+        "denied",
+        "unsupported",
+        "unavailable",
+        "unsupported-version"
+      ]
+    },
+    "contractPins": {
+      "type": "object",
+      "properties": {
+        "diagnostic": {
+          "const": "0.2.16"
+        },
+        "diagnosticRegistry": {
+          "const": "0.8.0"
+        },
+        "protocolProfile": {
+          "const": "2025-11-25"
+        },
+        "traceManifest": {
+          "const": "0.2.16"
+        }
+      },
+      "required": [
+        "diagnostic",
+        "diagnosticRegistry",
+        "protocolProfile",
+        "traceManifest"
+      ],
+      "additionalProperties": false
+    },
+    "diagnostics": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object"
+      },
+      "description": "Wire diagnostic items (lekalo/diagnostic/v0.2.16) resolved against dev.lekalo.diagnostic-registry@0.8.0; scripts/test-mcp-contracts.mjs validates every item against the published diagnostic schema and the union registry."
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": "lekalo/trace-manifest/v0.2.16"
+        },
+        "identity": {
+          "const": "dev.lekalo.trace-manifest@0.2.16"
+        },
+        "trace": {
+          "type": "object"
+        },
+        "manifestDigest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "identity",
+        "trace",
+        "manifestDigest"
+      ],
+      "additionalProperties": false
+    },
+    "failure": {
+      "type": "object",
+      "properties": {
+        "failureClass": {
+          "enum": [
+            "invalid-input",
+            "scope-denied",
+            "sensitive-output",
+            "request-limit",
+            "output-limit",
+            "timeout",
+            "cancelled",
+            "contract-unsupported",
+            "snapshot-stale",
+            "backend-unavailable",
+            "result-invalid",
+            "domain-invalid",
+            "domain-denied",
+            "domain-unavailable",
+            "domain-unsupported",
+            "domain-unsupported-version"
+          ]
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "failureClass"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "identity",
+    "tool",
+    "scope",
+    "snapshotRef",
+    "status",
+    "contractPins",
+    "diagnostics"
+  ],
+  "additionalProperties": false
+}

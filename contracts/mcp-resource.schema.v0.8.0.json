@@ -1,0 +1,239 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.mcp-resource@0.8.0",
+  "title": "Lekalo MCP resource envelope",
+  "description": "Issue #33 closed resource identity, scope, revision, data, and bounded-page metadata of the five resource families. Per-kind data branches are nested; kind/data coherence is enforced semantically by the server and the contract gate.",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/mcp-resource/v0.8.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.mcp-resource@0.8.0"
+    },
+    "kind": {
+      "enum": [
+        "project-summary",
+        "module-list",
+        "symbol-metadata",
+        "target-status",
+        "diagnostics"
+      ]
+    },
+    "uri": {
+      "type": "string",
+      "pattern": "^lekalo://[a-z][a-z0-9-]{0,63}/[a-z][a-zA-Z0-9/-]{0,240}$"
+    },
+    "scope": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,63}$"
+        },
+        "groupId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-z][a-z0-9-]{0,63}$"
+        }
+      },
+      "required": [
+        "projectId",
+        "groupId"
+      ],
+      "additionalProperties": false
+    },
+    "revision": {
+      "type": "string",
+      "pattern": "^sha256-[0-9a-f]{64}$"
+    },
+    "data": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "project": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,63}$"
+            },
+            "modelVersion": {
+              "type": "string",
+              "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+            },
+            "moduleCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "definitionCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "unknownStates": {
+              "type": "array",
+              "maxItems": 16,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z-]{1,32}$"
+              }
+            }
+          },
+          "required": [
+            "project",
+            "modelVersion",
+            "moduleCount",
+            "definitionCount",
+            "unknownStates"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "modules": {
+              "type": "array",
+              "maxItems": 500,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                  },
+                  "definitionCount": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "id",
+                  "definitionCount"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "modules"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "schemaVersion": {
+              "const": "lekalo/inspect/v0.2.16"
+            },
+            "identity": {
+              "const": "dev.lekalo.inspect@0.2.16"
+            },
+            "inspect": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "schemaVersion",
+            "identity",
+            "inspect"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "schemaVersion": {
+              "const": "lekalo/doctor/v0.3.2"
+            },
+            "identity": {
+              "const": "dev.lekalo.doctor@0.3.2"
+            },
+            "doctor": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "schemaVersion",
+            "identity",
+            "doctor"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "diagnosticCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "evidenceCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "complete": {
+              "type": "boolean"
+            },
+            "reasons": {
+              "type": "array",
+              "maxItems": 16,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z-]{1,48}$"
+              }
+            }
+          },
+          "required": [
+            "diagnosticCount",
+            "evidenceCount",
+            "complete"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "page": {
+      "type": "object",
+      "properties": {
+        "cursor": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 256
+        },
+        "returned": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 500
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "cursor",
+        "nextCursor",
+        "returned",
+        "total"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "identity",
+    "kind",
+    "uri",
+    "scope",
+    "revision",
+    "data"
+  ],
+  "additionalProperties": false
+}

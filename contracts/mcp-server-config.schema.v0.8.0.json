@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.mcp-server-config@0.8.0",
+  "title": "Lekalo MCP server config (trusted catalog)",
+  "description": "Issue #33 trusted launcher catalog for `lekalo mcp serve`: admitted projects with physical roots, named module allow-list groups, approved trace manifest inputs, changed-mode Git admission, and optional limit reductions. Physical roots never appear in discovery or result payloads; this config is not a persisted canonical artifact.",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/mcp-server-config/v0.8.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.mcp-server-config@0.8.0"
+    },
+    "projects": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 128,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,63}$"
+          },
+          "root": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        },
+        "required": [
+          "id",
+          "root"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "groups": {
+      "type": "array",
+      "maxItems": 128,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,63}$"
+          },
+          "projectId": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,63}$"
+          },
+          "modules": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 500,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,63}$"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "modules"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "manifests": {
+      "type": "array",
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,63}$"
+          },
+          "projectId": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,63}$"
+          },
+          "path": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9/._-]{0,511}$",
+            "description": "Project-relative logical path of one approved trace manifest input; no traversal, no backslash, no dot segments."
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "path"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "git": {
+      "type": "object",
+      "properties": {
+        "changedMode": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "changedMode"
+      ],
+      "additionalProperties": false,
+      "description": "Explicit admission of changed-mode Git access per project catalog; without it the changed impact mode refuses instead of scanning."
+    },
+    "limits": {
+      "type": "object",
+      "properties": {
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30000
+        },
+        "maxResponseBytes": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 1048576
+        },
+        "pageSize": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      },
+      "additionalProperties": false,
+      "description": "Optional reductions of the server defaults; never a raise."
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "identity",
+    "projects"
+  ],
+  "additionalProperties": false
+}

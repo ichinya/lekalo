@@ -1,0 +1,265 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.mcp-tool-graph-output@0.8.0",
+  "title": "Lekalo MCP tool output: graph",
+  "description": "Issue #33 closed result envelope of the graph tool. status \"valid\" carries the preserved core receipt in \"result\"; every other status carries the typed \"failure\" branch and never a fabricated payload. Presence of result/failure per status, and refusal classes, are enforced semantically by the server and by scripts/test-mcp-contracts.mjs.",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/mcp-tool-graph-output/v0.8.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.mcp-tool-graph-output@0.8.0"
+    },
+    "tool": {
+      "const": "lekalo_graph"
+    },
+    "scope": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,63}$"
+        },
+        "groupId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-z][a-z0-9-]{0,63}$"
+        }
+      },
+      "required": [
+        "projectId",
+        "groupId"
+      ],
+      "additionalProperties": false
+    },
+    "snapshotRef": {
+      "type": "string",
+      "pattern": "^sha256-[0-9a-f]{64}$"
+    },
+    "status": {
+      "enum": [
+        "valid",
+        "invalid",
+        "denied",
+        "unsupported",
+        "unavailable",
+        "unsupported-version"
+      ]
+    },
+    "contractPins": {
+      "type": "object",
+      "properties": {
+        "diagnostic": {
+          "const": "0.2.16"
+        },
+        "diagnosticRegistry": {
+          "const": "0.8.0"
+        },
+        "protocolProfile": {
+          "const": "2025-11-25"
+        },
+        "graph": {
+          "const": "0.2.16"
+        }
+      },
+      "required": [
+        "diagnostic",
+        "diagnosticRegistry",
+        "protocolProfile",
+        "graph"
+      ],
+      "additionalProperties": false
+    },
+    "diagnostics": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object"
+      },
+      "description": "Wire diagnostic items (lekalo/diagnostic/v0.2.16) resolved against dev.lekalo.diagnostic-registry@0.8.0; scripts/test-mcp-contracts.mjs validates every item against the published diagnostic schema and the union registry."
+    },
+    "result": {
+      "type": "object",
+      "description": "Mode-tagged receipt: show/callers/path carry the frozen core query payload unchanged; export carries the canonical whole-graph document (lekalo/graph/v0.2.16). Mode/branch coherence is semantic.",
+      "properties": {
+        "mode": {
+          "enum": [
+            "show",
+            "callers",
+            "path",
+            "export"
+          ]
+        },
+        "query": {
+          "$ref": "#/$defs/graphQuery"
+        },
+        "export": {
+          "type": "object",
+          "properties": {
+            "schemaVersion": {
+              "const": "lekalo/graph/v0.2.16"
+            },
+            "identity": {
+              "const": "dev.lekalo.graph@0.2.16"
+            }
+          },
+          "required": [
+            "schemaVersion",
+            "identity"
+          ]
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "additionalProperties": false
+    },
+    "failure": {
+      "type": "object",
+      "properties": {
+        "failureClass": {
+          "enum": [
+            "invalid-input",
+            "scope-denied",
+            "sensitive-output",
+            "request-limit",
+            "output-limit",
+            "timeout",
+            "cancelled",
+            "contract-unsupported",
+            "snapshot-stale",
+            "backend-unavailable",
+            "result-invalid",
+            "domain-invalid",
+            "domain-denied",
+            "domain-unavailable",
+            "domain-unsupported",
+            "domain-unsupported-version"
+          ]
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "failureClass"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "identity",
+    "tool",
+    "scope",
+    "snapshotRef",
+    "status",
+    "contractPins",
+    "diagnostics"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "graphQuery": {
+      "description": "The frozen core query payloads of `graph show`, `graph callers`, and `graph path`, described without injecting a discriminator; exactly one branch matches.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "node": {
+              "type": "object"
+            },
+            "dependencies": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "dependents": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            }
+          },
+          "required": [
+            "node",
+            "dependencies",
+            "dependents"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "node": {
+              "type": "object"
+            },
+            "callers": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "complete": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "node",
+            "callers",
+            "complete"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "confidence": {
+              "type": "string"
+            },
+            "complete": {
+              "type": "boolean"
+            },
+            "edges": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "from": {
+              "type": "string"
+            },
+            "length": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "nodes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "to": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "confidence",
+            "complete",
+            "edges",
+            "from",
+            "length",
+            "nodes",
+            "to"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}
