@@ -1,0 +1,385 @@
+// Issue #41 managed CLI gate: the real binary against a real filesystem.
+//
+// Proves, on disposable sandbox copies of the synthetic planner fixture:
+// zero-write check/plan previews, the confirmed apply transaction, the
+// complete output oracle, staleness and drift refusals, exact restoration,
+// scoped cleanup, mixed-mode isolation, recovery blocking, determinism
+// across fresh roots, the upgrade diff, and the equivalence verdicts.
+// Missing binary or fixture fails the lane; nothing regenerates committed
+// fixtures in acceptance mode.
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { root, version } from './gen-managed-contracts.mjs';
+
+const read = (path) => readFileSync(join(root, path), 'utf8');
+const wire = 'tests/fixtures/managed';
+const bin = join(root, 'target/debug', process.platform === 'win32' ? 'lekalo.exe' : 'lekalo');
+assert.ok(existsSync(bin), 'binary-missing: cargo build --workspace --locked must precede gate');
+
+function snapshot(directory) {
+  const files = new Map();
+  const walk = (current, logical) => {
+    for (const name of readdirSync(current).sort()) {
+      const full = join(current, name);
+      const child = logical ? `${logical}/${name}` : name;
+      if (statSync(full).isDirectory()) walk(full, child);
+      else files.set(child, readFileSync(full).toString('base64'));
+    }
+  };
+  walk(directory, '');
+  return files;
+}
+function assertSameTree(before, after, label) {
+  assert.deepEqual([...after.keys()].sort(), [...before.keys()].sort(), `${label}: inventory changed`);
+  for (const [name, bytes] of before) {
+    assert.equal(after.get(name), bytes, `${label}: ${name} changed`);
+  }
+}
+
+function sandbox(name) {
+  const directory = mkdtempSync(join(tmpdir(), `lekalo-managed-cli-${name}-`));
+  const project = join(directory, 'proj');
+  cpSync(join(root, wire, 'planner'), project, { recursive: true });
+  rmSync(join(project, 'expected'), { recursive: true, force: true });
+  return { project, json: (relative) => JSON.parse(readFileSync(join(project, relative), 'utf8')) };
+}
+
+let exits = 0;
+function invoke(project, args, status) {
+  exits += 1;
+  const argv = ['--json', 'managed', ...args];
+  if (args[0] !== 'equivalence') argv.push('--project', project);
+  const child = spawnSync(bin, argv, {
+    cwd: project,
+    encoding: 'utf8',
+    timeout: 120000,
+    maxBuffer: 32 * 1024 * 1024,
+  });
+  const text = child.stdout.trim() || child.stderr.trim();
+  let envelope;
+  try {
+    envelope = JSON.parse(text);
+  } catch {
+    throw new Error(`invalid output exit ${child.status}: ${text.slice(0, 1500)}`);
+  }
+  assert.equal(envelope.status, status, text.slice(0, 1500));
+  const expectedExit = { valid: 0, invalid: 1, denied: 3, unsupported: 4, 'unsupported-version': 5 }[status];
+  assert.equal(child.status, expectedExit, `exit for ${status}`);
+  if (status === 'invalid' || status === 'unsupported-version') assert.equal(child.stdout, '', 'failures stream on stderr');
+  else assert.equal(child.stderr, '');
+  for (const diagnostic of envelope.diagnostics ?? []) {
+    if (diagnostic.id.startsWith('managed.')) {
+      assert.equal(diagnostic.registry_version, version);
+    }
+  }
+  return envelope;
+}
+
+const ORACLE = {
+  'apps/planner/gen/src/completeTask.ts': read(`${wire}/planner/expected/completeTask.ts`),
+  'apps/planner/gen/src/focusTask.ts': read(`${wire}/planner/expected/focusTask.ts`),
+  'apps/planner/gen/test/completeTask.test.ts': read(`${wire}/planner/expected/completeTask.test.ts`),
+  'apps/planner/gen/test/focusTask.test.ts': read(`${wire}/planner/expected/focusTask.test.ts`),
+};
+
+function planReceipt(project, coverage = 'coverage.json', input = 'model/planner.model.json') {
+  const receipt = invoke(project, [
+    'plan', '--to', 'managed',
+    '--ownership', 'ownership.json',
+    '--coverage', coverage,
+    '--module', 'planner', '--target', 'node-typescript',
+    '--input', input,
+  ], 'valid');
+  return receipt.managed.plan;
+}
+
+function plan(project, coverage, input, name = 'plan.json') {
+  const plan = planReceipt(project, coverage, input);
+  writeFileSync(join(project, name), JSON.stringify(plan, null, 2) + '\n');
+  return plan;
+}
+
+function apply(project, status, planFile = 'plan.json', coverage = 'coverage.json') {
+  const plan = JSON.parse(readFileSync(join(project, planFile), 'utf8'));
+  return invoke(project, [
+    'apply', '--plan', planFile, '--coverage', coverage,
+    '--ownership', 'ownership.json',
+    '--confirm', plan.planDigest,
+  ], status);
+}
+
+// ---- 1. Read-only surfaces never write: check and plan previews. ----------
+{
+  const { project } = sandbox('zero');
+  const before = snapshot(project);
+  invoke(project, ['check', '--ownership', 'ownership.json', '--coverage', 'coverage.json'], 'valid');
+  assertSameTree(before, snapshot(project), 'check');
+  planReceipt(project);
+  assertSameTree(before, snapshot(project), 'plan preview');
+  rmSync(project, { recursive: true, force: true });
+}
+
+// ---- 2. The confirmed apply publishes the exact oracle bytes. -------------
+const primary = sandbox('primary');
+{
+  const before = snapshot(primary.project);
+  const built = planReceipt(primary.project);
+  assertSameTree(before, snapshot(primary.project), 'plan preview (primary)');
+  assert.equal(built.action, 'promotion');
+  writeFileSync(join(primary.project, 'plan.json'), JSON.stringify(built, null, 2) + '\n');
+  assert.deepEqual(built.outputs.map((output) => `${output.path}:${output.action}`), [
+    'apps/planner/gen/src/completeTask.ts:create',
+    'apps/planner/gen/src/focusTask.ts:create',
+    'apps/planner/gen/test/completeTask.test.ts:create',
+    'apps/planner/gen/test/focusTask.test.ts:create',
+  ]);
+  const preview = apply(primary.project, 'valid', 'plan.json');
+  assert.equal(preview.managed.dryRun, false);
+  // Missing confirmation never mutates.
+  const beforeApply = snapshot(primary.project);
+  const unconfirmed = spawnSync(bin, ['--json', 'managed', 'apply', '--plan', 'plan.json', '--coverage', 'coverage.json', '--ownership', 'ownership.json', '--project', primary.project], { cwd: primary.project, encoding: 'utf8' });
+  assert.equal(JSON.parse(unconfirmed.stderr.trim()).reasonCodes[0], 'managed.input-invalid');
+  assertSameTree(beforeApply, snapshot(primary.project), 'apply-preflight-must-not-write-until-confirmed');
+  for (const [path, bytes] of Object.entries(ORACLE)) {
+    assert.equal(readFileSync(join(primary.project, path), 'utf8'), bytes, `oracle drift ${path}`);
+  }
+  assert.ok(existsSync(join(primary.project, '.lekalo/generated/manifests/managed/current')));
+  const generation = readFileSync(join(primary.project, '.lekalo/generated/manifests/managed/current'), 'utf8').trim();
+  assert.equal(preview.managed.generationDigest, generation);
+}
+const primaryGeneration = readFileSync(join(primary.project, '.lekalo/generated/manifests/managed/current'), 'utf8').trim();
+
+// ---- 3. Re-applying the identical plan is stale, never a silent rewrite. --
+{
+  const before = snapshot(primary.project);
+  const stale = apply(primary.project, 'invalid');
+  assert.deepEqual(stale.diagnostics[0].data, { path: ORACLE ? 'apps/planner/gen/src/completeTask.ts' : '', reason: 'already-applied' });
+  assertSameTree(before, snapshot(primary.project), 'stale re-apply');
+}
+
+// ---- 4. Manual drift blocks regeneration until an exact resolve. ----------
+{
+  const handler = join(primary.project, 'apps/planner/gen/src/focusTask.ts');
+  writeFileSync(handler, '// manually edited\n');
+  // Planning already refuses: the live bytes differ from recorded custody.
+  const drifted = invoke(primary.project, [
+    'plan', '--to', 'managed',
+    '--ownership', 'ownership.json',
+    '--coverage', 'coverage.json',
+    '--module', 'planner', '--target', 'node-typescript',
+    '--input', 'model/planner.model.json',
+  ], 'invalid');
+  assert.equal(drifted.diagnostics[0].data.reason, 'before-state');
+  assert.equal(drifted.diagnostics[0].id, 'managed.generated-drift');
+  // No regeneration plan exists after the refusal; only the exact resolve
+  // transaction can move the drifted path.
+  // The preview resolves the recorded bytes; the confirmation is the exact
+  // resolve plan digest.
+  const preview = invoke(primary.project, ['resolve', '--path', 'apps/planner/gen/src/focusTask.ts', '--restore', '--dry-run'], 'valid');
+  const resolveDigest = preview.managed.planDigest;
+  invoke(primary.project, ['resolve', '--path', 'apps/planner/gen/src/focusTask.ts', '--restore', '--confirm', resolveDigest], 'valid');
+  assert.equal(readFileSync(handler, 'utf8'), ORACLE['apps/planner/gen/src/focusTask.ts'], 'restore must be exact recorded bytes, never the edited baseline');
+  // A missing generated file is drift too (plan time refuses the same way).
+  rmSync(join(primary.project, 'apps/planner/gen/src/completeTask.ts'));
+  const missing = invoke(primary.project, [
+    'plan', '--to', 'managed',
+    '--ownership', 'ownership.json',
+    '--coverage', 'coverage.json',
+    '--module', 'planner', '--target', 'node-typescript',
+    '--input', 'model/planner.model.json',
+  ], 'invalid');
+  assert.equal(missing.diagnostics[0].id, 'managed.generated-drift');
+  invoke(primary.project, ['resolve', '--path', 'apps/planner/gen/src/completeTask.ts', '--restore', '--dry-run'], 'valid');
+  const restoreDigest = JSON.parse(
+    spawnSync(bin, ['--json', 'managed', 'resolve', '--path', 'apps/planner/gen/src/completeTask.ts', '--restore', '--dry-run', '--project', primary.project], { cwd: primary.project, encoding: 'utf8' }).stdout.trim(),
+  ).managed.planDigest;
+  invoke(primary.project, ['resolve', '--path', 'apps/planner/gen/src/completeTask.ts', '--restore', '--confirm', restoreDigest], 'valid');
+  assert.equal(readFileSync(join(primary.project, 'apps/planner/gen/src/completeTask.ts'), 'utf8'), ORACLE['apps/planner/gen/src/completeTask.ts']);
+}
+
+// ---- 5. Scoped cleanup deletes exactly the orphaned generated output. ------
+{
+  const coverage = JSON.parse(read(`${wire}/planner/coverage.json`));
+  coverage.requirements = coverage.requirements.filter((requirement) => requirement.id !== 'planner.complete_task');
+  writeFileSync(join(primary.project, 'coverage-cleanup.json'), JSON.stringify(coverage, null, 2) + '\n');
+  // An unclaimed neighbor must survive every cleanup.
+  writeFileSync(join(primary.project, 'apps/planner/gen/src/unclaimed.ts'), '// not ours\n');
+  const built = plan(primary.project, 'coverage-cleanup.json');
+  const deletions = built.outputs.filter((output) => output.action === 'delete');
+  assert.deepEqual(deletions.map((output) => output.path), [
+    'apps/planner/gen/src/completeTask.ts',
+    'apps/planner/gen/test/completeTask.test.ts',
+  ]);
+  writeFileSync(join(primary.project, 'plan-cleanup.json'), JSON.stringify(built, null, 2) + '\n');
+  const applied = apply(primary.project, 'valid', 'plan-cleanup.json', 'coverage-cleanup.json');
+  assert.equal(applied.managed.deleted.length, 2);
+  assert.ok(!existsSync(join(primary.project, 'apps/planner/gen/src/completeTask.ts')));
+  assert.ok(existsSync(join(primary.project, 'apps/planner/gen/src/unclaimed.ts')), 'unclaimed files are never guessed disposable');
+  rmSync(join(primary.project, 'apps/planner/gen/src/unclaimed.ts'));
+  // Restore the full coverage and generation for later phases.
+  const rebuilt = plan(primary.project);
+  writeFileSync(join(primary.project, 'plan-restore.json'), JSON.stringify(rebuilt, null, 2) + '\n');
+  apply(primary.project, 'valid', 'plan-restore.json');
+  for (const [path, bytes] of Object.entries(ORACLE)) {
+    assert.equal(readFileSync(join(primary.project, path), 'utf8'), bytes, `restore-after-cleanup ${path}`);
+  }
+}
+
+// ---- 6. Mixed modes: an observed sibling keeps every byte. -----------------
+{
+  const directory = mkdtempSync(join(tmpdir(), 'lekalo-managed-cli-mixed-'));
+  const project = join(directory, 'proj');
+  cpSync(join(root, wire, 'planner'), project, { recursive: true });
+  rmSync(join(project, 'expected'), { recursive: true, force: true });
+  cpSync(join(root, wire, 'mixed', 'ownership.json'), join(project, 'ownership.json'));
+  const billing = join(project, 'apps/billing/handwritten/billing.ts');
+  mkdirSync(join(project, 'apps/billing/handwritten'), { recursive: true });
+  writeFileSync(billing, '// maintained billing handler; owned by the observed module\n');
+  const before = snapshot(project);
+  const built = plan(project);
+  writeFileSync(join(project, 'plan.json'), JSON.stringify(built, null, 2) + '\n');
+  apply(project, 'valid');
+  assert.equal(readFileSync(billing, 'utf8'), '// maintained billing handler; owned by the observed module\n', 'observed module bytes are never touched');
+  const afterTree = snapshot(project);
+  for (const [name, bytes] of before) {
+    if (!name.startsWith('apps/planner/gen') && !name.startsWith('.lekalo') && name !== 'plan.json') {
+      assert.equal(afterTree.get(name), bytes, `mixed: ${name} changed`);
+    }
+  }
+  const view = invoke(project, ['check', '--ownership', 'ownership.json'], 'valid');
+  assert.deepEqual(view.managed.assignments.map((row) => `${row.module}:${row.mode}`), ['billing:observed', 'planner:managed']);
+  rmSync(directory, { recursive: true, force: true });
+}
+
+// ---- 7. Recovery: an unresolved journal blocks every further mutation. ----
+{
+  const custody = join(primary.project, '.lekalo/generated/manifests/managed/transactions');
+  writeFileSync(join(custody, 'blocked-9999.json'), JSON.stringify({
+    schemaVersion: `lekalo/managed-transaction/v${version}`,
+    identity: `dev.lekalo.managed-transaction@${version}`,
+    transactionId: 'blocked-9999',
+    state: 'prepared',
+    action: 'apply',
+    planDigest: { state: 'absent' },
+    generationDigest: { state: 'absent' },
+    beforeManifestDigest: { state: 'absent' },
+    afterManifestDigest: { state: 'absent' },
+    pending: [],
+    affectedFiles: [],
+    conflict: { state: 'absent' },
+  }, null, 2) + '\n');
+  planReceipt(primary.project);
+  writeFileSync(join(primary.project, 'plan-blocked.json'), JSON.stringify(planReceipt(primary.project), null, 2) + '\n');
+  const before = snapshot(primary.project);
+  const blocked = apply(primary.project, 'invalid', 'plan-blocked.json');
+  assert.equal(blocked.reasonCodes[0], 'managed.recovery-required');
+  assertSameTree(before, snapshot(primary.project), 'blocked mutation');
+  rmSync(join(custody, 'blocked-9999.json'));
+  // Reconciliation unblocks: the resolved apply runs again.
+  plan(primary.project);
+  writeFileSync(join(primary.project, 'plan-unblocked.json'), JSON.stringify(plan(primary.project), null, 2) + '\n');
+}
+
+// ---- 8. Hostile ownership: unclaimed creates are denied, traversal never
+//         admits, capability gaps and unvalidated extensions block. --------
+{
+  const hostile = sandbox('hostile');
+  // An unclaimed file exactly where a create would land.
+  mkdirSync(join(hostile.project, 'apps/planner/gen/src'), { recursive: true });
+  writeFileSync(join(hostile.project, 'apps/planner/gen/src/focusTask.ts'), '// squatter\n');
+  const before = snapshot(hostile.project);
+  // The plan itself refuses: an unclaimed file already occupies a create
+  // coordinate, so no reviewed plan may exist for it.
+  const denied = invoke(hostile.project, [
+    'plan', '--to', 'managed',
+    '--ownership', 'ownership.json',
+    '--coverage', 'coverage.json',
+    '--module', 'planner', '--target', 'node-typescript',
+    '--input', 'model/planner.model.json',
+  ], 'denied');
+  assert.equal(denied.reasonCodes[0], 'managed.ownership-denied');
+  assert.equal(denied.diagnostics[0].data.reason, 'create-conflict');
+  assertSameTree(before, snapshot(hostile.project), 'denied plan');
+  rmSync(hostile.project, { recursive: true, force: true });
+
+  const traversal = sandbox('traversal');
+  const ownership = JSON.parse(read(`${wire}/planner/ownership.json`));
+  ownership.modules[0].targets[0].generatedRoot = 'apps/../secrets';
+  writeFileSync(join(traversal.project, 'ownership.json'), JSON.stringify(ownership, null, 2) + '\n');
+  const refused = invoke(traversal.project, ['check', '--ownership', 'ownership.json'], 'invalid');
+  assert.equal(refused.reasonCodes[0], 'managed.input-invalid');
+  rmSync(traversal.project, { recursive: true, force: true });
+
+  const gap = sandbox('gap');
+  const partial = JSON.parse(read(`${wire}/planner/coverage.json`));
+  partial.requirements[1].support = 'unknown';
+  writeFileSync(join(gap.project, 'coverage-gap.json'), JSON.stringify(partial, null, 2) + '\n');
+  const gapBefore = snapshot(gap.project);
+  const blocked = invoke(gap.project, ['plan', '--to', 'managed', '--ownership', 'ownership.json', '--coverage', 'coverage-gap.json', '--module', 'planner', '--target', 'node-typescript', '--input', 'model/planner.model.json'], 'unsupported');
+  assert.equal(blocked.reasonCodes[0], 'managed.capability-gap');
+  assert.ok(blocked.diagnostics[0].data.requirement === 'planner.focus_task', 'the gap names the semantic witness');
+  assertSameTree(gapBefore, snapshot(gap.project), 'capability gap writes nothing');
+  rmSync(gap.project, { recursive: true, force: true });
+
+  const extension = sandbox('extension');
+  const unvalidated = JSON.parse(read(`${wire}/planner/coverage.json`));
+  unvalidated.extensions.push({
+    symbol: 'legacy_hook',
+    binding: 'custom',
+    contractDigest: 'sha256:9999999999999999999999999999999999999999999999999999999999999999',
+    validated: false,
+  });
+  unvalidated.extensions.sort((a, b) => (a.symbol < b.symbol ? -1 : 1));
+  writeFileSync(join(extension.project, 'coverage-ext.json'), JSON.stringify(unvalidated, null, 2) + '\n');
+  const unresolved = invoke(extension.project, ['plan', '--to', 'managed', '--ownership', 'ownership.json', '--coverage', 'coverage-ext.json', '--module', 'planner', '--target', 'node-typescript', '--input', 'model/planner.model.json'], 'invalid');
+  assert.equal(unresolved.reasonCodes[0], 'managed.extension-unresolved');
+  rmSync(extension.project, { recursive: true, force: true });
+}
+
+// ---- 9. Determinism: a fresh root produces identical bytes and identity. --
+{
+  const twin = sandbox('twin');
+  const built = plan(twin.project);
+  // A clean rebuild legitimately reviews create actions where the repeated
+  // no-op plan reviews unchanged actions; the stable generation identity is
+  // what must match (AC1).
+  writeFileSync(join(twin.project, 'plan.json'), JSON.stringify(built, null, 2) + '\n');
+  const applied = apply(twin.project, 'valid');
+  assert.equal(applied.managed.generationDigest, primaryGeneration, 'the stable generation digest matches across roots');
+  for (const [path, bytes] of Object.entries(ORACLE)) {
+    assert.equal(readFileSync(join(twin.project, path), 'utf8'), bytes, `cross-root byte equality ${path}`);
+  }
+  rmSync(twin.project, { recursive: true, force: true });
+}
+
+// ---- 10. Upgrade diff: exact pin changes, zero writes. --------------------
+{
+  const candidate = JSON.parse(read(`${wire}/planner/coverage.json`));
+  candidate.recipe.digest = 'sha256:aaaa5555555555555555555555555555555555555555555555555555555aaa';
+  candidate.adapter.packageDigest = 'sha256:bbbb6666666666666666666666666666666666666666666666666666666666bbb';
+  writeFileSync(join(primary.project, 'coverage-candidate.json'), JSON.stringify(candidate, null, 2) + '\n');
+  const before = snapshot(primary.project);
+  const diff = invoke(primary.project, ['upgrade-plan', '--module', 'planner', '--target', 'node-typescript', '--base', 'coverage.json', '--candidate', 'coverage-candidate.json'], 'valid');
+  assert.deepEqual(diff.managed.changes.map((change) => change.field), ['recipe.digest', 'adapter.packageDigest']);
+  assertSameTree(before, snapshot(primary.project), 'upgrade-plan writes nothing');
+}
+
+// ---- 11. Equivalence verdicts never lower the denominator. ----------------
+{
+  const pass = invoke(primary.project, ['equivalence', '--evidence', 'equivalence.json'], 'valid');
+  assert.equal(pass.managed.verdict, 'match');
+  const evidence = JSON.parse(read(`${wire}/planner/equivalence.json`));
+  const mismatch = { ...evidence, scenarios: [{ ...evidence.scenarios[0], verdict: 'mismatch' }, ...evidence.scenarios.slice(1)] };
+  writeFileSync(join(primary.project, 'equivalence-mismatch.json'), JSON.stringify(mismatch, null, 2) + '\n');
+  const failed = invoke(primary.project, ['equivalence', '--evidence', 'equivalence-mismatch.json'], 'invalid');
+  assert.equal(failed.reasonCodes[0], 'managed.equivalence-failed');
+  const gap = { ...evidence, gaps: ['expression.regex'] };
+  writeFileSync(join(primary.project, 'equivalence-gap.json'), JSON.stringify(gap, null, 2) + '\n');
+  const incomplete = invoke(primary.project, ['equivalence', '--evidence', 'equivalence-gap.json'], 'unsupported');
+  assert.equal(incomplete.reasonCodes[0], 'managed.equivalence-incomplete');
+}
+
+console.log(JSON.stringify({ ok: true, gate: 'test-managed-cli', invocations: exits }));

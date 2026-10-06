@@ -1,0 +1,81 @@
+{
+  "schemaVersion": "lekalo/managed-generation-record/v0.8.0",
+  "identity": "dev.lekalo.managed-generation-record@0.8.0",
+  "planDigest": "sha256:bf8cd4cb3edfe6e466472ba07e992b197474ef1f6eb457ec11ed76b27e794f36",
+  "generationDigest": "sha256:9e1ced9809e02914c1d1fc7b759ce3ec4cb7be8e17a561ed2eeca71783c726d8",
+  "previousGeneration": {
+    "state": "absent"
+  },
+  "inputClosure": [
+    {
+      "path": "config/ownership.json",
+      "digest": "sha256:d73385cf6de44256f9bbf42da24236f8e026fdd7cd8e9455e315bdf75626b6a6"
+    },
+    {
+      "path": "model/planner.model.json",
+      "digest": "sha256:45c104c6019bfc8588af8b6a20ed3f7dae79f7b0cf692e6eb186f715d9de2eb4"
+    }
+  ],
+  "outputs": [
+    {
+      "path": "apps/planner/gen/src/completeTask.ts",
+      "role": "implementation",
+      "ownerModule": "planner",
+      "ownerTarget": "node-typescript",
+      "digest": "sha256:9b6a0aea8172a7764017f6bf2701ba280caca948b2051aa7618cd9d3ff6397c0",
+      "beforeRef": {
+        "state": "absent"
+      },
+      "afterRef": {
+        "state": "known",
+        "value": "sha256:9b6a0aea8172a7764017f6bf2701ba280caca948b2051aa7618cd9d3ff6397c0"
+      }
+    },
+    {
+      "path": "apps/planner/gen/src/focusTask.ts",
+      "role": "implementation",
+      "ownerModule": "planner",
+      "ownerTarget": "node-typescript",
+      "digest": "sha256:50f6420581cd54905918cf62e00f9417929ba4ac17532b8648091688a7eee141",
+      "beforeRef": {
+        "state": "absent"
+      },
+      "afterRef": {
+        "state": "known",
+        "value": "sha256:50f6420581cd54905918cf62e00f9417929ba4ac17532b8648091688a7eee141"
+      }
+    },
+    {
+      "path": "apps/planner/gen/test/completeTask.test.ts",
+      "role": "test",
+      "ownerModule": "planner",
+      "ownerTarget": "node-typescript",
+      "digest": "sha256:2ac29c518e9ed39b9294f154582c580fe060b450dc252c575bee501e5955c965",
+      "beforeRef": {
+        "state": "absent"
+      },
+      "afterRef": {
+        "state": "known",
+        "value": "sha256:2ac29c518e9ed39b9294f154582c580fe060b450dc252c575bee501e5955c965"
+      }
+    },
+    {
+      "path": "apps/planner/gen/test/focusTask.test.ts",
+      "role": "test",
+      "ownerModule": "planner",
+      "ownerTarget": "node-typescript",
+      "digest": "sha256:64ac5bc27c9ba96e553a5bd5fc786d949689fe6def11a3ffd38534c3616089f1",
+      "beforeRef": {
+        "state": "absent"
+      },
+      "afterRef": {
+        "state": "known",
+        "value": "sha256:64ac5bc27c9ba96e553a5bd5fc786d949689fe6def11a3ffd38534c3616089f1"
+      }
+    }
+  ],
+  "ownershipDigest": "sha256:5fd1b94099ffc5aafd5c071b0deb05e9974afb720625fc4092e210b908d152c5",
+  "lockPin": {
+    "state": "absent"
+  }
+}

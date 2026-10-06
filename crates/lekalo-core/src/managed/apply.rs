@@ -85,7 +85,10 @@ fn inputs_actual(
 
 /// Collect the recorded ownership and the actual digests of every recorded
 /// generated path.
-fn before_state(root: &std::path::Path) -> Result<BeforeState, DomainResult> {
+fn before_state(
+    root: &std::path::Path,
+    plan: Option<&GenerationPlan>,
+) -> Result<BeforeState, DomainResult> {
     let recorded: BTreeMap<String, RecordOutput> = match history::current(root) {
         Ok(Some(current)) => history::record(root, &current)?
             .outputs
@@ -103,6 +106,22 @@ fn before_state(root: &std::path::Path) -> Result<BeforeState, DomainResult> {
             }
             Ok(None) => {}
             Err(_) => return Err(drift(path, "unreadable")),
+        }
+    }
+    // Unclaimed files at a would-be create path are never invisible: every
+    // plan output coordinate is statted directly.
+    if let Some(plan) = plan {
+        for output in &plan.outputs {
+            if actual.contains_key(&output.path) {
+                continue;
+            }
+            match read_project_file(root, &output.path) {
+                Ok(Some(bytes)) => {
+                    actual.insert(output.path.clone(), super::digest(&bytes));
+                }
+                Ok(None) => {}
+                Err(_) => return Err(drift(&output.path, "unreadable")),
+            }
         }
     }
     let map: BTreeMap<String, super::plan::Recorded> = recorded
@@ -246,7 +265,7 @@ pub fn apply(
         Ok(inputs) => inputs,
         Err(error) => return error,
     };
-    let before = match before_state(root) {
+    let before = match before_state(root, Some(&plan)) {
         Ok(before) => before,
         Err(error) => return error,
     };
@@ -307,19 +326,22 @@ pub fn apply(
 fn generation_identity(plan: &GenerationPlan) -> String {
     super::inventory_digest(
         plan.input_closure.iter(),
-        plan.outputs.iter().map(|output| {
-            (
-                output.path.as_str(),
-                &output.role,
-                output.owner_module.as_str(),
-                output.owner_target.as_str(),
-                output
-                    .after_digest
-                    .value()
-                    .map(|digest| digest.as_str())
-                    .unwrap_or_default(),
-            )
-        }),
+        plan.outputs
+            .iter()
+            .filter(|output| output.action != OutputAction::Delete)
+            .map(|output| {
+                (
+                    output.path.as_str(),
+                    &output.role,
+                    output.owner_module.as_str(),
+                    output.owner_target.as_str(),
+                    output
+                        .after_digest
+                        .value()
+                        .map(|digest| digest.as_str())
+                        .unwrap_or_default(),
+                )
+            }),
     )
 }
 

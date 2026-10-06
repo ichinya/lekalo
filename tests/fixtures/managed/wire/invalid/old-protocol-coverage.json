@@ -1,0 +1,84 @@
+{
+  "schemaVersion": "lekalo/managed-coverage/v0.8.0",
+  "identity": "dev.lekalo.managed-coverage@0.8.0",
+  "module": "planner",
+  "target": "node-typescript",
+  "recipe": {
+    "id": "planner-basic",
+    "version": "1",
+    "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+  },
+  "adapter": {
+    "entry": "adapters/managed.mjs",
+    "packageDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+    "protocol": "0.6.4"
+  },
+  "requirements": [
+    {
+      "id": "planner.complete_task",
+      "kind": "command",
+      "support": "full",
+      "witness": {
+        "state": "known",
+        "value": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+      },
+      "projection": [
+        {
+          "from": "done",
+          "to": "done"
+        },
+        {
+          "from": "id",
+          "to": "id"
+        }
+      ],
+      "sample": {
+        "state": "known",
+        "value": {
+          "input": {
+            "id": "t-2",
+            "done": true
+          },
+          "output": {
+            "id": "t-2",
+            "done": true
+          }
+        }
+      }
+    },
+    {
+      "id": "planner.focus_task",
+      "kind": "query",
+      "support": "full",
+      "witness": {
+        "state": "known",
+        "value": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+      },
+      "projection": [
+        {
+          "from": "id",
+          "to": "id"
+        },
+        {
+          "from": "subject",
+          "to": "title"
+        }
+      ],
+      "sample": {
+        "state": "known",
+        "value": {
+          "input": {
+            "id": "t-1",
+            "subject": "Focus"
+          },
+          "output": {
+            "id": "t-1",
+            "title": "Focus"
+          }
+        }
+      }
+    }
+  ],
+  "extensions": [],
+  "complete": true
+}

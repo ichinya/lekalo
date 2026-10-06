@@ -335,6 +335,20 @@ fn run_plan(args: PlanArgs) -> Outcome {
             before.actual.insert(path.clone(), core::digest(&bytes));
         }
     }
+    // Unclaimed files at a would-be create path are never invisible at
+    // planning time either.
+    if let Ok(inventory) = core::canonical::render_inventory(&coverage, &target.generated_root) {
+        for artifact in &inventory {
+            if before.actual.contains_key(&artifact.path) {
+                continue;
+            }
+            if let Ok(bytes) = std::fs::read(project_root.join(&artifact.path)) {
+                before
+                    .actual
+                    .insert(artifact.path.clone(), core::digest(&bytes));
+            }
+        }
+    }
     let previous = core::history::current(&project_root)?;
     let action = if previous.is_some() {
         core::PlanAction::Regeneration

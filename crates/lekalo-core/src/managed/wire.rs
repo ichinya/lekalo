@@ -220,15 +220,20 @@ dto!(TargetAssignment {
 dto!(ModuleAssignment { module: String, mode: Mode, targets: Vec<TargetAssignment> });
 dto!(Ownership { schema_version: String, identity: String, project: String, modules: Vec<ModuleAssignment> });
 
-dto!(Requirement {
-    id: String,
-    kind: RequirementKind,
-    support: Support,
-    witness: State<String>,
-    detail: Option<String>,
-    projection: Vec<Projection>,
-    sample: State<Sample>
-});
+/// Requirement: the optional `detail` note is skipped when absent so the
+/// canonical serialization matches the raw closed document byte for byte.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Requirement {
+    pub id: String,
+    pub kind: RequirementKind,
+    pub support: Support,
+    pub witness: State<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    pub projection: Vec<Projection>,
+    pub sample: State<Sample>,
+}
 dto!(Coverage {
     schema_version: String,
     identity: String,
