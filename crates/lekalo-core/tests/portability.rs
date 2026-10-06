@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 const FIXTURE: &str = "tests/fixtures/portability/planner";
-const EVIDENCE: &str = "tests/fixtures/portability/evidence/evidence.json";
+const EVIDENCE: &str = "tests/fixtures/portability/planner/reports/portability-evidence.json";
 
 /// Serializes every test that changes the process working directory.
 static CWD_LOCK: Mutex<()> = Mutex::new(());
@@ -222,7 +222,7 @@ mod classification_matrix {
         // schedule hook unsupported — an explicit verdict, not unknown.
         let go_schedule = row(
             &report,
-            "command:planner.calculate_schedule",
+            "command:planner.schedule_calculate",
             "go-service",
             Dimension::Behavioral,
         );
@@ -248,7 +248,7 @@ mod classification_matrix {
             .diagnostics
             .iter()
             .any(|d| d.code == "portability.implementation-required"
-                && d.subject.as_deref() == Some("planner.calculate_schedule")));
+                && d.subject.as_deref() == Some("planner.schedule_calculate")));
     }
 
     #[test]
@@ -257,7 +257,7 @@ mod classification_matrix {
         let (_, report) = fixture_assessment();
         let php_schedule = row(
             &report,
-            "command:planner.calculate_schedule",
+            "command:planner.schedule_calculate",
             "php-laravel",
             Dimension::Behavioral,
         );
@@ -413,7 +413,7 @@ mod classification_matrix {
             .expect("schedule flow affected");
         assert!(schedule_flow
             .subjects
-            .contains(&"command:planner.calculate_schedule".to_owned()));
+            .contains(&"command:planner.schedule_calculate".to_owned()));
         // The declared gate that references the recorded scenario joins
         // with its recorded state; unrelated gates stay out.
         assert!(report
@@ -530,7 +530,7 @@ mod request_rules {
         let targets =
             parse_targets(&read(&format!("{FIXTURE}/config/portability-targets.json"))).unwrap();
         let request = Request {
-            scope: Scope::Symbol("planner.calculate_schedule".to_owned()),
+            scope: Scope::Symbol("planner.schedule_calculate".to_owned()),
             source: Some("node-typescript".to_owned()),
             destinations: vec!["go-service".to_owned()],
         };
@@ -717,7 +717,7 @@ mod evidence_gaps {
         let schedule = report
             .subjects
             .iter()
-            .find(|s| s.subject == "command:planner.calculate_schedule")
+            .find(|s| s.subject == "command:planner.schedule_calculate")
             .unwrap();
         let behavioral = schedule
             .rows
@@ -815,7 +815,7 @@ mod evidence_gaps {
         let schedule = report
             .subjects
             .iter()
-            .find(|s| s.subject == "command:planner.calculate_schedule")
+            .find(|s| s.subject == "command:planner.schedule_calculate")
             .unwrap();
         let php = schedule
             .rows

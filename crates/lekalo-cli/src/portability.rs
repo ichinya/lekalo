@@ -11,8 +11,8 @@
 use clap::Args as ClapArgs;
 use lekalo_core::diagnostics::DiagnosticSet;
 use lekalo_core::portability::{
-    self as core, assess, embedded_recipe, extract, parse_evidence, parse_targets,
-    profile_pin, resolve_targets, verify_profile_pin, Request, Scope,
+    self as core, assess, embedded_recipe, extract, parse_evidence, parse_targets, profile_pin,
+    resolve_targets, verify_profile_pin, Request, Scope,
 };
 use lekalo_core::{DomainResult, Status};
 use std::collections::BTreeMap;
@@ -108,9 +108,8 @@ fn load_profile(
     binding: &lekalo_core::portability::wire::TargetBinding,
 ) -> Result<Option<lekalo_core::portability::ProfilePin>, DiagnosticSet> {
     let bytes = read_bounded(root, &binding.profile_document_ref)?;
-    let document = lekalo_core::target_profile::document::decode(&bytes).map_err(|_| {
-        lekalo_core::portability::diagnostic::invalid("profile-document")
-    })?;
+    let document = lekalo_core::target_profile::document::decode(&bytes)
+        .map_err(|_| lekalo_core::portability::diagnostic::invalid("profile-document"))?;
     let resolved = lekalo_core::target_profile::resolution::resolve(&document)
         .map_err(|_| lekalo_core::portability::diagnostic::invalid("profile-resolution"))?;
     let found = resolved
@@ -146,8 +145,8 @@ fn load_implementation(
     if format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes)) != *digest {
         return Err(invalid("implementation-digest"));
     }
-    let value: serde_json::Value = serde_json::from_slice(&bytes)
-        .map_err(|_| invalid("implementation-shape"))?;
+    let value: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(|_| invalid("implementation-shape"))?;
     let document = lekalo_core::implementation::ImplementationDocument::from_value(&value)
         .map_err(|_| invalid("implementation-shape"))?;
     match lekalo_core::implementation::validate(&document, compilation) {
@@ -171,17 +170,16 @@ fn execute(args: Args) -> Result<DomainResult, DiagnosticSet> {
         Ok(compilation) => compilation,
         Err(failure) => return Ok(failure.into_result()),
     };
-    let root = std::path::PathBuf::from(
-        selection
-            .project
-            .clone()
-            .unwrap_or_else(|| ".".to_owned()),
-    );
+    let root =
+        std::path::PathBuf::from(selection.project.clone().unwrap_or_else(|| ".".to_owned()));
     let recipe = embedded_recipe()?;
 
     // Targets configuration: the explicit selector or the default home;
     // an absent default derives the targets from the Model declarations.
-    let targets_path = args.targets.clone().unwrap_or_else(|| DEFAULT_TARGETS.to_owned());
+    let targets_path = args
+        .targets
+        .clone()
+        .unwrap_or_else(|| DEFAULT_TARGETS.to_owned());
     let targets_bytes = read_bounded(&root, &targets_path);
     let (targets, targets_input) = match targets_bytes {
         Ok(bytes) => {
@@ -235,17 +233,13 @@ fn execute(args: Args) -> Result<DomainResult, DiagnosticSet> {
 
     // Profile pins and adapter snapshots per configured target.
     let subjects = extract(&compilation.project, &recipe);
-    let mut pins: BTreeMap<String, Option<lekalo_core::portability::ProfilePin>> =
-        BTreeMap::new();
+    let mut pins: BTreeMap<String, Option<lekalo_core::portability::ProfilePin>> = BTreeMap::new();
     let mut adapters: BTreeMap<String, Option<lekalo_core::portability::wire::AdapterSnapshot>> =
         BTreeMap::new();
     let mut storage_refs: BTreeMap<String, Vec<String>> = BTreeMap::new();
     if let Some(document) = &targets {
         for binding in &document.targets {
-            pins.insert(
-                binding.target_id.clone(),
-                load_profile(&root, binding)?,
-            );
+            pins.insert(binding.target_id.clone(), load_profile(&root, binding)?);
             storage_refs.insert(
                 binding.target_id.clone(),
                 binding.storage_profile_refs.clone(),
@@ -266,7 +260,14 @@ fn execute(args: Args) -> Result<DomainResult, DiagnosticSet> {
             );
         }
     }
-    let resolved = resolve_targets(&request, targets.as_ref(), &subjects, &pins, &adapters, &storage_refs)?;
+    let resolved = resolve_targets(
+        &request,
+        targets.as_ref(),
+        &subjects,
+        &pins,
+        &adapters,
+        &storage_refs,
+    )?;
 
     // The lock custody pin, recorded separately from the evidence trust.
     let lock_digest = read_bounded(&root, LOCK_PATH)
@@ -340,7 +341,11 @@ fn execute(args: Args) -> Result<DomainResult, DiagnosticSet> {
 
     let set = DiagnosticSet::try_from_unsorted(diagnostics, Status::Valid)
         .map_err(|_| invalid("diagnostic-bound"))?;
-    Ok(DomainResult::validation(json, human, set.as_slice().to_vec()))
+    Ok(DomainResult::validation(
+        json,
+        human,
+        set.as_slice().to_vec(),
+    ))
 }
 
 /// The human projection: the four risk summaries before anything else,
@@ -360,10 +365,7 @@ fn human_summary(report: &lekalo_core::portability::Report) -> String {
             .get(&lekalo_core::portability::Dimension::Structural)
             .expect("structural summary");
         let ratio = match structural.structural_portable {
-            Some(ratio) => format!(
-                "{}/{}",
-                ratio.numerator, ratio.denominator
-            ),
+            Some(ratio) => format!("{}/{}", ratio.numerator, ratio.denominator),
             None => "unknown".to_owned(),
         };
         lines.push(format!(
@@ -392,7 +394,10 @@ fn human_summary(report: &lekalo_core::portability::Report) -> String {
             if row.blocking {
                 blockers.push(format!(
                     "{} -> {}: {} ({})",
-                    subject.subject, row.destination, row.dimension.as_str(), row.reason
+                    subject.subject,
+                    row.destination,
+                    row.dimension.as_str(),
+                    row.reason
                 ));
             }
             if row.classification == lekalo_core::portability::Classification::Partial {

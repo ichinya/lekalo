@@ -14,5 +14,5 @@ definitions:
     description: "Schedule flow"
     summary: "Calculating a schedule persists it and emits the scheduled event."
     covers:
-      - "planner.calculate_schedule"
+      - "planner.schedule_calculate"
       - "planner.schedule_write"

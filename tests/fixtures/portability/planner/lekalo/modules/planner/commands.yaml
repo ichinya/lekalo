@@ -56,7 +56,7 @@ definitions:
         required: true
     effects:
       - "planner.archive_task"
-  - id: planner.calculate_schedule
+  - id: planner.schedule_calculate
     kind: command
     version: 1
     description: "Calculate the focused schedule for one task window"

@@ -4,7 +4,7 @@
   "projectRef": {
     "projectId": "planner",
     "modelVersion": "0.2.16",
-    "irDigest": "sha256:ece56c7c27111acde7db1785800cc31d3343938a893a0e6492d1939482f4f26f"
+    "irDigest": "sha256:f9a4b5d6649787482014dffcdac03de55e231950af28cd853e6deaa6f1a29578"
   },
   "recipeRef": {
     "id": "dev.lekalo.portability-recipe",
@@ -21,7 +21,7 @@
       "family": "implementation",
       "complete": true,
       "artifactRef": "reports/implementation.json",
-      "digest": "sha256:75b078345906134b67676963f83a7f458fc967307d3de423d3e14e299ebda9c2"
+      "digest": "sha256:7cab4b866f616874e2cb5a64939d0e6cf1ecba08625476a9e1971cea5bd51d9c"
     },
     {
       "family": "storage",
@@ -67,7 +67,7 @@
       "id": "map.schedule-php",
       "requirement": "behavior.hook",
       "capability": "behavior.php-scheduler",
-      "subject": "planner.calculate_schedule",
+      "subject": "planner.schedule_calculate",
       "coverage": "full",
       "conditions": [
         "php-84",
