@@ -202,7 +202,7 @@ fn render_test(
          // Expected values are the pinned scenario sample of this recipe.\n\
          \n\
          import assert from \"node:assert/strict\";\n\
-         import {{ {function} }} from \"../src/{file}.js\";\n\
+         import {{ {function} }} from \"../src/{file}.ts\";\n\
          \n\
          assert.deepStrictEqual(\n  {function}({input}),\n  {output},\n);\n",
         function = function,
