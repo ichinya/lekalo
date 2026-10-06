@@ -18,6 +18,11 @@
       "origin": "synthetic"
     },
     {
+      "family": "adapter-sdk",
+      "origin": "synthetic",
+      "note": "Issue #106: authored wire-vector corpus for the four adapter SDK codecs (valid/invalid envelopes, semantic builder parity, canonicalization, security grammar, lifecycle recipes, upgrade matrix). No private source, no executed application behavior, no workstation paths."
+    },
+    {
       "family": "adapter-security",
       "origin": "synthetic"
     },

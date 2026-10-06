@@ -6,7 +6,7 @@ The exact [current schema](../contracts/target-protocol.schema.v0.3.2.json) and 
 
 ## Version negotiation and capability discovery
 
-This checkout probes and accepts **exactly `0.3.2`**: `BASE_VERSION`, `VERSION` and the singleton `SUPPORTED_VERSIONS` set in `crates/lekalo-core/src/target_protocol/version.rs`. A historical frozen schema does not grant runtime acceptance. The adapter must explicitly declare a version supported by this producer; arbitrary newer/older strings are refused.
+This checkout probes and accepts the **exact set `0.3.2` and `0.6.4`**: `BASE_VERSION`, `VERSION` and the closed `SUPPORTED_VERSIONS` set in `crates/lekalo-core/src/target_protocol/version.rs` (the additive `0.6.4` lint seam of issue #76 is negotiated only after an adapter explicitly advertises it). A historical frozen schema does not grant runtime acceptance. The adapter must explicitly declare a version supported by this producer; arbitrary newer/older strings are refused.
 
 Describe reports exact adapter identity/digest, protocol versions, operations, transports, target/profile choices, read/write scopes and capabilities. The closed capability object includes exact `ir_versions`, a bounded map of named support states (`full`, `partial`, `unsupported`, `unknown`) and optional declared constraints. Names must resolve in the embedded capability-definition registry. Missing or unknown evidence does not mean supported.
 

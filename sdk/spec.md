@@ -1,0 +1,119 @@
+# The language-neutral adapter SDK contract (issue #106)
+
+This document is the one decode/build/write contract every SDK language
+implements. The four runtimes are ports of one specification, proven
+equivalent by the shared vector corpus
+(`tests/fixtures/adapter-sdk/`) and the cross-language gate
+(`scripts/test-adapter-sdk-vectors.mjs`), which compares outcomes and
+canonical bytes for all four codecs.
+
+## Runtime API (equivalent concepts in all languages)
+
+`decodeRequest`, `validateRequest`, `describe` capability building,
+`buildSuccess`, `buildError`, `validateResponse`,
+`validateWritePlan`/`validateLogicalPath`, `buildFinding`,
+`buildDiagnostic`, `buildArtifactManifest`, `normalizeScenarioResult`,
+`stderrLogger`, and `runConformance`. Generated types carry no ambient
+I/O. SDK-local errors use closed safe reason tokens; the host owns the
+public domain result and the status/exit mapping.
+
+## 1. Transport and lifetime
+
+1. Read exactly one bounded UTF-8 JSON request from stdin or the
+   host-owned `--lekalo-request-file PATH` coordinate. This file
+   coordinate is transport-owned, never a portable project path or an
+   extra project-read grant. Refuse ambiguous input sources, trailing
+   documents, duplicate decoded keys (including escaped spellings),
+   invalid UTF-8, unsupported exact versions, and invalid operation
+   shapes before invoking any callback.
+2. Echo the host `request_id`, operation, and negotiated version.
+   `describe` reports the actual executable identity/digest and precise
+   operations/scopes/capabilities/IR pins. Unknown and partial support
+   stay explicit; scope/capability claims never widen host policy. No
+   hidden handshake cache authorizes a later process: host session
+   custody controls every call.
+3. Build into an in-memory bounded response, then validate schema **and
+   semantic invariants** before writing any stdout bytes. Success is
+   operation-specific: false `ok`, findings, unknown/unsupported
+   evidence, wrong identity/echo, extra members, invalid writes, or
+   mismatched hashes cannot silently pass. For a known request, emit a
+   valid closed error envelope when possible; for undecodable input or
+   invalid builder output, emit bounded safe stderr and exit nonzero —
+   never a fabricated success.
+4. Emit a single compact canonical JSON response on stdout (sorted
+   keys, no whitespace, no trailing LF). Logs go to a bounded, redacted
+   stderr logger and never carry raw request, source, or environment
+   content. Progress stays in the accepted response member; stdout
+   banners and streaming records are forbidden.
+5. Cooperative deadline/cancellation tokens reach callbacks using the
+   accepted request limits. Cap local work and output at the tighter of
+   the host request and SDK bounds. Hard cancellation and descendant
+   reaping remain host responsibilities: no `cancel` operation, no
+   automatic retry, and no catching termination to emit success.
+
+## 2. Defaults and authority
+
+- Default adapter configuration is read-only: no write scopes, no
+  network, no subprocess helper, no shell. Generation examples opt into
+  one narrow output scope and plan before apply; IR read scope is
+  explicit.
+- Dry-run computes a sorted plan and exact output byte hashes without
+  writing. Apply echoes the host's opaque `plan_id` and checks the
+  supplied plan against the input and before-state; it cannot mint or
+  persist host authority. The host retains whole-stage verification,
+  consumption of apply authority, and actual publication/rollback.
+- Path helpers mirror the host's closed grammar — portable lowercase
+  segments, optional trailing `**` recursion on scopes, no absolute
+  paths, backslashes, drive letters, percent escapes, DOS devices or
+  short names, NFC-normalized segments — and refuse protected canonical
+  homes for writes. They are defense in depth: only the host's private
+  view and confinement enforce reality, and a runtime without Unicode
+  normalization tables skips the `requiresNfc` vectors explicitly
+  (never silently).
+
+## 3. Byte-level determinism
+
+- Canonical output is byte-sorted compact JSON with no trailing LF;
+  array order is preserved; string escapes use the closed JSON set;
+  numbers keep integer/float distinction within the safe range.
+- Request identifiers hash the canonical envelope minus `request_id`;
+  plan identifiers hash the canonical ordered plan; write digests frame
+  exact file bytes. The framing is contract-specific — a universal JSON
+  sorter is never a substitute.
+- UTF-8 byte ordering, preserved ordered arrays, and digest framing
+  must match production byte-for-byte; the canonical vector family
+  pins cross-language equality.
+
+## 4. Semantic admission (beyond the schema)
+
+The closed shape refusals (unknown members, explicit nulls, bounds)
+run at decode; the cross-member rules run at validate:
+
+- request-side: operation/plan pairing, dry-run pairing, IR-path
+  requirement, target/profile requirements, describe member
+  prohibition, profile-resolution pairing, plan-native and lint seams
+  with version gating;
+- response-side: identity echo (protocol/version/operation/request_id),
+  status/error pairing, operation payload completeness, write-plan
+  presence and digest/action pairing, plan echo on apply.
+
+The deep `lint_evidence` subtree stays host-owned: the SDK carries it
+as a closed object and never builds one.
+
+## 5. Compatibility matrix
+
+On a protocol upgrade the generator re-emits the exact-version matrix
+and the accept/refuse cases together with the descriptor and records:
+old accepted inputs retain their result, newly admitted inputs succeed
+only under the new version, new fields/operations under the old version
+fail, unknown/future versions fail before IR disclosure or callback
+execution, and downgrade never drops evidence silently. Run through the
+actual host decoder as well as SDK codecs — advertising a schema just
+because generation succeeded proves nothing without this matrix.
+
+## 6. Capability honesty
+
+`describe` reports only what the adapter implements, resolved against
+the exported capability-definition pin. `unknown` is a declared state,
+never an optimistic yes; `partial` declares the subset; `unsupported`
+never emits. Declared scopes are claims the host polices, not grants.
