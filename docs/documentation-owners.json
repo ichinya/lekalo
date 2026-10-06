@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
-  "productVersion": "0.6.5",
-  "cliSourceDigest": "sha256:181e7cef1d85b55aa87f8984546ea4a9ee294082b60a6c4f4dbeb8667f05f6e3",
+  "productVersion": "0.8.0",
+  "cliSourceDigest": "sha256:1783707ca8b9c769572c2476bbef7728b8c5313a85e1219e5884b1df8feb5028",
   "p0Pages": [
     {
       "page": "README.md",
@@ -374,6 +374,50 @@
       "summary": "Print the read-only, bounded cache health projection",
       "leaf": true,
       "owner": "docs/cache.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:change",
+      "kind": "command",
+      "command": "change",
+      "usage": "lekalo change [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:f8002c395e6bad92f088c6e315ad7ddbabd35a3e90b5dba73d3486e70960b742",
+      "summary": "Semantic operations instead of direct YAML/code edits (issue #73): typed requests, validated candidates, bounded plans, and one durable, idempotent transaction writer",
+      "leaf": false,
+      "owner": "docs/change.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:change receipt",
+      "kind": "command",
+      "command": "change receipt",
+      "usage": "lekalo change receipt [OPTIONS] --idempotency-key <KEY>",
+      "helpDigest": "sha256:8c9bb6ab2faf283c695014e6841e1b608b730f5249dea701c434127a262ab49d",
+      "summary": "Print the committed receipt of one idempotency key",
+      "leaf": true,
+      "owner": "docs/change.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:change recover",
+      "kind": "command",
+      "command": "change recover",
+      "usage": "lekalo change recover [OPTIONS] --transaction <ID>",
+      "helpDigest": "sha256:68efaaa1330df9abaed9426934bf881925d938e487b93c7980ca2fcb55e2d6a9",
+      "summary": "Recover one interrupted change transaction; readers stay blocked until this succeeds",
+      "leaf": true,
+      "owner": "docs/change.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:change request",
+      "kind": "command",
+      "command": "change request",
+      "usage": "lekalo change request [OPTIONS] --request <FILE>",
+      "helpDigest": "sha256:6518c23b73aec4754cce2a96d8e95dfcf1dfc1b46f5be04192104620f68b4f1d",
+      "summary": "Run the complete JSON request surface from a file",
+      "leaf": true,
+      "owner": "docs/change.md",
       "status": "implemented"
     },
     {
@@ -2208,6 +2252,69 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/change-catalog.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/change-catalog.schema.v0.8.0.json",
+      "sourceDigest": "sha256:9e0e0f44ddd5342484a02c6ff200bbdb71ce0806589a0487ae6ce3442db5bd87",
+      "owner": "docs/change.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/change-catalog.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/change-catalog.v0.8.0.json",
+      "sourceDigest": "sha256:467a8466d9c8a6538b0d2a6e841f1cb7ebdd9a96152f7d6d79fbc62a209d7e80",
+      "owner": "docs/change.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/change-history.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/change-history.schema.v0.8.0.json",
+      "sourceDigest": "sha256:1cd9d955a9188ae48ffd3d9dbb96b18390593755a791079881efcb3f97f2af4b",
+      "owner": "docs/change.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/change-plan.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/change-plan.schema.v0.8.0.json",
+      "sourceDigest": "sha256:79080f2d8330c402ef3b60cfc2375dd5d2674fe6b8a46632e80790f1aa884271",
+      "owner": "docs/change.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/change-policy.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/change-policy.schema.v0.8.0.json",
+      "sourceDigest": "sha256:1f743cc43459b3dd46bcf937a4c9139ec7b6ccfb786fb523f639e66eb61a7bfa",
+      "owner": "docs/change.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/change-receipt.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/change-receipt.schema.v0.8.0.json",
+      "sourceDigest": "sha256:f1bce512430f1e0e55e0551730af6b577f217c7ea33d07fa02f47d80436777c6",
+      "owner": "docs/change.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/change-request.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/change-request.schema.v0.8.0.json",
+      "sourceDigest": "sha256:247d42c158f161933f26e31d6df38253e3b5b24d29b8ae9d4dcbb148cec19fad",
+      "owner": "docs/change.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/ci-report.schema.v0.6.3.json",
       "kind": "contract",
       "source": "contracts/ci-report.schema.v0.6.3.json",
@@ -2397,6 +2504,15 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/diagnostic-registry.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/diagnostic-registry.schema.v0.8.0.json",
+      "sourceDigest": "sha256:ab4c1d782b23838f2a955e5a119d33a1014042dbac2b91e29a12463cabfd22b4",
+      "owner": "docs/diagnostics.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/diagnostic-registry.v0.2.16.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.2.16.json",
@@ -2428,6 +2544,15 @@
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.6.5.json",
       "sourceDigest": "sha256:7b2be768be48050057682980b240f109d33adc56b1b4cb4b27848507df22b130",
+      "owner": "docs/diagnostics.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/diagnostic-registry.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/diagnostic-registry.v0.8.0.json",
+      "sourceDigest": "sha256:c9f76a4f77a551adf4287301d2ee4d6921ce2ce15a39455f8215bc340c6078f3",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

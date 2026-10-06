@@ -1122,7 +1122,7 @@ the redaction diff contract and never writes.
 <!-- issue-105-command-index -->
 ## Command index
 
-Status: **Implemented** command handlers for product 0.6.5. Handler existence does not imply every target capability, migration or native execution is available. Each row comes from recursive CLI help and has one owner in [the checked ownership inventory](documentation-owners.json). `init --adopt` is described in [adopt](adopt.md); native execution remains a typed refusal in the production CLI.
+Status: **Implemented** command handlers for product 0.8.0. Handler existence does not imply every target capability, migration or native execution is available. Each row comes from recursive CLI help and has one owner in [the checked ownership inventory](documentation-owners.json). `init --adopt` is described in [adopt](adopt.md); native execution remains a typed refusal in the production CLI.
 
 | Command | Synopsis from this binary | Reference owner |
 | --- | --- | --- |
@@ -1155,6 +1155,10 @@ Status: **Implemented** command handlers for product 0.6.5. Handler existence do
 | `lekalo cache` | `lekalo cache [OPTIONS] <COMMAND>` | [reference](cache.md) |
 | `lekalo cache clear` | `lekalo cache clear [OPTIONS]` | [reference](cache.md) |
 | `lekalo cache status` | `lekalo cache status [OPTIONS]` | [reference](cache.md) |
+| `lekalo change` | `lekalo change [OPTIONS] <COMMAND>` | [reference](change.md) |
+| `lekalo change receipt` | `lekalo change receipt [OPTIONS] --idempotency-key <KEY>` | [reference](change.md) |
+| `lekalo change recover` | `lekalo change recover [OPTIONS] --transaction <ID>` | [reference](change.md) |
+| `lekalo change request` | `lekalo change request [OPTIONS] --request <FILE>` | [reference](change.md) |
 | `lekalo classification` | `lekalo classification [OPTIONS] <COMMAND>` | [reference](classification.md) |
 | `lekalo classification inspect` | `lekalo classification inspect [OPTIONS] --attachment <PATH> --policy <PATH>` | [reference](classification.md) |
 | `lekalo classification validate` | `lekalo classification validate [OPTIONS] --attachment <PATH> --policy <PATH>` | [reference](classification.md) |

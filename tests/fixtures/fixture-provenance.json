@@ -81,6 +81,11 @@
       "origin": "synthetic"
     },
     {
+      "family": "change",
+      "origin": "synthetic",
+      "note": "Issue #73: authored field-vertical project (project/module/entities with a closed priority enum). Runtime cache and history bytes are never checked in; every test copies the fixture into a disposable sandbox."
+    },
+    {
       "family": "ci-report",
       "origin": "synthetic"
     },
