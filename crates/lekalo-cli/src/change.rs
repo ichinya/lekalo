@@ -323,10 +323,11 @@ pub(crate) fn run(command: ChangeCommands) -> DomainResult {
                     "diagnosticIds": [],
                     "replayed": false,
                 });
-                DomainResult::receipt(
-                    serde_json::to_string_pretty(&receipt).unwrap_or_default(),
-                    format!("recovered transaction {transaction}"),
-                )
+                let json = format!(
+                    "{{\"status\":\"valid\",\"change\":{} }}",
+                    serde_json::to_string(&receipt).unwrap_or_default()
+                );
+                DomainResult::receipt(json, format!("recovered transaction {transaction}"))
             }
             Err(error) => error.into(),
         },
@@ -406,21 +407,27 @@ fn execute(
     }
 }
 
-/// A preview success: the exact plan wire bytes plus the bounded summary.
+/// A preview success: the domain envelope with the exact plan wire bytes
+/// (`{"status":"valid","plan":{...}}`, the fixed key order of the
+/// repository envelope convention) plus the bounded human summary.
 fn preview_result(prepared: &change::PreparedChange, human_subject: &str) -> DomainResult {
     let plan = prepared.to_json_string();
+    let json = format!("{{\"status\":\"valid\",\"plan\":{plan}}}");
     let human = format!(
         "{human_subject}: {} operation(s), {} file edit(s), equal={}",
         prepared.operations().len(),
         prepared.file_edits().len(),
         prepared.is_no_op()
     );
-    DomainResult::receipt(plan, human)
+    DomainResult::receipt(json, human)
 }
 
-/// A receipt success: the exact receipt wire bytes plus the summary.
+/// A receipt success: the domain envelope with the exact receipt wire
+/// bytes plus the summary.
 fn receipt_result(receipt: &change::Receipt, human: impl std::fmt::Display) -> DomainResult {
-    DomainResult::receipt(receipt.to_json_string(), human.to_string())
+    let receipt_bytes = receipt.to_json_string();
+    let json = format!("{{\"status\":\"valid\",\"change\":{receipt_bytes}}}");
+    DomainResult::receipt(json, human.to_string())
 }
 
 /// The stable human summary of one receipt state.
