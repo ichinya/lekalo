@@ -6,7 +6,8 @@
  * policy.
  */
 import { BASE_OPERATIONS, ENUMS, IR_VERSIONS, LATEST_OPERATIONS, SUPPORTED_PROTOCOL_VERSIONS, WIRE_TOKEN } from "../generated/protocol.mjs";
-import { isPlanId } from "./ids.mjs";
+import { isLogicalPath } from "./paths.mjs";
+import { isPlanId, isSha256Digest } from "./ids.mjs";
 
 /** The closed semantic refusal tokens (distinct from decode reasons). */
 export const VALIDATE_REASONS = [
@@ -17,6 +18,15 @@ export const VALIDATE_REASONS = [
 ];
 
 const invalid = (reason) => ({ ok: false, reason });
+
+const isSorted = (values) => {
+  if (!Array.isArray(values)) return false;
+  for (let index = 1; index < values.length; index += 1) {
+    if (values[index - 1] >= values[index]) return false;
+  }
+  return true;
+};
+const isDetailToken = (value) => typeof value === "string" && value.length > 0 && value.length <= 128;
 
 const requiresIr = (operation) => ["validate", "generate", "verify"].includes(operation);
 const declaresWrites = (operation) => ["generate", "clean", "plan-clean"].includes(operation);
@@ -33,6 +43,22 @@ export function validateRequest(request) {
     if (request.protocol_version !== LINT_VERSION || request.target === undefined) return invalid("lint-request");
     if (request.profile !== undefined || request.profile_digest !== undefined || request.profile_capabilities !== undefined) return invalid("lint-request");
     if (request.ir_path !== undefined || request.native_request !== undefined || request.dry_run !== undefined || request.plan_id !== undefined) return invalid("lint-request");
+    const lint = request.lint_request;
+    if (!isSorted(lint.scope) || lint.scope.some((scope) => !isDetailToken(scope))) return invalid("lint-request");
+    if (!isSorted(lint.files) || lint.files.some((file) => !isLogicalPath(file))) return invalid("lint-request");
+    const bindingKeys = new Set();
+    for (const binding of lint.bindings) {
+      if (!isLogicalPath(binding.path) || !isDetailToken(binding.native_id) || !isDetailToken(binding.symbol)) return invalid("lint-binding");
+      if (!["command", "entity"].includes(binding.kind)) return invalid("lint-binding");
+      if (!isSha256Digest(binding.fingerprint)) return invalid("lint-binding");
+      const key = `${binding.path}\u0000${binding.native_id}\u0000${binding.kind}`;
+      if (bindingKeys.has(key) || !lint.files.includes(binding.path)) return invalid("lint-binding");
+      bindingKeys.add(key);
+    }
+    for (const pin of ["observed", "profile", "capabilities"]) {
+      if (lint.pins[pin] !== undefined && !isSha256Digest(lint.pins[pin])) return invalid("lint-pin");
+    }
+    if (lint.pins.revision !== undefined && !isDetailToken(lint.pins.revision)) return invalid("lint-pin");
   }
   if (request.operation === "plan-native" && request.native_request === undefined) return invalid("native-request");
   if (request.operation !== "plan-native" && request.native_request !== undefined) return invalid("native-request");
@@ -76,6 +102,9 @@ export function validateResponseIdentity(response, expected) {
 export function validateResponsePayload(request, response) {
   if (response.capabilities !== undefined && request.operation !== "describe") return invalid("member");
   if (request.operation === "describe" && response.status === "ok" && response.capabilities === undefined) return invalid("member");
+  const apply = request.operation === "clean" || (request.operation === "generate" && request.dry_run === false);
+  if (apply && response.evidence.plan_id !== request.plan_id) return invalid("plan-id");
+  if (request.operation === "generate" && request.dry_run === true && response.evidence.plan_id !== undefined) return invalid("plan-id");
   if (response.status === "error") {
     if (response.error === undefined) return invalid("error-pairing");
     if (response.result !== undefined || response.writes !== undefined || response.progress !== undefined) return invalid("error-pairing");

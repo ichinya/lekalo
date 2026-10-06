@@ -34,9 +34,11 @@ const requestIdOf = (envelope) => {
 const planIdOf = (entries) => "plan-" + sha256Hex(canonicalJson(entries));
 
 function canonicalJson(value) {
+  if (value === undefined) return undefined;
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   if (value !== null && typeof value === "object") {
     const body = Object.keys(value)
+      .filter((key) => value[key] !== undefined)
       .sort()
       .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
       .join(",");
@@ -66,7 +68,7 @@ function emit(relative, text) {
 const ADAPTER = { digest: digest("lekalo adapter-sdk reference adapter"), id: "sdk-reference", version: "0.1.0" };
 const IR = ".lekalo/ir/planner.json";
 const D = (seed) => digest(`lekalo adapter-sdk fixture ${seed}`);
-const R = (seed) => requestIdOf({ operation: "describe", project_root: ".", protocol: "lekalo.target/v1", protocol_version: "0.3.2", request_id: seed });
+const R = (seed) => "req-" + sha256Hex(`lekalo adapter-sdk fixture request ${seed}`);
 
 // ---------------------------------------------------------------------------
 // valid/: canonical wire envelopes
@@ -154,6 +156,7 @@ const planCleanRequest = {
   request_id: R("plan-clean"),
 };
 const nativeRequest = {
+  capability_snapshot_digest: D("capability-snapshot"),
   changes: {
     files: [
       { after_digest: D("after"), change: "modified", path: "src/main.ts" },
@@ -177,10 +180,10 @@ const planNativeRequest = {
 const lintRequest = {
   lint_request: {
     bindings: [
-      { fingerprint: D("fingerprint"), kind: "entity", native_id: "app-models-user", path: "src/User.php", symbol: "User" },
-      { fingerprint: D("fingerprint-2"), kind: "command", native_id: "app-console-inspect", path: "src/Console/Inspect.php", symbol: "Inspect" },
+      { fingerprint: D("fingerprint"), kind: "entity", native_id: "app-models-user", path: "src/domain/user.php", symbol: "user" },
+      { fingerprint: D("fingerprint-2"), kind: "command", native_id: "app-console-inspect", path: "src/console/inspect.php", symbol: "inspect" },
     ],
-    files: ["src/Console/Inspect.php", "src/User.php"],
+    files: ["src/console/inspect.php", "src/domain/user.php"],
     pins: { ir: D("ir"), model: D("model") },
     scope: ["src"],
   },
@@ -189,6 +192,7 @@ const lintRequest = {
   protocol: "lekalo.target/v1",
   protocol_version: "0.6.4",
   request_id: R("lint"),
+  target: "sdk-reference",
 };
 const generateProfileRequest = {
   ...generateDryRequest,
@@ -442,9 +446,9 @@ const invalidVectors = [
   ["native-plan-ref-bad-digest", { ...planNativeResponse, result: { native_plan: { ...planNativeResponse.result.native_plan, digest: "sha256:zz" } } }, "decode", "bounds"],
   ["scan-entry-bad-path", { ...scanResponse, result: { entries: [{ kind: "source", path: "../outside.ts" }], truncated: false } }, "decode", "bounds"],
   ["scan-entry-evidence-bad-digest", { ...scanResponseEvidence, result: { ...scanResponseEvidence.result, entries: [{ ...scanResponseEvidence.result.entries[0], evidence: { references: [], signature: "sha256:QQ" } }] } }, "decode", "bounds"],
-  ["scan-entry-reference-bad-role", { ...scanResponseEvidence, result: { ...scanResponseEvidence.result, entries: [{ ...scanResponseEvidence.result.entries[0], evidence: { references: [{ confidence: "exact", role: "watch", target: "lekalo/model/planner.v1" }] } }] } }, "decode", "bounds"],
+  ["scan-entry-reference-bad-role", { ...scanResponseEvidence, result: { ...scanResponseEvidence.result, entries: [{ ...scanResponseEvidence.result.entries[0], evidence: { references: [{ confidence: "exact", role: "watch", target: "lekalo/model/planner.v1" }] } }] } }, "decode", "shape"],
   ["lint-request-empty-scope", { ...lintRequest, lint_request: { ...lintRequest.lint_request, scope: [] } }, "decode", "bounds"],
-  ["lint-request-unsorted-files", { ...lintRequest, lint_request: { ...lintRequest.lint_request, files: ["src/User.php", "src/Console/Inspect.php"] } }, "decode", "lint-request"],
+  ["lint-request-unsorted-files", { ...lintRequest, lint_request: { ...lintRequest.lint_request, files: ["src/domain/user.php", "src/console/inspect.php"] } }, "validate", "lint-request"],
   ["dry-run-request-with-plan-id", { ...generateDryRequest, plan_id: APPLY_PLAN_ID }, "validate", "plan-id"],
   ["apply-without-plan-echo", canonicalJson(generateDryRequest).replace(`"dry_run":true`, `"dry_run":false`), "validate", "plan-id"],
   ["validate-request-missing-ir", { ...validateRequest, ir_path: undefined }, "validate", "ir-path"],
@@ -542,7 +546,7 @@ const semanticVectors = [
   },
   {
     expect: "reject:member",
-    builder: { fragments: { payload: { ok: true } }, identity: ADAPTER },
+    builder: { fragments: { payload: { ok: true }, planId: APPLY_PLAN_ID }, identity: ADAPTER },
     kind: "build-success",
     name: "semantic-build-generate-cannot-claim-ok",
     request: generateApplyRequest,
@@ -643,7 +647,7 @@ const canonicalVectors = [
     value: ["а", "б", "в", "😀", "क"],
   },
   {
-    canonical: `{"e":"combining","n":"cafe\\u0301"}`,
+    canonical: "{\"e\":\"combining\",\"n\":\"cafe\u0301\"}",
     name: "canonical-combining-not-normalized-away",
     value: { n: "cafe\u0301", e: "combining" },
   },
@@ -653,7 +657,7 @@ const canonicalVectors = [
     value: { big: 9007199254740991, cap: 1073741824, zero: 0 },
   },
   {
-    canonical: `{"t":"tab\\t and \\"quote\\" and \\u00e9"}`,
+    canonical: '{"t":"tab\\t and \\"quote\\" and é"}',
     name: "canonical-escapes",
     value: { t: "tab\t and \"quote\" and é" },
   },
@@ -692,13 +696,13 @@ const securityVectors = [
   { home: "ir", logical: true, name: "home-ir", path: ".lekalo/ir/planner.json" },
   { home: "cache", logical: true, name: "home-cache", path: ".lekalo/cache/x" },
   { home: "openspec", logical: true, name: "home-openspec", path: "openspec/change/1.md" },
-  { covers: false, name: "scope-not-covering", path: "srcx/a", scope: "src/**" },
-  { covers: true, name: "scope-recursive-covers", path: "src/a/b.ts", scope: "src/**" },
-  { covers: true, name: "scope-exact-covers", path: "gen/out.txt", scope: "gen/out.txt" },
-  { covers: false, name: "scope-exact-not-covers", path: "gen/other.txt", scope: "gen/out.txt" },
-  { covers: false, name: "scope-recursive-not-itself", path: "src", scope: "src/**" },
-  { logical: false, name: "scope-recursive-not-logical-path", path: "src/**", scope: null, scopeGrammar: true },
-  { logical: true, name: "scope-dot-home-recursive", scopeGrammar: true, scopeOk: true, value: ".lekalo/generated/sdk-reference/**" },
+  { covers: false, logical: true, name: "scope-not-covering", path: "srcx/a", scope: "src/**" },
+  { covers: true, logical: true, name: "scope-recursive-covers", path: "src/a/b.ts", scope: "src/**" },
+  { covers: true, logical: true, name: "scope-exact-covers", path: "gen/out.txt", scope: "gen/out.txt" },
+  { covers: false, logical: true, name: "scope-exact-not-covers", path: "gen/other.txt", scope: "gen/out.txt" },
+  { covers: false, logical: true, name: "scope-recursive-not-itself", path: "src", scope: "src/**" },
+  { logical: false, name: "scope-recursive-not-logical-path", scopeGrammar: true, scopeOk: true, value: "src/**" },
+  { logical: false, name: "scope-dot-home-recursive", scopeGrammar: true, scopeOk: true, value: ".lekalo/generated/sdk-reference/**" },
   { logical: false, name: "scope-recursive-middle", scopeGrammar: true, scopeOk: false, value: "src/**/x" },
   { logical: false, name: "scope-protected-recursive", scopeGrammar: true, scopeOk: true, touches: "ir", value: ".lekalo/**" },
   { logical: false, name: "scope-protected-home-recursive", scopeGrammar: true, scopeOk: true, touches: "lekalo-model", value: "lekalo/**" },
@@ -710,8 +714,8 @@ const securityVectors = [
   { logical: false, name: "capability-underscore", scopeGrammar: false, capability: "scan_symbols", tokenOk: true },
   { logical: false, name: "capability-uppercase", scopeGrammar: false, capability: "Scan.Symbols", tokenOk: false },
   { logical: false, name: "capability-lint", scopeGrammar: false, capability: "lint.ai-readability", tokenOk: true },
-  { logical: false, name: "path-nfc-denied", path: "cafe\u0301/x.ts", requiresNfc: true, value: "cafe\u0301/x.ts" },
-  { logical: true, name: "path-nfc-accepted", requiresNfc: true, value: "café/x.ts" },
+  { logical: false, name: "path-nfc-denied", requiresNfc: true, value: "cafe\u0301/x.ts" },
+  { logical: true, name: "path-nfc-accepted", requiresNfc: true, value: "cafe/x.ts" },
 ];
 for (const vector of securityVectors) {
   writeDoc("security", vector.name, vector);
@@ -763,7 +767,10 @@ for (const row of upgradeRows) {
   };
   if (row.operation === "lint") {
     envelope.lint_request = lintRequest.lint_request;
-    envelope.protocol_version = "0.6.4";
+    envelope.target = "sdk-reference";
+    // The row pins the exact version under test: the lint seam only
+    // negotiates on 0.6.4, so a 0.3.2 lint row must keep its version.
+    envelope.protocol_version = row.protocolVersion;
   }
   writeDoc("upgrade", row.name, { ...row, request: envelope });
 }

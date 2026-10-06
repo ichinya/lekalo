@@ -9,7 +9,7 @@
  * bounded safe stderr line and exits nonzero — never a fabricated success.
  */
 import { BOUNDS, ENUMS, WIRE_TOKEN } from "../generated/protocol.mjs";
-import { canonicalJson, canonicalJson as canonical } from "./json.mjs";
+import { canonicalJson } from "./json.mjs";
 import { isContractVersion, isToken } from "./paths.mjs";
 import { isPlanId, isSha256Digest } from "./ids.mjs";
 import { validateResponsePayload } from "./validate.mjs";
@@ -214,6 +214,3 @@ export function buildDiagnostic(codes, { code, data, message, rule }) {
 export function responseBytes(envelope) {
   return canonicalJson(envelope);
 }
-
-/** Compatibility re-export: canonical bytes of any closed value. */
-export const canonicalBytes = canonical;

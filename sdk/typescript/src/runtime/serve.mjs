@@ -77,6 +77,9 @@ async function dispatch(adapter, request, log, io) {
     });
   }
   const output = await handler({ cancel, io, log, request, token });
+  if (output !== null && typeof output === "object" && output.error !== undefined) {
+    return buildError({ adapter: adapter.identity, ...output.error, request });
+  }
   if (request.operation === "describe") {
     return buildSuccess({ adapter: adapter.identity, capabilities: output, request });
   }

@@ -97,7 +97,6 @@ export {
   buildFinding,
   buildOperationError,
   buildSuccess,
-  canonicalBytes,
   responseBytes,
 } from "./runtime/build.mjs";
 

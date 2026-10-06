@@ -144,8 +144,10 @@ const SEMANTIC_BOUNDS = {
   max_declared_capabilities: 64,
   max_scopes: 64,
   max_constraint_value: 1_073_741_824,
-  limits_timeout_ms: [1, 3_600_000],
-  limits_max_output_bytes: [1, 1_073_741_824],
+  limits_timeout_min: 1,
+  limits_timeout_max: 3_600_000,
+  limits_output_min: 1,
+  limits_output_max: 1_073_741_824,
   error_code_max: 128,
   error_message_max: 256,
   error_details_max: 16,
@@ -272,6 +274,8 @@ function corpusVectors() {
 // ---------------------------------------------------------------------------
 
 const languageExtension = { go: "go", php: "php", rust: "rs", typescript: "mjs" };
+/** The generated-module directory inside each SDK package root (research I3/I5). */
+const generatedDirectory = { go: "generated", php: "src/Generated", rust: "src/generated", typescript: "src/generated" };
 const generatedHeader = (lang) => {
   const comment = { go: "//", php: "//", rust: "//", typescript: "//" }[lang];
   return [
@@ -516,37 +520,10 @@ verifyEnumSpelling();
 
 function renderProtocol(lang) {
   const lines = [generatedHeader(lang), ""];
-  const boundsLines = () => [
-    `MAX_REQUEST_BYTES = ${SEMANTIC_BOUNDS.max_request_bytes}`,
-    `DEFAULT_TIMEOUT_MS = ${SEMANTIC_BOUNDS.default_timeout_ms}`,
-    `DEFAULT_MAX_OUTPUT_BYTES = ${SEMANTIC_BOUNDS.default_max_output_bytes}`,
-    `MAX_STDERR_BYTES = ${SEMANTIC_BOUNDS.max_stderr_bytes}`,
-    `MAX_PLAN_ENTRIES = ${SEMANTIC_BOUNDS.max_plan_entries}`,
-    `MAX_IR_VERSIONS = ${SEMANTIC_BOUNDS.max_ir_versions}`,
-    `MAX_DECLARED_CAPABILITIES = ${SEMANTIC_BOUNDS.max_declared_capabilities}`,
-    `MAX_SCOPES = ${SEMANTIC_BOUNDS.max_scopes}`,
-    `MAX_CONSTRAINT_VALUE = ${SEMANTIC_BOUNDS.max_constraint_value}`,
-    `LIMITS_TIMEOUT_MIN = ${SEMANTIC_BOUNDS.limits_timeout_ms[0]}`,
-    `LIMITS_TIMEOUT_MAX = ${SEMANTIC_BOUNDS.limits_timeout_ms[1]}`,
-    `LIMITS_OUTPUT_MIN = ${SEMANTIC_BOUNDS.limits_max_output_bytes[0]}`,
-    `LIMITS_OUTPUT_MAX = ${SEMANTIC_BOUNDS.limits_max_output_bytes[1]}`,
-    `ERROR_CODE_MAX = ${SEMANTIC_BOUNDS.error_code_max}`,
-    `ERROR_MESSAGE_MAX = ${SEMANTIC_BOUNDS.error_message_max}`,
-    `ERROR_DETAILS_MAX = ${SEMANTIC_BOUNDS.error_details_max}`,
-    `ERROR_DETAIL_MAX = ${SEMANTIC_BOUNDS.error_detail_max}`,
-    `PROGRESS_STEPS_MAX = ${SEMANTIC_BOUNDS.progress_steps_max}`,
-    `PROGRESS_TEXT_MAX = ${SEMANTIC_BOUNDS.progress_text_max}`,
-    `SCAN_ENTRIES_MAX = ${SEMANTIC_BOUNDS.scan_entries_max}`,
-    `FINDINGS_MAX = ${SEMANTIC_BOUNDS.findings_max}`,
-    `BINDINGS_MAX = ${SEMANTIC_BOUNDS.bindings_max}`,
-    `REFERENCES_MAX = ${SEMANTIC_BOUNDS.references_max}`,
-    `PROTOCOL_VERSIONS_MAX = ${SEMANTIC_BOUNDS.protocol_versions_max}`,
-    `OPERATIONS_MAX_BASE = ${SEMANTIC_BOUNDS.operations_max_base}`,
-    `OPERATIONS_MAX_LINT = ${SEMANTIC_BOUNDS.operations_max_lint}`,
-    `TRANSPORTS_MAX = ${SEMANTIC_BOUNDS.transports_max}`,
-    `TARGETS_MAX = ${SEMANTIC_BOUNDS.targets_max}`,
-    `PROFILES_MAX = ${SEMANTIC_BOUNDS.profiles_max}`,
-  ];
+  const BOUNDS_PAIRS = Object.entries(SEMANTIC_BOUNDS).map(([key, value]) => [
+    key.toUpperCase(),
+    value,
+  ]);
   if (lang === "rust") {
     lines.push(
       "//! The generated wire vocabulary of the target protocol (issue #106).",
@@ -564,7 +541,7 @@ function renderProtocol(lang) {
       "/// The semantic bounds the runtime codec enforces (mirrors of the closed",
       "/// schema constraints; the paired host tests pin them together).",
       "pub mod bounds {",
-      ...boundsLines().map((line) => `    pub const ${line}: ${/^(LIMITS_|MAX_REQUEST|DEFAULT_)/.test(line) ? "u64" : "usize"} = ${line.split(" = ")[1]};`),
+      ...BOUNDS_PAIRS.map(([key, value]) => `    pub const ${key}: u64 = ${value};`),
       "}",
       "",
       "/// The closed enum vocabularies (stable wire spellings).",
@@ -575,12 +552,14 @@ function renderProtocol(lang) {
       "/// One per-version operation row of the generated compatibility matrix.",
       "#[derive(Clone, Debug)]",
       "pub struct VersionOperations {",
-      "    pub operations: Vec<&'static str>,",
+      "    pub operations: &'static [&'static str],",
       "    pub protocol_version: &'static str,",
       "}",
       "",
+      ...protocolVersions.map((version) => `pub const OPERATIONS_V${version.replaceAll(".", "_")}: &[&str] = &[${config.operations[version].map((v) => JSON.stringify(v)).join(", ")}];`),
+      "",
       "pub const OPERATIONS_BY_VERSION: &[VersionOperations] = &[",
-      ...protocolVersions.map((version) => `    VersionOperations { operations: ${JSON.stringify(config.operations[version])}.into_iter().map(|op: &'static str| op).collect(), protocol_version: ${JSON.stringify(version)} },`),
+      ...protocolVersions.map((version) => `    VersionOperations { operations: OPERATIONS_V${version.replaceAll(".", "_")}, protocol_version: ${JSON.stringify(version)} },`),
       "];",
       "",
     );
@@ -595,7 +574,7 @@ function renderProtocol(lang) {
       `export const PLAN_ID_PREFIX = "plan-";`,
       "/** The semantic bounds the runtime codec enforces. */",
       "export const BOUNDS = Object.freeze({",
-      ...boundsLines().map((line) => `  ${line},`),
+      ...BOUNDS_PAIRS.map(([key, value]) => `  ${key}: ${value},`),
       "});",
       "/** The closed enum vocabularies (stable wire spellings). */",
       "export const ENUMS = Object.freeze({",
@@ -615,7 +594,7 @@ function renderProtocol(lang) {
       `\tWireToken                 = ${JSON.stringify(config.wireToken)}`,
       `\tRequestIDPrefix           = "req-"`,
       `\tPlanIDPrefix              = "plan-"`,
-      ...boundsLines().map((line) => `\t${line.replace(/ = /, " = ").replace(/^([A-Z_]+) = (.*)$/, "$1 = $2").replace(/^/, "")}`),
+      ...BOUNDS_PAIRS.map(([key, value]) => `	${key} = ${value}`),
       `)`,
       "",
       `var (`,
@@ -716,7 +695,6 @@ const TS_MODULE_ORDER = [
   "src/runtime/validate.mjs",
   "src/runtime/build.mjs",
   "src/runtime/serve.mjs",
-  "src/index.mjs",
 ];
 
 /** Bundle one TypeScript template's standalone entry (node-runnable). */
@@ -730,9 +708,7 @@ function bundleTypeScriptTemplate(template, generatedFiles) {
   ];
   const moduleSources = new Map();
   for (const relative of TS_MODULE_ORDER) {
-    const generatedKey = relative.startsWith("src/generated/")
-      ? `generated/${relative.slice("src/generated/".length)}`
-      : null;
+    const generatedKey = relative.startsWith("src/generated/") ? relative : null;
     const text = (generatedKey && generatedFiles.get(generatedKey)) ?? read(join("sdk/typescript", relative));
     moduleSources.set(relative, text);
   }
@@ -763,31 +739,44 @@ function transformTypeScriptModules(moduleSources, glue, templateName) {
   };
   for (const [name, text] of moduleSources) {
     sourceByModule.set(name, text);
-    const names = [...text.matchAll(/^export (?:const|function|class) ([A-Za-z0-9_]+)/gm)].map((match) => match[1]);
+    const names = [...text.matchAll(/^export (?:async )?(?:const|function|class) ([A-Za-z0-9_]+)/gm)].map((match) => match[1]);
     if (names.length === 0) fail("bundle-exports", name);
     exportsByModule.set(name, names);
   }
   const order = TS_MODULE_ORDER.filter((name) => sourceByModule.has(name));
+  const hoistedImports = new Set();
   const blocks = [];
   for (const name of order) {
     let text = sourceByModule.get(name);
+    // Bare (node built-in) imports are legal in the standalone bundle and
+    // must hoist to the file top; relative imports become registry lookups.
+    text = text.replace(/^import [\s\S]*?from "[^"]+";$/gm, (whole) => {
+      if (/from "\./.test(whole)) return whole;
+      hoistedImports.add(whole);
+      return `// hoisted: ${whole.slice(0, whole.indexOf(" from"))}`;
+    });
     text = text.replace(/^import \{([^}]*)\} from "(\.[^"]+)";$/gm, (whole, names, specifier) => {
       void whole;
       const target = normalize(name, specifier);
       return `const {${names.trim()}} = __module(${JSON.stringify(target)});`;
     });
-    if (/^import /m.test(text)) fail("bundle-import", name);
+    if (/^import [\s\S]*from "\./m.test(text)) fail("bundle-import", name);
     const names = exportsByModule.get(name);
-    text = text.replace(/^export (const|function|class) /gm, "$1 ");
-    text += `\n__register(${JSON.stringify(name)}, { ${names.join(", ")} });\n`;
-    blocks.push(`// ---- sdk/typescript/${name} ----\n${text}`);
+    text = text.replace(/^export (async )?(const|function|class) /gm, "$1$2 ");
+    blocks.push(
+      `// ---- sdk/typescript/${name} ----\n__register(${JSON.stringify(name)}, (() => {\n${text}\nreturn { ${names.join(", ")} };\n})());`,
+    );
   }
-  let glueText = glue.replace(/^import \{([^}]*)\} from "(@lekalo\/adapter-sdk[^"]*)";$/gm, (whole, names, specifier) => {
-    void whole; void specifier;
-    return `const {${names.trim()}} = __module(${JSON.stringify("src/index.mjs")});`;
-  });
-  if (/^import /m.test(glueText)) fail("bundle-glue-import", templateName);
-  glueText = glueText.replace(/^export (const|function|class) /gm, "$1 ");
+  let glueText = glue.replace(
+    /^import \{([^}]*)\} from "(@lekalo\/adapter-sdk|\.\.\/\.\.\/\.\.\/typescript\/(?:src\/[a-z0-9._/-]+|index\.mjs))";$/gm,
+    (whole, names, specifier) => {
+      void whole;
+      const target = specifier.startsWith("@lekalo/") ? "src/index.mjs" : specifier.slice("../../../typescript/".length);
+      return `const {${names.trim()}} = __module(${JSON.stringify(target)});`;
+    },
+  );
+  if (/^import [\s\S]*from "\./m.test(glueText)) fail("bundle-glue-import", templateName);
+  glueText = glueText.replace(/^export (async )?(const|function|class) /gm, "$1$2 ");
   return `let __registry = undefined;
 function __register(name, moduleExports) {
   __registry.set(name, moduleExports);
@@ -799,6 +788,7 @@ function __module(name) {
 }
 const __exports = new Map();
 __registry = __exports;
+${[...hoistedImports].sort().join("\n")}
 ${blocks.join("\n")}
 // ---- sdk/templates/typescript/${templateName}/main.mjs ----
 ${glueText}`;
@@ -829,9 +819,7 @@ function bundlePhpTemplate(template, generatedFiles) {
     "",
   ];
   for (const relative of order) {
-    const generatedKey = relative.includes("/Generated/")
-      ? `generated/${relative.split("/").pop()}`
-      : null;
+    const generatedKey = relative.includes("/Generated/") ? relative : null;
     const text = (generatedKey && generatedFiles.get(generatedKey)) ?? read(join("sdk/php", relative));
     const stripped = text
       .replace(/^<\?php\s*/,"")
@@ -866,10 +854,11 @@ function renderFor(lang) {
   const compatibility = buildCompatibility(lang, vectors);
   const files = new Map();
   const ext = languageExtension[lang];
-  files.set(`generated/protocol.${ext}`, renderProtocol(lang));
-  files.set(`generated/capabilities.${ext}`, renderCapabilities(lang));
-  files.set(`generated/diagnostics.${ext}`, renderDiagnostics(lang));
-  files.set(`generated/compatibility_tests.${ext}`, renderCompatibilityTests(lang));
+  const gen = generatedDirectory[lang];
+  files.set(`${gen}/protocol.${ext}`, renderProtocol(lang));
+  files.set(`${gen}/capabilities.${ext}`, renderCapabilities(lang));
+  files.set(`${gen}/diagnostics.${ext}`, renderDiagnostics(lang));
+  files.set(`${gen}/compatibility_tests.${ext}`, renderCompatibilityTests(lang));
   files.set("compatibility.json", canonicalJson(compatibility));
   const outputs = [...files.entries()]
     .map(([path, text]) => ({ digest: sha256(text), path }))

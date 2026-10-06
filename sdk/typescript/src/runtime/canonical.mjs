@@ -9,11 +9,11 @@
 import { canonicalJson } from "./json.mjs";
 import { isSha256Digest, planId, sha256 } from "./ids.mjs";
 import { isLogicalPath, planScopeViolation, protectedHome } from "./paths.mjs";
-import { MAX_PLAN_ENTRIES } from "../generated/protocol.mjs";
+import { BOUNDS } from "../generated/protocol.mjs";
 
 /** Sort one write plan by path and verify the closed entry grammar. */
 export function sortWritePlan(entries) {
-  if (!Array.isArray(entries) || entries.length > MAX_PLAN_ENTRIES) return null;
+  if (!Array.isArray(entries) || entries.length > BOUNDS.MAX_PLAN_ENTRIES) return null;
   for (const entry of entries) {
     if (entry === null || typeof entry !== "object" || Array.isArray(entry)) return null;
     if (!isLogicalPath(entry.path)) return null;
@@ -44,7 +44,7 @@ export function writeEntryDigest(contentBytes) {
  * input, and content links and owns durable publication.
  */
 export function buildArtifactManifest(entries) {
-  if (!Array.isArray(entries) || entries.length === 0 || entries.length > MAX_PLAN_ENTRIES) return null;
+  if (!Array.isArray(entries) || entries.length === 0 || entries.length > BOUNDS.MAX_PLAN_ENTRIES) return null;
   const rows = [];
   for (const entry of entries) {
     if (entry === null || typeof entry !== "object") return null;

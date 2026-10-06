@@ -26,7 +26,7 @@ const failure = (reason, detail) => ({ ok: false, reason, ...(detail === undefin
 const isInt = (value) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 
 function optional(member) {
-  if (member === undefined) return { ok: true };
+  // Absent is fine (null = continue); only an explicit null refuses.
   if (member === null) return failure("explicit-null");
   return null;
 }
@@ -455,22 +455,35 @@ function decodeCapabilities(value) {
   if (closed) return closed;
   const identity = decodeIdentity(value.adapter);
   if (!identity.ok) return identity;
-  const boundedList = (member, max, check) => {
+  // Required with a non-empty closed bound on the wire (core: unique).
+  const requiredList = (member, max, check) => {
     if (!Array.isArray(value[member]) || value[member].length > max) return false;
     const unique = new Set(value[member]);
     if (unique.size !== value[member].length) return false;
     return value[member].every((entry) => check(entry));
   };
-  if (!boundedList("protocol_versions", BOUNDS.PROTOCOL_VERSIONS_MAX, isContractVersion)) return failure("bounds");
-  if (!boundedList("operations", BOUNDS.OPERATIONS_MAX_LINT, (op) => LATEST_OPERATIONS.includes(op))) return failure("bounds");
-  if (!boundedList("transports", BOUNDS.TRANSPORTS_MAX, (t) => TRANSPORTS.includes(t))) return failure("bounds");
-  if (!boundedList("targets", BOUNDS.TARGETS_MAX, isToken)) return failure("bounds");
-  if (!boundedList("profiles", BOUNDS.PROFILES_MAX, isToken)) return failure("bounds");
-  if (!boundedList("read_scopes", BOUNDS.MAX_SCOPES, (s) => typeof s === "string" && s.length > 0 && s.length <= BOUNDS.PATH_MAX)) return failure("bounds");
-  if (!boundedList("write_scopes", BOUNDS.MAX_SCOPES, (s) => typeof s === "string" && s.length > 0 && s.length <= BOUNDS.PATH_MAX)) return failure("bounds");
-  if (!boundedList("ir_versions", BOUNDS.MAX_IR_VERSIONS, isContractVersion)) return failure("bounds");
+  // Optional members are absent-legal (core serde default), never null.
+  const optionalList = (member, max, check) => {
+    const absent = optional(value[member]);
+    if (absent) return false;
+    if (value[member] === undefined) return true;
+    if (!Array.isArray(value[member]) || value[member].length > max) return false;
+    const unique = new Set(value[member]);
+    if (unique.size !== value[member].length) return false;
+    return value[member].every((entry) => check(entry));
+  };
+  if (!requiredList("protocol_versions", BOUNDS.PROTOCOL_VERSIONS_MAX, isContractVersion)) return failure("bounds");
+  if (!requiredList("operations", BOUNDS.OPERATIONS_MAX_LINT, (op) => LATEST_OPERATIONS.includes(op))) return failure("bounds");
+  if (!requiredList("transports", BOUNDS.TRANSPORTS_MAX, (t) => TRANSPORTS.includes(t))) return failure("bounds");
+  if (!optionalList("targets", BOUNDS.TARGETS_MAX, isToken)) return failure("bounds");
+  if (!optionalList("profiles", BOUNDS.PROFILES_MAX, isToken)) return failure("bounds");
+  if (!optionalList("read_scopes", BOUNDS.MAX_SCOPES, (s) => typeof s === "string" && s.length > 0 && s.length <= BOUNDS.PATH_MAX)) return failure("bounds");
+  if (!optionalList("write_scopes", BOUNDS.MAX_SCOPES, (s) => typeof s === "string" && s.length > 0 && s.length <= BOUNDS.PATH_MAX)) return failure("bounds");
+  if (!optionalList("ir_versions", BOUNDS.MAX_IR_VERSIONS, isContractVersion)) return failure("bounds");
   if (typeof value.progress !== "boolean") return failure("shape");
   if (value.capabilities !== undefined) {
+    const absentMap = optional(value.capabilities);
+    if (absentMap) return absentMap;
     if (value.capabilities === null || typeof value.capabilities !== "object" || Array.isArray(value.capabilities)) return failure("shape");
     const ids = Object.keys(value.capabilities);
     if (ids.length > BOUNDS.MAX_DECLARED_CAPABILITIES) return failure("bounds");
