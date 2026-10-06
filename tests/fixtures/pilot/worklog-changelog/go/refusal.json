@@ -1,18 +1,1 @@
-{
-  "schemaVersion": "lekalo/worklog-changelog-refusal/v0.8.0",
-  "identity": "dev.lekalo.worklog-changelog-refusal@0.8.0",
-  "target": "go",
-  "state": "absent",
-  "reason": "No Go backend supplies bound publication evidence at this checkout; the negative gate asserts this denial, not Go execution.",
-  "requiredBeforeAcceptance": [
-    "publish.approval",
-    "publish.revisioned_snapshot",
-    "security.review_gate",
-    "delivery.durable",
-    "call.idempotent_write",
-    "transaction.atomic_group",
-    "idempotency.durable_key",
-    "authorization.tenant_scope",
-    "rendering.safe_url"
-  ]
-}
+{"identity":"dev.lekalo.worklog-changelog-refusal@0.8.0","reason":"No Go backend supplies bound publication evidence at this checkout; the negative gate asserts this denial, not Go execution.","requiredBeforeAcceptance":["publish.approval","publish.revisioned_snapshot","security.review_gate","delivery.durable","call.idempotent_write","transaction.atomic_group","idempotency.durable_key","authorization.tenant_scope","rendering.safe_url"],"schemaVersion":"lekalo/worklog-changelog-refusal/v0.8.0","state":"absent","target":"go"}

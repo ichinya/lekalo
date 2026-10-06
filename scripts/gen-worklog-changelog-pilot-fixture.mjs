@@ -403,8 +403,19 @@ const attachment = {
   ],
 };
 
+const ordered = (v) =>
+  Array.isArray(v)
+    ? v.map(ordered)
+    : v && typeof v === "object"
+      ? Object.fromEntries(
+          Object.keys(v)
+            .sort()
+            .map((k) => [k, ordered(v[k])]),
+        )
+      : v;
+
 mkdirSync(resolve(root, dirname(outPath)), { recursive: true });
-writeFileSync(resolve(root, outPath), JSON.stringify(attachment));
+writeFileSync(resolve(root, outPath), JSON.stringify(ordered(attachment)));
 console.log(
   JSON.stringify({
     ok: true,

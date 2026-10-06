@@ -62,8 +62,19 @@ const scenarioPins = {
   publishWithdrawOrdering: scenario("changelog.scenario.publish_withdraw_ordering", sha("scenario-ir:changelog.scenario.publish_withdraw_ordering")),
 };
 
+const ordered = (v) =>
+  Array.isArray(v)
+    ? v.map(ordered)
+    : v && typeof v === "object"
+      ? Object.fromEntries(
+          Object.keys(v)
+            .sort()
+            .map((k) => [k, ordered(v[k])]),
+        )
+      : v;
+
 const write = (name, value) => {
-  writeFileSync(resolve(root, dir, name), JSON.stringify(value));
+  writeFileSync(resolve(root, dir, name), JSON.stringify(ordered(value)));
   console.log("wrote", name);
 };
 
