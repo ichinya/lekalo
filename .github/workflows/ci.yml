@@ -99,6 +99,14 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-run-history-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-ai-workspace-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-provider-contracts.mjs
+      - name: Run the adapter-SDK schema, digest, and generator gates (issue #106)
+        # CI permits only the read-only generator --check; --write stays a
+        # local development action. The emitted outputs and records are
+        # pinned by committed digests, so drift fails here.
+        run: |
+          set -euo pipefail
+          node scripts/generate-adapter-sdk.mjs --check
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-adapter-sdk-contracts.mjs
       - name: Execute protocol semantic vectors through production Rust decoding
         run: cargo test -p lekalo-core target_protocol_conformance --locked
       - name: Run contract checkers and suites
@@ -576,6 +584,21 @@ jobs:
       - name: Run the target adapter conformance suite against the reference adapter
         timeout-minutes: 10
         run: cargo run --locked -p lekalo-cli -- adapter test --profile strict --report junit --timeout-ms 60000 node tests/fixtures/target-protocol/fake-adapter.mjs --lekalo-adapter-variant fluent
+      - name: Run the adapter-SDK vector parity gate (issue #106)
+        # Four provisioned runtimes (Node ships with the runner, Go/PHP
+        # are provisioned above, Rust by the toolchain step) replay the
+        # shared corpus; a missing runtime is a failed setup, not a skip.
+        timeout-minutes: 15
+        run: node scripts/test-adapter-sdk-vectors.mjs --language all
+      - name: Run the adapter-SDK conformance and package gates (issue #106)
+        # The host binary was built above in this job, so the confined
+        # strict battery, the feature-limited examples, and the packed
+        # release-candidate verification run on every OS.
+        timeout-minutes: 20
+        run: |
+          set -euo pipefail
+          node scripts/test-adapter-sdk-conformance.mjs --language all --profile strict --repeats 3 --timeout-ms 60000
+          node scripts/test-adapter-sdk-packages.mjs --verify
       - name: Remove the CI-only AppArmor launcher prerequisite
         if: always() && runner.os == 'Linux' && steps.apparmor.outcome == 'success'
         timeout-minutes: 1
