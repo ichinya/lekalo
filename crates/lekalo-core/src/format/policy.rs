@@ -7,6 +7,10 @@
 
 use serde::Deserialize;
 
+/// Why pinned policy bytes were refused (developer fault, fail closed).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PolicyError;
+
 /// One formatter limit from the policy contract.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -91,23 +95,23 @@ impl Policy {
     pub const IDENTITY: &'static str = "dev.lekalo.format-policy@0.8.0";
 
     /// Validate and pin the embedded policy once per process.
-    pub fn embedded() -> Result<Self, ()> {
-        static POLICY: std::sync::LazyLock<Result<Policy, ()>> =
+    pub fn embedded() -> Result<Self, PolicyError> {
+        static POLICY: std::sync::LazyLock<Result<Policy, PolicyError>> =
             std::sync::LazyLock::new(|| Policy::from_bytes(crate::format::POLICY_BYTES));
         POLICY.clone()
     }
 
     /// Parse and validate policy bytes: identity pin, digest recompute,
     /// and the closed shape.
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, ()> {
-        let policy: Policy = serde_json::from_slice(bytes).map_err(|_| ())?;
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, PolicyError> {
+        let policy: Policy = serde_json::from_slice(bytes).map_err(|_| PolicyError)?;
         if policy.schema_version != Self::SCHEMA_VERSION || policy.identity != Self::IDENTITY {
-            return Err(());
+            return Err(PolicyError);
         }
-        let value: serde_json::Value = serde_json::from_slice(bytes).map_err(|_| ())?;
+        let value: serde_json::Value = serde_json::from_slice(bytes).map_err(|_| PolicyError)?;
         let digest = policy.digest.clone();
         if compute_policy_digest(&value)? != digest {
-            return Err(());
+            return Err(PolicyError);
         }
         Ok(policy)
     }
@@ -159,9 +163,9 @@ pub(crate) fn canonical_json(value: &serde_json::Value, out: &mut String) {
 
 /// The policy digest recipe: SHA-256 over the canonical compact JSON of the
 /// whole document excluding its own `policyDigest` member.
-pub(crate) fn compute_policy_digest(value: &serde_json::Value) -> Result<String, ()> {
+pub(crate) fn compute_policy_digest(value: &serde_json::Value) -> Result<String, PolicyError> {
     let serde_json::Value::Object(entries) = value else {
-        return Err(());
+        return Err(PolicyError);
     };
     let mut reduced = entries.clone();
     reduced.remove("policyDigest");

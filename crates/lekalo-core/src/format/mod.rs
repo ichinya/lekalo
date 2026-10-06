@@ -16,6 +16,8 @@ pub(crate) mod transaction;
 pub(crate) mod trivia;
 pub mod wire;
 
+pub use policy::Policy;
+
 use crate::diagnostics::normalize::{build, source_location};
 use crate::diagnostics::types::DataValue;
 use crate::diagnostics::{DataObject, Diagnostic as Wire};
@@ -25,7 +27,6 @@ use crate::loader::{diagnostic as loader_diagnostic, error::Diagnostic as RawDia
 use crate::loader::{DocKind, LoadSelection};
 use crate::result::{DomainResult, Status, SuccessPayload};
 
-use policy::Policy;
 use render::Syntax;
 
 /// The exact embedded format-policy contract bytes.
@@ -94,7 +95,7 @@ struct RenderedFile {
 
 /// Load, pin, render, verify, and build the bounded report. No writes.
 fn plan(request: &FormatRequest, stdin_bytes: Option<&[u8]>) -> Result<Planned, DomainResult> {
-    let policy = Policy::embedded().map_err(|()| policy_failure())?;
+    let policy = Policy::embedded().map_err(|_policy_error| policy_failure())?;
     let selection = LoadSelection {
         project: request.project.clone(),
     };

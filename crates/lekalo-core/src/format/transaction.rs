@@ -174,8 +174,10 @@ pub(crate) fn pending_plan(selection: &LoadSelection) -> Option<String> {
         .or_else(|| Some("unknown".to_owned()))
 }
 
-/// Recover every interrupted plan under the selection's root before new
-/// mutating work. No-op when no recovery state exists.
+/// Recover every interrupted plan (those still carrying a journal) under
+/// the selection's root before new mutating work. Completed plan homes —
+/// journal removed at commit — are rollback material, never recovery
+/// targets. No-op when no recovery state exists.
 pub(crate) fn recover_pending(selection: &LoadSelection) -> Result<(), RecoveryError> {
     let root = crate::loader::root_for_selection(selection).map_err(|_| RecoveryError {
         plan_id: "unknown".to_owned(),
@@ -191,6 +193,11 @@ pub(crate) fn recover_pending(selection: &LoadSelection) -> Result<(), RecoveryE
     let write = FormatWrite::new(root);
     let plans = plan_directories_from(&write);
     for plan_id in plans {
+        // Only interrupted plans (durable journal present) recover;
+        // completed homes hold immutable backups for explicit rollback.
+        if !write.file_exists(&format!("{FORMAT_HOME}/{plan_id}/{JOURNAL}")) {
+            continue;
+        }
         recover_plan(&write, &plan_id)?;
     }
     // The lock outlives plan homes on a crash between lock and journal.

@@ -148,10 +148,7 @@ impl<'a> Renderer<'a> {
                 .unwrap_or(node.span.start.line),
             Value::Map(entries) => entries
                 .iter()
-                .map(|entry| {
-                    self.extent(&entry.value)
-                        .max(entry.key_span.end.line)
-                })
+                .map(|entry| self.extent(&entry.value).max(entry.key_span.end.line))
                 .max()
                 .unwrap_or(node.span.start.line),
         }
