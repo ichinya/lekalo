@@ -9,5 +9,7 @@ node_modules/
 
 # Independent SDK package build artifacts (issue #106)
 sdk/rust/target/
+sdk/templates/rust/*/target/
+sdk/templates/go/*/
 sdk/go/bin/
 node_modules/
