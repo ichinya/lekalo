@@ -73,3 +73,28 @@ fn pilot_document_joins_the_pinned_compilation() {
             .expect("composition joins the pinned compilation");
     });
 }
+
+/// The committed pilot scenario corpus: every document decodes through
+/// the production Scenario IR module and its committed bytes are the
+/// canonical form.
+#[test]
+fn pilot_scenario_corpus_decodes_and_canonicalizes() {
+    use lekalo_core::scenario::ScenarioIr;
+    let dir = workspace_root().join("tests/fixtures/pilot/worklog-changelog/scenarios");
+    let mut checked = 0;
+    for entry in std::fs::read_dir(&dir).expect("scenario corpus present") {
+        let path = entry.expect("scenario entry").path();
+        let bytes = std::fs::read(&path).expect("scenario bytes");
+        let value: serde_json::Value =
+            serde_json::from_slice(&bytes).expect("scenario JSON parses");
+        let ir = ScenarioIr::from_value(&value)
+            .unwrap_or_else(|set| panic!("{}: rejected: {set:?}", path.display()));
+        let text = std::str::from_utf8(&bytes).expect("utf8");
+        let canonical = ir
+            .canonical_bytes()
+            .unwrap_or_else(|set| panic!("{}: export refused: {set:?}", path.display()));
+        assert_eq!(canonical, text, "{}: canonical bytes diverge", path.display());
+        checked += 1;
+    }
+    assert!(checked >= 12, "the corpus carries the full scenario set");
+}

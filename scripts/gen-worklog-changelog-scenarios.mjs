@@ -1,0 +1,698 @@
+#!/usr/bin/env node
+// Issue #51: the pilot's Scenario IR corpus. Twelve closed documents
+// covering the ten issue scenarios plus the approval-required and
+// stale-preview publication guards. Every document pins the exact
+// compiled Model and IR digests (computed from the production binary)
+// and is emitted in the canonical form: compact JSON with byte-sorted
+// object keys. Deterministic; no wall clock.
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const root = resolve(here, "..");
+const binary = process.env.LEKALO_BIN ?? resolve(root, "target/debug/lekalo.exe");
+const project = "tests/fixtures/pilot/worklog-changelog/model";
+const dir = "tests/fixtures/pilot/worklog-changelog/scenarios";
+
+const sha = (bytes) => "sha256:" + createHash("sha256").update(bytes).digest("hex");
+const run = (args) => execFileSync(binary, args, { cwd: root, encoding: "utf8" }).trim();
+const runJson = (args) => JSON.parse(run(args));
+
+const modelDigest = sha(run(["--json", "--no-cache", "load", "--project", project]));
+const irEnvelope = runJson(["--json", "--no-cache", "load", "--ir", "--project", project]);
+if (irEnvelope.status !== "valid") throw new Error("ir load failed");
+const irDigest = sha(JSON.stringify(irEnvelope.ir));
+
+// Canonical emission: compact JSON with byte-sorted object keys.
+const ordered = (v) =>
+  Array.isArray(v)
+    ? v.map(ordered)
+    : v && typeof v === "object"
+      ? Object.fromEntries(
+          Object.keys(v)
+            .sort()
+            .map((k) => [k, ordered(v[k])]),
+        )
+      : v;
+
+const base = (scenarioId, summary) => ({
+  schemaVersion: "lekalo/scenario-ir/v0.2.16",
+  identity: "dev.lekalo.scenario-ir@0.2.16",
+  projectId: "taskhub",
+  scenarioId,
+  scenarioVersion: "0.2.16",
+  summary,
+  irRef: { identity: "dev.lekalo.ir@0.2.16", digest: irDigest },
+  modelRef: { modelVersion: "0.2.16", digest: modelDigest },
+  given: [],
+  when: [],
+  then: [],
+  bindings: [],
+  tags: [],
+  metadata: {},
+});
+
+const stateGiven = (stepId, entity, selector, fields) => ({
+  stepId,
+  precondition: { kind: "state", entity, selector, fields },
+});
+
+const actorGiven = (stepId, actor) => ({
+  stepId,
+  precondition: { kind: "actor", actor },
+});
+
+const clockGiven = (stepId, at) => ({
+  stepId,
+  precondition: { kind: "clock", at: { type: "datetime", value: at } },
+});
+
+const str = (value) => ({ type: "string", value });
+const int = (value) => ({ type: "integer", value });
+
+const invoke = (stepId, operation, input, extra = {}) => ({
+  stepId,
+  action: { kind: "invoke", operation, input, ...extra },
+});
+
+const equals = (field, value) => ({ equals: str(value), field });
+
+const entityState = (stepId, observes, entity, where, expect, fields) => ({
+  stepId,
+  observes,
+  assertion: {
+    kind: "entity_state",
+    entity,
+    where,
+    expect,
+    ...(fields ? { fields } : {}),
+  },
+});
+
+const forbidden = (stepId, observes, effect, scope) => ({
+  stepId,
+  observes,
+  assertion: { kind: "forbidden_effect", effect, scope },
+});
+
+const errorAt = (stepId, observes, error) => ({
+  stepId,
+  observes,
+  assertion: { kind: "error", error },
+});
+
+const idempotency = (stepId, observes, replay) => ({
+  stepId,
+  observes,
+  assertion: { kind: "idempotency", replay, equivalence: "identical", duplicates: "none" },
+});
+
+const contractMatch = (stepId, observes, contract, projection) => ({
+  stepId,
+  observes,
+  assertion: { kind: "contract_match", contract, projection },
+});
+
+const authorization = (stepId, observes, actor, policy, outcome) => ({
+  stepId,
+  observes,
+  assertion: { kind: "authorization", actor: { $ref: "actor", id: actor }, policy, outcome },
+});
+
+const scenarios = [
+  // 1. completion without worklog
+  {
+    ...base(
+      "worklog.scenario.completion_without_worklog",
+      "Completion persists; no worklog, provider request, or changelog rows and effects appear.",
+    ),
+    given: [
+      stateGiven("seed_task", "worklog.task", [equals("task_id", "task-1")], {
+        state: str("open"),
+      }),
+      actorGiven("as_member", "taskhub.actors/workspace-member"),
+      clockGiven("at_noon", "2026-03-01T12:00:00Z"),
+    ],
+    when: [
+      invoke("complete", "worklog.complete_task", {
+        task_id: str("task-1"),
+        tenant_id: str("tenant-1"),
+        workspace_id: str("workspace-1"),
+        expected_revision: int(1),
+      }),
+    ],
+    then: [
+      entityState(
+        "task_done",
+        "complete",
+        "worklog.task",
+        [equals("task_id", "task-1")],
+        { presence: "exists" },
+        { state: { value: str("done") } },
+      ),
+      forbidden("no_worklog_row", "complete", "worklog.effect_worklog_write", "entity"),
+      forbidden("no_provider_row", "complete", "worklog.effect_provider_action_write", "entity"),
+      forbidden("no_changelog_draft", "complete", "changelog.effect_draft_write", "entity"),
+      forbidden("no_publication", "complete", "changelog.effect_publication_emit", "entity"),
+    ],
+  },
+  // 2. completion with worklog
+  {
+    ...base(
+      "worklog.scenario.completion_with_worklog",
+      "Explicit selection creates one worklog; provider and changelog remain absent.",
+    ),
+    given: [
+      stateGiven("seed_task", "worklog.task", [equals("task_id", "task-1")], {
+        state: str("open"),
+      }),
+      actorGiven("as_member", "taskhub.actors/workspace-member"),
+      clockGiven("at_noon", "2026-03-01T12:00:00Z"),
+    ],
+    when: [
+      invoke("complete", "worklog.complete_task", {
+        task_id: str("task-1"),
+        tenant_id: str("tenant-1"),
+        workspace_id: str("workspace-1"),
+        expected_revision: int(1),
+      }),
+      invoke("write", "worklog.write_worklog", {
+        task_id: str("task-1"),
+        tenant_id: str("tenant-1"),
+        workspace_id: str("workspace-1"),
+        author_id: str("author-1"),
+        body: str("private worklog body"),
+      }),
+    ],
+    then: [
+      entityState(
+        "one_worklog",
+        "write",
+        "worklog.task_worklog",
+        [equals("task_id", "task-1")],
+        { count: 1 },
+      ),
+      forbidden("no_provider_row", "write", "worklog.effect_provider_action_write", "entity"),
+      forbidden("no_provider_call", "write", "worklog.effect_provider_call", "entity"),
+      forbidden("no_changelog_draft", "write", "changelog.effect_draft_write", "entity"),
+    ],
+  },
+  // 3. repeated correlation key
+  {
+    ...base(
+      "worklog.scenario.repeated_correlation_key",
+      "Same operation and body replays the recorded result; a changed body conflicts; a different tenant or operation stays independent.",
+    ),
+    given: [
+      stateGiven("seed_task", "worklog.task", [equals("task_id", "task-1")], {
+        state: str("open"),
+      }),
+      actorGiven("as_member", "taskhub.actors/workspace-member"),
+    ],
+    when: [
+      invoke(
+        "request",
+        "worklog.request_provider_comment",
+        {
+          task_id: str("task-1"),
+          tenant_id: str("tenant-1"),
+          requestor_id: str("requestor-1"),
+          correlation_key: str("corr-1"),
+          payload_digest: str("digest-1"),
+        },
+        { idempotencyKey: str("corr-1") },
+      ),
+      {
+        stepId: "replay",
+        action: {
+          kind: "invoke",
+          operation: "worklog.request_provider_comment",
+          input: {
+            task_id: str("task-1"),
+            tenant_id: str("tenant-1"),
+            requestor_id: str("requestor-1"),
+            correlation_key: str("corr-1"),
+            payload_digest: str("digest-1"),
+          },
+          idempotencyKey: str("corr-1"),
+        },
+        replay: { of: "request", expect: "no-duplicate" },
+      },
+      invoke(
+        "drift",
+        "worklog.request_provider_comment",
+        {
+          task_id: str("task-1"),
+          tenant_id: str("tenant-1"),
+          requestor_id: str("requestor-1"),
+          correlation_key: str("corr-1"),
+          payload_digest: str("digest-2"),
+        },
+        { idempotencyKey: str("corr-1") },
+      ),
+    ],
+    then: [
+      idempotency("replay_replays", "request", "replay"),
+      errorAt("drift_conflicts", "drift", "taskhub.duplicate_request"),
+      entityState(
+        "one_row",
+        "replay",
+        "worklog.provider_action",
+        [equals("correlation_key", "corr-1")],
+        { count: 1 },
+      ),
+    ],
+  },
+  // 4. no provider comment by default
+  {
+    ...base(
+      "worklog.scenario.no_provider_comment",
+      "The provider attempt log stays empty on completion and worklog-only paths.",
+    ),
+    given: [
+      stateGiven("seed_task", "worklog.task", [equals("task_id", "task-1")], {
+        state: str("open"),
+      }),
+      actorGiven("as_member", "taskhub.actors/workspace-member"),
+    ],
+    when: [
+      invoke("complete", "worklog.complete_task", {
+        task_id: str("task-1"),
+        tenant_id: str("tenant-1"),
+        workspace_id: str("workspace-1"),
+        expected_revision: int(1),
+      }),
+      invoke("write", "worklog.write_worklog", {
+        task_id: str("task-1"),
+        tenant_id: str("tenant-1"),
+        workspace_id: str("workspace-1"),
+        author_id: str("author-1"),
+        body: str("private worklog body"),
+      }),
+    ],
+    then: [
+      forbidden("no_provider_call", "write", "worklog.effect_provider_call", "entity"),
+      forbidden("no_provider_job", "write", "worklog.effect_provider_job_enqueue", "entity"),
+    ],
+  },
+  // 5. no changelog without opt-in
+  {
+    ...base(
+      "changelog.scenario.no_opt_in",
+      "No draft, snapshot, or publish effect appears on completion, worklog, or provider paths.",
+    ),
+    given: [
+      stateGiven("seed_task", "worklog.task", [equals("task_id", "task-1")], {
+        state: str("open"),
+      }),
+      actorGiven("as_member", "taskhub.actors/workspace-member"),
+    ],
+    when: [
+      invoke("complete", "worklog.complete_task", {
+        task_id: str("task-1"),
+        tenant_id: str("tenant-1"),
+        workspace_id: str("workspace-1"),
+        expected_revision: int(1),
+      }),
+      invoke("write", "worklog.write_worklog", {
+        task_id: str("task-1"),
+        tenant_id: str("tenant-1"),
+        workspace_id: str("workspace-1"),
+        author_id: str("author-1"),
+        body: str("private worklog body"),
+      }),
+      invoke("request", "worklog.request_provider_comment", {
+        task_id: str("task-1"),
+        tenant_id: str("tenant-1"),
+        requestor_id: str("requestor-1"),
+        correlation_key: str("corr-9"),
+        payload_digest: str("digest-9"),
+      }),
+    ],
+    then: [
+      forbidden("no_draft", "request", "changelog.effect_draft_write", "entity"),
+      forbidden("no_snapshot", "request", "changelog.effect_snapshot_append", "entity"),
+      forbidden("no_publish_emit", "request", "changelog.effect_publication_emit", "entity"),
+    ],
+  },
+  // 6. edit worklog after publish does not alter snapshot
+  {
+    ...base(
+      "changelog.scenario.source_edit_after_publish",
+      "Editing the source worklog leaves the exact existing snapshot bytes, revision, and digest unchanged.",
+    ),
+    given: [
+      stateGiven("seed_task", "worklog.task", [equals("task_id", "task-1")], {
+        state: str("done"),
+      }),
+      stateGiven(
+        "seed_worklog",
+        "worklog.task_worklog",
+        [equals("worklog_id", "worklog-1")],
+        { body: str("published source body") },
+      ),
+      stateGiven(
+        "seed_snapshot",
+        "changelog.snapshot",
+        [equals("entry_id", "entry-1"), equals("revision", "1")],
+        {
+          body: str("published body"),
+          content_digest: str("snapshot-digest-1"),
+          snapshot_schema_version: str("0.8.0"),
+        },
+      ),
+      actorGiven("as_author", "taskhub.actors/workspace-member"),
+    ],
+    when: [
+      invoke("edit_worklog", "worklog.edit_worklog", {
+        worklog_id: str("worklog-1"),
+        tenant_id: str("tenant-1"),
+        body: str("edited private body"),
+        expected_revision: int(1),
+      }),
+    ],
+    then: [
+      entityState(
+        "snapshot_unchanged",
+        "edit_worklog",
+        "changelog.snapshot",
+        [equals("entry_id", "entry-1"), equals("revision", "1")],
+        { presence: "exists" },
+        {
+          content_digest: { value: str("snapshot-digest-1") },
+          body: { value: str("published body") },
+        },
+      ),
+      contractMatch("dto_stable", "edit_worklog", "taskhub.dto/public-entry", [
+        "revision",
+        "content_digest",
+      ]),
+      forbidden("no_new_snapshot", "edit_worklog", "changelog.effect_snapshot_append", "entity"),
+    ],
+  },
+  // 7a. provider partial failure
+  {
+    ...base(
+      "worklog.scenario.provider_partial_failure",
+      "A failed provider delivery leaves the committed completion intact and the failed action explicit.",
+    ),
+    given: [
+      stateGiven("seed_task", "worklog.task", [equals("task_id", "task-1")], {
+        state: str("done"),
+      }),
+      stateGiven(
+        "seed_action",
+        "worklog.provider_action",
+        [equals("action_id", "action-1")],
+        { delivery_state: str("pending") },
+      ),
+      actorGiven("as_service", "taskhub.actors/service-worker"),
+    ],
+    when: [
+      invoke("complete", "worklog.complete_task", {
+        task_id: str("task-1"),
+        tenant_id: str("tenant-1"),
+        workspace_id: str("workspace-1"),
+        expected_revision: int(2),
+      }),
+      invoke("deliver", "worklog.deliver_provider_comment", {
+        action_id: str("action-1"),
+        tenant_id: str("tenant-1"),
+      }),
+    ],
+    then: [
+      entityState(
+        "completion_intact",
+        "deliver",
+        "worklog.task",
+        [equals("task_id", "task-1")],
+        { presence: "exists" },
+        { state: { value: str("done") } },
+      ),
+      errorAt("delivery_failed", "deliver", "taskhub.provider_ambiguous"),
+      entityState(
+        "action_explicit",
+        "deliver",
+        "worklog.provider_action",
+        [equals("action_id", "action-1")],
+        { presence: "exists" },
+        { delivery_state: { value: str("unknown") } },
+      ),
+    ],
+  },
+  // 7b. publication partial failure
+  {
+    ...base(
+      "changelog.scenario.publication_partial_failure",
+      "A failed declared publication effect leaves the local commit explicit and never duplicates publication on replay.",
+    ),
+    given: [
+      stateGiven(
+        "seed_entry",
+        "changelog.entry",
+        [equals("entry_id", "entry-1")],
+        { lifecycle: str("approved"), visibility: str("withdrawn") },
+      ),
+      stateGiven(
+        "seed_approval",
+        "changelog.approval",
+        [equals("approval_id", "approval-1")],
+        {
+          preview_revision: int(3),
+          preview_digest: str("preview-digest-1"),
+          destination: str("public-portal"),
+          publishing_authority: str("authority-1"),
+          policy_revision: str("policy-1"),
+        },
+      ),
+      actorGiven("as_authority", "taskhub.actors/publishing-authority"),
+    ],
+    when: [
+      invoke("publish", "changelog.publish_entry", {
+        entry_id: str("entry-1"),
+        tenant_id: str("tenant-1"),
+        approval_id: str("approval-1"),
+        preview_revision: int(3),
+        preview_digest: str("preview-digest-1"),
+      }),
+    ],
+    then: [
+      entityState(
+        "snapshot_committed",
+        "publish",
+        "changelog.snapshot",
+        [equals("entry_id", "entry-1")],
+        { presence: "exists" },
+      ),
+      errorAt("emit_recovery_required", "publish", "taskhub.store_unavailable"),
+    ],
+  },
+  // 8. withdraw keeps audit trail
+  {
+    ...base(
+      "changelog.scenario.withdraw_audit",
+      "Withdrawal hides the public projection, keeps restricted audit and immutable history, and replays safely.",
+    ),
+    given: [
+      stateGiven(
+        "seed_entry",
+        "changelog.entry",
+        [equals("entry_id", "entry-1")],
+        { lifecycle: str("published"), visibility: str("public") },
+      ),
+      stateGiven(
+        "seed_snapshot",
+        "changelog.snapshot",
+        [equals("entry_id", "entry-1"), equals("revision", "1")],
+        { body: str("published body") },
+      ),
+      actorGiven("as_authority", "taskhub.actors/publishing-authority"),
+    ],
+    when: [
+      invoke("withdraw", "changelog.withdraw_entry", {
+        entry_id: str("entry-1"),
+        tenant_id: str("tenant-1"),
+      }),
+      {
+        stepId: "withdraw_replay",
+        action: {
+          kind: "invoke",
+          operation: "changelog.withdraw_entry",
+          input: {
+            entry_id: str("entry-1"),
+            tenant_id: str("tenant-1"),
+          },
+        },
+        replay: { of: "withdraw", expect: "same-result" },
+      },
+    ],
+    then: [
+      entityState(
+        "entry_hidden",
+        "withdraw",
+        "changelog.entry",
+        [equals("entry_id", "entry-1")],
+        { presence: "exists" },
+        { visibility: { value: str("withdrawn") } },
+      ),
+      entityState(
+        "audit_survives",
+        "withdraw",
+        "changelog.audit",
+        [equals("entry_id", "entry-1")],
+        { presence: "exists" },
+      ),
+      entityState(
+        "history_survives",
+        "withdraw",
+        "changelog.snapshot",
+        [equals("entry_id", "entry-1"), equals("revision", "1")],
+        { presence: "exists" },
+      ),
+      forbidden("no_resurrection", "withdraw_replay", "changelog.effect_snapshot_append", "entity"),
+    ],
+  },
+  // 9. public endpoint excludes private data
+  {
+    ...base(
+      "changelog.scenario.public_projection",
+      "The public payload is allowlist-only; drafts, withdrawn entries, and cross-tenant private joins are excluded.",
+    ),
+    given: [
+      stateGiven(
+        "seed_snapshot",
+        "changelog.snapshot",
+        [equals("entry_id", "entry-1"), equals("revision", "1")],
+        {
+          body: str("published body"),
+          content_digest: str("snapshot-digest-1"),
+          tenant_id: str("tenant-1"),
+        },
+      ),
+      actorGiven("as_public", "taskhub.actors/anonymous-reader"),
+    ],
+    when: [
+      invoke("read_entry", "changelog.public_entry", { entry_id: str("entry-1") }),
+    ],
+    then: [
+      contractMatch("allowlisted_fields_only", "read_entry", "taskhub.dto/public-entry", [
+        "entry_id",
+        "revision",
+        "body",
+        "content_digest",
+        "snapshot_schema_version",
+        "published_at",
+      ]),
+      errorAt("cross_tenant_missing", "read_entry", "taskhub.entry_not_found"),
+    ],
+  },
+  // 10. XSS and unsafe links
+  {
+    ...base(
+      "changelog.scenario.unsafe_content",
+      "Script tags, event attributes, unsafe or encoded schemes, and control characters are rejected by the shared preview and final policy.",
+    ),
+    given: [
+      stateGiven(
+        "seed_draft",
+        "changelog.entry",
+        [equals("entry_id", "entry-2")],
+        { lifecycle: str("draft"), draft_body: str("<script>alert(1)</script>") },
+      ),
+      actorGiven("as_reviewer", "taskhub.actors/workspace-member"),
+    ],
+    when: [
+      invoke("preview", "changelog.preview_entry", {
+        entry_id: str("entry-2"),
+        tenant_id: str("tenant-1"),
+        expected_revision: int(1),
+      }),
+    ],
+    then: [
+      errorAt("unsafe_rejected", "preview", "taskhub.unsafe_content"),
+      forbidden("no_preview_bytes", "preview", "changelog.effect_preview_write", "entity"),
+    ],
+  },
+  // 11. approval required guard
+  {
+    ...base(
+      "changelog.scenario.approval_required",
+      "Missing preview, missing approval, wrong authority, or a changed draft all deny without a snapshot.",
+    ),
+    given: [
+      stateGiven(
+        "seed_entry",
+        "changelog.entry",
+        [equals("entry_id", "entry-1")],
+        { lifecycle: str("draft") },
+      ),
+      actorGiven("as_authority", "taskhub.actors/publishing-authority"),
+    ],
+    when: [
+      invoke("publish", "changelog.publish_entry", {
+        entry_id: str("entry-1"),
+        tenant_id: str("tenant-1"),
+        approval_id: str("approval-missing"),
+        preview_revision: int(1),
+        preview_digest: str("preview-digest-missing"),
+      }),
+    ],
+    then: [
+      errorAt("publish_denied", "publish", "taskhub.forbidden"),
+      forbidden("no_snapshot", "publish", "changelog.effect_snapshot_append", "entity"),
+      forbidden("no_publish_emit", "publish", "changelog.effect_publication_emit", "entity"),
+    ],
+  },
+  // 12. stale preview guard
+  {
+    ...base(
+      "changelog.scenario.stale_preview",
+      "An approval bound to a stale preview revision or digest denies publication.",
+    ),
+    given: [
+      stateGiven(
+        "seed_entry",
+        "changelog.entry",
+        [equals("entry_id", "entry-1")],
+        { lifecycle: str("previewed"), record_revision: int(4) },
+      ),
+      stateGiven(
+        "seed_approval",
+        "changelog.approval",
+        [equals("approval_id", "approval-1")],
+        {
+          preview_revision: int(2),
+          preview_digest: str("preview-digest-old"),
+          destination: str("public-portal"),
+          publishing_authority: str("authority-1"),
+          policy_revision: str("policy-1"),
+        },
+      ),
+      actorGiven("as_authority", "taskhub.actors/publishing-authority"),
+    ],
+    when: [
+      invoke("publish", "changelog.publish_entry", {
+        entry_id: str("entry-1"),
+        tenant_id: str("tenant-1"),
+        approval_id: str("approval-1"),
+        preview_revision: int(2),
+        preview_digest: str("preview-digest-old"),
+      }),
+    ],
+    then: [
+      errorAt("stale_denied", "publish", "taskhub.approval_stale"),
+      forbidden("no_snapshot", "publish", "changelog.effect_snapshot_append", "entity"),
+    ],
+  },
+];
+
+mkdirSync(resolve(root, dir), { recursive: true });
+for (const scenario of scenarios) {
+  const name = `${scenario.scenarioId}.scenario.json`;
+  writeFileSync(resolve(root, dir, name), JSON.stringify(ordered(scenario)));
+  console.log("wrote", name);
+}
+console.log(JSON.stringify({ ok: true, count: scenarios.length, modelDigest, irDigest }));

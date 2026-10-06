@@ -1,0 +1,435 @@
+{
+  "schemaVersion": "lekalo/worklog-changelog-evidence/v0.8.0",
+  "identity": "dev.lekalo.worklog-changelog-evidence@0.8.0",
+  "reportVersion": "0.8.0",
+  "compositionRef": {
+    "identity": "dev.lekalo.worklog-changelog-pilot@0.8.0",
+    "digest": "sha256:ef0d3ea3a1993b8655171122d6365e9078ed7328b8c4a56fe576f8a73b914fe8"
+  },
+  "toolchain": {
+    "harness": "scripts/test-worklog-changelog-pilot.mjs",
+    "node": "24",
+    "ajv": "8.17.1"
+  },
+  "profiles": [
+    "strict",
+    "permissive"
+  ],
+  "targets": [
+    {
+      "target": "php",
+      "backend": {
+        "state": "absent",
+        "identity": null,
+        "digest": null
+      },
+      "execution": "not_executed",
+      "capabilities": [
+        {
+          "capability": "publish.approval",
+          "support": "unknown",
+          "approval": "not_required",
+          "blocking": true,
+          "note": "No native runtime evidence exists at this checkout; the adapter declaration alone never proves atomic approval re-checking."
+        },
+        {
+          "capability": "publish.revisioned_snapshot",
+          "support": "unknown",
+          "approval": "not_required",
+          "blocking": true,
+          "note": "Immutable stored bytes need a native persistence test; capability-only claims stay unknown."
+        },
+        {
+          "capability": "security.review_gate",
+          "support": "unknown",
+          "approval": "not_required",
+          "blocking": true,
+          "note": "The sensitive public projection requires executed review-gate evidence."
+        },
+        {
+          "capability": "delivery.durable",
+          "support": "unknown",
+          "approval": "not_required",
+          "blocking": true,
+          "note": "Outbox durability and enqueue visibility need their own capability evidence."
+        },
+        {
+          "capability": "call.idempotent_write",
+          "support": "unknown",
+          "approval": "not_required",
+          "blocking": true,
+          "note": "Ambiguous remote acceptance stays recovery-required until provider idempotency is executed."
+        },
+        {
+          "capability": "transaction.atomic_group",
+          "support": "unknown",
+          "approval": "not_required",
+          "blocking": true,
+          "note": "The snapshot append and visibility update need an executed atomic-group test."
+        },
+        {
+          "capability": "idempotency.durable_key",
+          "support": "unknown",
+          "approval": "not_required",
+          "blocking": true,
+          "note": "Concurrent duplicate replay needs an executed isolation test."
+        },
+        {
+          "capability": "authorization.tenant_scope",
+          "support": "unknown",
+          "approval": "not_required",
+          "blocking": true,
+          "note": "Cross-tenant denial needs an executed authorization test over the public endpoint."
+        },
+        {
+          "capability": "rendering.safe_url",
+          "support": "unknown",
+          "approval": "not_required",
+          "blocking": true,
+          "note": "Preview and final rendering need an executed shared-policy corpus."
+        }
+      ],
+      "assertions": [
+        {
+          "scenario": "worklog.scenario.completion_without_worklog",
+          "status": "not_executed"
+        },
+        {
+          "scenario": "worklog.scenario.completion_with_worklog",
+          "status": "not_executed"
+        },
+        {
+          "scenario": "worklog.scenario.repeated_correlation_key",
+          "status": "not_executed"
+        },
+        {
+          "scenario": "worklog.scenario.no_provider_comment",
+          "status": "not_executed"
+        },
+        {
+          "scenario": "worklog.scenario.provider_partial_failure",
+          "status": "not_executed"
+        },
+        {
+          "scenario": "changelog.scenario.no_opt_in",
+          "status": "not_executed"
+        },
+        {
+          "scenario": "changelog.scenario.source_edit_after_publish",
+          "status": "not_executed"
+        },
+        {
+          "scenario": "changelog.scenario.publication_partial_failure",
+          "status": "not_executed"
+        },
+        {
+          "scenario": "changelog.scenario.withdraw_audit",
+          "status": "not_executed"
+        },
+        {
+          "scenario": "changelog.scenario.public_projection",
+          "status": "not_executed"
+        },
+        {
+          "scenario": "changelog.scenario.unsafe_content",
+          "status": "not_executed"
+        },
+        {
+          "scenario": "changelog.scenario.approval_required",
+          "status": "not_executed"
+        },
+        {
+          "scenario": "changelog.scenario.stale_preview",
+          "status": "not_executed"
+        }
+      ],
+      "blocking": [
+        "php:execution:not_executed"
+      ]
+    },
+    {
+      "target": "go",
+      "backend": {
+        "state": "absent",
+        "identity": null,
+        "digest": null
+      },
+      "execution": "not_executed",
+      "capabilities": [
+        {
+          "capability": "publish.approval",
+          "support": "unsupported",
+          "approval": "not_required",
+          "blocking": true,
+          "note": "No Go backend exists at this checkout; the negative gate asserts this denial instead of execution."
+        },
+        {
+          "capability": "publish.revisioned_snapshot",
+          "support": "unsupported",
+          "approval": "not_required",
+          "blocking": true,
+          "note": "No Go backend exists at this checkout."
+        },
+        {
+          "capability": "security.review_gate",
+          "support": "unsupported",
+          "approval": "not_required",
+          "blocking": true,
+          "note": "No Go backend exists at this checkout."
+        },
+        {
+          "capability": "delivery.durable",
+          "support": "unsupported",
+          "approval": "not_required",
+          "blocking": true,
+          "note": "No Go backend exists at this checkout."
+        },
+        {
+          "capability": "call.idempotent_write",
+          "support": "unsupported",
+          "approval": "not_required",
+          "blocking": true,
+          "note": "No Go backend exists at this checkout."
+        },
+        {
+          "capability": "transaction.atomic_group",
+          "support": "unsupported",
+          "approval": "not_required",
+          "blocking": true,
+          "note": "No Go backend exists at this checkout."
+        },
+        {
+          "capability": "idempotency.durable_key",
+          "support": "unsupported",
+          "approval": "not_required",
+          "blocking": true,
+          "note": "No Go backend exists at this checkout."
+        },
+        {
+          "capability": "authorization.tenant_scope",
+          "support": "unsupported",
+          "approval": "not_required",
+          "blocking": true,
+          "note": "No Go backend exists at this checkout."
+        },
+        {
+          "capability": "rendering.safe_url",
+          "support": "unsupported",
+          "approval": "not_required",
+          "blocking": true,
+          "note": "No Go backend exists at this checkout."
+        }
+      ],
+      "assertions": [
+        {
+          "scenario": "worklog.scenario.completion_without_worklog",
+          "status": "unsupported"
+        },
+        {
+          "scenario": "worklog.scenario.completion_with_worklog",
+          "status": "unsupported"
+        },
+        {
+          "scenario": "worklog.scenario.repeated_correlation_key",
+          "status": "unsupported"
+        },
+        {
+          "scenario": "worklog.scenario.no_provider_comment",
+          "status": "unsupported"
+        },
+        {
+          "scenario": "worklog.scenario.provider_partial_failure",
+          "status": "unsupported"
+        },
+        {
+          "scenario": "changelog.scenario.no_opt_in",
+          "status": "unsupported"
+        },
+        {
+          "scenario": "changelog.scenario.source_edit_after_publish",
+          "status": "unsupported"
+        },
+        {
+          "scenario": "changelog.scenario.publication_partial_failure",
+          "status": "unsupported"
+        },
+        {
+          "scenario": "changelog.scenario.withdraw_audit",
+          "status": "unsupported"
+        },
+        {
+          "scenario": "changelog.scenario.public_projection",
+          "status": "unsupported"
+        },
+        {
+          "scenario": "changelog.scenario.unsafe_content",
+          "status": "unsupported"
+        },
+        {
+          "scenario": "changelog.scenario.approval_required",
+          "status": "unsupported"
+        },
+        {
+          "scenario": "changelog.scenario.stale_preview",
+          "status": "unsupported"
+        }
+      ],
+      "blocking": [
+        "go:backend:absent"
+      ]
+    }
+  ],
+  "scenarios": [
+    {
+      "scenario": "worklog.scenario.completion_without_worklog",
+      "status": "unsupported",
+      "targets": [
+        "php",
+        "go"
+      ]
+    },
+    {
+      "scenario": "worklog.scenario.completion_with_worklog",
+      "status": "unsupported",
+      "targets": [
+        "php",
+        "go"
+      ]
+    },
+    {
+      "scenario": "worklog.scenario.repeated_correlation_key",
+      "status": "unsupported",
+      "targets": [
+        "php",
+        "go"
+      ]
+    },
+    {
+      "scenario": "worklog.scenario.no_provider_comment",
+      "status": "unsupported",
+      "targets": [
+        "php",
+        "go"
+      ]
+    },
+    {
+      "scenario": "worklog.scenario.provider_partial_failure",
+      "status": "unsupported",
+      "targets": [
+        "php",
+        "go"
+      ]
+    },
+    {
+      "scenario": "changelog.scenario.no_opt_in",
+      "status": "unsupported",
+      "targets": [
+        "php",
+        "go"
+      ]
+    },
+    {
+      "scenario": "changelog.scenario.source_edit_after_publish",
+      "status": "unsupported",
+      "targets": [
+        "php",
+        "go"
+      ]
+    },
+    {
+      "scenario": "changelog.scenario.publication_partial_failure",
+      "status": "unsupported",
+      "targets": [
+        "php",
+        "go"
+      ]
+    },
+    {
+      "scenario": "changelog.scenario.withdraw_audit",
+      "status": "unsupported",
+      "targets": [
+        "php",
+        "go"
+      ]
+    },
+    {
+      "scenario": "changelog.scenario.public_projection",
+      "status": "unsupported",
+      "targets": [
+        "php",
+        "go"
+      ]
+    },
+    {
+      "scenario": "changelog.scenario.unsafe_content",
+      "status": "unsupported",
+      "targets": [
+        "php",
+        "go"
+      ]
+    },
+    {
+      "scenario": "changelog.scenario.approval_required",
+      "status": "unsupported",
+      "targets": [
+        "php",
+        "go"
+      ]
+    },
+    {
+      "scenario": "changelog.scenario.stale_preview",
+      "status": "unsupported",
+      "targets": [
+        "php",
+        "go"
+      ]
+    }
+  ],
+  "consumers": [
+    {
+      "consumer": "changelog.public_entry",
+      "witness": "lekalo/modules/changelog/queries.yaml",
+      "relation": "returns"
+    },
+    {
+      "consumer": "changelog.public_entries",
+      "witness": "lekalo/modules/changelog/queries.yaml",
+      "relation": "returns"
+    },
+    {
+      "consumer": "changelog.endpoint_public_entry",
+      "witness": "lekalo/modules/changelog/bindings.yaml",
+      "relation": "invokes"
+    },
+    {
+      "consumer": "changelog.endpoint_public_entries",
+      "witness": "lekalo/modules/changelog/bindings.yaml",
+      "relation": "invokes"
+    },
+    {
+      "consumer": "changelog.scenario.public_projection",
+      "witness": "scenarios/changelog.scenario.public_projection.scenario.json",
+      "relation": "covers"
+    },
+    {
+      "consumer": "taskhub.dto/public-entry",
+      "witness": "public/changelog-entry.schema.json",
+      "relation": "projects"
+    },
+    {
+      "consumer": "taskhub.composition/public-allowlist",
+      "witness": "attachments/pilot.json",
+      "relation": "allowlists"
+    }
+  ],
+  "completeness": {
+    "consumerClosure": "complete",
+    "coverage": "partial",
+    "unknownExternalConsumers": true
+  },
+  "verdict": {
+    "strict": "unsupported",
+    "permissive": "degraded",
+    "degraded": true
+  }
+}
