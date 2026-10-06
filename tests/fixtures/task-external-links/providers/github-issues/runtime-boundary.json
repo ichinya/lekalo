@@ -1,0 +1,9 @@
+{
+  "runtime": {
+    "note": "Synthetic runtime-boundary material for the leak-corpus check only. The handle is a role alias; the canary token is a non-secret synthetic marker. Nothing in this file is a credential.",
+    "installation": "inst-primary-1",
+    "credentialHandle": "handle-primary-1",
+    "canaryToken": "LEKALO-SYNTHETIC-TOKEN-CANARY-0F0F",
+    "scope": "runtime-boundary-only"
+  }
+}

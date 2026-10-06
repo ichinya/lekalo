@@ -159,10 +159,11 @@ pub fn validate(
     }
     let mut findings: Vec<Finding> = Vec::new();
     let entities = ir_entities(compilation);
+    let model_policies = ir_policy_ids(compilation);
     check_entities(attachment, &entities, &mut findings);
     check_relations(attachment, &entities, &mut findings);
     check_unique_constraints(attachment, &entities, &mut findings);
-    check_decisions(attachment, &mut findings);
+    check_decisions(attachment, &model_policies, &mut findings);
     check_bindings(attachment, &mut findings);
     check_delivery(attachment, &mut findings);
     findings.sort();
@@ -231,6 +232,19 @@ fn ir_entities(compilation: &Compilation) -> BTreeMap<String, (Vec<String>, Vec<
 }
 
 type EntityTable = BTreeMap<String, (Vec<String>, Vec<String>)>;
+
+/// The declared Model policy ids of the compilation.
+fn ir_policy_ids(compilation: &Compilation) -> BTreeSet<String> {
+    compilation
+        .project
+        .definitions
+        .iter()
+        .filter_map(|definition| match definition {
+            Definition::Policy(policy) => Some(policy.id.as_str().to_owned()),
+            _ => None,
+        })
+        .collect()
+}
 
 fn check_entities(attachment: &Attachment, entities: &EntityTable, findings: &mut Vec<Finding>) {
     for binding in attachment.entities() {
@@ -363,7 +377,11 @@ fn check_unique_constraints(
     }
 }
 
-fn check_decisions(attachment: &Attachment, findings: &mut Vec<Finding>) {
+fn check_decisions(
+    attachment: &Attachment,
+    model_policies: &BTreeSet<String>,
+    findings: &mut Vec<Finding>,
+) {
     // Field policies reference owning Model policies; action policies
     // may reference field policies (composition) or owning Model
     // policies. Any referenced id must be declared in the attachment.
@@ -379,10 +397,10 @@ fn check_decisions(attachment: &Attachment, findings: &mut Vec<Finding>) {
         )
         .collect();
     let referenced_ok = |policy_ref: &str| {
-        // A Model-owner policy reference resolves inside the fixture
-        // module policy namespace; any in-attachment policy id also
-        // resolves (composition).
-        policy_ref.starts_with("tasklinks.policy.") || policy_ids.contains(policy_ref)
+        // A Model-owner policy reference must resolve to a declared
+        // Model policy of the compilation; an in-attachment policy id
+        // resolves through composition.
+        model_policies.contains(policy_ref) || policy_ids.contains(policy_ref)
     };
     for policy in attachment.field_policies() {
         if policy.policy_ref.is_empty() || !referenced_ok(&policy.policy_ref) {
