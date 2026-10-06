@@ -10,7 +10,7 @@ use lekalo_core::implementation::{self, ImplementationDocument};
 use lekalo_core::loader::{normalize_model, LoadSelection};
 use lekalo_core::portability::{
     assess, embedded_recipe, extract, parse_evidence, parse_targets, profile_pin, request,
-    verify_profile_pin, wire, Assessment, Request, Scope, TargetInput,
+    verify_profile_pin, wire, Assessment, Request, Scope,
 };
 use lekalo_core::target_profile::{document as profile_document, resolution as profile_resolution};
 use std::collections::BTreeMap;
