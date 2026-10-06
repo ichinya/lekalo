@@ -6,3 +6,8 @@
 /.pi/
 node_modules/
 /.ai-workspace.local.json
+
+# Independent SDK package build artifacts (issue #106)
+sdk/rust/target/
+sdk/go/bin/
+node_modules/
