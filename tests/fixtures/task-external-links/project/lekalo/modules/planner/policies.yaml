@@ -1,0 +1,9 @@
+schema_version: "0.2.16"
+definitions:
+  - id: planner.policy.task_update_member
+    kind: policy
+    version: 1
+    description: "Members may update canonical task fields"
+    applies_to:
+      - "planner.update_task"
+    decision: allow

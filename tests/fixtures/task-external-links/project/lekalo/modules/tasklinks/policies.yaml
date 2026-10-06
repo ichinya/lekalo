@@ -1,0 +1,30 @@
+schema_version: "0.2.16"
+definitions:
+  - id: tasklinks.policy.inbound_canonical_fields
+    kind: policy
+    version: 1
+    description: "Inbound provider events may write only canonical task fields"
+    applies_to:
+      - "tasklinks.ingest_event"
+    decision: allow
+  - id: tasklinks.policy.request_action_member
+    kind: policy
+    version: 1
+    description: "Members may request provider actions for admitted links"
+    applies_to:
+      - "tasklinks.request_action"
+    decision: allow
+  - id: tasklinks.policy.planning_fields_protected
+    kind: policy
+    version: 1
+    description: "Planning fields are never writable through any provider path"
+    applies_to:
+      - "tasklinks.ingest_event"
+    decision: deny
+  - id: tasklinks.policy.resolve_conflict_member
+    kind: policy
+    version: 1
+    description: "Members may resolve conflicts under explicit preconditions"
+    applies_to:
+      - "tasklinks.resolve_conflict"
+    decision: allow

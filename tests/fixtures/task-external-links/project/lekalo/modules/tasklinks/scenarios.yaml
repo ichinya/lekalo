@@ -1,0 +1,79 @@
+schema_version: "0.2.16"
+definitions:
+  - id: tasklinks.scenario.two_providers
+    kind: scenario
+    version: 1
+    description: "One task linked to two providers fans out two attributed intents"
+    summary: "One allowed action produces two independently attributed intents and receipts."
+    covers:
+      - "tasklinks.request_action"
+      - "tasklinks.delivery_recorded"
+  - id: tasklinks.scenario.duplicate_import
+    kind: scenario
+    version: 1
+    description: "Duplicate link/import replays the original result"
+    summary: "Repeating the same scoped identity and idempotency key leaves one link."
+    covers:
+      - "tasklinks.import_link"
+      - "tasklinks.link_attached"
+  - id: tasklinks.scenario.identity_collision
+    kind: scenario
+    version: 1
+    description: "The same external identity cannot bind two tasks silently"
+    summary: "A second task binding the same tuple is refused with identity-already-bound."
+    covers:
+      - "tasklinks.attach_link"
+  - id: tasklinks.scenario.attributed_inbound
+    kind: scenario
+    version: 1
+    description: "Inbound events aggregate with full attribution"
+    summary: "Provider, installation, event identity, and revision stay distinguishable."
+    covers:
+      - "tasklinks.ingest_event"
+      - "tasklinks.conflict_recorded"
+  - id: tasklinks.scenario.decision_matrix
+    kind: scenario
+    version: 1
+    description: "Fan-out only for supported and allowed actions"
+    summary: "Denied, unsupported, and unknown recipients produce no intent and no call."
+    covers:
+      - "tasklinks.request_action"
+  - id: tasklinks.scenario.partial_delivery
+    kind: scenario
+    version: 1
+    description: "One provider succeeds while another times out"
+    summary: "Status stays partial; the delivered receipt persists; only B is retry-eligible."
+    covers:
+      - "tasklinks.dispatch_outbox"
+      - "tasklinks.delivery_recorded"
+  - id: tasklinks.scenario.stale_conflict
+    kind: scenario
+    version: 1
+    description: "Stale versions create conflicts; stale resolvers cannot overwrite"
+    summary: "Fresh explicit resolution records the audit; stale resolution refuses."
+    covers:
+      - "tasklinks.resolve_conflict"
+      - "tasklinks.conflict_recorded"
+  - id: tasklinks.scenario.detach_history
+    kind: scenario
+    version: 1
+    description: "Detach preserves history and the external object"
+    summary: "Pending dispatch is cancelled and no external delete occurs."
+    covers:
+      - "tasklinks.detach_link"
+      - "tasklinks.link_detached"
+  - id: tasklinks.scenario.retry_echo_crash
+    kind: scenario
+    version: 1
+    description: "Retry keeps its key; echoes never loop; crashes preserve uncertainty"
+    summary: "Acceptance before acknowledgement reconciles or reports unknown delivery."
+    covers:
+      - "tasklinks.dispatch_outbox"
+      - "tasklinks.ack_delivery"
+  - id: tasklinks.scenario.secret_canary
+    kind: scenario
+    version: 1
+    description: "The synthetic credential token never enters any artifact"
+    summary: "Payload, evidence, errors, logs, and exports are canary-free."
+    covers:
+      - "tasklinks.request_action"

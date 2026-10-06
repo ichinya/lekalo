@@ -32,6 +32,7 @@ mod git_input;
 mod metrics_export;
 mod report_git;
 pub(crate) mod report_output;
+mod task_links;
 mod waivers;
 
 const PROGRAM_NAME: &str = "lekalo";
@@ -288,6 +289,11 @@ enum Commands {
     ArchitectureProfile {
         #[command(subcommand)]
         command: architecture_profile::Command,
+    },
+    /// The read-only multi-provider TaskExternalLink pilot surface (issue #52).
+    TaskLinks {
+        #[command(subcommand)]
+        command: task_links::Command,
     },
     /// Validate preregistered Framework Lift protocols and compare local recorded evidence.
     /// Never launches an agent/provider or exports private artifacts (issue #100).
@@ -2468,6 +2474,7 @@ fn runtime() -> u8 {
             } => run_context(symbol, changed, budget, spans, &project),
             Commands::Coupling { args } => coupling::run(args),
             Commands::ArchitectureProfile { command } => architecture_profile::run(command),
+            Commands::TaskLinks { command } => task_links::run(command),
             Commands::Evaluation { command } => evaluation::run(command),
             Commands::ContextBudget { args } => {
                 let ContextBudgetArgs {

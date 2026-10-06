@@ -1,0 +1,8 @@
+schema_version: "0.2.16"
+definitions:
+  - id: tasklinks.binding_pilot
+    kind: target-binding
+    version: 1
+    description: "Bind the tasklinks pilot to the node-typescript target for the portability comparison"
+    portability: target-specific
+    target: node-typescript

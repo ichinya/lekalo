@@ -1,0 +1,62 @@
+schema_version: "0.2.16"
+definitions:
+  - id: planner.task_id
+    kind: scalar
+    version: 1
+    description: "Stable local task identifier"
+    base: uuid
+    visibility: project
+  - id: planner.workspace_id
+    kind: scalar
+    version: 1
+    description: "Workspace scope identifier"
+    base: uuid
+    visibility: project
+  - id: planner.text
+    kind: scalar
+    version: 1
+    description: "Human-readable canonical task text"
+    base: string
+  - id: planner.date
+    kind: scalar
+    version: 1
+    description: "Calendar date"
+    base: date
+  - id: planner.task_state
+    kind: enum
+    version: 1
+    description: "Task lifecycle state"
+    values:
+      - value: backlog
+        description: "Not started"
+      - value: active
+        description: "In progress"
+      - value: done
+        description: "Completed"
+  - id: planner.task
+    kind: entity
+    version: 1
+    description: "One focusable local task; links refer to it 0..N times"
+    fields:
+      - name: task_id
+        type: "planner.task_id"
+        required: true
+      - name: workspace_id
+        type: "planner.workspace_id"
+        required: true
+      - name: title
+        type: "planner.text"
+        required: true
+      - name: state
+        type: "planner.task_state"
+        required: true
+      - name: planned_for
+        type: "planner.date?"
+      - name: position
+        type: "planner.text?"
+      - name: focused_at
+        type: "planner.date?"
+      - name: paused_at
+        type: "planner.date?"
+    identity:
+      - task_id

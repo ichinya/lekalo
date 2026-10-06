@@ -1,0 +1,10 @@
+schema_version: "0.2.16"
+definitions:
+  - id: planner.get_task
+    kind: query
+    version: 1
+    description: "Read one local task"
+    reads:
+      - "planner.task"
+    returns:
+      ref: "planner.task"
