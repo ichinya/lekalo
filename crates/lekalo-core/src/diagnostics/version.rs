@@ -56,6 +56,11 @@ pub const REGISTRY_VERSION: &str = "0.6.4";
 /// Opt-in issue #84 union successor. Predecessor producers keep their exact pins.
 pub const SUCCESSOR_REGISTRY_VERSION: &str = "0.6.5";
 
+/// Issue #73 union successor: the exact 0.6.5 union plus the closed
+/// `change.*` family (`LEK-CHANGE-001..012`). Predecessor producers keep
+/// their exact pins.
+pub const CHANGE_REGISTRY_VERSION: &str = "0.8.0";
+
 /// The closed diagnostic schema version.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DiagnosticSchemaVersion {

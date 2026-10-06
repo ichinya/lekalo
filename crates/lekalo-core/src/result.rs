@@ -333,6 +333,12 @@ impl DomainResult {
         }
     }
 
+    /// A negotiated external operation is unsupported, with the caller's
+    /// normalized set (the change service's registered unsupported rule).
+    pub fn unsupported_operation(diagnostics: DiagnosticSet) -> Self {
+        Self::UnsupportedOperation { diagnostics }
+    }
+
     pub fn unsupported_version(diagnostics: DiagnosticSet) -> Self {
         Self::UnsupportedVersion { diagnostics }
     }

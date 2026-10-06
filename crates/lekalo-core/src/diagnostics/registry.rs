@@ -22,6 +22,11 @@ pub const REGISTRY_BYTES: &[u8] =
 pub const SUCCESSOR_REGISTRY_BYTES: &[u8] =
     include_bytes!("../../../../contracts/diagnostic-registry.v0.6.5.json");
 
+/// The issue #73 union successor: every 0.6.5 entry plus the closed
+/// `change.*` family (`LEK-CHANGE-001..012`).
+pub const CHANGE_REGISTRY_BYTES: &[u8] =
+    include_bytes!("../../../../contracts/diagnostic-registry.v0.8.0.json");
+
 /// Why the embedded registry could not be trusted.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RegistryError {
@@ -159,10 +164,24 @@ impl DiagnosticRegistry {
         REGISTRY.as_ref().map_err(Clone::clone)
     }
 
+    /// The issue #73 union successor (0.8.0): the exact 0.6.5 union plus
+    /// the change family. Predecessor producers keep their exact pins.
+    pub fn change_successor() -> Result<&'static Self, RegistryError> {
+        static REGISTRY: LazyLock<Result<DiagnosticRegistry, RegistryError>> =
+            LazyLock::new(|| {
+                DiagnosticRegistry::parse_version(
+                    CHANGE_REGISTRY_BYTES,
+                    super::version::CHANGE_REGISTRY_VERSION,
+                )
+            });
+        REGISTRY.as_ref().map_err(Clone::clone)
+    }
+
     pub fn for_version(version: &str) -> Result<&'static Self, RegistryError> {
         match version {
             REGISTRY_VERSION => Self::embedded(),
             super::version::SUCCESSOR_REGISTRY_VERSION => Self::successor(),
+            super::version::CHANGE_REGISTRY_VERSION => Self::change_successor(),
             _ => Err(RegistryError::Unsupported),
         }
     }

@@ -123,6 +123,7 @@ pub struct NormalizedModel {
 }
 
 /// One loaded source document plus its exact original bytes.
+#[derive(Clone)]
 pub(crate) struct LoadedDocument {
     pub document: Document,
     pub bytes: Vec<u8>,
@@ -278,7 +279,12 @@ pub(crate) fn load_validated_root(root: PathBuf) -> Result<ProjectLoad, DomainRe
 
     // Phase 2b (issue #9): fail closed while a migration journal or runtime
     // migration lock exists; readers never observe a half-migrated project.
+    // Issue #73 extends the same barrier to interrupted change transactions
+    // under `.lekalo/cache/change`.
     if let Some(code) = crate::versioning::migration_recovery_code(&fs) {
+        return failure(Status::Invalid, vec![Diagnostic::new(code)]);
+    }
+    if let Some(code) = crate::change::recovery_barrier_code(&fs) {
         return failure(Status::Invalid, vec![Diagnostic::new(code)]);
     }
 
