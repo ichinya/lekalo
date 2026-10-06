@@ -1,12 +1,18 @@
 //! The closed `format-report.v0.8.0` wire: the command payload, its file
 //! rows, and the summary invariants (issue #94).
 //!
-//! Object member order in the emitted JSON follows `serde_json`'s
-//! byte-sorted maps; the schema is order-insensitive and the gates assert
-//! the semantic invariants (`selected = changed + unchanged`, no duplicate
-//! rows, byte-sorted paths, zero applied files in check mode).
+//! Object member order in the emitted JSON follows the canonical writer
+//! (byte-sorted keys, compact); the schema is order-insensitive and the
+//! gates assert the semantic invariants (`selected = changed +
+//! unchanged`, no duplicate rows, byte-sorted paths, zero applied files
+//! in check mode).
 
 use crate::format::policy::canonical_json;
+
+/// The exact wire discriminator of the report contract.
+pub const SCHEMA_VERSION: &str = "lekalo/format-report/v0.8.0";
+/// The exact report identity.
+pub const IDENTITY: &str = "dev.lekalo.format-report@0.8.0";
 
 /// One comment-loss row of one file.
 #[derive(Clone, Debug, serde::Serialize)]
@@ -62,32 +68,53 @@ pub struct LossRow {
 /// The closed report document.
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct Report {
+    pub schema_version: &'static str,
+    pub identity: &'static str,
     pub mode: &'static str,
-    /// The policy contract version.
-    #[serde(rename = "policyVersion")]
-    pub policy_version: String,
-    #[serde(rename = "policyDigest")]
-    pub policy_digest: String,
-    #[serde(rename = "modelVersion")]
-    pub model_version: String,
-    /// The IR contract version the equality oracle compiled against.
-    #[serde(rename = "irVersion")]
-    pub ir_version: String,
-    #[serde(rename = "scopeKind")]
-    pub scope_kind: String,
-    #[serde(rename = "scopeSelector")]
-    pub scope_selector: Option<String>,
-    pub rows: Vec<FileRow>,
+    /// A completed plan always reports complete state; an incomplete plan
+    /// never reports equality or zero changes as known.
+    pub complete: bool,
+    pub policy: PolicyRef,
+    pub model: VersionRef,
+    pub ir: VersionRef,
+    pub scope: Scope,
+    pub files: Vec<FileRow>,
+    pub summary: Summary,
+}
+
+/// The pinned policy the plan was built under.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct PolicyRef {
+    pub version: String,
+    pub digest: String,
+}
+
+/// One admitted contract version the plan bound.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct VersionRef {
+    pub version: String,
+}
+
+/// The resolved scope selector.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct Scope {
+    pub kind: String,
+    /// Null for the whole-source scope; the schema requires the member.
+    pub selector: Option<String>,
+}
+
+/// The closed summary counts.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct Summary {
     pub selected: usize,
     pub changed: usize,
+    pub unchanged: usize,
     pub applied: usize,
+    #[serde(rename = "lossCount")]
+    pub loss_count: usize,
 }
 
 impl Report {
-    pub fn unchanged_count(&self) -> usize {
-        self.rows.iter().filter(|row| !row.is_changed()).count()
-    }
-
     /// The exact compact report bytes (the payload document).
     pub fn to_json(&self) -> String {
         let value = serde_json::to_value(self).expect("report serializes");

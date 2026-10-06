@@ -253,22 +253,38 @@ fn plan(request: &FormatRequest, stdin_bytes: Option<&[u8]>) -> Result<Planned, 
     } else {
         None
     };
+    let unchanged = rows.iter().filter(|row| !row.is_changed()).count();
     let report = wire::Report {
+        schema_version: wire::SCHEMA_VERSION,
+        identity: wire::IDENTITY,
         mode: match request.mode {
             FormatMode::Check => "check",
             FormatMode::Apply => "apply",
             FormatMode::Stdin => "stdin",
         },
-        policy_version: policy::Policy::VERSION.to_owned(),
-        policy_digest: policy.digest.clone(),
-        ir_version: crate::ir::VERSION.to_owned(),
-        model_version: model_version.as_str().to_owned(),
-        scope_kind: scope_kind(&request.scope).to_owned(),
-        scope_selector: scope_selector(&request.scope),
-        rows,
-        selected: selected.len(),
-        changed: changed.len(),
-        applied: 0,
+        complete: true,
+        policy: wire::PolicyRef {
+            version: policy::Policy::VERSION.to_owned(),
+            digest: policy.digest.clone(),
+        },
+        model: wire::VersionRef {
+            version: model_version.as_str().to_owned(),
+        },
+        ir: wire::VersionRef {
+            version: crate::ir::VERSION.to_owned(),
+        },
+        scope: wire::Scope {
+            kind: scope_kind(&request.scope).to_owned(),
+            selector: scope_selector(&request.scope),
+        },
+        files: rows,
+        summary: wire::Summary {
+            selected: selected.len(),
+            changed: changed.len(),
+            unchanged,
+            applied: 0,
+            loss_count: losses.len(),
+        },
     };
     let report_json = report.to_json();
     Ok(Planned {
@@ -327,7 +343,7 @@ fn dispatch(request: &FormatRequest, planned: Planned) -> DomainResult {
                 let mut diagnostics: Vec<Wire> = Vec::new();
                 push_loss_diagnostic(&mut diagnostics, &planned.losses, "lossy");
                 let mut report = planned.report.clone();
-                report.applied = 0;
+                report.summary.applied = 0;
                 return DomainResult::Valid {
                     payload: SuccessPayload::Model {
                         json: wire::envelope("valid", &report.to_json()),
@@ -356,7 +372,7 @@ fn dispatch(request: &FormatRequest, planned: Planned) -> DomainResult {
             ) {
                 Ok(()) => {
                     let mut report = planned.report.clone();
-                    report.applied = planned.changed.len();
+                    report.summary.applied = planned.changed.len();
                     let mut diagnostics: Vec<Wire> = Vec::new();
                     push_loss_diagnostic(&mut diagnostics, &planned.losses, "lossy");
                     DomainResult::Valid {
@@ -382,7 +398,7 @@ fn dispatch(request: &FormatRequest, planned: Planned) -> DomainResult {
                     .map(|_| String::new())
                     .unwrap_or_default()
             });
-            for row in &mut report.rows {
+            for row in &mut report.files {
                 row.replacement = Some(replacement.clone());
             }
             DomainResult::Valid {
@@ -609,12 +625,12 @@ fn push_loss_diagnostic(diagnostics: &mut Vec<Wire>, losses: &[wire::LossRow], d
 fn human_valid(report: &wire::Report) -> String {
     let mut lines = vec![format!(
         "formatted {} files: {} changed, {} unchanged, {} applied",
-        report.selected,
-        report.changed,
-        report.unchanged_count(),
-        report.applied
+        report.summary.selected,
+        report.summary.changed,
+        report.summary.unchanged,
+        report.summary.applied
     )];
-    for row in report.rows.iter().filter(|row| row.action == "changed") {
+    for row in report.files.iter().filter(|row| row.is_changed()) {
         lines.push(format!("changed {}", row.path));
     }
     lines.join("\n")

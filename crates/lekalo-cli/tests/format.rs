@@ -292,7 +292,7 @@ fn editor_stdin_flow_returns_replacement_and_never_writes() {
     let envelope: serde_json::Value =
         serde_json::from_str(&stdout_text(&output)).expect("envelope json");
     let rows = envelope
-        .pointer("/format/rows")
+        .pointer("/format/files")
         .and_then(|rows| rows.as_array())
         .expect("report rows")
         .clone();

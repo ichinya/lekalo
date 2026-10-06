@@ -3,9 +3,9 @@
 //! buffer, and hands the request to the pure core service.
 
 use clap::Args;
-use lekalo_core::loader::source::MAX_DOCUMENT_BYTES;
 use lekalo_core::format::{FormatMode, FormatScope};
-use lekalo_core::{DomainResult, format};
+use lekalo_core::loader::source::MAX_DOCUMENT_BYTES;
+use lekalo_core::{format, DomainResult};
 use std::io::Read;
 
 /// The `format` argument surface: the scoped selector family, the
@@ -44,17 +44,17 @@ pub struct FormatArgs {
 /// Run one `format` command to its terminal domain result.
 pub fn run(args: FormatArgs) -> DomainResult {
     let mode = if args.stdin {
-FormatMode::Stdin
+        FormatMode::Stdin
     } else if args.check {
-FormatMode::Check
+        FormatMode::Check
     } else {
-FormatMode::Apply
+        FormatMode::Apply
     };
     let scope = if args.stdin {
-FormatScope::Document(args.stdin_filepath.as_ref().expect("clap requires").clone())
+        FormatScope::Document(args.stdin_filepath.as_ref().expect("clap requires").clone())
     } else {
         match args.path.as_deref() {
-None => FormatScope::All,
+            None => FormatScope::All,
             Some(path) => match resolve_scope(path) {
                 Ok(scope) => scope,
                 Err(result) => return result,
@@ -75,7 +75,9 @@ None => FormatScope::All,
         None
     };
     let request = format::FormatRequest {
-        project: args.project.or_else(|| std::env::var("LEKALO_PROJECT").ok()),
+        project: args
+            .project
+            .or_else(|| std::env::var("LEKALO_PROJECT").ok()),
         scope,
         mode,
         allow_lossy_comments: args.allow_lossy_comments,
@@ -93,7 +95,7 @@ fn resolve_scope(path: &str) -> Result<format::FormatScope, DomainResult> {
         && segments.next().is_some()
         && segments.next().is_none()
     {
-return Ok(FormatScope::Module(path.to_owned()));
+        return Ok(FormatScope::Module(path.to_owned()));
     }
-Ok(FormatScope::Document(path.to_owned()))
+    Ok(FormatScope::Document(path.to_owned()))
 }
