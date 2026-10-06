@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.format-report-schema@0.8.0",
+  "title": "Lekalo format-report 0.8.0",
+  "description": "Issue #94: the closed command payload of one formatter plan. File rows are byte-sorted by path; check and disk rows omit replacement text, stdin editor rows require it.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "lekalo/format-report/v0.8.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.format-report@0.8.0"
+    },
+    "mode": {
+      "enum": ["check", "apply", "stdin"]
+    },
+    "complete": {
+      "const": true
+    },
+    "policy": {
+      "type": "object",
+      "properties": {
+        "version": { "const": "0.8.0" },
+        "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      },
+      "required": ["version", "digest"],
+      "additionalProperties": false
+    },
+    "model": {
+      "type": "object",
+      "properties": {
+        "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$", "maxLength": 32 }
+      },
+      "required": ["version"],
+      "additionalProperties": false
+    },
+    "ir": {
+      "type": "object",
+      "properties": {
+        "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$", "maxLength": 32 }
+      },
+      "required": ["version"],
+      "additionalProperties": false
+    },
+    "scope": {
+      "type": "object",
+      "properties": {
+        "kind": { "enum": ["all", "module", "document"] },
+        "selector": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": ["kind", "selector"],
+      "additionalProperties": false
+    },
+    "files": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/fileRow" },
+      "maxItems": 4096
+    },
+    "summary": {
+      "type": "object",
+      "properties": {
+        "selected": { "type": "integer", "minimum": 0 },
+        "changed": { "type": "integer", "minimum": 0 },
+        "unchanged": { "type": "integer", "minimum": 0 },
+        "applied": { "type": "integer", "minimum": 0 },
+        "lossCount": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["selected", "changed", "unchanged", "applied", "lossCount"],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema_version",
+    "identity",
+    "mode",
+    "complete",
+    "policy",
+    "model",
+    "ir",
+    "scope",
+    "files",
+    "summary"
+  ],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": { "mode": { "const": "stdin" } },
+        "required": ["mode"]
+      },
+      "then": {
+        "properties": {
+          "files": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "replacement": { "type": "string", "maxLength": 8388608 }
+              },
+              "required": ["replacement"]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "mode": { "enum": ["check", "apply"] } },
+        "required": ["mode"]
+      },
+      "then": {
+        "properties": {
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "replacement": false
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "loss": {
+      "type": "object",
+      "properties": {
+        "line": { "type": "integer", "minimum": 1 },
+        "reason": {
+          "enum": ["ambiguous-owner", "unrepresentable-form"]
+        }
+      },
+      "required": ["line", "reason"],
+      "additionalProperties": false
+    },
+    "fileRow": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^lekalo/(project\\.yaml|modules/[a-z][a-z0-9_-]{0,62}/(module|entities|commands|queries|policies|events|scenarios|bindings)\\.yaml)$"
+        },
+        "syntax": { "enum": ["yaml", "json"] },
+        "action": { "enum": ["changed", "unchanged"] },
+        "bytesBefore": { "type": "integer", "minimum": 0 },
+        "bytesAfter": { "type": "integer", "minimum": 0 },
+        "sha256Before": { "$ref": "#/$defs/digest" },
+        "sha256After": { "$ref": "#/$defs/digest" },
+        "equal": { "const": true },
+        "loss": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/loss" },
+          "maxItems": 256
+        },
+        "replacement": {
+          "type": "string",
+          "maxLength": 8388608
+        }
+      },
+      "required": [
+        "path",
+        "syntax",
+        "action",
+        "bytesBefore",
+        "bytesAfter",
+        "sha256Before",
+        "sha256After",
+        "equal"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

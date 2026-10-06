@@ -282,6 +282,13 @@ pub(crate) fn load_validated_root(root: PathBuf) -> Result<ProjectLoad, DomainRe
         return failure(Status::Invalid, vec![Diagnostic::new(code)]);
     }
 
+    // Phase 2c (issue #94): the same fail-closed rule for an interrupted
+    // formatter transaction; readers refuse, only an explicit mutating
+    // format recovers.
+    if let Some(code) = crate::format::transaction::recovery_code(&fs) {
+        return failure(Status::Invalid, vec![Diagnostic::new(code)]);
+    }
+
     // Phase 3: capability-safe enumeration and reads.
     let mut sources: Vec<(String, DocKind)> =
         vec![("lekalo/project.yaml".to_owned(), DocKind::Project)];
