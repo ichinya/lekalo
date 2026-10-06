@@ -54,7 +54,14 @@ pub(crate) fn build(
     let registry = if predecessor.entry(id).is_some() {
         predecessor
     } else {
-        DiagnosticRegistry::successor().map_err(|_| BuildError::Registry)?
+        let successor = DiagnosticRegistry::successor().map_err(|_| BuildError::Registry)?;
+        if successor.entry(id).is_some() {
+            successor
+        } else {
+            // The issue #19 M8 union successor carries the portability
+            // family; the chain only ever selects a reviewed registry.
+            DiagnosticRegistry::m8().map_err(|_| BuildError::Registry)?
+        }
     };
     let entry = registry
         .entry(id)

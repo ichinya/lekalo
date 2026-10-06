@@ -56,6 +56,12 @@ pub const REGISTRY_VERSION: &str = "0.6.4";
 /// Opt-in issue #84 union successor. Predecessor producers keep their exact pins.
 pub const SUCCESSOR_REGISTRY_VERSION: &str = "0.6.5";
 
+/// The issue #19 M8 union successor: the complete `0.6.5` entry set plus
+/// the nine `portability.*` diagnostics (LEK-PORT-001..009). The new
+/// producer explicitly selects this registry; frozen predecessor outputs
+/// retain their pinned registries.
+pub const M8_REGISTRY_VERSION: &str = "0.8.0";
+
 /// The closed diagnostic schema version.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DiagnosticSchemaVersion {
