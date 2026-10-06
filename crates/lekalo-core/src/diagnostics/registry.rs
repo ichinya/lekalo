@@ -22,6 +22,9 @@ pub const REGISTRY_BYTES: &[u8] =
 pub const SUCCESSOR_REGISTRY_BYTES: &[u8] =
     include_bytes!("../../../../contracts/diagnostic-registry.v0.6.5.json");
 
+pub const MCP_REGISTRY_BYTES: &[u8] =
+    include_bytes!("../../../../contracts/diagnostic-registry.v0.8.0.json");
+
 /// Why the embedded registry could not be trusted.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RegistryError {
@@ -159,10 +162,25 @@ impl DiagnosticRegistry {
         REGISTRY.as_ref().map_err(Clone::clone)
     }
 
+    /// The independently admitted issue #33 MCP union successor: the
+    /// 0.6.5 union plus the closed `mcp.*` family, never a runtime
+    /// extension of an earlier pin.
+    pub fn mcp_successor() -> Result<&'static Self, RegistryError> {
+        static REGISTRY: LazyLock<Result<DiagnosticRegistry, RegistryError>> =
+            LazyLock::new(|| {
+                DiagnosticRegistry::parse_version(
+                    MCP_REGISTRY_BYTES,
+                    super::version::MCP_REGISTRY_VERSION,
+                )
+            });
+        REGISTRY.as_ref().map_err(Clone::clone)
+    }
+
     pub fn for_version(version: &str) -> Result<&'static Self, RegistryError> {
         match version {
             REGISTRY_VERSION => Self::embedded(),
             super::version::SUCCESSOR_REGISTRY_VERSION => Self::successor(),
+            super::version::MCP_REGISTRY_VERSION => Self::mcp_successor(),
             _ => Err(RegistryError::Unsupported),
         }
     }
