@@ -1,0 +1,106 @@
+{
+  "schemaVersion": "lekalo/portability-recipe/v0.8.0",
+  "identity": "dev.lekalo.portability-recipe@0.8.0",
+  "dimensions": {
+    "structural": {
+      "definitionKinds": [
+        "scalar",
+        "enum",
+        "value-object",
+        "entity",
+        "command",
+        "query",
+        "policy",
+        "event",
+        "effect",
+        "endpoint",
+        "scenario"
+      ],
+      "decision": "IR types, explicit references, visibility and portability annotations; a target-specific dependency witness forces the target-specific risk tag."
+    },
+    "behavioral": {
+      "definitionKinds": [
+        "command",
+        "query",
+        "effect"
+      ],
+      "decision": "Operation hook coverage from the validated implementation inventory and qualified semantic mappings; a missing or unsupported destination hook in a complete inventory is a blocker."
+    },
+    "storage": {
+      "definitionKinds": [
+        "scalar",
+        "enum",
+        "value-object",
+        "entity"
+      ],
+      "decision": "Required storage policies compared against offered policies per destination; exact mismatch is behavior loss and absence stays unknown."
+    },
+    "operational": {
+      "definitionKinds": [
+        "command",
+        "effect",
+        "event",
+        "endpoint"
+      ],
+      "decision": "Declared publication obligations, qualified operational requirements, and observed implicit-hook limitations; observed hooks keep their inferred status and proof gap."
+    }
+  },
+  "excludedFromDenominator": [
+    "project",
+    "module",
+    "target-binding"
+  ],
+  "limits": {
+    "maxSubjects": 50000,
+    "maxTraversalDepth": 256,
+    "maxDependencyEdges": 250000,
+    "maxObligationRows": 1000000,
+    "maxReportBytes": 33554432,
+    "maxWorkUnits": 10000000
+  },
+  "classification": {
+    "precedence": [
+      "unsupported",
+      "partial",
+      "target-specific",
+      "supported-with-mapping",
+      "portable",
+      "unknown"
+    ],
+    "denominatorBasis": "eligible-applicable-subjects",
+    "ratioBasis": {
+      "dimension": "structural",
+      "formula": "portable/eligibleApplicableSubjects"
+    },
+    "rounding": "none-integer-ratio"
+  },
+  "semanticMappings": [
+    {
+      "requirement": "storage.transactions",
+      "capability": "storage.transactions",
+      "definitionVersion": "0.4.0",
+      "preconditions": [
+        "same-database-engine-family",
+        "declared-isolation-level-at-least-required"
+      ]
+    },
+    {
+      "requirement": "storage.decimal-policy",
+      "capability": "storage.exact-decimal",
+      "definitionVersion": "0.4.0",
+      "preconditions": [
+        "identical-precision",
+        "identical-scale",
+        "identical-rounding"
+      ]
+    },
+    {
+      "requirement": "verify.operations",
+      "capability": "testing.native-scenario",
+      "definitionVersion": "0.4.0",
+      "preconditions": [
+        "recorded-scenario-receipt"
+      ]
+    }
+  ]
+}

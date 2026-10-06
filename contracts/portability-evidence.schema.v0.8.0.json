@@ -1,0 +1,632 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lekalo.dev/contracts/portability-evidence.schema.v0.8.0.json",
+  "title": "Portability evidence 0.8.0",
+  "description": "Issue #19 digest-bound input manifest and qualified snapshot/mapping/coverage records. Every reference is immutable and digest-pinned; recorded adapter snapshots state their origin and recorded evaluation context. Evidence never carries executable extraction logic, raw adapter output, absolute paths, or secrets.",
+  "$ref": "#/$defs/document",
+  "$defs": {
+    "document": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "const": "lekalo/portability-evidence/v0.8.0"
+        },
+        "identity": {
+          "const": "dev.lekalo.portability-evidence@0.8.0"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/projectRef"
+        },
+        "recipeRef": {
+          "$ref": "#/$defs/recipeRef"
+        },
+        "recordedContext": {
+          "$ref": "#/$defs/recordedContext"
+        },
+        "families": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/family"
+          }
+        },
+        "adapters": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/adapter"
+          }
+        },
+        "mappings": {
+          "type": "array",
+          "maxItems": 4096,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/mapping"
+          }
+        },
+        "storageRequired": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/storageRequirement"
+          }
+        },
+        "storageOffered": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/storageOffering"
+          }
+        },
+        "operationalRequirements": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/operationalRequirement"
+          }
+        },
+        "scenarios": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/scenarioRecord"
+          }
+        },
+        "gates": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/gateRecord"
+          }
+        },
+        "hooks": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/hookObservation"
+          }
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "identity",
+        "projectRef",
+        "recipeRef",
+        "recordedContext",
+        "families",
+        "adapters",
+        "mappings",
+        "storageRequired",
+        "storageOffered",
+        "operationalRequirements",
+        "scenarios",
+        "gates",
+        "hooks"
+      ],
+      "unevaluatedProperties": false
+    },
+    "semanticId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "artifactRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]*$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "capabilityId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$"
+    },
+    "projectRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "modelVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "irDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "required": [
+        "projectId",
+        "modelVersion",
+        "irDigest"
+      ],
+      "unevaluatedProperties": false
+    },
+    "recipeRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "const": "dev.lekalo.portability-recipe"
+        },
+        "version": {
+          "const": "0.8.0"
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "digest"
+      ],
+      "unevaluatedProperties": false
+    },
+    "recordedContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The explicit recorded evaluation context freshness is judged against; evidence carrying expiry without this context is unqualified.",
+      "properties": {
+        "state": {
+          "enum": [
+            "recorded",
+            "absent"
+          ]
+        },
+        "revision": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[0-9a-f]{40}$|^[0-9a-f]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "note": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9 .,:;/()_-]*$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "state",
+        "revision",
+        "note"
+      ],
+      "unevaluatedProperties": false
+    },
+    "family": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "family": {
+          "enum": [
+            "implementation",
+            "storage",
+            "extended-effects",
+            "scenario",
+            "trace"
+          ]
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "artifactRef": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/artifactRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "digest": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "family",
+        "complete",
+        "artifactRef",
+        "digest"
+      ],
+      "unevaluatedProperties": false
+    },
+    "adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "targetId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "state": {
+          "enum": [
+            "absent",
+            "recorded"
+          ]
+        },
+        "identity": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9.@/_-]*$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "version": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32,
+              "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "protocol": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9.@/_-]*$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "capabilityDigest": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "targetId",
+        "state",
+        "identity",
+        "version",
+        "protocol",
+        "capabilityDigest"
+      ],
+      "unevaluatedProperties": false
+    },
+    "mapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "requirement": {
+          "$ref": "#/$defs/capabilityId"
+        },
+        "capability": {
+          "$ref": "#/$defs/capabilityId"
+        },
+        "subject": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/semanticId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "coverage": {
+          "enum": [
+            "full",
+            "partial"
+          ]
+        },
+        "conditions": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[a-z][a-z0-9-]*$"
+          }
+        },
+        "definitionPins": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/capabilityId"
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32,
+                "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+              }
+            },
+            "required": [
+              "id",
+              "version"
+            ],
+            "unevaluatedProperties": false
+          }
+        }
+      },
+      "required": [
+        "id",
+        "requirement",
+        "capability",
+        "subject",
+        "coverage",
+        "conditions",
+        "definitionPins"
+      ],
+      "unevaluatedProperties": false
+    },
+    "storageRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "subject": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "policy": {
+          "$ref": "#/$defs/policy"
+        }
+      },
+      "required": [
+        "subject",
+        "policy"
+      ],
+      "unevaluatedProperties": false
+    },
+    "storageOffering": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "targetId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "policy": {
+          "$ref": "#/$defs/policy"
+        }
+      },
+      "required": [
+        "targetId",
+        "policy"
+      ],
+      "unevaluatedProperties": false
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "decimal",
+            "isolation",
+            "ordering",
+            "null-handling",
+            "rounding"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "precision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "scale": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "unevaluatedProperties": false
+    },
+    "operationalRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "subject": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "requirement": {
+          "$ref": "#/$defs/capabilityId"
+        }
+      },
+      "required": [
+        "subject",
+        "requirement"
+      ],
+      "unevaluatedProperties": false
+    },
+    "scenarioRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "scenario": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "targetId": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[a-z][a-z0-9-]*$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "enum": [
+            "untested",
+            "recorded-pass",
+            "recorded-fail"
+          ]
+        },
+        "receiptRef": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/artifactRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "scenario",
+        "targetId",
+        "state",
+        "receiptRef"
+      ],
+      "unevaluatedProperties": false
+    },
+    "gateRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "gate": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "scenarios": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          }
+        },
+        "state": {
+          "enum": [
+            "declared",
+            "planned",
+            "executed",
+            "unknown"
+          ]
+        }
+      },
+      "required": [
+        "gate",
+        "scenarios",
+        "state"
+      ],
+      "unevaluatedProperties": false
+    },
+    "hookObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A qualified observed implicit hook: an inferred status with an explicit proof gap, never a canonical Model member.",
+      "properties": {
+        "subject": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "hook": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "state": {
+          "enum": [
+            "observed-supported",
+            "observed-unsupported"
+          ]
+        },
+        "targetId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        }
+      },
+      "required": [
+        "subject",
+        "hook",
+        "state",
+        "targetId"
+      ],
+      "unevaluatedProperties": false
+    }
+  }
+}
