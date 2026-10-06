@@ -13,7 +13,7 @@ const binary = join(root, 'target/debug', process.platform === 'win32' ? 'lekalo
 // Product-qualified successor snapshots preserve the original exact goldens.
 // Lock productVersion changes artifact/trace/condition pins, not this wire family.
 const product = readFileSync(join(root,'Cargo.toml'),'utf8').match(/\[workspace.package\][\s\S]*?version = "([^"]+)"/)?.[1];
-assert.ok(['0.6.4','0.6.5'].includes(product),'explicit product golden admission');
+assert.ok(['0.6.4','0.6.5','0.8.0'].includes(product),'explicit product golden admission');
 const productPinnedGoldens = new Set(['report','report-waived','waivers','comparison','comparison-incomparable']);
 const require = createRequire((process.env.LEKALO_AJV_NODE_PATH || dirname(fileURLToPath(import.meta.url))) + '/');
 assert.equal(require('ajv/package.json').version, '8.17.1', 'exact Ajv gate dependency');

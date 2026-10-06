@@ -26,6 +26,11 @@
       "origin": "synthetic"
     },
     {
+      "family": "adoption",
+      "origin": "synthetic",
+      "note": "Issue #136: authored synthetic brownfield taskboard app, scanner, refactor candidates, verification spec and invalid inputs; no private code or executed application behavior claims."
+    },
+    {
       "family": "ai-lint",
       "origin": "synthetic",
       "note": "Issue #76: authored Model, target source, evidence, policy, waiver and revision fixtures; no private code or executed application behavior."
