@@ -152,8 +152,8 @@
         "properties": {
           "correlationId": {
             "type": "string",
-            "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
-            "minLength": 3,
+            "pattern": "^[a-z][a-z0-9_-]*$|^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+(/[a-z][a-z0-9_-]+)*$",
+            "minLength": 1,
             "maxLength": 256
           },
           "keyRef": {
@@ -192,8 +192,8 @@
         "properties": {
           "approvalId": {
             "type": "string",
-            "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
-            "minLength": 3,
+            "pattern": "^[a-z][a-z0-9_-]*$|^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+(/[a-z][a-z0-9_-]+)*$",
+            "minLength": 1,
             "maxLength": 256
           },
           "operation": {
@@ -244,14 +244,14 @@
         "properties": {
           "snapshotId": {
             "type": "string",
-            "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
-            "minLength": 3,
+            "pattern": "^[a-z][a-z0-9_-]*$|^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+(/[a-z][a-z0-9_-]+)*$",
+            "minLength": 1,
             "maxLength": 256
           },
           "entity": {
             "type": "string",
-            "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
-            "minLength": 3,
+            "pattern": "^[a-z][a-z0-9_-]*$|^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+(/[a-z][a-z0-9_-]+)*$",
+            "minLength": 1,
             "maxLength": 256
           },
           "revisionField": {
@@ -286,8 +286,8 @@
       "properties": {
         "dto": {
           "type": "string",
-          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
-          "minLength": 3,
+          "pattern": "^[a-z][a-z0-9_-]*$|^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+(/[a-z][a-z0-9_-]+)*$",
+          "minLength": 1,
           "maxLength": 256
         },
         "fields": {
@@ -381,8 +381,8 @@
         "properties": {
           "requirementId": {
             "type": "string",
-            "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
-            "minLength": 3,
+            "pattern": "^[a-z][a-z0-9_-]*$|^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+(/[a-z][a-z0-9_-]+)*$",
+            "minLength": 1,
             "maxLength": 256
           },
           "capability": {
@@ -419,8 +419,8 @@
   "$defs": {
     "semanticId": {
       "type": "string",
-      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
-      "minLength": 3,
+      "pattern": "^[a-z][a-z0-9_-]*$|^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+(/[a-z][a-z0-9_-]+)*$",
+      "minLength": 1,
       "maxLength": 256
     },
     "roleName": {
@@ -526,8 +526,8 @@
         },
         "effectId": {
           "type": "string",
-          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
-          "minLength": 3,
+          "pattern": "^[a-z][a-z0-9_-]*$|^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+(/[a-z][a-z0-9_-]+)*$",
+          "minLength": 1,
           "maxLength": 256
         }
       }
@@ -571,8 +571,8 @@
         },
         "scope": {
           "type": "string",
-          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
-          "minLength": 3,
+          "pattern": "^[a-z][a-z0-9_-]*$|^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+(/[a-z][a-z0-9_-]+)*$",
+          "minLength": 1,
           "maxLength": 256
         },
         "keyRef": {

@@ -210,8 +210,8 @@ export const registryDigest = digest(
 const token = { type: "string", pattern: "^[A-Za-z0-9_.:/@-]+$", minLength: 1, maxLength: 256 };
 const semanticId = {
   type: "string",
-  pattern: "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
-  minLength: 3,
+  pattern: "^[a-z][a-z0-9_-]*$|^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+(/[a-z][a-z0-9_-]+)*$",
+  minLength: 1,
   maxLength: 256,
 };
 const digestPin = { type: "string", pattern: "^sha256:[a-f0-9]{64}$" };

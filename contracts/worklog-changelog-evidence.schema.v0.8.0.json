@@ -120,8 +120,8 @@
         "properties": {
           "consumer": {
             "type": "string",
-            "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
-            "minLength": 3,
+            "pattern": "^[a-z][a-z0-9_-]*$|^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+(/[a-z][a-z0-9_-]+)*$",
+            "minLength": 1,
             "maxLength": 256
           },
           "witness": {
@@ -307,8 +307,8 @@
             "properties": {
               "scenario": {
                 "type": "string",
-                "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
-                "minLength": 3,
+                "pattern": "^[a-z][a-z0-9_-]*$|^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+(/[a-z][a-z0-9_-]+)*$",
+                "minLength": 1,
                 "maxLength": 256
               },
               "status": {
@@ -346,8 +346,8 @@
       "properties": {
         "scenario": {
           "type": "string",
-          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
-          "minLength": 3,
+          "pattern": "^[a-z][a-z0-9_-]*$|^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+(/[a-z][a-z0-9_-]+)*$",
+          "minLength": 1,
           "maxLength": 256
         },
         "status": {
