@@ -582,7 +582,7 @@ checksum = "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb"
 
 [[package]]
 name = "lekalo-cli"
-version = "0.6.5"
+version = "0.8.0"
 dependencies = [
  "clap",
  "lekalo-core",
@@ -592,7 +592,7 @@ dependencies = [
 
 [[package]]
 name = "lekalo-core"
-version = "0.6.5"
+version = "0.8.0"
 dependencies = [
  "jsonschema",
  "rusqlite",
