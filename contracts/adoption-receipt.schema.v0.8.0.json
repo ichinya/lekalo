@@ -1,0 +1,514 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/receipt.schema.v0.8.0.json",
+  "title": "Lekalo adoption receipt (v0.8.0)",
+  "description": "Issue #136 scoped brownfield adoption, selective refactoring, and hybrid mode. Closed Draft 2020-12 contract at the 0.8.0 product generation; the exact discriminator is lekalo/adoption-{family}/v0.8.0 and the schema identity is dev.lekalo.adoption-{family}@0.8.0. The closed receipt of one confirmation, apply, or rollback phase: the plan and input digests, the exact mutation set with before/after digests, the journal and snapshot references, the consumed verification evidence, and the completion or recovery state. No completed outcome exists without the required independent passing evidence; interrupted or failed phases record recovery-required instead.",
+  "type": "object",
+  "additionalProperties": false,
+  "unevaluatedProperties": false,
+  "required": [
+    "schema_version",
+    "identity",
+    "receipt",
+    "phase",
+    "project",
+    "plan",
+    "outcome",
+    "writes",
+    "journal",
+    "snapshots",
+    "verification",
+    "pins",
+    "analysis"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "lekalo/adoption-receipt/v0.8.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.adoption-receipt@0.8.0"
+    },
+    "receipt": {
+      "$ref": "#/$defs/sha256"
+    },
+    "phase": {
+      "enum": [
+        "confirmation",
+        "apply",
+        "rollback"
+      ]
+    },
+    "project": {
+      "$ref": "#/$defs/moduleId"
+    },
+    "plan": {
+      "$ref": "#/$defs/sha256"
+    },
+    "outcome": {
+      "enum": [
+        "completed",
+        "failed",
+        "rolled-back",
+        "recovery-required"
+      ]
+    },
+    "writes": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "$ref": "#/$defs/writeEntry"
+      }
+    },
+    "journal": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "oneOf": [
+        {
+          "$ref": "#/$defs/relPath"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "snapshots": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "$ref": "#/$defs/relPath"
+      }
+    },
+    "verification": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "oneOf": [
+        {
+          "$ref": "#/$defs/sha256"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "pins": {
+      "$ref": "#/$defs/pins"
+    },
+    "analysis": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "oneOf": [
+        {
+          "$ref": "#/$defs/sha256"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "digestOrNull": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "semanticId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z0-9_]+)*$"
+    },
+    "moduleId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,62}$"
+    },
+    "relPath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+    },
+    "nativeId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+    },
+    "confidence": {
+      "enum": [
+        "exact",
+        "high",
+        "medium",
+        "low",
+        "unknown"
+      ]
+    },
+    "target": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z][a-z0-9_-]{0,62}$"
+    },
+    "profile": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9-]{0,63}$"
+    },
+    "adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "digest"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "adapterOrNull": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "version",
+            "digest"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[a-z0-9][a-z0-9._-]*$"
+            },
+            "version": {
+              "type": "string",
+              "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+            },
+            "digest": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "symbol",
+            "module",
+            "use-case"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9_.-]*$"
+        }
+      }
+    },
+    "pins": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "lock",
+        "observed_index",
+        "adapter",
+        "sources"
+      ],
+      "properties": {
+        "model": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "lock": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "observed_index": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "adapter": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "version",
+                "digest"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                },
+                "version": {
+                  "type": "string",
+                  "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+                },
+                "digest": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sources": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "sha256"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024,
+                "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              }
+            }
+          }
+        }
+      }
+    },
+    "sourcePins": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "sha256"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    "writeEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "action",
+        "before",
+        "after",
+        "content"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+        },
+        "action": {
+          "enum": [
+            "create",
+            "replace"
+          ]
+        },
+        "before": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "after": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "content": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 1048576
+        }
+      }
+    },
+    "rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "journal",
+        "snapshots"
+      ],
+      "properties": {
+        "journal": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+        },
+        "snapshots": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+        }
+      }
+    },
+    "token": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "gap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subject",
+        "detail"
+      ],
+      "properties": {
+        "subject": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "effectiveMode": {
+      "enum": [
+        "observed",
+        "contracted-legacy",
+        "contracted-new",
+        "unbound",
+        "conflicting"
+      ]
+    },
+    "bindingRef": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "proposal",
+            "candidate"
+          ],
+          "properties": {
+            "proposal": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+            },
+            "candidate": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  }
+}

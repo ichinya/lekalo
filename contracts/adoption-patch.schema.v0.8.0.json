@@ -1,0 +1,543 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/patch.schema.v0.8.0.json",
+  "title": "Lekalo adoption patch (v0.8.0)",
+  "description": "Issue #136 scoped brownfield adoption, selective refactoring, and hybrid mode. Closed Draft 2020-12 contract at the 0.8.0 product generation; the exact discriminator is lekalo/adoption-{family}/v0.8.0 and the schema identity is dev.lekalo.adoption-{family}@0.8.0. A closed, bounded, data-only candidate change set for maintained source files: the complete create/replace/delete set with exact relative paths, expected before/after digests, and exact new content. The patch never embeds executable tools or scripts, never carries commands, and its origin (a qualified adapter or a supplied reviewed patch) is recorded explicitly. Declining a preview writes nothing.",
+  "type": "object",
+  "additionalProperties": false,
+  "unevaluatedProperties": false,
+  "required": [
+    "schema_version",
+    "identity",
+    "patch",
+    "origin",
+    "scope",
+    "files"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "lekalo/adoption-patch/v0.8.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.adoption-patch@0.8.0"
+    },
+    "patch": {
+      "$ref": "#/$defs/sha256"
+    },
+    "origin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "identity"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "supplied-reviewed",
+            "adapter-generated"
+          ]
+        },
+        "identity": {
+          "$ref": "#/$defs/token"
+        }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "symbol",
+        "target",
+        "profile"
+      ],
+      "properties": {
+        "symbol": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "target": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "oneOf": [
+            {
+              "$ref": "#/$defs/target"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "profile": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "oneOf": [
+            {
+              "$ref": "#/$defs/profile"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4096,
+      "items": {
+        "$ref": "#/$defs/writeEntryDeletable"
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "digestOrNull": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "semanticId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z0-9_]+)*$"
+    },
+    "moduleId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,62}$"
+    },
+    "relPath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+    },
+    "nativeId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+    },
+    "confidence": {
+      "enum": [
+        "exact",
+        "high",
+        "medium",
+        "low",
+        "unknown"
+      ]
+    },
+    "target": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z][a-z0-9_-]{0,62}$"
+    },
+    "profile": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9-]{0,63}$"
+    },
+    "adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "digest"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "adapterOrNull": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "version",
+            "digest"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[a-z0-9][a-z0-9._-]*$"
+            },
+            "version": {
+              "type": "string",
+              "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+            },
+            "digest": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "symbol",
+            "module",
+            "use-case"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9_.-]*$"
+        }
+      }
+    },
+    "pins": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "lock",
+        "observed_index",
+        "adapter",
+        "sources"
+      ],
+      "properties": {
+        "model": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "lock": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "observed_index": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "adapter": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "version",
+                "digest"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                },
+                "version": {
+                  "type": "string",
+                  "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+                },
+                "digest": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sources": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "sha256"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024,
+                "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              }
+            }
+          }
+        }
+      }
+    },
+    "sourcePins": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "sha256"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    "writeEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "action",
+        "before",
+        "after",
+        "content"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+        },
+        "action": {
+          "enum": [
+            "create",
+            "replace"
+          ]
+        },
+        "before": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "after": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "content": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 1048576
+        }
+      }
+    },
+    "rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "journal",
+        "snapshots"
+      ],
+      "properties": {
+        "journal": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+        },
+        "snapshots": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+        }
+      }
+    },
+    "token": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "gap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subject",
+        "detail"
+      ],
+      "properties": {
+        "subject": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "effectiveMode": {
+      "enum": [
+        "observed",
+        "contracted-legacy",
+        "contracted-new",
+        "unbound",
+        "conflicting"
+      ]
+    },
+    "bindingRef": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "proposal",
+            "candidate"
+          ],
+          "properties": {
+            "proposal": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+            },
+            "candidate": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "writeEntryDeletable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "action",
+        "before",
+        "after",
+        "content"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+        },
+        "action": {
+          "enum": [
+            "create",
+            "replace",
+            "delete"
+          ]
+        },
+        "before": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "after": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "content": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 1048576
+        }
+      }
+    }
+  }
+}
