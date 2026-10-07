@@ -5201,12 +5201,18 @@ fn run_status(project: Option<String>, adoption: Option<String>) -> DomainResult
         return base;
     }
     // The adoption context resolves from the exact project selection the
-    // invocation named — never silently from the cwd (F5/X10).
+    // invocation named — never silently from the cwd (F5/X10). The
+    // observed index rides along for the freshness re-fingerprint
+    // (X11); unreadable evidence degrades to the typed unknown panel.
     let selection = selection_for(&project);
     let context = match lekalo_core::adoption::context(&selection) {
         Ok(context) => context,
         Err(result) => return result,
     };
+    let index = lekalo_core::observed::context(&selection)
+        .ok()
+        .and_then(|observed| lekalo_core::observed::index::load_index(&observed).ok())
+        .flatten();
     let project_id = context
         .model
         .project
@@ -5235,7 +5241,11 @@ fn run_status(project: Option<String>, adoption: Option<String>) -> DomainResult
             ))
         }
     };
-    let report = lekalo_core::adoption::status_report(upstream, &coverage);
+    let report =
+        match lekalo_core::adoption::status_report(&context, index.as_ref(), upstream, &coverage) {
+            Ok(report) => report,
+            Err(result) => return result,
+        };
     DomainResult::receipt(
         serde_json::to_string_pretty(&report).expect("status report serializes"),
         format!(
@@ -10327,12 +10337,18 @@ fn run_impact(args: ImpactArgs) -> DomainResult {
         return base;
     }
     // The adoption context resolves from the exact project selection the
-    // invocation named — never silently from the cwd (F5/X10).
+    // invocation named — never silently from the cwd (F5/X10). The
+    // observed index rides along for the freshness re-fingerprint
+    // (X11); unreadable evidence degrades to the typed boundary only.
     let selection = selection_for(&project);
     let context = match lekalo_core::adoption::context(&selection) {
         Ok(context) => context,
         Err(result) => return result,
     };
+    let index = lekalo_core::observed::context(&selection)
+        .ok()
+        .and_then(|observed| lekalo_core::observed::index::load_index(&observed).ok())
+        .flatten();
     let project_id = context
         .model
         .project
@@ -10361,7 +10377,11 @@ fn run_impact(args: ImpactArgs) -> DomainResult {
             ))
         }
     };
-    let report = lekalo_core::adoption::impact_report(upstream, &coverage);
+    let report = match lekalo_core::adoption::impact_report(&context, index.as_ref(), upstream, &coverage)
+    {
+        Ok(report) => report,
+        Err(result) => return result,
+    };
     DomainResult::receipt(
         serde_json::to_string_pretty(&report).expect("impact report serializes"),
         format!(

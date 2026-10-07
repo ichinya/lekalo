@@ -304,11 +304,15 @@ pub fn coverage_freshness(
 /// freshness is qualified by the attachment's own recorded conformance
 /// freshness: a stale or unqualified attachment never presents its
 /// rows as plain `fresh` (X11).
-pub fn status_report(upstream: Json, coverage: &CoverageDocument) -> StatusReport {
-    let attachment_fresh = coverage.revision.as_deref().is_some()
-        && coverage.pins.is_some()
-        && coverage.revision.as_deref() != Some("drifted");
-    StatusReport {
+pub fn status_report(
+    ctx: &AdoptionContext,
+    index: Option<&ObservedIndex>,
+    upstream: Json,
+    coverage: &CoverageDocument,
+) -> Outcome<StatusReport> {
+    let freshness = coverage_freshness(ctx, index, coverage)?;
+    let attachment_fresh = freshness.0 == "fresh";
+    Ok(StatusReport {
         schema_version: version::STATUS_REPORT_SCHEMA_VERSION.to_owned(),
         identity: version::STATUS_REPORT_IDENTITY.to_owned(),
         upstream,
@@ -324,7 +328,7 @@ pub fn status_report(upstream: Json, coverage: &CoverageDocument) -> StatusRepor
             })
             .collect(),
         gaps: coverage.gaps.clone(),
-    }
+    })
 }
 
 /// The qualified per-panel freshness: a `current` row is fresh only
@@ -342,8 +346,14 @@ fn panel_freshness(row: &CoverageRow, attachment_fresh: bool) -> String {
 /// The typed impact projection: the exact upstream envelope plus
 /// mode-boundary witnesses (observed neighbors included) and the
 /// explicit coverage gaps.
-pub fn impact_report(upstream: Json, coverage: &CoverageDocument) -> ImpactReport {
-    ImpactReport {
+pub fn impact_report(
+    ctx: &AdoptionContext,
+    index: Option<&ObservedIndex>,
+    upstream: Json,
+    coverage: &CoverageDocument,
+) -> Outcome<ImpactReport> {
+    let _ = coverage_freshness(ctx, index, coverage)?;
+    Ok(ImpactReport {
         schema_version: version::IMPACT_REPORT_SCHEMA_VERSION.to_owned(),
         identity: version::IMPACT_REPORT_IDENTITY.to_owned(),
         upstream,
@@ -364,7 +374,7 @@ pub fn impact_report(upstream: Json, coverage: &CoverageDocument) -> ImpactRepor
             })
             .collect(),
         gaps: coverage.gaps.clone(),
-    }
+    })
 }
 
 /// The typed trace projection: the exact manifest and query result plus
