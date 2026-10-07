@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
-  "productVersion": "0.6.5",
-  "cliSourceDigest": "sha256:181e7cef1d85b55aa87f8984546ea4a9ee294082b60a6c4f4dbeb8667f05f6e3",
+  "productVersion": "0.8.0",
+  "cliSourceDigest": "sha256:2d53f4f9e371a5ac16a1ecee5a03f86b2a81373bbbabb59d3638967580f39454",
   "p0Pages": [
     {
       "page": "README.md",
@@ -1752,6 +1752,50 @@
       "status": "implemented"
     },
     {
+      "id": "cli:task-links",
+      "kind": "command",
+      "command": "task-links",
+      "usage": "lekalo task-links [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:ccad901602fdd47a3c36a653d593b1473c91c65945c96ed5be382d9aea740b0a",
+      "summary": "The read-only multi-provider TaskExternalLink pilot surface (issue #52)",
+      "leaf": false,
+      "owner": "docs/task-external-links.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:task-links inspect",
+      "kind": "command",
+      "command": "task-links inspect",
+      "usage": "lekalo task-links inspect [OPTIONS] --attachment <PATH> <SYMBOL>",
+      "helpDigest": "sha256:7bcea83bfb5975ec76de13ca86954235d5a4686e4ae512b0f4b3d3213b5723fb",
+      "summary": "Display typed relations, decisions, effects, and admitted evidence; missing evidence stays unavailable",
+      "leaf": true,
+      "owner": "docs/task-external-links.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:task-links portability",
+      "kind": "command",
+      "command": "task-links portability",
+      "usage": "lekalo task-links portability [OPTIONS] --from-profile <PATH> --to-profile <PATH> <PATH>",
+      "helpDigest": "sha256:be33ee7b2e74073fefe1b6024d708ace5e98d6f70eea87214b6f5250fb1f758f",
+      "summary": "Join resolved target/component profiles and provider contract requirements into the closed portability projection",
+      "leaf": true,
+      "owner": "docs/task-external-links.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:task-links validate",
+      "kind": "command",
+      "command": "task-links validate",
+      "usage": "lekalo task-links validate [OPTIONS] <PATH>",
+      "helpDigest": "sha256:a94f9a418021c3e5dfc4c51f47ea9c2be97b34f3be631c5d72909d1de3165959",
+      "summary": "Join the attachment to the current compilation and report the static obligations",
+      "leaf": true,
+      "owner": "docs/task-external-links.md",
+      "status": "implemented"
+    },
+    {
       "id": "cli:trace",
       "kind": "command",
       "command": "trace",
@@ -2397,6 +2441,15 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/diagnostic-registry.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/diagnostic-registry.schema.v0.8.0.json",
+      "sourceDigest": "sha256:e4f08bd36f8860bcccba25c80b4b8e90fa83dbce4becc9a614b23cc3e2983830",
+      "owner": "docs/diagnostics.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/diagnostic-registry.v0.2.16.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.2.16.json",
@@ -2428,6 +2481,15 @@
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.6.5.json",
       "sourceDigest": "sha256:7b2be768be48050057682980b240f109d33adc56b1b4cb4b27848507df22b130",
+      "owner": "docs/diagnostics.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/diagnostic-registry.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/diagnostic-registry.v0.8.0.json",
+      "sourceDigest": "sha256:1e94177b8c8db065a0126c7c3b15dfb6e29b11883163e41481fb235a7824ff41",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3203,6 +3265,42 @@
       "source": "contracts/target-protocol.schema.v0.6.4.json",
       "sourceDigest": "sha256:40a169699324b537d7a9cbdf199f69201fb90db65c31deab49797cd7a4c5fcce",
       "owner": "docs/target-protocol.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/task-links-evidence.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/task-links-evidence.schema.v0.8.0.json",
+      "sourceDigest": "sha256:a310200767c0c25bee1e0410707af52eb02729a1556d9dc408e4239ccb3a3e04",
+      "owner": "docs/task-external-links.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/task-links-integration.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/task-links-integration.schema.v0.8.0.json",
+      "sourceDigest": "sha256:576aeb36724587f8b7350eb12f577129ace64ed013c876c97c2b7174b9d9ef71",
+      "owner": "docs/task-external-links.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/task-links-portability.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/task-links-portability.schema.v0.8.0.json",
+      "sourceDigest": "sha256:23207d1539d6fb73e36144bcd362fdab1b4a48ef366ce2f3879af8d88ee66102",
+      "owner": "docs/task-external-links.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/task-links-report.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/task-links-report.schema.v0.8.0.json",
+      "sourceDigest": "sha256:a5c750378d8a569783aa6647c2315a0e18e584e789de83e03db03ffd8f7b1a24",
+      "owner": "docs/task-external-links.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
