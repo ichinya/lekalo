@@ -335,7 +335,13 @@ fn parse_operations(json: Option<&Json>) -> Result<Vec<OperationRole>, Diagnosti
         });
     }
     operations.sort_by(|left, right| left.operation.cmp(&right.operation));
-    operations.dedup_by(|left, right| left.operation == right.operation);
+    // A duplicate role is a contract violation, never a silent merge:
+    // the assemble gate refuses adjacent equals.
+    for pair in operations.windows(2) {
+        if pair[0].operation == pair[1].operation {
+            return Err(diagnostic::input_invalid("duplicate-role"));
+        }
+    }
     Ok(operations)
 }
 

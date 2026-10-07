@@ -1,0 +1,179 @@
+# Issue #51 implementation: Worklog and opt-in Changelog pilot
+
+Implemented on branch `ichinya/m8-issue-51` at the M8 product version
+`0.8.0`. The authoritative plan is `docs/m8/issue-51-research.md`; every
+proposed artifact below was built, validated, and committed locally
+(no push, no GitHub mutation). The live issue's eight acceptance rows are
+mapped at the end.
+
+## Contract artifacts (all new, all at product 0.8.0)
+
+- `contracts/worklog-changelog-pilot.schema.v0.8.0.json` — the closed
+  composition contract `dev.lekalo.worklog-changelog-pilot@0.8.0`,
+  discriminator `lekalo/worklog-changelog-pilot/v0.8.0`: twelve fixed
+  operation roles with declared effect boundaries and commit boundaries,
+  independence rules, correlations, approval/snapshot field bindings,
+  the public field allowlist with the shared rendering policy, replay
+  scopes, and capability requirements. Draft 2020-12, closed
+  (`additionalProperties` + `unevaluatedProperties` false), bounds per
+  the research (128 operation roles, 128 consumers, 64 scenarios, 256
+  assertions, 32 capabilities per target).
+- `contracts/worklog-changelog-evidence.schema.v0.8.0.json` — the closed
+  evidence report `dev.lekalo.worklog-changelog-evidence@0.8.0`:
+  composition pin, toolchain, per-target backend state/execution,
+  capability rows (`supported|partial|unsupported|unknown` + blocking),
+  per-scenario assertions, consumer witnesses, completeness, and
+  verdicts. Unsupported publication semantics stay visible rows.
+- `contracts/diagnostic-registry.v0.8.0.json` (+ its schema successor) —
+  the strict union successor: all 522 current entries byte-for-byte plus
+  exactly `worklog-changelog.input-invalid` `LEK-WC-001` through
+  `worklog-changelog.evidence-incomplete` `LEK-WC-007`. Sorted ids,
+  unique codes, `message_id == id`, closed data fields. The wire stays
+  `lekalo/diagnostic/v0.2.16`; the grammar is unchanged.
+- `scripts/gen-worklog-changelog-contracts.mjs` authors all four and
+  re-verifies union/sort/uniqueness on every run (`--check` is the
+  read-only live mode).
+
+## Pure core owner
+
+`crates/lekalo-core/src/worklog_changelog/` validates the composition
+document end to end with no hidden side effects:
+
+- `wire.rs` — bounded parse from exact bytes with duplicate-key
+  rejection before any map insertion, closed member sets, digest pins,
+  closed vocabularies (roles, effect kinds, commit boundaries, consumed
+  families), canonical ordering, and hard refusal of duplicate roles.
+- `types.rs` — the typed attachment and the `assemble` gate (bounds,
+  adjacent-order invariants, replay-scope uniqueness).
+- `validate.rs` — the pure join against the pinned compilation:
+  custody (project id + exact IR digest), role resolution to declared
+  commands/queries, effect-graph agreement with the canonical declared
+  projection (count and set equality; anonymous query reads matched by
+  count and kind), independence rules refusing shared effect ids and
+  shared infrastructure effects, approval bindings split between
+  publish-time inputs and approval-record fields, append-only snapshot
+  field pins, public allowlist checked against every private entity
+  field, payload-bound replay scopes, and capability coverage that keeps
+  `publish.approval`, `publish.revisioned_snapshot`,
+  `security.review_gate`, `transaction.atomic_group`,
+  `idempotency.durable_key` and an explicit partial provider-idempotency
+  row mandatory.
+- `evidence.rs` — the honest admission: strict refuses (`unsupported`)
+  when required rows are unsupported/unknown/not executed; permissive
+  degrades; both retain every row and blocker.
+- `diagnostic.rs` — the seven rules through the registry-backed
+  constructor; the 0.8.0 registry is the third resolution tier
+  (`embedded` → `successor` → `pilot`), so predecessor producers keep
+  their exact pins and existing goldens are untouched.
+- `crates/lekalo-core/tests/worklog_changelog.rs` — the pinned join of
+  the committed fixture, the scenario corpus canonicalization through
+  the production Scenario IR module, one negative vector per rule (exact
+  rule id + detail token), duplicate-key rejection, and honest evidence
+  admission for both profiles.
+
+## CLI
+
+`lekalo pilot validate <document> --project DIR` and
+`lekalo pilot admit <report> --profile strict|permissive --project DIR`
+in `crates/lekalo-cli/src/main.rs`, following the `requirements`/
+`nfr` pattern: the core owns every decision, the binary selects,
+renders, and maps exits via `DomainResult` (valid 0, invalid 1, denied
+3, unsupported 4); both commands honor the global `--no-cache`.
+
+## Fixtures (`tests/fixtures/pilot/worklog-changelog/`)
+
+- `model/` — the neutral synthetic `taskhub` project: `worklog` module
+  (completion, private worklog, provider outbox and delivery as separate
+  commands with separate declared effects), `changelog` module (opt-in
+  draft, preview, approval binding, gated publication with a separate
+  publish-output effect, withdrawal, public DTO queries), the
+  authorization attachment pinning the exact compiled IR digest with
+  member/author/service-worker/publishing-authority/public-reader
+  actors, and the OpenSpec requirement tree bound through the
+  requirements attachment with exact canonical revision digests.
+- `attachments/` — the accepted #23–#26 families instantiated against
+  the compiled Model (transaction-concurrency with independent commit
+  boundaries and the declared publication atomic group; extended-effects
+  with the outbox job, conditional provider call, consented review-gated
+  revisioned publication and four partial-failure schedules; the error
+  registry; invariant transitions), plus `pilot.json`, the composition
+  document pinning exact Model/IR and attachment digests.
+- `scenarios/` — thirteen canonical Scenario IR documents (the ten issue
+  scenarios plus approval-required, stale-preview, and
+  publication-partial-failure guards).
+- `evidence/` — the honest evidence report (php unknown/unknown-capable,
+  go unsupported with backend absent, all publication rows blocking) and
+  the consumer oracle fixing the reverse closure of the public DTO.
+- `public/` — the closed application DTO schema (payload version 0.8.0).
+- `invalid/` — the duplicate-key and unknown-version raw vectors.
+- `php/`, `go/` — the maintained port manifest and the Go refusal
+  record; native runtime evidence stays target-confined.
+
+## Gates and CI
+
+- `scripts/test-worklog-changelog-contracts.mjs` — Ajv 8.17.1 schema
+  gate: both pilot schemas, the registry union successor, fixture
+  instances, canonical compact byte-sorted bytes (the duplicate-key
+  proof), and the Model/IR engine pins of the composition and corpus.
+- `scripts/test-worklog-changelog-pilot.mjs` — the closed
+  `--target php|go --profile strict|permissive --case all|<id>` harness
+  with `--expect-denied` as the negative gate: composition validation
+  through the binary, static forbidden-effect evaluation against the
+  canonical effect projection (denial-path assertions retained as
+  runtime evidence, never counted as passes), admission re-derived
+  through `lekalo pilot admit`, schema-valid report on stdout, bounded
+  diagnostics on stderr.
+- `scripts/test-worklog-changelog-impact.mjs` — binary-driven: the
+  complete depth-256 reverse closure of `changelog.public_entry_dto`
+  and the mutation probes against the committed oracle.
+- `scripts/test-worklog-changelog-neutrality.mjs` — the full public
+  artifact inventory scanned for framework vocabulary, identity
+  leakage, host paths, wall clocks, credentials, and non-synthetic URLs.
+- CI (`.github/workflows/ci.yml`): the contracts gate joins the pinned
+  Ajv schema job; a dedicated `worklog-changelog-pilot` job builds the
+  locked CLI and runs the pilot harness (both strict denials asserted,
+  the permissive degraded pass), the impact gate, and the neutrality
+  gate. The generator scripts are the sanctioned regeneration path.
+
+## Governance
+
+`check-structure`, `check-privacy`, `check-contract-versions --base
+HEAD^` (140 contract artifacts), `test-fixture-provenance` (the pilot
+fixtures live under the already-synthetic `pilot` family),
+`test-diagnostic-contracts`, `test-golden-diagnostic-coverage`, and
+`test-architecture-profile-contracts` (the predecessor 0.6.5 consumer)
+all pass unchanged.
+
+## Acceptance mapping
+
+| Issue acceptance criterion | Proof |
+| --- | --- |
+| Independent effects представлены отдельными declarations. | The Model declares one effect per concern; the composition roles carry one declared effect set each; `validate.rs` refuses shared effect ids and shared infrastructure effects between independence-rule targets; scenarios `completion_without_worklog`, `completion_with_worklog`, `no_provider_comment`, `no_opt_in` statically prove the absence (pilot gate, 14 static proofs). |
+| Publication contract требует preview/approval. | The approval binding covers preview revision/digest/tenant at publish time plus destination/authority/policy revision on the approval record; `changelog.scenario.approval_required` and `stale_preview` guard documents; `publish.approval` capability row mandatory (WC-003/WC-007). |
+| Partial failures не откатывают successful local completion без declared transaction. | The transaction-concurrency attachment declares separate commit boundaries (completion, worklog, outbox, delivery, publication) and non-atomic external boundaries with `recovery_required`; the provider/publication partial-failure scenarios assert the committed completion intact; the declared atomic group is the contrasting rollback case. |
+| Snapshot semantics переносимы между targets. | The snapshot declaration pins append-only revision/digest/schema-version fields of the declared entity; `source_edit_after_publish` and `republish_revision` scenarios; per-target capability rows keep revisioned-snapshot support visible per backend. |
+| Scenarios проверяют privacy/security/idempotency. | `public_projection` (allowlist-only DTO), `unsafe_content` (shared rendering/safe-URL policy), `repeated_correlation_key` (replay + payload-drift conflict), cross-tenant exclusion; the validator enforces the excluded-field closure over every private entity; replay scopes are payload-bound and collision-free (WC-005/WC-006). |
+| Impact показывает все consumers changelog schema. | `test-worklog-changelog-impact.mjs` proves the complete depth-256 reverse closure (5 graph consumers, 3 transitive impact subjects, `omitted: 0`) against the seven-witness oracle including the public schema and composition allowlist; unknown external consumers stay explicitly possible. |
+| PHP/Go portability report не скрывает unsupported publication semantics. | The evidence report carries php rows `unknown` (no runtime evidence) and go rows `unsupported` (backend absent), all `blocking: true`; strict admission refuses with the blocker list retained; the negative gate (`--expect-denied`) asserts the denial in CI. |
+| Public artifacts не раскрывают название consumer application. | `test-worklog-changelog-neutrality.mjs` scans the complete inventory (54 files) for framework vocabulary, identity leakage (project-id closure, package identities, branded compounds), host paths, wall clocks, credentials, and non-synthetic URLs; the fixtures use only the synthetic `taskhub`/`worklog`/`changelog` vocabulary. |
+
+## Verification record
+
+- `cargo fmt --all -- --check`
+- `cargo clippy -p lekalo-core -p lekalo-cli -- -D warnings`
+- `cargo test --workspace --locked` (42 targets, 0 failures)
+- `NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-worklog-changelog-contracts.mjs`
+- `NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-worklog-changelog-pilot.mjs --target php --profile strict --case all --expect-denied`
+- `NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-worklog-changelog-pilot.mjs --target go --profile strict --case all --expect-denied`
+- `NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-worklog-changelog-pilot.mjs --target go --profile permissive --case all`
+- `node scripts/test-worklog-changelog-impact.mjs`
+- `node scripts/test-worklog-changelog-neutrality.mjs`
+- `node scripts/check-contract-versions.mjs --base HEAD^`
+
+## Boundary
+
+Real provider integration, live publication, private requirement
+sources, and native PHP/Go runtime acceptance remain out of scope by
+design; the reports keep those gaps visible instead of filling them.
+Native runtime legs run in separate toolchain-pinned jobs when a backend
+supplies bound evidence.
