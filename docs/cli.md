@@ -1122,7 +1122,7 @@ the redaction diff contract and never writes.
 <!-- issue-105-command-index -->
 ## Command index
 
-Status: **Implemented** command handlers for product 0.6.5. Handler existence does not imply every target capability, migration or native execution is available. Each row comes from recursive CLI help and has one owner in [the checked ownership inventory](documentation-owners.json). `init --adopt` is described in [adopt](adopt.md); native execution remains a typed refusal in the production CLI.
+Status: **Implemented** command handlers for product 0.8.0. Handler existence does not imply every target capability, migration or native execution is available. Each row comes from recursive CLI help and has one owner in [the checked ownership inventory](documentation-owners.json). `init --adopt` is described in [adopt](adopt.md); native execution remains a typed refusal in the production CLI.
 
 | Command | Synopsis from this binary | Reference owner |
 | --- | --- | --- |
@@ -1242,6 +1242,9 @@ Status: **Implemented** command handlers for product 0.6.5. Handler existence do
 | `lekalo openapi diff` | `lekalo openapi diff [OPTIONS] <BASE> <CANDIDATE>` | [reference](openapi.md) |
 | `lekalo openapi inspect` | `lekalo openapi inspect [OPTIONS] --endpoint <SYMBOL> <PATH>` | [reference](openapi.md) |
 | `lekalo openapi render` | `lekalo openapi render [OPTIONS] <PATH>` | [reference](openapi.md) |
+| `lekalo pilot` | `lekalo pilot [OPTIONS] <COMMAND>` | [reference](m8/issue-51-implementation.md) |
+| `lekalo pilot admit` | `lekalo pilot admit [OPTIONS] <PATH>` | [reference](m8/issue-51-implementation.md) |
+| `lekalo pilot validate` | `lekalo pilot validate [OPTIONS] <PATH>` | [reference](m8/issue-51-implementation.md) |
 | `lekalo privacy` | `lekalo privacy [OPTIONS] <COMMAND>` | [reference](privacy-runtime.md) |
 | `lekalo privacy evaluate` | `lekalo privacy evaluate [OPTIONS] --decision <FILE>` | [reference](privacy-runtime.md) |
 | `lekalo privacy export` | `lekalo privacy export [OPTIONS] --destination <SPEC> <ARTIFACT>` | [reference](privacy-runtime.md) |

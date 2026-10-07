@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
-  "productVersion": "0.6.5",
-  "cliSourceDigest": "sha256:181e7cef1d85b55aa87f8984546ea4a9ee294082b60a6c4f4dbeb8667f05f6e3",
+  "productVersion": "0.8.0",
+  "cliSourceDigest": "sha256:9b5636f8ea65364016b36ade9cf361f477fe595a7dc410d991722e699bcd2f6a",
   "p0Pages": [
     {
       "page": "README.md",
@@ -1334,6 +1334,39 @@
       "status": "implemented"
     },
     {
+      "id": "cli:pilot",
+      "kind": "command",
+      "command": "pilot",
+      "usage": "lekalo pilot [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:b3b285c32621b6159b99916ec0e80cab661d03a67f716d732bb5407c7e1173c1",
+      "summary": "Validate the issue #51 worklog-changelog pilot composition against its pinned project: the pure composition contract",
+      "leaf": false,
+      "owner": "docs/m8/issue-51-implementation.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:pilot admit",
+      "kind": "command",
+      "command": "pilot admit",
+      "usage": "lekalo pilot admit [OPTIONS] <PATH>",
+      "helpDigest": "sha256:7e0f902215317037fb248e2550523db5d9c3bfe626a57e23d33b80b1b6972777",
+      "summary": "Admit one evidence report under the selected profile: strict refuses any required unsupported or unknown row (exit 4) while keeping the report; permissive emits the degraded verdict",
+      "leaf": true,
+      "owner": "docs/m8/issue-51-implementation.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:pilot validate",
+      "kind": "command",
+      "command": "pilot validate",
+      "usage": "lekalo pilot validate [OPTIONS] <PATH>",
+      "helpDigest": "sha256:f37a3ba0bba675ff5ce097b9f732afadc3a7c7acc1a1bdf7e012d5190ff0119e",
+      "summary": "Validate one composition document against its pinned project: custody, role resolution, effect separation, approval binding, snapshot immutability, public allowlist, replay scopes, and capability coverage",
+      "leaf": true,
+      "owner": "docs/m8/issue-51-implementation.md",
+      "status": "implemented"
+    },
+    {
       "id": "cli:privacy",
       "kind": "command",
       "command": "privacy",
@@ -2397,6 +2430,15 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/diagnostic-registry.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/diagnostic-registry.schema.v0.8.0.json",
+      "sourceDigest": "sha256:2c6d5d805a7e338fc85edd94bac2ac7d4a8e61e9b26322c4de7eb0c146aaa300",
+      "owner": "docs/diagnostics.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/diagnostic-registry.v0.2.16.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.2.16.json",
@@ -2428,6 +2470,15 @@
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.6.5.json",
       "sourceDigest": "sha256:7b2be768be48050057682980b240f109d33adc56b1b4cb4b27848507df22b130",
+      "owner": "docs/diagnostics.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/diagnostic-registry.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/diagnostic-registry.v0.8.0.json",
+      "sourceDigest": "sha256:d4277c3e296c4c9b382f8ad6ae809eda4e47c1dfda4596343c310c0f6b5c1fcb",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3311,6 +3362,24 @@
       "source": "contracts/waiver-input.schema.v0.6.5.json",
       "sourceDigest": "sha256:061d6713a74da631ac2c812efb23c19e30acb6c7a064fb1a4fd011bfce3ae176",
       "owner": "docs/waivers.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/worklog-changelog-evidence.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/worklog-changelog-evidence.schema.v0.8.0.json",
+      "sourceDigest": "sha256:39f5a82fafc6e94b4b968e46badd579521d434b92058fdb2bc3c357b0c8392e6",
+      "owner": "docs/m8/issue-51-implementation.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/worklog-changelog-pilot.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/worklog-changelog-pilot.schema.v0.8.0.json",
+      "sourceDigest": "sha256:fcf2ba0b7bf8f6210a75f9821af993a88d4086933d0b5a5bb2c1858cd1333ae0",
+      "owner": "docs/m8/issue-51-implementation.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
