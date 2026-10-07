@@ -485,3 +485,376 @@ fn real_recovery_restores_the_pinned_preimages_and_formats() {
         );
     });
 }
+
+/// The base identity of one single-file plan record (the test-side
+/// spelling of the runtime's `plan_identity`).
+fn plan_record(
+    policy_digest: &str,
+    path: &str,
+    before_digest: &str,
+    after_digest: &str,
+) -> (String, String, String) {
+    let mut material = String::new();
+    material.push_str(policy_digest);
+    material.push('\u{1F}');
+    material.push_str(path);
+    material.push('\u{1F}');
+    material.push_str(before_digest);
+    material.push('\u{1F}');
+    material.push_str(after_digest);
+    let base = lekalo_core::digest::sha256_hex(material.as_bytes());
+    let plan_id = format!("{}-1", &base[..47]);
+    let manifest = format!(
+        "{{\"schema_version\":\"lekalo/format-transaction/v0.8.0\",\"plan_id\":\"{plan_id}\",\"policy_digest\":\"{policy_digest}\",\"files\":[{{\"path\":\"{path}\",\"before_sha256\":\"{before_digest}\",\"after_sha256\":\"{after_digest}\"}}]}}"
+    );
+    let journal = format!(
+        "{{\"schema_version\":\"lekalo/format-transaction/v0.8.0\",\"plan_id\":\"{plan_id}\",\"manifest_sha256\":\"{}\"}}\n",
+        lekalo_core::digest::sha256_hex(manifest.as_bytes())
+    );
+    (plan_id, manifest, journal)
+}
+
+/// Plant a valid single-file interrupted transaction over `root`'s
+/// scheduling module (current source bytes = `current`).
+fn plant_interrupted(root: &Path, current: &[u8]) -> (PathBuf, String) {
+    let module = root.join("lekalo/modules/scheduling/module.yaml");
+    let before = fs::read(&module).expect("preimage");
+    let before_digest = lekalo_core::digest::sha256_hex(&before);
+    let after_digest = lekalo_core::digest::sha256_hex(current);
+    let (plan_id, manifest, journal) = plan_record(
+        &format!("sha256:{}", "0".repeat(64)),
+        "lekalo/modules/scheduling/module.yaml",
+        &before_digest,
+        &after_digest,
+    );
+    let home = root.join(".lekalo/cache/format").join(&plan_id);
+    fs::create_dir_all(home.join("before/modules/scheduling")).expect("backup dirs");
+    fs::write(home.join("before/modules/scheduling/module.yaml"), &before).expect("backup");
+    fs::write(home.join("manifest.json"), manifest).expect("manifest");
+    fs::write(home.join("journal.json"), journal).expect("journal");
+    fs::write(&module, current).expect("current");
+    (home, plan_id)
+}
+
+#[test]
+fn forged_recovery_records_fail_every_escape_and_shape_class() {
+    let escape_paths = [
+        "../../lekalo/project.yaml",
+        "lekalo/../../outside.yaml",
+        "lekalo/modules/a/../b/module.yaml",
+        ".lekalo/cache/format/victim/module.yaml",
+        "lekalo.lock",
+    ];
+    in_sandbox("escape", "planner-canonical", |root| {
+        let victim = root.join("lekalo/modules/planner/entities.yaml");
+        let victim_before = fs::read(&victim).expect("victim bytes");
+        for hostile in escape_paths {
+            let digest = "0".repeat(64);
+            let (plan_id, manifest, journal) = plan_record(
+                &format!("sha256:{}", "f".repeat(64)),
+                hostile,
+                &digest,
+                &digest,
+            );
+            let home = root.join(".lekalo/cache/format").join(&plan_id);
+            fs::create_dir_all(home.join("before")).expect("home");
+            fs::write(home.join("manifest.json"), manifest).expect("manifest");
+            fs::write(home.join("journal.json"), journal).expect("journal");
+            let result =
+                lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
+            assert_eq!(
+                result.status(),
+                Status::Invalid,
+                "{hostile}: forged record refused"
+            );
+            assert_eq!(first_reason(&result), "format.recovery-required");
+            assert!(
+                home.join("journal.json").exists(),
+                "{hostile}: material never dropped"
+            );
+            assert_eq!(
+                fs::read(&victim).expect("victim after"),
+                victim_before,
+                "{hostile}: the in-project target is untouched"
+            );
+            let _ = fs::remove_dir_all(root.join(".lekalo"));
+        }
+    });
+}
+
+#[test]
+fn unknown_fields_and_versions_refuse_recovery() {
+    in_sandbox("unknown-fields", "planner-canonical", |root| {
+        let module = root.join("lekalo/modules/scheduling/module.yaml");
+        let before = fs::read(&module).expect("preimage");
+        let digest = lekalo_core::digest::sha256_hex(&before);
+        let (plan_id, manifest, _journal) = plan_record(
+            &format!("sha256:{}", "0".repeat(64)),
+            "lekalo/modules/scheduling/module.yaml",
+            &digest,
+            &digest,
+        );
+        let home = root.join(".lekalo/cache/format").join(&plan_id);
+        fs::create_dir_all(&home).expect("home");
+        let manifest_digest = lekalo_core::digest::sha256_hex(manifest.as_bytes());
+        fs::write(home.join("manifest.json"), manifest).expect("manifest");
+        let variants = [
+            format!(
+                "{{\"schema_version\":\"lekalo/format-transaction/v0.8.0\",\"plan_id\":\"{plan_id}\",\"manifest_sha256\":\"{manifest_digest}\",\"extra\":true}}\n"
+            ),
+            format!(
+                "{{\"schema_version\":\"lekalo/format-transaction/v9.9.9\",\"plan_id\":\"{plan_id}\",\"manifest_sha256\":\"{manifest_digest}\"}}\n"
+            ),
+            format!(
+                "{{\"schema_version\":\"lekalo/format-transaction/v0.8.0\",\"plan_id\":\"{plan_id}\",\"manifest_sha256\":\"short\"}}\n"
+            ),
+        ];
+        for variant in &variants {
+            fs::write(home.join("journal.json"), variant).expect("journal");
+            let result =
+                lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
+            assert_eq!(result.status(), Status::Invalid, "{variant}");
+            assert_eq!(first_reason(&result), "format.recovery-required");
+            assert!(home.join("journal.json").exists(), "never dropped");
+            assert_eq!(fs::read(&module).expect("module"), before, "untouched");
+        }
+    });
+}
+
+#[test]
+fn a_post_crash_edit_surfaces_as_the_conflict_and_is_never_erased() {
+    in_sandbox("conflict", "seeds/noncanonical", |root| {
+        // Recovered source: neither the pinned preimage nor the plan's
+        // after bytes, but a user's post-crash edit.
+        let edit = b"schema_version: \"0.2.16\"\ndefinitions:\n- id: scheduling\n  kind: module\n  version: 1\n  description: A user's post-crash edit\n";
+        let (home, _plan_id) = plant_interrupted_with_golden_after(root, edit);
+        let module = root.join("lekalo/modules/scheduling/module.yaml");
+
+        let result = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
+        assert_eq!(result.status(), Status::Denied, "{result:?}");
+        assert_eq!(first_reason(&result), "format.source-changed");
+        let diagnostic = result.diagnostics().first().expect("diagnostic");
+        assert_eq!(
+            diagnostic.path(),
+            Some("lekalo/modules/scheduling/module.yaml"),
+            "the conflict names the diverged pin"
+        );
+        // The user's edit survived and the journal stays: recovery is
+        // still required, and the explicit decision owns the outcome.
+        assert_eq!(fs::read(&module).expect("module"), edit, "edit preserved");
+        assert!(home.join("journal.json").exists(), "journal kept");
+    });
+}
+
+#[test]
+fn recovery_to_the_pinned_after_state_succeeds_without_rollback() {
+    in_sandbox("conflict-after", "seeds/noncanonical", |root| {
+        // The current bytes already equal the plan's after pin (the
+        // replacement fully landed before the crash): recovery keeps
+        // them, clears the journal, and formats the rest.
+        let golden = fs::read(
+            workspace_root()
+                .join(FIXTURES)
+                .join("planner-canonical/lekalo/modules/scheduling/module.yaml"),
+        )
+        .expect("golden");
+        let (home, _plan_id) = plant_interrupted_with_golden_after(root, &golden);
+        let result = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
+        assert_eq!(result.status(), Status::Valid, "{result:?}");
+        assert!(!home.join("journal.json").exists(), "journal cleared");
+    });
+}
+
+#[test]
+fn a_retried_identical_plan_gets_a_fresh_home_and_succeeds() {
+    in_sandbox("retry", "seeds/noncanonical", |root| {
+        let home = root.join(".lekalo/cache/format");
+        let module = root.join("lekalo/modules/planner/entities.yaml");
+        // Attempt 1: formats and leaves the completed immutable home.
+        let first = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
+        assert_eq!(first.status(), Status::Valid, "{first:?}");
+        let homes: Vec<_> = fs::read_dir(&home)
+            .expect("home")
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.file_name() != "active.lock")
+            .collect();
+        assert_eq!(homes.len(), 1, "exactly one attempt home");
+        let formatted = fs::read(&module).expect("formatted bytes");
+        // External revert to identical bytes: the retry re-emits the same
+        // plan identity and must not collide with the completed home.
+        fs::write(&module, &formatted).expect("rewrite identical bytes");
+        let second = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
+        assert_eq!(second.status(), Status::Valid, "{second:?}");
+        assert_eq!(fs::read(&module).expect("bytes"), formatted);
+    });
+}
+
+#[test]
+fn editor_mode_refuses_comment_losing_buffers_instead_of_returning_them() {
+    in_sandbox("stdin-loss", "planner-canonical", |root| {
+        let path = root.join("lekalo/modules/scheduling/module.yaml");
+        let source = fs::read(&path).expect("source");
+        // The buffer carries a trailing comment with no owner line.
+        let buffer = b"schema_version: \"0.2.16\"\ndefinitions:\n- id: scheduling\n  kind: module\n  version: 1\n  description: Slot scheduling\n    module # this trailing comment has no owner line\n";
+        let result = lekalo_core::format::run(
+            &request(
+                FormatScope::Document("lekalo/modules/scheduling/module.yaml".to_owned()),
+                FormatMode::Stdin,
+            ),
+            Some(buffer),
+        );
+        assert_eq!(result.status(), Status::Denied, "{result:?}");
+        assert_eq!(first_reason(&result), "format.comments-loss");
+        assert_eq!(fs::read(&path).expect("after"), source, "disk untouched");
+    });
+}
+
+#[test]
+fn editor_oracle_judges_semantic_edits_against_the_unsaved_buffer() {
+    in_sandbox("stdin-oracle", "planner-canonical", |root| {
+        let path = root.join("lekalo/modules/scheduling/module.yaml");
+        let source = fs::read(&path).expect("saved bytes");
+        // The buffer semantically diverges from the saved file (a new
+        // description): against the saved file this would be refused as
+        // format.semantic-change; the unsaved-buffer oracle accepts it.
+        let buffer = b"schema_version: \"0.2.16\"\ndefinitions:\n- id: scheduling\n  kind: module\n  version: 1\n  description: The unsaved semantic edit\n";
+        let result = lekalo_core::format::run(
+            &request(
+                FormatScope::Document("lekalo/modules/scheduling/module.yaml".to_owned()),
+                FormatMode::Stdin,
+            ),
+            Some(buffer),
+        );
+        assert_eq!(result.status(), Status::Valid, "{result:?}");
+        let replacement = result.to_human_string("lekalo");
+        assert!(
+            replacement.contains("The unsaved semantic edit"),
+            "the replacement carries the buffer's edit: {replacement}"
+        );
+        assert_eq!(fs::read(&path).expect("after"), source, "disk untouched");
+    });
+}
+
+#[cfg(windows)]
+#[test]
+fn a_live_windows_writer_is_refused_and_never_rolled_back() {
+    in_sandbox("live-lock-win", "seeds/noncanonical", |root| {
+        // A real live writer: a held share-mode-zero handle on the
+        // ownership file (std only). The second formatter refuses as busy
+        // and never rolls the live writer's applied sources back.
+        let module = root.join("lekalo/modules/scheduling/module.yaml");
+        let replaced = b"schema_version: \"0.2.16\"\ndefinitions:\n- id: scheduling\n  kind: module\n  version: 1\n  description: The live writer's applied bytes\n";
+        let (home, _plan_id) = plant_interrupted(root, replaced);
+        let lock = root.join(".lekalo/cache/format/active.lock");
+        std::fs::create_dir_all(lock.parent().unwrap()).expect("home");
+        use std::os::windows::fs::OpenOptionsExt;
+        let guard = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .share_mode(0)
+            .open(&lock)
+            .expect("hold the ownership handle");
+        let result = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
+        assert_eq!(result.status(), Status::Denied, "{result:?}");
+        assert_eq!(first_reason(&result), "format.locked");
+        assert_eq!(
+            fs::read(&module).expect("module"),
+            replaced,
+            "live state untouched"
+        );
+        assert!(home.join("journal.json").exists(), "journal untouched");
+        drop(guard);
+        let recovered =
+            lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
+        assert_eq!(recovered.status(), Status::Valid, "{recovered:?}");
+        assert!(!home.join("journal.json").exists(), "journal cleared");
+    });
+}
+
+/// Plant a valid interrupted transaction whose after pin is the canonical
+/// formatting of the preimage (the golden bytes), while the current
+/// source bytes are `current` — the honest post-crash shape.
+fn plant_interrupted_with_golden_after(root: &Path, current: &[u8]) -> (PathBuf, String) {
+    let module = root.join("lekalo/modules/scheduling/module.yaml");
+    let before = fs::read(&module).expect("preimage");
+    let before_digest = lekalo_core::digest::sha256_hex(&before);
+    let golden = fs::read(
+        workspace_root()
+            .join(FIXTURES)
+            .join("planner-canonical/lekalo/modules/scheduling/module.yaml"),
+    )
+    .expect("golden");
+    let after_digest = lekalo_core::digest::sha256_hex(&golden);
+    let (plan_id, manifest, journal) = plan_record(
+        &format!("sha256:{}", "0".repeat(64)),
+        "lekalo/modules/scheduling/module.yaml",
+        &before_digest,
+        &after_digest,
+    );
+    let home = root.join(".lekalo/cache/format").join(&plan_id);
+    fs::create_dir_all(home.join("before/modules/scheduling")).expect("backup dirs");
+    fs::write(home.join("before/modules/scheduling/module.yaml"), &before).expect("backup");
+    fs::write(home.join("manifest.json"), manifest).expect("manifest");
+    fs::write(home.join("journal.json"), journal).expect("journal");
+    fs::write(&module, current).expect("current");
+    (home, plan_id)
+}
+
+#[cfg(unix)]
+#[test]
+fn a_link_spelled_format_home_is_denied_on_sight() {
+    // Hostile-link probe: a symlinked runtime home (or journal) must be
+    // refused by the read path, never followed into recovery.
+    in_sandbox("hostile-link", "planner-canonical", |root| {
+        let real_home = root.join("elsewhere/format");
+        fs::create_dir_all(&real_home).expect("real home");
+        fs::write(real_home.join("journal.json"), b"{}\n").expect("journal");
+        std::os::unix::fs::symlink(real_home, root.join(".lekalo/cache/format"))
+            .expect("symlinked home");
+        let result = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
+        assert_ne!(
+            result.status(),
+            Status::Valid,
+            "a linked home never recovers"
+        );
+        // The linked tree is untouched: recovery never followed the link.
+        assert!(real_home.join("journal.json").exists());
+    });
+}
+
+#[cfg(unix)]
+#[test]
+fn a_link_spelled_source_in_a_forged_record_is_refused() {
+    in_sandbox("hostile-link-source", "planner-canonical", |root| {
+        // A record pinning a path that exists on disk only as a symlink:
+        // the restore must refuse the replace, never write through it.
+        let victim = root.join("outside-victim.yaml");
+        fs::write(&victim, b"victim: true\n").expect("victim");
+        let link = root.join("lekalo/modules/scheduling/link.yaml");
+        std::os::unix::fs::symlink(&victim, &link).expect("source link");
+        let digest = "0".repeat(64);
+        let (plan_id, manifest, journal) = plan_record(
+            &format!("sha256:{}", "f".repeat(64)),
+            "lekalo/modules/scheduling/link.yaml",
+            &digest,
+            &digest,
+        );
+        let home = root.join(".lekalo/cache/format").join(&plan_id);
+        fs::create_dir_all(home.join("before")).expect("home");
+        fs::write(home.join("manifest.json"), manifest).expect("manifest");
+        fs::write(home.join("journal.json"), journal).expect("journal");
+        let result = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
+        assert_eq!(
+            result.status(),
+            Status::Invalid,
+            "link-pinned record refused"
+        );
+        assert_eq!(
+            fs::read(&victim).expect("victim"),
+            b"victim: true\n",
+            "never written through"
+        );
+    });
+}

@@ -271,13 +271,27 @@ pub(crate) fn pending_plan(selection: &LoadSelection) -> Option<String> {
 /// material, never recovery targets; homes with neither journal nor
 /// manifest are crashed partial attempts and are swept. The guard is
 /// held by the caller across the load/plan/apply window.
-pub(crate) fn recover_pending(selection: &LoadSelection) -> Result<FormatGuard, RecoveryFailure> {
+pub(crate) fn recover_pending(
+    selection: &LoadSelection,
+) -> Result<Option<FormatGuard>, RecoveryFailure> {
     let root = crate::loader::root_for_selection(selection).map_err(|_| {
         RecoveryFailure::Recovery(RecoveryError {
             plan_id: "unknown".to_owned(),
             reason: "root-unresolved",
         })
     })?;
+    // Read the recovery signal first: a project with no formatter state
+    // gets no runtime-home writes at all from planning (a no-op apply on
+    // a canonical tree stays byte-identical, finding D's gate premise).
+    let fs = crate::project_fs::Fs::open(&root).map_err(|_| {
+        RecoveryFailure::Recovery(RecoveryError {
+            plan_id: "unknown".to_owned(),
+            reason: "root-unreadable",
+        })
+    })?;
+    if recovery_code(&fs).is_none() {
+        return Ok(None);
+    }
     let write = FormatWrite::new(root);
     let guard = write
         .acquire_ownership()
@@ -301,7 +315,7 @@ pub(crate) fn recover_pending(selection: &LoadSelection) -> Result<FormatGuard, 
             let _ = write.remove_dir(&format!("{FORMAT_HOME}/{plan_id}"));
         }
     }
-    Ok(guard)
+    Ok(Some(guard))
 }
 
 /// The plan directories beneath the formatter home (sorted).

@@ -111,7 +111,7 @@ fn plan(request: &FormatRequest, stdin_bytes: Option<&[u8]>) -> Result<Planned, 
     // recovers to verified original bytes before its own load.
     let guard = if request.mode == FormatMode::Apply {
         match transaction::recover_pending(&selection) {
-            Ok(guard) => Some(guard),
+            Ok(guard) => guard,
             Err(transaction::RecoveryFailure::LiveWriter) => {
                 return Err(transaction::ApplyFailure::Locked.into_result());
             }

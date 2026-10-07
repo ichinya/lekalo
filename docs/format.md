@@ -27,11 +27,17 @@ lekalo format --stdin --stdin-filepath PATH [--project DIR] [--json]
 - `--allow-lossy-comments` is the only way a plan with enumerated comment
   losses applies. No hidden configuration or prompt authorizes loss.
 - `--stdin --stdin-filepath` is the editor variant: it reads one bounded
-  unsaved buffer, verifies it against the project overlay in memory, and
-  emits the full-document replacement text (the human projection is the
-  formatted buffer; `--json` carries it in the report row). It never
-  writes, and positional paths, `--check`, and `--allow-lossy-comments`
-  are refused in this mode.
+  unsaved buffer, verifies it against the project overlay built from the
+  buffer itself (the oracle judges edits against the unsaved state, not
+  the stale saved file), and emits the full-document replacement text
+  (the human projection is the formatted buffer; `--json` carries it in
+  the report row). It never writes. A buffer whose plan enumerates any
+  comment loss is refused with the registered loss diagnostic — the
+  replacement text is never returned while a comment would drop — and
+  positional paths, `--check`, and `--allow-lossy-comments` are refused
+  in this mode. A well-formed selector outside the admitted Model source
+  family (lockfiles, docs, runtime trees) is the registered
+  `format.unsupported-surface` refusal (exit 4) in every mode.
 
 ## Canonical policy
 
@@ -53,13 +59,22 @@ equality, enumerated losses, and the summary counts
 (`selected = changed + unchanged`). Apply runs through a confined
 transaction under `.lekalo/cache/format/`: digest-bound preimages,
 immutable backups, a durable journal, verified rollback, and fail-closed
-recovery — while a journal or lock exists every reader refuses with
+recovery — while a journal exists every reader refuses with
 `format.recovery-required` until the next explicit `format` run restores
-the pinned bytes. The nine `format.*` diagnostics (`LEK-FORMAT-001` …
-`LEK-FORMAT-009`) live in the union diagnostic registry at `0.8.0`.
+the pinned bytes. Recovery is fully validated before any restore: the
+journal and manifest are typed closed records pinned to their plan
+identity and admitted Model paths only, every current source digest is
+preflighted (a post-crash user edit surfaces as the explicit
+`format.source-changed` conflict and is never erased), and the whole
+recover-then-apply window runs under one process-death-released
+ownership lock — a live second formatter is refused with the registered
+`format.locked` denial instead of being rolled back as crashed. Retries
+of an identical plan get a fresh attempt home and never collide with
+completed material. The eleven `format.*` diagnostics (`LEK-FORMAT-001`
+… `LEK-FORMAT-011`) live in the union diagnostic registry at `0.8.0`.
 
 Diagnostics: `format.diff`, `format.comments-loss`,
 `format.semantic-change`, `format.selection-invalid`,
 `format.source-changed`, `format.write-failed`,
 `format.recovery-required`, `format.limit-exceeded`,
-`format.unsupported-surface`.
+`format.unsupported-surface`, `format.locked`, `format.stdin-loss`.

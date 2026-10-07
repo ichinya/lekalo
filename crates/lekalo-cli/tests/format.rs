@@ -365,3 +365,93 @@ fn interrupted_state_blocks_load_and_is_reported_by_check() {
     );
     let _ = fs::remove_dir_all(&root);
 }
+
+#[test]
+fn editor_stdin_refuses_comment_losing_buffers() {
+    let root = sandbox("cli-stdin-loss", "planner-canonical");
+    let path = root.join("lekalo/modules/scheduling/module.yaml");
+    let before = fs::read(&path).expect("disk bytes");
+    // A lossy buffer refuses: the replacement text is never returned as
+    // success (exit 0 with a dropped comment).
+    let buffer = "schema_version: \"0.2.16\"\ndefinitions:\n- id: scheduling\n  kind: module\n  version: 1\n  description: Slot scheduling\n    module # this trailing comment has no owner line\n";
+    use std::io::Write;
+    let mut child = Command::new(env!("CARGO_BIN_EXE_lekalo"))
+        .args([
+            "--json",
+            "format",
+            "--stdin",
+            "--stdin-filepath",
+            "lekalo/modules/scheduling/module.yaml",
+        ])
+        .current_dir(alias_free_path(&root))
+        .env_remove("LEKALO_PROJECT")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn editor run");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin pipe")
+        .write_all(buffer.as_bytes())
+        .expect("write buffer");
+    let output = child.wait_with_output().expect("editor run");
+    assert_eq!(exit_code(&output), 3, "{}", stdout_text(&output));
+    let stdout = stdout_text(&output);
+    assert!(
+        stdout.contains("format.comments-loss"),
+        "the registered loss diagnostic gates the editor return: {stdout}"
+    );
+    assert!(
+        !stdout.contains("\"replacement\""),
+        "no replacement returned: {stdout}"
+    );
+    assert_eq!(fs::read(&path).expect("after"), before, "disk untouched");
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn editor_stdin_judges_edits_against_the_unsaved_buffer() {
+    let root = sandbox("cli-stdin-oracle", "planner-canonical");
+    let path = root.join("lekalo/modules/scheduling/module.yaml");
+    let before = fs::read(&path).expect("disk bytes");
+    // The buffer semantically diverges from the saved file: the oracle
+    // compares against the buffer, so the edit survives into the
+    // replacement instead of being refused as format.semantic-change.
+    let buffer = "schema_version: \"0.2.16\"\ndefinitions:\n- id: scheduling\n  kind: module\n  version: 1\n  description: The unsaved semantic edit\n";
+    use std::io::Write;
+    let mut child = Command::new(env!("CARGO_BIN_EXE_lekalo"))
+        .args([
+            "--json",
+            "format",
+            "--stdin",
+            "--stdin-filepath",
+            "lekalo/modules/scheduling/module.yaml",
+        ])
+        .current_dir(alias_free_path(&root))
+        .env_remove("LEKALO_PROJECT")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn editor run");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin pipe")
+        .write_all(buffer.as_bytes())
+        .expect("write buffer");
+    let output = child.wait_with_output().expect("editor run");
+    assert_eq!(exit_code(&output), 0, "{}", stdout_text(&output));
+    let envelope: serde_json::Value =
+        serde_json::from_str(&stdout_text(&output)).expect("envelope json");
+    let replacement = envelope
+        .pointer("/format/files/0/replacement")
+        .and_then(|text| text.as_str())
+        .expect("the replacement text");
+    assert!(
+        replacement.contains("The unsaved semantic edit"),
+        "the replacement carries the buffer's edit: {replacement}"
+    );
+    assert_eq!(fs::read(&path).expect("after"), before, "disk untouched");
+    let _ = fs::remove_dir_all(&root);
+}
