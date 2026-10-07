@@ -8,12 +8,23 @@
 // supplies the complete consumer set; strict profile may honestly deny
 // on missing runtime gates without making the consumer closure vanish.
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const binary = process.env.LEKALO_BIN ?? resolve(root, "target/debug/lekalo.exe");
+// The production binary resolves per-host: an explicit LEKALO_BIN wins,
+// then the Windows debug name, then the POSIX one (precedent:
+// test-context-budget-contracts.mjs).
+const resolveBinary = () => {
+  if (process.env.LEKALO_BIN) return process.env.LEKALO_BIN;
+  const windows = resolve(root, "target/debug/lekalo.exe");
+  const posix = resolve(root, "target/debug/lekalo");
+  if (existsSync(windows)) return windows;
+  if (existsSync(posix)) return posix;
+  return windows;
+};
+const binary = resolveBinary();
 const project = "tests/fixtures/pilot/worklog-changelog/model";
 const oracle = JSON.parse(
   readFileSync(resolve(root, "tests/fixtures/pilot/worklog-changelog/evidence/consumer-oracle.json"), "utf8"),
@@ -44,13 +55,18 @@ const expectedGraph = new Set(
       return `scenario:${consumer.consumer}`;
     }),
 );
-const actualGraph = new Set(
-  graph.graph.callers
-    .map((edge) => edge.from)
-    .filter((subject) => expectedGraph.has(subject)),
-);
+const actualGraph = new Set(graph.graph.callers.map((edge) => edge.from));
+// Exact set equality in both directions: every oracle witness must
+// appear, and no unexpected consumer may drift in unlisted (a silent
+// stale oracle never passes this gate).
 for (const subject of expectedGraph) {
   if (!actualGraph.has(subject)) fail("consumer-missing", subject);
+}
+for (const subject of actualGraph) {
+  if (!expectedGraph.has(subject)) fail("consumer-unexpected", subject);
+}
+if (actualGraph.size !== expectedGraph.size) {
+  fail("consumer-set-drift", { expected: expectedGraph.size, actual: actualGraph.size });
 }
 
 const impact = run([
@@ -72,9 +88,22 @@ if (!transitive.complete || transitive.omitted !== 0) {
   });
 }
 const actualImpact = new Set(transitive.items.map((item) => item.subject));
-for (const consumer of oracle.expectedConsumers.filter((row) => ["endpoint", "scenario"].includes(row.kind))) {
-  const subject = `${consumer.kind === "endpoint" ? "endpoint" : "scenario"}:${consumer.consumer}`;
+// Exact set equality for the impact closure too, over the same
+// graph-reachable witness set the oracle lists for endpoints and
+// scenarios.
+const expectedImpact = new Set(
+  oracle.expectedConsumers
+    .filter((row) => ["endpoint", "scenario"].includes(row.kind))
+    .map((consumer) => `${consumer.kind}:${consumer.consumer}`),
+);
+for (const subject of expectedImpact) {
   if (!actualImpact.has(subject)) fail("impact-consumer-missing", subject);
+}
+for (const subject of actualImpact) {
+  if (!expectedImpact.has(subject)) fail("impact-consumer-unexpected", subject);
+}
+if (actualImpact.size !== expectedImpact.size) {
+  fail("impact-set-drift", { expected: expectedImpact.size, actual: actualImpact.size });
 }
 
 // The oracle's mutation probes are closed and must carry both an

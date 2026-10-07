@@ -15,7 +15,7 @@
 
 import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -162,7 +162,36 @@ for (const id of expectedNew) {
   if (!expectedCodes.includes(entry.code)) fail("pilot-code-drift", `${id}=${entry.code}`);
 }
 
-// 4. Canonical bytes: every committed JSON artifact of the family is
+// 4. Catalog↔document parity: every scenario id declared in the model
+//    catalog (`scenarios.yaml`) has exactly one committed scenario
+//    document, and no orphan documents exist. A silently missing or
+//    extra corpus entry fails here instead of drifting.
+const catalogIds = [];
+for (const module of ["worklog", "changelog"]) {
+  const catalogText = readText(
+    `tests/fixtures/pilot/worklog-changelog/model/lekalo/modules/${module}/scenarios.yaml`,
+  );
+  // scenarios.yaml is a single-line canonical JSON document; parse it
+  // like every other canonical fixture.
+  const catalog = JSON.parse(catalogText);
+  if (catalog.schema_version !== "0.2.16") fail("catalog-version", module);
+  for (const definition of catalog.definitions) {
+    if (definition.kind !== "scenario") continue;
+    catalogIds.push(definition.id);
+  }
+}
+const documentIds = readdirSync(resolve(root, "tests/fixtures/pilot/worklog-changelog/scenarios"))
+  .filter((name) => name.endsWith(".scenario.json"))
+  .map((name) => name.replace(/\.scenario\.json$/, ""))
+  .sort();
+catalogIds.sort();
+if (JSON.stringify(catalogIds) !== JSON.stringify(documentIds)) {
+  const missing = catalogIds.filter((id) => !documentIds.includes(id));
+  const orphan = documentIds.filter((id) => !catalogIds.includes(id));
+  fail("catalog-document-parity", { missing, orphan });
+}
+
+// 5. Canonical bytes: every committed JSON artifact of the family is
 //    compact, byte-sorted JSON. (The scenario corpus is produced by the
 //    Rust canonical writer and verified in crates/lekalo-core/tests.)
 const jsonArtifacts = [
@@ -187,7 +216,7 @@ for (const relative of jsonArtifacts) {
   // not reproduce the committed bytes if one existed.
 }
 
-// 5. Duplicate-key rejection on every committed JSON fixture: a
+// 6. Duplicate-key rejection on every committed JSON fixture: a
 //    raw-text scan (a parsed-value representation cannot see
 //    duplicates).
 // The authoritative duplicate-key rejection lives in the production
@@ -203,12 +232,23 @@ if (!/"schemaVersion"[^}]*"schemaVersion"/.test(duplicateVector.replace(/\n/g, "
   fail("duplicate-vector-missing");
 }
 
-// 6. The pinned compositions agree with the production engine's view:
-//    the scenario corpus pins the exact IR and Model digests.
+// 7. The pinned compositions agree with the production engine's view:
+//    the scenario corpus pins the exact IR and Model digests. A missing
+//    binary degrades loudly (the skip is visible in the exit summary
+//    and on stderr); a present binary with drifted pins fails.
 const { execFileSync } = await import("node:child_process");
-const binary = process.env.LEKALO_BIN ?? resolve(root, "target/debug/lekalo.exe");
+const resolveBinary = () => {
+  if (process.env.LEKALO_BIN) return process.env.LEKALO_BIN;
+  const windows = resolve(root, "target/debug/lekalo.exe");
+  const posix = resolve(root, "target/debug/lekalo");
+  if (existsSync(windows)) return windows;
+  if (existsSync(posix)) return posix;
+  return null;
+};
+const binary = resolveBinary();
 let engine;
 try {
+  if (!binary) throw new Error("binary-missing");
   const modelEnvelope = JSON.parse(
     execFileSync(
       binary,
@@ -256,6 +296,13 @@ if (engine) {
       fail("scenario-ir-pin-drift", name);
     }
   }
+} else {
+  // The engine-pin leg degrades loudly: the summary carries the skip
+  // and stderr names it, so a CI run without the CLI binary cannot
+  // silently claim the pins were verified.
+  process.stderr.write(
+    `${JSON.stringify({ ok: true, warning: "engine-pins-skipped", detail: "lekalo binary missing; build target/debug/lekalo (or set LEKALO_BIN) to verify the Model/IR pins" }, null, 2)}\n`,
+  );
 }
 
 process.stdout.write(
@@ -266,6 +313,8 @@ process.stdout.write(
     registryEntries: registry.entries.length,
     pilotRules: expectedNew.length,
     canonicalArtifacts: jsonArtifacts.length,
-    enginePins: engine ? "verified" : "binary-unavailable",
+    catalogScenarios: catalogIds.length,
+    scenarioDocuments: documentIds.length,
+    enginePins: engine ? "verified" : "skipped-binary-unavailable",
   })}\n`,
 );

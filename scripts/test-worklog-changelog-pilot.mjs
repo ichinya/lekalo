@@ -27,7 +27,7 @@
 
 import { createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
-import { readFileSync, readdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -53,7 +53,19 @@ if (ajvVersion !== "8.17.1") {
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const binary = process.env.LEKALO_BIN ?? resolve(root, "target/debug/lekalo.exe");
+// The production binary resolves per-host: an explicit LEKALO_BIN wins,
+// then the Windows debug name, then the POSIX one (precedent:
+// test-context-budget-contracts.mjs). A missing binary is a loud
+// failure, never a silent skip.
+const resolveBinary = () => {
+  if (process.env.LEKALO_BIN) return process.env.LEKALO_BIN;
+  const windows = resolve(root, "target/debug/lekalo.exe");
+  const posix = resolve(root, "target/debug/lekalo");
+  if (existsSync(windows)) return windows;
+  if (existsSync(posix)) return posix;
+  return windows;
+};
+const binary = resolveBinary();
 const project = "tests/fixtures/pilot/worklog-changelog/model";
 const fixtureRoot = "tests/fixtures/pilot/worklog-changelog";
 
@@ -80,6 +92,18 @@ if (typeof scenario !== "string" || scenario.length === 0) usage("--case must be
 
 const run = (args) => execFileSync(binary, args, { cwd: root, encoding: "utf8" }).trim();
 const runJson = (args) => JSON.parse(run(args));
+// One envelope-producing run that tolerates the documented unsupported
+// class: a strict refusal exits 4 and still carries the receipt bytes
+// on stdout. Any other nonzero exit stays a thrown failure.
+const runJsonAllowUnsupported = (args) => {
+  try {
+    return { exit: 0, envelope: JSON.parse(run(args)) };
+  } catch (error) {
+    const exit = typeof error.status === "number" ? error.status : -1;
+    if (exit !== 4) throw error;
+    return { exit, envelope: JSON.parse(String(error.stdout ?? "").trim()) };
+  }
+};
 const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf8"));
 
 // ---------------------------------------------------------------------------
@@ -218,13 +242,17 @@ if (evidence.compositionRef.digest !== compositionDigest) {
 
 // The profile the selected target runs under: the admission re-derives
 // the verdict from the rows through the production core (`lekalo pilot
-// admit`), so the report's own verdict claim cannot drift.
+// admit`), so the report's own verdict claim cannot drift. The
+// documented exit contract is enforced here: a strict refusal exits 4
+// (status `unsupported`) while the receipt stays on stdout; a passing
+// admission exits 0. Any other exit is a broken contract.
 const tempRoot = mkdtempSync(join(tmpdir(), "lekalo-pilot-"));
 const evidencePath = join(tempRoot, "evidence.json");
 writeFileSync(evidencePath, JSON.stringify(evidence));
+let admissionExit;
 let admission;
 try {
-  admission = runJson([
+  ({ exit: admissionExit, envelope: admission } = runJsonAllowUnsupported([
     "--json",
     "--no-cache",
     "pilot",
@@ -234,10 +262,33 @@ try {
     profile,
     "--project",
     project,
-  ]);
+  ]));
 } catch (error) {
   process.stderr.write(
     `${JSON.stringify({ ok: false, reason: "admission-unavailable", detail: String(error).slice(0, 400) }, null, 2)}\n`,
+  );
+  process.exit(1);
+}
+const admissionVerdict =
+  admission?.pilot?.verdict ??
+  // A strict refusal rides the failure envelope: the receipt is the
+  // embedded `payload` of the unsupported result.
+  admission?.payload?.pilot?.verdict ??
+  "unknown";
+// The single-pass case runs (`--case <id>`) trim the report before it
+// is written to the admission temp file, so the receipt verdict can be
+// the report-level degraded/pass; only the all-cases run mirrors the
+// committed unsupported report exactly. The contract: `unsupported`
+// exits 4, every other verdict exits 0.
+if (admissionVerdict === "unsupported" && admissionExit !== 4) {
+  process.stderr.write(
+    `${JSON.stringify({ ok: false, reason: "admission-exit-contract", detail: `unsupported verdict exited ${admissionExit}, documented exit is 4` }, null, 2)}\n`,
+  );
+  process.exit(1);
+}
+if (admissionVerdict !== "unsupported" && admissionExit !== 0) {
+  process.stderr.write(
+    `${JSON.stringify({ ok: false, reason: "admission-exit-contract", detail: `${profile} ${admissionVerdict} verdict exited ${admissionExit}, documented exit is 0` }, null, 2)}\n`,
   );
   process.exit(1);
 }
@@ -303,7 +354,8 @@ const verdict = {
   staticProven: staticResults.filter((row) => row.result === "pass").length,
   runtimeRetained: runtimeChecks,
   targetVerdict: targetReport.execution,
-  admissionVerdict: admission?.pilot?.verdict ?? "unknown",
+  admissionVerdict,
+  admissionExit,
   expectedDenied: expectDenied,
   denialConfirmed: expectDenied ? !strictPass : undefined,
 };
