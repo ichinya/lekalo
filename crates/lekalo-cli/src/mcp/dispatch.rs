@@ -579,7 +579,10 @@ fn resources_read(session: &Arc<Session>, incoming: &Incoming) -> String {
 /// contract's closed sha256-`<hex>` form.
 fn resource_revision(domain: &str, bytes: &[u8]) -> String {
     let digest = crate::mcp::snapshot::domain_digest(domain, bytes);
-    format!("sha256-{}", digest.split_once(':').expect("domain prefix").1)
+    format!(
+        "sha256-{}",
+        digest.split_once(':').expect("domain prefix").1
+    )
 }
 
 /// Build the closed `lekalo/mcp-resource/v0.8.0` payload for one

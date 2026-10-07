@@ -345,7 +345,16 @@ fn workspace_and_dependency_metadata_preserve_the_two_crate_boundary() {
     cli_normal_dependencies.sort_unstable();
     assert_eq!(
         cli_normal_dependencies,
-        ["clap", "lekalo-core", "serde_json"]
+        [
+            "clap",
+            "lekalo-core",
+            // Issue #33 reuses the workspace serde derive for the trusted
+            // MCP server-config wire documents and the envelope views; the
+            // version is pinned by the same workspace entry lekalo-core
+            // already depends on.
+            "serde",
+            "serde_json"
+        ]
     );
     assert!(cli["targets"]
         .as_array()
