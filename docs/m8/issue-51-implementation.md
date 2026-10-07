@@ -78,7 +78,14 @@ document end to end with no hidden side effects:
 in `crates/lekalo-cli/src/main.rs`, following the `requirements`/
 `nfr` pattern: the core owns every decision, the binary selects,
 renders, and maps exits via `DomainResult` (valid 0, invalid 1, denied
-3, unsupported 4); both commands honor the global `--no-cache`.
+3, unsupported 4); both commands honor the global `--no-cache`. A
+strict admission whose derived verdict is `unsupported` returns the
+evidence-carrying unsupported class (`DomainResult::unsupported_json`,
+the mirror of `denied_json`): the receipt stays visible in the
+envelope's `payload` while the process exit is the documented 4.
+Admission also enforces the closed evidence schema's required-member
+sets top-level and per-target (`missing-member` refusal), so a
+structurally incomplete report never reaches verdict derivation.
 
 ## Fixtures (`tests/fixtures/pilot/worklog-changelog/`)
 
@@ -98,9 +105,15 @@ renders, and maps exits via `DomainResult` (valid 0, invalid 1, denied
   revisioned publication and four partial-failure schedules; the error
   registry; invariant transitions), plus `pilot.json`, the composition
   document pinning exact Model/IR and attachment digests.
-- `scenarios/` — thirteen canonical Scenario IR documents (the ten issue
-  scenarios plus approval-required, stale-preview, and
-  publication-partial-failure guards).
+- `scenarios/` — seventeen canonical Scenario IR documents: the ten
+  issue scenarios, the approval-required, stale-preview, and
+  publication-partial-failure guards, and the four catalog-parity
+  vectors (`worklog_partial_failure`, `declared_atomic_rollback`,
+  `republish_revision`, `publish_withdraw_ordering`) that complete the
+  declared `scenarios.yaml` catalog 1:1. The contracts gate and the
+  corpus test both verify the catalog↔document parity: every scenario
+  id declared in the model catalog has a committed, production-
+  canonical scenario document.
 - `evidence/` — the honest evidence report (php unknown/unknown-capable,
   go unsupported with backend absent, all publication rows blocking) and
   the consumer oracle fixing the reverse closure of the public DTO.
@@ -115,6 +128,10 @@ renders, and maps exits via `DomainResult` (valid 0, invalid 1, denied
   gate: both pilot schemas, the registry union successor, fixture
   instances, canonical compact byte-sorted bytes (the duplicate-key
   proof), and the Model/IR engine pins of the composition and corpus.
+  The binary resolves per host (`LEKALO_BIN`, then
+  `target/debug/lekalo.exe`, then `target/debug/lekalo`); without a
+  binary the pin leg degrades loudly (`enginePins:
+  "skipped-binary-unavailable"` plus a stderr warning), never silently.
 - `scripts/test-worklog-changelog-pilot.mjs` — the closed
   `--target php|go --profile strict|permissive --case all|<id>` harness
   with `--expect-denied` as the negative gate: composition validation
@@ -122,10 +139,16 @@ renders, and maps exits via `DomainResult` (valid 0, invalid 1, denied
   canonical effect projection (denial-path assertions retained as
   runtime evidence, never counted as passes), admission re-derived
   through `lekalo pilot admit`, schema-valid report on stdout, bounded
-  diagnostics on stderr.
+  diagnostics on stderr. The harness also enforces the documented exit
+  contract of the admission: a derived `unsupported` verdict must exit
+  4 with the receipt still on stdout, every other verdict must exit 0;
+  an exit-4 receipt is read from the failure envelope's embedded
+  payload.
 - `scripts/test-worklog-changelog-impact.mjs` — binary-driven: the
   complete depth-256 reverse closure of `changelog.public_entry_dto`
-  and the mutation probes against the committed oracle.
+  and the mutation probes against the committed oracle, compared as
+  exact set equality in both directions — a consumer missing from the
+  oracle or an unlisted consumer in the closure both fail the gate.
 - `scripts/test-worklog-changelog-neutrality.mjs` — the full public
   artifact inventory scanned for framework vocabulary, identity
   leakage, host paths, wall clocks, credentials, and non-synthetic URLs.
@@ -150,12 +173,12 @@ all pass unchanged.
 | --- | --- |
 | Independent effects представлены отдельными declarations. | The Model declares one effect per concern; the composition roles carry one declared effect set each; `validate.rs` refuses shared effect ids and shared infrastructure effects between independence-rule targets; scenarios `completion_without_worklog`, `completion_with_worklog`, `no_provider_comment`, `no_opt_in` statically prove the absence (pilot gate, 14 static proofs). |
 | Publication contract требует preview/approval. | The approval binding covers preview revision/digest/tenant at publish time plus destination/authority/policy revision on the approval record; `changelog.scenario.approval_required` and `stale_preview` guard documents; `publish.approval` capability row mandatory (WC-003/WC-007). |
-| Partial failures не откатывают successful local completion без declared transaction. | The transaction-concurrency attachment declares separate commit boundaries (completion, worklog, outbox, delivery, publication) and non-atomic external boundaries with `recovery_required`; the provider/publication partial-failure scenarios assert the committed completion intact; the declared atomic group is the contrasting rollback case. |
-| Snapshot semantics переносимы между targets. | The snapshot declaration pins append-only revision/digest/schema-version fields of the declared entity; `source_edit_after_publish` and `republish_revision` scenarios; per-target capability rows keep revisioned-snapshot support visible per backend. |
+| Partial failures не откатывают successful local completion без declared transaction. | The transaction-concurrency attachment declares separate commit boundaries (completion, worklog, outbox, delivery, publication) and non-atomic external boundaries with `recovery_required`; the provider/publication/worklog partial-failure scenarios assert the committed completion intact; `declared_atomic_rollback` is the contrasting declared-group rollback vector, committed as a scenario document. |
+| Snapshot semantics переносимы между targets. | The snapshot declaration pins append-only revision/digest/schema-version fields of the declared entity; the `source_edit_after_publish` and `republish_revision` scenario documents; per-target capability rows keep revisioned-snapshot support visible per backend. |
 | Scenarios проверяют privacy/security/idempotency. | `public_projection` (allowlist-only DTO), `unsafe_content` (shared rendering/safe-URL policy), `repeated_correlation_key` (replay + payload-drift conflict), cross-tenant exclusion; the validator enforces the excluded-field closure over every private entity; replay scopes are payload-bound and collision-free (WC-005/WC-006). |
-| Impact показывает все consumers changelog schema. | `test-worklog-changelog-impact.mjs` proves the complete depth-256 reverse closure (5 graph consumers, 3 transitive impact subjects, `omitted: 0`) against the seven-witness oracle including the public schema and composition allowlist; unknown external consumers stay explicitly possible. |
+| Impact показывает все consumers changelog schema. | `test-worklog-changelog-impact.mjs` proves the complete depth-256 reverse closure (5 graph consumers, 3 transitive impact subjects, `omitted: 0`) against the seven-witness oracle including the public schema and composition allowlist, compared as exact set equality both directions; unknown external consumers stay explicitly possible. |
 | PHP/Go portability report не скрывает unsupported publication semantics. | The evidence report carries php rows `unknown` (no runtime evidence) and go rows `unsupported` (backend absent), all `blocking: true`; strict admission refuses with the blocker list retained; the negative gate (`--expect-denied`) asserts the denial in CI. |
-| Public artifacts не раскрывают название consumer application. | `test-worklog-changelog-neutrality.mjs` scans the complete inventory (54 files) for framework vocabulary, identity leakage (project-id closure, package identities, branded compounds), host paths, wall clocks, credentials, and non-synthetic URLs; the fixtures use only the synthetic `taskhub`/`worklog`/`changelog` vocabulary. |
+| Public artifacts не раскрывают название consumer application. | `test-worklog-changelog-neutrality.mjs` scans the complete inventory for framework vocabulary, identity leakage (project-id closure, package identities, branded compounds), host paths, wall clocks, credentials, and non-synthetic URLs; any inventory file without a scannable text extension fails the gate (`unscannable-inventory`), so an opaque blob can never evade the scan; the fixtures use only the synthetic `taskhub`/`worklog`/`changelog` vocabulary. |
 
 ## Verification record
 
@@ -177,3 +200,12 @@ sources, and native PHP/Go runtime acceptance remain out of scope by
 design; the reports keep those gaps visible instead of filling them.
 Native runtime legs run in separate toolchain-pinned jobs when a backend
 supplies bound evidence.
+
+Deferred by review (recorded, not silently dropped): the seven
+`LEK-WC-001`–`LEK-WC-007` rules are not registered in the suite
+coverage index (`tests/fixtures/suite/v1` stays pinned to
+`diagnostic-registry.v0.6.4`). The golden-catalog gates pass unchanged
+because the pilot family resolves through the 0.8.0 successor tier, not
+the pinned suite catalog; cross-registering the pilot rules into the
+suite coverage index is its own follow-up with owner approval, exactly
+like the PHP/Go runtime deferral.
