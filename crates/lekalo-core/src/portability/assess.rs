@@ -209,14 +209,16 @@ pub fn assess(input: &Assessment) -> Result<Report, DiagnosticSet> {
                 if !bounds.charge_row() {
                     continue;
                 }
-                rows.push(classify(
+                for row in classify(
                     input,
                     evidence,
                     &mut sink,
                     subject,
                     &destination.target_id,
                     dimension,
-                ));
+                ) {
+                    rows.push(row);
+                }
             }
         }
         subject_rows.push(SubjectRow {
@@ -468,24 +470,29 @@ fn classify(
     subject: &super::requirements::Subject,
     destination: &str,
     dimension: Dimension,
-) -> ObligationRow {
-    let row = match dimension {
-        Dimension::Structural => structural(subject, destination),
-        Dimension::Behavioral => behavioral(input, evidence, sink, subject, destination),
-        Dimension::Storage => storage(evidence, sink, subject, destination),
+) -> Vec<ObligationRow> {
+    let mut rows = match dimension {
+        Dimension::Structural => vec![structural(input, subject, destination)],
+        Dimension::Behavioral => vec![behavioral(input, evidence, sink, subject, destination)],
+        Dimension::Storage => vec![storage(evidence, sink, subject, destination)],
         Dimension::Operational => operational(input, evidence, sink, subject, destination),
     };
-    let mut row = row;
-    row.verification = if row.classification == Classification::NonApplicable {
-        Verification::NotApplicable
-    } else {
-        verification_for(&input.subjects, evidence, subject, destination)
-    };
-    row.witnesses = subject.witnesses.clone();
-    row
+    for row in rows.iter_mut() {
+        row.verification = if row.classification == Classification::NonApplicable {
+            Verification::NotApplicable
+        } else {
+            verification_for(&input.subjects, evidence, subject, destination)
+        };
+        row.witnesses = subject.witnesses.clone();
+    }
+    rows
 }
 
-fn structural(subject: &super::requirements::Subject, destination: &str) -> ObligationRow {
+fn structural(
+    input: &Assessment,
+    subject: &super::requirements::Subject,
+    destination: &str,
+) -> ObligationRow {
     let base = |classification, reason: &'static str| ObligationRow {
         destination: destination.to_owned(),
         dimension: Dimension::Structural,
@@ -506,13 +513,18 @@ fn structural(subject: &super::requirements::Subject, destination: &str) -> Obli
         );
     }
     // The bounded dependency closure carries the target-specific risk:
-    // any witness declared target-specific makes the dependent one a
-    // target-specific risk with an explicit replacement obligation.
-    if subject
-        .witnesses
-        .iter()
-        .any(|w| w.starts_with("target-binding:"))
-    {
+    // any witness whose own declaration is target-specific makes the
+    // dependent one a target-specific risk with an explicit replacement
+    // obligation (witnesses are typed ids, so the declared annotation
+    // joins by semantic id).
+    if subject.witnesses.iter().any(|w| {
+        input
+            .subjects
+            .rows
+            .iter()
+            .find(|candidate| &candidate.typed_id == w)
+            .is_some_and(|candidate| candidate.declared_portability == Some("target-specific"))
+    }) {
         return base(
             Classification::TargetSpecific,
             reasons::DEPENDENCY_TARGET_SPECIFIC,
@@ -671,11 +683,16 @@ fn hook_row(
                 evidence_refs: vec![],
             },
             crate::implementation::PortStatus::Foreign => {
-                mapping_outcome(evidence, sink, symbol, destination, Binding::Foreign)
+                mapping_outcome(input, evidence, sink, symbol, destination, Binding::Foreign)
             }
-            crate::implementation::PortStatus::External => {
-                mapping_outcome(evidence, sink, symbol, destination, Binding::External)
-            }
+            crate::implementation::PortStatus::External => mapping_outcome(
+                input,
+                evidence,
+                sink,
+                symbol,
+                destination,
+                Binding::External,
+            ),
             crate::implementation::PortStatus::Unsupported => {
                 sink.push(
                     codes::IMPLEMENTATION_REQUIRED,
@@ -711,27 +728,60 @@ fn hook_row(
 }
 
 fn mapping_outcome(
+    input: &Assessment,
     evidence: Option<&EvidenceDocument>,
     sink: &mut Sink,
     symbol: &str,
-    _destination: &str,
+    destination: &str,
     binding: Binding,
 ) -> HookOutcome {
+    // Destination scoping: a mapping credits exactly the destination it
+    // named. A mapping authored for another target is invisible here, so
+    // a php-scoped recipe can never green-light a go row.
     let mappings: Vec<&wire::MappingRecord> = evidence
         .map(|e| {
             e.mappings
                 .iter()
-                .filter(|m| m.subject.as_deref() == Some(symbol))
+                .filter(|m| m.subject.as_deref() == Some(symbol) && m.target_id == destination)
                 .collect()
         })
         .unwrap_or_default();
+    // Capability verification: the mapped semantic capability must be
+    // declared by the destination profile's resolved capability set at
+    // full support before the mapping may credit the row.
+    let destination_profile = input
+        .destinations
+        .iter()
+        .find(|d| d.target_id == destination)
+        .and_then(|d| d.profile.as_ref());
+    let capability_state = |capability: &str| -> Option<&str> {
+        destination_profile
+            .and_then(|profile| profile.capabilities.iter().find(|c| c.id == capability))
+            .map(|c| c.support.as_str())
+    };
+    let mappings: Vec<(&wire::MappingRecord, Option<&str>)> = mappings
+        .into_iter()
+        .map(|m| {
+            let support = capability_state(&m.capability);
+            (m, support)
+        })
+        .collect();
     let full = mappings
         .iter()
-        .any(|m| m.coverage == wire::MappingCoverage::Full);
-    let partial = mappings
-        .iter()
-        .any(|m| m.coverage == wire::MappingCoverage::Partial);
-    let refs: Vec<String> = mappings.iter().map(|m| m.id.clone()).collect();
+        .any(|(m, support)| m.coverage == wire::MappingCoverage::Full && *support == Some("full"));
+    let partial = mappings.iter().any(|(m, support)| match support {
+        // A declared-but-weaker or undeclared capability keeps a full
+        // mapping out of the supported state; it degrades to partial
+        // with the destination's profile as the witness surface.
+        Some("full") => m.coverage == wire::MappingCoverage::Partial,
+        _ => true,
+    });
+    let refs: Vec<String> = mappings.iter().map(|(m, _)| m.id.clone()).collect();
+    let partial_reason = if binding == Binding::Foreign {
+        reasons::HOOK_FOREIGN_PARTIAL
+    } else {
+        reasons::HOOK_EXTERNAL_PARTIAL
+    };
     if full {
         HookOutcome {
             classification: Classification::SupportedWithMapping,
@@ -749,21 +799,13 @@ fn mapping_outcome(
             codes::MAPPING_PARTIAL,
             Some(symbol.to_owned()),
             Some(Dimension::Behavioral),
-            if binding == Binding::Foreign {
-                reasons::HOOK_FOREIGN_PARTIAL
-            } else {
-                reasons::HOOK_EXTERNAL_PARTIAL
-            },
+            partial_reason,
         );
         HookOutcome {
             classification: Classification::Partial,
             binding: Some(binding),
             blocking: true,
-            reason: if binding == Binding::Foreign {
-                reasons::HOOK_FOREIGN_PARTIAL
-            } else {
-                reasons::HOOK_EXTERNAL_PARTIAL
-            },
+            reason: partial_reason,
             evidence_refs: refs,
         }
     } else {
@@ -932,26 +974,35 @@ fn operational(
     sink: &mut Sink,
     subject: &super::requirements::Subject,
     destination: &str,
-) -> ObligationRow {
-    let base = |classification, blocking, reason: &'static str, evidence_refs: Vec<String>| {
-        ObligationRow {
-            destination: destination.to_owned(),
-            dimension: Dimension::Operational,
-            classification,
-            verification: Verification::Untested,
-            binding: None,
-            blocking,
-            reason: reason.to_owned(),
-            required: None,
-            offered: None,
-            evidence_refs,
-            witnesses: vec![],
-        }
+) -> Vec<ObligationRow> {
+    let base = |blocking, reason: &'static str| ObligationRow {
+        destination: destination.to_owned(),
+        dimension: Dimension::Operational,
+        classification: Classification::Portable,
+        verification: Verification::Untested,
+        binding: None,
+        blocking,
+        reason: reason.to_owned(),
+        required: None,
+        offered: None,
+        evidence_refs: vec![],
+        witnesses: vec![],
+    };
+    let finish = |mut row: ObligationRow,
+                  classification: Classification,
+                  blocking: bool,
+                  reason: &'static str,
+                  evidence_refs: Vec<String>| {
+        row.classification = classification;
+        row.blocking = blocking;
+        row.reason = reason.to_owned();
+        row.evidence_refs = evidence_refs;
+        row
     };
     // Observed implicit hooks keep their inferred status and proof gap:
     // they stay qualified observations, never canonical Model members.
     if let Some(evidence) = evidence {
-        if let Some(observation) = evidence.hooks.iter().find(|h| {
+        if evidence.hooks.iter().any(|h| {
             h.subject == subject.typed_id
                 && h.target_id == destination
                 && h.state == wire::HookObservationState::ObservedUnsupported
@@ -962,13 +1013,13 @@ fn operational(
                 Some(Dimension::Operational),
                 reasons::IMPLICIT_HOOK_UNSUPPORTED,
             );
-            let _ = observation;
-            return base(
+            return vec![finish(
+                base(true, reasons::IMPLICIT_HOOK_UNSUPPORTED),
                 Classification::Partial,
                 true,
                 reasons::IMPLICIT_HOOK_UNSUPPORTED,
                 vec![],
-            );
+            )];
         }
     }
     // Publication obligations join the declared profile capabilities.
@@ -982,12 +1033,13 @@ fn operational(
         })
         .unwrap_or_default();
     if !has_publication && requirements.is_empty() {
-        return base(
+        return vec![finish(
+            base(false, reasons::NO_OPERATIONAL_OBLIGATION),
             Classification::NonApplicable,
             false,
             reasons::NO_OPERATIONAL_OBLIGATION,
             vec![],
-        );
+        )];
     }
     let profile = input
         .destinations
@@ -1001,103 +1053,115 @@ fn operational(
             Some(Dimension::Operational),
             reasons::CAPABILITY_ABSENT,
         );
-        return base(
+        return vec![finish(
+            base(true, reasons::CAPABILITY_ABSENT),
             Classification::Unknown,
             true,
             reasons::CAPABILITY_ABSENT,
             vec![],
-        );
+        )];
     };
-    let required_capability = if has_publication {
-        "events.publication".to_owned()
-    } else {
-        // The reviewed recipe bridges the required semantic capability to
-        // the profile-owned capability namespace; an unmapped requirement
-        // stays unknown.
-        let recipe = input.recipe;
-        requirements
-            .iter()
-            .filter_map(|r| {
-                recipe
-                    .document
-                    .semantic_mappings
-                    .iter()
-                    .find(|m| m.requirement == r.requirement)
-                    .map(|m| m.capability.clone())
-            })
-            .next()
-            .unwrap_or_default()
-    };
-    if required_capability.is_empty() {
-        sink.push(
-            codes::EVIDENCE_INCOMPLETE,
-            Some(subject.typed_id.clone()),
-            Some(Dimension::Operational),
-            reasons::CAPABILITY_ABSENT,
-        );
-        return base(
-            Classification::Unknown,
-            true,
-            reasons::CAPABILITY_ABSENT,
-            vec![],
-        );
+    // Every declared publication obligation and every qualified
+    // requirement becomes its own evaluated obligation row: silently
+    // dropping sibling requirements would hide an evidence gap behind
+    // a single satisfied one.
+    let mut obligations: Vec<Option<String>> = Vec::new();
+    if has_publication {
+        obligations.push(Some("events.publication".to_owned()));
     }
-    let Some(capability) = profile
-        .capabilities
-        .iter()
-        .find(|c| c.id == required_capability)
-    else {
-        // An unsatisfied declaration is not proof that the native
-        // runtime cannot implement the capability.
-        sink.push(
-            codes::EVIDENCE_INCOMPLETE,
-            Some(subject.typed_id.clone()),
-            Some(Dimension::Operational),
-            reasons::CAPABILITY_ABSENT,
-        );
-        return base(
-            Classification::Unknown,
-            true,
-            reasons::CAPABILITY_ABSENT,
-            vec![],
-        );
-    };
-    match capability.support.as_str() {
-        "full" => base(
-            Classification::Portable,
-            false,
-            reasons::CAPABILITY_DECLARED,
-            vec![required_capability],
-        ),
-        "partial" => {
-            sink.push(
-                codes::MAPPING_PARTIAL,
-                Some(subject.typed_id.clone()),
-                Some(Dimension::Operational),
-                reasons::CAPABILITY_PARTIAL,
-            );
-            base(
-                Classification::Partial,
-                true,
-                reasons::CAPABILITY_PARTIAL,
-                vec![required_capability],
-            )
-        }
-        _ => {
+    let recipe = input.recipe;
+    for requirement in &requirements {
+        let mapped = recipe
+            .document
+            .semantic_mappings
+            .iter()
+            .find(|m| m.requirement == requirement.requirement)
+            .map(|m| m.capability.clone());
+        obligations.push(mapped);
+    }
+    let mut rows = Vec::new();
+    for required in obligations {
+        let Some(required_capability) = required else {
+            // An unmapped requirement stays an explicit unknown; it is
+            // never silently dropped.
             sink.push(
                 codes::EVIDENCE_INCOMPLETE,
                 Some(subject.typed_id.clone()),
                 Some(Dimension::Operational),
                 reasons::CAPABILITY_ABSENT,
             );
-            base(
+            rows.push(finish(
+                base(true, reasons::CAPABILITY_ABSENT),
+                Classification::Unknown,
+                true,
+                reasons::CAPABILITY_ABSENT,
+                vec![],
+            ));
+            continue;
+        };
+        let Some(capability) = profile
+            .capabilities
+            .iter()
+            .find(|c| c.id == required_capability)
+        else {
+            // An unsatisfied declaration is not proof that the native
+            // runtime cannot implement the capability.
+            sink.push(
+                codes::EVIDENCE_INCOMPLETE,
+                Some(subject.typed_id.clone()),
+                Some(Dimension::Operational),
+                reasons::CAPABILITY_ABSENT,
+            );
+            rows.push(finish(
+                base(true, reasons::CAPABILITY_ABSENT),
                 Classification::Unknown,
                 true,
                 reasons::CAPABILITY_ABSENT,
                 vec![required_capability],
-            )
-        }
+            ));
+            continue;
+        };
+        rows.push(match capability.support.as_str() {
+            "full" => finish(
+                base(false, reasons::CAPABILITY_DECLARED),
+                Classification::Portable,
+                false,
+                reasons::CAPABILITY_DECLARED,
+                vec![required_capability],
+            ),
+            "partial" => {
+                sink.push(
+                    codes::MAPPING_PARTIAL,
+                    Some(subject.typed_id.clone()),
+                    Some(Dimension::Operational),
+                    reasons::CAPABILITY_PARTIAL,
+                );
+                finish(
+                    base(true, reasons::CAPABILITY_PARTIAL),
+                    Classification::Partial,
+                    true,
+                    reasons::CAPABILITY_PARTIAL,
+                    vec![required_capability],
+                )
+            }
+            _ => {
+                sink.push(
+                    codes::EVIDENCE_INCOMPLETE,
+                    Some(subject.typed_id.clone()),
+                    Some(Dimension::Operational),
+                    reasons::CAPABILITY_ABSENT,
+                );
+                finish(
+                    base(true, reasons::CAPABILITY_ABSENT),
+                    Classification::Unknown,
+                    true,
+                    reasons::CAPABILITY_ABSENT,
+                    vec![required_capability],
+                )
+            }
+        });
     }
+    rows
 }
 
 /// The per-destination dimension summaries with the published
