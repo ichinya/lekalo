@@ -2022,7 +2022,7 @@
       "id": "contract:contracts/adapter-sdk-generation.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/adapter-sdk-generation.schema.v0.8.0.json",
-      "sourceDigest": "sha256:db46e0883e303a848d87fb472f5c9721e620ba2114db2b0c23dbb56f91bde00b",
+      "sourceDigest": "sha256:ac5e7378df2447c259b621299154b1f58c36005a3ef3818d16cbca37fbff7d08",
       "owner": "docs/adapter-sdk.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

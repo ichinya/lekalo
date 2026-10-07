@@ -96,7 +96,6 @@ const descriptorDigests = new Map();
 for (const language of LANGUAGES) {
   const compatibilityRaw = read(`sdk/${language}/compatibility.json`);
   const generationRaw = read(`sdk/${language}/generation.json`);
-  check(compatibilityRaw === JSON.stringify(JSON.parse(compatibilityRaw)) ? compatibilityRaw : compatibilityRaw, "descriptor-noncanonical", language);
   // Canonical byte form: re-encoding the parsed document must reproduce
   // the exact bytes (sorted keys, compact, no trailing LF).
   const canonicalForm = (text) => {
@@ -299,10 +298,18 @@ for (const language of LANGUAGES) {
   }
 }
 
-// 5. Generator determinism: committed outputs byte-match regeneration.
-const generatorCheck = execFileSync(process.execPath, [join(SCRIPT_DIR, "generate-adapter-sdk.mjs"), "--check"], {
-  cwd: ROOT, encoding: "utf8",
-});
+// 5. Generator determinism: committed outputs byte-match regeneration. A
+// failure surfaces through this gate's own failure report (exit 1 with
+// the collected JSON), never as an uncaught child-process stack that
+// would bury the diagnosis.
+let generatorCheck;
+try {
+  generatorCheck = execFileSync(process.execPath, [join(SCRIPT_DIR, "generate-adapter-sdk.mjs"), "--check"], {
+    cwd: ROOT, encoding: "utf8",
+  });
+} catch (error) {
+  fail("generator-check", String(error.stdout ?? error.message).slice(0, 400));
+}
 check(generatorCheck.includes('"ok":true'), "generator-check", generatorCheck.slice(0, 200));
 
 if (failures.length > 0) {

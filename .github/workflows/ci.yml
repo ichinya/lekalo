@@ -162,6 +162,13 @@ jobs:
         with:
           components: rustfmt
       - run: cargo fmt --all -- --check
+      # The standalone adapter-SDK Rust workspace (sdk/rust, its own
+      # [workspace]) is not covered by the root workspace (issue #106):
+      # its generated modules pin their layout with #[rustfmt::skip], so
+      # formatting can never fight the generator's byte --check.
+      - name: Rustfmt (adapter SDK workspace)
+        working-directory: sdk/rust
+        run: cargo fmt --all -- --check
 
   clippy:
     name: Clippy
@@ -172,6 +179,9 @@ jobs:
         with:
           components: clippy
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Clippy (adapter SDK workspace)
+        working-directory: sdk/rust
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
   msrv:
     name: Rust 1.80.0 MSRV (${{ matrix.os }})

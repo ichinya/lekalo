@@ -992,9 +992,44 @@ function emitFile(absolute, text) {
 const targets = write ? (language === "all" ? LANGUAGES : [language]) : LANGUAGES;
 const drift = [];
 const written = [];
+/** Every file under `dir` (recursively), as forward-slash relative paths. */
+function listFilesRecursive(dir) {
+  const found = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const relative = `${dir}/${entry.name}`.replaceAll("\\", "/");
+    if (entry.isDirectory()) found.push(...listFilesRecursive(relative));
+    else found.push(relative);
+  }
+  return found;
+}
 for (const lang of targets) {
   const files = renderFor(lang);
   const bundles = templateFiles(lang, files);
+  // A file the run no longer generates but that still sits under the
+  // generated tree is drift too (issue #106 review: a stale generated
+  // file could live forever outside the record). Hand-maintained files
+  // that legally live beside the generated modules are allow-listed by
+  // name (the Rust `mod.rs` umbrella re-exporting the generated modules).
+  const HAND_MAINTAINED = new Set(["sdk/rust/src/generated/mod.rs"]);
+  const generatedDirs = [join(ROOT, "sdk", lang, generatedDirectory[lang])];
+  if (BUNDLE_PROVENANCE[lang].outputs.length > 0) {
+    generatedDirs.push(join(ROOT, "sdk", lang, "templates"));
+  }
+  const expected = new Set([...files.keys(), ...bundles.keys()].map((path) => join(ROOT, "sdk", lang, path).replaceAll("\\", "/")));
+  for (const dir of generatedDirs) {
+    let present = [];
+    try {
+      present = listFilesRecursive(dir);
+    } catch {
+      present = [];
+    }
+    for (const absolute of present) {
+      const relative = absolute.slice(ROOT.length + 1).replaceAll("\\", "/");
+      if (!expected.has(absolute) && !HAND_MAINTAINED.has(relative)) {
+        drift.push(`${relative} (not generator-owned; remove it or teach the generator)`);
+      }
+    }
+  }
   for (const [path, text] of [...files, ...bundles]) {
     const absolute = join(ROOT, "sdk", lang, path);
     let current = null;

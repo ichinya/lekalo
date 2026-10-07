@@ -40,13 +40,21 @@ fn main() {
             Ok(_) => serde_json::json!({"accepted": true}),
             Err(failure) => {
                 let reason = match &failure {
-                    lekalo_core::target_protocol::TargetFailure::ProtocolMismatch { detail } => detail.detail(),
-                    lekalo_core::target_protocol::TargetFailure::RequestInvalid { detail } => detail,
+                    lekalo_core::target_protocol::TargetFailure::ProtocolMismatch { detail } => {
+                        detail.detail()
+                    }
+                    lekalo_core::target_protocol::TargetFailure::RequestInvalid { detail } => {
+                        detail
+                    }
                     _ => "request-invalid",
                 };
                 serde_json::json!({"accepted": false, "reason": reason})
             }
         };
-        let _ = writeln!(stdout, "{}", serde_json::to_string(&verdict).unwrap_or_default());
+        let _ = writeln!(
+            stdout,
+            "{}",
+            serde_json::to_string(&verdict).unwrap_or_default()
+        );
     }
 }

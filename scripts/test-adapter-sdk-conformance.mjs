@@ -185,9 +185,43 @@ if (languages.includes("typescript")) {
   if (!junit.includes("dev.lekalo.adapter-conformance") && !junit.includes("adapter-conformance")) {
     fail("junit-identity", "the JUnit projection must carry the suite identity");
   }
-  if (/badge[^<]*issued[^<]*true/i.test(junit)) {
-    // The JUnit form reports the run; a wrapper must never fabricate one.
-    if (!junit.includes('<testsuite') ) fail("junit-shape", "unexpected JUnit shape");
+  // Structural admission of the native JUnit XML (issue #106 review: the
+  // old check asserted only the literal substring `<testsuite`, which is
+  // always true of any well-formed projection). Parse the real shape:
+  // a <testsuites> root wrapping exactly one <testsuite> with exactly 29
+  // <testcase> children, every case carrying classname and name, the
+  // root's own counts consistent with the embedded failures, and no
+  // fabricated badge element.
+  const suitesMatches = junit.match(/<testsuites\b[^>]*>/g) ?? [];
+  if (suitesMatches.length !== 1) {
+    fail("junit-shape", `expected exactly one <testsuites> root, found ${suitesMatches.length}`);
+  }
+  const suiteMatches = junit.match(/<testsuite\b[^>]*>/g) ?? [];
+  if (suiteMatches.length !== 1) {
+    fail("junit-shape", `expected exactly one <testsuite>, found ${suiteMatches.length}`);
+  }
+  const testcases = junit.match(/<testcase\b[^>]*(?:\/>|>[\s\S]*?<\/testcase>)/g) ?? [];
+  if (testcases.length !== 29) {
+    fail("junit-case-count", `expected 29 <testcase> entries (the full catalog), found ${testcases.length}`);
+  }
+  for (const testcase of testcases) {
+    if (!/name="[^"]+"/.test(testcase) || !/classname="[^"]+"/.test(testcase)) {
+      fail("junit-case-shape", `testcase missing name/classname: ${testcase.slice(0, 120)}`);
+      break;
+    }
+  }
+  const root = suitesMatches[0] ?? "";
+  const attr = (name) => root.match(new RegExp(`${name}="(\\d+)"`))?.[1];
+  const xmlFails = Number(attr("failures") ?? "-1");
+  const xmlErrors = Number(attr("errors") ?? "0");
+  const xmlTests = Number(attr("tests") ?? "-1");
+  if (xmlTests !== 29) fail("junit-tests-attr", `tests=${xmlTests}`);
+  const outcomeFails = testcases.filter((testcase) => /<(failure|error)\b/.test(testcase)).length;
+  if (xmlFails + xmlErrors !== outcomeFails) {
+    fail("junit-counts", `root failures+errors=${xmlFails + xmlErrors} but ${outcomeFails} case(s) embed failure/error bodies`);
+  }
+  if (/badge/i.test(junit)) {
+    fail("junit-badge", "the native JUnit projection must not carry badge data");
   }
 }
 
