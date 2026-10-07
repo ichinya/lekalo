@@ -306,11 +306,23 @@ foreach ($list('upgrade') as $name) {
 }
 
 $failed = array_values(array_filter($results, fn ($entry) => !$entry['ok']));
+$countByPrefix = static function (string $prefix) use ($results): int {
+    return count(array_filter($results, static fn (array $entry): bool => str_starts_with($entry['name'], $prefix)));
+};
 $verdict = [
     'ok' => count($failed) === 0,
     'language' => 'php',
     'total' => count($results),
     'failed' => count($failed),
+    'executedFamilies' => ['canonical', 'codec', 'semantic', 'upgrade'],
+    'executedVectors' => [
+        'valid' => $countByPrefix('valid/'),
+        'invalid' => $countByPrefix('invalid/'),
+        'semantic' => $countByPrefix('semantic/'),
+        'upgrade' => $countByPrefix('upgrade/'),
+        'canonical' => $countByPrefix('canonical/'),
+        'security' => $countByPrefix('security/'),
+    ],
     'canonicalOutputs' => $canonicalOutputs,
 ];
 if (count($failed) > 0) {

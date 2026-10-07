@@ -15,13 +15,15 @@ import (
 )
 
 type verdict struct {
-	Results          []result           `json:"-"`
-	Failures         []map[string]any   `json:"failures,omitempty"`
-	OK               bool               `json:"ok"`
-	Language         string             `json:"language"`
-	Total            int                `json:"total"`
-	Failed           int                `json:"failed"`
-	CanonicalOutputs map[string]string  `json:"canonicalOutputs"`
+	Results          []result          `json:"-"`
+	Failures         []map[string]any  `json:"failures,omitempty"`
+	OK               bool              `json:"ok"`
+	Language         string            `json:"language"`
+	Total            int               `json:"total"`
+	Failed           int               `json:"failed"`
+	ExecutedFamilies []string          `json:"executedFamilies"`
+	ExecutedVectors  map[string]int    `json:"executedVectors"`
+	CanonicalOutputs map[string]string `json:"canonicalOutputs"`
 }
 
 type result struct {
@@ -75,7 +77,7 @@ func main() {
 			corpus = strings.TrimPrefix(arg, "--corpus=")
 		}
 	}
-	state = verdict{Language: "go", CanonicalOutputs: map[string]string{}}
+	state = verdict{Language: "go", ExecutedFamilies: []string{"canonical", "codec", "semantic", "upgrade"}, ExecutedVectors: map[string]int{}, CanonicalOutputs: map[string]string{}}
 
 	// valid/
 	for _, name := range listCorpus(corpus, "valid") {
@@ -131,6 +133,23 @@ func main() {
 	state.Total = len(state.Results)
 	state.Failed = failed
 	state.OK = failed == 0
+	count := func(prefix string) int {
+		total := 0
+		for _, entry := range state.Results {
+			if strings.HasPrefix(entry.name, prefix) {
+				total++
+			}
+		}
+		return total
+	}
+	state.ExecutedVectors = map[string]int{
+		"valid":     count("valid/"),
+		"invalid":   count("invalid/"),
+		"semantic":  count("semantic/"),
+		"upgrade":   count("upgrade/"),
+		"canonical": count("canonical/"),
+		"security":  count("security/"),
+	}
 	out, _ := json.Marshal(state)
 	fmt.Println(string(out))
 	if failed > 0 {

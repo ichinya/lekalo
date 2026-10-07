@@ -196,11 +196,21 @@ for (const name of list("upgrade")) {
 }
 
 const failed = results.filter((entry) => !entry.ok);
+const executedVectors = {
+  valid: results.filter((entry) => entry.name.startsWith("valid/")).length,
+  invalid: results.filter((entry) => entry.name.startsWith("invalid/")).length,
+  semantic: results.filter((entry) => entry.name.startsWith("semantic/")).length,
+  upgrade: results.filter((entry) => entry.name.startsWith("upgrade/")).length,
+  canonical: results.filter((entry) => entry.name.startsWith("canonical/")).length,
+  security: results.filter((entry) => entry.name.startsWith("security/")).length,
+};
 const summary = {
   ok: failed.length === 0,
   language: "typescript",
   total: results.length,
   failed: failed.length,
+  executedFamilies: ["canonical", "codec", "semantic", "upgrade"],
+  executedVectors,
   canonicalOutputs,
 };
 if (failed.length > 0) summary.failures = failed;

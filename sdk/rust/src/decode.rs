@@ -515,7 +515,10 @@ fn admit_state_string(value: &Value) -> Result<(), Refusal> {
             if names.len() != 2 || !names.contains(&"value") {
                 return Err(Refusal::new("decode", "shape"));
             }
-            if !bounded_text(value.get("value").unwrap_or(&Value::Null), protocol::bounds::ERROR_DETAIL_MAX as usize) {
+            if !bounded_text(
+                value.get("value").unwrap_or(&Value::Null),
+                protocol::bounds::ERROR_DETAIL_MAX as usize,
+            ) {
                 return Err(Refusal::new("decode", "bounds"));
             }
             Ok(())

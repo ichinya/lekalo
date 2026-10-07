@@ -494,11 +494,24 @@ fn main() {
         .iter()
         .map(|(name, bytes)| format!("\"{name}\":\"{}\"", json_escape(bytes)))
         .collect();
+    let count_by_prefix = |prefix: &str| {
+        verdict
+            .results
+            .iter()
+            .filter(|(name, _, _)| name.starts_with(prefix))
+            .count()
+    };
     let status = if failed.is_empty() { "true" } else { "false" };
     let mut out = format!(
-        "{{\"ok\":{status},\"language\":\"rust\",\"total\":{},\"failed\":{},\"canonicalOutputs\":{{{}}}",
+        "{{\"ok\":{status},\"language\":\"rust\",\"total\":{},\"failed\":{},\"executedFamilies\":[\"canonical\",\"codec\",\"semantic\",\"upgrade\"],\"executedVectors\":{{\"valid\":{},\"invalid\":{},\"semantic\":{},\"upgrade\":{},\"canonical\":{},\"security\":{}}},\"canonicalOutputs\":{{{}}}",
         verdict.results.len(),
         failed.len(),
+        count_by_prefix("valid/"),
+        count_by_prefix("invalid/"),
+        count_by_prefix("semantic/"),
+        count_by_prefix("upgrade/"),
+        count_by_prefix("canonical/"),
+        count_by_prefix("security/"),
         canonical_json.join(",")
     );
     if !failed.is_empty() {
