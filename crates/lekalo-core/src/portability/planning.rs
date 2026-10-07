@@ -18,8 +18,9 @@ use std::collections::{BTreeMap, BTreeSet};
 pub(super) type AffectedJoins = (Vec<AffectedScenario>, Vec<AffectedGate>);
 
 /// Join the affected scenarios and gates: direct scenario coverage over
-/// the selected subjects, with declared/planned/executed states kept
-/// separate and unknown gate coverage left explicit.
+/// the selected subjects, with every covered subject joined (never only
+/// the first), receipts scoped to the assessed destinations, and
+/// declared/planned/executed/failed states kept separate.
 pub(super) fn affected_joins(
     input: &Assessment,
     evidence: Option<&EvidenceDocument>,
@@ -28,17 +29,28 @@ pub(super) fn affected_joins(
 ) -> AffectedJoins {
     let _ = subjects;
     let selected_ids: BTreeSet<&str> = selected.iter().map(|s| s.id.as_str()).collect();
+    let assessed_destinations: BTreeSet<&str> = input
+        .destinations
+        .iter()
+        .map(|d| d.target_id.as_str())
+        .collect();
     let mut scenarios: BTreeMap<String, (JoinState, BTreeSet<String>)> = BTreeMap::new();
     for (scenario, covered) in &input.subjects.covered_by {
-        if let Some(reached) = covered
+        // Every selected subject the scenario covers joins, in stable
+        // (sorted) order; a first-match drop would misstate the surface.
+        let reached: BTreeSet<&str> = covered
             .iter()
-            .find(|c| selected_ids.contains(c.as_str()))
-            .cloned()
-        {
-            let entry = scenarios
-                .entry(scenario.clone())
-                .or_insert((JoinState::Declared, BTreeSet::new()));
-            entry.1.insert(reached);
+            .filter(|c| selected_ids.contains(c.as_str()))
+            .map(|c| c.as_str())
+            .collect();
+        if reached.is_empty() {
+            continue;
+        }
+        let entry = scenarios
+            .entry(scenario.clone())
+            .or_insert((JoinState::Declared, BTreeSet::new()));
+        for subject in reached {
+            entry.1.insert(subject.to_owned());
         }
     }
     if let Some(evidence) = evidence {
@@ -46,9 +58,17 @@ pub(super) fn affected_joins(
             let Some(entry) = scenarios.get_mut(&record.scenario) else {
                 continue;
             };
+            // A receipt recorded against another destination does not
+            // prove this assessment's join; only matching (or
+            // destination-unscoped) receipts set the state.
+            if let Some(target) = &record.target_id {
+                if !assessed_destinations.contains(target.as_str()) {
+                    continue;
+                }
+            }
             entry.0 = match record.state {
                 wire::ScenarioReceipt::RecordedPass => JoinState::Executed,
-                wire::ScenarioReceipt::RecordedFail => JoinState::Planned,
+                wire::ScenarioReceipt::RecordedFail => JoinState::Failed,
                 wire::ScenarioReceipt::Untested => JoinState::Declared,
             };
         }
@@ -312,8 +332,23 @@ fn planning_row(
 }
 
 /// Whether the strict `--check` gate must deny this report: any blocking
-/// obligation (unsupported, partial/lossy, or unknown) denies.
+/// obligation (unsupported, partial/lossy, or unknown) denies, and so do
+/// coverage gaps — a truncated extraction or an empty assessment is a
+/// false green, never a pass.
 pub fn denial(report: &super::wire::Report) -> bool {
+    if report.coverage.truncated || !report.coverage.complete {
+        return true;
+    }
+    if report.destinations.is_empty() || report.subjects.is_empty() {
+        return true;
+    }
+    let any_rows = report
+        .subjects
+        .iter()
+        .any(|subject| !subject.rows.is_empty());
+    if !any_rows {
+        return true;
+    }
     report
         .subjects
         .iter()
