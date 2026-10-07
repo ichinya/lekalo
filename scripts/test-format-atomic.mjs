@@ -11,7 +11,7 @@ import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, re
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const binary = join(root, "target/debug", process.platform === "win32" ? "lekalo.exe" : "lekalo");
@@ -128,10 +128,15 @@ try {
   }
 
   // 4b. A LIVE writer is respected (finding C): with the ownership lock
-  //     genuinely held by another process (util-linux flock on POSIX),
-  //     the second mutating run refuses with the registered busy denial
-  //     (exit 3, format.locked) and never rolls the live state back.
-  if (process.platform !== "win32") {
+  //     genuinely held by another live process (util-linux flock on
+  //     POSIX), the second mutating run refuses with the registered busy
+  //     denial (exit 3, format.locked) and never rolls the live state
+  //     back. The holder is asynchronous (finding r2 6): the lock is
+  //     still held while the competitor runs, which is the exact state
+  //     the gate exists to test — a synchronous holder would release the
+  //     lock before the competitor ever started. The holder is only
+  //     assumed on Linux, where util-linux flock is a base tool.
+  if (process.platform === "linux") {
     const project = seed("live-lock", "seeds/noncanonical");
     // The live writer has already replaced a source and journaled.
     const module = modulePath(project);
@@ -153,19 +158,32 @@ try {
     const manifest = `{"schema_version":"lekalo/format-transaction/v0.8.0","plan_id":"${planId}","policy_digest":"${policyDigest}","files":[{"path":"lekalo/modules/scheduling/module.yaml","before_sha256":"${beforeDigest}","after_sha256":"${sha256(applied)}"}]}`;
     writeFileSync(join(home, "manifest.json"), Buffer.from(manifest));
     writeFileSync(join(home, "journal.json"), Buffer.from(`{"schema_version":"lekalo/format-transaction/v0.8.0","plan_id":"${planId}","manifest_sha256":"${sha256(manifest)}"}\n`));
-    // Hold the ownership lock exactly like a live formatter would.
-    const holder = spawnSync(
-      "flock",
-      [join(formatHome(project), "active.lock"), "-c", "sleep 6"],
-      { timeout: 15000 },
-    );
-    assert.ok(!holder.error, `flock holder ran: ${holder.error}`);
-    const second = run(project, ["format"]);
-    assert.equal(second.status, 3, `the live writer is refused as busy: ${second.stdout} ${second.stderr}`);
-    assert.match(second.stdout + second.stderr, /format\.locked/, "the registered busy denial");
-    assert.ok(readFileSync(module).equals(applied), "the live writer's applied bytes were not rolled back");
-    assert.ok(existsSync(join(home, "journal.json")), "the journal stays");
-    // Once the owner exits, recovery proceeds.
+    // Establish the live lock and PROVE ownership before the competitor:
+    // the holder takes the lock non-blocking (so a stale owner would fail
+    // the gate immediately) and then sleeps, keeping the lock held.
+    const lockPath = join(formatHome(project), "active.lock");
+    const holder = spawn("flock", ["-n", lockPath, "-c", "sleep 30"], {
+      stdio: "ignore",
+    });
+    try {
+      // Ownership proof: while the holder lives, the same non-blocking
+      // acquisition must refuse — the lock is genuinely contended.
+      const proof = spawnSync("flock", ["-n", lockPath, "true"], { timeout: 10000 });
+      assert.notEqual(proof.status, 0, "the holder owns the lock (contention is real)");
+      const second = run(project, ["format"]);
+      assert.equal(second.status, 3, `the live writer is refused as busy: ${second.stdout} ${second.stderr}`);
+      assert.match(second.stdout + second.stderr, /format\.locked/, "the registered busy denial");
+      assert.ok(readFileSync(module).equals(applied), "the live writer's applied bytes were not rolled back");
+      assert.ok(existsSync(join(home, "journal.json")), "the journal stays");
+    } finally {
+      // Release: end the holder and wait for the kernel to drop the lock.
+      holder.kill("SIGTERM");
+      await new Promise((resolveHold) => {
+        holder.once("exit", resolveHold);
+        holder.once("error", resolveHold);
+      });
+    }
+    // Once the owner exited, recovery proceeds.
     const recovered = run(project, ["format"]);
     assert.equal(recovered.status, 0, recovered.stdout + recovered.stderr);
     assert.ok(!existsSync(join(home, "journal.json")), "the journal cleared after the owner left");
@@ -181,20 +199,29 @@ try {
     assert.equal(applied.status, 0);
     const home = formatHome(project);
     assert.ok(existsSync(home), "the runtime home exists");
-    const plans = readdirSync(home).filter((name) => name !== "active.lock");
+    const plans = readdirSync(home).filter((name) => name !== "active.lock" && name !== "temps");
     assert.equal(plans.length, 1, "exactly one plan home");
     assert.ok(!existsSync(join(home, plans[0], "journal.json")), "the journal cleared at commit");
     assert.ok(existsSync(join(home, plans[0], "manifest.json")), "the manifest remains");
     assert.ok(existsSync(join(home, plans[0], "before")), "backups remain");
-    // No temp source files anywhere in the source tree.
+    // No temp files anywhere in the source tree: rename temps live in
+    // the runtime temp home, never as source-tree siblings (finding
+    // r2 3).
     const walk = (base) => {
       for (const entry of readdirSync(base, { withFileTypes: true })) {
-        assert.ok(!entry.name.includes(".lekalo-format-new"), "no temp source files");
+        assert.ok(!entry.name.startsWith("."), "no dotfiles in the governed tree");
+        assert.ok(!entry.name.includes("lekalo-format-new"), "no temp source files");
         const next = join(base, entry.name);
         if (entry.isDirectory()) walk(next);
       }
     };
     walk(join(project, "lekalo"));
+    // A committed apply leaves no orphaned rename temps either.
+    const temps = join(home, "temps");
+    assert.ok(
+      !existsSync(temps) || readdirSync(temps).length === 0,
+      "no orphaned rename temps after commit",
+    );
     rmSync(project, { recursive: true, force: true });
     passed += 1;
   }
@@ -204,22 +231,35 @@ try {
   //    tree loads clean (exit 0) and the sources are byte-for-byte the
   //    originals. An INCOMPLETE rollback (one source left replaced) is
   //    the fail-closed case instead: readers refuse until recovery.
+  //
+  //    The sorted candidate order puts lekalo/project.yaml first and the
+  //    planner module files after it, so the read-only planner directory
+  //    fails at project.yaml+1: the planner module files were already
+  //    replaced when the failure lands — a real prefix > 0 partial
+  //    rollback (finding r2 16, previously only the index-0 prefix was
+  //    exercised).
   if (process.platform !== "win32") {
     const project = seed("readonly", "seeds/noncanonical");
-    const before = readFileSync(modulePath(project));
-    const entitiesBefore = readFileSync(join(project, "lekalo/modules/planner/entities.yaml"));
+    const originals = new Map([
+      [modulePath(project), readFileSync(modulePath(project))],
+      [join(project, "lekalo/modules/planner/module.yaml"), readFileSync(join(project, "lekalo/modules/planner/module.yaml"))],
+      [join(project, "lekalo/modules/planner/entities.yaml"), readFileSync(join(project, "lekalo/modules/planner/entities.yaml"))],
+      [join(project, "lekalo/modules/planner/scenarios.yaml"), readFileSync(join(project, "lekalo/modules/planner/scenarios.yaml"))],
+      [join(project, "lekalo/project.yaml"), readFileSync(join(project, "lekalo/project.yaml"))],
+    ]);
+    const changedBefore = run(project, ["format", "--check", "--json"]);
+    assert.equal(changedBefore.status, 3, "the seed needs formatting");
     chmodSync(join(project, "lekalo/modules/planner"), 0o555);
     try {
       const applied = run(project, ["format"]);
       assert.equal(applied.status, 1, "the write failure is invalid");
       assert.match(applied.stderr, /format\.write-failed/, "the stage failure is typed");
-      // Verified rollback is byte-exact: every restored source equals its
-      // preimage and the tree loads cleanly (exit 0).
-      assert.ok(readFileSync(modulePath(project)).equals(before), "rollback restored the module bytes");
-      assert.ok(
-        readFileSync(join(project, "lekalo/modules/planner/entities.yaml")).equals(entitiesBefore),
-        "rollback restored sibling bytes",
-      );
+      // Verified rollback is byte-exact for the whole replaced prefix:
+      // every restored source equals its preimage (including the files
+      // replaced BEFORE the failing one) and the tree loads clean.
+      for (const [path, bytes] of originals) {
+        assert.ok(readFileSync(path).equals(bytes), `rollback restored ${path}`);
+      }
       assert.equal(run(project, ["load"]).status, 0, "a fully rolled-back tree loads clean");
     } finally {
       chmodSync(join(project, "lekalo/modules/planner"), 0o755);
@@ -230,18 +270,29 @@ try {
     // 6b. An incomplete rollback (journal left behind, one source left
     //     replaced) fails closed: readers refuse with the recovery
     //     diagnostic, and the explicit mutating run restores the pinned
-    //     preimage before new work.
+    //     preimage before new work. The records are valid (finding
+    //     r2 7): the plan home carries the recomputable 47-hex base
+    //     identity plus the attempt suffix — the earlier "d".repeat(47)
+    //     spelling can never decode, so the expected exit 0 was
+    //     unreachable.
     {
       const project = seed("incomplete-rollback", "seeds/noncanonical");
       const before = readFileSync(modulePath(project));
       const beforeDigest = sha256(before);
       const replaced = Buffer.from('# a half-applied replacement\n"definitions":\n  - "description": "Slot scheduling module"\n    "id": "scheduling"\n    "kind": "module"\n    "version": 1\n"schema_version": "0.2.16"\n');
       writeFileSync(modulePath(project), replaced);
-      const planId = "d".repeat(47);
+      const policyDigest = `sha256:${"0".repeat(64)}`;
+      const base = sha256(Buffer.concat([
+        Buffer.from(policyDigest), Buffer.from([0x1f]),
+        Buffer.from("lekalo/modules/scheduling/module.yaml"), Buffer.from([0x1f]),
+        Buffer.from(beforeDigest), Buffer.from([0x1f]),
+        Buffer.from(sha256(replaced)),
+      ]));
+      const planId = `${base.slice(0, 47)}-1`;
       const home = join(formatHome(project), planId);
       mkdirSync(join(home, "before/modules/scheduling"), { recursive: true });
       writeFileSync(join(home, "before/modules/scheduling/module.yaml"), before);
-      const manifest = `{"schema_version":"lekalo/format-transaction/v0.8.0","plan_id":"${planId}","policy_digest":"sha256:${"0".repeat(64)}","files":[{"path":"lekalo/modules/scheduling/module.yaml","before_sha256":"${beforeDigest}","after_sha256":"${sha256(replaced)}"}]}`;
+      const manifest = `{"schema_version":"lekalo/format-transaction/v0.8.0","plan_id":"${planId}","policy_digest":"${policyDigest}","files":[{"path":"lekalo/modules/scheduling/module.yaml","before_sha256":"${beforeDigest}","after_sha256":"${sha256(replaced)}"}]}`;
       writeFileSync(join(home, "manifest.json"), Buffer.from(manifest));
       writeFileSync(join(home, "journal.json"), Buffer.from(`{"schema_version":"lekalo/format-transaction/v0.8.0","plan_id":"${planId}","manifest_sha256":"${sha256(manifest)}"}\n`));
       // The interrupted state blocks readers (fail closed).

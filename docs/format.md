@@ -32,7 +32,8 @@ lekalo format --stdin --stdin-filepath PATH [--project DIR] [--json]
   the stale saved file), and emits the full-document replacement text
   (the human projection is the formatted buffer; `--json` carries it in
   the report row). It never writes. A buffer whose plan enumerates any
-  comment loss is refused with the registered loss diagnostic — the
+  comment loss is refused with the registered editor-mode diagnostic
+  `format.stdin-loss`, which carries the exact loss span — the
   replacement text is never returned while a comment would drop — and
   positional paths, `--check`, and `--allow-lossy-comments` are refused
   in this mode. A well-formed selector outside the admitted Model source
@@ -64,13 +65,18 @@ recovery — while a journal exists every reader refuses with
 the pinned bytes. Recovery is fully validated before any restore: the
 journal and manifest are typed closed records pinned to their plan
 identity and admitted Model paths only, every current source digest is
-preflighted (a post-crash user edit surfaces as the explicit
+preflighted (a post-crash user edit or deletion surfaces as the explicit
 `format.source-changed` conflict and is never erased), and the whole
 recover-then-apply window runs under one process-death-released
 ownership lock — a live second formatter is refused with the registered
-`format.locked` denial instead of being rolled back as crashed. Retries
-of an identical plan get a fresh attempt home and never collide with
-completed material. The eleven `format.*` diagnostics (`LEK-FORMAT-001`
+`format.locked` denial instead of being rolled back as crashed. The
+mutating run also reclaims crash residue under the same lock: a
+pre-journal attempt home and an orphaned rename temp never poison an
+identical retry or leave the governed tree unloadable (rename temps live
+inside the runtime home, never as source-tree siblings). Retries of an
+identical plan get a fresh attempt home and never collide with completed
+material; a bounded attempt chain reclaims its oldest completed home
+instead of permanently denying a repeated change set. The eleven `format.*` diagnostics (`LEK-FORMAT-001`
 … `LEK-FORMAT-011`) live in the union diagnostic registry at `0.8.0`.
 
 Diagnostics: `format.diff`, `format.comments-loss`,
