@@ -405,7 +405,15 @@ fn apply_transaction_is_recoverable_and_exact() {
     .expect("plan");
     let plan_bytes = serde_json::to_vec(&built).expect("wire");
     // Missing confirmation never mutates.
-    let refused = apply::apply(&root, &plan_bytes, &coverage_bytes, &ownership, None, false, None);
+    let refused = apply::apply(
+        &root,
+        &plan_bytes,
+        &coverage_bytes,
+        &ownership,
+        None,
+        false,
+        None,
+    );
     assert_eq!(refused.status(), Status::Invalid);
     assert!(!history::exists(&root));
     // Wrong confirmation never mutates.
@@ -416,7 +424,8 @@ fn apply_transaction_is_recoverable_and_exact() {
         &ownership,
         Some(PIN_A),
         false,
-        None,);
+        None,
+    );
     assert_eq!(refused.status(), Status::Invalid);
     // Dry run writes nothing but previews the inventory.
     let preview = apply::apply(
@@ -426,7 +435,8 @@ fn apply_transaction_is_recoverable_and_exact() {
         &ownership,
         Some(built.plan_digest.as_str()),
         true,
-        None,);
+        None,
+    );
     assert_eq!(preview.status(), Status::Valid, "{preview:?}");
     assert!(!history::exists(&root));
     // The confirmed apply publishes and records custody.
@@ -437,7 +447,8 @@ fn apply_transaction_is_recoverable_and_exact() {
         &ownership,
         Some(built.plan_digest.as_str()),
         false,
-        None,);
+        None,
+    );
     assert_eq!(applied.status(), Status::Valid, "{applied:?}");
     let generation = history::current(&root)
         .expect("custody")
@@ -456,7 +467,8 @@ fn apply_transaction_is_recoverable_and_exact() {
         &ownership,
         Some(built.plan_digest.as_str()),
         false,
-        None,);
+        None,
+    );
     assert_eq!(stale.status(), Status::Invalid);
     assert_eq!(
         stale.reason_codes().first().map(|code| code.as_str()),
@@ -512,7 +524,8 @@ fn apply_transaction_is_recoverable_and_exact() {
         &ownership,
         Some(rebuilt.plan_digest.as_str()),
         false,
-        None,);
+        None,
+    );
     assert_eq!(drifted.status(), Status::Invalid);
     assert_eq!(
         drifted.reason_codes().first().map(|code| code.as_str()),
@@ -579,7 +592,8 @@ fn apply_transaction_is_recoverable_and_exact() {
         &ownership,
         Some(rebuilt.plan_digest.as_str()),
         false,
-        None,);
+        None,
+    );
     assert_eq!(
         blocked.reason_codes().first().map(|code| code.as_str()),
         Some("managed.recovery-required")
@@ -648,7 +662,8 @@ fn rollback_restores_the_exact_previous_generation() {
         &ownership,
         Some(first.plan_digest.as_str()),
         false,
-        None,);
+        None,
+    );
     assert_eq!(applied.status(), Status::Valid, "{applied:?}");
     let first_generation = history::current(&root)
         .expect("custody")
@@ -696,7 +711,8 @@ fn rollback_restores_the_exact_previous_generation() {
         &ownership,
         Some(second.plan_digest.as_str()),
         false,
-        None,);
+        None,
+    );
     assert_eq!(applied.status(), Status::Valid, "{applied:?}");
     let second_generation = history::current(&root)
         .expect("custody")
@@ -834,13 +850,12 @@ fn nested_constraints_match_the_published_schema() {
     assert_eq!(error.status(), Status::Invalid);
     let mut coverage = coverage_doc();
     coverage.recipe.digest = "sha256:nothex".to_owned();
-    let error = parse_coverage(&serde_json::to_vec(&coverage).expect("wire"))
-        .expect_err("coverage pin");
+    let error =
+        parse_coverage(&serde_json::to_vec(&coverage).expect("wire")).expect_err("coverage pin");
     assert_eq!(error.status(), Status::Invalid);
     let mut adapter = coverage_doc();
     adapter.adapter.package_digest = "not-a-digest".to_owned();
-    let error =
-        parse_coverage(&serde_json::to_vec(&adapter).expect("wire")).expect_err("adapter");
+    let error = parse_coverage(&serde_json::to_vec(&adapter).expect("wire")).expect_err("adapter");
     assert_eq!(error.status(), Status::Invalid);
     // A requirement without projection/sample is closed-wire refused —
     // the same minimum edit the tightened schema refuses (finding C).
@@ -854,10 +869,8 @@ fn nested_constraints_match_the_published_schema() {
     }
     let mut document = serde_json::to_value(&bare).expect("wire");
     document["requirements"][0] = serde_json::Value::Object(removed);
-    let error = parse_coverage(
-        &serde_json::to_vec(&document).expect("wire"),
-    )
-    .expect_err("closed wire");
+    let error =
+        parse_coverage(&serde_json::to_vec(&document).expect("wire")).expect_err("closed wire");
     assert_eq!(error.status(), Status::Invalid);
 }
 
@@ -895,7 +908,8 @@ fn tampered_records_are_refused_without_touching_files() {
         &ownership,
         Some(built.plan_digest.as_str()),
         false,
-        None,);
+        None,
+    );
     assert_eq!(applied.status(), Status::Valid, "{applied:?}");
     let generation = history::current(&root)
         .expect("custody")
@@ -910,7 +924,9 @@ fn tampered_records_are_refused_without_touching_files() {
         .find(|output| output.path == target_path)
         .expect("output");
     output.path = "maintained/handler.ts".to_owned();
-    forged.outputs.sort_by(|left, right| left.path.cmp(&right.path));
+    forged
+        .outputs
+        .sort_by(|left, right| left.path.cmp(&right.path));
     let hex = generation.strip_prefix("sha256:").expect("digest");
     write_input(
         &root,
@@ -974,7 +990,8 @@ fn interrupted_publication_recovers_to_a_defined_state() {
         &ownership,
         Some(built.plan_digest.as_str()),
         false,
-        None,);
+        None,
+    );
     assert_eq!(applied.status(), Status::Valid, "{applied:?}");
     // A prepared journal with no disk effect abandons cleanly.
     let generation = history::current(&root)
@@ -988,7 +1005,8 @@ fn interrupted_publication_recovers_to_a_defined_state() {
         action: TransactionAction::Apply,
         plan_digest: State::known(built.plan_digest.clone()),
         generation_digest: State::known(GenerationDigest {
-            generation_digest: "sha256:9999999999999999999999999999999999999999999999999999999999999999".to_owned(),
+            generation_digest:
+                "sha256:9999999999999999999999999999999999999999999999999999999999999999".to_owned(),
         }),
         before_manifest_digest: State::Absent,
         after_manifest_digest: State::Absent,
@@ -1006,7 +1024,8 @@ fn interrupted_publication_recovers_to_a_defined_state() {
         &ownership,
         Some(built.plan_digest.as_str()),
         false,
-        None,);
+        None,
+    );
     assert_eq!(blocked.status(), Status::Invalid);
     assert_eq!(
         blocked.reason_codes().first().map(|code| code.as_str()),
@@ -1055,7 +1074,8 @@ fn resolve_confirmation_binds_the_drifted_before_state() {
         &ownership,
         Some(built.plan_digest.as_str()),
         false,
-        None,);
+        None,
+    );
     assert_eq!(applied.status(), Status::Valid, "{applied:?}");
     let path = "apps/planner/gen/src/focus-task.ts";
     write_input(&root, path, b"// drift one\n");
@@ -1083,12 +1103,7 @@ fn resolve_confirmation_binds_the_drifted_before_state() {
     // bytes.
     let fresh = rollback::resolve(&root, path, None, true);
     let fresh_digest = resolve_plan_digest(&fresh);
-    let restored = rollback::resolve(
-        &root,
-        path,
-        Some(&format!("sha256:{fresh_digest}")),
-        false,
-    );
+    let restored = rollback::resolve(&root, path, Some(&format!("sha256:{fresh_digest}")), false);
     assert_eq!(restored.status(), Status::Valid, "{restored:?}");
     let record = history::record(
         &root,

@@ -43,7 +43,9 @@ fn invalid(reason: &str) -> DomainResult {
 }
 
 /// The generated-root coordinate map of one ownership document.
-pub fn generated_roots(ownership: &crate::managed::wire::Ownership) -> BTreeMap<(String, String), String> {
+pub fn generated_roots(
+    ownership: &crate::managed::wire::Ownership,
+) -> BTreeMap<(String, String), String> {
     ownership
         .modules
         .iter()

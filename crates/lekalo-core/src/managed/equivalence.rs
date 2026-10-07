@@ -42,7 +42,10 @@ fn implementation_inventory_digest(
         .filter(|output| {
             output.owner_module == module
                 && output.owner_target == target
-                && matches!(output.role, ArtifactRole::Implementation | ArtifactRole::Test)
+                && matches!(
+                    output.role,
+                    ArtifactRole::Implementation | ArtifactRole::Test
+                )
         })
         .map(|output| output.digest.as_str())
         .collect();
@@ -100,12 +103,12 @@ pub fn adjudicate_for(root: &std::path::Path, bytes: &[u8]) -> DomainResult {
             .next()
             .and_then(|file| file.strip_suffix(".ts"))
             .unwrap_or(path);
-        let scenario = format!(
-            "{}.{}",
-            evidence.module,
-            name.replace('-', "_")
-        );
-        if !evidence.scenarios.iter().any(|row| row.scenario == scenario) {
+        let scenario = format!("{}.{}", evidence.module, name.replace('-', "_"));
+        if !evidence
+            .scenarios
+            .iter()
+            .any(|row| row.scenario == scenario)
+        {
             return diagnostic::failure(EQUIVALENCE_INCOMPLETE, &detail("corpus"));
         }
     }

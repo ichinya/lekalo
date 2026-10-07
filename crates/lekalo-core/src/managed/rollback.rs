@@ -49,6 +49,10 @@ fn drift(path: &str, reason: &str) -> DomainResult {
 
 /// Build the exact rollback plan for the retained destination generation.
 pub fn build(root: &std::path::Path, destination: &str) -> Result<RollbackPlan, DomainResult> {
+    // The barrier holds for every mutating surface, previews included: an
+    // unresolved journal is reconciled before any rollback authority is
+    // computed (finding J).
+    history::assert_reconciled(root)?;
     let current = match history::current(root)? {
         Some(current) => current,
         None => return Err(refused("no-generation")),
@@ -170,6 +174,10 @@ pub fn apply(
         if let Err(error) = require_confirmation(confirm, &plan.plan_digest) {
             return error;
         }
+    }
+    // The centralized barrier holds before and under the lock (finding J).
+    if let Err(error) = history::assert_reconciled(root) {
+        return error;
     }
     // The current generation must still match the reviewed before-state.
     let current = match history::current(root) {
@@ -306,10 +314,7 @@ fn staged(
     plan: &RollbackPlan,
     bytes: &[(&RestoreOp, Vec<u8>)],
 ) -> Result<(), DomainResult> {
-    let transaction_id = match history::transaction_id(root, &plan.plan_digest) {
-        Ok(id) => id,
-        Err(error) => return Err(error),
-    };
+    let transaction_id = history::transaction_id(root, &plan.plan_digest)?;
     let mut transaction = Transaction {
         schema_version: super::header("managed-transaction").0,
         identity: super::header("managed-transaction").1,
@@ -347,9 +352,7 @@ fn staged(
     pending.sort_by(|left, right| (&left.path, &left.op).cmp(&(&right.path, &right.op)));
     transaction.pending = pending;
     transaction.state = TransactionState::Restoring;
-    if let Err(error) = history::write_transaction(root, &transaction) {
-        return Err(error);
-    }
+    history::write_transaction(root, &transaction)?;
     for (op, bytes) in bytes {
         if fs::write_file(root, &op.path, bytes).is_err() {
             transaction.conflict = State::known(super::wire::Conflict {
@@ -373,9 +376,7 @@ fn staged(
             }
         }
     }
-    if let Err(error) = history::write_current(root, &plan.destination_generation_digest) {
-        return Err(error);
-    }
+    history::write_current(root, &plan.destination_generation_digest)?;
     transaction.state = TransactionState::Committed;
     match history::write_transaction(root, &transaction) {
         Ok(()) => Ok(()),
@@ -434,6 +435,9 @@ pub fn resolve(
     // The drifted before-state rides the transaction: the confirmation
     // digest covers it, so a stale preview (the file moved after the
     // caller reviewed it) can never publish over unseen bytes.
+    if let Err(error) = history::assert_reconciled(root) {
+        return error;
+    }
     let before_digest = match fs::read_file(root, path) {
         Ok(Some(live)) => {
             if super::digest(&live) == output.digest {
@@ -506,10 +510,7 @@ pub fn resolve(
             }
             Err(_) => return Err(drift(path, "unreadable")),
         }
-        transaction.transaction_id = match history::transaction_id(root, &expected) {
-            Ok(id) => id,
-            Err(error) => return Err(error),
-        };
+        transaction.transaction_id = history::transaction_id(root, &expected)?;
         let outcome = staged_resolve(root, &transaction, &bytes);
         if outcome.status() == crate::result::Status::Valid {
             Ok(())

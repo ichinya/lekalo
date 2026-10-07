@@ -177,9 +177,7 @@ pub fn sorted<T: Ord>(rows: &[T]) -> bool {
 fn prose(text: &str) -> bool {
     !text.is_empty()
         && text.len() <= 2000
-        && !text
-            .chars()
-            .any(|c| c.is_ascii_control() || c == '\u{7f}')
+        && !text.chars().any(|c| c.is_ascii_control() || c == '\u{7f}')
 }
 
 /// Published nested-reference constraints: the closed `Reference` shape.
@@ -199,7 +197,13 @@ fn target_assignment(target: &TargetAssignment) -> bool {
         && reference(&target.profile_ref)
         && reference(&target.implementation_ref)
         && target.extensions.len() <= 64
-        && sorted(&target.extensions.iter().map(|e| &e.symbol).collect::<Vec<_>>())
+        && sorted(
+            &target
+                .extensions
+                .iter()
+                .map(|e| &e.symbol)
+                .collect::<Vec<_>>(),
+        )
         && target.extensions.iter().all(|extension| {
             token(&extension.symbol) && token(&extension.binding) && pin(&extension.contract_digest)
         })
@@ -215,13 +219,25 @@ fn sample(sample: &Sample) -> bool {
 fn requirement(requirement: &Requirement) -> bool {
     token(&requirement.id)
         && requirement.projection.len() <= 64
-        && sorted(&requirement.projection.iter().map(|p| &p.to).collect::<Vec<_>>())
+        && sorted(
+            &requirement
+                .projection
+                .iter()
+                .map(|p| &p.to)
+                .collect::<Vec<_>>(),
+        )
         && requirement
             .projection
             .iter()
             .all(|p| token(&p.from) && token(&p.to))
-        && requirement.witness.value().map_or(true, |witness| pin(witness))
-        && requirement.detail.as_ref().map_or(true, |detail| prose(detail))
+        && requirement
+            .witness
+            .value()
+            .map_or(true, |witness| pin(witness))
+        && requirement
+            .detail
+            .as_ref()
+            .map_or(true, |detail| prose(detail))
         && requirement.sample.value().map_or(true, sample)
 }
 
@@ -307,7 +323,10 @@ pub fn parse_ownership(bytes: &[u8]) -> Result<Ownership, DomainResult> {
     roots.sort_by(|left, right| left.1.cmp(&right.1));
     for (index, (_, candidate)) in roots.iter().enumerate() {
         let prefix = format!("{candidate}/");
-        if roots[index + 1..].iter().any(|(_, other)| other.starts_with(&prefix)) {
+        if roots[index + 1..]
+            .iter()
+            .any(|(_, other)| other.starts_with(&prefix))
+        {
             return Err(invalid("root-overlap"));
         }
     }
@@ -419,7 +438,7 @@ pub fn verify_plan(bytes: &[u8]) -> Result<GenerationPlan, DomainResult> {
             || output
                 .before_digest
                 .value()
-                .map_or(false, |before| !pin(before))
+                .is_some_and(|before| !pin(before))
         {
             return Err(invalid("output"));
         }

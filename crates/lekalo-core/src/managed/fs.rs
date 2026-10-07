@@ -32,7 +32,7 @@ fn is_reparse(_metadata: &std::fs::Metadata) -> bool {
 fn unconfined(relative: &str, reason: &str) -> DomainResult {
     super::diagnostic::failure(
         INPUT_INVALID,
-        &[("path", relative), ("reason", &detail(reason)[0].1)],
+        &[("path", relative), ("reason", detail(reason)[0].1)],
     )
 }
 
@@ -51,7 +51,11 @@ fn confinable(relative: &str) -> bool {
                 !body.is_empty()
                     && body.as_bytes()[0].is_ascii_alphanumeric()
                     && body.bytes().all(|c| {
-                        c.is_ascii_alphanumeric() || c == b'_' || c == b'.' || c == b'@' || c == b'-'
+                        c.is_ascii_alphanumeric()
+                            || c == b'_'
+                            || c == b'.'
+                            || c == b'@'
+                            || c == b'-'
                     })
             }
         })
@@ -131,7 +135,11 @@ pub fn read_file(root: &std::path::Path, relative: &str) -> std::io::Result<Opti
 /// Write one project file, creating bounded parent directories. The whole
 /// ancestor chain is validated before and revalidated after creation, so a
 /// junction swapped in between checks still fails the write.
-pub fn write_file(root: &std::path::Path, relative: &str, bytes: &[u8]) -> Result<(), DomainResult> {
+pub fn write_file(
+    root: &std::path::Path,
+    relative: &str,
+    bytes: &[u8],
+) -> Result<(), DomainResult> {
     let path = root.join(relative);
     let parent = match relative.rsplit_once('/') {
         Some((parent, _)) => parent.to_owned(),
@@ -143,10 +151,8 @@ pub fn write_file(root: &std::path::Path, relative: &str, bytes: &[u8]) -> Resul
     if validate_leaf(root, relative).is_err() {
         return Err(unconfined(relative, "unconfined-leaf"));
     }
-    if !parent.is_empty() {
-        if std::fs::create_dir_all(root.join(&parent)).is_err() {
-            return Err(unconfined(relative, "publish-mkdir"));
-        }
+    if !parent.is_empty() && std::fs::create_dir_all(root.join(&parent)).is_err() {
+        return Err(unconfined(relative, "publish-mkdir"));
     }
     // Revalidation under the mutation: creating the directories above is
     // exactly where an alias could have been interpolated.

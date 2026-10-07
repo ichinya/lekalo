@@ -9,9 +9,11 @@
 // fixtures in acceptance mode.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { root, version } from './gen-managed-contracts.mjs';
 
 const read = (path) => readFileSync(join(root, path), 'utf8');
@@ -428,6 +430,244 @@ function rewriteModelCommands(project, keepIds) {
   writeFileSync(join(primary.project, 'equivalence-gap.json'), JSON.stringify(gap, null, 2) + '\n');
   const incomplete = invoke(primary.project, ['equivalence', '--evidence', 'equivalence-gap.json'], 'unsupported');
   assert.equal(incomplete.reasonCodes[0], 'managed.equivalence-incomplete');
+  // The evidence is bound to the exact committed generation: a stale
+  // implementation pin (the bytes moved) is a failed gate, not a pass
+  // (finding L).
+  const staleEvidence = { ...evidence, implementationDigest: 'sha256:cccc333333333333333333333333333333333333333333333333333333333333' };
+  writeFileSync(join(primary.project, 'equivalence-stale.json'), JSON.stringify(staleEvidence, null, 2) + '\n');
+  const stale = invoke(primary.project, ['equivalence', '--evidence', 'equivalence-stale.json'], 'invalid');
+  assert.equal(stale.reasonCodes[0], 'managed.equivalence-failed');
+}
+
+// ---- 12. The resolve confirmation cannot be bypassed (finding A). --------
+{
+  const sandbox0 = sandbox('confirm');
+  const project = sandbox0.project;
+  const built = plan(project);
+  writeFileSync(join(project, 'plan.json'), JSON.stringify(built, null, 2) + '\n');
+  apply(project, 'valid');
+  const handler = join(project, 'apps/planner/gen/src/focus-task.ts');
+  writeFileSync(handler, '// drift for confirm probe\n');
+  const preview = invoke(project, ['resolve', '--path', 'apps/planner/gen/src/focus-task.ts', '--restore', '--dry-run'], 'valid');
+  const digest = preview.managed.planDigest;
+  const before = snapshot(project);
+  // No confirmation never moves the file.
+  const none = spawnSync(bin, ['--json', 'managed', 'resolve', '--path', 'apps/planner/gen/src/focus-task.ts', '--restore', '--project', project], { cwd: project, encoding: 'utf8' });
+  assert.equal(JSON.parse(none.stderr.trim()).reasonCodes[0], 'managed.input-invalid');
+  // An all-zero confirmation never moves the file.
+  const zero = spawnSync(bin, ['--json', 'managed', 'resolve', '--path', 'apps/planner/gen/src/focus-task.ts', '--restore', '--confirm', 'sha256:' + '0'.repeat(64), '--project', project], { cwd: project, encoding: 'utf8' });
+  assert.equal(JSON.parse(zero.stderr.trim()).reasonCodes[0], 'managed.input-invalid');
+  assertSameTree(before, snapshot(project), 'resolve confirmations refuse without moving bytes');
+  // The exact previewed confirmation restores the recorded bytes.
+  invoke(project, ['resolve', '--path', 'apps/planner/gen/src/focus-task.ts', '--restore', '--confirm', digest], 'valid');
+  assert.equal(readFileSync(handler, 'utf8'), ORACLE['apps/planner/gen/src/focus-task.ts']);
+  rmSync(project, { recursive: true, force: true });
+}
+
+// ---- 13. Scoped applies preserve every unaffected managed module (F). -----
+{
+  const directory = mkdtempSync(join(tmpdir(), 'lekalo-managed-cli-two-'));
+  const project = join(directory, 'proj');
+  cpSync(join(root, wire, 'planner'), project, { recursive: true });
+  rmSync(join(project, 'expected'), { recursive: true, force: true });
+  // A second managed module zoo with its own generated root.
+  const ownership = JSON.parse(read(`${wire}/planner/ownership.json`));
+  ownership.modules.push({
+    module: 'zoo',
+    mode: 'managed',
+    targets: [{
+      target: 'node-typescript',
+      profileRef: ownership.modules[0].targets[0].profileRef,
+      implementationRef: ownership.modules[0].targets[0].implementationRef,
+      generatedRoot: 'apps/zoo/gen',
+      extensions: [],
+    }],
+  });
+  writeFileSync(join(project, 'ownership.json'), JSON.stringify(ownership, null, 2) + '\n');
+  const zooCoverage = JSON.parse(read(`${wire}/planner/coverage.json`));
+  zooCoverage.module = 'zoo';
+  zooCoverage.requirements = [{ ...zooCoverage.requirements[0], id: 'zoo.feed_animal' }];
+  // zoo must be a real module of the model for its ledger to exist.
+  const projectYaml = readFileSync(join(project, 'lekalo/project.yaml'), 'utf8') + '';
+  const moduleDir = join(project, 'lekalo/modules/zoo');
+  mkdirSync(moduleDir, { recursive: true });
+  writeFileSync(join(moduleDir, 'module.yaml'), 'schema_version: "0.2.16"\ndefinitions:\n  - id: zoo\n    kind: module\n    version: 1\n');
+  writeFileSync(join(moduleDir, 'commands.yaml'), 'schema_version: "0.2.16"\ndefinitions:\n  - id: zoo.feed_animal\n    kind: command\n    version: 1\n');
+  spawnSync(bin, ['lock'], { cwd: project, encoding: 'utf8' });
+  const plannerPins = invoke(project, ['authority', '--module', 'planner'], 'valid').managed;
+  const plannerCoverage = JSON.parse(read(`${wire}/planner/coverage.json`));
+  plannerCoverage.authority = { state: 'known', value: { model: plannerPins.model, ir: plannerPins.ir, lock: plannerPins.lock } };
+  writeFileSync(join(project, 'coverage.json'), JSON.stringify(plannerCoverage, null, 2) + '\n');
+  const pins = invoke(project, ['authority', '--module', 'zoo'], 'valid').managed;
+  zooCoverage.authority = { state: 'known', value: { model: pins.model, ir: pins.ir, lock: pins.lock } };
+  writeFileSync(join(project, 'coverage-zoo.json'), JSON.stringify(zooCoverage, null, 2) + '\n');
+  // Apply planner, then zoo, then replan planner: zoo's outputs must
+  // survive in the committed record and planner must not be orphaned.
+  const plannerPlan = plan(project);
+  writeFileSync(join(project, 'plan.json'), JSON.stringify(plannerPlan, null, 2) + '\n');
+  apply(project, 'valid');
+  const zooPlanReceipt = invoke(project, [
+    'plan', '--to', 'managed', '--ownership', 'ownership.json', '--coverage', 'coverage-zoo.json',
+    '--module', 'zoo', '--target', 'node-typescript', '--input', 'model/planner.model.json',
+  ], 'valid');
+  const zooPlan = zooPlanReceipt.managed.plan;
+  writeFileSync(join(project, 'plan-zoo.json'), JSON.stringify(zooPlan, null, 2) + '\n');
+  invoke(project, ['apply', '--plan', 'plan-zoo.json', '--coverage', 'coverage-zoo.json', '--ownership', 'ownership.json', '--confirm', zooPlan.planDigest], 'valid');
+  assert.ok(existsSync(join(project, 'apps/zoo/gen/src/feed-animal.ts')));
+  // Replanning planner must succeed: zoo custody is preserved, planner's
+  // files are still owned.
+  const replan = invoke(project, [
+    'plan', '--to', 'managed', '--ownership', 'ownership.json', '--coverage', 'coverage.json',
+    '--module', 'planner', '--target', 'node-typescript', '--input', 'model/planner.model.json',
+  ], 'valid');
+  assert.ok(replan.managed.plan.outputs.every((output) => output.action === 'unchanged'), 'planner replan is a clean no-op');
+  rmSync(directory, { recursive: true, force: true });
+}
+
+// ---- 14. Ancestor reparse aliases never escape the project (H). ----------
+if (process.platform === 'win32') {
+  const directory = mkdtempSync(join(tmpdir(), 'lekalo-managed-cli-junction-'));
+  const project = join(directory, 'proj');
+  cpSync(join(root, wire, 'planner'), project, { recursive: true });
+  rmSync(join(project, 'expected'), { recursive: true, force: true });
+  // A sibling directory outside the project plus a junction from the
+  // generated root: a confined plan must refuse before any byte moves.
+  const outside = join(directory, 'outside');
+  mkdirSync(outside, { recursive: true });
+  writeFileSync(join(outside, 'escaped.ts'), '// must never be written\n');
+  rmSync(join(project, 'apps'), { recursive: true, force: true });
+  mkdirSync(join(project, 'apps/planner'), { recursive: true });
+  symlinkSync(join(directory, 'outside'), join(project, 'apps/planner/gen'), 'junction');
+  const before = snapshot(project);
+  const denied = invoke(project, [
+    'plan', '--to', 'managed', '--ownership', 'ownership.json', '--coverage', 'coverage.json',
+    '--module', 'planner', '--target', 'node-typescript', '--input', 'model/planner.model.json',
+  ], 'denied');
+  assert.equal(denied.diagnostics[0].id, 'managed.ownership-denied');
+  assertSameTree(before, snapshot(project), 'junction plan writes nothing outside');
+  rmSync(join(project, 'apps/planner/gen'), { recursive: true, force: true });
+  rmSync(directory, { recursive: true, force: true });
+}
+
+// ---- 15. Custody publication is verified by generate --check (E). --------
+{
+  // Clean committed custody: the ownership manifest matches every byte.
+  spawnSync(bin, ['--json', 'generate', '--check', '--project', primary.project], { cwd: primary.project, encoding: 'utf8' });
+  // A manual edit of a recorded output is a blocking verdict.
+  const handler = join(primary.project, 'apps/planner/gen/src/focus-task.ts');
+  writeFileSync(handler, '// drifted for generate check\n');
+  const drifted = spawnSync(bin, ['--json', 'generate', '--check', '--project', primary.project], { cwd: primary.project, encoding: 'utf8' });
+  assert.equal(JSON.parse(drifted.stderr.trim()).status, 'invalid');
+  // Restore through the exact resolve, then the check is clean again.
+  const preview = invoke(primary.project, ['resolve', '--path', 'apps/planner/gen/src/focus-task.ts', '--restore', '--dry-run'], 'valid');
+  invoke(primary.project, ['resolve', '--path', 'apps/planner/gen/src/focus-task.ts', '--restore', '--confirm', preview.managed.planDigest], 'valid');
+  spawnSync(bin, ['--json', 'generate', '--check', '--project', primary.project], { cwd: primary.project, encoding: 'utf8' });
+  // A missing recorded output is a blocking verdict too.
+  rmSync(join(primary.project, 'apps/planner/gen/src/complete-task.ts'));
+  const missing = spawnSync(bin, ['--json', 'generate', '--check', '--project', primary.project], { cwd: primary.project, encoding: 'utf8' });
+  assert.equal(JSON.parse(missing.stderr.trim()).status, 'invalid');
+  const missingPreview = invoke(primary.project, ['resolve', '--path', 'apps/planner/gen/src/complete-task.ts', '--restore', '--dry-run'], 'valid');
+  invoke(primary.project, ['resolve', '--path', 'apps/planner/gen/src/complete-task.ts', '--restore', '--confirm', missingPreview.managed.planDigest], 'valid');
+}
+
+// ---- 16. Interrupted publication recovers through the defined path (J). --
+{
+  const custody = join(primary.project, '.lekalo/generated/manifests/managed/transactions');
+  writeFileSync(join(custody, 'blocked-7777.json'), JSON.stringify({
+    schemaVersion: `lekalo/managed-transaction/v${version}`,
+    identity: `dev.lekalo.managed-transaction@${version}`,
+    transactionId: 'blocked-7777',
+    state: 'publishing',
+    action: 'apply',
+    planDigest: { state: 'absent' },
+    generationDigest: { state: 'absent' },
+    beforeManifestDigest: { state: 'absent' },
+    afterManifestDigest: { state: 'absent' },
+    pending: [],
+    affectedFiles: [],
+    conflict: { state: 'absent' },
+    beforeDigest: { state: 'absent' },
+  }, null, 2) + '\n');
+  // Rollback and resolve are blocked by the unresolved journal too.
+  const blockedRollback = invoke(primary.project, ['rollback', '--to', 'deadbeef'], 'invalid');
+  assert.equal(blockedRollback.reasonCodes[0], 'managed.recovery-required');
+  // Recovery reconciles the journal and unblocks every mutator.
+  const recovered = invoke(primary.project, ['recover'], 'valid');
+  assert.equal(recovered.managed.reconciled[0].transactionId, 'blocked-7777');
+  invoke(primary.project, ['recover'], 'invalid'); // nothing left to recover
+  rmSync(join(custody, 'blocked-7777.json'), { force: true });
+}
+
+// ---- 17. A resolved custom binding renders its invocation and stays owned
+//          by its maintainer across regeneration (K). ----------------------
+{
+  const extension = sandbox('custom-binding');
+  const project = extension.project;
+  mkdirSync(join(project, 'src/extensions'), { recursive: true });
+  const bindingBytes = 'export function legacyHook(input) { return input ?? null; }\n';
+  writeFileSync(join(project, 'src/extensions/legacy_hook.ts'), bindingBytes);
+  const bindingDigest = createHash('sha256').update(bindingBytes).digest('hex');
+  // The ownership target selects the extension explicitly.
+  const ownership = JSON.parse(read(`${wire}/planner/ownership.json`));
+  ownership.modules[0].targets[0].extensions.push({
+    symbol: 'legacy_hook',
+    binding: 'src/extensions/legacy_hook.ts',
+    contractDigest: `sha256:${bindingDigest}`,
+  });
+  writeFileSync(join(project, 'ownership.json'), JSON.stringify(ownership, null, 2) + '\n');
+  const coverage = JSON.parse(read(`${wire}/planner/coverage.json`));
+  coverage.extensions.push({
+    symbol: 'legacy_hook',
+    binding: 'src/extensions/legacy_hook.ts',
+    contractDigest: `sha256:${bindingDigest}`,
+    validated: true,
+  });
+  writeFileSync(join(project, 'coverage-bound.json'), JSON.stringify(coverage, null, 2) + '\n');
+  // A validated row whose binding file is missing never reaches a plan:
+  // both the ownership selection and the coverage row retarget, so the
+  // refusal comes from the live resolution, not a stale selection.
+  const missingCoverage = JSON.parse(JSON.stringify(coverage));
+  missingCoverage.extensions[0].binding = 'src/extensions/missing.ts';
+  const missingOwnership = JSON.parse(JSON.stringify(ownership));
+  missingOwnership.modules[0].targets[0].extensions[0].binding = 'src/extensions/missing.ts';
+  writeFileSync(join(project, 'ownership-missing.json'), JSON.stringify(missingOwnership, null, 2) + '\n');
+  writeFileSync(join(project, 'coverage-missing-binding.json'), JSON.stringify(missingCoverage, null, 2) + '\n');
+  const unresolved = invoke(project, [
+    'plan', '--to', 'managed', '--ownership', 'ownership-missing.json', '--coverage', 'coverage-missing-binding.json',
+    '--module', 'planner', '--target', 'node-typescript', '--input', 'model/planner.model.json',
+  ], 'invalid');
+  assert.equal(unresolved.reasonCodes[0], 'managed.extension-unresolved');
+  assert.equal(unresolved.diagnostics[0].data.reason, 'missing');
+  // The resolved binding plans, applies, and the generated test invokes it.
+  const built = plan(project, 'coverage-bound.json');
+  writeFileSync(join(project, 'plan-bound.json'), JSON.stringify(built, null, 2) + '\n');
+  invoke(project, ['apply', '--plan', 'plan-bound.json', '--coverage', 'coverage-bound.json', '--ownership', 'ownership.json', '--confirm', built.planDigest], 'valid');
+  const test = readFileSync(join(project, 'apps/planner/gen/test/focus-task.test.ts'), 'utf8');
+  assert.ok(test.includes('src/extensions/legacy_hook.ts'), 'the generated test imports the bound implementation');
+  assert.ok(test.includes('legacyHook({})'), 'the generated test invokes the binding');
+  execFileSync(process.execPath, [join(project, 'apps/planner/gen/test/focus-task.test.ts')], { timeout: 60000, stdio: 'pipe' });
+  // The bound implementation is maintained source: regeneration keeps it.
+  const rebuilt = plan(project, 'coverage-bound.json');
+  writeFileSync(join(project, 'plan-rebound.json'), JSON.stringify(rebuilt, null, 2) + '\n');
+  apply(project, 'valid', 'plan-rebound.json', 'coverage-bound.json');
+  assert.equal(readFileSync(join(project, 'src/extensions/legacy_hook.ts'), 'utf8'), bindingBytes, 'custom source is preserved');
+  rmSync(project, { recursive: true, force: true });
+}
+
+// ---- 18. In-place requirement diffs are named by upgrade-plan (N). -------
+{
+  const candidate = JSON.parse(read(`${wire}/planner/coverage.json`));
+  candidate.requirements[1].detail = 'in-place witness tightening';
+  writeFileSync(join(primary.project, 'coverage-inplace.json'), JSON.stringify(candidate, null, 2) + '\n');
+  const diff = invoke(primary.project, ['upgrade-plan', '--module', 'planner', '--target', 'node-typescript', '--ownership', 'ownership.json', '--base', 'coverage.json', '--candidate', 'coverage-inplace.json'], 'valid');
+  const fields = diff.managed.changes.map((change) => change.field);
+  assert.ok(fields.includes('requirement.planner.focus_task'), `in-place diff present: ${fields}`);
+  const retired = JSON.parse(read(`${wire}/planner/coverage.json`));
+  retired.recipe.digest = 'sha256:' + 'd'.repeat(64);
+  retired.adapter.protocol = '0.6.4';
+  writeFileSync(join(primary.project, 'coverage-incomparable.json'), JSON.stringify(retired, null, 2) + '\n');
+  const incomparable = invoke(primary.project, ['upgrade-plan', '--module', 'planner', '--target', 'node-typescript', '--ownership', 'ownership.json', '--base', 'coverage.json', '--candidate', 'coverage-incomparable.json'], 'valid');
+  assert.equal(incomparable.managed.comparable, false);
 }
 
 console.log(JSON.stringify({ ok: true, gate: 'test-managed-cli', invocations: exits }));

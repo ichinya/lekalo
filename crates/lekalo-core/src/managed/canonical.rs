@@ -222,7 +222,9 @@ fn render_test(
         if !extension.validated {
             continue;
         }
-        let Some((binding_file, binding_symbol)) = binding_parts(&extension.binding) else {
+        let Some((binding_file, binding_symbol)) =
+            binding_parts(&extension.binding, &extension.symbol)
+        else {
             return Err(invalid("binding"));
         };
         let Some(relative) = relative_binding_path(generated_root, &binding_file) else {
@@ -256,12 +258,13 @@ fn render_test(
     Ok(document.into_bytes())
 }
 
-/// The file and exported symbol of one binding spelling
-/// (`path/file.ts` or `path/file.ts#symbol`).
-fn binding_parts(binding: &str) -> Option<(String, String)> {
+/// The file and exported symbol of one binding spelling. The symbol is
+/// the explicit `#symbol` suffix, or the camelCase spelling of the
+/// extension's own symbol.
+fn binding_parts(binding: &str, fallback_symbol: &str) -> Option<(String, String)> {
     let (file, symbol) = match binding.split_once('#') {
-        Some((file, symbol)) => (file, symbol),
-        None => (binding, "default"),
+        Some((file, symbol)) => (file, symbol.to_owned()),
+        None => (binding, camel(fallback_symbol)),
     };
     if file.is_empty() || symbol.is_empty() {
         return None;

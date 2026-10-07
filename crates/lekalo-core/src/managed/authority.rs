@@ -105,8 +105,12 @@ pub fn derive(selection: &LoadSelection, module: &str) -> Result<Authority, Doma
         ir_digest: super::digest(ir_json.as_bytes()),
         // The canonical lock digest (the same identity the artifact owner
         // and every source map bind), never the raw file bytes.
-        lock_digest: crate::lockfile::canonical::lock_digest(&lock).as_str().to_owned(),
-        lock_protocol: lock.target_protocol().map(|pin| pin.version().as_str().to_owned()),
+        lock_digest: crate::lockfile::canonical::lock_digest(&lock)
+            .as_str()
+            .to_owned(),
+        lock_protocol: lock
+            .target_protocol()
+            .map(|pin| pin.version().as_str().to_owned()),
         model_version: compilation.project.model_version.as_str().to_owned(),
         project_id: compilation
             .project
@@ -123,8 +127,14 @@ pub fn derive(selection: &LoadSelection, module: &str) -> Result<Authority, Doma
 /// exact lock revision the evidence claims. The advertised adapter
 /// protocol is qualified in [`super::coverage::admit`] against the
 /// negotiated successor token.
-pub fn qualify(coverage: &super::wire::Coverage, authority: &Authority) -> Result<(), DomainResult> {
-    let pins = coverage.authority.value().ok_or_else(|| invalid("authority"))?;
+pub fn qualify(
+    coverage: &super::wire::Coverage,
+    authority: &Authority,
+) -> Result<(), DomainResult> {
+    let pins = coverage
+        .authority
+        .value()
+        .ok_or_else(|| invalid("authority"))?;
     if pins.model != authority.model_digest
         || pins.ir != authority.ir_digest
         || pins.lock != authority.lock_digest

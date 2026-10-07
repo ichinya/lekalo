@@ -224,7 +224,10 @@ fn selection(project: &Option<String>) -> lekalo_core::loader::LoadSelection {
         let (Some(cwd), Ok(absolute)) = (cwd.canonicalize().ok(), path.canonicalize()) else {
             return lekalo_core::loader::LoadSelection { project: None };
         };
-        absolute.strip_prefix(&cwd).map(|p| p.to_path_buf()).unwrap_or(absolute)
+        absolute
+            .strip_prefix(&cwd)
+            .map(|p| p.to_path_buf())
+            .unwrap_or(absolute)
     } else {
         path
     };
@@ -283,7 +286,8 @@ fn run_check(args: CheckArgs) -> Outcome {
         // The generation authority is derived from the exact project: the
         // coverage evidence must pin it and discharge every required
         // obligation before it admits (finding D).
-        let authority = core::authority::derive(&selection(&args.project.project), &coverage.module)?;
+        let authority =
+            core::authority::derive(&selection(&args.project.project), &coverage.module)?;
         core::authority::qualify(&coverage, &authority)?;
         core::authority::ledger_complete(&coverage, &authority)?;
         core::coverage::admit(assignment, target, &coverage)?;
@@ -321,10 +325,7 @@ fn run_check(args: CheckArgs) -> Outcome {
     if !drifted.is_empty() {
         return Err(core::diagnostic::failure(
             core::GENERATED_DRIFT,
-            &[
-                ("path", drifted[0].as_str()),
-                ("reason", "custody-drift"),
-            ],
+            &[("path", drifted[0].as_str()), ("reason", "custody-drift")],
         ));
     }
     Ok(core::render(&CheckReceipt {
@@ -406,8 +407,19 @@ fn run_plan(args: PlanArgs) -> Outcome {
                 object_ref: output.after_ref.value().cloned(),
             },
         );
-        if let Ok(bytes) = std::fs::read(project_root.join(path)) {
-            before.actual.insert(path.clone(), core::digest(&bytes));
+        match core::fs::read_file(&project_root, path) {
+            Ok(Some(bytes)) => {
+                before.actual.insert(path.clone(), core::digest(&bytes));
+            }
+            // An unreadable recorded path (a link or reparse alias in the
+            // ancestor chain) refuses the plan instead of looking absent.
+            Ok(None) => {}
+            Err(_) => {
+                return Err(core::diagnostic::failure(
+                    core::GENERATED_DRIFT,
+                    &[("path", path.as_str()), ("reason", "unreadable")],
+                ))
+            }
         }
     }
     // Unclaimed files at a would-be create path are never invisible at
@@ -417,10 +429,24 @@ fn run_plan(args: PlanArgs) -> Outcome {
             if before.actual.contains_key(&artifact.path) {
                 continue;
             }
-            if let Ok(bytes) = std::fs::read(project_root.join(&artifact.path)) {
-                before
-                    .actual
-                    .insert(artifact.path.clone(), core::digest(&bytes));
+            match core::fs::read_file(&project_root, &artifact.path) {
+                Ok(Some(bytes)) => {
+                    before
+                        .actual
+                        .insert(artifact.path.clone(), core::digest(&bytes));
+                }
+                // An unclaimed coordinate behind a link or reparse alias
+                // refuses the plan as a create conflict.
+                Ok(None) => {}
+                Err(_) => {
+                    return Err(core::diagnostic::failure(
+                        core::OWNERSHIP_DENIED,
+                        &[
+                            ("path", artifact.path.as_str()),
+                            ("reason", "create-conflict"),
+                        ],
+                    ))
+                }
             }
         }
     }
@@ -462,17 +488,25 @@ fn run_apply(args: ApplyArgs) -> Outcome {
     // (finding D).
     let parsed_plan = core::verify_plan(&plan)?;
     let coverage_doc = core::parse_coverage(&coverage)?;
-    let authority = core::authority::derive(&selection(&args.project.project), &parsed_plan.modules[0])?;
+    let authority =
+        core::authority::derive(&selection(&args.project.project), &parsed_plan.modules[0])?;
     core::authority::qualify(&coverage_doc, &authority)?;
     core::authority::ledger_complete(&coverage_doc, &authority)?;
     // Every validated custom/foreign binding re-resolves at apply time.
     if let (Some(_module), Some(target)) = (
-        ownership.modules.iter().find(|m| m.module == parsed_plan.modules[0]),
+        ownership
+            .modules
+            .iter()
+            .find(|m| m.module == parsed_plan.modules[0]),
         ownership
             .modules
             .iter()
             .find(|m| m.module == parsed_plan.modules[0])
-            .and_then(|m| m.targets.iter().find(|t| t.target == parsed_plan.targets[0])),
+            .and_then(|m| {
+                m.targets
+                    .iter()
+                    .find(|t| t.target == parsed_plan.targets[0])
+            }),
     ) {
         core::bindings::resolve(&root(&args.project.project), target, &coverage_doc)?;
     } else {
@@ -523,8 +557,7 @@ fn run_upgrade_plan(args: UpgradePlanArgs) -> Outcome {
         let _ = error;
         comparable = false;
     }
-    let _ = core::coverage::admit(assignment, target, &base)
-        .map_err(|_| comparable = false);
+    let _ = core::coverage::admit(assignment, target, &base).map_err(|_| comparable = false);
     let candidate_admission =
         core::coverage::admit(assignment, target, &candidate).map_err(|_| comparable = false);
     // The complete pinned change set: recipe, adapter, and every
@@ -581,7 +614,8 @@ fn run_upgrade_plan(args: UpgradePlanArgs) -> Outcome {
         .map(|requirement| (requirement.id.as_str(), requirement))
         .collect();
     for base_requirement in &base.requirements {
-        let Some(candidate_requirement) = candidate_rows.remove(base_requirement.id.as_str()) else {
+        let Some(candidate_requirement) = candidate_rows.remove(base_requirement.id.as_str())
+        else {
             continue;
         };
         if core::canonical_bytes(base_requirement) != core::canonical_bytes(candidate_requirement) {
@@ -706,6 +740,6 @@ fn execute(command: ManagedCommands) -> Outcome {
         }
         ManagedCommands::Equivalence { evidence, project } => Err(
             core::equivalence::adjudicate_for(&root(&project.project), &read(&evidence)?),
-        )
+        ),
     }
 }

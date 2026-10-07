@@ -90,21 +90,18 @@ pub fn publish(
     // The exact input pins the manifest binds: the compiled Model and IR
     // instance digests plus their exact contract versions, and the exact
     // lock revision.
-    let model_semver =
-        SemVer::parse(&authority.model_version).map_err(|_| invalid("ir-digest"))?;
+    let model_semver = SemVer::parse(&authority.model_version).map_err(|_| invalid("ir-digest"))?;
     let ir_semver = SemVer::parse(crate::ir::version::VERSION).map_err(|_| invalid("ir-digest"))?;
     let model_pin = ContractPin::new(
         model_semver.clone(),
-        Sha256Digest::parse(authority.model_digest.as_str())
-            .map_err(|_| invalid("authority"))?,
+        Sha256Digest::parse(authority.model_digest.as_str()).map_err(|_| invalid("authority"))?,
     );
     let ir_pin = ContractPin::new(
         ir_semver.clone(),
         Sha256Digest::parse(authority.ir_digest.as_str()).map_err(|_| invalid("authority"))?,
     );
     let lock = LockRevision::new(crate::lockfile::LockDigest::new(
-        Sha256Digest::parse(authority.lock_digest.as_str())
-            .map_err(|_| invalid("lock-digest"))?,
+        Sha256Digest::parse(authority.lock_digest.as_str()).map_err(|_| invalid("lock-digest"))?,
     ));
     let revision = inputs_revision(&model_pin, &ir_pin);
     let mut entries = Vec::new();
@@ -183,7 +180,15 @@ pub fn publish(
     let computed = Sha256Digest::from_hex(&sha256_hex(
         &crate::artifacts::canonical::digest_input_bytes(&draft),
     ));
-    let manifest = ArtifactManifest::new(project, lock, model, ir, draft.artifacts().to_vec(), draft.source_maps().to_vec(), computed);
+    let manifest = ArtifactManifest::new(
+        project,
+        lock,
+        model,
+        ir,
+        draft.artifacts().to_vec(),
+        draft.source_maps().to_vec(),
+        computed,
+    );
     let bytes = manifest.canonical_bytes();
     ArtifactManifest::parse_canonical(&bytes).map_err(|_| invalid("manifest"))?;
     write_manifest(root, &bytes)

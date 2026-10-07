@@ -4,7 +4,7 @@
 // schema, or fixture fails the lane instead of skipping.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { root, version, generate, shapes } from './gen-managed-contracts.mjs';
@@ -161,5 +161,44 @@ assert.ok(overlap.reasonCodes.includes('managed.input-invalid'));
 const mixed = join(root, wire, 'mixed');
 const mixedView = invoke(['check', '--ownership', 'ownership.json'], 'valid', mixed);
 assert.deepEqual(mixedView.managed.assignments.map((row) => `${row.module}:${row.mode}`), ['billing:observed', 'planner:managed']);
+
+
+// 6. Schema/runtime parity negatives: every minimum hostile edit the
+//    published schema refuses is refused identically by the live runtime
+//    admission path (findings C and M).
+const parityCoverage = (edit) => {
+  const document = JSON.parse(JSON.stringify(read(`${wire}/planner/coverage.json`)));
+  edit(document);
+  schemaRejected('managed-coverage', document);
+  writeFileSync(join(project, 'coverage-parity.json'), JSON.stringify(document, null, 2) + '\n');
+  const refused = invoke(['check', '--ownership', 'ownership.json', '--coverage', 'coverage-parity.json'], 'invalid', project);
+  assert.ok(refused.reasonCodes.includes('managed.input-invalid'), `runtime refuses like the schema: ${refused.reasonCodes}`);
+};
+// projection/sample are required by both layers after the reconciliation.
+parityCoverage((document) => {
+  delete document.requirements[0].projection;
+  delete document.requirements[0].sample;
+});
+// hostile nested pins are refused by both layers.
+parityCoverage((document) => {
+  document.recipe.digest = 'not-a-digest';
+});
+parityCoverage((document) => {
+  document.adapter.packageDigest = 'not-a-digest';
+});
+const parityOwnership = (edit) => {
+  const document = JSON.parse(JSON.stringify(read(`${wire}/planner/ownership.json`)));
+  edit(document);
+  schemaRejected('managed-ownership', document);
+  writeFileSync(join(project, 'ownership-parity.json'), JSON.stringify(document, null, 2) + '\n');
+  const refused = invoke(['check', '--ownership', 'ownership-parity.json'], 'invalid', project);
+  assert.ok(refused.reasonCodes.includes('managed.input-invalid'), `runtime refuses like the schema: ${refused.reasonCodes}`);
+};
+parityOwnership((document) => {
+  document.modules[0].targets[0].profileRef.digest = 'not-a-digest';
+});
+parityOwnership((document) => {
+  document.modules[0].targets[0].implementationRef.version = 'has space';
+});
 
 console.log(JSON.stringify({ ok: true, gate: 'test-managed-contracts', families: families.length, registryEntries: registry.entries.length, managedRules: managedIds.length }));

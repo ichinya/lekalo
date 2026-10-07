@@ -252,7 +252,7 @@ pub fn apply(
     let guard = match history::lock(root) {
         Ok(guard) => guard,
         Err(error) => return error,
-        };
+    };
     // Recheck under the mutation lock: the barrier, the inputs, and the
     // before-state are revalidated now that this caller owns mutation, so
     // a racer that moved a pin between preflight and lock cannot win.
@@ -370,6 +370,7 @@ fn inventory_matches(plan: &GenerationPlan, inventory: &[Rendered]) -> Result<()
 /// unaffected managed module is preserved verbatim and every preserved
 /// input pin rides the closure, so a scoped apply never orphans another
 /// module's files (one file, one owner, at every generation).
+#[allow(clippy::too_many_arguments)]
 fn staged_apply(
     root: &std::path::Path,
     plan: &GenerationPlan,
@@ -380,10 +381,7 @@ fn staged_apply(
     coverage: &super::wire::Coverage,
     generated_root: &str,
 ) -> Result<String, DomainResult> {
-    let previous = match history::current(root) {
-        Ok(current) => current,
-        Err(error) => return Err(error),
-    };
+    let previous = history::current(root)?;
     let previous_record = match &previous {
         Some(digest) => Some(history::record(root, digest)?),
         None => None,
@@ -415,10 +413,7 @@ fn staged_apply(
         closure.insert(pin.path.clone(), pin.clone());
     }
     let closure: Vec<InputPin> = closure.into_values().collect();
-    let transaction_id = match history::transaction_id(root, &plan.plan_digest) {
-        Ok(id) => id,
-        Err(error) => return Err(error),
-    };
+    let transaction_id = history::transaction_id(root, &plan.plan_digest)?;
     let mut transaction = Transaction {
         schema_version: super::header("managed-transaction").0,
         identity: super::header("managed-transaction").1,
@@ -437,9 +432,7 @@ fn staged_apply(
         before_digest: State::Absent,
     };
     transaction.affected_files.sort();
-    if let Err(error) = history::write_transaction(root, &transaction) {
-        return Err(error);
-    }
+    history::write_transaction(root, &transaction)?;
     // Content-addressed snapshots: exact before bytes of every replaced or
     // deleted file, exact after bytes of every published file.
     let bytes_of: BTreeMap<&str, &[u8]> = inventory
@@ -464,9 +457,7 @@ fn staged_apply(
     pending.sort_by(|left, right| (&left.path, &left.op).cmp(&(&right.path, &right.op)));
     transaction.pending = pending;
     transaction.state = TransactionState::Publishing;
-    if let Err(error) = history::write_transaction(root, &transaction) {
-        return Err(error);
-    }
+    history::write_transaction(root, &transaction)?;
     // Build the committed record while every before byte is still on disk.
     let mut record_outputs = Vec::new();
     for output in &plan.outputs {
@@ -481,10 +472,7 @@ fn staged_apply(
             Some(bytes) => *bytes,
             None => return Err(invalid("inventory")),
         };
-        let after_ref = match history::write_object(root, bytes) {
-            Ok(reference) => State::known(reference),
-            Err(error) => return Err(error),
-        };
+        let after_ref = State::known(history::write_object(root, bytes)?);
         let before_ref = match output.action {
             OutputAction::Create => State::Absent,
             _ => {
@@ -498,10 +486,7 @@ fn staged_apply(
                         // First-generation replaces may lack a retained
                         // object; snapshot the live bytes so rollback stays
                         // exact.
-                        Ok(Some(live)) => match history::write_object(root, &live) {
-                            Ok(reference) => State::known(reference),
-                            Err(error) => return Err(error),
-                        },
+                        Ok(Some(live)) => State::known(history::write_object(root, &live)?),
                         Ok(None) => State::Absent,
                         Err(_) => return Err(drift(&output.path, "snapshot")),
                     },
@@ -550,17 +535,12 @@ fn staged_apply(
     if super::generation_digest(&record) != generation {
         return Err(invalid("generation-identity"));
     }
-    let after_manifest = match history::write_record(root, &record) {
-        Ok(custody) => custody,
-        Err(error) => return Err(error),
-    };
+    let after_manifest = history::write_record(root, &record)?;
     transaction.generation_digest = State::known(GenerationDigest {
         generation_digest: generation.clone(),
     });
     transaction.after_manifest_digest = State::known(after_manifest.clone());
-    if let Err(error) = history::write_transaction(root, &transaction) {
-        return Err(error);
-    }
+    history::write_transaction(root, &transaction)?;
     // Publication: create/replace first, then deletions. Deletes are
     // custody-checked at the moment of consumption: the live bytes must
     // still be the reviewed before bytes under the lock.
@@ -617,9 +597,7 @@ fn staged_apply(
         }
     }
     // Pointer commit completes the generation.
-    if let Err(error) = history::write_current(root, &generation) {
-        return Err(error);
-    }
+    history::write_current(root, &generation)?;
     transaction.state = TransactionState::Committed;
     match history::write_transaction(root, &transaction) {
         Ok(()) => {}
