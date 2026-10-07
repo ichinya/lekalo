@@ -10377,11 +10377,11 @@ fn run_impact(args: ImpactArgs) -> DomainResult {
             ))
         }
     };
-    let report = match lekalo_core::adoption::impact_report(&context, index.as_ref(), upstream, &coverage)
-    {
-        Ok(report) => report,
-        Err(result) => return result,
-    };
+    let report =
+        match lekalo_core::adoption::impact_report(&context, index.as_ref(), upstream, &coverage) {
+            Ok(report) => report,
+            Err(result) => return result,
+        };
     DomainResult::receipt(
         serde_json::to_string_pretty(&report).expect("impact report serializes"),
         format!(

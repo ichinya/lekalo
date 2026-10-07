@@ -197,7 +197,18 @@ pub fn plan(
         })
         .collect();
 
-    let pins = compute_pins(ctx, index, &scope_source_paths(index, &records))?;
+    // The exact pins: the full consumed set apply re-fingerprints —
+    // the evidence read scope plus every patch path (F4). A patch
+    // mutating a scanned file outside the use-case evidence set plans
+    // and applies cleanly; absent files contribute no pin on either
+    // side, so plan-time and apply-time sets agree structurally.
+    let mut pin_paths = scope_source_paths(index, &records);
+    if let Some(document) = &patch {
+        for file in &document.files {
+            pin_paths.insert(file.path.clone());
+        }
+    }
+    let pins = compute_pins(ctx, index, &pin_paths)?;
     let project = analysis.project.clone();
     let partial = RefactorPlan {
         schema_version: version::REFACTOR_PLAN_SCHEMA_VERSION.to_owned(),
