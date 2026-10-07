@@ -409,6 +409,29 @@ impl ClosedValidate for VerificationDocument {
         if let Some(conclusion) = &self.conclusion {
             check_member(conclusion, &KINDS_CONCLUSION)?;
         }
+        for token in &self.confinement {
+            // The disposable-copy token may bind the exact candidate
+            // revision (`disposable-copy:<sha256>`); the bare form and
+            // the bound form are the only accepted spellings.
+            if token == "disposable-copy"
+                || token == "bounded-output"
+                || token == "no-network"
+                || token
+                    .strip_prefix("disposable-copy:")
+                    .is_some_and(version::is_sha256)
+            {
+                continue;
+            }
+            return Err(WireError::Shape);
+        }
+        if let Some(tool) = &self.tool {
+            tool_digest_or_null(&tool.digest)?;
+        }
+        if let Some(custody) = &self.custody {
+            if !version::is_sha256(&custody.run) {
+                return Err(WireError::Shape);
+            }
+        }
         Ok(())
     }
 }
@@ -697,6 +720,11 @@ pub struct VerificationDocument {
     pub candidate: Option<CheckResults>,
     pub oracle: Option<OracleVerdict>,
     pub conclusion: Option<String>,
+    /// Execution custody: set only by this module's real runs; apply
+    /// refuses an execution that lacks it. Specifications never carry
+    /// one (typed null on the wire for the shared closed member set).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custody: Option<super::verification::ExecutionCustody>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -705,6 +733,11 @@ pub struct ToolRef {
     pub program: String,
     pub args: Vec<String>,
     pub digest: Option<String>,
+}
+
+/// The exact tool byte-digest grammar (present or typed null).
+pub(crate) fn tool_digest_or_null(digest: &Option<String>) -> Result<(), WireError> {
+    check_digest(digest)
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -939,6 +972,11 @@ decode_entry!(
     version::VERIFICATION_SCHEMA_VERSION
 );
 decode_entry!(
+    execution_of_bytes,
+    VerificationDocument,
+    version::VERIFICATION_SCHEMA_VERSION
+);
+decode_entry!(
     receipt_of_bytes,
     AdoptionReceipt,
     version::RECEIPT_SCHEMA_VERSION
@@ -983,6 +1021,19 @@ mod tests {
         assert_eq!(
             error,
             WireError::Version("lekalo/adoption-analysis/v0.2.16".to_owned())
+        );
+    }
+
+    #[test]
+    fn execution_documents_never_decode_as_wrong_version_or_invalid() {
+        // A wrong-version execution document keeps its exit-5 class
+        // through the shared domain mapping (X9).
+        let bytes = br#"{"schema_version":"lekalo/adoption-verification/v0.2.16"}"#;
+        let error = execution_of_bytes(bytes).unwrap_err();
+        assert!(matches!(error, WireError::Version(_)));
+        assert_eq!(
+            error.domain_result().status(),
+            crate::result::Status::UnsupportedVersion
         );
     }
 

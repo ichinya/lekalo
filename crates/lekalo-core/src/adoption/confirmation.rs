@@ -141,12 +141,13 @@ pub fn plan(
             &ctx.root, document, content, "replace",
         ));
     }
-    // Created canonical documents have no prior bytes: before stays
-    // typed-null and the write creates the file.
+    // A document with no prior bytes is a typed create: `before` stays
+    // null and rollback removes the file again instead of restoring a
+    // zero-byte ghost (F1). The old deleted-between-reads fixup only
+    // fired on a race; the exact read is authoritative here.
     for write in &mut writes {
-        if write.before.is_some() && std::fs::metadata(ctx.root.join(&write.path)).is_err() {
+        if write.before.is_none() {
             write.action = "create".to_owned();
-            write.before = None;
         }
     }
 
@@ -200,13 +201,19 @@ pub fn plan(
         ));
     }
 
-    // The exact pins: the selected definitions' sources, the model, the
-    // lock, the index digest, and the adapter.
+    // The exact pins: the selected definitions' sources plus every
+    // canonical write path the plan will create (F4). Plan and apply
+    // must compute the same consumed set — a created document simply
+    // contributes no pin until it exists, exactly like apply-time.
     let records: Vec<crate::observed::types::SymbolRecord> = selected
         .iter()
         .filter_map(|id| index.symbol(id).cloned())
         .collect();
-    let pins = compute_pins(ctx, Some(index), &scope_source_paths(Some(index), &records))?;
+    let mut pin_paths = scope_source_paths(Some(index), &records);
+    for write in &writes {
+        pin_paths.insert(write.path.clone());
+    }
+    let pins = compute_pins(ctx, Some(index), &pin_paths)?;
 
     let project = analysis.project.clone();
     let selections = ConfirmationSelections {
@@ -269,14 +276,22 @@ pub fn apply(
     let index = index
         .ok_or_else(|| DomainResult::invalid(diagnostic::input_invalid_set("index", "missing")))?;
 
-    // Re-fingerprint every consumed input before any write.
+    // Re-fingerprint every consumed input before any write: the same
+    // consumed set the plan pinned — evidence sources plus the planned
+    // write paths (F4). The plan's `pins.sources` never carries pins
+    // for not-yet-existing documents; apply recomputes over the same
+    // set, so a clean tree is never structurally stale.
     let records: Vec<crate::observed::types::SymbolRecord> = document
         .selections
         .definitions
         .iter()
         .filter_map(|id| index.symbol(id).cloned())
         .collect();
-    let current = compute_pins(ctx, Some(index), &scope_source_paths(Some(index), &records))?;
+    let mut pin_paths = scope_source_paths(Some(index), &records);
+    for write in &document.writes {
+        pin_paths.insert(write.path.clone());
+    }
+    let current = compute_pins(ctx, Some(index), &pin_paths)?;
     let changed = transaction::changed_pins(&document.pins, &current);
     if !changed.is_empty() {
         return Err(DomainResult::denied(diagnostic::plan_stale_set(
@@ -285,16 +300,14 @@ pub fn apply(
         )));
     }
 
-    // The write set: canonical documents plus the observed index when a
-    // binding is confirmed.
-    let mut targets: Vec<String> = document.writes.iter().map(|w| w.path.clone()).collect();
-    if document.selections.binding.is_some() {
-        targets.push(format!(
-            "{}/{}",
-            crate::observed::version::INDEX_DIR,
-            crate::observed::version::INDEX_NAME
-        ));
+    // The write set: canonical documents plus, when a binding is
+    // confirmed, the observed index as a first-class compare-and-swap
+    // write entry with exact before/after digests (F2/X7).
+    let mut writes: Vec<wire::WriteEntry> = document.writes.clone();
+    if let Some(binding) = &document.selections.binding {
+        writes.push(index_write_entry(ctx, index, binding)?);
     }
+    let mut targets: Vec<String> = writes.iter().map(|w| w.path.clone()).collect();
     targets.sort();
     targets.dedup();
 
@@ -306,55 +319,56 @@ pub fn apply(
     };
     let mut journal = Journal::new(&document.plan, "confirmation");
     let snapshots = transaction::snapshot_targets(&ctx.root, &home, &targets, &mut journal)?;
-    let mut snapshot_names: Vec<String> = snapshots
+    let snapshot_names: Vec<String> = snapshots
         .iter()
         .map(|record| record.snapshot.clone())
         .collect();
 
-    // Step 1: the binding resolution (the index mutates first so a
-    // canonical write failure can still roll both back).
-    if let Some(binding) = &document.selections.binding {
-        if let Err(set) = crate::observed::bindings::confirm(
-            &observed(ctx),
-            &binding.proposal,
-            Some(&binding.candidate),
-        ) {
-            journal.steps.push(super::transaction::JournalStep {
-                path: "bindings".to_owned(),
-                state: "failed".to_owned(),
-                snapshot: None,
-            });
-            let _ = transaction::persist_journal(&ctx.root, &home, &journal);
-            return Err(DomainResult::invalid(set));
+    // Step 1: the binding resolution. The index mutates through the
+    // same compare-and-swap discipline as every canonical write: the
+    // live index bytes must still match the plan's recorded `before`
+    // digest, then the exact planned bytes rename into place. A failure
+    // here rolls the tree back and refuses with the typed recovery
+    // path; the index is never left mutated without a receipt naming
+    // its restoration.
+    for write in writes.iter().filter(|write| write.action == "binding") {
+        if let Err(result) = install_binding(ctx, index, write, &mut journal, &home) {
+            return Err(rollback_partial(
+                ctx,
+                &home,
+                &journal,
+                &document.plan,
+                &snapshots,
+                result,
+            ));
         }
-        journal.steps.push(super::transaction::JournalStep {
-            path: "bindings".to_owned(),
-            state: "written".to_owned(),
-            snapshot: None,
-        });
-        let _ = transaction::persist_journal(&ctx.root, &home, &journal);
     }
 
     // Step 2: the canonical documents, one compare-and-swap write per
-    // path, journaled as they complete.
+    // path, journaled as they complete. A failure rolls every completed
+    // byte (binding included) back and refuses.
     for write in &document.writes {
         if let Err(result) = transaction::cas_install(&ctx.root, write) {
-            journal.steps.push(super::transaction::JournalStep {
-                path: write.path.clone(),
-                state: "failed".to_owned(),
-                snapshot: None,
-            });
-            let _ = transaction::persist_journal(&ctx.root, &home, &journal);
-            return Err(result);
+            return Err(rollback_partial(
+                ctx,
+                &home,
+                &journal,
+                &document.plan,
+                &snapshots,
+                result,
+            ));
         }
         journal.steps.push(super::transaction::JournalStep {
             path: write.path.clone(),
             state: "written".to_owned(),
             snapshot: None,
         });
-        let _ = transaction::persist_journal(&ctx.root, &home, &journal);
+        transaction::persist_journal(&ctx.root, &home, &journal)?;
     }
 
+    // The receipt carries the complete mutation set — canonical writes
+    // plus the binding-index entry — so conflict checks and rollback
+    // cover every byte the confirmation touched (F2/X7).
     let receipt = AdoptionReceipt {
         schema_version: version::RECEIPT_SCHEMA_VERSION.to_owned(),
         identity: version::RECEIPT_IDENTITY.to_owned(),
@@ -363,9 +377,9 @@ pub fn apply(
         project: document.project.clone(),
         plan: document.plan.clone(),
         outcome: "completed".to_owned(),
-        writes: document.writes.clone(),
+        writes,
         journal: Some(home.journal_relative.clone()),
-        snapshots: std::mem::take(&mut snapshot_names),
+        snapshots: snapshot_names,
         verification: None,
         pins: current,
         analysis: document.analysis.clone(),
@@ -385,6 +399,157 @@ fn observed(ctx: &AdoptionContext) -> crate::observed::ObservedContext {
         model: ctx.model.clone(),
         root: ctx.root.clone(),
     }
+}
+
+/// The index path of the observed seam (the exact store the bindings
+/// module saves through).
+fn index_relative_path() -> String {
+    format!(
+        "{}/{}",
+        crate::observed::version::INDEX_DIR,
+        crate::observed::version::INDEX_NAME
+    )
+}
+
+/// Build the first-class binding-index write entry (F2/X7): derive the
+/// exact post-confirmation index bytes by re-running the accepted
+/// bindings confirmation over the loaded index (in memory only), then
+/// record the canonical-JSON bytes with the exact live `before` digest
+/// and planned `after` digest. The proposed-receipt resolution already
+/// validated the proposal/candidate pair at plan time; this recomputes
+/// over the same inputs so plan and apply cannot disagree.
+fn index_write_entry(
+    ctx: &AdoptionContext,
+    index: &ObservedIndex,
+    binding: &wire::BindingSelection,
+) -> Outcome<wire::WriteEntry> {
+    // Resolve the exact proposal the plan names from the live proposals
+    // of this index; the candidate must be a member (same admission as
+    // bindings::confirm, without persisting anything yet).
+    let resolved = render_confirmed_index(ctx, index, binding)?;
+    let content =
+        crate::observed::index::canonical_bytes(&resolved).map_err(DomainResult::invalid)?;
+    let before = std::fs::read(ctx.root.join(index_relative_path())).ok();
+    Ok(wire::WriteEntry {
+        path: index_relative_path(),
+        action: "binding".to_owned(),
+        before: before
+            .as_ref()
+            .map(|bytes| format!("sha256:{}", crate::digest::sha256_hex(bytes))),
+        after: Some(format!(
+            "sha256:{}",
+            crate::digest::sha256_hex(content.as_bytes())
+        )),
+        content: Some(content),
+    })
+}
+
+/// The exact post-confirmation index bytes: the loaded index with the
+/// one reviewed binding applied in memory (the same mutation the
+/// accepted bindings::confirm performs), never persisted directly.
+fn render_confirmed_index(
+    ctx: &AdoptionContext,
+    index: &ObservedIndex,
+    binding: &wire::BindingSelection,
+) -> Outcome<ObservedIndex> {
+    let proposals = crate::observed::bindings::proposals_of(index);
+    let proposal = proposals
+        .iter()
+        .find(|proposal| proposal.proposal == binding.proposal)
+        .cloned()
+        .ok_or_else(|| {
+            DomainResult::invalid(diagnostic::input_invalid_set("binding", "proposal-unknown"))
+        })?;
+    if proposal.symbol != binding.symbol {
+        return Err(DomainResult::invalid(diagnostic::input_invalid_set(
+            "binding",
+            "symbol-mismatch",
+        )));
+    }
+    let record = index
+        .symbols
+        .iter()
+        .find(|record| record.id == proposal.symbol)
+        .cloned()
+        .ok_or_else(|| {
+            DomainResult::invalid(diagnostic::input_invalid_set("binding", "symbol-missing"))
+        })?;
+    let candidates = crate::observed::bindings::ranked_candidates(&record);
+    let chosen = candidates
+        .iter()
+        .find(|candidate| candidate.native == binding.candidate)
+        .cloned()
+        .ok_or_else(|| {
+            DomainResult::invalid(diagnostic::input_invalid_set(
+                "binding",
+                "candidate-unknown",
+            ))
+        })?;
+    let mut owned = index.clone();
+    crate::observed::bindings::apply_confirmation(&mut owned, &proposal, &chosen).ok_or_else(
+        || DomainResult::invalid(diagnostic::input_invalid_set("binding", "proposal-unknown")),
+    )?;
+    let _ = ctx;
+    Ok(owned)
+}
+
+/// Install the binding-index write entry through compare-and-swap, then
+/// journal the completed step. The planned bytes are the exact
+/// canonical index the plan derived; the live bytes must still match
+/// the plan's `before` digest.
+fn install_binding(
+    ctx: &AdoptionContext,
+    index: &ObservedIndex,
+    write: &wire::WriteEntry,
+    journal: &mut Journal,
+    home: &transaction::RecoveryHome,
+) -> Outcome<()> {
+    transaction::cas_install(&ctx.root, write)?;
+    let _ = index;
+    journal.steps.push(super::transaction::JournalStep {
+        path: write.path.clone(),
+        state: "written".to_owned(),
+        snapshot: None,
+    });
+    transaction::persist_journal(&ctx.root, home, journal)
+}
+
+/// Roll a partially applied confirmation back to its exact prior state
+/// and surface the typed recovery-required refusal. Every snapshotted
+/// target regains its exact prior bytes (or is removed again); the
+/// durable journal records the rollback so the partial mutation is
+/// never invisible (F2/X4/X5).
+fn rollback_partial(
+    ctx: &AdoptionContext,
+    home: &transaction::RecoveryHome,
+    journal: &Journal,
+    plan: &str,
+    snapshots: &[transaction::SnapshotRecord],
+    cause: DomainResult,
+) -> DomainResult {
+    let mut recovery = journal.clone();
+    recovery.phase = "confirmation-rollback".to_owned();
+    for record in snapshots {
+        let restored = transaction::cas_restore(&ctx.root, record);
+        recovery.steps.push(super::transaction::JournalStep {
+            path: record.path.clone(),
+            state: if restored.is_ok() {
+                "restored".to_owned()
+            } else {
+                "restore-failed".to_owned()
+            },
+            snapshot: Some(record.snapshot.clone()),
+        });
+    }
+    let _ = transaction::persist_journal(&ctx.root, home, &recovery);
+    if recovery
+        .steps
+        .iter()
+        .any(|step| step.state == "restore-failed")
+    {
+        return DomainResult::invalid(diagnostic::recovery_required_set(plan, "rollback"));
+    }
+    cause
 }
 
 /// The plan identity: the family-specific content address over the whole

@@ -3,21 +3,31 @@
 //! only after the pinned verification evidence really passed on both
 //! sides. Failure never records completion; a rollback restores the
 //! exact prior bytes and refuses when later edits conflict.
+//!
+//! Custody model: apply admits an execution document only through
+//! [`verification::admit_execution`] — the execution binds to this
+//! exact plan, the exact plan-pinned candidate-patch digest, the
+//! complete consumed input set (oracle/runner sources pinned by the
+//! plan or typed absent), and execution-measured results carried with
+//! the run's digest and timestamp. A forged or hand-written conclusion
+//! without that custody is refused before any write.
 
 use super::analysis::{compute_pins, AdoptionContext, Outcome};
 use super::diagnostic;
-use super::transaction::{self, Journal, JournalStep};
+use super::transaction::{self, Journal, JournalStep, SnapshotRecord};
 use super::version;
 use super::wire::{self, AdoptionReceipt, PatchDocument, RefactorPlan, VerificationDocument};
+use super::{verification, Outcome as AdoptionOutcome};
 use crate::observed::types::ObservedIndex;
 use crate::result::DomainResult;
 
 /// Apply one confirmed refactor plan. The verification execution
-/// document must name this plan's pinned spec, conclude `preserved`,
-/// and still match the current tree; the candidate patch must still
-/// hash to the plan's pinned digest; the plan digest must name the
-/// exact current plan bytes. Every write is snapshotted, journaled,
-/// and installed through compare-and-swap.
+/// document must carry admitted execution custody for this exact plan
+/// and candidate, conclude `preserved` from measured results, and still
+/// match the current tree; the candidate patch must still hash to the
+/// plan's pinned digest; the plan digest must name the exact current
+/// plan bytes. Every write is snapshotted, journaled, and installed
+/// through compare-and-swap.
 pub fn apply(
     ctx: &AdoptionContext,
     index: Option<&ObservedIndex>,
@@ -52,40 +62,22 @@ pub fn apply(
             "advice-only-plan",
         )));
     };
-    let execution: VerificationDocument = wire::verification_of_bytes(execution_bytes)
-        .map_err(|error| DomainResult::invalid(error.set()))?;
-    if execution.variant != "execution" {
-        return Err(DomainResult::invalid(diagnostic::input_invalid_set(
-            "verification",
-            "not-an-execution",
-        )));
-    }
-    if execution.spec.as_deref() != document.verification.as_deref()
-        || execution.plan.as_deref() != Some(document.plan.as_str())
-    {
-        return Err(DomainResult::invalid(diagnostic::input_invalid_set(
-            "verification",
-            "plan-mismatch",
-        )));
-    }
-    if execution.conclusion.as_deref() != Some("preserved") {
-        return Err(DomainResult::invalid(diagnostic::verification_failed_set(
-            execution
-                .oracle
-                .as_ref()
-                .map(|oracle| oracle.detail.as_str())
-                .unwrap_or("conclusion"),
-            &execution.spec.clone().unwrap_or_default(),
-        )));
-    }
+
+    // Execution custody before anything else: the document must decode
+    // as an execution variant whose measurements this tree can accept —
+    // bound to this exact plan, the exact pinned candidate digest, the
+    // complete consumed-input set, and execution-measured results. A
+    // forged `preserved` never reaches a write.
+    let execution: VerificationDocument =
+        verification::admit_execution(ctx, &document, patch_digest, execution_bytes)?;
 
     // The candidate patch bytes: a closed, scope-contained document
     // revalidated against the plan's pinned digest and mutation scope.
     let patch = load_patch_for(ctx, &document, patch_bytes, patch_digest)?;
 
     // Re-fingerprint every consumed input before any write: the same
-    // pins the plan recorded, recomputed over the mutation scope.
-    let current = compute_pins(ctx, index, &mutation_sources(&document, &patch))?;
+    // consumed set the plan pinned, recomputed at apply time.
+    let current = compute_pins(ctx, index, &consumed_sources(&document, &patch))?;
     let changed = transaction::changed_pins(&document.pins, &current);
     let tree_current = super::refactor::tree_digest(&current);
     let tree_plan = super::refactor::tree_digest(&document.pins);
@@ -113,8 +105,11 @@ pub fn apply(
     let snapshots = transaction::snapshot_targets(&ctx.root, &home, &targets, &mut journal)?;
     let mut writes = Vec::new();
     for file in &patch.files {
+        // One exact write entry per action: deletes carry the expected
+        // pre-state in `before` (never a synthesized after-digest) so
+        // compare-and-swap checks the live bytes against reality.
         let entry = match file.action.as_str() {
-            "delete" => super::wire::WriteEntry {
+            "delete" => wire::WriteEntry {
                 path: file.path.clone(),
                 action: "delete".to_owned(),
                 before: file.before.clone(),
@@ -124,32 +119,25 @@ pub fn apply(
             _ => file.clone(),
         };
         let result = match file.action.as_str() {
-            "delete" => transaction::cas_delete(&ctx.root, &{
-                super::wire::WriteEntry {
-                    path: file.path.clone(),
-                    action: "delete".to_owned(),
-                    before: file.before.clone(),
-                    after: Some(file.after.clone().unwrap_or_default()),
-                    content: None,
-                }
-            }),
+            "delete" => transaction::cas_delete(&ctx.root, &entry),
             _ => transaction::cas_install(&ctx.root, &entry),
         };
         if let Err(result) = result {
-            journal.steps.push(JournalStep {
-                path: file.path.clone(),
-                state: "failed".to_owned(),
-                snapshot: None,
-            });
-            let _ = transaction::persist_journal(&ctx.root, &home, &journal);
-            return Err(result);
+            return Err(failed_apply(
+                &ctx.root,
+                &home,
+                &mut journal,
+                &document.plan,
+                &file.path,
+                result,
+            ));
         }
         journal.steps.push(JournalStep {
             path: file.path.clone(),
             state: "written".to_owned(),
             snapshot: None,
         });
-        let _ = transaction::persist_journal(&ctx.root, &home, &journal);
+        transaction::persist_journal(&ctx.root, &home, &journal)?;
         writes.push(entry);
     }
     let receipt = AdoptionReceipt {
@@ -180,6 +168,31 @@ pub fn apply(
     Ok(receipt)
 }
 
+/// Journal one failed installation step and surface the typed
+/// recovery-required refusal. The journal is durable before the error
+/// returns: a partial application is never reported as either
+/// completed or silently lost. Receipt persistence failures after the
+/// writes completed are also classified recovery-required.
+fn failed_apply(
+    root: &std::path::Path,
+    home: &transaction::RecoveryHome,
+    journal: &mut Journal,
+    plan: &str,
+    path: &str,
+    result: DomainResult,
+) -> DomainResult {
+    journal.steps.push(JournalStep {
+        path: path.to_owned(),
+        state: "failed".to_owned(),
+        snapshot: None,
+    });
+    let persisted = transaction::persist_journal(root, home, journal);
+    if persisted.is_err() {
+        return DomainResult::invalid(diagnostic::recovery_required_set(plan, "journal-write"));
+    }
+    result
+}
+
 /// Re-derive and revalidate the candidate patch at apply time: the
 /// patch must still hash to the plan's pinned digest and every file
 /// must still sit inside the plan's recorded mutation scope.
@@ -188,7 +201,7 @@ fn load_patch_for(
     document: &RefactorPlan,
     patch_bytes: &[u8],
     patch_digest: &str,
-) -> Outcome<PatchDocument> {
+) -> AdoptionOutcome<PatchDocument> {
     let patch = wire::patch_of_bytes(patch_bytes).map_err(|error| error.domain_result())?;
     let value = serde_json::to_value(&patch).expect("patch serializes");
     let recomputed = wire::digest("adoption-patch", &wire::without_member(&value, "patch"));
@@ -210,8 +223,11 @@ fn load_patch_for(
     Ok(patch)
 }
 
-/// The read/mutation source set of one plan plus its patch files.
-fn mutation_sources(
+/// The complete consumed input set of one plan plus its patch files:
+/// read scope ∪ mutation scope ∪ the patch paths. Absent files simply
+/// contribute no pin; the plan pins exactly this set, so plan-time and
+/// apply-time fingerprints can never structurally disagree.
+fn consumed_sources(
     document: &RefactorPlan,
     patch: &PatchDocument,
 ) -> std::collections::BTreeSet<String> {
@@ -270,7 +286,9 @@ pub fn rollback(
         )));
     }
     // Conflict detection: every mutated path must still hold the exact
-    // post-state the receipt recorded.
+    // post-state the receipt recorded. Presence follows the recorded
+    // action, never an action-name guess: created paths must be gone,
+    // every other path must hold the exact recorded post-state.
     let mut conflicts: Vec<String> = Vec::new();
     for write in &receipt.writes {
         let current = std::fs::read(ctx.root.join(&write.path));
@@ -280,11 +298,12 @@ pub fn rollback(
                 let _ = bytes;
             }
             ("delete", Err(_)) => {}
-            (_, Ok(bytes)) => {
+            (action, Ok(bytes)) => {
                 let digest = format!("sha256:{}", crate::digest::sha256_hex(&bytes));
                 if write.after.as_deref() != Some(digest.as_str()) {
                     conflicts.push(write.path.clone());
                 }
+                let _ = action;
             }
             (_, Err(_)) => conflicts.push(write.path.clone()),
         }
@@ -296,9 +315,11 @@ pub fn rollback(
         )));
     }
     // Restore through the exact local snapshots. The snapshot file for
-    // every path is derived from the path itself (sha256 hex), so the
-    // restore never guesses from receipt order; created files restore
-    // to typed absence.
+    // every path is derived from the path itself (sha256 hex), the
+    // digest-keyed file is reparse-checked before read, and the bytes
+    // are verified against the receipt's recorded `before` digest
+    // before anything moves. A corrupted snapshot is a typed
+    // recovery-required refusal that keeps the current files.
     let Some(home) = transaction::recovery_home(&ctx.root, &receipt.plan) else {
         return Err(DomainResult::invalid(diagnostic::input_invalid_set(
             "receipt",
@@ -307,10 +328,10 @@ pub fn rollback(
     };
     let mut journal = Journal::new(&receipt.plan, "rollback");
     let (head, tail) = version::digest_dir(&receipt.plan).unwrap_or_default();
-    let records: Vec<transaction::SnapshotRecord> = receipt
+    let records: Vec<SnapshotRecord> = receipt
         .writes
         .iter()
-        .map(|write| transaction::SnapshotRecord {
+        .map(|write| SnapshotRecord {
             path: write.path.clone(),
             snapshot: format!(
                 "{}/{}/{}/snapshots/{}",
@@ -319,7 +340,11 @@ pub fn rollback(
                 tail,
                 snapshot_name(&write.path)
             ),
-            present: write.action != "create",
+            // The exact prior state follows the recorded pre-state:
+            // `before` present means restore bytes, absent means the
+            // path was created by this plan and is removed again.
+            present: write.before.is_some(),
+            before_digest: write.before.clone(),
         })
         .collect();
     for record in &records {
@@ -337,7 +362,7 @@ pub fn rollback(
             state: "restored".to_owned(),
             snapshot: Some(record.snapshot.clone()),
         });
-        let _ = transaction::persist_journal(&ctx.root, &home, &journal);
+        transaction::persist_journal(&ctx.root, &home, &journal)?;
     }
     let rollback_receipt = AdoptionReceipt {
         schema_version: version::RECEIPT_SCHEMA_VERSION.to_owned(),
