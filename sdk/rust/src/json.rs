@@ -128,7 +128,9 @@ pub fn read_single_object(text: &str, max_bytes: usize) -> Result<Value, ParseRe
 
 impl<'a> Parser<'a> {
     fn skip_whitespace(&mut self) {
-        while self.index < self.bytes.len() && matches!(self.bytes[self.index], b' ' | b'\t' | b'\r' | b'\n') {
+        while self.index < self.bytes.len()
+            && matches!(self.bytes[self.index], b' ' | b'\t' | b'\r' | b'\n')
+        {
             self.index += 1;
         }
     }
@@ -250,7 +252,9 @@ impl<'a> Parser<'a> {
                                     }
                                     self.index += 1;
                                     let low = self.parse_hex4()?;
-                                    let combined = 0x10000 + (((high - 0xD800) as u32) << 10) + (low - 0xDC00) as u32;
+                                    let combined = 0x10000
+                                        + (((high - 0xD800) as u32) << 10)
+                                        + (low - 0xDC00) as u32;
                                     out.push(char::from_u32(combined).ok_or(ParseReason::NotJson)?);
                                 } else {
                                     return Err(ParseReason::NotJson);
@@ -271,7 +275,8 @@ impl<'a> Parser<'a> {
                     if end > self.bytes.len() {
                         return Err(ParseReason::NotJson);
                     }
-                    let chunk = std::str::from_utf8(&self.bytes[start..end]).map_err(|_| ParseReason::NotJson)?;
+                    let chunk = std::str::from_utf8(&self.bytes[start..end])
+                        .map_err(|_| ParseReason::NotJson)?;
                     out.push_str(chunk);
                     self.index = end;
                 }
@@ -283,7 +288,8 @@ impl<'a> Parser<'a> {
         if self.index + 4 > self.bytes.len() {
             return Err(ParseReason::NotJson);
         }
-        let chunk = std::str::from_utf8(&self.bytes[self.index..self.index + 4]).map_err(|_| ParseReason::NotJson)?;
+        let chunk = std::str::from_utf8(&self.bytes[self.index..self.index + 4])
+            .map_err(|_| ParseReason::NotJson)?;
         let value = u16::from_str_radix(chunk, 16).map_err(|_| ParseReason::NotJson)?;
         self.index += 4;
         Ok(value)
@@ -315,7 +321,8 @@ impl<'a> Parser<'a> {
                 self.index += 1;
             }
         }
-        let text = std::str::from_utf8(&self.bytes[start..self.index]).map_err(|_| ParseReason::NotJson)?;
+        let text = std::str::from_utf8(&self.bytes[start..self.index])
+            .map_err(|_| ParseReason::NotJson)?;
         if text.is_empty() || text == "-" {
             return Err(ParseReason::NotJson);
         }
@@ -364,9 +371,15 @@ pub fn canonical(value: &Value) -> String {
             format!("[{}]", body.join(","))
         }
         Value::Object(members) => {
-            let mut sorted: Vec<(String, String)> = members.iter().map(|(key, member)| (key.clone(), canonical(member))).collect();
+            let mut sorted: Vec<(String, String)> = members
+                .iter()
+                .map(|(key, member)| (key.clone(), canonical(member)))
+                .collect();
             sorted.sort_by(|a, b| a.0.cmp(&b.0));
-            let body: Vec<String> = sorted.into_iter().map(|(key, formatted)| format!("{}:{}", quote(&key), formatted)).collect();
+            let body: Vec<String> = sorted
+                .into_iter()
+                .map(|(key, formatted)| format!("{}:{}", quote(&key), formatted))
+                .collect();
             format!("{{{}}}", body.join(","))
         }
     }

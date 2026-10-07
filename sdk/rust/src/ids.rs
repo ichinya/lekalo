@@ -30,7 +30,10 @@ fn is_prefixed_hex(value: &str, prefix: &str) -> bool {
     let Some(hex) = value.strip_prefix(prefix) else {
         return false;
     };
-    hex.len() == 64 && hex.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    hex.len() == 64
+        && hex
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 pub fn is_sha256_digest(value: &str) -> bool {

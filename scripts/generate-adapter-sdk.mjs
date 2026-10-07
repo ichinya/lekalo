@@ -344,13 +344,13 @@ function renderCompatibilityTests(lang) {
   ];
   const body = canonicalJson(matrix);
   if (lang === "rust") {
-    lines.push("/// One generated compatibility row: an exact-version admission or a", "/// bounded refusal reason.", "#[derive(Clone, Copy, Debug)]", "pub struct CompatibilityCase {", "    pub admitted: bool,", '    pub operation: Option<&\'static str>,', "    pub protocol_version: &'static str,", "    pub reason: Option<&'static str>,", '    pub wire_token: Option<&\'static str>,', "}", "", `pub const COMPATIBILITY_MATRIX: &[CompatibilityCase] = &[`);
+    lines.push("/// One generated compatibility row: an exact-version admission or a", "/// bounded refusal reason.", "#[derive(Clone, Copy, Debug)]", "pub struct CompatibilityCase {", "    pub admitted: bool,", '    pub operation: Option<&\'static str>,', "    pub protocol_version: &'static str,", "    pub reason: Option<&'static str>,", '    pub wire_token: Option<&\'static str>,', "}", "", rustPinned("pub const COMPATIBILITY_MATRIX: &[CompatibilityCase] = &["));
     for (const row of matrix) {
       lines.push(
         `    CompatibilityCase { admitted: ${row.admitted}, operation: ${row.operation ? `Some("${row.operation}")` : "None"}, protocol_version: "${row.protocolVersion}", reason: ${row.reason ? `Some("${row.reason}")` : "None"}, wire_token: ${row.wireToken ? `Some("${row.wireToken}")` : "None"} },`,
       );
     }
-    lines.push("];", "");
+    lines.push("];");
   } else if (lang === "typescript") {
     lines.push(`export const COMPATIBILITY_MATRIX = ${body};`, "");
   } else if (lang === "go") {
@@ -378,17 +378,17 @@ function renderCapabilities(lang) {
       "/// canonical embedded table, exported for describe helpers. Never a",
       "/// second registry: new ids arrive through a reviewed owner successor.",
       `pub const CAPABILITY_IDENTITY: &str = ${JSON.stringify(capabilityExport.identity)};`,
-      `pub const CAPABILITY_ENTRIES_DIGEST: &str = ${JSON.stringify(capabilityExport.entriesDigest)};`,
+      rustPinned(`pub const CAPABILITY_ENTRIES_DIGEST: &str = ${JSON.stringify(capabilityExport.entriesDigest)};`),
       "",
       "/// One exported capability definition (id-sorted).",
       "#[derive(Clone, Copy, Debug)]",
-      "pub struct CapabilityDefinition {",
+      rustPinned("pub struct CapabilityDefinition {"),
       "    pub definition_version: &'static str,",
       "    pub domain: &'static str,",
       "    pub id: &'static str,",
       "}",
       "",
-      "pub const CAPABILITY_DEFINITIONS: &[CapabilityDefinition] = &[",
+      rustPinned("pub const CAPABILITY_DEFINITIONS: &[CapabilityDefinition] = &["),
     );
     for (const entry of capabilityEntries) {
       lines.push(`    CapabilityDefinition { definition_version: ${JSON.stringify(entry.definitionVersion)}, domain: ${JSON.stringify(entry.domain)}, id: ${JSON.stringify(entry.id)} },`);
@@ -448,10 +448,10 @@ function renderDiagnostics(lang) {
       "/// the SDK validates builders against the selected canonical registry",
       "/// instead of becoming a second source of codes.",
       `pub const DIAGNOSTIC_REGISTRY_IDENTITY: &str = ${JSON.stringify(registry.identity)};`,
-      `pub const DIAGNOSTIC_REGISTRY_DIGEST: &str = ${JSON.stringify(registryInput.digest)};`,
+      rustPinned(`pub const DIAGNOSTIC_REGISTRY_DIGEST: &str = ${JSON.stringify(registryInput.digest)};`),
       "",
       "/// The id-sorted registry codes available to adapter builders.",
-      "pub const DIAGNOSTIC_CODES: &[(&str, &str)] = &[",
+      rustPinned("pub const DIAGNOSTIC_CODES: &[(&str, &str)] = &["),
     );
     for (const entry of diagnosticCodes) {
       lines.push(`    (${JSON.stringify(entry.id)}, ${JSON.stringify(entry.code)}),`);
@@ -535,6 +535,16 @@ function verifyEnumSpelling() {
 
 verifyEnumSpelling();
 
+/**
+ * Rust generated modules are pinned bytes: the byte-for-byte `--check`
+ * must never fight rustfmt, so every generated top-level item carries the
+ * stable outer `#[rustfmt::skip]` attribute (the inner-crate form is
+ * unstable; verified: rustfmt honors the outer one and leaves the emitted
+ * layout untouched, and 1.80 rustc accepts it).
+ */
+const rustPinned = (item) => `#[rustfmt::skip]
+${item}`;
+
 function renderProtocol(lang) {
   const lines = [generatedHeader(lang), ""];
   const BOUNDS_PAIRS = Object.entries(SEMANTIC_BOUNDS).map(([key, value]) => [
@@ -548,34 +558,34 @@ function renderProtocol(lang) {
       "//! hand-maintained runtime codec, validated against the shared vectors.",
       "",
       `pub const WIRE_TOKEN: &str = ${JSON.stringify(config.wireToken)};`,
-      `pub const SUPPORTED_PROTOCOL_VERSIONS: &[&str] = &[${protocolVersions.map((v) => JSON.stringify(v)).join(", ")}];`,
-      `pub const BASE_OPERATIONS: &[&str] = &[${baseOperations.map((v) => JSON.stringify(v)).join(", ")}];`,
-      `pub const LATEST_OPERATIONS: &[&str] = &[${latestOperations.map((v) => JSON.stringify(v)).join(", ")}];`,
-      `pub const IR_VERSIONS: &[&str] = &[${config.irVersions.map((v) => JSON.stringify(v)).join(", ")}];`,
+      rustPinned(`pub const SUPPORTED_PROTOCOL_VERSIONS: &[&str] = &[${protocolVersions.map((v) => JSON.stringify(v)).join(", ")}];`),
+      rustPinned(`pub const BASE_OPERATIONS: &[&str] = &[${baseOperations.map((v) => JSON.stringify(v)).join(", ")}];`),
+      rustPinned(`pub const LATEST_OPERATIONS: &[&str] = &[${latestOperations.map((v) => JSON.stringify(v)).join(", ")}];`),
+      rustPinned(`pub const IR_VERSIONS: &[&str] = &[${config.irVersions.map((v) => JSON.stringify(v)).join(", ")}];`),
       `pub const REQUEST_ID_PREFIX: &str = "req-";`,
       `pub const PLAN_ID_PREFIX: &str = "plan-";`,
       "",
       "/// The semantic bounds the runtime codec enforces (mirrors of the closed",
       "/// schema constraints; the paired host tests pin them together).",
-      "pub mod bounds {",
+      rustPinned("pub mod bounds {"),
       ...BOUNDS_PAIRS.map(([key, value]) => `    pub const ${key}: u64 = ${value};`),
       "}",
       "",
       "/// The closed enum vocabularies (stable wire spellings).",
-      "pub mod enums {",
+      rustPinned("pub mod enums {"),
       ...ENUM_TABLE.map(([name, values]) => `    pub const ${name.toUpperCase().replace(/_/g, "")}: &[&str] = &[${values.map((v) => JSON.stringify(v)).join(", ")}];`),
       "}",
       "",
       "/// One per-version operation row of the generated compatibility matrix.",
       "#[derive(Clone, Debug)]",
-      "pub struct VersionOperations {",
+      rustPinned("pub struct VersionOperations {"),
       "    pub operations: &'static [&'static str],",
       "    pub protocol_version: &'static str,",
       "}",
       "",
-      ...protocolVersions.map((version) => `pub const OPERATIONS_V${version.replaceAll(".", "_")}: &[&str] = &[${config.operations[version].map((v) => JSON.stringify(v)).join(", ")}];`),
+      ...protocolVersions.map((version) => rustPinned(`pub const OPERATIONS_V${version.replaceAll(".", "_")}: &[&str] = &[${config.operations[version].map((v) => JSON.stringify(v)).join(", ")}];`)),
       "",
-      "pub const OPERATIONS_BY_VERSION: &[VersionOperations] = &[",
+      rustPinned("pub const OPERATIONS_BY_VERSION: &[VersionOperations] = &["),
       ...protocolVersions.map((version) => `    VersionOperations { operations: OPERATIONS_V${version.replaceAll(".", "_")}, protocol_version: ${JSON.stringify(version)} },`),
       "];",
       "",
@@ -834,39 +844,72 @@ function bundlePhpTemplate(template, generatedFiles) {
     "declare(strict_types=1);",
     "",
   ];
-  const useLines = new Set();
+  // Bundled classes all share one global namespace (the bundle declares
+  // none), so unqualified references resolve inside the file. The
+  // namespace-bearing SDK files never keep their cross-namespace `use`
+  // statements: hoisting one above a same-named global class is the
+  // "Cannot redeclare class" fatal that made the first bundles DOA.
+  const useLine = (text) => text.replace(/^use [^;]+;$/gm, "");
   for (const relative of order) {
     const generatedKey = relative.includes("/Generated/") ? relative : null;
-    const raw = (generatedKey && generatedFiles.get(generatedKey)) ?? read(join("sdk/php", relative));
-    // Same-namespace references need no imports; collect the cross-namespace
-    // use statements and emit each exactly once at the bundle top.
-    for (const match of raw.matchAll(/^use ([^;]+);$/gm)) {
-      useLines.add(match[1]);
-    }
-  }
-  for (const useLine of [...useLines].sort()) {
-    parts.push(`use ${useLine};`);
-  }
-  if (useLines.size > 0) parts.push("");
-  for (const relative of order) {
-    const generatedKey = relative.includes("/Generated/") ? relative : null;
-    const raw = (generatedKey && generatedFiles.get(generatedKey)) ?? read(join("sdk/php", relative));
-    const text = raw.replace(/^use [^;]+;$/gm, "");
-    const stripped = text
+    const text = (generatedKey && generatedFiles.get(generatedKey)) ?? read(join("sdk/php", relative));
+    const stripped = useLine(text)
       .replace(/^<\?php\s*/,"")
       .replace(/^declare\(strict_types=1\);\s*$/m, "")
       .replace(/^namespace Lekalo\\AdapterSdk(\\Generated|\\Runtime);\s*$/m, "")
       .replace(/\n{3,}/g, "\n\n");
     parts.push(`// ---- sdk/php/${relative} ----`, stripped.trimEnd(), "");
   }
-  const glue = read(join("sdk/templates/php", template.name, "main.php"))
-    .replace(/^<\?php\s*/, "")
-    .replace(/^declare\(strict_types=1\);\s*$/m, "")
-    .replace(/^use [^;]+;$/gm, "")
-    .replace(/\n{3,}/g, "\n\n");
+  const glue = useLine(
+    read(join("sdk/templates/php", template.name, "main.php"))
+      .replace(/^<\?php\s*/, "")
+      .replace(/^declare\(strict_types=1\);\s*$/m, "")
+      .replace(/\n{3,}/g, "\n\n"),
+  );
   parts.push(`// ---- sdk/templates/php/${template.name}/main.php ----`, glue.trimEnd(), "");
   return parts.join("\n");
 }
+
+/**
+ * Bundle provenance (issue #106, generation-record accuracy): the
+ * standalone template bundles each run emits are outputs keyed by exact
+ * bytes, and the SDK sources inlined into them are inputs the run
+ * consumed. Keyed by language because the bundle paths and inlined
+ * sources differ per SDK layout. The Go and Rust SDKs carry no
+ * generator-owned bundles (their templates are ordinary cargo/go builds
+ * against the package), so their lists stay empty.
+ */
+const BUNDLE_PROVENANCE = {
+  go: { outputs: [], inputs: [] },
+  php: {
+    inputs: [
+      "sdk/php/src/Runtime/Build.php",
+      "sdk/php/src/Runtime/Canonical.php",
+      "sdk/php/src/Runtime/Decode.php",
+      "sdk/php/src/Runtime/Ids.php",
+      "sdk/php/src/Runtime/Json.php",
+      "sdk/php/src/Runtime/Logger.php",
+      "sdk/php/src/Runtime/Paths.php",
+      "sdk/php/src/Runtime/Serve.php",
+    ],
+    outputs: [
+      "templates/php/generate/adapter.php",
+      "templates/php/reference/adapter.php",
+      "templates/php/scan/adapter.php",
+      "templates/php/verify/adapter.php",
+    ],
+  },
+  rust: { outputs: [], inputs: [] },
+  typescript: {
+    inputs: TS_MODULE_ORDER.map((name) => `sdk/typescript/${name}`),
+    outputs: [
+      "templates/typescript/generate/adapter.mjs",
+      "templates/typescript/reference/adapter.mjs",
+      "templates/typescript/scan/adapter.mjs",
+      "templates/typescript/verify/adapter.mjs",
+    ],
+  },
+};
 
 const TEMPLATES = {
   go: [{ entry: "main.go", name: "generate" }, { entry: "main.go", name: "reference" }, { entry: "main.go", name: "scan" }, { entry: "main.go", name: "verify" }],
@@ -901,10 +944,25 @@ function renderFor(lang) {
     compatibility: { digest: sha256(files.get("compatibility.json")), path: "compatibility.json" },
     generator: { digest: sha256(readFileSync(SCRIPT_PATH)), name: GENERATOR_NAME, version: GENERATOR_VERSION },
     identity: "dev.lekalo.adapter-sdk-generation@0.8.0",
-    inputs: inputRecords.map(({ digest, path, role }) => ({ digest, path, role })).sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)),
+    inputs: [
+      ...inputRecords.map(({ digest, path, role }) => ({ digest, path, role })),
+      // Bundle provenance (issue #106): the SDK sources inlined into the
+      // standalone template bundles are real inputs of this run.
+      ...BUNDLE_PROVENANCE[lang].inputs.map((path) => ({ digest: sha256(read(path)), path, role: "bundle-source" })),
+    ]
+      .map(({ digest, path, role }) => ({ digest, path, role }))
+      .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)),
     language: lang,
     options: { ...config.options },
-    outputs,
+    outputs: [
+      ...outputs.filter((output) => output.path !== "compatibility.json"),
+      // The emitted standalone template bundles are outputs of this run,
+      // pinned by the exact bytes of the freshly written candidate.
+      ...templateFiles(lang, files)
+        .entries()
+        .map(([path, text]) => ({ digest: sha256(text), path })),
+      { digest: sha256(files.get("compatibility.json")), path: "compatibility.json" },
+    ].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)),
     schemaVersion: "lekalo/adapter-sdk-generation/v0.8.0",
     semanticCoverage: [...config.semanticCoverage].sort((a, b) => (a.definition < b.definition ? -1 : a.definition > b.definition ? 1 : 0)),
     toolchain: { ...pkg.toolchain },

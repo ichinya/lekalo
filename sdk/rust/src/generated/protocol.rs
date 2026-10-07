@@ -9,15 +9,20 @@
 //! hand-maintained runtime codec, validated against the shared vectors.
 
 pub const WIRE_TOKEN: &str = "lekalo.target/v1";
+#[rustfmt::skip]
 pub const SUPPORTED_PROTOCOL_VERSIONS: &[&str] = &["0.3.2", "0.6.4"];
+#[rustfmt::skip]
 pub const BASE_OPERATIONS: &[&str] = &["bind", "clean", "describe", "generate", "plan-clean", "plan-native", "scan", "validate", "verify"];
+#[rustfmt::skip]
 pub const LATEST_OPERATIONS: &[&str] = &["bind", "clean", "describe", "generate", "lint", "plan-clean", "plan-native", "scan", "validate", "verify"];
+#[rustfmt::skip]
 pub const IR_VERSIONS: &[&str] = &["0.2.16"];
 pub const REQUEST_ID_PREFIX: &str = "req-";
 pub const PLAN_ID_PREFIX: &str = "plan-";
 
 /// The semantic bounds the runtime codec enforces (mirrors of the closed
 /// schema constraints; the paired host tests pin them together).
+#[rustfmt::skip]
 pub mod bounds {
     pub const MAX_REQUEST_BYTES: u64 = 1048576;
     pub const DEFAULT_TIMEOUT_MS: u64 = 600000;
@@ -56,6 +61,7 @@ pub mod bounds {
 }
 
 /// The closed enum vocabularies (stable wire spellings).
+#[rustfmt::skip]
 pub mod enums {
     pub const RESPONSESTATUS: &[&str] = &["ok", "error"];
     pub const TRANSPORT: &[&str] = &["stdin", "file"];
@@ -73,14 +79,18 @@ pub mod enums {
 
 /// One per-version operation row of the generated compatibility matrix.
 #[derive(Clone, Debug)]
+#[rustfmt::skip]
 pub struct VersionOperations {
     pub operations: &'static [&'static str],
     pub protocol_version: &'static str,
 }
 
+#[rustfmt::skip]
 pub const OPERATIONS_V0_3_2: &[&str] = &["bind", "clean", "describe", "generate", "plan-clean", "plan-native", "scan", "validate", "verify"];
+#[rustfmt::skip]
 pub const OPERATIONS_V0_6_4: &[&str] = &["bind", "clean", "describe", "generate", "lint", "plan-clean", "plan-native", "scan", "validate", "verify"];
 
+#[rustfmt::skip]
 pub const OPERATIONS_BY_VERSION: &[VersionOperations] = &[
     VersionOperations { operations: OPERATIONS_V0_3_2, protocol_version: "0.3.2" },
     VersionOperations { operations: OPERATIONS_V0_6_4, protocol_version: "0.6.4" },

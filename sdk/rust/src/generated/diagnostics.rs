@@ -8,9 +8,11 @@
 /// the SDK validates builders against the selected canonical registry
 /// instead of becoming a second source of codes.
 pub const DIAGNOSTIC_REGISTRY_IDENTITY: &str = "dev.lekalo.diagnostic-registry@0.6.4";
+#[rustfmt::skip]
 pub const DIAGNOSTIC_REGISTRY_DIGEST: &str = "sha256:323d4614eef262b5d4a3a0afaab9e07a4921a7c409bb3f64d16c93060ff71e9f";
 
 /// The id-sorted registry codes available to adapter builders.
+#[rustfmt::skip]
 pub const DIAGNOSTIC_CODES: &[(&str, &str)] = &[
     ("adapter.check-failed", "LEK-ADP-002"),
     ("adapter.checksum-mismatch", "LEK-ADP-007"),

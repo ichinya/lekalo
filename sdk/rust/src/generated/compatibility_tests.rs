@@ -19,6 +19,7 @@ pub struct CompatibilityCase {
     pub wire_token: Option<&'static str>,
 }
 
+#[rustfmt::skip]
 pub const COMPATIBILITY_MATRIX: &[CompatibilityCase] = &[
     CompatibilityCase { admitted: true, operation: None, protocol_version: "0.3.2", reason: None, wire_token: Some("lekalo.target/v1") },
     CompatibilityCase { admitted: true, operation: None, protocol_version: "0.6.4", reason: None, wire_token: Some("lekalo.target/v1") },
@@ -31,4 +32,3 @@ pub const COMPATIBILITY_MATRIX: &[CompatibilityCase] = &[
     CompatibilityCase { admitted: false, operation: Some("plan-native"), protocol_version: "0.3.2", reason: Some("native-request"), wire_token: Some("lekalo.target/v1") },
     CompatibilityCase { admitted: false, operation: Some("transpile"), protocol_version: "0.6.4", reason: Some("operation"), wire_token: Some("lekalo.target/v1") },
 ];
-

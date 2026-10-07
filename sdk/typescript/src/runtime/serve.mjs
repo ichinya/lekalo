@@ -4,12 +4,14 @@
  * coordinate, decode and validate it, dispatch one operation callback,
  * and emit exactly one compact canonical response on stdout.
  *
- * Lifecycle rules implemented here: ambiguous input sources are refused,
- * cooperative deadline tokens reach the callbacks, logs stay on bounded
- * redacted stderr, an unknown request that cannot be answered yields a
- * bounded stderr line and a nonzero exit (never a fabricated success),
- * and a known request with failing builder output yields a valid closed
- * error envelope when possible.
+ * Lifecycle rules implemented here: the host-owned file coordinate wins
+ * whenever present (a piped stdin next to it is the ordinary host shape,
+ * never an ambiguity), empty stdin without a file flag is the only
+ * missing-input refusal, cooperative deadline tokens reach the callbacks,
+ * logs stay on bounded redacted stderr, an unknown request that cannot be
+ * answered yields a bounded stderr line and a nonzero exit (never a
+ * fabricated success), and a known request with failing builder output
+ * yields a valid closed error envelope when possible.
  */
 import { readFileSync, readSync } from "node:fs";
 import { BOUNDS } from "../generated/protocol.mjs";
@@ -19,6 +21,16 @@ import { buildError, buildSuccess, responseBytes } from "./build.mjs";
 import { stderrLogger } from "./logger.mjs";
 
 const MAX_REQUEST_BYTES = BOUNDS.MAX_REQUEST_BYTES;
+const MAX_OUTPUT_BYTES = BOUNDS.DEFAULT_MAX_OUTPUT_BYTES;
+
+/**
+ * The one input-source contract (issue #106), implemented identically in
+ * all four runtimes: the host-owned `--lekalo-request-file` coordinate
+ * wins whenever present. A piped stdin alongside it is the ordinary host
+ * shape (the host always spawns adapters with piped stdio), so pipe-ness
+ * is never ambiguous. Empty stdin without a file flag is the only
+ * missing-input refusal.
+ */
 
 /**
  * Serve exactly one exchange. The adapter provides:
@@ -29,10 +41,6 @@ const MAX_REQUEST_BYTES = BOUNDS.MAX_REQUEST_BYTES;
  */
 export async function serve(adapter, io = defaultIo()) {
   const log = stderrLogger(adapter.identity.id);
-  if (io.fileRequested() && io.stdinPiped()) {
-    log.error("transport: ambiguous input sources");
-    return 1;
-  }
   let raw;
   try {
     raw = io.readInput();
@@ -58,7 +66,16 @@ export async function serve(adapter, io = defaultIo()) {
     response = buildFailureResponse(adapter, request, error, log);
   }
   if (response === null) return 1;
-  io.writeOutput(responseBytes(response));
+  // Bounded emission (issue #106): the completed envelope is admitted and
+  // serialized into a bounded buffer before a single stdout byte is
+  // written. A response over the accepted output ceiling refuses here —
+  // never a truncated ok written to the stream.
+  const bytes = responseBytes(response);
+  if (bytes.length > MAX_OUTPUT_BYTES) {
+    log.error(`response refused: output-limit`);
+    return 1;
+  }
+  io.writeOutput(bytes);
   return 0;
 }
 
@@ -122,12 +139,12 @@ function buildFailureResponse(adapter, request, error, log) {
   }
 }
 
-/** The real process IO: stdin/file in, canonical stdout out. */
+/** The real process IO: file-flag-first request in, canonical stdout out. */
 function defaultIo() {
   return {
     fileRequested: () => process.argv.includes("--lekalo-request-file"),
     readInput: readRequestInput,
-    stdinPiped: () => process.stdin.isTTY === false,
+    stdinPiped: () => !process.stdin.isTTY,
     writeOutput: (bytes) => process.stdout.write(bytes),
   };
 }

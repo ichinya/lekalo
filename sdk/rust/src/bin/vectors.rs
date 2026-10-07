@@ -2,9 +2,9 @@
 //! (issue #106). Mirrors `sdk/typescript/test/vectors.mjs` exactly and
 //! prints the same one-line JSON verdict for the parity gate.
 
-use std::fs;
 use lekalo_adapter_sdk as sdk;
 use sdk::{canonical, Value};
+use std::fs;
 
 fn corpus_path() -> String {
     for arg in std::env::args().skip(1) {
@@ -23,7 +23,10 @@ struct Verdict {
 
 impl Verdict {
     fn new() -> Self {
-        Self { results: Vec::new(), canonical_outputs: Vec::new() }
+        Self {
+            results: Vec::new(),
+            canonical_outputs: Vec::new(),
+        }
     }
 
     fn record(&mut self, name: &str, ok: bool, detail: &str) {
@@ -78,7 +81,11 @@ fn main() {
         };
         if is_response {
             let decoded = sdk::admit_response(&text);
-            verdict.record(&format!("valid/{name}"), decoded.is_ok(), &format!("{:?}", decoded.err().map(|r| r.reason)));
+            verdict.record(
+                &format!("valid/{name}"),
+                decoded.is_ok(),
+                &format!("{:?}", decoded.err().map(|r| r.reason)),
+            );
         } else {
             match sdk::decode_request(&text) {
                 Ok(_) => verdict.record(&format!("valid/{name}"), true, ""),
@@ -90,12 +97,23 @@ fn main() {
     // invalid/
     for name in list(&corpus, "invalid") {
         let text = read(&corpus, &format!("invalid/{name}"));
-        let expect_text = read(&corpus, &format!("invalid/{}.expect.json", name.trim_end_matches(".json")));
+        let expect_text = read(
+            &corpus,
+            &format!("invalid/{}.expect.json", name.trim_end_matches(".json")),
+        );
         let expect = sdk::strict_parse(&expect_text);
         let (expect_stage, expect_reason) = match &expect {
             Ok(value) => (
-                value.get("stage").and_then(Value::as_str).unwrap_or("").to_owned(),
-                value.get("reason").and_then(Value::as_str).unwrap_or("").to_owned(),
+                value
+                    .get("stage")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_owned(),
+                value
+                    .get("reason")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_owned(),
             ),
             Err(_) => (String::new(), String::new()),
         };
@@ -115,7 +133,11 @@ fn main() {
             }
         };
         let ok = actual.0 == expect_stage && actual.1 == expect_reason;
-        verdict.record(&format!("invalid/{name}"), ok, &format!("{actual:?} vs {expect_stage}/{expect_reason}"));
+        verdict.record(
+            &format!("invalid/{name}"),
+            ok,
+            &format!("{actual:?} vs {expect_stage}/{expect_reason}"),
+        );
     }
 
     // semantic/
@@ -134,142 +156,197 @@ fn main() {
             Some((kind, reason)) => (kind, reason),
             None => (expect, ""),
         };
-        let outcome: Result<bool, String> = (|| {
-            match kind {
-                "validate-before-write" => {
-                    let request = sdk::decode_request(&json_text(&vector, "request")).map_err(|r| r.reason)?;
-                    let response = sdk::admit_response(&json_text(&vector, "response")).map_err(|r| r.reason)?;
-                    let identity = sdk::validate_response_identity(
-                        &response,
-                        (
-                            request.get("protocol_version").and_then(Value::as_str).unwrap_or(""),
-                            request.get("operation").and_then(Value::as_str).unwrap_or(""),
-                            request.get("request_id").and_then(Value::as_str).unwrap_or(""),
-                        ),
-                    );
-                    let reason = match identity {
+        let outcome: Result<bool, String> = (|| match kind {
+            "validate-before-write" => {
+                let request =
+                    sdk::decode_request(&json_text(&vector, "request")).map_err(|r| r.reason)?;
+                let response =
+                    sdk::admit_response(&json_text(&vector, "response")).map_err(|r| r.reason)?;
+                let identity = sdk::validate_response_identity(
+                    &response,
+                    (
+                        request
+                            .get("protocol_version")
+                            .and_then(Value::as_str)
+                            .unwrap_or(""),
+                        request
+                            .get("operation")
+                            .and_then(Value::as_str)
+                            .unwrap_or(""),
+                        request
+                            .get("request_id")
+                            .and_then(Value::as_str)
+                            .unwrap_or(""),
+                    ),
+                );
+                let reason = match identity {
+                    Err(refusal) => refusal.reason,
+                    Ok(()) => match sdk::validate_response_payload(&request, &response) {
                         Err(refusal) => refusal.reason,
-                        Ok(()) => match sdk::validate_response_payload(&request, &response) {
-                            Err(refusal) => refusal.reason,
-                            Ok(()) => String::new(),
-                        },
-                    };
-                    Ok(if reason.is_empty() {
-                        expect_kind == "accept"
-                    } else {
-                        expect_kind == "reject" && expect_reason == reason
-                    })
-                }
-                "build-success" => {
-                    let request = sdk::decode_request(&json_text(&vector, "request")).map_err(|r| r.reason)?;
-                    let builder = vector.get("builder").ok_or_else(|| "no-builder".to_owned())?;
-                    let identity_text = canonical(builder.get("identity").ok_or_else(|| "no-identity".to_owned())?);
-                    let identity = sdk::admit_response(&format!(
-                        "{{\"evidence\":{{\"adapter\":{identity_text}}},\"operation\":\"describe\",\"protocol\":\"lekalo.target/v1\",\"protocol_version\":\"0.3.2\",\"request_id\":\"req-{}\",\"status\":\"ok\"}}",
-                        "0".repeat(64)
-                    )).map_err(|r| r.reason)?;
-                    let adapter = identity.get("evidence").and_then(|e| e.get("adapter")).cloned().unwrap_or(Value::Null);
-                    let fragments = builder.get("fragments");
-                    let capabilities = builder.get("capabilities").cloned();
-                    let envelope = sdk::build_success(
-                        &request,
-                        &adapter,
-                        capabilities.as_ref(),
-                        fragments.and_then(|f| f.get("payload")),
-                        fragments.and_then(|f| f.get("writes")),
-                        fragments.and_then(|f| f.get("progress")),
-                        fragments.and_then(|f| f.get("planId")).and_then(Value::as_str),
-                    ).map_err(|e| e.reason)?;
-                    let mut ok = expect_kind == "accept";
-                    if ok {
-                        if let Some(expected_writes) = fragments.and_then(|f| f.get("writes")) {
-                            let sorted = sdk::canonical(&envelope.get("writes").cloned().unwrap_or(Value::Null));
-                            let reference = sdk::canonical(&{
-                                let mut items: Vec<Value> = expected_writes.as_array().map(|slice| slice.to_vec()).unwrap_or_default();
-                                items.sort_by(|a, b| a.get("path").and_then(Value::as_str).cmp(&b.get("path").and_then(Value::as_str)));
-                                Value::Array(items)
-                            });
-                            ok = sorted == reference;
-                        }
-                    }
-                    Ok(ok)
-                }
-                "build-error" => {
-                    let request = sdk::decode_request(&json_text(&vector, "request")).map_err(|r| r.reason)?;
-                    let builder = vector.get("builder").ok_or("no-builder")?;
-                    let error = builder.get("error").ok_or_else(|| "no-error".to_owned())?;
-                    let identity_text = canonical(builder.get("identity").ok_or("no-identity")?);
-                    let identity_probe = sdk::admit_response(&format!(
-                        "{{\"evidence\":{{\"adapter\":{identity_text}}},\"operation\":\"describe\",\"protocol\":\"lekalo.target/v1\",\"protocol_version\":\"0.3.2\",\"request_id\":\"req-{}\",\"status\":\"ok\"}}",
-                        "0".repeat(64)
-                    )).map_err(|r| r.reason)?;
-                    let adapter = identity_probe.get("evidence").and_then(|e| e.get("adapter")).cloned().unwrap_or(Value::Null);
-                    match sdk::build_error(
-                        &request,
-                        &adapter,
-                        error.get("errorClass").and_then(Value::as_str).unwrap_or(""),
-                        error.get("errorCode").and_then(Value::as_str).unwrap_or(""),
-                        error.get("message").and_then(Value::as_str).unwrap_or(""),
-                        None,
-                    ) {
-                        Ok(envelope) => Ok(expect_kind == "accept"
-                            && envelope.get("status").and_then(Value::as_str) == Some("error")),
-                        Err(build_error) => {
-                            Ok(expect_kind == "reject" && expect_reason == build_error.reason)
-                        }
-                    }
-                }
-                "decode-oversize" => {
-                    let max_bytes = vector.get("maxBytes").and_then(Value::as_u64).unwrap_or(0) as usize;
-                    let text_value = vector.get("text").and_then(Value::as_str).unwrap_or("");
-                    match sdk::read_single_object(text_value, max_bytes) {
-                        Err(sdk::ParseReason::Oversize) => Ok(expect_kind == "reject" && expect_reason == "oversize"),
-                        _ => Ok(false),
-                    }
-                }
-                "canonical-plan" => {
-                    let writes = vector.get("writes").cloned().unwrap_or(Value::Null);
-                    let sorted = sdk::sort_write_plan(&writes).ok_or_else(|| "unsortable".to_owned())?;
-                    let plan_id = sdk::canonical_plan_id(&sorted);
-                    Ok(plan_id == vector.get("planId").and_then(Value::as_str).unwrap_or(""))
-                }
-                "artifact-manifest" => {
-                    let entries = vector.get("entries").and_then(Value::as_array).ok_or_else(|| "no-entries".to_owned())?;
-                    let pairs: Vec<(String, String)> = entries
-                        .iter()
-                        .map(|entry| {
-                            (
-                                entry.get("path").and_then(Value::as_str).unwrap_or("").to_owned(),
-                                entry.get("bytes").and_then(Value::as_str).unwrap_or("").to_owned(),
-                            )
-                        })
-                        .collect();
-                    let manifest = sdk::build_artifact_manifest(&pairs);
-                    if expect_kind == "reject" {
-                        Ok(manifest.is_none())
-                    } else {
-                        let expected_sorted = vector.get("expectSorted").and_then(Value::as_array);
-                        Ok(manifest.is_some()
-                            && expected_sorted.is_some()
-                            && sdk::canonical(&manifest.as_ref().unwrap().get("entries").unwrap())
-                                == sdk::canonical(&Value::Array(expected_sorted.unwrap().to_vec())))
-                    }
-                }
-                "scenario-result" => {
-                    let result = vector.get("result").cloned().unwrap_or(Value::Null);
-                    let normalized = sdk::normalize_scenario_result(&result);
-                    if expect_kind == "reject" {
-                        Ok(normalized.is_none())
-                    } else {
-                        let expected_findings = vector.get("normalizedFindings").and_then(Value::as_array);
-                        Ok(normalized.is_some()
-                            && expected_findings.is_some()
-                            && sdk::canonical(&normalized.as_ref().unwrap().get("findings").unwrap())
-                                == sdk::canonical(&Value::Array(expected_findings.unwrap().to_vec())))
-                    }
-                }
-                _ => Err("unknown-kind".to_owned()),
+                        Ok(()) => String::new(),
+                    },
+                };
+                Ok(if reason.is_empty() {
+                    expect_kind == "accept"
+                } else {
+                    expect_kind == "reject" && expect_reason == reason
+                })
             }
+            "build-success" => {
+                let request =
+                    sdk::decode_request(&json_text(&vector, "request")).map_err(|r| r.reason)?;
+                let builder = vector
+                    .get("builder")
+                    .ok_or_else(|| "no-builder".to_owned())?;
+                let identity_text = canonical(
+                    builder
+                        .get("identity")
+                        .ok_or_else(|| "no-identity".to_owned())?,
+                );
+                let identity = sdk::admit_response(&format!(
+                        "{{\"evidence\":{{\"adapter\":{identity_text}}},\"operation\":\"describe\",\"protocol\":\"lekalo.target/v1\",\"protocol_version\":\"0.3.2\",\"request_id\":\"req-{}\",\"status\":\"ok\"}}",
+                        "0".repeat(64)
+                    )).map_err(|r| r.reason)?;
+                let adapter = identity
+                    .get("evidence")
+                    .and_then(|e| e.get("adapter"))
+                    .cloned()
+                    .unwrap_or(Value::Null);
+                let fragments = builder.get("fragments");
+                let capabilities = builder.get("capabilities").cloned();
+                let envelope = sdk::build_success(
+                    &request,
+                    &adapter,
+                    capabilities.as_ref(),
+                    fragments.and_then(|f| f.get("payload")),
+                    fragments.and_then(|f| f.get("writes")),
+                    fragments.and_then(|f| f.get("progress")),
+                    fragments
+                        .and_then(|f| f.get("planId"))
+                        .and_then(Value::as_str),
+                )
+                .map_err(|e| e.reason)?;
+                let mut ok = expect_kind == "accept";
+                if ok {
+                    if let Some(expected_writes) = fragments.and_then(|f| f.get("writes")) {
+                        let sorted =
+                            sdk::canonical(&envelope.get("writes").cloned().unwrap_or(Value::Null));
+                        let reference = sdk::canonical(&{
+                            let mut items: Vec<Value> = expected_writes
+                                .as_array()
+                                .map(|slice| slice.to_vec())
+                                .unwrap_or_default();
+                            items.sort_by(|a, b| {
+                                a.get("path")
+                                    .and_then(Value::as_str)
+                                    .cmp(&b.get("path").and_then(Value::as_str))
+                            });
+                            Value::Array(items)
+                        });
+                        ok = sorted == reference;
+                    }
+                }
+                Ok(ok)
+            }
+            "build-error" => {
+                let request =
+                    sdk::decode_request(&json_text(&vector, "request")).map_err(|r| r.reason)?;
+                let builder = vector.get("builder").ok_or("no-builder")?;
+                let error = builder.get("error").ok_or_else(|| "no-error".to_owned())?;
+                let identity_text = canonical(builder.get("identity").ok_or("no-identity")?);
+                let identity_probe = sdk::admit_response(&format!(
+                        "{{\"evidence\":{{\"adapter\":{identity_text}}},\"operation\":\"describe\",\"protocol\":\"lekalo.target/v1\",\"protocol_version\":\"0.3.2\",\"request_id\":\"req-{}\",\"status\":\"ok\"}}",
+                        "0".repeat(64)
+                    )).map_err(|r| r.reason)?;
+                let adapter = identity_probe
+                    .get("evidence")
+                    .and_then(|e| e.get("adapter"))
+                    .cloned()
+                    .unwrap_or(Value::Null);
+                match sdk::build_error(
+                    &request,
+                    &adapter,
+                    error
+                        .get("errorClass")
+                        .and_then(Value::as_str)
+                        .unwrap_or(""),
+                    error.get("errorCode").and_then(Value::as_str).unwrap_or(""),
+                    error.get("message").and_then(Value::as_str).unwrap_or(""),
+                    None,
+                ) {
+                    Ok(envelope) => Ok(expect_kind == "accept"
+                        && envelope.get("status").and_then(Value::as_str) == Some("error")),
+                    Err(build_error) => {
+                        Ok(expect_kind == "reject" && expect_reason == build_error.reason)
+                    }
+                }
+            }
+            "decode-oversize" => {
+                let max_bytes =
+                    vector.get("maxBytes").and_then(Value::as_u64).unwrap_or(0) as usize;
+                let text_value = vector.get("text").and_then(Value::as_str).unwrap_or("");
+                match sdk::read_single_object(text_value, max_bytes) {
+                    Err(sdk::ParseReason::Oversize) => {
+                        Ok(expect_kind == "reject" && expect_reason == "oversize")
+                    }
+                    _ => Ok(false),
+                }
+            }
+            "canonical-plan" => {
+                let writes = vector.get("writes").cloned().unwrap_or(Value::Null);
+                let sorted =
+                    sdk::sort_write_plan(&writes).ok_or_else(|| "unsortable".to_owned())?;
+                let plan_id = sdk::canonical_plan_id(&sorted);
+                Ok(plan_id == vector.get("planId").and_then(Value::as_str).unwrap_or(""))
+            }
+            "artifact-manifest" => {
+                let entries = vector
+                    .get("entries")
+                    .and_then(Value::as_array)
+                    .ok_or_else(|| "no-entries".to_owned())?;
+                let pairs: Vec<(String, String)> = entries
+                    .iter()
+                    .map(|entry| {
+                        (
+                            entry
+                                .get("path")
+                                .and_then(Value::as_str)
+                                .unwrap_or("")
+                                .to_owned(),
+                            entry
+                                .get("bytes")
+                                .and_then(Value::as_str)
+                                .unwrap_or("")
+                                .to_owned(),
+                        )
+                    })
+                    .collect();
+                let manifest = sdk::build_artifact_manifest(&pairs);
+                if expect_kind == "reject" {
+                    Ok(manifest.is_none())
+                } else {
+                    let expected_sorted = vector.get("expectSorted").and_then(Value::as_array);
+                    Ok(manifest.is_some()
+                        && expected_sorted.is_some()
+                        && sdk::canonical(manifest.as_ref().unwrap().get("entries").unwrap())
+                            == sdk::canonical(&Value::Array(expected_sorted.unwrap().to_vec())))
+                }
+            }
+            "scenario-result" => {
+                let result = vector.get("result").cloned().unwrap_or(Value::Null);
+                let normalized = sdk::normalize_scenario_result(&result);
+                if expect_kind == "reject" {
+                    Ok(normalized.is_none())
+                } else {
+                    let expected_findings =
+                        vector.get("normalizedFindings").and_then(Value::as_array);
+                    Ok(normalized.is_some()
+                        && expected_findings.is_some()
+                        && sdk::canonical(normalized.as_ref().unwrap().get("findings").unwrap())
+                            == sdk::canonical(&Value::Array(expected_findings.unwrap().to_vec())))
+                }
+            }
+            _ => Err("unknown-kind".to_owned()),
         })();
         match outcome {
             Ok(true) => verdict.record(&format!("semantic/{name}"), true, ""),
@@ -293,9 +370,15 @@ fn main() {
         };
         let value = vector.get("value").cloned().unwrap_or(Value::Null);
         let bytes = sdk::canonical(&value);
-        verdict.canonical_outputs.push((format!("canonical/{name}"), bytes.clone()));
+        verdict
+            .canonical_outputs
+            .push((format!("canonical/{name}"), bytes.clone()));
         let round_trip = sdk::strict_parse(&bytes);
-        let ok = bytes == vector.get("canonical").and_then(Value::as_str).unwrap_or("")
+        let ok = bytes
+            == vector
+                .get("canonical")
+                .and_then(Value::as_str)
+                .unwrap_or("")
             && round_trip.is_ok()
             && sdk::canonical(&round_trip.unwrap()) == sdk::canonical(&value);
         verdict.record(&format!("canonical/{name}"), ok, &bytes);
@@ -319,31 +402,58 @@ fn main() {
         let ok;
         if vector.get("scopeGrammar").and_then(Value::as_bool) == Some(true) {
             let value = vector.get("value").and_then(Value::as_str).unwrap_or("");
-            ok = sdk::is_scope(value) == vector.get("scopeOk").and_then(Value::as_bool).unwrap_or(false)
+            ok = sdk::is_scope(value)
+                == vector
+                    .get("scopeOk")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false)
                 && vector
                     .get("touches")
-                    .map(|touches| sdk::scope_touches_protected_home(value).map(str::to_owned) == touches.as_str().map(str::to_owned))
+                    .map(|touches| {
+                        sdk::scope_touches_protected_home(value).map(str::to_owned)
+                            == touches.as_str().map(str::to_owned)
+                    })
                     .unwrap_or(true)
                 && vector
                     .get("logical")
-                    .map(|logical| sdk::is_logical_path(value) == logical.as_bool().unwrap_or(false))
+                    .map(|logical| {
+                        sdk::is_logical_path(value) == logical.as_bool().unwrap_or(false)
+                    })
                     .unwrap_or(true);
         } else if let Some(token) = vector.get("token").and_then(Value::as_str) {
-            ok = sdk::is_token(token) == vector.get("tokenOk").and_then(Value::as_bool).unwrap_or(false);
+            ok = sdk::is_token(token)
+                == vector
+                    .get("tokenOk")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
         } else if let Some(capability) = vector.get("capability").and_then(Value::as_str) {
-            ok = sdk::is_capability_id(capability) == vector.get("tokenOk").and_then(Value::as_bool).unwrap_or(false);
+            ok = sdk::is_capability_id(capability)
+                == vector
+                    .get("tokenOk")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
         } else {
             let path = vector.get("path").and_then(Value::as_str).unwrap_or("");
-            ok = sdk::is_logical_path(path) == vector.get("logical").and_then(Value::as_bool).unwrap_or(false)
+            ok = sdk::is_logical_path(path)
+                == vector
+                    .get("logical")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false)
                 && vector
                     .get("home")
-                    .map(|home| sdk::protected_home(path).map(str::to_owned) == home.as_str().map(str::to_owned))
+                    .map(|home| {
+                        sdk::protected_home(path).map(str::to_owned)
+                            == home.as_str().map(str::to_owned)
+                    })
                     .unwrap_or(true)
                 && vector
                     .get("scope")
                     .map(|scope| {
                         sdk::scope_covers(scope.as_str().unwrap_or(""), path)
-                            == vector.get("covers").and_then(Value::as_bool).unwrap_or(false)
+                            == vector
+                                .get("covers")
+                                .and_then(Value::as_bool)
+                                .unwrap_or(false)
                     })
                     .unwrap_or(true);
         }
@@ -368,13 +478,17 @@ fn main() {
                 Err(refusal) => (false, refusal.reason),
             },
         };
-        let expect_accept = vector.get("accept").and_then(Value::as_bool).unwrap_or(false);
+        let expect_accept = vector
+            .get("accept")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
         let expect_reason = vector.get("reason").and_then(Value::as_str).unwrap_or("");
         let ok = expect_accept == accepted.0 && (expect_accept || expect_reason == accepted.1);
         verdict.record(&format!("upgrade/{name}"), ok, &format!("{:?}", accepted));
     }
 
-    let failed: Vec<&(String, bool, String)> = verdict.results.iter().filter(|(_, ok, _)| !ok).collect();
+    let failed: Vec<&(String, bool, String)> =
+        verdict.results.iter().filter(|(_, ok, _)| !ok).collect();
     let canonical_json: Vec<String> = verdict
         .canonical_outputs
         .iter()
@@ -390,7 +504,12 @@ fn main() {
     if !failed.is_empty() {
         let failures: Vec<String> = failed
             .iter()
-            .map(|(name, _, detail)| format!("{{\"name\":\"{name}\",\"detail\":\"{}\"}}", json_escape(detail)))
+            .map(|(name, _, detail)| {
+                format!(
+                    "{{\"name\":\"{name}\",\"detail\":\"{}\"}}",
+                    json_escape(detail)
+                )
+            })
             .collect();
         out.push_str(&format!(",\"failures\":[{}]", failures.join(",")));
     }

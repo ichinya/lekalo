@@ -10,6 +10,7 @@
  */
 import { BOUNDS, ENUMS, WIRE_TOKEN } from "../generated/protocol.mjs";
 import { canonicalJson } from "./json.mjs";
+import { decodeResponse } from "./decode.mjs";
 import { isContractVersion, isToken } from "./paths.mjs";
 import { isPlanId, isSha256Digest } from "./ids.mjs";
 import { validateResponsePayload } from "./validate.mjs";
@@ -145,7 +146,11 @@ export function buildError({ adapter, detail, errorCode, errorClass, message, re
   return finishEnvelope(envelope, request);
 }
 
-/** Final admission: every envelope passes the full validator before emission. */
+/** Final admission: every envelope passes the full closed validator AND the
+ * strict structural response decoder before emission (issue #106: the
+ * validate-before-write boundary admits the completed wire form, not just
+ * the builder's payload view — a semantic-clean envelope with a
+ * structurally malformed member can never reach stdout). */
 function finishEnvelope(envelope, request) {
   if (envelope.writes !== undefined) {
     const sorted = sortWritePlan(envelope.writes);
@@ -155,6 +160,9 @@ function finishEnvelope(envelope, request) {
   const verdict = validateResponsePayload(request, envelope);
   if (!verdict.ok) throw new SdkBuildError(verdict.reason);
   if (!isPlanIdSafe(envelope)) throw new SdkBuildError("plan-id");
+  const text = canonicalJson(envelope);
+  const admitted = decodeResponse(text);
+  if (!admitted.ok) throw new SdkBuildError(admitted.reason);
   return envelope;
 }
 

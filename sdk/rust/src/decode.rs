@@ -18,7 +18,10 @@ pub struct Refusal {
 
 impl Refusal {
     fn new(stage: &'static str, reason: &str) -> Self {
-        Self { stage, reason: reason.to_owned() }
+        Self {
+            stage,
+            reason: reason.to_owned(),
+        }
     }
 }
 
@@ -57,7 +60,11 @@ fn parse_reason(reason: &ParseReason) -> &str {
 }
 
 fn str_members(value: &Value) -> Vec<String> {
-    value.member_names().into_iter().map(str::to_owned).collect()
+    value
+        .member_names()
+        .into_iter()
+        .map(str::to_owned)
+        .collect()
 }
 
 fn explicit_null(object: &Value, key: &str) -> bool {
@@ -68,29 +75,56 @@ fn is_closed_object(value: &Value, allowed: &[&str]) -> bool {
     if !value.is_object() {
         return false;
     }
-    str_members(value).iter().all(|key| allowed.contains(&key.as_str()))
+    str_members(value)
+        .iter()
+        .all(|key| allowed.contains(&key.as_str()))
 }
 
 fn bounded_text(value: &Value, max: usize) -> bool {
-    value.as_str().is_some_and(|text| text.chars().count() <= max)
+    value
+        .as_str()
+        .is_some_and(|text| text.chars().count() <= max)
 }
 
 /// Structural admission of one request envelope (closed shape + bounds).
 pub fn admit_request_value(value: &Value) -> Result<(), Refusal> {
     let refuse = |reason: &str| Err(Refusal::new("decode", reason));
     let allowed = [
-        "dry_run", "ir_path", "limits", "lint_request", "native_request", "operation", "plan_id",
-        "profile", "profile_capabilities", "profile_digest", "project_root", "protocol",
-        "protocol_version", "request_id", "target",
+        "dry_run",
+        "ir_path",
+        "limits",
+        "lint_request",
+        "native_request",
+        "operation",
+        "plan_id",
+        "profile",
+        "profile_capabilities",
+        "profile_digest",
+        "project_root",
+        "protocol",
+        "protocol_version",
+        "request_id",
+        "target",
     ];
     if !is_closed_object(value, &allowed) {
-        return refuse(if str_members(value).iter().any(|k| !allowed.contains(&k.as_str())) {
-            "unknown-member"
-        } else {
-            "shape"
-        });
+        return refuse(
+            if str_members(value)
+                .iter()
+                .any(|k| !allowed.contains(&k.as_str()))
+            {
+                "unknown-member"
+            } else {
+                "shape"
+            },
+        );
     }
-    for member in ["protocol", "protocol_version", "operation", "request_id", "project_root"] {
+    for member in [
+        "protocol",
+        "protocol_version",
+        "operation",
+        "request_id",
+        "project_root",
+    ] {
         if value.get(member).is_none() {
             return refuse("shape");
         }
@@ -101,7 +135,10 @@ pub fn admit_request_value(value: &Value) -> Result<(), Refusal> {
     if value.get("protocol").and_then(Value::as_str) != Some(protocol::WIRE_TOKEN) {
         return refuse("token");
     }
-    let version = value.get("protocol_version").and_then(Value::as_str).unwrap_or("");
+    let version = value
+        .get("protocol_version")
+        .and_then(Value::as_str)
+        .unwrap_or("");
     if !protocol::SUPPORTED_PROTOCOL_VERSIONS.contains(&version) {
         return refuse("version");
     }
@@ -109,7 +146,11 @@ pub fn admit_request_value(value: &Value) -> Result<(), Refusal> {
     if !protocol::LATEST_OPERATIONS.contains(&operation) {
         return refuse("operation");
     }
-    if value.get("request_id").and_then(Value::as_str).is_some_and(|value| !is_request_id(value)) {
+    if value
+        .get("request_id")
+        .and_then(Value::as_str)
+        .is_some_and(|value| !is_request_id(value))
+    {
         return refuse("request-id");
     }
     if value.get("project_root").and_then(Value::as_str) != Some(".") {
@@ -186,8 +227,20 @@ fn admit_limits(value: &Value) -> Result<(), Refusal> {
         return Err(Refusal::new("decode", "shape"));
     }
     for (member, (min, max)) in [
-        ("timeout_ms", (protocol::bounds::LIMITS_TIMEOUT_MIN, protocol::bounds::LIMITS_TIMEOUT_MAX)),
-        ("max_output_bytes", (protocol::bounds::LIMITS_OUTPUT_MIN, protocol::bounds::LIMITS_OUTPUT_MAX)),
+        (
+            "timeout_ms",
+            (
+                protocol::bounds::LIMITS_TIMEOUT_MIN,
+                protocol::bounds::LIMITS_TIMEOUT_MAX,
+            ),
+        ),
+        (
+            "max_output_bytes",
+            (
+                protocol::bounds::LIMITS_OUTPUT_MIN,
+                protocol::bounds::LIMITS_OUTPUT_MAX,
+            ),
+        ),
     ] {
         if explicit_null(value, member) {
             return Err(Refusal::new("decode", "explicit-null"));
@@ -214,15 +267,29 @@ fn admit_profile_capabilities(value: &Value) -> Result<(), Refusal> {
         if !is_closed_object(capability, &["id", "support"]) {
             return Err(Refusal::new("decode", "shape"));
         }
-        if !capability.get("id").and_then(Value::as_str).is_some_and(is_capability_id) {
+        if !capability
+            .get("id")
+            .and_then(Value::as_str)
+            .is_some_and(is_capability_id)
+        {
             return Err(Refusal::new("decode", "bounds"));
         }
-        let support = capability.get("support").and_then(Value::as_str).unwrap_or("");
+        let support = capability
+            .get("support")
+            .and_then(Value::as_str)
+            .unwrap_or("");
         if !protocol::enums::SUPPORTSTATE.contains(&support) {
             return Err(Refusal::new("decode", "shape"));
         }
-        let id = capability.get("id").and_then(Value::as_str).unwrap_or("").to_owned();
-        if previous.as_deref().is_some_and(|previous| id.as_str() <= previous) {
+        let id = capability
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_owned();
+        if previous
+            .as_deref()
+            .is_some_and(|previous| id.as_str() <= previous)
+        {
             return Err(Refusal::new("decode", "bounds"));
         }
         previous = Some(id);
@@ -234,7 +301,11 @@ fn admit_content_ref(value: &Value) -> Result<(), Refusal> {
     if !is_closed_object(value, &["adapter", "digest", "revision"]) {
         return Err(Refusal::new("decode", "shape"));
     }
-    if !value.get("digest").and_then(Value::as_str).is_some_and(is_sha256_digest) {
+    if !value
+        .get("digest")
+        .and_then(Value::as_str)
+        .is_some_and(is_sha256_digest)
+    {
         return Err(Refusal::new("decode", "bounds"));
     }
     for member in ["adapter", "revision"] {
@@ -252,26 +323,47 @@ fn admit_content_ref(value: &Value) -> Result<(), Refusal> {
 
 fn admit_native_request(value: &Value) -> Result<(), Refusal> {
     let allowed = [
-        "capability_snapshot_digest", "changes", "execution_policy_ref", "input_manifest_digest",
-        "observed_ref", "scan_ref", "tool_catalog_digest",
+        "capability_snapshot_digest",
+        "changes",
+        "execution_policy_ref",
+        "input_manifest_digest",
+        "observed_ref",
+        "scan_ref",
+        "tool_catalog_digest",
     ];
     if !is_closed_object(value, &allowed) {
         return Err(Refusal::new("decode", "shape"));
     }
-    for member in ["input_manifest_digest", "tool_catalog_digest", "capability_snapshot_digest"] {
+    for member in [
+        "input_manifest_digest",
+        "tool_catalog_digest",
+        "capability_snapshot_digest",
+    ] {
         if explicit_null(value, member) {
             return Err(Refusal::new("decode", "explicit-null"));
         }
-        if !value.get(member).and_then(Value::as_str).is_some_and(is_sha256_digest) {
+        if !value
+            .get(member)
+            .and_then(Value::as_str)
+            .is_some_and(is_sha256_digest)
+        {
             return Err(Refusal::new("decode", "bounds"));
         }
     }
-    let changes = value.get("changes").ok_or_else(|| Refusal::new("decode", "shape"))?;
+    let changes = value
+        .get("changes")
+        .ok_or_else(|| Refusal::new("decode", "shape"))?;
     if !is_closed_object(changes, &["files", "symbols"]) {
         return Err(Refusal::new("decode", "shape"));
     }
-    let files = changes.get("files").and_then(Value::as_array).unwrap_or(&[]);
-    let symbols = changes.get("symbols").and_then(Value::as_array).unwrap_or(&[]);
+    let files = changes
+        .get("files")
+        .and_then(Value::as_array)
+        .unwrap_or(&[]);
+    let symbols = changes
+        .get("symbols")
+        .and_then(Value::as_array)
+        .unwrap_or(&[]);
     if files.len() > 1024 || symbols.len() > 1024 {
         return Err(Refusal::new("decode", "bounds"));
     }
@@ -280,7 +372,11 @@ fn admit_native_request(value: &Value) -> Result<(), Refusal> {
         if !is_closed_object(change, &["after_digest", "before_digest", "change", "path"]) {
             return Err(Refusal::new("decode", "shape"));
         }
-        if !change.get("path").and_then(Value::as_str).is_some_and(is_logical_path) {
+        if !change
+            .get("path")
+            .and_then(Value::as_str)
+            .is_some_and(is_logical_path)
+        {
             return Err(Refusal::new("decode", "bounds"));
         }
         let kind = change.get("change").and_then(Value::as_str).unwrap_or("");
@@ -297,8 +393,15 @@ fn admit_native_request(value: &Value) -> Result<(), Refusal> {
                 }
             }
         }
-        let path = change.get("path").and_then(Value::as_str).unwrap_or("").to_owned();
-        if previous.as_deref().is_some_and(|previous| path.as_str() <= previous) {
+        let path = change
+            .get("path")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_owned();
+        if previous
+            .as_deref()
+            .is_some_and(|previous| path.as_str() <= previous)
+        {
             return Err(Refusal::new("decode", "bounds"));
         }
         previous = Some(path);
@@ -331,7 +434,10 @@ fn admit_lint_request(value: &Value) -> Result<(), Refusal> {
     }
     let scope = value.get("scope").and_then(Value::as_array).unwrap_or(&[]);
     let files = value.get("files").and_then(Value::as_array).unwrap_or(&[]);
-    let bindings = value.get("bindings").and_then(Value::as_array).unwrap_or(&[]);
+    let bindings = value
+        .get("bindings")
+        .and_then(Value::as_array)
+        .unwrap_or(&[]);
     if scope.is_empty() || scope.len() > 10_000 || files.len() > 4_096 || bindings.len() > 10_000 {
         return Err(Refusal::new("decode", "bounds"));
     }
@@ -350,7 +456,11 @@ fn admit_lint_request(value: &Value) -> Result<(), Refusal> {
         if !is_closed_object(binding, &allowed) {
             return Err(Refusal::new("decode", "shape"));
         }
-        if !binding.get("path").and_then(Value::as_str).is_some_and(is_logical_path) {
+        if !binding
+            .get("path")
+            .and_then(Value::as_str)
+            .is_some_and(is_logical_path)
+        {
             return Err(Refusal::new("decode", "bounds"));
         }
         for member in ["native_id", "symbol"] {
@@ -362,17 +472,32 @@ fn admit_lint_request(value: &Value) -> Result<(), Refusal> {
         if !["command", "entity"].contains(&kind) {
             return Err(Refusal::new("decode", "shape"));
         }
-        if !binding.get("fingerprint").and_then(Value::as_str).is_some_and(is_sha256_digest) {
+        if !binding
+            .get("fingerprint")
+            .and_then(Value::as_str)
+            .is_some_and(is_sha256_digest)
+        {
             return Err(Refusal::new("decode", "bounds"));
         }
     }
     let pins = value.get("pins").unwrap_or(&Value::Null);
-    let allowed = ["capabilities", "ir", "model", "observed", "profile", "revision"];
+    let allowed = [
+        "capabilities",
+        "ir",
+        "model",
+        "observed",
+        "profile",
+        "revision",
+    ];
     if !is_closed_object(pins, &allowed) {
         return Err(Refusal::new("decode", "shape"));
     }
     for member in ["model", "ir"] {
-        if !pins.get(member).and_then(Value::as_str).is_some_and(is_sha256_digest) {
+        if !pins
+            .get(member)
+            .and_then(Value::as_str)
+            .is_some_and(is_sha256_digest)
+        {
             return Err(Refusal::new("decode", "bounds"));
         }
     }
@@ -397,13 +522,25 @@ fn admit_identity(value: &Value) -> Result<(), Refusal> {
     if !is_closed_object(value, &["digest", "id", "version"]) {
         return Err(Refusal::new("decode", "shape"));
     }
-    if !value.get("id").and_then(Value::as_str).is_some_and(is_token) {
+    if !value
+        .get("id")
+        .and_then(Value::as_str)
+        .is_some_and(is_token)
+    {
         return Err(Refusal::new("decode", "bounds"));
     }
-    if !value.get("version").and_then(Value::as_str).is_some_and(is_contract_version) {
+    if !value
+        .get("version")
+        .and_then(Value::as_str)
+        .is_some_and(is_contract_version)
+    {
         return Err(Refusal::new("decode", "bounds"));
     }
-    if !value.get("digest").and_then(Value::as_str).is_some_and(is_sha256_digest) {
+    if !value
+        .get("digest")
+        .and_then(Value::as_str)
+        .is_some_and(is_sha256_digest)
+    {
         return Err(Refusal::new("decode", "bounds"));
     }
     Ok(())
@@ -429,7 +566,11 @@ fn admit_write_entry(value: &Value) -> Result<(), Refusal> {
     if !is_closed_object(value, &["action", "path", "sha256"]) {
         return Err(Refusal::new("decode", "shape"));
     }
-    if !value.get("path").and_then(Value::as_str).is_some_and(is_logical_path) {
+    if !value
+        .get("path")
+        .and_then(Value::as_str)
+        .is_some_and(is_logical_path)
+    {
         return Err(Refusal::new("decode", "bounds"));
     }
     let action = value.get("action").and_then(Value::as_str).unwrap_or("");
@@ -451,7 +592,11 @@ fn admit_scan_entry(value: &Value) -> Result<(), Refusal> {
     if !is_closed_object(value, &["detail", "evidence", "kind", "path"]) {
         return Err(Refusal::new("decode", "shape"));
     }
-    if !value.get("path").and_then(Value::as_str).is_some_and(is_logical_path) {
+    if !value
+        .get("path")
+        .and_then(Value::as_str)
+        .is_some_and(is_logical_path)
+    {
         return Err(Refusal::new("decode", "bounds"));
     }
     if !bounded_text(value.get("kind").unwrap_or(&Value::Null), 128) {
@@ -480,7 +625,10 @@ fn admit_scan_entry(value: &Value) -> Result<(), Refusal> {
                 return Err(Refusal::new("decode", "bounds"));
             }
         }
-        let references = evidence.get("references").and_then(Value::as_array).unwrap_or(&[]);
+        let references = evidence
+            .get("references")
+            .and_then(Value::as_array)
+            .unwrap_or(&[]);
         if references.len() > protocol::bounds::REFERENCES_MAX as usize {
             return Err(Refusal::new("decode", "bounds"));
         }
@@ -495,7 +643,10 @@ fn admit_scan_entry(value: &Value) -> Result<(), Refusal> {
             if !protocol::enums::SCANENTRYREFERENCEROLE.contains(&role) {
                 return Err(Refusal::new("decode", "shape"));
             }
-            let confidence = reference.get("confidence").and_then(Value::as_str).unwrap_or("");
+            let confidence = reference
+                .get("confidence")
+                .and_then(Value::as_str)
+                .unwrap_or("");
             if !protocol::enums::SCANENTRYCONFIDENCE.contains(&confidence) {
                 return Err(Refusal::new("decode", "shape"));
             }
@@ -505,7 +656,16 @@ fn admit_scan_entry(value: &Value) -> Result<(), Refusal> {
 }
 
 fn admit_native_plan(value: &Value) -> Result<(), Refusal> {
-    let allowed = ["commands", "completeness", "digest", "entries", "kind", "packages", "run_eligibility", "units"];
+    let allowed = [
+        "commands",
+        "completeness",
+        "digest",
+        "entries",
+        "kind",
+        "packages",
+        "run_eligibility",
+        "units",
+    ];
     if !is_closed_object(value, &allowed) {
         return Err(Refusal::new("decode", "shape"));
     }
@@ -513,7 +673,11 @@ fn admit_native_plan(value: &Value) -> Result<(), Refusal> {
     if !protocol::enums::NATIVEPLANKIND.contains(&kind) {
         return Err(Refusal::new("decode", "shape"));
     }
-    if !value.get("digest").and_then(Value::as_str).is_some_and(is_sha256_digest) {
+    if !value
+        .get("digest")
+        .and_then(Value::as_str)
+        .is_some_and(is_sha256_digest)
+    {
         return Err(Refusal::new("decode", "bounds"));
     }
     for member in ["commands", "entries", "packages", "units"] {
@@ -544,7 +708,15 @@ fn admit_native_plan(value: &Value) -> Result<(), Refusal> {
 }
 
 fn admit_result(value: &Value) -> Result<(), Refusal> {
-    let allowed = ["bindings", "entries", "findings", "lint_evidence", "native_plan", "ok", "truncated"];
+    let allowed = [
+        "bindings",
+        "entries",
+        "findings",
+        "lint_evidence",
+        "native_plan",
+        "ok",
+        "truncated",
+    ];
     if !is_closed_object(value, &allowed) {
         return Err(Refusal::new("decode", "shape"));
     }
@@ -586,7 +758,11 @@ fn admit_result(value: &Value) -> Result<(), Refusal> {
             if !is_closed_object(finding, &["code", "detail", "path"]) {
                 return Err(Refusal::new("decode", "shape"));
             }
-            if !finding.get("path").and_then(Value::as_str).is_some_and(is_logical_path) {
+            if !finding
+                .get("path")
+                .and_then(Value::as_str)
+                .is_some_and(is_logical_path)
+            {
                 return Err(Refusal::new("decode", "bounds"));
             }
             if !bounded_text(finding.get("code").unwrap_or(&Value::Null), 128) {
@@ -614,7 +790,11 @@ fn admit_result(value: &Value) -> Result<(), Refusal> {
                 return Err(Refusal::new("decode", "shape"));
             }
             for member in ["module", "profile", "target"] {
-                if !binding.get(member).and_then(Value::as_str).is_some_and(is_token) {
+                if !binding
+                    .get(member)
+                    .and_then(Value::as_str)
+                    .is_some_and(is_token)
+                {
                     return Err(Refusal::new("decode", "bounds"));
                 }
             }
@@ -715,59 +895,121 @@ fn admit_error(value: &Value) -> Result<(), Refusal> {
 
 fn admit_capabilities(value: &Value) -> Result<(), Refusal> {
     let allowed = [
-        "adapter", "capabilities", "constraints", "ir_versions", "operations", "profiles",
-        "progress", "protocol_versions", "read_scopes", "targets", "transports", "write_scopes",
+        "adapter",
+        "capabilities",
+        "constraints",
+        "ir_versions",
+        "operations",
+        "profiles",
+        "progress",
+        "protocol_versions",
+        "read_scopes",
+        "targets",
+        "transports",
+        "write_scopes",
     ];
     if !is_closed_object(value, &allowed) {
         return Err(Refusal::new("decode", "shape"));
     }
     admit_identity(value.get("adapter").unwrap_or(&Value::Null))?;
-    let unique_bounded = |member: &str, max: usize, check: fn(&Value) -> bool, required: bool| -> bool {
-        match value.get(member) {
-            None => !required,
-            Some(Value::Null) => false,
-            Some(items) => {
-                let Some(items) = items.as_array() else {
-                    return false;
-                };
-                items.len() <= max
-                    && items.iter().all(check)
-                    && {
-                    let mut seen: Vec<String> = items.iter().map(crate::json::canonical).collect();
-                    seen.sort();
-                    seen.dedup();
-                    seen.len() == items.len()
+    let unique_bounded =
+        |member: &str, max: usize, check: fn(&Value) -> bool, required: bool| -> bool {
+            match value.get(member) {
+                None => !required,
+                Some(Value::Null) => false,
+                Some(items) => {
+                    let Some(items) = items.as_array() else {
+                        return false;
+                    };
+                    items.len() <= max && items.iter().all(check) && {
+                        let mut seen: Vec<String> =
+                            items.iter().map(crate::json::canonical).collect();
+                        seen.sort();
+                        seen.dedup();
+                        seen.len() == items.len()
+                    }
                 }
             }
-        }
-    };
+        };
     let is_contract = |value: &Value| value.as_str().is_some_and(is_contract_version);
     let is_token_value = |value: &Value| value.as_str().is_some_and(is_token);
-    let is_operation = |value: &Value| value.as_str().is_some_and(|op| protocol::LATEST_OPERATIONS.contains(&op));
-    let is_transport = |value: &Value| value.as_str().is_some_and(|t| protocol::enums::TRANSPORT.contains(&t));
-    let is_scope_text = |value: &Value| value.as_str().is_some_and(|s| !s.is_empty() && s.len() <= 512);
-    if !unique_bounded("protocol_versions", protocol::bounds::PROTOCOL_VERSIONS_MAX as usize, is_contract, true) {
+    let is_operation = |value: &Value| {
+        value
+            .as_str()
+            .is_some_and(|op| protocol::LATEST_OPERATIONS.contains(&op))
+    };
+    let is_transport = |value: &Value| {
+        value
+            .as_str()
+            .is_some_and(|t| protocol::enums::TRANSPORT.contains(&t))
+    };
+    let is_scope_text = |value: &Value| {
+        value
+            .as_str()
+            .is_some_and(|s| !s.is_empty() && s.len() <= 512)
+    };
+    if !unique_bounded(
+        "protocol_versions",
+        protocol::bounds::PROTOCOL_VERSIONS_MAX as usize,
+        is_contract,
+        true,
+    ) {
         return Err(Refusal::new("decode", "bounds"));
     }
-    if !unique_bounded("operations", protocol::bounds::OPERATIONS_MAX_LINT as usize, is_operation, true) {
+    if !unique_bounded(
+        "operations",
+        protocol::bounds::OPERATIONS_MAX_LINT as usize,
+        is_operation,
+        true,
+    ) {
         return Err(Refusal::new("decode", "bounds"));
     }
-    if !unique_bounded("transports", protocol::bounds::TRANSPORTS_MAX as usize, is_transport, true) {
+    if !unique_bounded(
+        "transports",
+        protocol::bounds::TRANSPORTS_MAX as usize,
+        is_transport,
+        true,
+    ) {
         return Err(Refusal::new("decode", "bounds"));
     }
-    if !unique_bounded("targets", protocol::bounds::TARGETS_MAX as usize, is_token_value, false) {
+    if !unique_bounded(
+        "targets",
+        protocol::bounds::TARGETS_MAX as usize,
+        is_token_value,
+        false,
+    ) {
         return Err(Refusal::new("decode", "bounds"));
     }
-    if !unique_bounded("profiles", protocol::bounds::PROFILES_MAX as usize, is_token_value, false) {
+    if !unique_bounded(
+        "profiles",
+        protocol::bounds::PROFILES_MAX as usize,
+        is_token_value,
+        false,
+    ) {
         return Err(Refusal::new("decode", "bounds"));
     }
-    if !unique_bounded("read_scopes", protocol::bounds::MAX_SCOPES as usize, is_scope_text, false) {
+    if !unique_bounded(
+        "read_scopes",
+        protocol::bounds::MAX_SCOPES as usize,
+        is_scope_text,
+        false,
+    ) {
         return Err(Refusal::new("decode", "bounds"));
     }
-    if !unique_bounded("write_scopes", protocol::bounds::MAX_SCOPES as usize, is_scope_text, false) {
+    if !unique_bounded(
+        "write_scopes",
+        protocol::bounds::MAX_SCOPES as usize,
+        is_scope_text,
+        false,
+    ) {
         return Err(Refusal::new("decode", "bounds"));
     }
-    if !unique_bounded("ir_versions", protocol::bounds::MAX_IR_VERSIONS as usize, is_contract, false) {
+    if !unique_bounded(
+        "ir_versions",
+        protocol::bounds::MAX_IR_VERSIONS as usize,
+        is_contract,
+        false,
+    ) {
         return Err(Refusal::new("decode", "bounds"));
     }
     match value.get("progress") {
@@ -789,7 +1031,10 @@ fn admit_capabilities(value: &Value) -> Result<(), Refusal> {
             if !is_capability_id(name) {
                 return Err(Refusal::new("decode", "bounds"));
             }
-            let support = capability_map.get(name).and_then(Value::as_str).unwrap_or("");
+            let support = capability_map
+                .get(name)
+                .and_then(Value::as_str)
+                .unwrap_or("");
             if !protocol::enums::SUPPORTSTATE.contains(&support) {
                 return Err(Refusal::new("decode", "shape"));
             }
@@ -820,17 +1065,39 @@ fn admit_capabilities(value: &Value) -> Result<(), Refusal> {
 /// Structural admission of one response envelope.
 pub fn admit_response_value(value: &Value) -> Result<(), Refusal> {
     let allowed = [
-        "capabilities", "error", "evidence", "operation", "progress", "protocol",
-        "protocol_version", "request_id", "result", "status", "writes",
+        "capabilities",
+        "error",
+        "evidence",
+        "operation",
+        "progress",
+        "protocol",
+        "protocol_version",
+        "request_id",
+        "result",
+        "status",
+        "writes",
     ];
     if !is_closed_object(value, &allowed) {
-        return Err(Refusal::new("decode", if str_members(value).iter().any(|k| !allowed.contains(&k.as_str())) {
-            "unknown-member"
-        } else {
-            "shape"
-        }));
+        return Err(Refusal::new(
+            "decode",
+            if str_members(value)
+                .iter()
+                .any(|k| !allowed.contains(&k.as_str()))
+            {
+                "unknown-member"
+            } else {
+                "shape"
+            },
+        ));
     }
-    for member in ["protocol", "protocol_version", "operation", "request_id", "status", "evidence"] {
+    for member in [
+        "protocol",
+        "protocol_version",
+        "operation",
+        "request_id",
+        "status",
+        "evidence",
+    ] {
         if value.get(member).is_none() {
             return Err(Refusal::new("decode", "shape"));
         }
@@ -841,13 +1108,25 @@ pub fn admit_response_value(value: &Value) -> Result<(), Refusal> {
     if value.get("protocol").and_then(Value::as_str) != Some(protocol::WIRE_TOKEN) {
         return Err(Refusal::new("decode", "token"));
     }
-    if !value.get("protocol_version").and_then(Value::as_str).is_some_and(is_contract_version) {
+    if !value
+        .get("protocol_version")
+        .and_then(Value::as_str)
+        .is_some_and(is_contract_version)
+    {
         return Err(Refusal::new("decode", "version"));
     }
-    if !value.get("operation").and_then(Value::as_str).is_some_and(|op| protocol::LATEST_OPERATIONS.contains(&op)) {
+    if !value
+        .get("operation")
+        .and_then(Value::as_str)
+        .is_some_and(|op| protocol::LATEST_OPERATIONS.contains(&op))
+    {
         return Err(Refusal::new("decode", "operation"));
     }
-    if !value.get("request_id").and_then(Value::as_str).is_some_and(is_request_id) {
+    if !value
+        .get("request_id")
+        .and_then(Value::as_str)
+        .is_some_and(is_request_id)
+    {
         return Err(Refusal::new("decode", "request-id"));
     }
     let status = value.get("status").and_then(Value::as_str).unwrap_or("");
@@ -911,7 +1190,9 @@ fn declares_writes(operation: &str) -> bool {
 const LINT_VERSION: &str = "0.6.4";
 
 fn is_sorted(values: &[Value]) -> bool {
-    values.windows(2).all(|window| window[0].as_str() < window[1].as_str())
+    values
+        .windows(2)
+        .all(|window| window[0].as_str() < window[1].as_str())
 }
 
 /// Cross-member request semantics (closed refusal tokens).
@@ -922,7 +1203,10 @@ pub fn validate_request(value: &Value) -> Result<(), Refusal> {
         return invalid("version");
     }
     let operation = value.get("operation").and_then(Value::as_str).unwrap_or("");
-    let version = value.get("protocol_version").and_then(Value::as_str).unwrap_or("");
+    let version = value
+        .get("protocol_version")
+        .and_then(Value::as_str)
+        .unwrap_or("");
     let has_lint = value.get("lint_request").is_some();
     if (operation == "lint") != has_lint {
         return invalid("lint-request");
@@ -931,9 +1215,17 @@ pub fn validate_request(value: &Value) -> Result<(), Refusal> {
         if version != LINT_VERSION || value.get("target").is_none() {
             return invalid("lint-request");
         }
-        if ["profile", "profile_digest", "profile_capabilities", "ir_path", "native_request", "dry_run", "plan_id"]
-            .iter()
-            .any(|member| value.get(member).is_some())
+        if [
+            "profile",
+            "profile_digest",
+            "profile_capabilities",
+            "ir_path",
+            "native_request",
+            "dry_run",
+            "plan_id",
+        ]
+        .iter()
+        .any(|member| value.get(member).is_some())
         {
             return invalid("lint-request");
         }
@@ -942,21 +1234,39 @@ pub fn validate_request(value: &Value) -> Result<(), Refusal> {
         if !is_sorted(scope) || !is_sorted(files) {
             return invalid("lint-request");
         }
-        if files.iter().any(|file| !file.as_str().is_some_and(is_logical_path)) {
+        if files
+            .iter()
+            .any(|file| !file.as_str().is_some_and(is_logical_path))
+        {
             return invalid("lint-request");
         }
         let mut keys = std::collections::BTreeSet::new();
-        for binding in lint.get("bindings").and_then(Value::as_array).unwrap_or(&[]) {
+        for binding in lint
+            .get("bindings")
+            .and_then(Value::as_array)
+            .unwrap_or(&[])
+        {
             let path = binding.get("path").and_then(Value::as_str).unwrap_or("");
-            let native_id = binding.get("native_id").and_then(Value::as_str).unwrap_or("");
+            let native_id = binding
+                .get("native_id")
+                .and_then(Value::as_str)
+                .unwrap_or("");
             let kind = binding.get("kind").and_then(Value::as_str).unwrap_or("");
             if !is_logical_path(path) || !files.iter().any(|file| file.as_str() == Some(path)) {
                 return invalid("lint-binding");
             }
-            if !binding.get("fingerprint").and_then(Value::as_str).is_some_and(is_sha256_digest) {
+            if !binding
+                .get("fingerprint")
+                .and_then(Value::as_str)
+                .is_some_and(is_sha256_digest)
+            {
                 return invalid("lint-binding");
             }
-            if !binding.get("symbol").and_then(Value::as_str).is_some_and(|s| !s.is_empty() && s.len() <= 128) {
+            if !binding
+                .get("symbol")
+                .and_then(Value::as_str)
+                .is_some_and(|s| !s.is_empty() && s.len() <= 128)
+            {
                 return invalid("lint-binding");
             }
             if !keys.insert((path.to_owned(), native_id.to_owned(), kind.to_owned())) {
@@ -972,7 +1282,10 @@ pub fn validate_request(value: &Value) -> Result<(), Refusal> {
             }
         }
         if let Some(revision) = pins.get("revision") {
-            if !revision.as_str().is_some_and(|s| !s.is_empty() && s.len() <= 128) {
+            if !revision
+                .as_str()
+                .is_some_and(|s| !s.is_empty() && s.len() <= 128)
+            {
                 return invalid("lint-pin");
             }
         }
@@ -981,7 +1294,9 @@ pub fn validate_request(value: &Value) -> Result<(), Refusal> {
     if (operation == "plan-native") != has_native {
         return invalid("native-request");
     }
-    let apply = operation == "clean" || (operation == "generate" && value.get("dry_run").and_then(Value::as_bool) == Some(false));
+    let apply = operation == "clean"
+        || (operation == "generate"
+            && value.get("dry_run").and_then(Value::as_bool) == Some(false));
     let has_plan = value.get("plan_id").is_some();
     if apply != has_plan {
         return invalid("plan-id");
@@ -994,7 +1309,9 @@ pub fn validate_request(value: &Value) -> Result<(), Refusal> {
     if (operation == "generate") != value.get("dry_run").is_some() {
         return invalid("dry-run");
     }
-    if operation == "plan-native" && (value.get("dry_run").is_some() || value.get("plan_id").is_some()) {
+    if operation == "plan-native"
+        && (value.get("dry_run").is_some() || value.get("plan_id").is_some())
+    {
         return invalid("plan-id");
     }
     if requires_ir(operation) && value.get("ir_path").is_none() {
@@ -1007,15 +1324,25 @@ pub fn validate_request(value: &Value) -> Result<(), Refusal> {
         return invalid("profile");
     }
     if operation == "describe"
-        && ["target", "profile", "profile_digest", "profile_capabilities", "native_request", "ir_path"]
-            .iter()
-            .any(|member| value.get(member).is_some())
+        && [
+            "target",
+            "profile",
+            "profile_digest",
+            "profile_capabilities",
+            "native_request",
+            "ir_path",
+        ]
+        .iter()
+        .any(|member| value.get(member).is_some())
     {
         return invalid("member");
     }
-    let profile_resolution = value.get("profile_digest").is_some() || value.get("profile_capabilities").is_some();
+    let profile_resolution =
+        value.get("profile_digest").is_some() || value.get("profile_capabilities").is_some();
     if profile_resolution
-        && (value.get("profile_digest").is_none() || value.get("profile_capabilities").is_none() || value.get("profile").is_none())
+        && (value.get("profile_digest").is_none()
+            || value.get("profile_capabilities").is_none()
+            || value.get("profile").is_none())
     {
         return invalid("profile-capabilities");
     }
@@ -1050,22 +1377,39 @@ pub fn validate_response_identity(
 /// validate-before-write obligation).
 pub fn validate_response_payload(request: &Value, response: &Value) -> Result<(), Refusal> {
     let refuse = |reason: &str| Err(Refusal::new("validate", reason));
-    let operation = request.get("operation").and_then(Value::as_str).unwrap_or("");
+    let operation = request
+        .get("operation")
+        .and_then(Value::as_str)
+        .unwrap_or("");
     if response.get("capabilities").is_some() && operation != "describe" {
         return refuse("member");
     }
-    if operation == "describe" && response.get("status").and_then(Value::as_str) == Some("ok") && response.get("capabilities").is_none() {
+    if operation == "describe"
+        && response.get("status").and_then(Value::as_str) == Some("ok")
+        && response.get("capabilities").is_none()
+    {
         return refuse("member");
     }
-    let apply = operation == "clean" || (operation == "generate" && request.get("dry_run").and_then(Value::as_bool) == Some(false));
-    if apply && response.get("evidence").and_then(|e| e.get("plan_id")).map(Value::as_str) != request.get("plan_id").map(Value::as_str) {
+    let apply = operation == "clean"
+        || (operation == "generate"
+            && request.get("dry_run").and_then(Value::as_bool) == Some(false));
+    if apply
+        && response
+            .get("evidence")
+            .and_then(|e| e.get("plan_id"))
+            .map(Value::as_str)
+            != request.get("plan_id").map(Value::as_str)
+    {
         return refuse("plan-id");
     }
     if response.get("status").and_then(Value::as_str) == Some("error") {
         if response.get("error").is_none() {
             return refuse("error-pairing");
         }
-        if response.get("result").is_some() || response.get("writes").is_some() || response.get("progress").is_some() {
+        if response.get("result").is_some()
+            || response.get("writes").is_some()
+            || response.get("progress").is_some()
+        {
             return refuse("error-pairing");
         }
         return Ok(());
@@ -1131,4 +1475,3 @@ pub fn validate_response_payload(request: &Value, response: &Value) -> Result<()
     }
     Ok(())
 }
-

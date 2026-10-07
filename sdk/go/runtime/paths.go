@@ -10,7 +10,7 @@ const (
 )
 
 var protectedHomes = []struct {
-	Name  string
+	Name     string
 	Segments []string
 }{
 	{"lekalo-model", []string{"lekalo"}},
@@ -93,8 +93,8 @@ func isDriveOrScheme(path string) bool {
 	return false
 }
 
-func isASCIIAlpha(c byte) bool      { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') }
-func isASCIILower(c byte) bool      { return c >= 'a' && c <= 'z' }
+func isASCIIAlpha(c byte) bool { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') }
+func isASCIILower(c byte) bool { return c >= 'a' && c <= 'z' }
 func isASCIIAlphanumeric(c byte) bool {
 	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
 }

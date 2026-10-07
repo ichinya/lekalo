@@ -1,7 +1,9 @@
-// The per-exchange process lifetime (issue #106): read exactly one
-// bounded request from stdin or the host-owned --lekalo-request-file
-// coordinate, decode and validate it, dispatch one operation callback,
-// and emit exactly one compact canonical response on stdout.
+// The one input-source contract (issue #106), implemented identically in
+// all four runtimes: the host-owned --lekalo-request-file coordinate wins
+// whenever present. A piped stdin alongside it is the ordinary host shape
+// (the host always spawns adapters with piped stdio), so pipe-ness is
+// never ambiguous. Empty stdin without a file flag is the only
+// missing-input refusal.
 package runtime
 
 import (
@@ -18,7 +20,7 @@ type Output struct {
 	Writes       Value
 	// Error is a closed in-envelope error the handler chose deliberately
 	// as (class, code, message).
-	Error [3]string
+	Error    [3]string
 	HasError bool
 }
 
@@ -49,10 +51,6 @@ func DeadlineTokenFromRequest(request Value) DeadlineToken {
 func Serve(adapter Adapter) int {
 	identity := adapter.Identity()
 	tag := GetString(identity, "id")
-	if hasRequestFileFlag() && stdinPiped() {
-		Error(tag, "transport: ambiguous input sources")
-		return 1
-	}
 	raw, err := readRequestText()
 	if err != nil {
 		Error(tag, "transport: request input unreadable")
@@ -81,7 +79,17 @@ func Serve(adapter Adapter) int {
 			return 1
 		}
 	}
-	_, _ = os.Stdout.WriteString(ResponseBytes(response))
+	// Bounded emission (issue #106): the completed envelope is admitted
+	// (builders already validate the full closed contract) and serialized
+	// into a bounded buffer before a single stdout byte is written. A
+	// response over the accepted output ceiling refuses here — never a
+	// truncated ok written to the stream.
+	bytes := ResponseBytes(response)
+	if int64(len(bytes)) > generatedBounds.DefaultMaxOutputBytes {
+		Error(tag, "response refused: output-limit")
+		return 1
+	}
+	_, _ = os.Stdout.WriteString(bytes)
 	return 0
 }
 
@@ -94,13 +102,10 @@ func hasRequestFileFlag() bool {
 	return false
 }
 
-func stdinPiped() bool {
-	stat, err := os.Stdin.Stat()
-	if err != nil {
-		return false
-	}
-	return stat.Mode()&os.ModeCharDevice == 0
-}
+// stdinPiped reports whether stdin carries a live pipe (or any non-tty
+// stream). It is diagnostics-only since issue #106: pipe-ness never
+// refuses an exchange, because the host always spawns adapters with a
+// piped stdin — including on file-transport exchanges.
 
 func readRequestText() (string, error) {
 	if hasRequestFileFlag() {

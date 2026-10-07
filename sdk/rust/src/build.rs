@@ -19,7 +19,9 @@ pub struct BuildError {
 
 impl From<Refusal> for BuildError {
     fn from(refusal: Refusal) -> Self {
-        Self { reason: refusal.reason }
+        Self {
+            reason: refusal.reason,
+        }
     }
 }
 
@@ -32,13 +34,19 @@ impl std::fmt::Display for BuildError {
 /// Build and validate one adapter identity block.
 pub fn build_adapter_identity(id: &str, version: &str, digest: &str) -> Result<Value, BuildError> {
     if !is_token(id) {
-        return Err(BuildError { reason: "identity".to_owned() });
+        return Err(BuildError {
+            reason: "identity".to_owned(),
+        });
     }
     if !is_contract_version(version) {
-        return Err(BuildError { reason: "identity".to_owned() });
+        return Err(BuildError {
+            reason: "identity".to_owned(),
+        });
     }
     if !is_sha256_digest(digest) {
-        return Err(BuildError { reason: "identity".to_owned() });
+        return Err(BuildError {
+            reason: "identity".to_owned(),
+        });
     }
     Ok(Value::Object(vec![
         ("digest".to_owned(), Value::Str(digest.to_owned())),
@@ -49,24 +57,32 @@ pub fn build_adapter_identity(id: &str, version: &str, digest: &str) -> Result<V
 
 fn bounded_unique(values: Vec<Value>, max: usize, _label: &str) -> Result<Vec<Value>, BuildError> {
     if values.len() > max {
-        return Err(BuildError { reason: "bounds".to_owned() });
+        return Err(BuildError {
+            reason: "bounds".to_owned(),
+        });
     }
     let mut unique = values.clone();
     unique.sort_by(|a, b| a.as_str().cmp(&b.as_str()));
     unique.dedup_by(|a, b| a == b);
     if unique.len() != values.len() {
-        return Err(BuildError { reason: "bounds".to_owned() });
+        return Err(BuildError {
+            reason: "bounds".to_owned(),
+        });
     }
     Ok(unique)
 }
 
 fn string_values(items: &[&str]) -> Vec<Value> {
-    items.iter().map(|value| Value::Str((*value).to_owned())).collect()
+    items
+        .iter()
+        .map(|value| Value::Str((*value).to_owned()))
+        .collect()
 }
 
 /// Build one `describe` capability map. Declared scopes and capability
 /// states are honest claims the host polices — describing more than the
 /// adapter implements is a refusal, never a capability gain.
+#[allow(clippy::too_many_arguments)]
 pub fn build_capabilities(
     adapter: &Value,
     protocol_versions: &[&str],
@@ -85,15 +101,27 @@ pub fn build_capabilities(
         ("adapter".to_owned(), adapter.clone()),
         (
             "ir_versions".to_owned(),
-            Value::Array(bounded_unique(string_values(ir_versions), protocol::bounds::MAX_IR_VERSIONS as usize, "ir_versions")?),
+            Value::Array(bounded_unique(
+                string_values(ir_versions),
+                protocol::bounds::MAX_IR_VERSIONS as usize,
+                "ir_versions",
+            )?),
         ),
         (
             "operations".to_owned(),
-            Value::Array(bounded_unique(string_values(operations), protocol::bounds::OPERATIONS_MAX_LINT as usize, "operations")?),
+            Value::Array(bounded_unique(
+                string_values(operations),
+                protocol::bounds::OPERATIONS_MAX_LINT as usize,
+                "operations",
+            )?),
         ),
         (
             "profiles".to_owned(),
-            Value::Array(bounded_unique(string_values(profiles), protocol::bounds::PROFILES_MAX as usize, "profiles")?),
+            Value::Array(bounded_unique(
+                string_values(profiles),
+                protocol::bounds::PROFILES_MAX as usize,
+                "profiles",
+            )?),
         ),
         ("progress".to_owned(), Value::Bool(progress)),
         (
@@ -106,19 +134,35 @@ pub fn build_capabilities(
         ),
         (
             "read_scopes".to_owned(),
-            Value::Array(bounded_unique(string_values(read_scopes), protocol::bounds::MAX_SCOPES as usize, "read_scopes")?),
+            Value::Array(bounded_unique(
+                string_values(read_scopes),
+                protocol::bounds::MAX_SCOPES as usize,
+                "read_scopes",
+            )?),
         ),
         (
             "targets".to_owned(),
-            Value::Array(bounded_unique(string_values(targets), protocol::bounds::TARGETS_MAX as usize, "targets")?),
+            Value::Array(bounded_unique(
+                string_values(targets),
+                protocol::bounds::TARGETS_MAX as usize,
+                "targets",
+            )?),
         ),
         (
             "transports".to_owned(),
-            Value::Array(bounded_unique(string_values(transports), protocol::bounds::TRANSPORTS_MAX as usize, "transports")?),
+            Value::Array(bounded_unique(
+                string_values(transports),
+                protocol::bounds::TRANSPORTS_MAX as usize,
+                "transports",
+            )?),
         ),
         (
             "write_scopes".to_owned(),
-            Value::Array(bounded_unique(string_values(write_scopes), protocol::bounds::MAX_SCOPES as usize, "write_scopes")?),
+            Value::Array(bounded_unique(
+                string_values(write_scopes),
+                protocol::bounds::MAX_SCOPES as usize,
+                "write_scopes",
+            )?),
         ),
     ];
     if let Some(capabilities) = capabilities {
@@ -127,10 +171,14 @@ pub fn build_capabilities(
         let mut map = Vec::new();
         for (id, state) in sorted {
             if !is_capability_id(id) {
-                return Err(BuildError { reason: "capabilities".to_owned() });
+                return Err(BuildError {
+                    reason: "capabilities".to_owned(),
+                });
             }
             if !protocol::enums::SUPPORTSTATE.contains(&state) {
-                return Err(BuildError { reason: "capabilities".to_owned() });
+                return Err(BuildError {
+                    reason: "capabilities".to_owned(),
+                });
             }
             map.push((id.to_owned(), Value::Str(state.to_owned())));
         }
@@ -152,20 +200,34 @@ fn envelope_base(request: &Value, status: &str) -> Vec<(String, Value)> {
     let evidence_adapter = Value::Object(vec![]);
     vec![
         ("evidence".to_owned(), evidence_adapter),
-        ("operation".to_owned(), request.get("operation").cloned().unwrap_or(Value::Null)),
-        ("protocol".to_owned(), Value::Str(protocol::WIRE_TOKEN.to_owned())),
+        (
+            "operation".to_owned(),
+            request.get("operation").cloned().unwrap_or(Value::Null),
+        ),
+        (
+            "protocol".to_owned(),
+            Value::Str(protocol::WIRE_TOKEN.to_owned()),
+        ),
         (
             "protocol_version".to_owned(),
-            request.get("protocol_version").cloned().unwrap_or(Value::Null),
+            request
+                .get("protocol_version")
+                .cloned()
+                .unwrap_or(Value::Null),
         ),
-        ("request_id".to_owned(), request.get("request_id").cloned().unwrap_or(Value::Null)),
+        (
+            "request_id".to_owned(),
+            request.get("request_id").cloned().unwrap_or(Value::Null),
+        ),
         ("status".to_owned(), Value::Str(status.to_owned())),
     ]
 }
 
 fn finish_envelope(mut envelope: Value, request: &Value) -> Result<Value, BuildError> {
     if let Some(writes) = envelope.get("writes").cloned() {
-        let sorted = sort_write_plan(&writes).ok_or_else(|| BuildError { reason: "writes".to_owned() })?;
+        let sorted = sort_write_plan(&writes).ok_or_else(|| BuildError {
+            reason: "writes".to_owned(),
+        })?;
         let value = Value::Array(
             sorted
                 .into_iter()
@@ -188,9 +250,14 @@ fn finish_envelope(mut envelope: Value, request: &Value) -> Result<Value, BuildE
     }
     let value = admit_envelope(&envelope).map_err(BuildError::from)?;
     validate_response_payload(request, &value).map_err(BuildError::from)?;
-    if let Some(plan) = envelope.get("evidence").and_then(|evidence| evidence.get("plan_id")) {
+    if let Some(plan) = envelope
+        .get("evidence")
+        .and_then(|evidence| evidence.get("plan_id"))
+    {
         if !plan.as_str().is_some_and(is_plan_id) {
-            return Err(BuildError { reason: "plan-id".to_owned() });
+            return Err(BuildError {
+                reason: "plan-id".to_owned(),
+            });
         }
     }
     Ok(envelope)
@@ -252,13 +319,20 @@ pub fn build_error(
     detail: Option<Vec<String>>,
 ) -> Result<Value, BuildError> {
     if !protocol::enums::ERRORCLASS.contains(&class) {
-        return Err(BuildError { reason: "error-class".to_owned() });
+        return Err(BuildError {
+            reason: "error-class".to_owned(),
+        });
     }
     if code.is_empty() || code.chars().count() > protocol::bounds::ERROR_CODE_MAX as usize {
-        return Err(BuildError { reason: "error-code".to_owned() });
+        return Err(BuildError {
+            reason: "error-code".to_owned(),
+        });
     }
-    if message.is_empty() || message.chars().count() > protocol::bounds::ERROR_MESSAGE_MAX as usize {
-        return Err(BuildError { reason: "error-message".to_owned() });
+    if message.is_empty() || message.chars().count() > protocol::bounds::ERROR_MESSAGE_MAX as usize
+    {
+        return Err(BuildError {
+            reason: "error-message".to_owned(),
+        });
     }
     let mut error_members = vec![
         ("class".to_owned(), Value::Str(class.to_owned())),
@@ -267,11 +341,15 @@ pub fn build_error(
     ];
     if let Some(detail) = detail {
         if detail.len() > protocol::bounds::ERROR_DETAILS_MAX as usize {
-            return Err(BuildError { reason: "error-detail".to_owned() });
+            return Err(BuildError {
+                reason: "error-detail".to_owned(),
+            });
         }
         for item in &detail {
             if item.chars().count() > protocol::bounds::ERROR_DETAIL_MAX as usize {
-                return Err(BuildError { reason: "error-detail".to_owned() });
+                return Err(BuildError {
+                    reason: "error-detail".to_owned(),
+                });
             }
         }
         error_members.push((
@@ -292,11 +370,15 @@ pub fn build_error(
 /// Build one wire `Finding` (validate/verify result row).
 pub fn build_finding(code: &str, path: &str, detail: Option<&str>) -> Result<Value, BuildError> {
     if code.is_empty() || code.chars().count() > protocol::bounds::ERROR_CODE_MAX as usize {
-        return Err(BuildError { reason: "finding-code".to_owned() });
+        return Err(BuildError {
+            reason: "finding-code".to_owned(),
+        });
     }
     if let Some(detail) = detail {
         if detail.chars().count() > protocol::bounds::ERROR_DETAIL_MAX as usize {
-            return Err(BuildError { reason: "finding-detail".to_owned() });
+            return Err(BuildError {
+                reason: "finding-detail".to_owned(),
+            });
         }
     }
     let mut members = vec![
@@ -310,15 +392,30 @@ pub fn build_finding(code: &str, path: &str, detail: Option<&str>) -> Result<Val
 }
 
 /// Build one bounded, registry-checked diagnostic record.
-pub fn build_diagnostic(codes: &[(&str, &str)], code: &str, message: &str, rule: &str) -> Result<Value, BuildError> {
-    if !codes.iter().any(|(_, registry_code)| *registry_code == code) {
-        return Err(BuildError { reason: "diagnostic-code".to_owned() });
+pub fn build_diagnostic(
+    codes: &[(&str, &str)],
+    code: &str,
+    message: &str,
+    rule: &str,
+) -> Result<Value, BuildError> {
+    if !codes
+        .iter()
+        .any(|(_, registry_code)| *registry_code == code)
+    {
+        return Err(BuildError {
+            reason: "diagnostic-code".to_owned(),
+        });
     }
-    if message.is_empty() || message.chars().count() > protocol::bounds::ERROR_MESSAGE_MAX as usize {
-        return Err(BuildError { reason: "diagnostic-message".to_owned() });
+    if message.is_empty() || message.chars().count() > protocol::bounds::ERROR_MESSAGE_MAX as usize
+    {
+        return Err(BuildError {
+            reason: "diagnostic-message".to_owned(),
+        });
     }
     if rule.chars().count() > protocol::bounds::ERROR_DETAIL_MAX as usize {
-        return Err(BuildError { reason: "diagnostic-rule".to_owned() });
+        return Err(BuildError {
+            reason: "diagnostic-rule".to_owned(),
+        });
     }
     Ok(Value::Object(vec![
         ("code".to_owned(), Value::Str(code.to_owned())),

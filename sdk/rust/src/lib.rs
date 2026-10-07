@@ -8,13 +8,13 @@
 //! serve loop. No ambient I/O beyond the serve loop; no network; no
 //! telemetry; no `lekalo-core` coupling beyond the wire contracts.
 
+pub mod build;
 pub mod canonical;
 pub mod decode;
-pub mod logger;
-pub mod build;
 pub mod generated;
 pub mod ids;
 pub mod json;
+pub mod logger;
 pub mod paths;
 pub mod serve;
 pub mod validate;
@@ -31,7 +31,9 @@ pub use decode::{
     admit_request, admit_response, decode_request, validate_request, validate_response_identity,
     validate_response_payload, Refusal,
 };
-pub use ids::{is_plan_id, is_request_id, is_sha256_digest, plan_id, request_id, sha256, sha256_hex};
+pub use ids::{
+    is_plan_id, is_request_id, is_sha256_digest, plan_id, request_id, sha256, sha256_hex,
+};
 pub use json::{canonical, read_single_object, strict_parse, ParseReason, Value};
 pub use paths::{
     is_capability_id, is_contract_version, is_logical_path, is_scope, is_token, path_violation,

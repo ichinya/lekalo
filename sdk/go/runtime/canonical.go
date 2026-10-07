@@ -106,9 +106,9 @@ func NormalizeScenarioResult(result Value) Value {
 		return nil
 	}
 	type findingRow struct {
-		path   string
-		code   string
-		detail string
+		path      string
+		code      string
+		detail    string
 		hasDetail bool
 	}
 	rows := make([]findingRow, 0, len(findings))

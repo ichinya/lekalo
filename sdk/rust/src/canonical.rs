@@ -17,7 +17,9 @@ fn write_entry(entry: &Value) -> Option<(String, String, Option<String>)> {
         return None;
     }
     match (action, entry.get("sha256")) {
-        ("delete", None) | ("delete", Some(Value::Null)) => Some((path.to_owned(), action.to_owned(), None)),
+        ("delete", None) | ("delete", Some(Value::Null)) => {
+            Some((path.to_owned(), action.to_owned(), None))
+        }
         (_, Some(digest)) => {
             let digest = digest.as_str()?;
             if digest.len() == 71 && digest.starts_with("sha256:") {
@@ -98,7 +100,10 @@ pub fn build_artifact_manifest(entries: &[(String, String)]) -> Option<Value> {
     );
     Some(Value::Object(vec![
         ("algorithm".to_owned(), Value::Str("sha256".to_owned())),
-        ("canonicalForm".to_owned(), Value::Str(canonical(&entries_value))),
+        (
+            "canonicalForm".to_owned(),
+            Value::Str(canonical(&entries_value)),
+        ),
         ("entries".to_owned(), entries_value),
     ]))
 }
@@ -112,7 +117,10 @@ pub fn normalize_scenario_result(result: &Value) -> Option<Value> {
     if !SCENARIO_STATUSES.contains(&status) {
         return None;
     }
-    let findings = result.get("findings").and_then(Value::as_array).unwrap_or(&[]);
+    let findings = result
+        .get("findings")
+        .and_then(Value::as_array)
+        .unwrap_or(&[]);
     if findings.len() > 10_000 {
         return None;
     }

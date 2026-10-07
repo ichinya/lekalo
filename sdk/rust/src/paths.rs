@@ -48,10 +48,12 @@ fn dos_stem(segment: &str) -> &str {
 fn contains_short_name(segment: &str) -> bool {
     match segment.find('~') {
         Some(tilt) => {
-            tilt >= 1
-                && tilt <= 6
+            (1..=6).contains(&tilt)
                 && segment.len() > tilt
-                && segment[tilt + 1..].chars().next().is_some_and(|c| c.is_ascii_digit())
+                && segment[tilt + 1..]
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_digit())
         }
         None => false,
     }
@@ -76,10 +78,19 @@ pub fn path_violation(path: &str) -> Option<&'static str> {
         return Some("structure.path-absolute");
     }
     if path.starts_with('~')
-        || (path.as_bytes().first().is_some_and(|b| b.is_ascii_alphabetic()) && path.as_bytes().get(1) == Some(&b':'))
+        || (path
+            .as_bytes()
+            .first()
+            .is_some_and(|b| b.is_ascii_alphabetic())
+            && path.as_bytes().get(1) == Some(&b':'))
         || path.chars().next().is_some_and(|c| c.is_ascii_lowercase())
             && path.contains(':')
-            && path.find(':').is_some_and(|index| index > 0 && path[..index].chars().all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '.' || c == '-'))
+            && path.find(':').is_some_and(|index| {
+                index > 0
+                    && path[..index]
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '.' || c == '-')
+            })
     {
         return Some("structure.path-absolute");
     }
@@ -125,7 +136,9 @@ fn segment_ok(segment: &str) -> bool {
     if !(first.is_ascii_lowercase() || first.is_ascii_digit() || first == '.') {
         return false;
     }
-    segment.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '.' || c == '-' || c == '_')
+    segment
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '.' || c == '-' || c == '_')
 }
 
 fn segments(value: &str) -> Option<Vec<&str>> {
@@ -220,7 +233,9 @@ pub fn is_token(value: &str) -> bool {
         _ => return false,
     }
     value.len() <= 64
-        && value.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        && value
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
 /// The closed capability-id grammar (lowercase dotted segments).
@@ -230,9 +245,12 @@ pub fn is_capability_id(value: &str) -> bool {
         && value.split('.').all(|segment| {
             !segment.is_empty()
                 && segment.starts_with(|c: char| c.is_ascii_lowercase() || c.is_ascii_digit())
-                && segment
-                    .bytes()
-                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-' || byte == b'_')
+                && segment.bytes().all(|byte| {
+                    byte.is_ascii_lowercase()
+                        || byte.is_ascii_digit()
+                        || byte == b'-'
+                        || byte == b'_'
+                })
         })
 }
 
@@ -240,7 +258,9 @@ pub fn is_capability_id(value: &str) -> bool {
 pub fn is_contract_version(value: &str) -> bool {
     value.len() <= 32
         && value.split('.').count() == 3
-        && value.split('.').all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
+        && value
+            .split('.')
+            .all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
 }
 
 /// One write-scope violation of a plan entry, or `None`.

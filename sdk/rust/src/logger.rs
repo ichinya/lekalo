@@ -20,7 +20,12 @@ fn timestamp() -> String {
     // Deterministic fixed-width UTC timestamp (no host timezone data).
     let days = seconds / 86_400;
     let rem = seconds % 86_400;
-    format!("{days:05}T{:02}:{:02}:{:02}Z", rem / 3600, (rem % 3600) / 60, rem % 60)
+    format!(
+        "{days:05}T{:02}:{:02}:{:02}Z",
+        rem / 3600,
+        (rem % 3600) / 60,
+        rem % 60
+    )
 }
 
 fn emit(level: &str, tag: &str, message: &str) {
@@ -62,5 +67,8 @@ pub fn warn(tag: &str, message: &str) {
 
 /// Whether a redaction candidate is safe to log: bounded and single-line.
 pub fn is_loggable_token(value: &str) -> bool {
-    !value.is_empty() && value.chars().count() <= 128 && !value.contains('\n') && !value.contains('\r')
+    !value.is_empty()
+        && value.chars().count() <= 128
+        && !value.contains('\n')
+        && !value.contains('\r')
 }

@@ -8,16 +8,19 @@
 /// canonical embedded table, exported for describe helpers. Never a
 /// second registry: new ids arrive through a reviewed owner successor.
 pub const CAPABILITY_IDENTITY: &str = "dev.lekalo.target-capabilities@0.6.4";
+#[rustfmt::skip]
 pub const CAPABILITY_ENTRIES_DIGEST: &str = "sha256:4d3b4af2a154c23d8f9f388ff44e980f5840b965586c1a9a8b9c808dc669fa5b";
 
 /// One exported capability definition (id-sorted).
 #[derive(Clone, Copy, Debug)]
+#[rustfmt::skip]
 pub struct CapabilityDefinition {
     pub definition_version: &'static str,
     pub domain: &'static str,
     pub id: &'static str,
 }
 
+#[rustfmt::skip]
 pub const CAPABILITY_DEFINITIONS: &[CapabilityDefinition] = &[
     CapabilityDefinition { definition_version: "0.4.0", domain: "generate", id: "generate.client-sdk" },
     CapabilityDefinition { definition_version: "0.3.1", domain: "generate", id: "generate.openapi" },

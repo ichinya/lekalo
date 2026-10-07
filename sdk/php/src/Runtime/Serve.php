@@ -2,12 +2,25 @@
 // The per-exchange process lifetime (issue #106): read exactly one
 // bounded request from stdin or the host-owned --lekalo-request-file
 // coordinate, decode and validate it, dispatch one operation callback,
-// and emit exactly one compact canonical response on stdout.
+// and emit exactly one compact canonical response on stdout. The
+// host-owned file coordinate wins whenever present; a piped stdin next
+// to it is the ordinary host shape, never an ambiguity.
 
 namespace Lekalo\AdapterSdk\Runtime;
 
 use Lekalo\AdapterSdk\Generated\Protocol;
 
+/**
+ * The one input-source contract (issue #106), implemented identically in
+ * all four runtimes: the host-owned `--lekalo-request-file` coordinate
+ * wins whenever present. A piped stdin alongside it is the ordinary host
+ * shape (the host always spawns adapters with piped stdio), so pipe-ness
+ * is never ambiguous. Empty stdin without a file flag is the only
+ * missing-input refusal. Emission is bounded: the completed envelope is
+ * serialized and measured before a single stdout byte is written, and a
+ * response over the accepted output ceiling refuses instead of writing a
+ * truncated ok.
+ */
 final class Serve {
     /**
      * Serve exactly one exchange; returns the process exit code.
@@ -22,10 +35,6 @@ final class Serve {
         $identity = $adapter['identity'];
         $tag = $identity['id'] ?? 'adapter';
         $fileRequested = self::hasRequestFileFlag();
-        if ($fileRequested && self::stdinPiped()) {
-            Logger::error($tag, 'transport: ambiguous input sources');
-            return 1;
-        }
         $raw = self::readRequestInput($fileRequested);
         if ($raw === null) {
             Logger::error($tag, 'transport: request input unreadable');
@@ -50,8 +59,7 @@ final class Serve {
             if ($response === null) {
                 return 1;
             }
-            fwrite(STDOUT, Build::responseBytes($response));
-            return 0;
+            return self::emit($response);
         }
         $output = $handler($request);
         $response = self::buildResponse($request, $identity, $operation, is_array($output) ? $output : []);
@@ -62,7 +70,21 @@ final class Serve {
                 return 1;
             }
         }
-        fwrite(STDOUT, Build::responseBytes($response));
+        return self::emit($response);
+    }
+
+    /**
+     * Bounded emission (issue #106): the completed envelope is serialized
+     * into a bounded buffer and measured before a single stdout byte is
+     * written; a response over the accepted output ceiling refuses with a
+     * nonzero exit instead of writing a truncated ok.
+     */
+    private static function emit(array $response): int {
+        $bytes = Build::responseBytes($response);
+        if (strlen($bytes) > Protocol::BOUNDS['DEFAULT_MAX_OUTPUT_BYTES']) {
+            return 1;
+        }
+        fwrite(STDOUT, $bytes);
         return 0;
     }
 
@@ -94,8 +116,18 @@ final class Serve {
         return false;
     }
 
+    /**
+     * Diagnostics-only stdin probe retained for host-side tooling: since
+     * issue #106 pipe-ness never refuses an exchange (the host always
+     * spawns adapters with piped stdin, including on file transport), so
+     * the serve path no longer consults it.
+     */
     private static function stdinPiped(): bool {
-        return true;
+        $spec = stat(STDIN);
+        if ($spec === false) {
+            return false;
+        }
+        return ($spec['mode'] & 0x02000) === 0; // S_IFCHR: character device.
     }
 
     private static function readRequestInput(bool $fileRequested): ?string {

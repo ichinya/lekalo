@@ -13,34 +13,36 @@ func GeneratedEnums(name string) []string {
 }
 
 var generatedBounds = struct {
-	MaxRequestBytes       int64
-	MaxPlanEntries        int
-	MaxIrVersions         int
+	MaxRequestBytes         int64
+	DefaultMaxOutputBytes   int64
+	MaxPlanEntries          int
+	MaxIrVersions           int
 	MaxDeclaredCapabilities int
-	MaxScopes             int
-	MaxConstraintValue    int64
-	LimitsTimeoutMin      int64
-	LimitsTimeoutMax      int64
-	LimitsOutputMin       int64
-	LimitsOutputMax       int64
-	ErrorCodeMax          int64
-	ErrorMessageMax       int64
-	ErrorDetailsMax       int64
-	ErrorDetailMax        int64
-	ProgressStepsMax      int64
-	ProgressTextMax       int64
-	ScanEntriesMax        int64
-	FindingsMax           int64
-	BindingsMax           int64
-	ReferencesMax         int64
-	ProtocolVersionsMax   int64
-	OperationsMaxLint     int64
-	TransportsMax         int64
-	TargetsMax            int64
-	ProfilesMax           int64
-	PathMax               int64
+	MaxScopes               int
+	MaxConstraintValue      int64
+	LimitsTimeoutMin        int64
+	LimitsTimeoutMax        int64
+	LimitsOutputMin         int64
+	LimitsOutputMax         int64
+	ErrorCodeMax            int64
+	ErrorMessageMax         int64
+	ErrorDetailsMax         int64
+	ErrorDetailMax          int64
+	ProgressStepsMax        int64
+	ProgressTextMax         int64
+	ScanEntriesMax          int64
+	FindingsMax             int64
+	BindingsMax             int64
+	ReferencesMax           int64
+	ProtocolVersionsMax     int64
+	OperationsMaxLint       int64
+	TransportsMax           int64
+	TargetsMax              int64
+	ProfilesMax             int64
+	PathMax                 int64
 }{
 	MaxRequestBytes:         generated.MAX_REQUEST_BYTES,
+	DefaultMaxOutputBytes:   generated.DEFAULT_MAX_OUTPUT_BYTES,
 	MaxPlanEntries:          int(generated.MAX_PLAN_ENTRIES),
 	MaxIrVersions:           int(generated.MAX_IR_VERSIONS),
 	MaxDeclaredCapabilities: int(generated.MAX_DECLARED_CAPABILITIES),
