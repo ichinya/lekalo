@@ -140,8 +140,17 @@ fn the_scoped_symbol_report_keeps_cross_boundary_witnesses() {
     );
     assert_eq!(exit_code(&output), 0);
     // The sanctioned two-segment semantic id selects the scheduling
-    // command; an unknown symbol is refused with the input diagnostic.
-    assert!(stdout_text(&output).contains("planner.calculate_schedule") || true);
+    // command: the report carries exactly that subject with its
+    // cross-boundary witnesses, and no other subject row.
+    let envelope = document(&output);
+    let report = &envelope["portability"];
+    assert_eq!(report["scope"]["kind"], "symbol");
+    assert_eq!(report["scope"]["selector"], "planner.schedule_calculate");
+    let subjects = report["subjects"].as_array().unwrap();
+    assert_eq!(subjects.len(), 1);
+    assert_eq!(subjects[0]["subject"], "command:planner.schedule_calculate");
+    assert!(!subjects[0]["requirements"].as_array().unwrap().is_empty());
+    // An unknown symbol is refused with the input diagnostic.
     let output = lekalo_in(
         &project,
         &[
@@ -203,6 +212,151 @@ fn unknown_target_selection_is_invalid_on_stderr() {
     assert_eq!(exit_code(&output), 1);
     let text = stderr_text(&output);
     assert!(text.contains("portability.input-invalid"));
+}
+
+#[test]
+#[cfg(windows)]
+fn a_junction_inside_the_project_never_escapes_the_root() {
+    // The review probe: `config/` replaced by a directory junction to a
+    // directory outside the project must not feed the assessment. The
+    // confined read path rejects the reparse point instead of opening
+    // through it.
+    let project = fixture_path();
+    let outside = std::env::temp_dir().join("lekalo-portability-junction-outside");
+    let _ = std::fs::remove_dir_all(&outside);
+    std::fs::create_dir_all(&outside).expect("create outside dir");
+    std::fs::write(
+        outside.join("portability-targets.json"),
+        "{\"smuggled\":true}\n",
+    )
+    .expect("write outside file");
+    let sandbox = std::env::temp_dir().join("lekalo-portability-junction-run");
+    let _ = std::fs::remove_dir_all(&sandbox);
+    copy_dir(&project, &sandbox);
+    let junction = sandbox.join("config");
+    std::fs::remove_dir_all(&junction).expect("remove real config");
+    let status = Command::new("cmd")
+        .args(["/C", "mklink", "/J"])
+        .arg(&junction)
+        .arg(&outside)
+        .status()
+        .expect("create junction");
+    assert!(status.success(), "junction creation must succeed");
+    let output = lekalo_in(&sandbox, &["--json", "portability"]);
+    // The default targets read must refuse (junction classified, no
+    // smuggled config bound) and the run must never report a pinned
+    // configuration digest of outside bytes.
+    assert_ne!(exit_code(&output), 0, "junction read must not succeed");
+    let _ = std::fs::remove_dir_all(&sandbox);
+    let _ = std::fs::remove_dir_all(&outside);
+}
+
+#[test]
+fn an_empty_default_destination_list_is_refused_not_reinterpreted() {
+    // `defaultDestinations: []` is schema-invalid (minItems 1); the
+    // decoder must refuse it rather than silently assessing nothing.
+    let mut config: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(fixture_path().join("config/portability-targets.json"))
+            .expect("config"),
+    )
+    .unwrap();
+    config["defaultDestinations"] = serde_json::Value::Array(vec![]);
+    let empty_dir = std::env::temp_dir().join("lekalo-portability-empty-destinations");
+    let _ = std::fs::remove_dir_all(&empty_dir);
+    copy_dir(&fixture_path(), &empty_dir);
+    std::fs::write(
+        empty_dir.join("config/portability-targets.json"),
+        serde_json::to_vec_pretty(&config).unwrap(),
+    )
+    .unwrap();
+    let output = lekalo_in(&empty_dir, &["--json", "portability"]);
+    assert_eq!(exit_code(&output), 1, "empty destinations are invalid");
+    assert!(stderr_text(&output).contains("portability.input-invalid"));
+    std::fs::remove_dir_all(&empty_dir).ok();
+}
+
+#[test]
+fn a_mapping_for_another_destination_never_credits_this_row() {
+    // The review probe: a mapping scoped to php-laravel (its capability
+    // declared only partially there) must keep the go-service hook
+    // blocked even when the go row would otherwise look mappable.
+    let evidence =
+        std::fs::read_to_string(fixture_path().join("reports/portability-evidence.json"))
+            .expect("evidence");
+    let mut manifest: serde_json::Value = serde_json::from_str(&evidence).unwrap();
+    for mapping in manifest["mappings"].as_array_mut().unwrap().iter_mut() {
+        if mapping["id"] == "map.schedule-php" {
+            mapping["capability"] = "storage.returning".into();
+            mapping["definitionPins"] = serde_json::json!([
+                {"id": "storage.returning", "version": "0.2.16"}
+            ]);
+        }
+    }
+    let scoped_dir = std::env::temp_dir().join("lekalo-portability-scoped-mapping");
+    let _ = std::fs::remove_dir_all(&scoped_dir);
+    copy_dir(&fixture_path(), &scoped_dir);
+    std::fs::write(
+        scoped_dir.join("reports/portability-evidence.json"),
+        serde_json::to_vec_pretty(&manifest).unwrap(),
+    )
+    .unwrap();
+    let output = lekalo_in(
+        &scoped_dir,
+        &[
+            "--json",
+            "portability",
+            "--evidence",
+            "reports/portability-evidence.json",
+        ],
+    );
+    assert_eq!(exit_code(&output), 0);
+    let envelope = document(&output);
+    let report = &envelope["portability"];
+    let schedule = report["subjects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["subject"] == "command:planner.schedule_calculate")
+        .expect("schedule subject");
+    let go_row = schedule["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["destination"] == "go-service" && r["dimension"] == "behavioral")
+        .expect("go behavioral row");
+    assert_ne!(
+        go_row["classification"], "supported-with-mapping",
+        "a php-scoped mapping must never green the go row"
+    );
+    assert_eq!(go_row["classification"], "unsupported");
+    std::fs::remove_dir_all(&scoped_dir).ok();
+}
+
+#[test]
+fn running_from_the_lekalo_subdirectory_still_reads_the_project_root() {
+    // The loader resolves the project root through the ancestor walk;
+    // artifact reads must bind to that same resolved root.
+    let project = fixture_path();
+    let subdir = project.join("lekalo/modules/planner");
+    let output = Command::new(env!("CARGO_BIN_EXE_lekalo"))
+        .args(["--json", "portability"])
+        .current_dir(alias_free_path(&subdir))
+        .env_remove("LEKALO_PROJECT")
+        .output()
+        .expect("run the real lekalo binary");
+    assert_eq!(
+        exit_code(&output),
+        0,
+        "ancestor selection resolves the root"
+    );
+    let envelope = document(&output);
+    let report = &envelope["portability"];
+    assert_eq!(report["projectRef"]["projectId"], "planner");
+    assert_eq!(
+        report["inputs"]["targetsConfig"]["path"],
+        "config/portability-targets.json"
+    );
+    assert_eq!(report["inputs"]["targetsConfig"]["state"], "pinned");
 }
 
 #[test]

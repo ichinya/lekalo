@@ -256,20 +256,37 @@ mod classification_matrix {
     fn node_to_php_shows_the_explicit_custom_and_foreign_views() {
         let _guard = CWD_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let (_, report) = fixture_assessment();
+        // `map.reading-go` pins `storage.returning`, a capability the go
+        // profile declares at full support: the go reading hook is
+        // credited. The php mapping pins `runtime.async`, which the php
+        // profile only declares at partial support: the php schedule row
+        // must stay a blocking partial (supported-with-mapping requires
+        // full declared support), and a mapping scoped to another
+        // destination never surfaces at all.
         let php_schedule = row(
             &report,
             "command:planner.schedule_calculate",
             "php-laravel",
             Dimension::Behavioral,
         );
+        assert_eq!(php_schedule.classification, Classification::Partial);
+        assert_eq!(php_schedule.binding, Some(wire::Binding::Foreign));
+        assert_eq!(php_schedule.reason, "hook-foreign-partial");
+        assert!(php_schedule.blocking);
+        assert!(!php_schedule.evidence_refs.is_empty());
+        let go_reading = row(
+            &report,
+            "query:planner.count_focused",
+            "go-service",
+            Dimension::Behavioral,
+        );
         assert_eq!(
-            php_schedule.classification,
+            go_reading.classification,
             Classification::SupportedWithMapping
         );
-        assert_eq!(php_schedule.binding, Some(wire::Binding::Foreign));
-        assert_eq!(php_schedule.reason, "hook-foreign-mapped");
-        assert!(!php_schedule.blocking);
-        assert!(!php_schedule.evidence_refs.is_empty());
+        assert_eq!(go_reading.binding, Some(wire::Binding::Foreign));
+        assert_eq!(go_reading.reason, "hook-foreign-mapped");
+        assert!(!go_reading.blocking);
         let php_focus = row(
             &report,
             "command:planner.focus_task",
@@ -633,7 +650,7 @@ mod request_rules {
     }
 
     #[test]
-    fn derived_selection_from_the_sole_target_names_state() {
+    fn derived_selection_from_the_sole_target_is_invalid_without_destinations() {
         let _guard = CWD_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let compilation = compilation();
         let recipe = embedded_recipe().unwrap();
@@ -644,7 +661,10 @@ mod request_rules {
         };
         let mut subjects = extract(&compilation.project, &recipe);
         subjects.declared_targets = vec!["node-typescript".to_owned()];
-        let resolved = lekalo_core::portability::resolve_targets(
+        // The sole declared target names the source (derived), but there
+        // is no destination left: a zero-destination assessment is the
+        // vacuous green report, so the selection refuses instead.
+        let error = lekalo_core::portability::resolve_targets(
             &request,
             None,
             &subjects,
@@ -652,11 +672,11 @@ mod request_rules {
             &BTreeMap::new(),
             &BTreeMap::new(),
         )
-        .unwrap();
-        assert_eq!(resolved.source.target_id, "node-typescript");
-        assert_eq!(resolved.source.state, wire::PinState::Derived);
-        assert!(resolved.source.profile.is_none());
-        assert!(resolved.destinations.is_empty());
+        .unwrap_err();
+        assert!(error
+            .as_slice()
+            .iter()
+            .any(|d| d.id() == "portability.input-invalid"));
     }
 }
 
