@@ -17,14 +17,16 @@
           "scenario": "planner.focus_flow",
           "state": "executed",
           "subjects": [
-            "command:planner.focus_task"
+            "command:planner.focus_task",
+            "event:planner.task_focused"
           ]
         },
         {
           "scenario": "planner.schedule_flow",
           "state": "declared",
           "subjects": [
-            "command:planner.schedule_calculate"
+            "command:planner.schedule_calculate",
+            "effect:planner.schedule_write"
           ]
         }
       ],
@@ -419,6 +421,12 @@
           "subject": "planner.schedule_calculate"
         },
         {
+          "code": "portability.mapping-partial",
+          "detail": "hook-foreign-partial",
+          "dimension": "behavioral",
+          "subject": "planner.schedule_calculate"
+        },
+        {
           "code": "portability.evidence-incomplete",
           "detail": "capability-absent",
           "dimension": "operational",
@@ -464,7 +472,7 @@
       "identity": "dev.lekalo.portability-report@0.8.0",
       "inputs": {
         "evidence": {
-          "digest": "sha256:f9f268dd006e3d1a9e7a7ec0b9bf3084721af9800dcd8eea59f35923dd29f0a1",
+          "digest": "sha256:b97b11c755c8389bfba29d746aac1f62a4ec81d59026ea6a6fc4bc52895b9663",
           "state": "supplied"
         },
         "lockDigest": {
@@ -480,7 +488,7 @@
         "affectedGates": 1,
         "affectedScenarios": 2,
         "complete": true,
-        "mappedSymbols": 5,
+        "mappedSymbols": 3,
         "missingImplementations": 2,
         "rows": [
           {
@@ -666,7 +674,7 @@
               "planner.task"
             ],
             "reason": "capability-absent",
-            "requirement": "planner.task",
+            "requirement": "events.publication",
             "scenarios": [],
             "subject": "effect:planner.archive_task"
           },
@@ -684,7 +692,7 @@
               "planner.task"
             ],
             "reason": "capability-absent",
-            "requirement": "planner.task",
+            "requirement": "events.publication",
             "scenarios": [],
             "subject": "effect:planner.create_task"
           },
@@ -702,7 +710,7 @@
               "planner.task"
             ],
             "reason": "capability-absent",
-            "requirement": "planner.task",
+            "requirement": "events.publication",
             "scenarios": [
               "planner.schedule_flow"
             ],
@@ -1009,7 +1017,7 @@
               "planner.task"
             ],
             "reason": "capability-absent",
-            "requirement": "planner.task",
+            "requirement": "events.publication",
             "scenarios": [],
             "subject": "effect:planner.archive_task"
           },
@@ -1027,7 +1035,7 @@
               "planner.task"
             ],
             "reason": "capability-absent",
-            "requirement": "planner.task",
+            "requirement": "events.publication",
             "scenarios": [],
             "subject": "effect:planner.create_task"
           },
@@ -1045,7 +1053,7 @@
               "planner.task"
             ],
             "reason": "capability-absent",
-            "requirement": "planner.task",
+            "requirement": "events.publication",
             "scenarios": [
               "planner.schedule_flow"
             ],
@@ -1267,6 +1275,49 @@
             "subject": "command:planner.focus_task"
           },
           {
+            "action": "replace-mapping",
+            "destination": "php-laravel",
+            "dimension": "behavioral",
+            "evidenceNeeded": [
+              "full-mapping"
+            ],
+            "gates": [],
+            "id": "plan.replace-mapping.phplaravel.behavioral.command.planner.schedule_calculate",
+            "member": null,
+            "prerequisites": [
+              "planner.due_window",
+              "planner.schedule_write",
+              "planner.task_id",
+              "planner.weight"
+            ],
+            "reason": "hook-foreign-partial",
+            "requirement": "map.schedule-php",
+            "scenarios": [
+              "planner.schedule_flow"
+            ],
+            "subject": "command:planner.schedule_calculate"
+          },
+          {
+            "action": "replace-mapping",
+            "destination": "php-laravel",
+            "dimension": "behavioral",
+            "evidenceNeeded": [
+              "full-mapping"
+            ],
+            "gates": [],
+            "id": "plan.replace-mapping.phplaravel.behavioral.effect.planner.schedule_write",
+            "member": null,
+            "prerequisites": [
+              "planner.task"
+            ],
+            "reason": "hook-foreign-partial",
+            "requirement": "planner.task",
+            "scenarios": [
+              "planner.schedule_flow"
+            ],
+            "subject": "effect:planner.schedule_write"
+          },
+          {
             "action": "review-storage-policy",
             "destination": "php-laravel",
             "dimension": "storage",
@@ -1309,29 +1360,6 @@
               "scenario-receipt"
             ],
             "gates": [],
-            "id": "plan.verify-scenario.phplaravel.behavioral.command.planner.schedule_calculate",
-            "member": null,
-            "prerequisites": [
-              "planner.due_window",
-              "planner.schedule_write",
-              "planner.task_id",
-              "planner.weight"
-            ],
-            "reason": "hook-foreign-mapped",
-            "requirement": "map.schedule-php",
-            "scenarios": [
-              "planner.schedule_flow"
-            ],
-            "subject": "command:planner.schedule_calculate"
-          },
-          {
-            "action": "verify-scenario",
-            "destination": "php-laravel",
-            "dimension": "behavioral",
-            "evidenceNeeded": [
-              "scenario-receipt"
-            ],
-            "gates": [],
             "id": "plan.verify-scenario.phplaravel.behavioral.effect.planner.create_task",
             "member": null,
             "prerequisites": [
@@ -1341,30 +1369,10 @@
             "requirement": "planner.task",
             "scenarios": [],
             "subject": "effect:planner.create_task"
-          },
-          {
-            "action": "verify-scenario",
-            "destination": "php-laravel",
-            "dimension": "behavioral",
-            "evidenceNeeded": [
-              "scenario-receipt"
-            ],
-            "gates": [],
-            "id": "plan.verify-scenario.phplaravel.behavioral.effect.planner.schedule_write",
-            "member": null,
-            "prerequisites": [
-              "planner.task"
-            ],
-            "reason": "hook-foreign-mapped",
-            "requirement": "planner.task",
-            "scenarios": [
-              "planner.schedule_flow"
-            ],
-            "subject": "effect:planner.schedule_write"
           }
         ],
         "storageReviews": 1,
-        "unresolvedObligations": 44
+        "unresolvedObligations": 46
       },
       "projectRef": {
         "irDigest": "sha256:f9a4b5d6649787482014dffcdac03de55e231950af28cd853e6deaa6f1a29578",
@@ -2495,7 +2503,9 @@
               "classification": "unknown",
               "destination": "go-service",
               "dimension": "operational",
-              "evidenceRefs": [],
+              "evidenceRefs": [
+                "events.publication"
+              ],
               "offered": null,
               "reason": "capability-absent",
               "required": null,
@@ -2568,7 +2578,9 @@
               "classification": "unknown",
               "destination": "php-laravel",
               "dimension": "operational",
-              "evidenceRefs": [],
+              "evidenceRefs": [
+                "events.publication"
+              ],
               "offered": null,
               "reason": "capability-absent",
               "required": null,
@@ -2956,7 +2968,9 @@
               "classification": "unknown",
               "destination": "go-service",
               "dimension": "operational",
-              "evidenceRefs": [],
+              "evidenceRefs": [
+                "events.publication"
+              ],
               "offered": null,
               "reason": "capability-absent",
               "required": null,
@@ -3029,7 +3043,9 @@
               "classification": "unknown",
               "destination": "php-laravel",
               "dimension": "operational",
-              "evidenceRefs": [],
+              "evidenceRefs": [
+                "events.publication"
+              ],
               "offered": null,
               "reason": "capability-absent",
               "required": null,
@@ -4276,15 +4292,15 @@
             },
             {
               "binding": "foreign",
-              "blocking": false,
-              "classification": "supported-with-mapping",
+              "blocking": true,
+              "classification": "partial",
               "destination": "php-laravel",
               "dimension": "behavioral",
               "evidenceRefs": [
                 "map.schedule-php"
               ],
               "offered": null,
-              "reason": "hook-foreign-mapped",
+              "reason": "hook-foreign-partial",
               "required": null,
               "verification": "untested",
               "witnesses": [
@@ -4535,7 +4551,9 @@
               "classification": "unknown",
               "destination": "go-service",
               "dimension": "operational",
-              "evidenceRefs": [],
+              "evidenceRefs": [
+                "events.publication"
+              ],
               "offered": null,
               "reason": "capability-absent",
               "required": null,
@@ -4571,13 +4589,13 @@
             },
             {
               "binding": "foreign",
-              "blocking": false,
-              "classification": "supported-with-mapping",
+              "blocking": true,
+              "classification": "partial",
               "destination": "php-laravel",
               "dimension": "behavioral",
               "evidenceRefs": [],
               "offered": null,
-              "reason": "hook-foreign-mapped",
+              "reason": "hook-foreign-partial",
               "required": null,
               "verification": "untested",
               "witnesses": [
@@ -4608,7 +4626,9 @@
               "classification": "unknown",
               "destination": "php-laravel",
               "dimension": "operational",
-              "evidenceRefs": [],
+              "evidenceRefs": [
+                "events.publication"
+              ],
               "offered": null,
               "reason": "capability-absent",
               "required": null,
@@ -5846,17 +5866,17 @@
           "unknowns": 21
         },
         {
-          "blockers": 20,
+          "blockers": 22,
           "customObligations": 2,
           "destination": "php-laravel",
           "dimensions": {
             "behavioral": {
               "eligibleApplicable": 14,
               "nonApplicable": 17,
-              "partial": 0,
+              "partial": 2,
               "portable": 3,
               "structuralPortable": null,
-              "supportedWithMapping": 4,
+              "supportedWithMapping": 2,
               "targetSpecific": 0,
               "unknown": 7,
               "unsupported": 0,
@@ -5950,6 +5970,24 @@
     {
       "schema_version": "lekalo/diagnostic/v0.2.16",
       "registry_version": "0.8.0",
+      "id": "portability.mapping-partial",
+      "code": "LEK-PORT-004",
+      "severity": "warning",
+      "category": "compatibility",
+      "message_id": "portability.mapping-partial",
+      "message": "A qualified semantic mapping covers only part of a required obligation.",
+      "data": {
+        "detail": "finding",
+        "subject": "portability"
+      },
+      "related_locations": [],
+      "causes": [],
+      "fixes": [],
+      "metadata": {}
+    },
+    {
+      "schema_version": "lekalo/diagnostic/v0.2.16",
+      "registry_version": "0.8.0",
       "id": "portability.implementation-required",
       "code": "LEK-PORT-006",
       "severity": "warning",
@@ -6004,6 +6042,7 @@
   ],
   "reasonCodes": [
     "portability.evidence-incomplete",
+    "portability.mapping-partial",
     "portability.implementation-required",
     "portability.behavior-loss",
     "portability.check-denied"

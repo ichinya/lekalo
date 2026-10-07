@@ -183,6 +183,12 @@
       "reason": "hook-missing"
     },
     {
+      "subject": "command:planner.schedule_calculate",
+      "destination": "php-laravel",
+      "dimension": "behavioral",
+      "reason": "hook-foreign-partial"
+    },
+    {
       "subject": "effect:planner.schedule_write",
       "destination": "go-service",
       "dimension": "behavioral",
@@ -193,6 +199,12 @@
       "destination": "go-service",
       "dimension": "operational",
       "reason": "capability-absent"
+    },
+    {
+      "subject": "effect:planner.schedule_write",
+      "destination": "php-laravel",
+      "dimension": "behavioral",
+      "reason": "hook-foreign-partial"
     },
     {
       "subject": "effect:planner.schedule_write",
@@ -299,18 +311,8 @@
       "destination": "go-service"
     },
     {
-      "id": "plan.verify-scenario.phplaravel.behavioral.command.planner.schedule_calculate",
-      "subject": "command:planner.schedule_calculate",
-      "destination": "php-laravel"
-    },
-    {
       "id": "plan.verify-scenario.phplaravel.behavioral.effect.planner.create_task",
       "subject": "effect:planner.create_task",
-      "destination": "php-laravel"
-    },
-    {
-      "id": "plan.verify-scenario.phplaravel.behavioral.effect.planner.schedule_write",
-      "subject": "effect:planner.schedule_write",
       "destination": "php-laravel"
     }
   ],
@@ -319,14 +321,16 @@
       "scenario": "planner.focus_flow",
       "state": "executed",
       "subjects": [
-        "command:planner.focus_task"
+        "command:planner.focus_task",
+        "event:planner.task_focused"
       ]
     },
     {
       "scenario": "planner.schedule_flow",
       "state": "declared",
       "subjects": [
-        "command:planner.schedule_calculate"
+        "command:planner.schedule_calculate",
+        "effect:planner.schedule_write"
       ]
     }
   ],
@@ -341,10 +345,10 @@
     }
   ],
   "totals": {
-    "blockers": 44,
+    "blockers": 46,
     "requiredImplementations": 2,
     "storageReviews": 1,
-    "verificationTasks": 4,
-    "unresolvedObligations": 44
+    "verificationTasks": 2,
+    "unresolvedObligations": 46
   }
 }

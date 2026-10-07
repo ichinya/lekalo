@@ -145,20 +145,22 @@ const evidence = {
     {
       id: "map.schedule-php",
       requirement: "behavior.hook",
-      capability: "behavior.php-scheduler",
+      capability: "runtime.async",
+      targetId: "php-laravel",
       subject: "planner.schedule_calculate",
       coverage: "full",
       conditions: ["php-84", "laravel-11"],
-      definitionPins: [{ id: "behavior.php-scheduler", version: "0.8.0" }],
+      definitionPins: [{ id: "runtime.async", version: "0.2.16" }],
     },
     {
       id: "map.reading-go",
       requirement: "behavior.hook",
-      capability: "behavior.go-reader",
+      capability: "storage.returning",
+      targetId: "go-service",
       subject: "planner.count_focused",
       coverage: "full",
       conditions: ["go-122"],
-      definitionPins: [{ id: "behavior.go-reader", version: "0.8.0" }],
+      definitionPins: [{ id: "storage.returning", version: "0.2.16" }],
     },
   ],
   storageRequired: [
@@ -225,6 +227,10 @@ const documents = new Map([
 ]);
 
 // The invalid controls: authored refusals with their expected reason.
+// `cross-target-mapping` is not a decode refusal: its re-scoped php
+// mapping names a capability the go profile never declares at full
+// support, so the go schedule row must stay blocked (the report
+// consumer below pins the expected row states).
 const invalidControls = [
   ["invalid/duplicate-keys.evidence.json", "duplicate-key"],
   ["invalid/stale-project-pin.evidence.json", "project-pin"],
@@ -233,6 +239,7 @@ const invalidControls = [
   ["invalid/duplicate-binding.targets.json", "target-binding"],
   ["invalid/stale-profile-pin.targets.json", "profile-pin"],
   ["invalid/unknown-member.evidence.json", "closed-shape"],
+  ["invalid/cross-target-mapping.evidence.json", "cross-target-mapping"],
 ];
 
 // ---------------------------------------------------------------------------

@@ -66,7 +66,8 @@
     {
       "id": "map.schedule-php",
       "requirement": "behavior.hook",
-      "capability": "behavior.php-scheduler",
+      "capability": "runtime.async",
+      "targetId": "php-laravel",
       "subject": "planner.schedule_calculate",
       "coverage": "full",
       "conditions": [
@@ -75,15 +76,16 @@
       ],
       "definitionPins": [
         {
-          "id": "behavior.php-scheduler",
-          "version": "0.8.0"
+          "id": "runtime.async",
+          "version": "0.2.16"
         }
       ]
     },
     {
       "id": "map.reading-go",
       "requirement": "behavior.hook",
-      "capability": "behavior.go-reader",
+      "capability": "storage.returning",
+      "targetId": "go-service",
       "subject": "planner.count_focused",
       "coverage": "full",
       "conditions": [
@@ -91,8 +93,8 @@
       ],
       "definitionPins": [
         {
-          "id": "behavior.go-reader",
-          "version": "0.8.0"
+          "id": "storage.returning",
+          "version": "0.2.16"
         }
       ]
     }

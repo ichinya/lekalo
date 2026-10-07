@@ -320,6 +320,31 @@ for (const [relative, reason, expectedExit] of controls) {
   }
 }
 
+// 10b. The cross-target mapping control: a mapping re-scoped onto
+// go-service whose capability the go profile never declares at full
+// support must keep the go schedule hook blocked — never a green
+// `supported-with-mapping` fabricated from a foreign recipe.
+{
+  const temp = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
+  try {
+    cpSync(project, temp, { recursive: true });
+    cpSync(
+      join(root, "tests/fixtures/portability/invalid/cross-target-mapping.evidence.json"),
+      join(temp, "reports/portability-evidence.json"),
+      { force: true },
+    );
+    const leaked = tryRun(["--json", "portability", "--evidence", "reports/portability-evidence.json"], temp);
+    if (leaked.code !== 0) fail("control-exit", `cross-target-mapping: ${leaked.code}`);
+    const report = JSON.parse(leaked.stdout).portability;
+    const schedule = report.subjects.find((s) => s.subject === "command:planner.schedule_calculate");
+    const goRow = schedule.rows.find((r) => r.destination === "go-service" && r.dimension === "behavioral");
+    if (goRow.classification === "supported-with-mapping") fail("cross-target-leak", JSON.stringify(goRow));
+    if (!goRow.blocking) fail("cross-target-green", JSON.stringify(goRow));
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
+}
+
 // 11. The strict --check denial: exit 3, status denied, report preserved.
 const denied = JSON.parse(deniedRun);
 if (denied.status !== "denied") fail("check-status", denied.status);
