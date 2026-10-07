@@ -6530,11 +6530,24 @@ fn run_pilot(command: PilotCommands, no_cache: bool) -> DomainResult {
         Some(profile) => match lekalo_core::worklog_changelog::admit(&bytes, profile) {
             Ok(receipt) => {
                 let verdict = receipt.verdict;
-                DomainResult::receipt(
-                    serde_json::to_string_pretty(&serde_json::json!({ "pilot": receipt }))
-                        .expect("pilot receipt serializes"),
-                    format!("pilot evidence {}: {}", profile.wire_name(), verdict),
-                )
+                let json = serde_json::to_string_pretty(&serde_json::json!({ "pilot": receipt }))
+                    .expect("pilot receipt serializes");
+                let human = format!("pilot evidence {}: {}", profile.wire_name(), verdict);
+                if verdict == "unsupported" {
+                    // The strict refusal keeps every row visible but is
+                    // never a success: status unsupported, exit 4 (the
+                    // documented convention; the receipt rides the
+                    // envelope like a denied one).
+                    DomainResult::unsupported_json(
+                        json,
+                        human,
+                        lekalo_core::worklog_changelog::diagnostic::evidence_incomplete(
+                            "strict-refused",
+                        ),
+                    )
+                } else {
+                    DomainResult::receipt(json, human)
+                }
             }
             Err(result) => result,
         },

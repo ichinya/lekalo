@@ -97,6 +97,10 @@ const TOP_LEVEL_KEYS: &[&str] = &[
     "verdict",
 ];
 
+/// The schema-required top-level members: admission enforces their
+/// presence exactly like the closed schema does.
+const TOP_LEVEL_REQUIRED: &[&str] = TOP_LEVEL_KEYS;
+
 const TARGET_KEYS: &[&str] = &[
     "target",
     "backend",
@@ -105,6 +109,9 @@ const TARGET_KEYS: &[&str] = &[
     "assertions",
     "blocking",
 ];
+
+/// The schema-required per-target members.
+const TARGET_REQUIRED: &[&str] = TARGET_KEYS;
 
 const CAPABILITY_KEYS: &[&str] = &["capability", "support", "approval", "blocking", "note"];
 
@@ -134,6 +141,17 @@ pub fn admit(bytes: &[u8], profile: AdmissionProfile) -> Result<AdmissionReceipt
         if !TOP_LEVEL_KEYS.contains(&key.as_str()) {
             return Err(DomainResult::invalid(diagnostic::input_invalid(
                 "unknown-field",
+            )));
+        }
+    }
+    // The closed member set is also a required member set: a report
+    // missing any schema-required member is structurally incomplete
+    // (mirror of the schema's `required` list; admission never admits
+    // an absent member behind a defaulted read).
+    for required in TOP_LEVEL_REQUIRED {
+        if !object.contains_key(*required) {
+            return Err(DomainResult::invalid(diagnostic::input_invalid(
+                "missing-member",
             )));
         }
     }
@@ -200,6 +218,16 @@ pub fn admit(bytes: &[u8], profile: AdmissionProfile) -> Result<AdmissionReceipt
             .and_then(Json::as_str)
             .ok_or_else(|| DomainResult::invalid(diagnostic::input_invalid("execution")))?
             .to_owned();
+        // The target member set is required as well as closed: a
+        // missing backend, capabilities, assertions, or blocking list
+        // is structural incompleteness, never a defaulted empty set.
+        for required in TARGET_REQUIRED {
+            if !target_object.contains_key(*required) {
+                return Err(DomainResult::invalid(diagnostic::input_invalid(
+                    "missing-member",
+                )));
+            }
+        }
         let capabilities_json = target_object
             .get("capabilities")
             .and_then(Json::as_array)
@@ -379,5 +407,52 @@ mod tests {
             super::diagnostic::EVIDENCE_INCOMPLETE
         );
         assert_eq!(set.as_slice()[0].registry_version(), "0.8.0");
+    }
+
+    #[test]
+    fn missing_required_members_are_structurally_refused() {
+        // A minimal well-formed-but-incomplete report: the required
+        // member admission reads is present, its siblings are not.
+        let report = serde_json::json!({
+            "schemaVersion": super::version::EVIDENCE_SCHEMA_VERSION,
+            "identity": super::version::EVIDENCE_IDENTITY,
+            "targets": [],
+        });
+        let bytes = serde_json::to_vec(&report).expect("report serializes");
+        let set = admit(&bytes, AdmissionProfile::Strict).unwrap_err();
+        assert_eq!(set.status(), Status::Invalid);
+        let rendered = serde_json::to_string(set.diagnostics().first().expect("one diagnostic"))
+            .expect("diagnostic serializes");
+        let value: serde_json::Value = serde_json::from_str(&rendered).expect("diagnostic JSON");
+        assert_eq!(value["data"]["detail"], "missing-member");
+    }
+
+    #[test]
+    fn missing_required_target_members_are_structurally_refused() {
+        let report = serde_json::json!({
+            "schemaVersion": super::version::EVIDENCE_SCHEMA_VERSION,
+            "identity": super::version::EVIDENCE_IDENTITY,
+            "reportVersion": "0.8.0",
+            "compositionRef": {"identity": "i", "digest": "d"},
+            "toolchain": {},
+            "profiles": ["strict"],
+            "scenarios": [{"scenario": "s", "status": "not_executed", "targets": ["php"]}],
+            "consumers": [],
+            "completeness": {"consumerClosure": "complete"},
+            "verdict": {},
+            "targets": [{
+                "target": "php",
+                "execution": "not_executed",
+                "capabilities": [],
+                "assertions": [],
+                "blocking": []
+            }],
+        });
+        let bytes = serde_json::to_vec(&report).expect("report serializes");
+        let set = admit(&bytes, AdmissionProfile::Strict).unwrap_err();
+        let rendered = serde_json::to_string(set.diagnostics().first().expect("one diagnostic"))
+            .expect("diagnostic serializes");
+        let value: serde_json::Value = serde_json::from_str(&rendered).expect("diagnostic JSON");
+        assert_eq!(value["data"]["detail"], "missing-member");
     }
 }
