@@ -56,6 +56,7 @@
           "freshness": {
             "enum": [
               "fresh",
+              "unqualified",
               "stale",
               "unknown"
             ]

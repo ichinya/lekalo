@@ -264,6 +264,77 @@ pub fn load_journal(root: &Path, plan_digest: &str) -> Outcome<Option<Journal>> 
     }
 }
 
+/// The durable recovery view of one plan (F10/X5): the interrupted
+/// phase's journal with every snapshot's on-disk integrity classified —
+/// present digests re-verified, absent files named. A consumed journal
+/// makes a partial mutation discoverable instead of invisible; a
+/// missing journal means nothing durable exists for the plan.
+pub fn recovery_view(root: &Path, plan_digest: &str) -> Outcome<RecoveryView> {
+    let journal = load_journal(root, plan_digest)?;
+    let Some(journal) = journal else {
+        return Ok(RecoveryView {
+            plan: plan_digest.to_owned(),
+            phase: None,
+            intact: true,
+            steps: Vec::new(),
+            missing_snapshots: Vec::new(),
+        });
+    };
+    let Some(home) = recovery_home(root, plan_digest) else {
+        return Err(DomainResult::invalid(diagnostic::input_invalid_set(
+            "plan",
+            "invalid-digest",
+        )));
+    };
+    let _ = home;
+    let mut intact = true;
+    let mut missing_snapshots = Vec::new();
+    for step in &journal.steps {
+        let Some(snapshot) = &step.snapshot else {
+            continue;
+        };
+        if !version::is_rel_path(snapshot)
+            || std::fs::symlink_metadata(root.join(snapshot)).is_err()
+        {
+            intact = false;
+            missing_snapshots.push(step.path.clone());
+        }
+    }
+    Ok(RecoveryView {
+        plan: plan_digest.to_owned(),
+        phase: Some(journal.phase.clone()),
+        intact,
+        steps: journal
+            .steps
+            .iter()
+            .map(|step| RecoveryStep {
+                path: step.path.clone(),
+                state: step.state.clone(),
+                snapshot: step.snapshot.clone(),
+            })
+            .collect(),
+        missing_snapshots,
+    })
+}
+
+/// One journaled recovery step as the recovery view reports it.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct RecoveryStep {
+    pub path: String,
+    pub state: String,
+    pub snapshot: Option<String>,
+}
+
+/// The durable recovery view of one plan's installation.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct RecoveryView {
+    pub plan: String,
+    pub phase: Option<String>,
+    pub intact: bool,
+    pub steps: Vec<RecoveryStep>,
+    pub missing_snapshots: Vec<String>,
+}
+
 /// One compare-and-swap file installation: the on-disk bytes must still
 /// match the plan's expected `before` digest (or the file must still be
 /// absent), then the new bytes rename into place. Later user edits at a

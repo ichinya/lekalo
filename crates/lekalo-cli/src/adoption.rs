@@ -150,6 +150,21 @@ pub enum AdoptionCommands {
         #[arg(long, value_name = "DIR")]
         project: Option<String>,
     },
+    /// The durable recovery view of one plan: the interrupted apply or
+    /// confirmation phase's journal with every snapshot's integrity
+    /// classified, so a partial mutation is discoverable instead of
+    /// invisible.
+    Recovery {
+        /// The plan digest (or a saved plan file) to inspect.
+        #[arg(long, value_name = "FILE", conflicts_with = "digest")]
+        plan: Option<String>,
+        /// The exact plan digest to inspect.
+        #[arg(long = "digest", value_name = "DIGEST", conflicts_with = "plan")]
+        digest: Option<String>,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
     /// The hybrid coverage join: effective mode, freshness, and gaps
     /// for exactly one selected scope.
     Coverage {
@@ -284,6 +299,42 @@ pub fn run(command: AdoptionCommands) -> DomainResult {
                 return DomainResult::usage_error();
             }
             run_rollback(&receipt, dry_run, confirm.as_deref(), &project)
+        }
+        AdoptionCommands::Recovery {
+            plan,
+            digest,
+            project,
+        } => {
+            let resolved = match (plan, digest) {
+                (Some(path), _) => {
+                    let bytes = match read_input("plan", &path) {
+                        Ok(bytes) => bytes,
+                        Err(result) => return result,
+                    };
+                    match lekalo_core::adoption::wire::refactor_plan_of_bytes(&bytes) {
+                        Ok(document) => document.plan,
+                        Err(_) => {
+                            match lekalo_core::adoption::wire::confirmation_plan_of_bytes(&bytes) {
+                                Ok(document) => document.plan,
+                                Err(error) => return DomainResult::invalid(error.set()),
+                            }
+                        }
+                    }
+                }
+                (_, Some(digest)) => {
+                    if !lekalo_core::adoption::version::is_sha256(&digest) {
+                        return DomainResult::invalid(
+                            lekalo_core::adoption::diagnostic_input_invalid(
+                                "digest",
+                                "invalid-digest",
+                            ),
+                        );
+                    }
+                    digest
+                }
+                _ => return DomainResult::usage_error(),
+            };
+            run_recovery(&resolved, &project)
         }
         AdoptionCommands::Coverage {
             symbol,
@@ -657,6 +708,27 @@ fn run_rollback(
             ),
             Err(result) => result,
         }
+    }
+}
+
+fn run_recovery(plan_digest: &str, project: &Option<String>) -> DomainResult {
+    let selection = selection_for(project);
+    let context = match lekalo_core::adoption::context(&selection) {
+        Ok(context) => context,
+        Err(result) => return result,
+    };
+    match lekalo_core::adoption::recovery_view(&context.root, plan_digest) {
+        Ok(view) => emit(
+            serde_json::to_string_pretty(&view).expect("recovery view serializes"),
+            format!(
+                "adoption recovery : plan {} phase {} ({} steps, intact: {})",
+                view.plan,
+                view.phase.as_deref().unwrap_or("none"),
+                view.steps.len(),
+                view.intact
+            ),
+        ),
+        Err(result) => result,
     }
 }
 

@@ -5191,7 +5191,7 @@ fn run_doctor(project: Option<String>, fix: bool, traces: Vec<String>) -> Domain
 
 /// `lekalo status`: the freshness panel plus the exact revisions.
 fn run_status(project: Option<String>, adoption: Option<String>) -> DomainResult {
-    let base = run_status_envelope(project);
+    let base = run_status_envelope(project.clone());
     let Some(path) = adoption else {
         return base;
     };
@@ -5200,7 +5200,9 @@ fn run_status(project: Option<String>, adoption: Option<String>) -> DomainResult
     if base.status() != lekalo_core::Status::Valid {
         return base;
     }
-    let selection = selection_for(&None);
+    // The adoption context resolves from the exact project selection the
+    // invocation named — never silently from the cwd (F5/X10).
+    let selection = selection_for(&project);
     let context = match lekalo_core::adoption::context(&selection) {
         Ok(context) => context,
         Err(result) => return result,
@@ -10315,6 +10317,7 @@ fn source_paths_of(
 /// core; this binary only selects, renders, and maps exits.
 fn run_impact(args: ImpactArgs) -> DomainResult {
     let adoption = args.adoption.clone();
+    let project = args.project.clone();
     let base = run_impact_base(args);
     let Some(path) = adoption else {
         return base;
@@ -10323,7 +10326,9 @@ fn run_impact(args: ImpactArgs) -> DomainResult {
     if base.status() != lekalo_core::Status::Valid {
         return base;
     }
-    let selection = selection_for(&None);
+    // The adoption context resolves from the exact project selection the
+    // invocation named — never silently from the cwd (F5/X10).
+    let selection = selection_for(&project);
     let context = match lekalo_core::adoption::context(&selection) {
         Ok(context) => context,
         Err(result) => return result,

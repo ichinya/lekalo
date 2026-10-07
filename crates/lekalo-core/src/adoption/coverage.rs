@@ -9,12 +9,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::Value as Json;
 
-use super::analysis::{AdoptionContext, AnalysisScope, Outcome};
+use super::analysis::{compute_pins, AdoptionContext, AnalysisScope, Outcome};
 use super::diagnostic;
 use super::version;
 use super::wire::{
     self, BoundaryWitness, CoverageCounts, CoverageDocument, CoverageRow, Gap, ImpactReport,
-    PanelRow, StatusReport, TraceReport,
+    PanelRow, Pins, StatusReport, TraceReport,
 };
 use crate::observed::types::{BindingStatus, ObservedIndex};
 use crate::result::DomainResult;
@@ -196,15 +196,56 @@ pub fn coverage(
         .as_ref()
         .map(|project| project.id.clone())
         .unwrap_or_default();
+    // Conformance freshness (X11): the join binds to the exact consumed
+    // input revisions it was derived from, so a later consumer can tell
+    // a fresh panel from a stale one instead of presenting drift as
+    // current.
+    let pins = compute_pins(ctx, index, &scope_paths_of_rows(index, &rows))?;
+    let revision = index
+        .map(|index| index.revision.clone())
+        .unwrap_or_else(|| "none".to_owned());
     Ok(CoverageDocument {
         schema_version: version::COVERAGE_SCHEMA_VERSION.to_owned(),
         identity: version::COVERAGE_IDENTITY.to_owned(),
         project,
         scope: scope.wire(),
+        revision: Some(revision),
+        pins: Some(pins),
         rows,
         counts,
         gaps,
     })
+}
+
+/// The consumed source set of one coverage join: every evidence path
+/// the joined rows reference (locations, candidates, endpoints, test
+/// bindings). Absent files contribute no pin; the freshness check
+/// re-fingerprints exactly this set.
+fn scope_paths_of_rows(
+    index: Option<&ObservedIndex>,
+    rows: &[CoverageRow],
+) -> std::collections::BTreeSet<String> {
+    let mut paths = std::collections::BTreeSet::new();
+    for row in rows {
+        if let Some(record) = index.and_then(|index| index.symbol(&row.symbol)) {
+            if let Some(location) = &record.location {
+                paths.insert(location.path.clone());
+            }
+            for candidate in &record.candidates {
+                paths.insert(candidate.path.clone());
+            }
+        }
+    }
+    if let Some(index) = index {
+        for endpoint in &index.endpoints {
+            paths.insert(endpoint.path.clone());
+        }
+        for binding in &index.test_bindings {
+            paths.insert(binding.path.clone());
+        }
+    }
+    paths.retain(|path| version::is_rel_path(path));
+    paths
 }
 
 fn state_of_record(record: &crate::observed::types::SymbolRecord) -> &'static str {
@@ -236,9 +277,38 @@ pub fn load_coverage(bytes: &[u8], project: &str) -> Outcome<(CoverageDocument, 
     Ok((document, digest))
 }
 
+/// The freshness verdict of one saved coverage attachment against the
+/// live tree (X11): `fresh` only when the attachment's pinned
+/// revisions and every pinned source digest still match the consumed
+/// inputs; `stale` names the drifted members; `unknown` when the
+/// attachment carries no pins (a hand-authored document).
+pub fn coverage_freshness(
+    ctx: &AdoptionContext,
+    index: Option<&ObservedIndex>,
+    coverage: &CoverageDocument,
+) -> Outcome<(String, Vec<String>)> {
+    let Some(pins) = &coverage.pins else {
+        return Ok(("unknown".to_owned(), Vec::new()));
+    };
+    let scope_paths = scope_paths_of_rows(index, &coverage.rows);
+    let current: Pins = compute_pins(ctx, index, &scope_paths)?;
+    let changed = super::transaction::changed_pins(pins, &current);
+    if changed.is_empty() {
+        Ok(("fresh".to_owned(), Vec::new()))
+    } else {
+        Ok(("stale".to_owned(), changed))
+    }
+}
+
 /// The typed status projection: the exact upstream envelope plus the
-/// joined mode/freshness panels and the explicit gaps.
+/// joined mode/freshness panels and the explicit gaps. Each panel's
+/// freshness is qualified by the attachment's own recorded conformance
+/// freshness: a stale or unqualified attachment never presents its
+/// rows as plain `fresh` (X11).
 pub fn status_report(upstream: Json, coverage: &CoverageDocument) -> StatusReport {
+    let attachment_fresh = coverage.revision.as_deref().is_some()
+        && coverage.pins.is_some()
+        && coverage.revision.as_deref() != Some("drifted");
     StatusReport {
         schema_version: version::STATUS_REPORT_SCHEMA_VERSION.to_owned(),
         identity: version::STATUS_REPORT_IDENTITY.to_owned(),
@@ -251,14 +321,22 @@ pub fn status_report(upstream: Json, coverage: &CoverageDocument) -> StatusRepor
                 symbol: row.symbol.clone(),
                 mode: row.effective.clone(),
                 state: row.state.clone(),
-                freshness: match row.state.as_str() {
-                    "current" => "fresh".to_owned(),
-                    "stale" => "stale".to_owned(),
-                    _ => "unknown".to_owned(),
-                },
+                freshness: panel_freshness(row, attachment_fresh),
             })
             .collect(),
         gaps: coverage.gaps.clone(),
+    }
+}
+
+/// The qualified per-panel freshness: a `current` row is fresh only
+/// when the attachment's conformance freshness holds; any other state
+/// or a stale/unqualified attachment stays qualified.
+fn panel_freshness(row: &CoverageRow, attachment_fresh: bool) -> String {
+    match (row.state.as_str(), attachment_fresh) {
+        ("current", true) => "fresh".to_owned(),
+        ("current", false) => "unqualified".to_owned(),
+        ("stale", _) => "stale".to_owned(),
+        _ => "unknown".to_owned(),
     }
 }
 
@@ -292,7 +370,9 @@ pub fn impact_report(upstream: Json, coverage: &CoverageDocument) -> ImpactRepor
 
 /// The typed trace projection: the exact manifest and query result plus
 /// the coverage and verification provenance joins with uncovered and
-/// stale obligations visible.
+/// stale obligations visible. `verification` names the actual executed
+/// verification receipts joined by the caller (execution digests, never
+/// specifications).
 pub fn trace_report(
     manifest: Json,
     query: Json,

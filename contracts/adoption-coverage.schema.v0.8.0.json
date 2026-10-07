@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://dev.lekalo/coverage.schema.v0.8.0.json",
   "title": "Lekalo adoption coverage (v0.8.0)",
-  "description": "Issue #136 scoped brownfield adoption, selective refactoring, and hybrid mode. Closed Draft 2020-12 contract at the 0.8.0 product generation; the exact discriminator is lekalo/adoption-{family}/v0.8.0 and the schema identity is dev.lekalo.adoption-{family}@0.8.0. The derived hybrid join of observed and contracted records for the selected scope: per-symbol effective mode (untouched observed, adapted legacy contracted, new contracted, unbound, conflicting), freshness state, origin, confirmed contract and binding/test coverage, verification receipts, and explicit gap rows. Aggregate counts use disjoint effective sets while raw provenance is preserved; the coverage view is never an ownership authority.",
+  "description": "Issue #136 scoped brownfield adoption, selective refactoring, and hybrid mode. Closed Draft 2020-12 contract at the 0.8.0 product generation; the exact discriminator is lekalo/adoption-{family}/v0.8.0 and the schema identity is dev.lekalo.adoption-{family}@0.8.0. The derived hybrid join of observed and contracted records for the selected scope: per-symbol effective mode (untouched observed, adapted legacy contracted, new contracted, unbound, conflicting), freshness state, origin, confirmed contract and binding/test coverage, verification receipts, and explicit gap rows. Aggregate counts use disjoint effective sets while raw provenance is preserved; the coverage view is never an ownership authority. The join binds the producing scan revision and its exact consumed input pins, so a consumer can distinguish a fresh panel from a stale one by re-fingerprinting the pinned set (a hand-authored document carries neither).",
   "type": "object",
   "additionalProperties": false,
   "unevaluatedProperties": false,
@@ -11,6 +11,8 @@
     "identity",
     "project",
     "scope",
+    "revision",
+    "pins",
     "rows",
     "counts",
     "gaps"
@@ -27,6 +29,27 @@
     },
     "scope": {
       "$ref": "#/$defs/scope"
+    },
+    "revision": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 256
+    },
+    "pins": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "oneOf": [
+        {
+          "$ref": "#/$defs/pins"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "rows": {
       "type": "array",

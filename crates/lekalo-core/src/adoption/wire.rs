@@ -471,7 +471,7 @@ impl ClosedValidate for StatusReport {
         for panel in &self.panels {
             check_member(&panel.mode, &KINDS_EFFECTIVE)?;
             check_member(&panel.state, &KINDS_ROW_STATE)?;
-            check_member(&panel.freshness, &["fresh", "stale", "unknown"])?;
+            check_member(&panel.freshness, &["fresh", "unqualified", "stale", "unknown"])?;
         }
         Ok(())
     }
@@ -798,6 +798,15 @@ pub struct CoverageDocument {
     pub identity: String,
     pub project: String,
     pub scope: Scope,
+    /// The producing scan revision the join was derived from (typed
+    /// null without scan evidence) — the first freshness input (X11).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision: Option<String>,
+    /// The exact consumed input pins of the join (typed null for a
+    /// hand-authored document): a consumer can tell a fresh panel from
+    /// a stale one by re-fingerprinting this set (X11).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pins: Option<Pins>,
     pub rows: Vec<CoverageRow>,
     pub counts: CoverageCounts,
     pub gaps: Vec<Gap>,

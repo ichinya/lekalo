@@ -521,10 +521,12 @@ const schemas = {
     "coverage",
     "Lekalo adoption coverage (v0.8.0)",
     base +
-      "The derived hybrid join of observed and contracted records for the selected scope: per-symbol effective mode (untouched observed, adapted legacy contracted, new contracted, unbound, conflicting), freshness state, origin, confirmed contract and binding/test coverage, verification receipts, and explicit gap rows. Aggregate counts use disjoint effective sets while raw provenance is preserved; the coverage view is never an ownership authority.",
+      "The derived hybrid join of observed and contracted records for the selected scope: per-symbol effective mode (untouched observed, adapted legacy contracted, new contracted, unbound, conflicting), freshness state, origin, confirmed contract and binding/test coverage, verification receipts, and explicit gap rows. Aggregate counts use disjoint effective sets while raw provenance is preserved; the coverage view is never an ownership authority. The join binds the producing scan revision and its exact consumed input pins, so a consumer can distinguish a fresh panel from a stale one by re-fingerprinting the pinned set (a hand-authored document carries neither).",
     {
       project: { $ref: "#/$defs/moduleId" },
       scope: { $ref: "#/$defs/scope" },
+      revision: { type: ["string", "null"], maxLength: 256 },
+      pins: { type: ["object", "null"], oneOf: [{ $ref: "#/$defs/pins" }, { type: "null" }] },
       rows: {
         type: "array",
         maxItems: 10000,
@@ -559,7 +561,7 @@ const schemas = {
       },
       gaps: { type: "array", maxItems: 1000, items: { $ref: "#/$defs/gap" } },
     },
-    ["project", "scope", "rows", "counts", "gaps"],
+    ["project", "scope", "revision", "pins", "rows", "counts", "gaps"],
   ),
 
   "adoption-status-report": schema(
@@ -581,7 +583,7 @@ const schemas = {
             symbol: { $ref: "#/$defs/semanticId" },
             mode: { $ref: "#/$defs/effectiveMode" },
             state: { enum: ["current", "stale", "unknown"] },
-            freshness: { enum: ["fresh", "stale", "unknown"] },
+            freshness: { enum: ["fresh", "unqualified", "stale", "unknown"] },
           },
         },
       },
