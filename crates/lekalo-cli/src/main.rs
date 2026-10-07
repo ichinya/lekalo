@@ -31,8 +31,8 @@ mod evaluation;
 mod git_input;
 mod metrics_export;
 mod report_git;
-mod search;
 pub(crate) mod report_output;
+mod search;
 mod waivers;
 
 const PROGRAM_NAME: &str = "lekalo";

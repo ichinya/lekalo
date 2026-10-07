@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
-  "productVersion": "0.6.5",
-  "cliSourceDigest": "sha256:181e7cef1d85b55aa87f8984546ea4a9ee294082b60a6c4f4dbeb8667f05f6e3",
+  "productVersion": "0.8.0",
+  "cliSourceDigest": "sha256:3743be27883f4fa35c270f6c11d145cee54dc234d855800f9939a6d4aec57794",
   "p0Pages": [
     {
       "page": "README.md",
@@ -704,6 +704,17 @@
       "summary": "Validate one attachment: exhaustive static typing, canonical bytes, and the required capability set",
       "leaf": true,
       "owner": "docs/expressions.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:find",
+      "kind": "command",
+      "command": "find",
+      "usage": "lekalo find [OPTIONS]",
+      "helpDigest": "sha256:1112b080435371b107c6725b5e8694f0fcf13dbcc64ce19175e2d59a1f90772d",
+      "summary": "Exact filtered lookup over the typed projection (issue #93): never fuzzes a selector; repeated flags OR, different flags AND",
+      "leaf": true,
+      "owner": "docs/semantic-search.md",
       "status": "implemented"
     },
     {
@@ -1518,6 +1529,61 @@
       "summary": "Scan existing code through one target adapter and record the bindings (issue #42). Everything after the program path is passed to the adapter verbatim (no shell), so adapter flags come last",
       "leaf": true,
       "owner": "docs/observed-mode.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:search",
+      "kind": "command",
+      "command": "search",
+      "usage": "lekalo search [OPTIONS] <QUERY>",
+      "helpDigest": "sha256:320d4ca6184717aada01ad790545ad9833dc1a434c80bd2eb9da61a1c351bea9",
+      "summary": "Deterministic semantic search over the typed projection (issue #93): `search` combines exact filters with lexical retrieval, `find` applies exact filters alone, and `search-index` owns the durable generation lifecycle. The core owns every decision; this binary only admits inputs, persists the cache-owned store, and maps exits",
+      "leaf": true,
+      "owner": "docs/semantic-search.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:search-index",
+      "kind": "command",
+      "command": "search-index",
+      "usage": "lekalo search-index [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:2e4a75ef61a184c4d2904fdd127ca31e7ac63a23f2b7970dc9d580f76e159066",
+      "summary": "The durable search index lifecycle under the governed cache custody (issue #93)",
+      "leaf": false,
+      "owner": "docs/semantic-search.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:search-index build",
+      "kind": "command",
+      "command": "search-index build",
+      "usage": "lekalo search-index build [OPTIONS]",
+      "helpDigest": "sha256:5223095f907b930b4cfcf9fd9a7dffeb6015caff572019a9f088c80222da5dbc",
+      "summary": "Build and publish one index generation from the admitted inputs",
+      "leaf": true,
+      "owner": "docs/semantic-search.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:search-index status",
+      "kind": "command",
+      "command": "search-index status",
+      "usage": "lekalo search-index status [OPTIONS]",
+      "helpDigest": "sha256:419816aa1e302a06458bdcf12f5e343fdc041cb02811bcce7f7ee94e40814e25",
+      "summary": "The read-only status of the durable index store",
+      "leaf": true,
+      "owner": "docs/semantic-search.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:search-index update",
+      "kind": "command",
+      "command": "search-index update",
+      "usage": "lekalo search-index update [OPTIONS]",
+      "helpDigest": "sha256:98d697db35fa5fbe22a17a2bacfded609ff4a65b9f38c2e81b7c635272a1a43f",
+      "summary": "Incrementally recompute the index from the admitted inputs",
+      "leaf": true,
+      "owner": "docs/semantic-search.md",
       "status": "implemented"
     },
     {
@@ -2397,6 +2463,15 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/diagnostic-registry.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/diagnostic-registry.schema.v0.8.0.json",
+      "sourceDigest": "sha256:3f3b3930165b71ba83456f3afebba47d028f1517752e7eb5ed8f0936e23795b1",
+      "owner": "docs/diagnostics.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/diagnostic-registry.v0.2.16.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.2.16.json",
@@ -2428,6 +2503,15 @@
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.6.5.json",
       "sourceDigest": "sha256:7b2be768be48050057682980b240f109d33adc56b1b4cb4b27848507df22b130",
+      "owner": "docs/diagnostics.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/diagnostic-registry.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/diagnostic-registry.v0.8.0.json",
+      "sourceDigest": "sha256:6453f96c7754b9ed826c215fb587c633671d29eeebb590036d7c63145124c506",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3086,6 +3170,42 @@
       "source": "contracts/scenario-run.schema.v0.4.0.json",
       "sourceDigest": "sha256:f0ab66697ad7b2c48dea7180b301080586df3a4f3f09fc2700373ef7cbfad358",
       "owner": "docs/native-gates.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/search-index.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/search-index.schema.v0.8.0.json",
+      "sourceDigest": "sha256:e747d1a8f662eaf154d4b096dd779ba18b269f6f875bc3fb072e121ee4a30f98",
+      "owner": "docs/semantic-search.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/search-inputs.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/search-inputs.schema.v0.8.0.json",
+      "sourceDigest": "sha256:bbc627b379186eb46d49f7eef9205b1a76f5aead4c6212d0d1645aeb3bcba8ac",
+      "owner": "docs/semantic-search.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/search-query.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/search-query.schema.v0.8.0.json",
+      "sourceDigest": "sha256:b20a18c647570cd08c2b831afd60314a6ae25f44ef886ba82b8692ec2c198ba7",
+      "owner": "docs/semantic-search.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/search-result.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/search-result.schema.v0.8.0.json",
+      "sourceDigest": "sha256:14bf02bbecd1bbb9dff5bdddea0388d13959d9dfd13842a33f5e17b366cf687a",
+      "owner": "docs/semantic-search.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },

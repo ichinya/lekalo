@@ -182,7 +182,6 @@ pub enum SearchIndexCommands {
     },
 }
 
-
 /// The admitted service context of one run: the loaded projection, its
 /// immutable content digest, and the per-domain admitted coverage.
 struct Service {
@@ -313,10 +312,8 @@ fn assemble(page: &PageArgs, no_cache: bool) -> Result<Service, DomainResult> {
             .clone()
             .or_else(|| std::env::var("LEKALO_PROJECT").ok()),
     };
-    let (_model, compilation) =
-        lekalo_core::cache::load_compiled(&selection, no_cache).map_err(|result| result)?;
-    let graph = lekalo_core::effects::build(&compilation.project)
-        .map_err(DomainResult::invalid)?;
+    let (_model, compilation) = lekalo_core::cache::load_compiled(&selection, no_cache)?;
+    let graph = lekalo_core::effects::build(&compilation.project).map_err(DomainResult::invalid)?;
     let cap = lekalo_core::search::MAX_POSTINGS;
     let mut projection = project_ir(&compilation.project, cap);
     attach_effects(&mut projection, &graph, cap);
@@ -328,18 +325,14 @@ fn assemble(page: &PageArgs, no_cache: bool) -> Result<Service, DomainResult> {
         Some(path) => {
             let bytes = read_admitted(path).map_err(|detail| {
                 DomainResult::invalid(lekalo_core::search::diagnostic_query_invalid(
-                    "inputs",
-                    detail,
+                    "inputs", detail,
                 ))
             })?;
             let manifest = SearchInputs::parse(&bytes).map_err(DomainResult::invalid)?;
             if let Some(project) = &compilation.project.project {
                 if manifest.project_id() != project.id.as_str() {
                     return Err(DomainResult::invalid(
-                        lekalo_core::search::diagnostic_input_invalid(
-                            "project-mismatch",
-                            None,
-                        ),
+                        lekalo_core::search::diagnostic_input_invalid("project-mismatch", None),
                     ));
                 }
             }
@@ -370,10 +363,7 @@ fn assemble(page: &PageArgs, no_cache: bool) -> Result<Service, DomainResult> {
     })
 }
 
-fn coverage_row(
-    domain: &'static str,
-    state: &'static str,
-) -> lekalo_core::search::CoverageRow {
+fn coverage_row(domain: &'static str, state: &'static str) -> lekalo_core::search::CoverageRow {
     lekalo_core::search::CoverageRow {
         domain: domain.to_owned(),
         state: state.to_owned(),
@@ -401,10 +391,7 @@ fn admit_producers(
     projection: &mut Projection,
     coverage: &mut Vec<lekalo_core::search::CoverageRow>,
 ) -> Result<(), DomainResult> {
-    let root = match lekalo_core::doctor::project_root(selection) {
-        Ok(root) => root,
-        Err(result) => return Err(result),
-    };
+    let root = lekalo_core::doctor::project_root(selection)?;
     let cap = lekalo_core::search::MAX_POSTINGS;
     let mut states: Vec<(&'static str, &'static str)> = Vec::new();
     for entry in manifest.entries() {
@@ -433,8 +420,8 @@ fn admit_producers(
                 states.push(("trace", if complete { "complete" } else { "partial" }));
             }
             lekalo_core::search::ProducerKind::ObservedIndex => {
-                let index = lekalo_core::observed::parse_index(&bytes)
-                    .map_err(DomainResult::invalid)?;
+                let index =
+                    lekalo_core::observed::parse_index(&bytes).map_err(DomainResult::invalid)?;
                 project_observed(projection, &index, cap);
                 states.push(("bindings", "complete"));
             }
@@ -457,11 +444,11 @@ fn admit_producers(
     // One row per admitted domain: the worst observed state wins, so a
     // partial producer never advertises complete coverage.
     for (domain, state) in states {
-        let existing = coverage
-            .iter_mut()
-            .find(|row| row.domain == domain);
+        let existing = coverage.iter_mut().find(|row| row.domain == domain);
         match existing {
-            Some(row) if row.state == "complete" && state != "complete" => row.state = state.to_owned(),
+            Some(row) if row.state == "complete" && state != "complete" => {
+                row.state = state.to_owned()
+            }
             Some(_) => {}
             None => coverage.push(coverage_row(domain, state)),
         }
@@ -501,18 +488,15 @@ fn project_trace(
                 CardKind::Requirement,
                 requirement_key(
                     &node.node_id,
-                    node.requirement_id
-                        .as_deref()
-                        .unwrap_or(&node.node_id),
+                    node.requirement_id.as_deref().unwrap_or(&node.node_id),
                 ),
-                node.requirement_id.clone().unwrap_or_else(|| node.node_id.clone()),
+                node.requirement_id
+                    .clone()
+                    .unwrap_or_else(|| node.node_id.clone()),
             ),
             lekalo_core::trace::NodeKind::Gate => (
                 CardKind::Gate,
-                format!(
-                    "gate:{}",
-                    node.gate_id.as_deref().unwrap_or(&node.node_id)
-                ),
+                format!("gate:{}", node.gate_id.as_deref().unwrap_or(&node.node_id)),
                 node.gate_id.clone().unwrap_or_else(|| node.node_id.clone()),
             ),
             lekalo_core::trace::NodeKind::Scenario => (
@@ -521,7 +505,9 @@ fn project_trace(
                     "def:{}",
                     node.scenario_id.as_deref().unwrap_or(&node.node_id)
                 ),
-                node.scenario_id.clone().unwrap_or_else(|| node.node_id.clone()),
+                node.scenario_id
+                    .clone()
+                    .unwrap_or_else(|| node.node_id.clone()),
             ),
             _ => continue,
         };
@@ -565,24 +551,19 @@ fn project_trace(
         })
         .collect();
     for (relation_kind, from, to) in relations {
-        for (side, other, direction) in [
-            (&from, &to, "outgoing"),
-            (&to, &from, "incoming"),
-        ] {
-            let key = evidence_key_of(
-                side,
-                &|node_id, requirement_id| requirement_key(node_id, requirement_id),
-            );
+        for (side, other, direction) in [(&from, &to, "outgoing"), (&to, &from, "incoming")] {
+            let key = evidence_key_of(side, &|node_id, requirement_id| {
+                requirement_key(node_id, requirement_id)
+            });
             let Some(card) = projection.cards.get(&key) else {
                 continue;
             };
             let mut relations = card.relations.clone();
             relations.push(lekalo_core::search::RelationWitness {
                 relation: relation_kind.clone(),
-                other: evidence_key_of(
-                    other,
-                    &|node_id, requirement_id| requirement_key(node_id, requirement_id),
-                ),
+                other: evidence_key_of(other, &|node_id, requirement_id| {
+                    requirement_key(node_id, requirement_id)
+                }),
                 direction: direction.to_owned(),
                 trust: lekalo_core::search::Trust::Detected,
                 confidence: Confidence::Verified,
@@ -609,10 +590,7 @@ fn project_trace(
 
 /// The qualified key of one trace node reference, with the
 /// requirement-source qualifier resolved by the caller.
-fn evidence_key_of(
-    reference: &str,
-    requirement: &dyn Fn(&str, &str) -> String,
-) -> String {
+fn evidence_key_of(reference: &str, requirement: &dyn Fn(&str, &str) -> String) -> String {
     let (kind, id) = reference.split_once(':').unwrap_or(("symbol", reference));
     match kind {
         "symbol" | "scenario" => format!("def:{id}"),
@@ -638,7 +616,10 @@ fn project_observed(
             key: format!("bind:{}", record.id),
             kind: CardKind::Binding,
             subkind: Some(record.kind.key().to_owned()),
-            module: record.id.split_once('.').map(|(module, _)| module.to_owned()),
+            module: record
+                .id
+                .split_once('.')
+                .map(|(module, _)| module.to_owned()),
             id: Some(record.id.clone()),
             name: Some(record.id.clone()),
             description: None,
@@ -656,7 +637,10 @@ fn project_observed(
                     .as_ref()
                     .map(|location| location.path.clone())
                     .unwrap_or_default(),
-                symbol: record.candidates.first().map(|candidate| candidate.native.clone()),
+                symbol: record
+                    .candidates
+                    .first()
+                    .map(|candidate| candidate.native.clone()),
                 status: record.status.key().to_owned(),
             }],
             locations: Vec::new(),
@@ -710,11 +694,11 @@ fn project_observed(
 /// exact subject (resource plus optional field) so an entity-wide
 /// effect can never claim a field it did not name, and the row's own
 /// recorded trust state is preserved per relationship.
-fn project_effects_document(
-    projection: &mut Projection,
-    document: &serde_json::Value,
-) {
-    let Some(rows) = document.get("effects").and_then(|effects| effects.as_array()) else {
+fn project_effects_document(projection: &mut Projection, document: &serde_json::Value) {
+    let Some(rows) = document
+        .get("effects")
+        .and_then(|effects| effects.as_array())
+    else {
         return;
     };
     let mut witnesses: Vec<(String, lekalo_core::search::RelationWitness)> = Vec::new();
@@ -743,7 +727,11 @@ fn project_effects_document(
             "create" | "update" | "delete" | "write-field" => "writes",
             _ => continue,
         };
-        let Some(resource) = row.get("resource").and_then(|value| value.get("id")).and_then(|value| value.as_str()) else {
+        let Some(resource) = row
+            .get("resource")
+            .and_then(|value| value.get("id"))
+            .and_then(|value| value.as_str())
+        else {
             continue;
         };
         let field = row.get("field").and_then(|value| value.as_str());
@@ -935,9 +923,10 @@ pub fn run_search_index(command: SearchIndexCommands, no_cache: bool) -> DomainR
             let store = match SearchStore::resolve(&root) {
                 Ok(store) => store,
                 Err(_) => {
-                    return DomainResult::invalid(
-                        lekalo_core::search::diagnostic_input_invalid("store-denied", None)
-                    )
+                    return DomainResult::invalid(lekalo_core::search::diagnostic_input_invalid(
+                        "store-denied",
+                        None,
+                    ))
                 }
             };
             let status = store.status();
@@ -958,7 +947,11 @@ pub fn run_search_index(command: SearchIndexCommands, no_cache: bool) -> DomainR
                     .map(|postings| postings.to_string())
                     .unwrap_or_else(|| "null".to_owned()),
             );
-            let human = format!("search index {} : {}", status.state, status.generation.clone().unwrap_or_default());
+            let human = format!(
+                "search index {} : {}",
+                status.state,
+                status.generation.clone().unwrap_or_default()
+            );
             DomainResult::graph(json, human, Vec::new())
         }
         SearchIndexCommands::Build { page } | SearchIndexCommands::Update { page } => {
@@ -980,9 +973,10 @@ pub fn run_search_index(command: SearchIndexCommands, no_cache: bool) -> DomainR
             let store = match SearchStore::resolve(&root) {
                 Ok(store) => store,
                 Err(_) => {
-                    return DomainResult::invalid(
-                        lekalo_core::search::diagnostic_input_invalid("store-denied", None)
-                    )
+                    return DomainResult::invalid(lekalo_core::search::diagnostic_input_invalid(
+                        "store-denied",
+                        None,
+                    ))
                 }
             };
             let service = match assemble(&page, no_cache) {

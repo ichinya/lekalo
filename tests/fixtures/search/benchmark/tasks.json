@@ -1,0 +1,121 @@
+{
+  "benchmarkId": "dev.lekalo.search-benchmark",
+  "version": "1.0.0",
+  "status": "accepted",
+  "rule": "questions and relevant-answer sets are authored before either tool runs; rg line hits are not semantic answers, so each rg leg records the file opens its hits force",
+  "tasks": [
+    {
+      "id": "field-writers",
+      "question": "Which operations write planner.user_task_planning.focused_at?",
+      "command": "find",
+      "flags": [
+        "--writes planner.user_task_planning.focused_at"
+      ],
+      "relevant": [
+        "def:planner.focus_task",
+        "def:planner.refocus_task"
+      ],
+      "ambiguous": false,
+      "rgPattern": "focused_at"
+    },
+    {
+      "id": "field-readers",
+      "question": "Which operation reads planner.user_task_planning.focused_at?",
+      "command": "find",
+      "flags": [
+        "--reads planner.user_task_planning.focused_at"
+      ],
+      "relevant": [
+        "def:planner.get_focused_task"
+      ],
+      "ambiguous": false,
+      "rgPattern": "focused_at"
+    },
+    {
+      "id": "exact-operation",
+      "question": "Find the focus_task operation of the planner module.",
+      "command": "search",
+      "query": "planner.focus_task",
+      "relevant": [
+        "def:planner.focus_task",
+        "bind:planner.focus_task"
+      ],
+      "ambiguous": true,
+      "rgPattern": "planner.focus_task"
+    },
+    {
+      "id": "requirement-chain",
+      "question": "What implements PLANNER-REQ-001 across providers?",
+      "command": "find",
+      "flags": [
+        "--requirement PLANNER-REQ-001"
+      ],
+      "relevant": [
+        "def:planner.focus_task",
+        "def:planner.refocus_task",
+        "req:openspec:PLANNER-REQ-001",
+        "req:aifhub:PLANNER-REQ-001"
+      ],
+      "ambiguous": true,
+      "rgPattern": "PLANNER-REQ-001"
+    },
+    {
+      "id": "binding-prefix",
+      "question": "Which native bindings live under apps/api/src/planner?",
+      "command": "find",
+      "flags": [
+        "--binding-path apps/api/src/planner"
+      ],
+      "relevant": [
+        "bind:planner.focus_task",
+        "bind:planner.get_status",
+        "bind:planner.user_task_planning",
+        "def:planner.focus_task"
+      ],
+      "ambiguous": false,
+      "rgPattern": "apps/api/src/planner"
+    },
+    {
+      "id": "input-type",
+      "question": "Which operations take planner.task_id as input?",
+      "command": "find",
+      "flags": [
+        "--input-type planner.task_id"
+      ],
+      "relevant": [
+        "def:planner.focus_task",
+        "def:planner.refocus_task",
+        "def:planner.archive_task_cmd",
+        "def:planner.import_planning_cmd"
+      ],
+      "ambiguous": false,
+      "rgPattern": "planner.task_id"
+    },
+    {
+      "id": "ambiguous-name",
+      "question": "Find get_status.",
+      "command": "search",
+      "query": "get_status",
+      "relevant": [
+        "def:notify.get_status",
+        "def:planner.get_status"
+      ],
+      "ambiguous": true,
+      "rgPattern": "get_status"
+    },
+    {
+      "id": "waiver-lookup",
+      "question": "Which waiver covers lint-focus-debt?",
+      "command": "find",
+      "flags": [
+        "--waiver lint-focus-debt"
+      ],
+      "relevant": [
+        "waiv:lint-focus-debt",
+        "def:planner.focus_task"
+      ],
+      "ambiguous": false,
+      "rgPattern": "lint-focus-debt"
+    }
+  ]
+}

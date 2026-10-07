@@ -8,10 +8,10 @@
 //! detected effect trust, requirement qualification ambiguity, cursor
 //! generation binding, closed-grammar refusals, and byte-determinism.
 
-use lekalo_core::search::{
-    execute, FilterSet, QueryRequest, SearchInputs, SearchIndex, EffectScope,
-};
 use lekalo_core::loader::LoadSelection;
+use lekalo_core::search::{
+    execute, EffectScope, FilterSet, QueryRequest, SearchIndex, SearchInputs,
+};
 use std::path::Path;
 use std::sync::Mutex;
 
@@ -40,12 +40,7 @@ fn compiled() -> lekalo_core::ir::Compilation {
     let loaded = lekalo_core::cache::load_compiled(&selection, true);
     std::env::set_current_dir(previous).expect("restore");
     let (_model, compilation) = loaded
-        .map_err(|result| {
-            panic!(
-                "fixture compiles: {:?}",
-                result.to_json_string()
-            )
-        })
+        .map_err(|result| panic!("fixture compiles: {:?}", result.to_json_string()))
         .expect("compiles");
     compilation
 }
@@ -88,15 +83,9 @@ fn request(
     cursor: Option<String>,
     filters: FilterSet,
 ) -> QueryRequest {
-    QueryRequest::admit(
-        query.map(str::to_owned),
-        fuzzy,
-        limit,
-        cursor,
-        filters,
-    )
-    .map_err(|set| panic!("admit: {:?}", set.reason_ids()))
-    .expect("admits")
+    QueryRequest::admit(query.map(str::to_owned), fuzzy, limit, cursor, filters)
+        .map_err(|set| panic!("admit: {:?}", set.reason_ids()))
+        .expect("admits")
 }
 
 #[test]
@@ -124,25 +113,13 @@ fn fuzzy_is_opt_in_and_labeled() {
     let without = run(
         &index,
         "sha256:1111111111111111111111111111111111111111111111111111111111111111",
-        &request(
-            Some("fokus"),
-            false,
-            None,
-            None,
-            FilterSet::default(),
-        ),
+        &request(Some("fokus"), false, None, None, FilterSet::default()),
     );
     assert_eq!(without.result.selection, "none");
     let with = run(
         &index,
         "sha256:1111111111111111111111111111111111111111111111111111111111111111",
-        &request(
-            Some("fokus"),
-            true,
-            None,
-            None,
-            FilterSet::default(),
-        ),
+        &request(Some("fokus"), true, None, None, FilterSet::default()),
     );
     assert_eq!(with.result.selection, "ambiguous");
     assert!(with
@@ -159,8 +136,10 @@ fn fuzzy_is_opt_in_and_labeled() {
 #[test]
 fn writers_keep_exact_and_entity_wide_effects_apart() {
     let index = index_of(&projection());
-    let mut filters = FilterSet::default();
-    filters.writes = vec!["planner.user_task_planning".to_owned()];
+    let filters = FilterSet {
+        writes: vec!["planner.user_task_planning".to_owned()],
+        ..Default::default()
+    };
     let entity_wide = run(
         &index,
         "sha256:1111111111111111111111111111111111111111111111111111111111111111",
@@ -174,11 +153,9 @@ fn writers_keep_exact_and_entity_wide_effects_apart() {
 
 #[test]
 fn find_requires_at_least_one_filter() {
-    let error = QueryRequest::admit(None, false, None, None, FilterSet::default())
-        .expect_err("refused");
-    assert!(error
-        .reason_ids()
-        .contains(&"search.query-invalid"));
+    let error =
+        QueryRequest::admit(None, false, None, None, FilterSet::default()).expect_err("refused");
+    assert!(error.reason_ids().contains(&"search.query-invalid"));
 }
 
 #[test]
@@ -186,9 +163,7 @@ fn query_bounds_fail_closed() {
     let long = "a".repeat(513);
     let error = QueryRequest::admit(Some(long), false, None, None, FilterSet::default())
         .expect_err("refused");
-    assert!(error
-        .reason_ids()
-        .contains(&"search.query-invalid"));
+    assert!(error.reason_ids().contains(&"search.query-invalid"));
     let error = QueryRequest::admit(
         Some("ok".to_owned()),
         false,
@@ -197,9 +172,7 @@ fn query_bounds_fail_closed() {
         FilterSet::default(),
     )
     .expect_err("refused");
-    assert!(error
-        .reason_ids()
-        .contains(&"search.query-invalid"));
+    assert!(error.reason_ids().contains(&"search.query-invalid"));
 }
 
 #[test]
@@ -220,24 +193,12 @@ fn repeated_queries_are_byte_identical() {
     let first = run(
         &index,
         digest,
-        &request(
-            Some("focus"),
-            false,
-            Some(5),
-            None,
-            FilterSet::default(),
-        ),
+        &request(Some("focus"), false, Some(5), None, FilterSet::default()),
     );
     let second = run(
         &index,
         digest,
-        &request(
-            Some("focus"),
-            false,
-            Some(5),
-            None,
-            FilterSet::default(),
-        ),
+        &request(Some("focus"), false, Some(5), None, FilterSet::default()),
     );
     assert_eq!(first.json, second.json);
 }

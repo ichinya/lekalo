@@ -109,17 +109,14 @@ fn search_exact_id_outranks_the_lexical_tail() {
     let project = fixture_path();
     let output = lekalo_in(
         &project,
-        &[
-            "--json",
-            "search",
-            "planner.focus_task",
-            "--project",
-            ".",
-        ],
+        &["--json", "search", "planner.focus_task", "--project", "."],
     );
     assert_eq!(exit_code(&output), 0, "{}", stderr_text(&output));
     let envelope = json(&output);
-    assert_eq!(envelope["items"][0]["card"]["key"], "def:planner.focus_task");
+    assert_eq!(
+        envelope["items"][0]["card"]["key"],
+        "def:planner.focus_task"
+    );
     assert_eq!(envelope["items"][0]["match"]["tier"], "exact-id");
     assert_eq!(envelope["items"][0]["match"]["edits"], 0);
 }
@@ -131,13 +128,15 @@ fn fuzzy_is_opt_in_labeled_and_ambiguity_honest() {
     let project = fixture_path();
     let plain = json(&lekalo_in(
         &project,
-        &[
-            "--json", "search", "fokus", "--project", ".",
-        ],
+        &["--json", "search", "fokus", "--project", "."],
     ));
-    assert_eq!(exit_code(
-        &lekalo_in(&project, &["--json", "search", "fokus", "--project", "."])
-    ), 0);
+    assert_eq!(
+        exit_code(&lekalo_in(
+            &project,
+            &["--json", "search", "fokus", "--project", "."]
+        )),
+        0
+    );
     assert_eq!(plain["selection"], "none");
     assert_eq!(plain["items"].as_array().map(Vec::len), Some(0));
 
@@ -232,7 +231,10 @@ fn cursor_refuses_a_foreign_query() {
         ],
     );
     assert_eq!(exit_code(&mismatch), 1);
-    assert_eq!(json(&mismatch)["diagnostics"][0]["id"], "search.cursor-invalid");
+    assert_eq!(
+        json(&mismatch)["diagnostics"][0]["id"],
+        "search.cursor-invalid"
+    );
     let garbage = lekalo_in(
         &project,
         &[
@@ -260,7 +262,6 @@ fn cursor_refuses_a_foreign_query() {
 fn pagination_concatenates_without_repeats_or_skips() {
     let project = fixture_path();
     let _guard = CWD_LOCK.lock().expect("lock");
-    let no_cache = ["--no-cache"];
     let mut seen: Vec<String> = Vec::new();
     let mut cursor: Option<String> = None;
     for _ in 0..20 {
@@ -278,7 +279,10 @@ fn pagination_concatenates_without_repeats_or_skips() {
             args.push("--cursor".to_owned());
             args.push(token.clone());
         }
-        let output = lekalo_in(&project, &args.iter().map(String::as_str).collect::<Vec<_>>());
+        let output = lekalo_in(
+            &project,
+            &args.iter().map(String::as_str).collect::<Vec<_>>(),
+        );
         assert_eq!(exit_code(&output), 0, "{}", stderr_text(&output));
         let envelope = json(&output);
         for item in envelope["items"].as_array().expect("items") {
@@ -316,7 +320,10 @@ fn index_lifecycle_and_cache_custody() {
     let receipts = stdout_text(&build);
     assert!(receipts.contains("search index built"));
 
-    let status = lekalo_in(&project, &["--json", "search-index", "status", "--project", "."]);
+    let status = lekalo_in(
+        &project,
+        &["--json", "search-index", "status", "--project", "."],
+    );
     assert_eq!(exit_code(&status), 0, "{}", stderr_text(&status));
     let envelope = json(&status);
     assert_eq!(envelope["searchIndex"]["state"], "ready");
@@ -364,7 +371,10 @@ fn coverage_states_are_honest_with_and_without_producers() {
         &["--json", "find", "--kind", "command", "--project", "."],
     ));
     let rows = without["coverage"].as_array().expect("coverage");
-    let trace = rows.iter().find(|row| row["domain"] == "trace").expect("trace");
+    let trace = rows
+        .iter()
+        .find(|row| row["domain"] == "trace")
+        .expect("trace");
     assert_eq!(trace["state"], "unknown");
 
     let with = json(&lekalo_in(
@@ -381,7 +391,10 @@ fn coverage_states_are_honest_with_and_without_producers() {
         ],
     ));
     let rows = with["coverage"].as_array().expect("coverage");
-    let trace = rows.iter().find(|row| row["domain"] == "trace").expect("trace");
+    let trace = rows
+        .iter()
+        .find(|row| row["domain"] == "trace")
+        .expect("trace");
     assert_eq!(trace["state"], "partial", "the aifhub manifest is partial");
 }
 
@@ -396,13 +409,26 @@ fn stale_waivers_are_excluded_until_explicitly_included() {
         json(&output)
     };
     let revoked = run(&[
-        "--json", "find", "--waiver", "lint-focus-debt-revoked", "--project", ".",
-        "--inputs", "evidence/search-inputs.json",
+        "--json",
+        "find",
+        "--waiver",
+        "lint-focus-debt-revoked",
+        "--project",
+        ".",
+        "--inputs",
+        "evidence/search-inputs.json",
     ]);
     assert_eq!(revoked["selection"], "none");
     let included = run(&[
-        "--json", "find", "--waiver", "lint-focus-debt-revoked", "--include-stale",
-        "--project", ".", "--inputs", "evidence/search-inputs.json",
+        "--json",
+        "find",
+        "--waiver",
+        "lint-focus-debt-revoked",
+        "--include-stale",
+        "--project",
+        ".",
+        "--inputs",
+        "evidence/search-inputs.json",
     ]);
     assert_eq!(included["selection"], "unique");
     assert_eq!(
@@ -411,8 +437,14 @@ fn stale_waivers_are_excluded_until_explicitly_included() {
     );
     assert_eq!(included["items"][0]["card"]["freshness"], "stale");
     let active = run(&[
-        "--json", "find", "--waiver", "lint-focus-debt", "--project", ".",
-        "--inputs", "evidence/search-inputs.json",
+        "--json",
+        "find",
+        "--waiver",
+        "lint-focus-debt",
+        "--project",
+        ".",
+        "--inputs",
+        "evidence/search-inputs.json",
     ]);
     let keys: Vec<&str> = active["items"]
         .as_array()
@@ -430,9 +462,7 @@ fn zero_matches_is_valid() {
     let project = fixture_path();
     let output = lekalo_in(
         &project,
-        &[
-            "--json", "search", "xyzzynomatch", "--project", ".",
-        ],
+        &["--json", "search", "xyzzynomatch", "--project", "."],
     );
     assert_eq!(exit_code(&output), 0, "{}", stdout_text(&output));
     let envelope = json(&output);

@@ -546,10 +546,7 @@ fn set_items(set: crate::diagnostics::DiagnosticSet) -> Vec<crate::diagnostics::
 fn response_bytes(result: &SearchResult) -> Result<String, crate::diagnostics::DiagnosticSet> {
     let value = serde_json::to_value(result).map_err(|_| emit::result_limit("response", true))?;
     let payload = canonical_json(&value);
-    let json = format!(
-        "{{\"status\":\"valid\",{}",
-        &payload[1..]
-    );
+    let json = format!("{{\"status\":\"valid\",{}", &payload[1..]);
     if json.len() > MAX_RESPONSE_BYTES {
         return Err(emit::result_limit("response-bytes", false));
     }
@@ -642,8 +639,7 @@ fn admits(index: &SearchIndex, card: &Card, filters: &FilterSet) -> bool {
         return false;
     }
     if !any_of(&filters.requirements, |requirement| {
-        (card.kind == CardKind::Requirement
-            && card.id.as_deref() == Some(requirement))
+        (card.kind == CardKind::Requirement && card.id.as_deref() == Some(requirement))
             || card.requirements.iter().any(|reference| {
                 reference == requirement || reference.ends_with(&format!(":{requirement}"))
             })

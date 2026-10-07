@@ -22,8 +22,7 @@ use serde::{Deserialize, Serialize};
 use crate::search::input::SearchInputs;
 use crate::search::projection::{Card, Projection};
 use crate::search::version::{
-    INDEX_IDENTITY, INDEX_SCHEMA_VERSION, MAX_CARDS, MAX_INDEX_BYTES, MAX_POSTINGS,
-    RECIPE,
+    INDEX_IDENTITY, INDEX_SCHEMA_VERSION, MAX_CARDS, MAX_INDEX_BYTES, MAX_POSTINGS, RECIPE,
 };
 use crate::search::wire::{canonical_json, sha256_digest};
 
@@ -276,15 +275,13 @@ impl SearchStore {
         // snapshot with an empty digest field; the stored payload then
         // carries the digest itself.
         record.digest = String::new();
-        let canonical =
-            canonical_json(&serde_json::to_value(&record).map_err(|_| StoreError::Io)?);
+        let canonical = canonical_json(&serde_json::to_value(&record).map_err(|_| StoreError::Io)?);
         if canonical.len() > MAX_INDEX_BYTES {
             return Err(StoreError::Io);
         }
         let digest = sha256_digest(canonical.as_bytes());
         record.digest = format!("sha256:{digest}");
-        let payload =
-            canonical_json(&serde_json::to_value(&record).map_err(|_| StoreError::Io)?);
+        let payload = canonical_json(&serde_json::to_value(&record).map_err(|_| StoreError::Io)?);
         let final_path = self.generation_path(&digest);
         if !final_path.exists() {
             let temp = self.root.join(format!(

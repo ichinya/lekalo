@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "lekalo/search-query/v0.8.0",
+  "identity": "dev.lekalo.search-query@0.8.0",
+  "recipe": "semantic-search/1",
+  "mode": "find",
+  "limit": 20,
+  "filters": {
+    "writes": ["planner.user_task_planning.focused_at"],
+    "effectScope": "overlapping"
+  }
+}

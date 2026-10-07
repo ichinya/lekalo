@@ -204,10 +204,12 @@ impl SearchInputs {
             max_postings: Option<u64>,
         }
         // Duplicate JSON keys are rejected before decoding.
-        let text = std::str::from_utf8(bytes).map_err(|_| input_invalid("invalid-encoding", None))?;
+        let text =
+            std::str::from_utf8(bytes).map_err(|_| input_invalid("invalid-encoding", None))?;
         crate::search::wire::reject_duplicate_keys(text)
             .map_err(|_| input_invalid("duplicate-key", None))?;
-        let wire: Wire = serde_json::from_str(text).map_err(|_| input_invalid("malformed", None))?;
+        let wire: Wire =
+            serde_json::from_str(text).map_err(|_| input_invalid("malformed", None))?;
         if wire.schema_version != INPUTS_SCHEMA_VERSION {
             return Err(version_failure("inputs-schema"));
         }

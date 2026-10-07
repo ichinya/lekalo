@@ -55,3 +55,17 @@ carries; those pins never drift with a product release.
 точной записью в реестре, а не попаданием в числовой диапазон.
 
 Issue #76 publishes AI lint report/evidence/config/waivers/comparison, registry, validation profile/report, provider and package-manifest successors at `0.6.4`. The frozen `0.3.2` protocol remains the ordinary lock/bootstrap contract; the additive `0.6.4` lint seam is negotiated only after an adapter explicitly advertises it. A base describe response keeps the frozen operation vocabulary, and the upgraded describe publishes lint. Existing Model/IR/effect/observed/trace/transition/lock and context-budget wire contracts keep their accepted versions.
+
+Issue #93 adds the semantic search family: the four wire contracts
+`dev.lekalo.search-query@0.8.0`, `dev.lekalo.search-result@0.8.0`,
+`dev.lekalo.search-index@0.8.0`, and `dev.lekalo.search-inputs@0.8.0`
+(wire discriminators `lekalo/search-*/v0.8.0`), plus the diagnostic
+registry union successor `dev.lekalo.diagnostic-registry@0.8.0` with
+the eight `search.*` rules LEK-SRCH-001..008. Like every search
+artifact they take the product version of the implementing commit per
+the rule above; unchanged contracts keep their exact accepted
+identities and bytes, and predecessor diagnostic registries stay
+embedded exactly as accepted (producers keep their pins). The index
+store lives under the governed cache custody
+(`.lekalo/cache/search/**` of the accepted `lekalo.cache` authority
+kind); no authority boundary changes for search.

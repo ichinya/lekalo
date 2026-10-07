@@ -33,7 +33,9 @@ pub mod version;
 pub mod wire;
 
 pub use cursor::{Cursor, CursorBinding, CursorError, LastTuple};
-pub use index::{digest_of, pins_of, sha256_of, IndexDocument, IndexStatus, SearchIndex, SearchStore};
+pub use index::{
+    digest_of, pins_of, sha256_of, IndexDocument, IndexStatus, SearchIndex, SearchStore,
+};
 pub use input::{InputEntry, ProducerKind, SearchInputs};
 pub use projection::{
     add_card, attach_effects, bounded_push, project_ir, Card, CardKind, Completeness, Confidence,
@@ -42,9 +44,7 @@ pub use projection::{
 pub use query::{
     execute, CoverageRow, EffectScope, FilterSet, QueryRequest, SearchOutcome, SearchResult,
 };
-pub use version::{
-    DEFAULT_LIMIT, INDEX_IDENTITY, INDEX_SCHEMA_VERSION, MAX_POSTINGS, RECIPE,
-};
+pub use version::{DEFAULT_LIMIT, INDEX_IDENTITY, INDEX_SCHEMA_VERSION, MAX_POSTINGS, RECIPE};
 
 /// `search.input-invalid` rejection with a bounded reason (and producer).
 pub fn diagnostic_input_invalid(
@@ -55,7 +55,10 @@ pub fn diagnostic_input_invalid(
 }
 
 /// `search.query-invalid` rejection with a bounded member and reason.
-pub fn diagnostic_query_invalid(member: &str, detail: &'static str) -> crate::diagnostics::DiagnosticSet {
+pub fn diagnostic_query_invalid(
+    member: &str,
+    detail: &'static str,
+) -> crate::diagnostics::DiagnosticSet {
     diagnostic::query_invalid(member, detail)
 }
 
