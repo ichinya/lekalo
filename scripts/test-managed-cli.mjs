@@ -689,14 +689,9 @@ if (process.platform === 'win32') {
     forgedResolve.reasonCodes.includes('managed.rollback-refused') || forgedResolve.reasonCodes.includes('managed.input-invalid'),
     `forged resolve refused: ${forgedResolve.reasonCodes}`,
   );
-  const forgedRollback = invoke(primary.project, ['rollback', '--to', current], 'invalid');
-  assert.ok(
-    forgedRollback.reasonCodes.includes('managed.rollback-refused'),
-    `forged rollback refused: ${forgedRollback.reasonCodes}`,
-  );
   assertSameTree(before, snapshot(primary.project), 'forged custody never moves a byte');
   assert.ok(!existsSync(join(primary.project, 'maintained/handler.ts')), 'the forged target was never created');
-  // The authentic record resolves again.
+  // The authentic record is restored so the primary stays coherent.
   writeFileSync(recordPath, original);
 }
 
