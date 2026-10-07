@@ -125,7 +125,8 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 256,
-      "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]*$"
+      "pattern": "^[a-z0-9](?:[a-z0-9._-]*/)*[a-z0-9][a-z0-9._-]*$",
+      "description": "Bounded project-relative artifact reference; never an absolute path, glob, traversal segment, or command. Segments must already satisfy the closed project path grammar."
     },
     "digest": {
       "type": "string",
@@ -363,6 +364,12 @@
         "capability": {
           "$ref": "#/$defs/capabilityId"
         },
+        "targetId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
         "subject": {
           "oneOf": [
             {
@@ -419,6 +426,7 @@
         "id",
         "requirement",
         "capability",
+        "targetId",
         "subject",
         "coverage",
         "conditions",

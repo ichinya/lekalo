@@ -432,8 +432,9 @@
           "items": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 256,
-            "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]*$"
+            "maxLength": 324,
+            "pattern": "^[a-z0-9](?:[a-z0-9._-]*/)*[a-z0-9][a-z0-9._-]*#sha256:[0-9a-f]{64}$",
+            "description": "A verified storage-profile reference: the exact project-relative path, '#' and the sha256 digest of the read bytes."
           }
         }
       },
@@ -1188,6 +1189,7 @@
             "declared",
             "planned",
             "executed",
+            "failed",
             "unknown"
           ]
         },
@@ -1219,6 +1221,7 @@
             "declared",
             "planned",
             "executed",
+            "failed",
             "unknown"
           ]
         },

@@ -25,7 +25,8 @@
           "uniqueItems": true,
           "items": {
             "$ref": "#/$defs/targetId"
-          }
+          },
+          "description": "Optional destination defaults; when present at least one entry is required, and an empty list is schema-invalid."
         },
         "targets": {
           "type": "array",
@@ -53,8 +54,8 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 256,
-      "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]*$",
-      "description": "Bounded project-relative artifact reference; never an absolute path, glob, or command."
+      "pattern": "^[a-z0-9](?:[a-z0-9._-]*/)*[a-z0-9][a-z0-9._-]*$",
+      "description": "Bounded project-relative artifact reference; never an absolute path, glob, traversal segment, or command. Segments must already satisfy the closed project path grammar."
     },
     "digest": {
       "type": "string",
