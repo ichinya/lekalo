@@ -82,8 +82,7 @@ pub fn execute(
     spec_bytes: &[u8],
     patch: Option<&PatchDocument>,
 ) -> Outcome<VerificationDocument> {
-    let spec = wire::verification_of_bytes(spec_bytes)
-        .map_err(|error| DomainResult::invalid(error.set()))?;
+    let spec = wire::verification_of_bytes(spec_bytes).map_err(|error| error.domain_result())?;
     if spec.variant != "specification" {
         return Err(DomainResult::invalid(diagnostic::input_invalid_set(
             "verification",
@@ -275,8 +274,8 @@ pub(crate) fn admit_execution(
     patch_digest: &str,
     execution_bytes: &[u8],
 ) -> Outcome<VerificationDocument> {
-    let execution = wire::execution_of_bytes(execution_bytes)
-        .map_err(|error| DomainResult::invalid(error.set()))?;
+    let execution =
+        wire::execution_of_bytes(execution_bytes).map_err(|error| error.domain_result())?;
     if execution.variant != "execution" {
         return Err(DomainResult::invalid(diagnostic::input_invalid_set(
             "verification",

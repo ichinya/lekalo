@@ -254,8 +254,8 @@ pub fn apply(
     plan_bytes: &[u8],
     confirm_digest: &str,
 ) -> Outcome<AdoptionReceipt> {
-    let document = wire::confirmation_plan_of_bytes(plan_bytes)
-        .map_err(|error| DomainResult::invalid(error.set()))?;
+    let document =
+        wire::confirmation_plan_of_bytes(plan_bytes).map_err(|error| error.domain_result())?;
     let value = serde_json::to_value(&document).expect("plan serializes");
     let recomputed = wire::digest(
         "adoption-confirmation-plan",

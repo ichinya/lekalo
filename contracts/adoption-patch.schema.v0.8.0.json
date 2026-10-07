@@ -583,7 +583,8 @@
           "enum": [
             "create",
             "replace",
-            "delete"
+            "delete",
+            "binding"
           ]
         },
         "before": {

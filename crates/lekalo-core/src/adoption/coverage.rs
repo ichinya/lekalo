@@ -265,8 +265,7 @@ pub fn coverage_digest(document: &CoverageDocument) -> String {
 /// Load a saved coverage attachment and recompute its digest; a stale
 /// or foreign attachment refuses rather than silently degrading.
 pub fn load_coverage(bytes: &[u8], project: &str) -> Outcome<(CoverageDocument, String)> {
-    let document =
-        wire::coverage_of_bytes(bytes).map_err(|error| DomainResult::invalid(error.set()))?;
+    let document = wire::coverage_of_bytes(bytes).map_err(|error| error.domain_result())?;
     if document.project != project {
         return Err(DomainResult::invalid(diagnostic::input_invalid_set(
             "coverage",

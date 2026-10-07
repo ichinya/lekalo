@@ -93,10 +93,12 @@ const pins = {
 const writeEntry = (deletable) => ({
   type: "object",
   additionalProperties: false,
-  required: deletable ? ["path", "action", "before", "after", "content"] : ["path", "action", "before", "after", "content"],
+  required: ["path", "action", "before", "after", "content"],
   properties: {
     path: relPath,
-    action: deletable ? { enum: ["create", "replace", "delete"] } : { enum: ["create", "replace"] },
+    action: deletable
+      ? { enum: ["create", "replace", "delete", "binding"] }
+      : { enum: ["create", "replace"] },
     before: digestOrNull,
     after: digestOrNull,
     content: { type: ["string", "null"], maxLength: 1048576 },

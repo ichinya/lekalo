@@ -212,7 +212,7 @@ const KINDS_ORIGIN: [&str; 2] = ["legacy", "new"];
 const KINDS_DEFINITION_STATUS: [&str; 2] = ["proposed", "confirmed"];
 const KINDS_BINDING_STATE: [&str; 4] = ["explicit", "confirmed", "inferred", "stale"];
 const KINDS_WRITE_ACTION: [&str; 2] = ["create", "replace"];
-const KINDS_WRITE_ACTION_DELETABLE: [&str; 3] = ["create", "replace", "delete"];
+const KINDS_WRITE_ACTION_DELETABLE: [&str; 4] = ["create", "replace", "delete", "binding"];
 const KINDS_VARIANT: [&str; 2] = ["specification", "execution"];
 const KINDS_CHECK: [&str; 3] = ["native-test", "behavior-oracle", "semantic"];
 const KINDS_OUTCOME_STATUS: [&str; 3] = ["passed", "failed", "unavailable"];
@@ -471,7 +471,10 @@ impl ClosedValidate for StatusReport {
         for panel in &self.panels {
             check_member(&panel.mode, &KINDS_EFFECTIVE)?;
             check_member(&panel.state, &KINDS_ROW_STATE)?;
-            check_member(&panel.freshness, &["fresh", "unqualified", "stale", "unknown"])?;
+            check_member(
+                &panel.freshness,
+                &["fresh", "unqualified", "stale", "unknown"],
+            )?;
         }
         Ok(())
     }

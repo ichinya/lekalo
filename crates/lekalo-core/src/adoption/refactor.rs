@@ -50,7 +50,7 @@ pub fn plan(
     // The verification specification is mandatory advice infrastructure:
     // the declared obligations bind advice, candidate, and verification.
     let spec = wire::verification_of_bytes(&request.verification)
-        .map_err(|error| DomainResult::invalid(error.set()))?;
+        .map_err(|error| error.domain_result())?;
     if spec.variant != "specification" {
         return Err(DomainResult::invalid(diagnostic::input_invalid_set(
             "verification",
@@ -264,8 +264,7 @@ pub(crate) fn validate_patch(
     analysis: &super::wire::AnalysisDocument,
     bytes: &[u8],
 ) -> Outcome<PatchDocument> {
-    let document =
-        wire::patch_of_bytes(bytes).map_err(|error| DomainResult::invalid(error.set()))?;
+    let document = wire::patch_of_bytes(bytes).map_err(|error| error.domain_result())?;
     if document.files.is_empty() {
         return Err(DomainResult::invalid(diagnostic::input_invalid_set(
             "candidate",

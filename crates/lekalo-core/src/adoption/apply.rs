@@ -36,8 +36,8 @@ pub fn apply(
     execution_bytes: &[u8],
     confirm_digest: &str,
 ) -> Outcome<AdoptionReceipt> {
-    let document = wire::refactor_plan_of_bytes(plan_bytes)
-        .map_err(|error| DomainResult::invalid(error.set()))?;
+    let document =
+        wire::refactor_plan_of_bytes(plan_bytes).map_err(|error| error.domain_result())?;
     let value = serde_json::to_value(&document).expect("plan serializes");
     let recomputed = wire::digest(
         "adoption-refactor-plan",
@@ -245,8 +245,7 @@ fn consumed_sources(
 
 /// Preview the exact files and digests a rollback would restore.
 pub fn rollback_preview(ctx: &AdoptionContext, receipt_bytes: &[u8]) -> Outcome<AdoptionReceipt> {
-    let receipt = wire::receipt_of_bytes(receipt_bytes)
-        .map_err(|error| DomainResult::invalid(error.set()))?;
+    let receipt = wire::receipt_of_bytes(receipt_bytes).map_err(|error| error.domain_result())?;
     if receipt.phase != "apply" && receipt.phase != "confirmation" {
         return Err(DomainResult::invalid(diagnostic::input_invalid_set(
             "receipt", "phase",
