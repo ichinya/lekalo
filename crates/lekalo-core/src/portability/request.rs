@@ -86,6 +86,16 @@ pub fn parse_targets(bytes: &[u8]) -> Result<TargetsDocument, DiagnosticSet> {
     {
         return Err(diagnostic::unsupported_version("targets-version"));
     }
+    // Mirror the contract's `minItems` exactly: an explicitly empty
+    // default-destination list is a decode refusal, never a silent
+    // reinterpretation.
+    if document
+        .default_destinations
+        .as_ref()
+        .is_some_and(|list| list.is_empty())
+    {
+        return Err(diagnostic::invalid("default-destination"));
+    }
     let mut ids = std::collections::BTreeSet::new();
     for binding in &document.targets {
         if !valid_target_token(&binding.target_id) || !ids.insert(binding.target_id.as_str()) {
@@ -114,7 +124,7 @@ pub fn parse_targets(bytes: &[u8]) -> Result<TargetsDocument, DiagnosticSet> {
             return Err(diagnostic::invalid("default-source"));
         }
     }
-    for destination in &document.default_destinations {
+    for destination in document.default_destinations.iter().flatten() {
         if !ids.contains(destination.as_str()) {
             return Err(diagnostic::invalid("default-destination"));
         }
@@ -133,7 +143,9 @@ pub fn parse_evidence(
     compilation: &Compilation,
     recipe: &Recipe,
 ) -> Result<EvidenceDocument, DiagnosticSet> {
-    let document: EvidenceDocument = wire::decode(bytes)?;
+    let value = wire::decode_dup_safe(bytes).map_err(|_| diagnostic::invalid("json-shape"))?;
+    let document: EvidenceDocument =
+        serde_json::from_value(value).map_err(|_| diagnostic::invalid("closed-shape"))?;
     if document.schema_version != version::EVIDENCE_SCHEMA_VERSION
         || document.identity != version::EVIDENCE_IDENTITY
     {
@@ -197,6 +209,9 @@ pub fn parse_evidence(
     for mapping in &document.mappings {
         if !mappings.insert(mapping.id.as_str()) {
             return Err(diagnostic::invalid("duplicate-mapping"));
+        }
+        if !valid_target_token(&mapping.target_id) {
+            return Err(diagnostic::invalid("mapping-target"));
         }
         if mapping.coverage == wire::MappingCoverage::Full && mapping.definition_pins.is_empty() {
             return Err(diagnostic::invalid("mapping-pin"));

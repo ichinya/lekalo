@@ -186,13 +186,16 @@ impl Action {
     }
 }
 
-/// The closed scenario/gate join-state vocabulary.
+/// The closed scenario/gate join-state vocabulary. A recorded failure is
+/// its own state: a failing receipt is material planning information and
+/// never collapses into `planned`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum JoinState {
     Declared,
     Planned,
     Executed,
+    Failed,
     Unknown,
 }
 
@@ -203,6 +206,7 @@ impl JoinState {
             Self::Declared => "declared",
             Self::Planned => "planned",
             Self::Executed => "executed",
+            Self::Failed => "failed",
             Self::Unknown => "unknown",
         }
     }
@@ -646,6 +650,10 @@ pub struct ProfileRef {
 }
 
 /// The closed targets configuration (`lekalo/portability-targets/v0.8.0`).
+///
+/// `default_destinations` mirrors the contract exactly: the member is
+/// optional, but when present it admits at least one entry — an empty
+/// list is a decode refusal, never a silent fallback.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TargetsDocument {
@@ -653,8 +661,8 @@ pub struct TargetsDocument {
     pub identity: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_source: Option<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub default_destinations: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_destinations: Option<Vec<String>>,
     pub targets: Vec<TargetBinding>,
 }
 
@@ -721,13 +729,16 @@ pub struct AdapterRecord {
     pub capability_digest: Option<String>,
 }
 
-/// One reviewed semantic mapping record.
+/// One reviewed semantic mapping record. A mapping is destination-scoped:
+/// it credits exactly the named destination target and is invisible to
+/// every other assessment destination.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MappingRecord {
     pub id: String,
     pub requirement: String,
     pub capability: String,
+    pub target_id: String,
     pub subject: Option<String>,
     pub coverage: MappingCoverage,
     pub conditions: Vec<String>,
@@ -900,6 +911,15 @@ pub struct Recipe {
 /// Recursive duplicate-key refusal before typed decoding; a plain
 /// `serde_json::Value` would silently discard the duplicate evidence.
 pub fn decode<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T, DiagnosticSet> {
+    let value = decode_dup_safe(bytes)?;
+    serde_json::from_value(value).map_err(|_| super::diagnostic::invalid("closed-shape"))
+}
+
+/// Decode one generic JSON value with the same recursive duplicate-key
+/// refusal and byte bound, for artifact families that continue through a
+/// `serde_json::Value` bridge (the implementation attachment). A plain
+/// `serde_json::from_slice` there would silently collapse duplicate keys.
+pub fn decode_dup_safe(bytes: &[u8]) -> Result<serde_json::Value, DiagnosticSet> {
     if bytes.len() > version::MAX_INPUT_BYTES {
         return Err(super::diagnostic::invalid("input-size"));
     }
@@ -909,7 +929,7 @@ pub fn decode<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T, Diagnos
         .0;
     de.end()
         .map_err(|_| super::diagnostic::invalid("json-trailing"))?;
-    serde_json::from_value(value).map_err(|_| super::diagnostic::invalid("closed-shape"))
+    Ok(value)
 }
 
 struct Unique(serde_json::Value);

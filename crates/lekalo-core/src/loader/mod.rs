@@ -160,15 +160,23 @@ pub(crate) fn decode_document_bytes(
     decode(path, kind, &parsed)
 }
 
-/// Run phases 1-8 to completion and return the normalized aggregate, or the
+/// Terminal outcome of a loader phase: the normalized aggregate, or the
 /// terminal failure. No rendering happens here; `run` owns the envelope.
 pub fn normalize_model(selection: &LoadSelection) -> Result<NormalizedModel, DomainResult> {
     load_with_snapshot(selection).map(|loaded| loaded.model)
 }
 
-/// Phase 1 only: resolve the selection to an absolute project root
-/// without reading model documents. The migration service uses this to
-/// recover a crashed transaction before the loader's fail-closed gate.
+/// Public phase-1 seam: resolve the selection to the absolute,
+/// alias-free project root without reading model documents. Commands
+/// that read project-relative artifacts after loading must bind those
+/// reads to this exact root — never to the raw invocation-relative
+/// selector, which resolves differently from another working directory.
+/// (The migration service keeps the `pub(crate)` spelling for its
+/// crash-recovery use.)
+pub fn resolve_selection_root(selection: &LoadSelection) -> Result<PathBuf, DomainResult> {
+    root_for_selection(selection)
+}
+
 pub(crate) fn root_for_selection(selection: &LoadSelection) -> Result<PathBuf, DomainResult> {
     let failure =
         |status, diagnostics: Vec<Diagnostic>| Err(diagnostic::failure(status, diagnostics));

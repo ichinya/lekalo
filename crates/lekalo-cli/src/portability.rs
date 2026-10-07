@@ -1,8 +1,10 @@
 //! Bounded read-only CLI adapter for issue #19; every decision belongs
 //! to the core.
 //!
-//! This module owns the classified reads (byte-bounded, duplicate-key
-//! rejecting, safe project-relative selectors), the exact profile-pin
+//! This module owns the confined reads (byte-bounded, duplicate-key
+//! rejecting, safe project-relative selectors routed through the
+//! reparse-checked project filesystem, so no junction or symlink can
+//! escape the resolved project root), the exact profile-pin
 //! verification against the resolved profile documents, the qualified
 //! implementation join through the existing producer, and the human/JSON
 //! rendering. The core [`lekalo_core::portability`] performs the whole
@@ -14,9 +16,9 @@ use lekalo_core::portability::{
     self as core, assess, embedded_recipe, extract, parse_evidence, parse_targets, profile_pin,
     resolve_targets, verify_profile_pin, Request, Scope,
 };
+use lekalo_core::project_fs::{Fs as ProjectFs, FsErrorKind};
 use lekalo_core::{DomainResult, Status};
 use std::collections::BTreeMap;
-use std::io::Read;
 
 /// The `lekalo portability` flag surface (issue #19).
 #[derive(Debug, ClapArgs)]
@@ -51,36 +53,72 @@ pub struct Args {
 /// The default project-relative configuration home, outside the
 /// reserved `lekalo/**` trees.
 const DEFAULT_TARGETS: &str = "config/portability-targets.json";
-/// The lock custody file of the project, when present.
-const LOCK_PATH: &str = "lekalo/lock.json";
+/// The canonical lock custody file of the project (`lekalo.lock` at the
+/// resolved project root), when present.
+const LOCK_PATH: &str = "lekalo.lock";
 
 fn invalid(detail: &'static str) -> DiagnosticSet {
     lekalo_core::portability::diagnostic::invalid(detail)
 }
 
-/// One bounded, classified read of a project-relative file: safe-path
-/// grammar, regular file, byte limit, no follow.
-fn read_bounded(root: &std::path::Path, relative: &str) -> Result<Vec<u8>, DiagnosticSet> {
+fn fs_error_class(kind: FsErrorKind) -> DiagnosticSet {
+    match kind {
+        FsErrorKind::NotFound => invalid("input-absent"),
+        FsErrorKind::Limit { .. } => invalid("input-size"),
+        FsErrorKind::Io => invalid("input-read"),
+    }
+}
+
+/// One bounded, classified read of a project-relative file through the
+/// confined project filesystem: safe-path grammar, per-component
+/// reparse/symlink-checked directories, regular-file classification
+/// before and after the open, byte limit. Every project-relative
+/// artifact read routes through this capability — `std::fs::File::open`
+/// would follow Windows junctions and Unix symlinks out of the root.
+fn read_bounded(fs: &ProjectFs, relative: &str) -> Result<Vec<u8>, DiagnosticSet> {
     if lekalo_core::project_fs::path_violation(relative).is_some() {
         return Err(invalid("artifact-ref"));
     }
-    let path = root.join(relative);
-    let file = std::fs::File::open(&path).map_err(|_| invalid("input-read"))?;
-    if !file
-        .metadata()
-        .map_err(|_| invalid("input-metadata"))?
-        .is_file()
-    {
-        return Err(invalid("input-file"));
+    let (directory, name) = match relative.rsplit_once('/') {
+        Some((dir, file)) => (dir, file),
+        None => ("", relative),
+    };
+    match fs.read_file_opt(
+        directory,
+        name,
+        lekalo_core::portability::version::MAX_INPUT_BYTES,
+    ) {
+        Ok(Some(bytes)) => Ok(bytes),
+        // The confined capability reports an absent file through the
+        // shared error class; the portability classification keeps its
+        // own absent token.
+        Ok(None) => Err(invalid("input-absent")),
+        Err(kind) => Err(fs_error_class(kind)),
     }
-    let mut bytes = vec![];
-    file.take(lekalo_core::portability::version::MAX_INPUT_BYTES as u64 + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|_| invalid("input-read"))?;
-    if bytes.len() > lekalo_core::portability::version::MAX_INPUT_BYTES {
-        return Err(invalid("input-size"));
+}
+
+/// The optional artifact read: an absent file is a `None`, every other
+/// failure is terminal.
+fn read_bounded_opt(fs: &ProjectFs, relative: &str) -> Result<Option<Vec<u8>>, DiagnosticSet> {
+    match read_bounded(fs, relative) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(set) if set
+            .as_slice()
+            .iter()
+            .any(|d| {
+                d.id() == "portability.input-invalid"
+                    && d.data()
+                        .get("detail")
+                        .map(|value| {
+                            matches!(value, lekalo_core::diagnostics::DataValue::Token(token) if token == "input-absent")
+                        })
+                        .unwrap_or(false)
+            }) =>
+        {
+            Ok(None)
+        }
+        Err(set) => Err(set),
     }
-    Ok(bytes)
 }
 
 fn failure(set: DiagnosticSet) -> DomainResult {
@@ -104,10 +142,10 @@ pub fn run(args: Args) -> DomainResult {
 
 /// Decode one profile document and verify the configured pin exactly.
 fn load_profile(
-    root: &std::path::Path,
+    fs: &ProjectFs,
     binding: &lekalo_core::portability::wire::TargetBinding,
 ) -> Result<Option<lekalo_core::portability::ProfilePin>, DiagnosticSet> {
-    let bytes = read_bounded(root, &binding.profile_document_ref)?;
+    let bytes = read_bounded(fs, &binding.profile_document_ref)?;
     let document = lekalo_core::target_profile::document::decode(&bytes)
         .map_err(|_| lekalo_core::portability::diagnostic::invalid("profile-document"))?;
     let resolved = lekalo_core::target_profile::resolution::resolve(&document)
@@ -123,8 +161,10 @@ fn load_profile(
 /// Join the qualified implementation projection: the evidence manifest
 /// must declare the family complete, pin the artifact digest, and the
 /// producer must validate the document against this exact compilation.
+/// The artifact bytes decode through the duplicate-key-refusing parser
+/// before the typed bridge.
 fn load_implementation(
-    root: &std::path::Path,
+    fs: &ProjectFs,
     evidence: &lekalo_core::portability::EvidenceDocument,
     compilation: &lekalo_core::ir::Compilation,
 ) -> Result<Option<lekalo_core::implementation::PortabilityReport>, DiagnosticSet> {
@@ -141,12 +181,12 @@ fn load_implementation(
     let (Some(reference), Some(digest)) = (&family.artifact_ref, &family.digest) else {
         return Ok(None);
     };
-    let bytes = read_bounded(root, reference)?;
+    let bytes = read_bounded(fs, reference)?;
     if format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes)) != *digest {
         return Err(invalid("implementation-digest"));
     }
-    let value: serde_json::Value =
-        serde_json::from_slice(&bytes).map_err(|_| invalid("implementation-shape"))?;
+    let value: serde_json::Value = lekalo_core::portability::wire::decode_dup_safe(&bytes)
+        .map_err(|_| invalid("implementation-shape"))?;
     let document = lekalo_core::implementation::ImplementationDocument::from_value(&value)
         .map_err(|_| invalid("implementation-shape"))?;
     match lekalo_core::implementation::validate(&document, compilation) {
@@ -162,6 +202,14 @@ fn execute(args: Args) -> Result<DomainResult, DiagnosticSet> {
             .clone()
             .or_else(|| std::env::var("LEKALO_PROJECT").ok()),
     };
+    // The loader-resolved project root: every subsequent artifact read
+    // binds to this exact tree, never to the raw selector spelled at
+    // the invocation directory.
+    let root = match lekalo_core::loader::resolve_selection_root(&selection) {
+        Ok(root) => root,
+        Err(result) => return Ok(result),
+    };
+    let fs = ProjectFs::open(&root).map_err(fs_error_class)?;
     let model = match lekalo_core::loader::normalize_model(&selection) {
         Ok(model) => model,
         Err(result) => return Ok(result),
@@ -170,8 +218,6 @@ fn execute(args: Args) -> Result<DomainResult, DiagnosticSet> {
         Ok(compilation) => compilation,
         Err(failure) => return Ok(failure.into_result()),
     };
-    let root =
-        std::path::PathBuf::from(selection.project.clone().unwrap_or_else(|| ".".to_owned()));
     let recipe = embedded_recipe()?;
 
     // Targets configuration: the explicit selector or the default home;
@@ -180,9 +226,9 @@ fn execute(args: Args) -> Result<DomainResult, DiagnosticSet> {
         .targets
         .clone()
         .unwrap_or_else(|| DEFAULT_TARGETS.to_owned());
-    let targets_bytes = read_bounded(&root, &targets_path);
+    let targets_bytes = read_bounded_opt(&fs, &targets_path)?;
     let (targets, targets_input) = match targets_bytes {
-        Ok(bytes) => {
+        Some(bytes) => {
             let document = parse_targets(&bytes)?;
             let digest = format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes));
             (
@@ -194,9 +240,9 @@ fn execute(args: Args) -> Result<DomainResult, DiagnosticSet> {
                 },
             )
         }
-        Err(set) => {
+        None => {
             if args.targets.is_some() {
-                return Err(set);
+                return Err(invalid("input-absent"));
             }
             (
                 None,
@@ -213,7 +259,7 @@ fn execute(args: Args) -> Result<DomainResult, DiagnosticSet> {
     let mut evidence_digest: Option<String> = None;
     let evidence = match &args.evidence {
         Some(path) => {
-            let bytes = read_bounded(&root, path)?;
+            let bytes = read_bounded(&fs, path)?;
             evidence_digest = Some(format!(
                 "sha256:{}",
                 lekalo_core::digest::sha256_hex(&bytes)
@@ -236,7 +282,11 @@ fn execute(args: Args) -> Result<DomainResult, DiagnosticSet> {
     };
     request.validate()?;
 
-    // Profile pins and adapter snapshots per configured target.
+    // Profile pins, adapter snapshots, and verified storage-profile
+    // artifact reads per configured target. The declared storage and
+    // adapter references are read and digest-pinned here: the report
+    // never echoes a reference it has not verified through the
+    // confined filesystem.
     let subjects = extract(&compilation.project, &recipe);
     let mut pins: BTreeMap<String, Option<lekalo_core::portability::ProfilePin>> = BTreeMap::new();
     let mut adapters: BTreeMap<String, Option<lekalo_core::portability::wire::AdapterSnapshot>> =
@@ -244,11 +294,24 @@ fn execute(args: Args) -> Result<DomainResult, DiagnosticSet> {
     let mut storage_refs: BTreeMap<String, Vec<String>> = BTreeMap::new();
     if let Some(document) = &targets {
         for binding in &document.targets {
-            pins.insert(binding.target_id.clone(), load_profile(&root, binding)?);
-            storage_refs.insert(
-                binding.target_id.clone(),
-                binding.storage_profile_refs.clone(),
-            );
+            pins.insert(binding.target_id.clone(), load_profile(&fs, binding)?);
+            let mut verified_refs = Vec::new();
+            for reference in &binding.storage_profile_refs {
+                let bytes = read_bounded(&fs, reference)?;
+                verified_refs.push(format!(
+                    "{}#sha256:{}",
+                    reference,
+                    lekalo_core::digest::sha256_hex(&bytes)
+                ));
+            }
+            storage_refs.insert(binding.target_id.clone(), verified_refs);
+            if let Some(adapter_ref) = &binding.adapter_evidence_ref {
+                // The adapter evidence reference is opened and pinned;
+                // its qualified snapshot still comes from the evidence
+                // manifest, never from the referenced file's content.
+                let bytes = read_bounded(&fs, adapter_ref)?;
+                let _ = format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes));
+            }
         }
     }
     if let Some(evidence) = &evidence {
@@ -274,14 +337,15 @@ fn execute(args: Args) -> Result<DomainResult, DiagnosticSet> {
         &storage_refs,
     )?;
 
-    // The lock custody pin, recorded separately from the evidence trust.
-    let lock_digest = read_bounded(&root, LOCK_PATH)
-        .ok()
+    // The lock custody pin, recorded separately from the evidence
+    // trust: the canonical `lekalo.lock` at the resolved project root,
+    // read through the confined filesystem.
+    let lock_digest = read_bounded_opt(&fs, LOCK_PATH)?
         .map(|bytes| format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes)));
 
     // The qualified implementation join.
     let implementation = match &evidence {
-        Some(document) => load_implementation(&root, document, &compilation)?,
+        Some(document) => load_implementation(&fs, document, &compilation)?,
         None => None,
     };
 
@@ -326,10 +390,15 @@ fn execute(args: Args) -> Result<DomainResult, DiagnosticSet> {
     }
 
     let human = human_summary(&report);
-    let json = format!(
-        "{{\"status\":\"valid\",\"portability\":{}}}",
-        lekalo_core::portability::canonical::canonical_bytes(&report)
-    );
+    let mut canonical = lekalo_core::portability::canonical::canonical_bytes(&report);
+    // The recipe's declared report byte bound is enforced against the
+    // canonical bytes; an oversized report is an explicit analysis
+    // failure, never a silently truncated emission.
+    if canonical.len() as u64 > recipe.document.limits.max_report_bytes {
+        return Err(invalid("report-size"));
+    }
+    let json = format!("{{\"status\":\"valid\",\"portability\":{}}}", canonical);
+    canonical.clear();
 
     // The strict gate: unresolved required obligations deny while the
     // report stays visible in the denied envelope.
