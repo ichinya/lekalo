@@ -1,12 +1,15 @@
 //! Neutral behavioral-equivalence adjudication (issue #41).
 //!
-//! The evidence document is producer-owned and independently checked here:
-//! any qualified mismatch is a failed gate, any unsupported or missing
+//! The evidence document is producer-owned and independently checked here
+//! against the exact committed generation: the implementation pin must be
+//! the digest of the recorded implementation inventory, the scenario
+//! corpus must cover every rendered requirement of the committed record,
+//! and any qualified mismatch is a failed gate. Unsupported or missing
 //! coverage is an incomplete gate, and only a fully supported matching
 //! corpus passes. Timing metrics and raw sources are never part of it.
 
 use super::diagnostic;
-use super::wire::{Equivalence, EquivalenceVerdict, ScenarioOutcome};
+use super::wire::{ArtifactRole, Equivalence, EquivalenceVerdict, ScenarioOutcome};
 use super::{detail, DomainResult, EQUIVALENCE_FAILED, EQUIVALENCE_INCOMPLETE, INPUT_INVALID};
 
 /// The adjudication receipt.
@@ -25,12 +28,92 @@ fn invalid(reason: &str) -> DomainResult {
     diagnostic::failure(INPUT_INVALID, &detail(reason))
 }
 
-/// Adjudicate one equivalence evidence document.
-pub fn adjudicate(bytes: &[u8]) -> DomainResult {
+/// The digest over one module's recorded implementation inventory: the
+/// ordered concatenation of every implementation/test output digest of
+/// the current generation for the evidence subject.
+fn implementation_inventory_digest(
+    record: &super::wire::GenerationRecord,
+    module: &str,
+    target: &str,
+) -> Option<String> {
+    let digests: Vec<&str> = record
+        .outputs
+        .iter()
+        .filter(|output| {
+            output.owner_module == module
+                && output.owner_target == target
+                && matches!(output.role, ArtifactRole::Implementation | ArtifactRole::Test)
+        })
+        .map(|output| output.digest.as_str())
+        .collect();
+    if digests.is_empty() {
+        return None;
+    }
+    Some(super::digest(digests.join("\n").as_bytes()))
+}
+
+/// Adjudicate one equivalence evidence document against the exact
+/// committed generation (read-only; `None` custody keeps the pure bytes
+/// behavior for detached callers).
+pub fn adjudicate_for(root: &std::path::Path, bytes: &[u8]) -> DomainResult {
     let evidence: Equivalence = match super::parse_equivalence(bytes) {
         Ok(evidence) => evidence,
         Err(error) => return error,
     };
+    let Some(current) = (match super::history::current(root) {
+        Ok(Some(current)) => Some(current),
+        Ok(None) => None,
+        Err(error) => return error,
+    }) else {
+        return invalid("custody");
+    };
+    let record = match super::history::record(root, &current) {
+        Ok(record) => record,
+        Err(error) => return error,
+    };
+    // The evidence is only ever about the exact committed implementation:
+    // the caller-provided pin must equal the recorded inventory digest.
+    match implementation_inventory_digest(&record, &evidence.module, &evidence.target) {
+        Some(digest) => {
+            if digest != evidence.implementation_digest {
+                return diagnostic::failure(EQUIVALENCE_FAILED, &detail("stale-evidence"));
+            }
+        }
+        None => return invalid("custody"),
+    }
+    // The required scenario corpus: every rendered requirement of the
+    // committed record for the subject must appear as a scenario.
+    let mut required: Vec<String> = record
+        .outputs
+        .iter()
+        .filter(|output| {
+            output.owner_module == evidence.module
+                && output.owner_target == evidence.target
+                && output.role == ArtifactRole::Implementation
+        })
+        .map(|output| output.path.clone())
+        .collect();
+    required.sort();
+    for path in &required {
+        let name = path
+            .rsplit('/')
+            .next()
+            .and_then(|file| file.strip_suffix(".ts"))
+            .unwrap_or(path);
+        let scenario = format!(
+            "{}.{}",
+            evidence.module,
+            name.replace('-', "_")
+        );
+        if !evidence.scenarios.iter().any(|row| row.scenario == scenario) {
+            return diagnostic::failure(EQUIVALENCE_INCOMPLETE, &detail("corpus"));
+        }
+    }
+    adjudicate_checked(evidence)
+}
+
+/// The pure adjudication over a pre-bound evidence document.
+fn adjudicate_checked(evidence: Equivalence) -> DomainResult {
     let mismatched = evidence
         .scenarios
         .iter()
@@ -68,4 +151,14 @@ pub fn adjudicate(bytes: &[u8]) -> DomainResult {
         matched,
         gaps: evidence.gaps,
     })
+}
+
+/// Adjudicate one equivalence evidence document without project custody
+/// (detached callers; the corpus binding stays structural).
+pub fn adjudicate(bytes: &[u8]) -> DomainResult {
+    let evidence: Equivalence = match super::parse_equivalence(bytes) {
+        Ok(evidence) => evidence,
+        Err(error) => return error,
+    };
+    adjudicate_checked(evidence)
 }

@@ -72,7 +72,7 @@ pub fn derive(selection: &LoadSelection, module: &str) -> Result<Authority, Doma
     // accepted contract families the pipeline compiled under, and its own
     // exact bytes ride the authority digest, so any lock mutation moves
     // the generation identity.
-    let lock_bytes = match std::fs::read(root.join("lekalo.lock")) {
+    let _lock_bytes = match std::fs::read(root.join("lekalo.lock")) {
         Ok(bytes) => bytes,
         Err(_) => return Err(stale("lekalo.lock", "missing")),
     };

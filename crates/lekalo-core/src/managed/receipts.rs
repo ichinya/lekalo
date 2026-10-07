@@ -27,6 +27,18 @@ pub struct CheckReceipt {
     pub coverage_digest: Option<String>,
 }
 
+/// The `managed authority` receipt: the exact generation-input pins of the
+/// project plus the module's required ledger.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthorityReceipt {
+    pub module: String,
+    pub model: String,
+    pub ir: String,
+    pub lock: String,
+    pub ledger: Vec<String>,
+}
+
 /// The `managed plan` receipt.
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]

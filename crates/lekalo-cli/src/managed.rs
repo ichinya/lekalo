@@ -6,7 +6,7 @@
 use clap::{Args, Subcommand};
 use lekalo_core::managed as core;
 use lekalo_core::managed::receipts::{
-    AssignmentView, CheckReceipt, PlanReceipt, UpgradeChange, UpgradeReceipt,
+    AssignmentView, AuthorityReceipt, CheckReceipt, PlanReceipt, UpgradeChange, UpgradeReceipt,
 };
 use lekalo_core::DomainResult;
 use std::io::Read;
@@ -91,6 +91,10 @@ pub struct UpgradePlanArgs {
     /// The exact target id.
     #[arg(long, value_name = "TARGET")]
     pub target: String,
+    /// The caller-owned ownership configuration both documents admit
+    /// against.
+    #[arg(long, value_name = "FILE")]
+    pub ownership: String,
     /// The current adapter coverage evidence.
     #[arg(long, value_name = "FILE")]
     pub base: String,
@@ -154,11 +158,22 @@ pub enum ManagedCommands {
         #[command(flatten)]
         project: ProjectArgs,
     },
+    /// Print the exact generation authority of the project: the canonical
+    /// Model/IR/lock pins and the module's required ledger. Read-only.
+    Authority {
+        /// The exact module id whose ledger is reported.
+        #[arg(long, value_name = "MODULE")]
+        module: String,
+        #[command(flatten)]
+        project: ProjectArgs,
+    },
     /// Adjudicate one neutral behavioral-equivalence evidence document.
     Equivalence {
         /// The closed equivalence evidence document.
         #[arg(long, value_name = "FILE")]
         evidence: String,
+        #[command(flatten)]
+        project: ProjectArgs,
     },
 }
 
@@ -196,10 +211,29 @@ fn root(project: &Option<String>) -> std::path::PathBuf {
 }
 
 /// The loader selection of one invocation: the same `--project` selector
-/// the accepted pipeline uses for root discovery.
+/// the accepted pipeline uses for root discovery. The selection grammar
+/// admits only relative selectors, so an absolute or backslash spelling
+/// normalizes to its cwd-relative form first.
 fn selection(project: &Option<String>) -> lekalo_core::loader::LoadSelection {
+    let Some(raw) = project else {
+        return lekalo_core::loader::LoadSelection { project: None };
+    };
+    let path = std::path::PathBuf::from(raw);
+    let candidate = if path.is_absolute() {
+        let cwd = std::env::current_dir().unwrap_or_default();
+        let (Some(cwd), Ok(absolute)) = (cwd.canonicalize().ok(), path.canonicalize()) else {
+            return lekalo_core::loader::LoadSelection { project: None };
+        };
+        absolute.strip_prefix(&cwd).map(|p| p.to_path_buf()).unwrap_or(absolute)
+    } else {
+        path
+    };
+    let mut selector = candidate.to_string_lossy().replace('\\', "/");
+    if selector.is_empty() {
+        selector = ".".to_owned();
+    }
     lekalo_core::loader::LoadSelection {
-        project: project.clone(),
+        project: Some(selector),
     }
 }
 
@@ -253,6 +287,9 @@ fn run_check(args: CheckArgs) -> Outcome {
         core::authority::qualify(&coverage, &authority)?;
         core::authority::ledger_complete(&coverage, &authority)?;
         core::coverage::admit(assignment, target, &coverage)?;
+        // Every validated custom/foreign binding resolves to a real pinned
+        // implementation file (finding K).
+        core::bindings::resolve(&root(&args.project.project), target, &coverage)?;
         admitted.push(format!("{}/{}", coverage.module, coverage.target));
         coverage_digest = Some(core::hash(&coverage));
     }
@@ -323,6 +360,9 @@ fn run_plan(args: PlanArgs) -> Outcome {
     let authority = core::authority::derive(&selection(&args.project.project), &args.module)?;
     core::authority::qualify(&coverage, &authority)?;
     core::authority::ledger_complete(&coverage, &authority)?;
+    // Every validated custom/foreign binding resolves to a real pinned
+    // implementation file before any plan exists (finding K).
+    core::bindings::resolve(&root(&args.project.project), target, &coverage)?;
     // The complete pinned input closure: every explicit input plus the
     // ownership configuration itself.
     let project_root = root(&args.project.project);
@@ -425,6 +465,19 @@ fn run_apply(args: ApplyArgs) -> Outcome {
     let authority = core::authority::derive(&selection(&args.project.project), &parsed_plan.modules[0])?;
     core::authority::qualify(&coverage_doc, &authority)?;
     core::authority::ledger_complete(&coverage_doc, &authority)?;
+    // Every validated custom/foreign binding re-resolves at apply time.
+    if let (Some(_module), Some(target)) = (
+        ownership.modules.iter().find(|m| m.module == parsed_plan.modules[0]),
+        ownership
+            .modules
+            .iter()
+            .find(|m| m.module == parsed_plan.modules[0])
+            .and_then(|m| m.targets.iter().find(|t| t.target == parsed_plan.targets[0])),
+    ) {
+        core::bindings::resolve(&root(&args.project.project), target, &coverage_doc)?;
+    } else {
+        return Err(invalid("module"));
+    }
     Err(core::apply::apply(
         &root(&args.project.project),
         &plan,
@@ -445,12 +498,64 @@ fn run_upgrade_plan(args: UpgradePlanArgs) -> Outcome {
     if base.target != args.target || candidate.target != args.target {
         return Err(invalid("target"));
     }
+    // Both documents must admit against the exact ownership assignment:
+    // an incomparable or unqualifiable candidate is reported, never an
+    // empty safe-looking diff (finding N).
+    let ownership = core::parse_ownership(&read(&args.ownership)?)?;
+    let assignment = ownership
+        .modules
+        .iter()
+        .find(|module| module.module == args.module)
+        .ok_or_else(|| invalid("module"))?;
+    let target = assignment
+        .targets
+        .iter()
+        .find(|target| target.target == args.target)
+        .ok_or_else(|| invalid("target"))?;
+    let authority = core::authority::derive(&selection(&args.project.project), &args.module)?;
+    let mut comparable = true;
     let mut changes = Vec::new();
+    if let Err(error) = core::authority::qualify(&base, &authority) {
+        let _ = error;
+        comparable = false;
+    }
+    if let Err(error) = core::authority::qualify(&candidate, &authority) {
+        let _ = error;
+        comparable = false;
+    }
+    let _ = core::coverage::admit(assignment, target, &base)
+        .map_err(|_| comparable = false);
+    let candidate_admission =
+        core::coverage::admit(assignment, target, &candidate).map_err(|_| comparable = false);
+    // The complete pinned change set: recipe, adapter, and every
+    // requirement row (support, witness, projection, sample) plus the
+    // extension rows.
+    if base.recipe.id != candidate.recipe.id {
+        changes.push(UpgradeChange {
+            field: "recipe.id".to_owned(),
+            before: base.recipe.id.clone(),
+            after: candidate.recipe.id.clone(),
+        });
+    }
+    if base.recipe.version != candidate.recipe.version {
+        changes.push(UpgradeChange {
+            field: "recipe.version".to_owned(),
+            before: base.recipe.version.clone(),
+            after: candidate.recipe.version.clone(),
+        });
+    }
     if base.recipe.digest != candidate.recipe.digest {
         changes.push(UpgradeChange {
             field: "recipe.digest".to_owned(),
             before: base.recipe.digest.clone(),
             after: candidate.recipe.digest.clone(),
+        });
+    }
+    if base.adapter.entry != candidate.adapter.entry {
+        changes.push(UpgradeChange {
+            field: "adapter.entry".to_owned(),
+            before: base.adapter.entry.clone(),
+            after: candidate.adapter.entry.clone(),
         });
     }
     if base.adapter.package_digest != candidate.adapter.package_digest {
@@ -467,23 +572,65 @@ fn run_upgrade_plan(args: UpgradePlanArgs) -> Outcome {
             after: candidate.adapter.protocol.clone(),
         });
     }
+    // In-place requirement diffs: every pinned row is compared by its
+    // canonical serialization, so an in-place support/witness/projection/
+    // sample change is a named change, never a silent keep.
+    let mut candidate_rows: std::collections::BTreeMap<&str, &core::Requirement> = candidate
+        .requirements
+        .iter()
+        .map(|requirement| (requirement.id.as_str(), requirement))
+        .collect();
+    for base_requirement in &base.requirements {
+        let Some(candidate_requirement) = candidate_rows.remove(base_requirement.id.as_str()) else {
+            continue;
+        };
+        if core::canonical_bytes(base_requirement) != core::canonical_bytes(candidate_requirement) {
+            changes.push(UpgradeChange {
+                field: format!("requirement.{}", base_requirement.id),
+                before: core::canonical_bytes(base_requirement),
+                after: core::canonical_bytes(candidate_requirement),
+            });
+        }
+    }
+    let base_extensions: std::collections::BTreeMap<&str, &core::ExtensionCheck> = base
+        .extensions
+        .iter()
+        .map(|check| (check.symbol.as_str(), check))
+        .collect();
+    for check in &candidate.extensions {
+        let Some(base_check) = base_extensions.get(check.symbol.as_str()) else {
+            continue;
+        };
+        if core::canonical_bytes(*base_check) != core::canonical_bytes(check) {
+            changes.push(UpgradeChange {
+                field: format!("extension.{}", check.symbol),
+                before: core::canonical_bytes(*base_check),
+                after: core::canonical_bytes(check),
+            });
+        }
+    }
     let base_ids: Vec<&str> = base.requirements.iter().map(|r| r.id.as_str()).collect();
     let candidate_ids: Vec<&str> = candidate
         .requirements
         .iter()
         .map(|r| r.id.as_str())
         .collect();
-    let requirements_added: Vec<String> = candidate_ids
+    let mut requirements_added: Vec<String> = candidate_ids
         .iter()
         .filter(|id| !base_ids.contains(id))
-        .map(|id| (*id).to_owned())
+        .map(|id| (*id).to_owned().to_owned())
         .collect();
+    requirements_added.sort();
     let requirements_removed: Vec<String> = base_ids
         .iter()
         .filter(|id| !candidate_ids.contains(id))
-        .map(|id| (*id).to_owned())
+        .map(|id| (*id).to_owned().to_owned())
         .collect();
-    let comparable = true;
+    // The candidate upgrade is only comparable when the candidate is a
+    // real qualified successor of the admitted base.
+    if candidate_admission.is_err() {
+        comparable = false;
+    }
     Ok(core::render(&UpgradeReceipt {
         module: args.module,
         target: args.target,
@@ -543,8 +690,22 @@ fn execute(command: ManagedCommands) -> Outcome {
         ManagedCommands::Rollback(args) => run_rollback(args),
         ManagedCommands::Resolve(args) => run_resolve(args),
         ManagedCommands::Recover { project } => Err(core::recovery::run(&root(&project.project))),
-        ManagedCommands::Equivalence { evidence } => {
-            Err(core::equivalence::adjudicate(&read(&evidence)?))
+        ManagedCommands::Authority { module, project } => {
+            let authority = core::authority::derive(&selection(&project.project), &module)?;
+            Ok(core::render(&AuthorityReceipt {
+                module,
+                model: authority.model_digest,
+                ir: authority.ir_digest,
+                lock: authority.lock_digest,
+                ledger: authority
+                    .ledger
+                    .iter()
+                    .map(|(id, kind)| format!("{id}:{}", kind.as_str()))
+                    .collect(),
+            }))
         }
+        ManagedCommands::Equivalence { evidence, project } => Err(
+            core::equivalence::adjudicate_for(&root(&project.project), &read(&evidence)?),
+        )
     }
 }

@@ -47,5 +47,8 @@
   ],
   "conflict": {
     "state": "absent"
+  },
+  "beforeDigest": {
+    "state": "absent"
   }
 }

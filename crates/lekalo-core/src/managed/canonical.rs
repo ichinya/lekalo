@@ -7,7 +7,8 @@
 
 use super::diagnostic;
 use super::wire::{
-    ArtifactRole, Coverage, Reference, Requirement, Sample, Scalar, Support, MAX_BYTES,
+    ArtifactRole, Coverage, ExtensionCheck, Reference, Requirement, Sample, Scalar, Support,
+    MAX_BYTES,
 };
 use super::{detail, DomainResult, INPUT_INVALID};
 
@@ -194,6 +195,8 @@ fn render_test(
     module: &str,
     target: &str,
     requirement: &Requirement,
+    extensions: &[ExtensionCheck],
+    generated_root: &str,
 ) -> Result<Vec<u8>, DomainResult> {
     let name =
         requirement_name(module, &requirement.id).ok_or_else(|| invalid("requirement-name"))?;
@@ -208,15 +211,80 @@ fn render_test(
          // Expected values are the pinned scenario sample of this recipe.\n\
          \n\
          import assert from \"node:assert/strict\";\n\
-         import {{ {function} }} from \"../src/{file}.ts\";\n\
-         \n\
-         assert.deepStrictEqual(\n  {function}({input}),\n  {output},\n);\n",
+         import {{ {function} }} from \"../src/{file}.ts\";\n",
         function = function,
         file = file_stem(name),
+    ));
+    // Every resolved custom/foreign binding is invoked explicitly: the
+    // generated evidence proves the pinned implementation is live for
+    // this generation (finding K).
+    for extension in extensions {
+        if !extension.validated {
+            continue;
+        }
+        let Some((binding_file, binding_symbol)) = binding_parts(&extension.binding) else {
+            return Err(invalid("binding"));
+        };
+        let Some(relative) = relative_binding_path(generated_root, &binding_file) else {
+            return Err(invalid("binding"));
+        };
+        document.push_str(&format!(
+            "import {{ {binding_symbol} }} from \"{relative}\";\n",
+        ));
+    }
+    document.push_str(&format!(
+        "\nassert.deepStrictEqual(\n  {function}({input}),\n  {output},\n);\n",
+        function = function,
         input = record_literal(&sample.input),
         output = record_literal(&sample.output),
     ));
+    for extension in extensions {
+        if !extension.validated {
+            continue;
+        }
+        let symbol = extension
+            .binding
+            .split('#')
+            .nth(1)
+            .unwrap_or(&extension.symbol);
+        let invoked = camel(symbol);
+        document.push_str(&format!(
+            "assert.strictEqual(typeof {invoked}, \"function\");\n\
+             assert.ok({invoked}({{}}) !== undefined);\n",
+        ));
+    }
     Ok(document.into_bytes())
+}
+
+/// The file and exported symbol of one binding spelling
+/// (`path/file.ts` or `path/file.ts#symbol`).
+fn binding_parts(binding: &str) -> Option<(String, String)> {
+    let (file, symbol) = match binding.split_once('#') {
+        Some((file, symbol)) => (file, symbol),
+        None => (binding, "default"),
+    };
+    if file.is_empty() || symbol.is_empty() {
+        return None;
+    }
+    Some((file.to_owned(), symbol.to_owned()))
+}
+
+/// The import specifier of one project-relative binding file as seen from
+/// the generated test directory `<generated_root>/test/`.
+fn relative_binding_path(generated_root: &str, binding_file: &str) -> Option<String> {
+    let from_dir = format!("{generated_root}/test");
+    let from: Vec<&str> = from_dir.split('/').collect();
+    let to: Vec<&str> = binding_file.split('/').collect();
+    let mut common = 0usize;
+    while common < from.len() && common < to.len() && from[common] == to[common] {
+        common += 1;
+    }
+    let mut parts: Vec<String> = from[common..].iter().map(|_| "..".to_owned()).collect();
+    parts.extend(to[common..].iter().map(|segment| segment.to_string()));
+    if parts.is_empty() {
+        return None;
+    }
+    Some(parts.join("/"))
 }
 
 /// Render the complete deterministic output inventory of one admitted
@@ -261,6 +329,8 @@ pub fn render_inventory(
                 &coverage.module,
                 &coverage.target,
                 requirement,
+                &coverage.extensions,
+                generated_root,
             )?,
         )?;
     }

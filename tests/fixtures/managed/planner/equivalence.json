@@ -3,19 +3,19 @@
   "identity": "dev.lekalo.managed-equivalence@0.8.0",
   "module": "planner",
   "target": "node-typescript",
-  "implementationDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+  "implementationDigest": "sha256:8b2d5231b2a510dc23a014a626e33bc8df173ceac8dc13ff7587c8d16c924fe9",
   "referenceDigest": {
     "state": "known",
     "value": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
   },
   "scenarios": [
     {
-      "scenario": "planner.completes_task",
+      "scenario": "planner.complete_task",
       "digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
       "verdict": "match"
     },
     {
-      "scenario": "planner.focuses_task",
+      "scenario": "planner.focus_task",
       "digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
       "verdict": "match"
     }

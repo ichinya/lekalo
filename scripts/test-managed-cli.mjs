@@ -65,7 +65,7 @@ function invoke(project, args, status) {
   } catch {
     throw new Error(`invalid output exit ${child.status}: ${text.slice(0, 1500)}`);
   }
-  assert.equal(envelope.status, status, text.slice(0, 1500));
+  assert.equal(envelope.status, status, text.slice(0, 1500) + ' ARGS=' + JSON.stringify(args));
   const expectedExit = { valid: 0, invalid: 1, denied: 3, unsupported: 4, 'unsupported-version': 5 }[status];
   assert.equal(child.status, expectedExit, `exit for ${status}`);
   if (status === 'invalid' || status === 'unsupported-version') assert.equal(child.stdout, '', 'failures stream on stderr');
@@ -79,10 +79,10 @@ function invoke(project, args, status) {
 }
 
 const ORACLE = {
-  'apps/planner/gen/src/completeTask.ts': read(`${wire}/planner/expected/completeTask.ts`),
-  'apps/planner/gen/src/focusTask.ts': read(`${wire}/planner/expected/focusTask.ts`),
-  'apps/planner/gen/test/completeTask.test.ts': read(`${wire}/planner/expected/completeTask.test.ts`),
-  'apps/planner/gen/test/focusTask.test.ts': read(`${wire}/planner/expected/focusTask.test.ts`),
+  'apps/planner/gen/src/complete-task.ts': read(`${wire}/planner/expected/complete-task.ts`),
+  'apps/planner/gen/src/focus-task.ts': read(`${wire}/planner/expected/focus-task.ts`),
+  'apps/planner/gen/test/complete-task.test.ts': read(`${wire}/planner/expected/complete-task.test.ts`),
+  'apps/planner/gen/test/focus-task.test.ts': read(`${wire}/planner/expected/focus-task.test.ts`),
 };
 
 function planReceipt(project, coverage = 'coverage.json', input = 'model/planner.model.json') {
@@ -131,10 +131,10 @@ const primary = sandbox('primary');
   assert.equal(built.action, 'promotion');
   writeFileSync(join(primary.project, 'plan.json'), JSON.stringify(built, null, 2) + '\n');
   assert.deepEqual(built.outputs.map((output) => `${output.path}:${output.action}`), [
-    'apps/planner/gen/src/completeTask.ts:create',
-    'apps/planner/gen/src/focusTask.ts:create',
-    'apps/planner/gen/test/completeTask.test.ts:create',
-    'apps/planner/gen/test/focusTask.test.ts:create',
+    'apps/planner/gen/src/complete-task.ts:create',
+    'apps/planner/gen/src/focus-task.ts:create',
+    'apps/planner/gen/test/complete-task.test.ts:create',
+    'apps/planner/gen/test/focus-task.test.ts:create',
   ]);
   const preview = apply(primary.project, 'valid', 'plan.json');
   assert.equal(preview.managed.dryRun, false);
@@ -156,13 +156,13 @@ const primaryGeneration = readFileSync(join(primary.project, '.lekalo/generated/
 {
   const before = snapshot(primary.project);
   const stale = apply(primary.project, 'invalid');
-  assert.deepEqual(stale.diagnostics[0].data, { path: ORACLE ? 'apps/planner/gen/src/completeTask.ts' : '', reason: 'already-applied' });
+  assert.deepEqual(stale.diagnostics[0].data, { path: ORACLE ? 'apps/planner/gen/src/complete-task.ts' : '', reason: 'already-applied' });
   assertSameTree(before, snapshot(primary.project), 'stale re-apply');
 }
 
 // ---- 4. Manual drift blocks regeneration until an exact resolve. ----------
 {
-  const handler = join(primary.project, 'apps/planner/gen/src/focusTask.ts');
+  const handler = join(primary.project, 'apps/planner/gen/src/focus-task.ts');
   writeFileSync(handler, '// manually edited\n');
   // Planning already refuses: the live bytes differ from recorded custody.
   const drifted = invoke(primary.project, [
@@ -178,12 +178,12 @@ const primaryGeneration = readFileSync(join(primary.project, '.lekalo/generated/
   // transaction can move the drifted path.
   // The preview resolves the recorded bytes; the confirmation is the exact
   // resolve plan digest.
-  const preview = invoke(primary.project, ['resolve', '--path', 'apps/planner/gen/src/focusTask.ts', '--restore', '--dry-run'], 'valid');
+  const preview = invoke(primary.project, ['resolve', '--path', 'apps/planner/gen/src/focus-task.ts', '--restore', '--dry-run'], 'valid');
   const resolveDigest = preview.managed.planDigest;
-  invoke(primary.project, ['resolve', '--path', 'apps/planner/gen/src/focusTask.ts', '--restore', '--confirm', resolveDigest], 'valid');
-  assert.equal(readFileSync(handler, 'utf8'), ORACLE['apps/planner/gen/src/focusTask.ts'], 'restore must be exact recorded bytes, never the edited baseline');
+  invoke(primary.project, ['resolve', '--path', 'apps/planner/gen/src/focus-task.ts', '--restore', '--confirm', resolveDigest], 'valid');
+  assert.equal(readFileSync(handler, 'utf8'), ORACLE['apps/planner/gen/src/focus-task.ts'], 'restore must be exact recorded bytes, never the edited baseline');
   // A missing generated file is drift too (plan time refuses the same way).
-  rmSync(join(primary.project, 'apps/planner/gen/src/completeTask.ts'));
+  rmSync(join(primary.project, 'apps/planner/gen/src/complete-task.ts'));
   const missing = invoke(primary.project, [
     'plan', '--to', 'managed',
     '--ownership', 'ownership.json',
@@ -192,34 +192,82 @@ const primaryGeneration = readFileSync(join(primary.project, '.lekalo/generated/
     '--input', 'model/planner.model.json',
   ], 'invalid');
   assert.equal(missing.diagnostics[0].id, 'managed.generated-drift');
-  invoke(primary.project, ['resolve', '--path', 'apps/planner/gen/src/completeTask.ts', '--restore', '--dry-run'], 'valid');
+  invoke(primary.project, ['resolve', '--path', 'apps/planner/gen/src/complete-task.ts', '--restore', '--dry-run'], 'valid');
   const restoreDigest = JSON.parse(
-    spawnSync(bin, ['--json', 'managed', 'resolve', '--path', 'apps/planner/gen/src/completeTask.ts', '--restore', '--dry-run', '--project', primary.project], { cwd: primary.project, encoding: 'utf8' }).stdout.trim(),
+    spawnSync(bin, ['--json', 'managed', 'resolve', '--path', 'apps/planner/gen/src/complete-task.ts', '--restore', '--dry-run', '--project', primary.project], { cwd: primary.project, encoding: 'utf8' }).stdout.trim(),
   ).managed.planDigest;
-  invoke(primary.project, ['resolve', '--path', 'apps/planner/gen/src/completeTask.ts', '--restore', '--confirm', restoreDigest], 'valid');
-  assert.equal(readFileSync(join(primary.project, 'apps/planner/gen/src/completeTask.ts'), 'utf8'), ORACLE['apps/planner/gen/src/completeTask.ts']);
+  invoke(primary.project, ['resolve', '--path', 'apps/planner/gen/src/complete-task.ts', '--restore', '--confirm', restoreDigest], 'valid');
+  assert.equal(readFileSync(join(primary.project, 'apps/planner/gen/src/complete-task.ts'), 'utf8'), ORACLE['apps/planner/gen/src/complete-task.ts']);
 }
 
 // ---- 5. Scoped cleanup deletes exactly the orphaned generated output. ------
+// Dropping a requirement is a Model change first: the coverage evidence is
+// re-pinned to the moved authority (the `managed authority` read-only view),
+// the plan is reviewed, and only the confirmed apply deletes the orphaned
+// outputs of the retired obligation.
+function authorityPins(project, module) {
+  const receipt = invoke(project, ['authority', '--module', module], 'valid');
+  return receipt.managed;
+}
+function rewriteModelCommands(project, keepIds) {
+  const commands = join(project, 'lekalo/modules/planner/commands.yaml');
+  if (keepIds.length === 0) {
+    rmSync(commands);
+    return;
+  }
+  const source = readFileSync(commands, 'utf8');
+  const blocks = source.split(/(?=- id: )/);
+  const kept = blocks.filter((block) => {
+    const match = block.match(/- id: ([a-z0-9_.]+)/);
+    return !match || keepIds.includes(match[1]);
+  });
+  writeFileSync(commands, kept.join(''));
+}
 {
   const coverage = JSON.parse(read(`${wire}/planner/coverage.json`));
   coverage.requirements = coverage.requirements.filter((requirement) => requirement.id !== 'planner.complete_task');
+  // The Model retires the command first; the lock and the coverage pins
+  // follow the moved authority.
+  rewriteModelCommands(primary.project, []);
+  invoke(primary.project, ['authority', '--module', 'planner'], 'valid');
+  spawnSync(bin, ['lock'], { cwd: primary.project, encoding: 'utf8' });
+  const moved = authorityPins(primary.project, 'planner');
+  coverage.authority = { state: 'known', value: { model: moved.model, ir: moved.ir, lock: moved.lock } };
   writeFileSync(join(primary.project, 'coverage-cleanup.json'), JSON.stringify(coverage, null, 2) + '\n');
+  // The stale coverage pins are refused before any plan exists.
+  const staleCoverage = JSON.parse(read(`${wire}/planner/coverage.json`));
+  staleCoverage.requirements = staleCoverage.requirements.filter((requirement) => requirement.id !== 'planner.complete_task');
+  writeFileSync(join(primary.project, 'coverage-stale.json'), JSON.stringify(staleCoverage, null, 2) + '\n');
+  const refused = invoke(primary.project, [
+    'plan', '--to', 'managed',
+    '--ownership', 'ownership.json',
+    '--coverage', 'coverage-stale.json',
+    '--module', 'planner', '--target', 'node-typescript',
+    '--input', 'model/planner.model.json',
+  ], 'invalid');
+  assert.equal(refused.diagnostics[0].id, 'managed.plan-stale');
   // An unclaimed neighbor must survive every cleanup.
   writeFileSync(join(primary.project, 'apps/planner/gen/src/unclaimed.ts'), '// not ours\n');
   const built = plan(primary.project, 'coverage-cleanup.json');
   const deletions = built.outputs.filter((output) => output.action === 'delete');
   assert.deepEqual(deletions.map((output) => output.path), [
-    'apps/planner/gen/src/completeTask.ts',
-    'apps/planner/gen/test/completeTask.test.ts',
+    'apps/planner/gen/src/complete-task.ts',
+    'apps/planner/gen/test/complete-task.test.ts',
   ]);
   writeFileSync(join(primary.project, 'plan-cleanup.json'), JSON.stringify(built, null, 2) + '\n');
   const applied = apply(primary.project, 'valid', 'plan-cleanup.json', 'coverage-cleanup.json');
   assert.equal(applied.managed.deleted.length, 2);
-  assert.ok(!existsSync(join(primary.project, 'apps/planner/gen/src/completeTask.ts')));
+  assert.ok(!existsSync(join(primary.project, 'apps/planner/gen/src/complete-task.ts')));
   assert.ok(existsSync(join(primary.project, 'apps/planner/gen/src/unclaimed.ts')), 'unclaimed files are never guessed disposable');
   rmSync(join(primary.project, 'apps/planner/gen/src/unclaimed.ts'));
-  // Restore the full coverage and generation for later phases.
+  // Restore the full Model, lock, coverage pins, and generation for the
+  // later phases.
+  writeFileSync(join(primary.project, 'lekalo/modules/planner/commands.yaml'), read(`${wire}/planner/lekalo/modules/planner/commands.yaml`));
+  spawnSync(bin, ['lock'], { cwd: primary.project, encoding: 'utf8' });
+  const restored = authorityPins(primary.project, 'planner');
+  const fullCoverage = JSON.parse(read(`${wire}/planner/coverage.json`));
+  fullCoverage.authority = { state: 'known', value: { model: restored.model, ir: restored.ir, lock: restored.lock } };
+  writeFileSync(join(primary.project, 'coverage.json'), JSON.stringify(fullCoverage, null, 2) + '\n');
   const rebuilt = plan(primary.project);
   writeFileSync(join(primary.project, 'plan-restore.json'), JSON.stringify(rebuilt, null, 2) + '\n');
   apply(primary.project, 'valid', 'plan-restore.json');
@@ -289,7 +337,7 @@ const primaryGeneration = readFileSync(join(primary.project, '.lekalo/generated/
   const hostile = sandbox('hostile');
   // An unclaimed file exactly where a create would land.
   mkdirSync(join(hostile.project, 'apps/planner/gen/src'), { recursive: true });
-  writeFileSync(join(hostile.project, 'apps/planner/gen/src/focusTask.ts'), '// squatter\n');
+  writeFileSync(join(hostile.project, 'apps/planner/gen/src/focus-task.ts'), '// squatter\n');
   const before = snapshot(hostile.project);
   // The plan itself refuses: an unclaimed file already occupies a create
   // coordinate, so no reviewed plan may exist for it.
@@ -358,11 +406,11 @@ const primaryGeneration = readFileSync(join(primary.project, '.lekalo/generated/
 // ---- 10. Upgrade diff: exact pin changes, zero writes. --------------------
 {
   const candidate = JSON.parse(read(`${wire}/planner/coverage.json`));
-  candidate.recipe.digest = 'sha256:aaaa5555555555555555555555555555555555555555555555555555555aaa';
-  candidate.adapter.packageDigest = 'sha256:bbbb6666666666666666666666666666666666666666666666666666666666bbb';
+  candidate.recipe.digest = 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  candidate.adapter.packageDigest = 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
   writeFileSync(join(primary.project, 'coverage-candidate.json'), JSON.stringify(candidate, null, 2) + '\n');
   const before = snapshot(primary.project);
-  const diff = invoke(primary.project, ['upgrade-plan', '--module', 'planner', '--target', 'node-typescript', '--base', 'coverage.json', '--candidate', 'coverage-candidate.json'], 'valid');
+  const diff = invoke(primary.project, ['upgrade-plan', '--module', 'planner', '--target', 'node-typescript', '--ownership', 'ownership.json', '--base', 'coverage.json', '--candidate', 'coverage-candidate.json'], 'valid');
   assert.deepEqual(diff.managed.changes.map((change) => change.field), ['recipe.digest', 'adapter.packageDigest']);
   assertSameTree(before, snapshot(primary.project), 'upgrade-plan writes nothing');
 }

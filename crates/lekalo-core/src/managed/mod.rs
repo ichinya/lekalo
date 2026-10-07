@@ -9,6 +9,7 @@
 
 pub mod apply;
 pub mod authority;
+pub mod bindings;
 pub mod canonical;
 pub mod coverage;
 pub mod custody;

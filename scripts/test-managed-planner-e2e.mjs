@@ -89,10 +89,10 @@ const applied = invoke([
 
 // The complete deterministic inventory matches the committed oracle.
 const oracle = {
-  'apps/planner/gen/src/completeTask.ts': `${wire}/planner/expected/completeTask.ts`,
-  'apps/planner/gen/src/focusTask.ts': `${wire}/planner/expected/focusTask.ts`,
-  'apps/planner/gen/test/completeTask.test.ts': `${wire}/planner/expected/completeTask.test.ts`,
-  'apps/planner/gen/test/focusTask.test.ts': `${wire}/planner/expected/focusTask.test.ts`,
+  'apps/planner/gen/src/complete-task.ts': `${wire}/planner/expected/complete-task.ts`,
+  'apps/planner/gen/src/focus-task.ts': `${wire}/planner/expected/focus-task.ts`,
+  'apps/planner/gen/test/complete-task.test.ts': `${wire}/planner/expected/complete-task.test.ts`,
+  'apps/planner/gen/test/focus-task.test.ts': `${wire}/planner/expected/focus-task.test.ts`,
 };
 for (const [generated, expected] of Object.entries(oracle)) {
   assert.equal(
@@ -107,7 +107,7 @@ const regenerated = readFileSync(join(project, '.lekalo/generated/manifests/mana
 assert.equal(applied.managed.generationDigest, regenerated);
 
 // The generated tests execute the generated handlers directly.
-for (const test of ['completeTask', 'focusTask']) {
+for (const test of ['complete-task', 'focus-task']) {
   execFileSync(process.execPath, [join(project, `apps/planner/gen/test/${test}.test.ts`)], {
     timeout: 60000,
     stdio: 'pipe',
@@ -123,6 +123,8 @@ const twin = join(mkdtempSync(join(tmpdir(), 'lekalo-managed-e2e-twin-')), 'proj
 cpSync(join(project, 'ownership.json'), join(twin, 'ownership.json'));
 cpSync(join(project, 'coverage.json'), join(twin, 'coverage.json'));
 cpSync(join(project, 'model'), join(twin, 'model'), { recursive: true });
+cpSync(join(project, 'lekalo'), join(twin, 'lekalo'), { recursive: true });
+cpSync(join(project, 'lekalo.lock'), join(twin, 'lekalo.lock'));
 const twinReceipt = spawnSync(bin, [
   '--json', 'managed', 'plan', '--to', 'managed',
   '--ownership', 'ownership.json', '--coverage', 'coverage.json',
