@@ -1081,13 +1081,14 @@ final class Decode {
             }
         }
         foreach ($bindings as $binding) {
-            if (!self::isClosedObject($binding, ['fingerprint', 'kind', 'native_id', 'path', 'symbol'])) {
+            // The pinned 0.6.4 schema spells the members camelCase.
+            if (!self::isClosedObject($binding, ['fingerprint', 'kind', 'nativeId', 'path', 'symbol'])) {
                 return self::refuse('decode', 'shape');
             }
             if (!Paths::isLogicalPath($binding['path'])) {
                 return self::refuse('decode', 'bounds');
             }
-            foreach (['native_id', 'symbol'] as $member) {
+            foreach (['nativeId', 'symbol'] as $member) {
                 if (!self::boundedText($binding[$member] ?? null, 128)) {
                     return self::refuse('decode', 'bounds');
                 }
@@ -1103,20 +1104,41 @@ final class Decode {
         if (!self::isClosedObject($pins, ['capabilities', 'ir', 'model', 'observed', 'profile', 'revision'])) {
             return self::refuse('decode', 'shape');
         }
-        foreach (['model', 'ir'] as $member) {
-            if (!Ids::isSha256Digest($pins[$member] ?? '')) {
-                return self::refuse('decode', 'bounds');
-            }
-        }
-        foreach (['observed', 'profile', 'capabilities', 'revision'] as $member) {
+        // The pinned 0.6.4 schema carries every pin as a State-tagged value
+        // ({state:"known",value}|{state:"unknown"|"withheld"|"unsupported"}).
+        foreach (['capabilities', 'ir', 'model', 'observed', 'profile', 'revision'] as $member) {
             if (self::explicitNull($pins, $member)) {
                 return self::refuse('decode', 'explicit-null');
             }
-            if (isset($pins[$member]) && !self::boundedText($pins[$member], 128)) {
-                return self::refuse('decode', 'bounds');
+            $state = self::admitStateString($pins[$member] ?? null);
+            if ($state !== null) {
+                return $state;
             }
         }
         return null;
+    }
+
+    /** One State-tagged string value of the pinned 0.6.4 lint schema. */
+    private static function admitStateString(mixed $value): ?array {
+        if (!is_array($value) || !self::isClosedObject($value, ['state', 'value'])) {
+            return self::refuse('decode', 'shape');
+        }
+        switch ($value['state'] ?? null) {
+            case 'known':
+                if (count($value) !== 2 || !isset($value['value']) || !self::boundedText($value['value'], 128)) {
+                    return self::refuse('decode', 'bounds');
+                }
+                return null;
+            case 'unknown':
+            case 'withheld':
+            case 'unsupported':
+                if (count($value) !== 1) {
+                    return self::refuse('decode', 'shape');
+                }
+                return null;
+            default:
+                return self::refuse('decode', 'shape');
+        }
     }
 
     // ------------------------------------------------------------------
@@ -1643,23 +1665,25 @@ final class Decode {
                 if ($symbol === '' || mb_strlen($symbol) > 128) {
                     return $invalid('lint-binding');
                 }
-                $key = $path . "\0" . $binding['native_id'] . "\0" . $binding['kind'];
+                $key = $path . "\0" . $binding['nativeId'] . "\0" . $binding['kind'];
                 if (isset($keys[$key])) {
                     return $invalid('lint-binding');
                 }
                 $keys[$key] = true;
             }
             $pins = $lint['pins'];
+            $pinKnown = static function ($pin): ?string {
+                return ($pin['state'] ?? null) === 'known' ? ($pin['value'] ?? null) : null;
+            };
             foreach (['observed', 'profile', 'capabilities'] as $pin) {
-                if (isset($pins[$pin]) && !Ids::isSha256Digest($pins[$pin])) {
+                $known = $pinKnown($pins[$pin] ?? null);
+                if ($known !== null && !Ids::isSha256Digest($known)) {
                     return $invalid('lint-pin');
                 }
             }
-            if (isset($pins['revision'])) {
-                $revision = $pins['revision'];
-                if ($revision === '' || mb_strlen($revision) > 128) {
-                    return $invalid('lint-pin');
-                }
+            $revision = $pinKnown($pins['revision'] ?? null);
+            if ($revision !== null && ($revision === '' || mb_strlen($revision) > 128)) {
+                return $invalid('lint-pin');
             }
         }
         $hasNative = array_key_exists('native_request', $value);

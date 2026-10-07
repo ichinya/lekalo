@@ -838,11 +838,27 @@ function decodeNativeRequest(value) {
   return { ok: true, value };
 }
 
+function decodeStateString(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return failure("shape");
+  const keys = Object.keys(value);
+  if (value.state === "known") {
+    if (keys.length !== 2 || !keys.includes("state") || !keys.includes("value")) return failure("shape");
+    if (typeof value.value !== "string" || value.value === "" || value.value.length > BOUNDS.ERROR_DETAIL_MAX) return failure("bounds");
+    return { ok: true, value };
+  }
+  if (["unknown", "withheld", "unsupported"].includes(value.state)) {
+    if (keys.length !== 1) return failure("shape");
+    return { ok: true, value };
+  }
+  return failure("shape");
+}
+
 function decodeLintBinding(value) {
-  const closed = closeObject(value, ["fingerprint", "kind", "native_id", "path", "symbol"]);
+  // The pinned 0.6.4 schema spells the members camelCase (nativeId).
+  const closed = closeObject(value, ["fingerprint", "kind", "nativeId", "path", "symbol"]);
   if (closed) return closed;
   if (!isLogicalPath(value.path)) return failure("bounds");
-  for (const member of ["native_id", "symbol"]) {
+  for (const member of ["nativeId", "symbol"]) {
     if (typeof value[member] !== "string" || value[member] === "" || value[member].length > BOUNDS.ERROR_DETAIL_MAX) return failure("bounds");
   }
   if (!["command", "entity"].includes(value.kind)) return failure("shape");
@@ -872,17 +888,11 @@ function decodeLintRequest(value) {
   }
   const pins = closeObject(value.pins, ["capabilities", "ir", "model", "observed", "profile", "revision"]);
   if (pins) return pins;
-  for (const member of ["model", "ir"]) {
-    if (!isSha256Digest(value.pins[member])) return failure("bounds");
+  // Every pin is a State-tagged value; model/ir must carry known digests.
+  for (const member of ["capabilities", "ir", "model", "observed", "profile", "revision"]) {
+    const state = decodeStateString(value.pins[member]);
+    if (!state.ok) return member === "model" || member === "ir" ? failure("bounds") : state;
   }
-  for (const member of ["observed", "profile", "capabilities"]) {
-    const absent = optional(value.pins[member]);
-    if (absent) return absent;
-    if (value.pins[member] !== undefined && !isSha256Digest(value.pins[member])) return failure("bounds");
-  }
-  const revision = optional(value.pins.revision);
-  if (revision) return revision;
-  if (value.pins.revision !== undefined && (typeof value.pins.revision !== "string" || value.pins.revision.length > BOUNDS.ERROR_DETAIL_MAX)) return failure("bounds");
   return { ok: true, value };
 }
 
@@ -1289,17 +1299,20 @@ function validateRequest(request) {
     if (!isSorted(lint.files) || lint.files.some((file) => !isLogicalPath(file))) return invalid("lint-request");
     const bindingKeys = new Set();
     for (const binding of lint.bindings) {
-      if (!isLogicalPath(binding.path) || !isDetailToken(binding.native_id) || !isDetailToken(binding.symbol)) return invalid("lint-binding");
+      if (!isLogicalPath(binding.path) || !isDetailToken(binding.nativeId) || !isDetailToken(binding.symbol)) return invalid("lint-binding");
       if (!["command", "entity"].includes(binding.kind)) return invalid("lint-binding");
       if (!isSha256Digest(binding.fingerprint)) return invalid("lint-binding");
-      const key = `${binding.path}\u0000${binding.native_id}\u0000${binding.kind}`;
+      const key = `${binding.path}\u0000${binding.nativeId}\u0000${binding.kind}`;
       if (bindingKeys.has(key) || !lint.files.includes(binding.path)) return invalid("lint-binding");
       bindingKeys.add(key);
     }
+    // Pins are State-tagged; a known value must be a digest, and the
+    // revision pin's known value a token.
+    const pinKnown = (pin) => (pin.state === "known" ? pin.value : undefined);
     for (const pin of ["observed", "profile", "capabilities"]) {
-      if (lint.pins[pin] !== undefined && !isSha256Digest(lint.pins[pin])) return invalid("lint-pin");
+      if (pinKnown(lint.pins[pin]) !== undefined && !isSha256Digest(lint.pins[pin].value)) return invalid("lint-pin");
     }
-    if (lint.pins.revision !== undefined && !isDetailToken(lint.pins.revision)) return invalid("lint-pin");
+    if (pinKnown(lint.pins.revision) !== undefined && !isDetailToken(lint.pins.revision.value)) return invalid("lint-pin");
   }
   if (request.operation === "plan-native" && request.native_request === undefined) return invalid("native-request");
   if (request.operation !== "plan-native" && request.native_request !== undefined) return invalid("native-request");

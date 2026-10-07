@@ -48,17 +48,20 @@ export function validateRequest(request) {
     if (!isSorted(lint.files) || lint.files.some((file) => !isLogicalPath(file))) return invalid("lint-request");
     const bindingKeys = new Set();
     for (const binding of lint.bindings) {
-      if (!isLogicalPath(binding.path) || !isDetailToken(binding.native_id) || !isDetailToken(binding.symbol)) return invalid("lint-binding");
+      if (!isLogicalPath(binding.path) || !isDetailToken(binding.nativeId) || !isDetailToken(binding.symbol)) return invalid("lint-binding");
       if (!["command", "entity"].includes(binding.kind)) return invalid("lint-binding");
       if (!isSha256Digest(binding.fingerprint)) return invalid("lint-binding");
-      const key = `${binding.path}\u0000${binding.native_id}\u0000${binding.kind}`;
+      const key = `${binding.path}\u0000${binding.nativeId}\u0000${binding.kind}`;
       if (bindingKeys.has(key) || !lint.files.includes(binding.path)) return invalid("lint-binding");
       bindingKeys.add(key);
     }
+    // Pins are State-tagged; a known value must be a digest, and the
+    // revision pin's known value a token.
+    const pinKnown = (pin) => (pin.state === "known" ? pin.value : undefined);
     for (const pin of ["observed", "profile", "capabilities"]) {
-      if (lint.pins[pin] !== undefined && !isSha256Digest(lint.pins[pin])) return invalid("lint-pin");
+      if (pinKnown(lint.pins[pin]) !== undefined && !isSha256Digest(lint.pins[pin].value)) return invalid("lint-pin");
     }
-    if (lint.pins.revision !== undefined && !isDetailToken(lint.pins.revision)) return invalid("lint-pin");
+    if (pinKnown(lint.pins.revision) !== undefined && !isDetailToken(lint.pins.revision.value)) return invalid("lint-pin");
   }
   if (request.operation === "plan-native" && request.native_request === undefined) return invalid("native-request");
   if (request.operation !== "plan-native" && request.native_request !== undefined) return invalid("native-request");

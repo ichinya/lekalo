@@ -177,14 +177,24 @@ const planNativeRequest = {
   native_request: nativeRequest,
   request_id: R("plan-native"),
 };
+const lintPins = () => ({
+  // The pinned 0.6.4 schema carries every pin as a State-tagged value;
+  // model/ir must be known digests, the rest start unknown.
+  capabilities: { state: "unknown" },
+  ir: { state: "known", value: D("ir") },
+  model: { state: "known", value: D("model") },
+  observed: { state: "unknown" },
+  profile: { state: "unknown" },
+  revision: { state: "unknown" },
+});
 const lintRequest = {
   lint_request: {
     bindings: [
-      { fingerprint: D("fingerprint"), kind: "entity", native_id: "app-models-user", path: "src/domain/user.php", symbol: "user" },
-      { fingerprint: D("fingerprint-2"), kind: "command", native_id: "app-console-inspect", path: "src/console/inspect.php", symbol: "inspect" },
+      { fingerprint: D("fingerprint"), kind: "entity", nativeId: "app-models-user", path: "src/domain/user.php", symbol: "user" },
+      { fingerprint: D("fingerprint-2"), kind: "command", nativeId: "app-console-inspect", path: "src/console/inspect.php", symbol: "inspect" },
     ],
     files: ["src/console/inspect.php", "src/domain/user.php"],
-    pins: { ir: D("ir"), model: D("model") },
+    pins: lintPins(),
     scope: ["src"],
   },
   operation: "lint",

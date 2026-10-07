@@ -452,7 +452,7 @@ fn admit_lint_request(value: &Value) -> Result<(), Refusal> {
         }
     }
     for binding in bindings {
-        let allowed = ["fingerprint", "kind", "native_id", "path", "symbol"];
+        let allowed = ["fingerprint", "kind", "nativeId", "path", "symbol"];
         if !is_closed_object(binding, &allowed) {
             return Err(Refusal::new("decode", "shape"));
         }
@@ -463,7 +463,7 @@ fn admit_lint_request(value: &Value) -> Result<(), Refusal> {
         {
             return Err(Refusal::new("decode", "bounds"));
         }
-        for member in ["native_id", "symbol"] {
+        for member in ["nativeId", "symbol"] {
             if !bounded_text(binding.get(member).unwrap_or(&Value::Null), 128) {
                 return Err(Refusal::new("decode", "bounds"));
             }
@@ -492,26 +492,42 @@ fn admit_lint_request(value: &Value) -> Result<(), Refusal> {
     if !is_closed_object(pins, &allowed) {
         return Err(Refusal::new("decode", "shape"));
     }
-    for member in ["model", "ir"] {
-        if !pins
-            .get(member)
-            .and_then(Value::as_str)
-            .is_some_and(is_sha256_digest)
-        {
-            return Err(Refusal::new("decode", "bounds"));
-        }
-    }
-    for member in ["observed", "profile", "capabilities", "revision"] {
+    // The pinned 0.6.4 schema carries every pin as a State-tagged value
+    // ({state:"known",value}|{state:"unknown"|"withheld"|"unsupported"}).
+    for member in allowed {
         if explicit_null(pins, member) {
             return Err(Refusal::new("decode", "explicit-null"));
         }
-        if let Some(pin) = pins.get(member) {
-            if !bounded_text(pin, 128) {
-                return Err(Refusal::new("decode", "bounds"));
-            }
-        }
+        admit_state_string(pins.get(member).unwrap_or(&Value::Null))?;
     }
     Ok(())
+}
+
+/// One State-tagged string value of the pinned 0.6.4 lint schema.
+fn admit_state_string(value: &Value) -> Result<(), Refusal> {
+    if !value.is_object() {
+        return Err(Refusal::new("decode", "shape"));
+    }
+    let state = value.get("state").and_then(Value::as_str);
+    match state {
+        Some("known") => {
+            let names = value.member_names();
+            if names.len() != 2 || !names.contains(&"value") {
+                return Err(Refusal::new("decode", "shape"));
+            }
+            if !bounded_text(value.get("value").unwrap_or(&Value::Null), protocol::bounds::ERROR_DETAIL_MAX as usize) {
+                return Err(Refusal::new("decode", "bounds"));
+            }
+            Ok(())
+        }
+        Some("unknown" | "withheld" | "unsupported") => {
+            if value.member_names().len() != 1 {
+                return Err(Refusal::new("decode", "shape"));
+            }
+            Ok(())
+        }
+        _ => Err(Refusal::new("decode", "shape")),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1248,7 +1264,7 @@ pub fn validate_request(value: &Value) -> Result<(), Refusal> {
         {
             let path = binding.get("path").and_then(Value::as_str).unwrap_or("");
             let native_id = binding
-                .get("native_id")
+                .get("nativeId")
                 .and_then(Value::as_str)
                 .unwrap_or("");
             let kind = binding.get("kind").and_then(Value::as_str).unwrap_or("");
@@ -1274,18 +1290,22 @@ pub fn validate_request(value: &Value) -> Result<(), Refusal> {
             }
         }
         let pins = lint.get("pins").unwrap_or(&Value::Null);
+        let pin_known = |pin: &Value| -> Option<String> {
+            if pin.get("state").and_then(Value::as_str) == Some("known") {
+                pin.get("value").and_then(Value::as_str).map(str::to_owned)
+            } else {
+                None
+            }
+        };
         for pin in ["observed", "profile", "capabilities"] {
-            if let Some(pin) = pins.get(pin) {
-                if !pin.as_str().is_some_and(is_sha256_digest) {
+            if let Some(value) = pin_known(pins.get(pin).unwrap_or(&Value::Null)) {
+                if !is_sha256_digest(&value) {
                     return invalid("lint-pin");
                 }
             }
         }
-        if let Some(revision) = pins.get("revision") {
-            if !revision
-                .as_str()
-                .is_some_and(|s| !s.is_empty() && s.len() <= 128)
-            {
+        if let Some(value) = pin_known(pins.get("revision").unwrap_or(&Value::Null)) {
+            if value.is_empty() || value.len() > 128 {
                 return invalid("lint-pin");
             }
         }

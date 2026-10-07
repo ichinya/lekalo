@@ -360,13 +360,13 @@ func admitLintRequest(value Value) *Refusal {
 		}
 	}
 	for _, binding := range bindings {
-		if !isClosedObject(binding, []string{"fingerprint", "kind", "native_id", "path", "symbol"}) {
+		if !isClosedObject(binding, []string{"fingerprint", "kind", "nativeId", "path", "symbol"}) {
 			return refuse(stageDecode, "shape")
 		}
 		if !IsLogicalPath(GetString(binding, "path")) {
 			return refuse(stageDecode, "bounds")
 		}
-		for _, member := range []string{"native_id", "symbol"} {
+		for _, member := range []string{"nativeId", "symbol"} {
 			if !boundedText(binding.(map[string]any)[member], 128) {
 				return refuse(stageDecode, "bounds")
 			}
@@ -382,20 +382,43 @@ func admitLintRequest(value Value) *Refusal {
 	if !isClosedObject(pins, []string{"capabilities", "ir", "model", "observed", "profile", "revision"}) {
 		return refuse(stageDecode, "shape")
 	}
-	for _, member := range []string{"model", "ir"} {
-		if !IsSha256Digest(GetString(pins, member)) {
-			return refuse(stageDecode, "bounds")
-		}
-	}
-	for _, member := range []string{"observed", "profile", "capabilities", "revision"} {
+	// The pinned 0.6.4 schema carries every pin as a State-tagged value
+	// ({state:"known",value}|{state:"unknown"|"withheld"|"unsupported"}).
+	for _, member := range []string{"capabilities", "ir", "model", "observed", "profile", "revision"} {
 		if IsNull(pins, member) {
 			return refuse(stageDecode, "explicit-null")
 		}
-		if Has(pins, member) && !boundedText(pins.(map[string]any)[member], 128) {
-			return refuse(stageDecode, "bounds")
+		if refusal := admitStateString(pins.(map[string]any)[member]); refusal != nil {
+			return refusal
 		}
 	}
 	return nil
+}
+
+// admitStateString checks one State-tagged string value of the pinned
+// 0.6.4 lint schema.
+func admitStateString(value Value) *Refusal {
+	if value == nil || !isClosedObject(value, []string{"state", "value"}) {
+		return refuse(stageDecode, "shape")
+	}
+	switch GetString(value, "state") {
+	case "known":
+		keys := value.(map[string]any)
+		if len(keys) != 2 {
+			return refuse(stageDecode, "shape")
+		}
+		if !boundedText(keys["value"], 128) {
+			return refuse(stageDecode, "bounds")
+		}
+		return nil
+	case "unknown", "withheld", "unsupported":
+		if len(value.(map[string]any)) != 1 {
+			return refuse(stageDecode, "shape")
+		}
+		return nil
+	default:
+		return refuse(stageDecode, "shape")
+	}
 }
 
 // AdmitResponse decodes one response document (structural admission).
@@ -961,23 +984,26 @@ func ValidateRequest(value Value) *Refusal {
 			if symbol == "" || len(symbol) > 128 {
 				return refuse(stageValidate, "lint-binding")
 			}
-			key := path + "\x00" + GetString(binding, "native_id") + "\x00" + GetString(binding, "kind")
+			key := path + "\x00" + GetString(binding, "nativeId") + "\x00" + GetString(binding, "kind")
 			if keys[key] {
 				return refuse(stageValidate, "lint-binding")
 			}
 			keys[key] = true
 		}
 		pins := lintValue.(map[string]any)["pins"]
+		pinKnown := func(pin Value) (string, bool) {
+			if GetString(pin, "state") == "known" {
+				return GetString(pin, "value"), true
+			}
+			return "", false
+		}
 		for _, pin := range []string{"observed", "profile", "capabilities"} {
-			if Has(pins, pin) && !IsSha256Digest(GetString(pins, pin)) {
+			if known, ok := pinKnown(pins.(map[string]any)[pin]); ok && !IsSha256Digest(known) {
 				return refuse(stageValidate, "lint-pin")
 			}
 		}
-		if Has(pins, "revision") {
-			revision := GetString(pins, "revision")
-			if revision == "" || len(revision) > 128 {
-				return refuse(stageValidate, "lint-pin")
-			}
+		if revision, ok := pinKnown(pins.(map[string]any)["revision"]); ok && (revision == "" || len(revision) > 128) {
+			return refuse(stageValidate, "lint-pin")
 		}
 	}
 	hasNative := Has(value, "native_request")

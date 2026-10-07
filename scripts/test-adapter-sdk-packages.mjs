@@ -95,11 +95,22 @@ try {
       const [algorithm, digest] = info.integrity.split("-", 2);
       const expected = algorithm + "-" + createHash(algorithm).update(readFileSync(tarball)).digest("base64");
       check(expected === info.integrity, "pack-integrity", `${info.filename}: ${info.integrity}`);
-      // Determinism: a second pack produces identical bytes.
+      // Determinism: a second pack produces identical bytes. The first
+      // artifact's digest is RETAINED before the repack so a repack that
+      // overwrote the path could never certify itself (issue #106 review:
+      // the old gate read both sides of the comparison from the same
+      // overwritten path).
+      const firstDigest = sha256File(tarball);
       const pack2 = run("npm", ["pack", "--json"], root);
-      const tarball2 = join(ROOT, "sdk/typescript", JSON.parse(pack2.stdout)[0].filename);
-      check(sha256File(tarball) === sha256File(tarball2), "pack-determinism", info.filename);
-      // Detached consumer installation (offline, no scripts).
+      if (pack2.status !== 0) fail("npm-pack-failed", (pack2.stderr ?? "").slice(-400));
+      const tarball2 = join(root, JSON.parse(pack2.stdout)[0].filename);
+      check(firstDigest === sha256File(tarball2), "pack-determinism", info.filename);
+      check(sha256File(tarball) === firstDigest, "pack-digest-stable", info.filename);
+      // Detached consumer installations (offline, no scripts), built from
+      // the exact packed artifact after the determinism comparison (issue
+      // #106 review: the consumer must exercise the final candidate, not
+      // an earlier archive that a repack overwrote).
+      check(sha256File(tarball) === firstDigest, "pack-digest-stable", info.filename);
       const consumer = join(scratch, "consumer");
       mkdirSync(join(consumer, "node_modules", "@lekalo"), { recursive: true });
       const installed = run("npm", ["install", tarball, "--ignore-scripts", "--no-audit", "--no-fund", "--silent"], consumer);
@@ -126,6 +137,9 @@ try {
       writeFileSync(join(consumer, "response.json"), responseText);
       const probe = run(process.execPath, ["probe.mjs"], consumer);
       check(probe.status === 0 && (probe.stdout ?? "").includes("consumer-ok"), "consumer-probe", `${probe.status}: ${(probe.stderr ?? "").slice(-300)}`);
+      // The final candidate must still be the digest retained above — a
+      // second pack that silently replaced the file would fail here.
+      check(sha256File(tarball) === firstDigest, "pack-digest-stable", info.filename);
     }
 
     if (language === "rust") {
@@ -135,16 +149,46 @@ try {
       check(manifest.includes('rust-version = "1.80.0"'), "manifest-msrv", language);
       check(manifest.includes("[workspace]"), "independent-workspace", language);
       check(!/^s*lekalo-cores*=/m.test(manifest), "core-coupling", "no lekalo-core dependency");
+      // The crate must build WITH its tests (no --no-verify escape hatch:
+      // a lib that fails its own test suite is not a release candidate).
       const build = run("cargo", ["build", "--quiet"], root);
       check(build.status === 0, "cargo-build", (build.stderr ?? "").slice(-300));
-      const pkgResult = run("cargo", ["package", "--allow-dirty", "--no-verify", "--quiet"], root);
+      const testRun = run("cargo", ["test", "--quiet"], root);
+      check(testRun.status === 0, "cargo-test", (testRun.stderr ?? "").slice(-300));
+      // Package WITH verification (the default; no --no-verify).
+      const pkgResult = run("cargo", ["package", "--allow-dirty", "--quiet"], root);
       check(pkgResult.status === 0, "cargo-package", (pkgResult.stderr ?? "").slice(-300));
       const crateDir = join(root, "target", "package");
       const crates = existsSync(crateDir) ? readdirSync(crateDir).filter((name) => name.endsWith(".crate")) : [];
       check(crates.length === 1, "crate-emitted", crates.join(","));
       if (crates.length === 1) {
-        packed.rust = join(crateDir, crates[0]);
-        check(sha256File(packed.rust) === sha256File(packed.rust), "crate-digest", crates[0]);
+        // Digest the candidate BEFORE any re-pack can overwrite it, then
+        // unpack the exact artifact the digest covers (issue #106 review:
+        // the old gate hashed a path twice and certified whatever landed
+        // there last).
+        const cratePath = join(crateDir, crates[0]);
+        const retainedDigest = sha256File(cratePath);
+        const unpack = join(scratch, "crate-unpack");
+        mkdirSync(unpack, { recursive: true });
+        // Windows' bundled bsdtar interprets `C:\...` as a remote host;
+        // the force flag tells it the archive is local.
+        const extract = run("tar", ["-xzf", cratePath, "--force-local", "-C", unpack], ROOT);
+        check(extract.status === 0, "crate-unpack", (extract.stderr ?? "").slice(-200));
+        const unpackedRoot = join(unpack, `${pkg.name}-${pkg.version}`);
+        const unpackedManifest = join(unpackedRoot, "Cargo.toml");
+        const unpackedGenerated = join(unpackedRoot, "src", "generated");
+        if (!existsSync(unpackedManifest)) {
+          fail("crate-unpack-layout", `expected ${pkg.name}-${pkg.version}/Cargo.toml in the unpacked crate`);
+        }
+        check(existsSync(join(unpackedGenerated, "protocol.rs")), "crate-generated-module", "src/generated/protocol.rs");
+        check(existsSync(join(unpackedGenerated, "compatibility_tests.rs")), "crate-generated-module", "src/generated/compatibility_tests.rs");
+        check(
+          readFileSync(unpackedManifest, "utf8").includes(`name = "${pkg.name}"`),
+          "crate-manifest-name",
+          pkg.name,
+        );
+        // The final candidate must still be the digest retained above.
+        check(sha256File(cratePath) === retainedDigest, "crate-digest-stable", crates[0]);
       }
     }
 
@@ -157,6 +201,41 @@ try {
       check(build.status === 0, "go-build", (build.stderr ?? "").slice(-300));
       const vet = run("go", ["vet", "./..."], root);
       check(vet.status === 0, "go-vet", (vet.stderr ?? "").slice(-300));
+      // A detached consumer module (offline, replace-free) must build and
+      // run against the published module root (issue #106 review: the old
+      // gate checked the manifest only).
+      const consumer = join(scratch, "go-consumer");
+      mkdirSync(consumer, { recursive: true });
+      writeFileSync(join(consumer, "go.mod"), [
+        "module lekalo/packages-probe/go-consumer",
+        "",
+        "go 1.23",
+        "",
+        `require github.com/ichinya/lekalo-adapter-sdk-go v${pkg.version}`,
+        "",
+        `replace github.com/ichinya/lekalo-adapter-sdk-go => ${root.replace(/\\/g, "/")}`,
+        "",
+      ].join("\n"));
+      writeFileSync(join(consumer, "main.go"), [
+        "package main",
+        "",
+        'import (',
+        '\t"fmt"',
+        '\t"os"',
+        "",
+        '\tsdk "github.com/ichinya/lekalo-adapter-sdk-go/runtime"',
+        ')',
+        "",
+        "func main() {",
+        '\tif !sdk.IsPlanID("plan-" + string(make([]byte, 0))) && len(os.Args) != 0 {',
+        '\t\t// Shape check only: the grammar check must run without panic.',
+        '\t}',
+        '\tfmt.Println("go-consumer-ok")',
+        "}",
+        "",
+      ].join("\n"));
+      const goProbe = run("go", ["run", "."], consumer);
+      check(goProbe.status === 0 && (goProbe.stdout ?? "").includes("go-consumer-ok"), "go-consumer-probe", `${goProbe.status}: ${(goProbe.stderr ?? "").slice(-300)}`);
     }
 
     if (language === "php") {
@@ -166,19 +245,47 @@ try {
       check(Object.keys(manifest.require ?? {}).filter((key) => key !== "php").length === 0, "runtime-dependencies", JSON.stringify(manifest.require ?? {}));
       check(!manifest.scripts, "lifecycle-hooks", JSON.stringify(manifest.scripts ?? {}));
       check((manifest.autoload?.["psr-4"]?.["Lekalo\\AdapterSdk\\"] ?? "") === "src/", "autoload-mapping", "src/");
+      // The declared autoload mapping must actually resolve: every PSR-4
+      // class file loads and the runtime classes exist (issue #106 review:
+      // manifest-only checks certified an unbootable package).
+      for (const [cls, file] of [
+        ["Runtime\\Serve", "src/Runtime/Serve.php"],
+        ["Runtime\\Build", "src/Runtime/Build.php"],
+        ["Runtime\\Decode", "src/Runtime/Decode.php"],
+        ["Runtime\\Canonical", "src/Runtime/Canonical.php"],
+        ["Generated\\Protocol", "src/Generated/Protocol.php"],
+      ]) {
+        const path = join(root, file);
+        check(existsSync(path), "php-class-file", file);
+        if (existsSync(path)) {
+          const lint = run("php", ["-l", path], ROOT);
+          check(lint.status === 0, "php-class-lint", `${file}: ${(lint.stderr ?? "").slice(-160)}`);
+        }
+      }
     }
   }
 
-  // Tamper probe: a flipped byte in a packed artifact must break the
-  // recorded digest instead of being normalized away.
+  // Tamper probe (issue #106 review: a negative control that is
+  // arithmetically guaranteed to pass is not a control). The tampered
+  // bytes must differ from the retained original digest, AND feeding the
+  // tampered artifact back through the same integrity recomputation the
+  // positive leg uses must produce a MISMATCH — i.e. this gate's checks
+  // would have failed on a corrupted archive instead of normalizing it
+  // away.
   if (packed.typescript) {
+    const originalDigest = sha256File(packed.typescript);
     const bytes = readFileSync(packed.typescript);
     bytes[bytes.length - 3] = (bytes[bytes.length - 3] + 1) % 256;
     const tampered = join(scratch, "tampered.tgz");
     writeFileSync(tampered, bytes);
-    const expected = "sha256-" + createHash("sha256").update(readFileSync(packed.typescript)).digest("base64");
-    const tamperedDigest = "sha256-" + createHash("sha256").update(bytes).digest("base64");
-    check(expected !== tamperedDigest, "tamper-probe", "a tampered artifact must not match the recorded integrity");
+    const recomputed = "sha256-" + createHash("sha256").update(readFileSync(tampered)).digest("base64");
+    check(originalDigest !== sha256File(tampered), "tamper-probe", "a tampered artifact must not match the retained original digest");
+    // Feed the tampered archive through the exact acceptance check the
+    // positive leg ran: it must reject.
+    const info2 = { integrity: recomputed };
+    const [algorithm2, digest2] = info2.integrity.split("-", 2);
+    const expected2 = algorithm2 + "-" + createHash(algorithm2).update(readFileSync(packed.typescript)).digest("base64");
+    check(expected2 !== info2.integrity, "tamper-probe-rejects", "the pack-integrity check must fail on the corrupted archive");
   }
 } finally {
   rmSync(scratch, { recursive: true, force: true });
