@@ -13,11 +13,17 @@
 //! - every preflight failure happens before the first source write;
 //! - ordinary write failures restore the replaced files in reverse order
 //!   from verified backups and report `format.write-failed`;
-//! - while the durable journal or the active lock exists, every loader
-//!   entry path fails closed with `format.recovery-required`;
+//! - while a durable journal exists, every loader entry path fails closed
+//!   with `format.recovery-required`; the ownership lock alone is never
+//!   a reader signal;
 //! - the next explicit mutating `format` operation recovers — restoring
 //!   every manifest file to its verified before digest — before doing new
-//!   work. Check and editor modes never recover and never create state.
+//!   work. Check and editor modes never recover and never create state;
+//! - the same mutating run reclaims crashed pre-journal attempt homes
+//!   and orphaned replacement temps under the ownership lock, so no
+//!   crash residue can poison an identical retry, and the bounded
+//!   attempt chain reclaims its oldest completed home instead of
+//!   permanently denying a repeated change set.
 //!
 //! Backups under `.lekalo/cache/format/<planId>/before/` are immutable
 //! local recovery material, never canonical source, never published.
@@ -39,8 +45,16 @@ const RECORD_BOUND: u64 = 256 * 1024;
 const RECORD_MAX_FILES: usize = 4096;
 /// The maximum attempt suffix of one plan identity.
 const ATTEMPT_BOUND: usize = 8;
+/// The fixed suffix of the in-directory replacement temps. Orphaned
+/// temps of this spelling are reclaimed by the mutating run (finding
+/// r2 3): a mid-rename crash otherwise leaves the governed tree
+/// unloadable and collides every retry on the fixed name.
+const TEMP_SUFFIX: &str = "lekalo-format-new";
 /// The immutable backup manifest inside one plan home.
 const MANIFEST: &str = "manifest.json";
+/// The rename-temp home inside the formatter runtime (finding r2 3):
+/// temps live here, never as siblings inside the governed source tree.
+const TEMP_HOME: &str = ".lekalo/cache/format/temps";
 /// The internal, versioned runtime-record identity (never a public
 /// contract; the reader owns this version).
 const RUNTIME_SCHEMA: &str = "lekalo/format-transaction/v0.8.0";
@@ -90,12 +104,23 @@ pub(crate) struct FormatGuard {
     // Held for RAII: dropping the file releases the OS lock.
     #[allow(dead_code)]
     file: std::fs::File,
+    /// Whether this process created the ownership file. Only a freshly
+    /// created lock is ever stamped (finding r2 1): an adopted file can
+    /// be a hostile link spelling, and its bytes are never this
+    /// formatter's to mutate.
+    fresh: bool,
 }
 
 impl FormatGuard {
     /// Best-effort advisory stamp of the owned plan identity. The stamp
-    /// never gates anything; diagnostics read it only as a hint.
+    /// never gates anything; diagnostics read it only as a hint. An
+    /// adopted (not freshly created) ownership file is never mutated:
+    /// the stamp must never become a write primitive through a planted
+    /// link (finding r2 1).
     fn stamp(&self, plan_id: &str) {
+        if !self.fresh {
+            return;
+        }
         use std::io::{Seek, Write};
         let mut file = &self.file;
         if file.set_len(0).is_ok() {
@@ -267,10 +292,12 @@ pub(crate) fn pending_plan(selection: &LoadSelection) -> Option<String> {
 /// before new mutating work. The same real ownership lock serializes
 /// recovery and the apply that follows, so a live writer is refused as
 /// busy instead of being rolled back as if crashed (finding C).
-/// Completed plan homes — journal removed at commit — are rollback
-/// material, never recovery targets; homes with neither journal nor
-/// manifest are crashed partial attempts and are swept. The guard is
-/// held by the caller across the load/plan/apply window.
+/// Crashed pre-journal attempt homes and orphaned replacement temps are
+/// reclaimed in the same owned window whether or not a journal exists
+/// (finding r2 2): residue that survives recovery would otherwise
+/// poison every identical retry forever. Completed plan homes — journal
+/// removed at commit — are rollback material, never recovery targets.
+/// The guard is held by the caller across the load/plan/apply window.
 pub(crate) fn recover_pending(
     selection: &LoadSelection,
 ) -> Result<Option<FormatGuard>, RecoveryFailure> {
@@ -280,45 +307,51 @@ pub(crate) fn recover_pending(
             reason: "root-unresolved",
         })
     })?;
-    // Read the recovery signal first: a project with no formatter state
-    // gets no runtime-home writes at all from planning (a no-op apply on
-    // a canonical tree stays byte-identical, finding D's gate premise).
-    let fs = crate::project_fs::Fs::open(&root).map_err(|_| {
-        RecoveryFailure::Recovery(RecoveryError {
-            plan_id: "unknown".to_owned(),
-            reason: "root-unreadable",
-        })
-    })?;
-    if recovery_code(&fs).is_none() {
+    let write = FormatWrite::new(root);
+    // A project with no formatter state at all gets no runtime-home
+    // writes: the no-op apply on a canonical tree stays byte-identical
+    // and creates nothing (the reviewed gate premise). Any state — a
+    // plan home of any kind — proceeds to the owned window below.
+    if plan_directories_from(&write).is_empty() {
         return Ok(None);
     }
-    let write = FormatWrite::new(root);
+    // The ownership lock precedes every runtime-home decision: only the
+    // exclusive owner may recover, sweep, or create formatter state.
     let guard = write
         .acquire_ownership()
         .map_err(|_| RecoveryFailure::LiveWriter)?;
+    // Reader-gate state first: a journaled plan recovers, or fails the
+    // run, before anything else touches the home or the tree.
     let plans = plan_directories_from(&write);
     for plan_id in &plans {
-        // Only interrupted plans (durable journal present) recover;
-        // completed homes hold immutable backups for explicit rollback.
-        if !write.file_exists(&format!("{FORMAT_HOME}/{plan_id}/{JOURNAL}")) {
-            continue;
+        if write.file_exists(&format!("{FORMAT_HOME}/{plan_id}/{JOURNAL}")) {
+            recover_plan(&write, plan_id)?;
         }
-        recover_plan(&write, plan_id)?;
     }
+    // Residue sweep, unconditionally of journal presence (finding
+    // r2 2): a crashed attempt between ownership and the manifest write
+    // leaves a home with neither record; its unpinned partial backups
+    // are reclaimable custody, never recovery material. A manifest-only
+    // home keeps its immutable rollback material and stays occupied.
+    let plans = plan_directories_from(&write);
     for plan_id in &plans {
-        // A home with neither journal nor manifest is a crashed attempt
-        // between ownership and the manifest write; its unpinned partial
-        // backups are swept so a later identical retry cannot collide.
         if !write.file_exists(&format!("{FORMAT_HOME}/{plan_id}/{JOURNAL}"))
             && !write.file_exists(&format!("{FORMAT_HOME}/{plan_id}/{MANIFEST}"))
         {
             let _ = write.remove_dir(&format!("{FORMAT_HOME}/{plan_id}"));
         }
     }
+    // Orphaned replacement temps in the governed source tree (finding
+    // r2 3): a process death between temp creation and rename leaves a
+    // dotfile sibling the governed scan rejects — the project stays
+    // unloadable until the owned sweep reclaims it. The fixed temp name
+    // would otherwise collide with every retry.
+    let _ = write.sweep_stale_temps();
     Ok(Some(guard))
 }
 
-/// The plan directories beneath the formatter home (sorted).
+/// The plan directories beneath the formatter home (sorted). The rename
+/// temp home (`temps`) is runtime custody, never a plan home.
 fn plan_directories_from(write: &FormatWrite) -> Vec<String> {
     let Ok(home) = write.physical(FORMAT_HOME, false) else {
         return Vec::new();
@@ -334,6 +367,7 @@ fn plan_directories_from(write: &FormatWrite) -> Vec<String> {
                 .map(|metadata| metadata.is_dir() && !metadata.file_type().is_symlink())
                 .unwrap_or(false)
         })
+        .filter(|entry| entry.file_name() != "temps")
         .filter_map(|entry| entry.file_name().to_str().map(str::to_owned))
         .collect();
     names.sort();
@@ -399,6 +433,11 @@ fn valid_digest(text: &str) -> bool {
     text.len() == 64 && text.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
+/// The conflict-side digest spelling of a deleted pinned source
+/// (finding r2 12): the 64-zero spelling that can never equal a real
+/// SHA-256 of existing bytes, so the conflict is always reported.
+const DELETED_DIGEST: &str = "0000000000000000000000000000000000000000000000000000000000000000";
+
 /// Parse and fully validate one bounded recovery record (finding A).
 macro_rules! validated_record {
     ($write:expr, $path:expr, $plan_id:expr, $reason:literal, $type:ty) => {{
@@ -447,14 +486,18 @@ fn recover_plan(write: &FormatWrite, plan_id: &str) -> Result<(), RecoveryFailur
     // (finding B). A source whose current digest is neither the before
     // nor the after pin is a post-crash edit; recovery must never erase
     // it, so the run ends in the explicit conflict decision with the
-    // journal and every source untouched.
+    // journal and every source untouched. A *deleted* source is the most
+    // severe divergence of the same class (finding r2 12): it also
+    // surfaces as the explicit conflict — never as the generic recovery
+    // refusal — because the pin it diverges from is known.
     for file in &manifest.files {
-        let current = write.read_file(&file.path).map_err(|_| {
-            RecoveryFailure::Recovery(RecoveryError {
-                plan_id: plan_id.to_owned(),
-                reason: "verify-failed",
-            })
-        })?;
+        let current = write
+            .read_file(&file.path)
+            .map_err(|_| RecoveryFailure::Conflict {
+                path: file.path.clone(),
+                expected: file.before_sha256.clone(),
+                current: DELETED_DIGEST.to_owned(),
+            })?;
         let digest = crate::digest::sha256_hex(&current);
         if digest != file.before_sha256 && digest != file.after_sha256 {
             return Err(RecoveryFailure::Conflict {
@@ -493,12 +536,14 @@ fn recover_plan(write: &FormatWrite, plan_id: &str) -> Result<(), RecoveryFailur
                 reason: "backup-mismatch",
             }));
         }
-        write.replace_file(&file.path, &backup).map_err(|_| {
-            RecoveryFailure::Recovery(RecoveryError {
-                plan_id: plan_id.to_owned(),
-                reason: "restore-failed",
-            })
-        })?;
+        write
+            .replace_file(&file.path, &backup, "restore")
+            .map_err(|_| {
+                RecoveryFailure::Recovery(RecoveryError {
+                    plan_id: plan_id.to_owned(),
+                    reason: "restore-failed",
+                })
+            })?;
     }
     for file in &manifest.files {
         let current = write.read_file(&file.path).map_err(|_| {
@@ -563,38 +608,66 @@ pub(crate) fn apply(
     // the lock: a retry of an already-completed plan (external revert to
     // identical bytes, interrupted-then-recovered material) gets a fresh
     // home instead of colliding with the completed one on exclusive
-    // writes (finding D). Bound the chain; a full chain is a bug, not a
-    // condition to spin on.
+    // writes (finding D). Any existing home directory of this identity
+    // is occupied, whether or not it still carries a record (finding
+    // r2 2): a pre-journal residue could otherwise be re-selected and
+    // collide on exclusive backup writes forever. Bounded by reclamation
+    // (finding r2 4): when every attempt slot is occupied by a completed
+    // home, the oldest one is reclaimed first, so a repeated change set
+    // cycles its homes instead of hitting a permanent denial. Reclamation
+    // never touches live state: homes with a journal recover (or fail
+    // the run) before this loop, and manifest-bearing material is
+    // reclaimed only when it is the only remedy that avoids the
+    // deterministic ceiling.
     let base = plan_identity(policy_digest, files);
-    let mut attempt = 1usize;
-    while write.file_exists(&format!(
-        "{FORMAT_HOME}/{}/{}",
-        plan_home(&base, attempt),
-        MANIFEST
-    )) || write.file_exists(&format!(
-        "{FORMAT_HOME}/{}/{}",
-        plan_home(&base, attempt),
-        JOURNAL
-    )) {
-        attempt += 1;
-        if attempt > ATTEMPT_BOUND {
-            drop(guard);
-            return Err(ApplyFailure::WriteFailed {
-                stage: "plan",
-                rollback: "not-started",
-            });
-        }
-    }
-    let plan_id = plan_home(&base, attempt);
+    let home_occupied = |attempt: usize| {
+        write
+            .physical(
+                &format!("{FORMAT_HOME}/{}", plan_home(&base, attempt)),
+                false,
+            )
+            .is_ok()
+    };
+    let first_free = (1..=ATTEMPT_BOUND)
+        .find(|attempt| !home_occupied(*attempt))
+        .or_else(|| {
+            // Every slot occupied: reclaim the oldest completed home
+            // (attempt 1) and reuse exactly that slot — the freed slot is
+            // the allocated one, so a completed home is never collided.
+            // A journaled home is never reclaimed: it is live recovery
+            // material, and recovery has already handled it on the
+            // guarded entry path.
+            let oldest = plan_home(&base, 1);
+            let journaled = write.file_exists(&format!("{FORMAT_HOME}/{oldest}/{JOURNAL}"));
+            if journaled {
+                return None;
+            }
+            write
+                .remove_dir(&format!("{FORMAT_HOME}/{oldest}"))
+                .ok()
+                .map(|()| 1)
+        })
+        .ok_or(ApplyFailure::WriteFailed {
+            stage: "plan",
+            rollback: "not-started",
+        })?;
+    let plan_id = plan_home(&base, first_free);
+    // The rename temps of this run live under the runtime temp home with
+    // the owned plan identity and pid as their namespace (finding r2 3):
+    // unique per run, and reclaimable by any later exclusive owner.
+    let write = write.with_temp_namespace(&plan_id);
 
     // The durable marker with the owned identity (reader-gate state for
-    // diagnostics; the OS lock above is the real exclusion).
+    // diagnostics; the OS lock above is the real exclusion). Only a
+    // freshly created ownership file is ever stamped (finding r2 1);
+    // an adopted one is never this process's to mutate.
     guard.stamp(&plan_id);
     let outcome = apply_locked(&write, &plan_id, policy_digest, files, after_bytes);
-    let journal_present = write.file_exists(&format!("{FORMAT_HOME}/{plan_id}/{JOURNAL}"));
-    if !journal_present {
-        let _ = write.remove_file(&format!("{FORMAT_HOME}/{ACTIVE_LOCK}"));
-    }
+    // The ownership file is never removed by its owner (finding r2 11):
+    // unlinking a held lock opens the fresh-inode window on POSIX, and
+    // the Windows share-mode handle refuses the removal silently — a
+    // platform-divergent residue. The kernel releases the lock at death;
+    // the file's presence alone is never a reader signal.
     drop(guard);
     outcome
 }
@@ -687,7 +760,9 @@ fn apply_locked(
             rollback: "not-started",
         })?;
 
-    // Phase 4: preimage-verified replacement in sorted order.
+    // Phase 4: preimage-verified replacement in sorted order. The
+    // replacement temps carry the "apply" stage key; the rollback below
+    // carries "restore".
     for (index, (path, before, _)) in files.iter().enumerate() {
         let current = write.read_file(path);
         let replaced = match current {
@@ -700,9 +775,9 @@ fn apply_locked(
                         current: digest,
                     });
                 }
-                write.replace_file(path, &after_bytes[index])
+                write.replace_file(path, &after_bytes[index], "apply")
             }
-            Err(_) => write.replace_file(path, &after_bytes[index]),
+            Err(_) => write.replace_file(path, &after_bytes[index], "apply"),
         };
         if replaced.is_err() {
             return match restore_prefix(write, plan_id, &manifest, index) {
@@ -787,7 +862,7 @@ fn restore_prefix(
             });
         }
         write
-            .replace_file(&file.path, &backup)
+            .replace_file(&file.path, &backup, "restore")
             .map_err(|_| RecoveryError {
                 plan_id: plan_id.to_owned(),
                 reason: "restore-failed",
@@ -958,47 +1033,161 @@ impl Journal {
 /// path chain component by component.
 struct FormatWrite {
     root: PathBuf,
+    /// The per-run temp namespace: the owned plan identity when known,
+    /// else a process-unique spelling. Temp rename files live under the
+    /// runtime home with this prefix (finding r2 3).
+    temp_namespace: Option<String>,
 }
 
 impl FormatWrite {
     fn new(root: PathBuf) -> Self {
-        Self { root }
+        Self {
+            root,
+            temp_namespace: None,
+        }
+    }
+
+    /// Bind the temp namespace to one plan identity (apply time).
+    fn with_temp_namespace(mut self, plan_id: &str) -> Self {
+        self.temp_namespace = Some(format!("{}.{}", plan_id, std::process::id()));
+        self
     }
 
     /// Acquire the process-death-released ownership lock: an exclusive
     /// advisory OS lock on the runtime lock file (POSIX `flock`, Windows
     /// share-mode zero). The file is created once and never removed, so
     /// every owner locks the same inode; a held lock refuses a second
-    /// owner immediately (non-blocking).
+    /// owner immediately (non-blocking). The final component is opened
+    /// without following links (POSIX `O_NOFOLLOW`; Windows reparse
+    /// attribute), and an existing file is adopted only when it is an
+    /// unlinked-since-check regular file: a planted hard link (nlink
+    /// above 1) or any other non-regular spelling refuses the ownership
+    /// instead of handing the stamp a write primitive through the link
+    /// (finding r2 1).
+    ///
+    /// Only a freshly created lock is ever stamped.
     fn acquire_ownership(&self) -> Result<FormatGuard, ()> {
         self.ensure_dir(FORMAT_HOME)?;
-        let path = self.root.join(format!("{FORMAT_HOME}/{ACTIVE_LOCK}"));
+        let path = self
+            .physical_lock_path(&format!("{FORMAT_HOME}/{ACTIVE_LOCK}"))?
+            .0;
         #[cfg(unix)]
         {
-            use rustix::fs::{flock, FlockOperation};
-            let file = std::fs::OpenOptions::new()
+            use std::os::unix::fs::MetadataExt;
+            use std::os::unix::fs::OpenOptionsExt;
+            // O_NOFOLLOW|O_CLOEXEC: the open itself refuses a final
+            // symlink instead of following it out of the runtime home.
+            const O_NOFOLLOW: i32 = 0o400000;
+            const O_CLOEXEC: i32 = 0o2000000;
+            let options = std::fs::OpenOptions::new()
                 .read(true)
                 .write(true)
                 .create(true)
                 .truncate(false)
-                .open(&path)
-                .map_err(|_| ())?;
+                .custom_flags(O_NOFOLLOW | O_CLOEXEC);
+            let file = options.open(&path).map_err(|_| ())?;
+            let metadata = file.metadata().map_err(|_| ())?;
+            if !metadata.is_file() || metadata.nlink() > 1 {
+                return Err(());
+            }
+            // The path must still be the opened inode: a swapped file
+            // (hard-link/replace between open and stat) is refused.
+            let on_disk = std::fs::symlink_metadata(&path).map_err(|_| ())?;
+            if on_disk.is_symlink()
+                || !on_disk.is_file()
+                || on_disk.ino() != metadata.ino()
+                || on_disk.dev() != metadata.dev()
+            {
+                return Err(());
+            }
+            let fresh = metadata.len() == 0 && metadata.nlink() == 1;
+            use rustix::fs::{flock, FlockOperation};
             flock(&file, FlockOperation::NonBlockingLockExclusive).map_err(|_| ())?;
-            Ok(FormatGuard { file })
+            Ok(FormatGuard { file, fresh })
         }
         #[cfg(windows)]
         {
             use std::os::windows::fs::OpenOptionsExt;
+            // FILE_FLAG_OPEN_REPARSE_POINT: the open never follows a
+            // planted reparse spelling; the post-open attribute check
+            // refuses it outright.
+            const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+            const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
             let file = std::fs::OpenOptions::new()
                 .read(true)
                 .write(true)
                 .create(true)
                 .truncate(false)
                 .share_mode(0)
+                .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS)
                 .open(&path)
                 .map_err(|_| ())?;
-            Ok(FormatGuard { file })
+            let metadata = file.metadata().map_err(|_| ())?;
+            if !metadata.is_file() || reparse_point(&metadata) {
+                return Err(());
+            }
+            // A hard-linked lock shares its content with an external
+            // victim; the stamp would clobber that victim. File indices
+            // are unavailable on stable std, so the pre-open stat plus
+            // the opened handle's size close the class: a planted hard
+            // link carries non-empty content (the victim's bytes), and
+            // any non-empty ownership file is adopted unstamped.
+            let on_disk = std::fs::symlink_metadata(&path).map_err(|_| ())?;
+            if reparse_point(&on_disk) || !on_disk.is_file() {
+                return Err(());
+            }
+            let fresh = metadata.len() == 0;
+            Ok(FormatGuard { file, fresh })
         }
+    }
+
+    /// The validated physical path of the ownership file: every chain
+    /// component is reparse-checked exactly like [`FormatWrite::physical`]
+    /// (the final component may not exist yet), plus the returned
+    /// pre-open `symlink_metadata` of the final component when present.
+    fn physical_lock_path(
+        &self,
+        logical: &str,
+    ) -> Result<(PathBuf, Option<std::fs::Metadata>), ()> {
+        let mut path = self.root.clone();
+        let segments: Vec<&str> = logical.split('/').filter(|s| !s.is_empty()).collect();
+        let last = segments.len();
+        for (position, segment) in segments.iter().enumerate() {
+            if *segment == ".." {
+                return Err(());
+            }
+            path.push(segment);
+            let metadata = match std::fs::symlink_metadata(&path) {
+                Ok(metadata) => metadata,
+                Err(_) if position + 1 == last => return Ok((path, None)),
+                Err(_) => return Err(()),
+            };
+            if metadata.file_type().is_symlink() {
+                return Err(());
+            }
+            #[cfg(windows)]
+            {
+                if reparse_point(&metadata) {
+                    return Err(());
+                }
+            }
+            if position + 1 != last && !metadata.is_dir() {
+                return Err(());
+            }
+        }
+        let final_metadata = std::fs::symlink_metadata(&path).ok();
+        if let Some(metadata) = &final_metadata {
+            if metadata.file_type().is_symlink() {
+                return Err(());
+            }
+            #[cfg(windows)]
+            {
+                if reparse_point(metadata) {
+                    return Err(());
+                }
+            }
+        }
+        Ok((path, final_metadata))
     }
 
     /// Physical path of one logical path, rejecting symlink/junction/
@@ -1007,6 +1196,12 @@ impl FormatWrite {
     fn physical(&self, logical: &str, expect_file: bool) -> Result<PathBuf, ()> {
         let mut path = self.root.clone();
         let segments: Vec<&str> = logical.split('/').filter(|s| !s.is_empty()).collect();
+        // Defense-in-depth (finding r2 10): every caller feeds validated
+        // logicals, but the confinement primitive itself rejects `..`
+        // spellings outright.
+        if segments.contains(&"..") {
+            return Err(());
+        }
         for (position, segment) in segments.iter().enumerate() {
             path.push(segment);
             let metadata = std::fs::symlink_metadata(&path).map_err(|_| ())?;
@@ -1082,10 +1277,16 @@ impl FormatWrite {
     }
 
     /// Replace a source file atomically within its directory: write a
-    /// temp sibling carrying the original's permissions, flush, then
-    /// rename over the target. The target must be a reparse-free regular
-    /// file; it is never truncated in place.
-    fn replace_file(&self, logical: &str, bytes: &[u8]) -> Result<(), ()> {
+    /// temp carrying the original's permissions, flush, then rename over
+    /// the target. The temp lives inside the formatter runtime home
+    /// under a unique per-run name — same volume, so the rename stays
+    /// atomic — never as a sibling inside the governed source tree, so
+    /// a mid-rename crash cannot strand a dotfile there (the governed
+    /// scan would reject it and leave the project unloadable, finding
+    /// r2 3). The target must be a reparse-free regular file; it is
+    /// never truncated in place. `temp_key` distinguishes concurrent
+    /// stages so temps never collide on a fixed name.
+    fn replace_file(&self, logical: &str, bytes: &[u8], temp_key: &str) -> Result<(), ()> {
         let dir_path = self.parent(logical)?;
         let (_, name) = split_logical(logical);
         let target = dir_path.join(name);
@@ -1099,7 +1300,14 @@ impl FormatWrite {
                 return Err(());
             }
         }
-        let temp = dir_path.join(format!(".{name}.lekalo-format-new"));
+        // The rename-temp home lives inside the formatter runtime; the
+        // exclusive owner creates it on first use (finding r2 3).
+        self.ensure_dir(TEMP_HOME)?;
+        let home = self.physical(TEMP_HOME, false)?;
+        let temp = home.join(format!(
+            "{}.{temp_key}.{name}.{TEMP_SUFFIX}",
+            self.temp_namespace()
+        ));
         {
             let mut file = std::fs::OpenOptions::new()
                 .write(true)
@@ -1115,10 +1323,56 @@ impl FormatWrite {
                 let _ = std::fs::remove_file(&temp);
             })?;
         }
-        std::fs::rename(&temp, &target).map_err(|_| {
+        let renamed = std::fs::rename(&temp, &target);
+        if renamed.is_err() {
             let _ = std::fs::remove_file(&temp);
-        })?;
+        }
+        renamed.map_err(|_| ())?;
         sync_dir(&dir_path);
+        Ok(())
+    }
+
+    /// The per-run temp namespace prefix: unique per process and plan
+    /// window, so orphan reclamation (below) never races a live writer's
+    /// temps and two attempts never share a temp name.
+    fn temp_namespace(&self) -> String {
+        self.temp_namespace
+            .clone()
+            .unwrap_or_else(|| "owned".to_owned())
+    }
+
+    /// Reclaim orphaned formatter temps inside the runtime home (finding
+    /// r2 3): any plain file spelled `*.new` under the temp home is a
+    /// crashed rename temp — the exclusive owner (this caller) is the
+    /// only legitimate writer of this home, so every orphan is
+    /// reclaimable custody. Links, directories, and foreign spellings
+    /// refuse the sweep instead of being followed or removed.
+    fn sweep_stale_temps(&self) -> Result<(), ()> {
+        let home = self.physical(TEMP_HOME, false)?;
+        for entry in std::fs::read_dir(&home).map_err(|_| ())? {
+            let entry = entry.map_err(|_| ())?;
+            let metadata = entry.metadata().map_err(|_| ())?;
+            if metadata.file_type().is_symlink() {
+                return Err(());
+            }
+            #[cfg(windows)]
+            {
+                if reparse_point(&metadata) {
+                    return Err(());
+                }
+            }
+            let name = entry.file_name();
+            let Some(name) = name.to_str() else {
+                return Err(());
+            };
+            if name.ends_with(".new") {
+                if !metadata.is_file() {
+                    return Err(());
+                }
+                std::fs::remove_file(entry.path()).map_err(|_| ())?;
+            }
+        }
+        sync_dir(&home);
         Ok(())
     }
 

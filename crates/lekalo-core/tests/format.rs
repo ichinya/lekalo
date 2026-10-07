@@ -670,22 +670,42 @@ fn a_retried_identical_plan_gets_a_fresh_home_and_succeeds() {
     in_sandbox("retry", "seeds/noncanonical", |root| {
         let home = root.join(".lekalo/cache/format");
         let module = root.join("lekalo/modules/planner/entities.yaml");
+        let plan_homes = || -> Vec<String> {
+            fs::read_dir(&home)
+                .expect("home")
+                .filter_map(|entry| entry.ok())
+                .filter(|entry| entry.file_name() != "active.lock")
+                .filter(|entry| entry.file_name() != "temps")
+                .map(|entry| entry.file_name().to_string_lossy().into_owned())
+                .collect()
+        };
         // Attempt 1: formats and leaves the completed immutable home.
         let first = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
         assert_eq!(first.status(), Status::Valid, "{first:?}");
-        let homes: Vec<_> = fs::read_dir(&home)
-            .expect("home")
-            .filter_map(|entry| entry.ok())
-            .filter(|entry| entry.file_name() != "active.lock")
-            .collect();
+        let homes = plan_homes();
         assert_eq!(homes.len(), 1, "exactly one attempt home");
         let formatted = fs::read(&module).expect("formatted bytes");
-        // External revert to identical bytes: the retry re-emits the same
-        // plan identity and must not collide with the completed home.
-        fs::write(&module, &formatted).expect("rewrite identical bytes");
+        // External revert of the whole admitted source set to the seed's
+        // original noncanonical bytes: the retry re-emits the exact same
+        // plan identity (same policy, same pins) and must take the real
+        // attempt-suffix path — a fresh home, never a collision with the
+        // completed one (finding r2 14; the prior version wrote the
+        // already-formatted bytes back, a vacuous no-op).
+        copy_dir(
+            &workspace_root()
+                .join(FIXTURES)
+                .join("seeds/noncanonical/lekalo"),
+            &root.join("lekalo"),
+        );
         let second = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
         assert_eq!(second.status(), Status::Valid, "{second:?}");
         assert_eq!(fs::read(&module).expect("bytes"), formatted);
+        let homes = plan_homes();
+        assert_eq!(homes.len(), 2, "the retry took a fresh attempt home");
+        assert!(
+            homes.iter().any(|name| name.ends_with("-2")),
+            "attempt 2: {homes:?}"
+        );
     });
 }
 
@@ -704,7 +724,18 @@ fn editor_mode_refuses_comment_losing_buffers_instead_of_returning_them() {
             Some(buffer),
         );
         assert_eq!(result.status(), Status::Denied, "{result:?}");
-        assert_eq!(first_reason(&result), "format.comments-loss");
+        // The editor-mode refusal carries the registered editor identity
+        // (LEK-FORMAT-011, finding r2 9): distinct from the disk-mode
+        // loss denial, with the exact loss span (finding r2 8).
+        assert_eq!(first_reason(&result), "format.stdin-loss");
+        let diagnostic = result.diagnostics().first().expect("diagnostic");
+        assert_eq!(
+            diagnostic.path(),
+            Some("lekalo/modules/scheduling/module.yaml")
+        );
+        let start = diagnostic.start().expect("the span requirement");
+        assert_eq!(start.line, 7, "the loss line");
+        assert!(start.byte > 0, "the real byte offset, never hardcoded 0");
         assert_eq!(fs::read(&path).expect("after"), source, "disk untouched");
     });
 }
@@ -811,6 +842,10 @@ fn a_link_spelled_format_home_is_denied_on_sight() {
         let real_home = root.join("elsewhere/format");
         fs::create_dir_all(&real_home).expect("real home");
         fs::write(real_home.join("journal.json"), b"{}\n").expect("journal");
+        // The link's parent chain must exist before linking (finding
+        // r2 10): the runtime home may not exist in a canonical fixture,
+        // and the setup must not panic before the formatter runs.
+        fs::create_dir_all(root.join(".lekalo/cache")).expect("link parent");
         std::os::unix::fs::symlink(real_home, root.join(".lekalo/cache/format"))
             .expect("symlinked home");
         let result = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
@@ -855,6 +890,220 @@ fn a_link_spelled_source_in_a_forged_record_is_refused() {
             fs::read(&victim).expect("victim"),
             b"victim: true\n",
             "never written through"
+        );
+    });
+}
+
+#[test]
+fn a_post_crash_deleted_source_is_the_conflict_not_a_generic_refusal() {
+    in_sandbox("conflict-deleted", "seeds/noncanonical", |root| {
+        // The pinned source was deleted after the crash (finding r2 12):
+        // deletion is the most severe divergence, so it surfaces as the
+        // explicit conflict decision — never the generic recovery
+        // refusal — with the never-realizable zero digest.
+        let golden = fs::read(
+            workspace_root()
+                .join(FIXTURES)
+                .join("planner-canonical/lekalo/modules/scheduling/module.yaml"),
+        )
+        .expect("golden");
+        let (home, _plan_id) = plant_interrupted_with_golden_after(root, &golden);
+        fs::remove_file(root.join("lekalo/modules/scheduling/module.yaml")).expect("delete");
+        let result = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
+        assert_eq!(result.status(), Status::Denied, "{result:?}");
+        assert_eq!(first_reason(&result), "format.source-changed");
+        let diagnostic = result.diagnostics().first().expect("diagnostic");
+        let deleted = matches!(
+            diagnostic.data().get("currentDigest"),
+            Some(lekalo_core::diagnostics::DataValue::Token(value))
+                if value.chars().all(|character| character == '0') && value.len() == 64
+        );
+        assert!(deleted, "the deleted pin carries the zero spelling");
+        assert!(home.join("journal.json").exists(), "journal kept");
+        assert!(
+            !root.join("lekalo/modules/scheduling/module.yaml").exists(),
+            "recovery never invents the deleted file"
+        );
+    });
+}
+
+#[test]
+fn stdin_mode_refuses_a_non_document_scope_pairing() {
+    in_sandbox("stdin-scope", "seeds/noncanonical", |root| {
+        // The public core refuses Stdin+All (finding r2 13): the editor
+        // replacement is defined for exactly one declared document.
+        let result = lekalo_core::format::run(
+            &request(FormatScope::All, FormatMode::Stdin),
+            Some(b"a: 1\n"),
+        );
+        assert_eq!(result.status(), Status::Invalid, "{result:?}");
+        assert_eq!(first_reason(&result), "format.selection-invalid");
+        let result = lekalo_core::format::run(
+            &request(
+                FormatScope::Module("lekalo/modules/scheduling".to_owned()),
+                FormatMode::Stdin,
+            ),
+            Some(b"a: 1\n"),
+        );
+        assert_eq!(result.status(), Status::Invalid, "{result:?}");
+        let _ = root;
+    });
+}
+
+#[test]
+fn a_crashed_pre_journal_home_is_swept_and_the_retry_succeeds() {
+    in_sandbox("pre-journal-residue", "seeds/noncanonical", |root| {
+        // A crash between ownership and the manifest write leaves a home
+        // with neither record (finding r2 2): the mutating run reclaims
+        // it and the identical retry succeeds instead of colliding on
+        // exclusive backup writes forever.
+        let home = root.join(".lekalo/cache/format");
+        let residue = home.join("aabbccdd-1");
+        fs::create_dir_all(residue.join("before/modules/planner")).expect("residue");
+        fs::write(
+            residue.join("before/modules/planner/entities.yaml"),
+            b"leftover: partial\n",
+        )
+        .expect("partial backup");
+        let result = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
+        assert_eq!(result.status(), Status::Valid, "{result:?}");
+        assert!(!residue.exists(), "the record-less residue was reclaimed");
+        // And a second full run is a byte-identical no-op.
+        let again = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
+        assert_eq!(again.status(), Status::Valid, "{again:?}");
+    });
+}
+
+#[test]
+fn an_eighth_and_ninth_identical_retry_still_succeed() {
+    in_sandbox("attempt-rotation", "seeds/noncanonical", |root| {
+        // Nine format/revert cycles of one change set (finding r2 4):
+        // the bounded attempt chain reclaims its oldest completed home
+        // instead of permanently denying the plan after eight attempts.
+        let module = root.join("lekalo/modules/planner/entities.yaml");
+        let first = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
+        assert_eq!(first.status(), Status::Valid, "{first:?}");
+        let golden = fs::read(&module).expect("formatted bytes");
+        for cycle in 1..=9usize {
+            copy_dir(
+                &workspace_root()
+                    .join(FIXTURES)
+                    .join("seeds/noncanonical/lekalo"),
+                &root.join("lekalo"),
+            );
+            let result =
+                lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
+            assert_eq!(result.status(), Status::Valid, "cycle {cycle}: {result:?}");
+            assert_eq!(fs::read(&module).expect("bytes"), golden);
+        }
+        let homes: Vec<_> = fs::read_dir(root.join(".lekalo/cache/format"))
+            .expect("home")
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.file_name() != "active.lock")
+            .filter(|entry| entry.file_name() != "temps")
+            .collect();
+        assert!(
+            homes.len() <= 8,
+            "the chain stays bounded: {:?}",
+            homes.len()
+        );
+    });
+}
+
+#[test]
+fn stdin_mode_formats_the_whole_buffer_of_its_declared_document() {
+    // Already covered by editor_mode_returns_replacement_text; this test
+    // pins the pairing gate positively: Stdin+Document is accepted.
+    in_sandbox("stdin-doc-ok", "planner-canonical", |_root| {
+        let buffer = b"schema_version: \"0.2.16\"\ndefinitions:\n- id: scheduling\n  kind: module\n  version: 1\n  description: Slot scheduling module\n".to_vec();
+        let result = lekalo_core::format::run(
+            &request(
+                FormatScope::Document("lekalo/modules/scheduling/module.yaml".to_owned()),
+                FormatMode::Stdin,
+            ),
+            Some(&buffer),
+        );
+        assert_eq!(result.status(), Status::Valid, "{result:?}");
+    });
+}
+
+#[cfg(unix)]
+#[test]
+fn a_hard_linked_ownership_file_is_refused_and_never_stamped() {
+    // Finding r2 1 on POSIX: a hard link at active.lock pointing at an
+    // external victim must refuse the ownership (multiply-linked file)
+    // instead of truncating the victim through the link with the plan
+    // stamp. O_NOFOLLOW additionally refuses the symlink spelling.
+    in_sandbox("hardlink-lock", "planner-canonical", |root| {
+        let victim = root.join("outside-victim.txt");
+        fs::write(&victim, b"DO NOT TOUCH EXTERNAL FILE\n").expect("victim");
+        let home = root.join(".lekalo/cache/format");
+        fs::create_dir_all(&home).expect("home");
+        fs::hard_link(&victim, home.join("active.lock")).expect("planted hard link");
+        let result = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
+        assert_ne!(
+            result.status(),
+            Status::Valid,
+            "a multiply-linked ownership file never grants ownership"
+        );
+        assert_eq!(
+            fs::read(&victim).expect("victim bytes"),
+            b"DO NOT TOUCH EXTERNAL FILE\n",
+            "the external victim is never clobbered through the link"
+        );
+    });
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symlinked_ownership_file_is_refused_by_the_open_itself() {
+    // O_NOFOLLOW semantics: the open of the final component refuses the
+    // symlink before any handle exists, so no stamp can follow it.
+    in_sandbox("symlink-lock", "planner-canonical", |root| {
+        let victim = root.join("outside-victim.txt");
+        fs::write(&victim, b"victim\n").expect("victim");
+        let home = root.join(".lekalo/cache/format");
+        fs::create_dir_all(&home).expect("home");
+        std::os::unix::fs::symlink(&victim, home.join("active.lock")).expect("planted symlink");
+        let result = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
+        assert_ne!(result.status(), Status::Valid, "the link never owns");
+        assert_eq!(fs::read(&victim).expect("victim"), b"victim\n");
+    });
+}
+
+#[cfg(unix)]
+#[test]
+fn an_orphaned_rename_temp_in_a_source_directory_is_reclaimed_by_apply() {
+    // Finding r2 3: a legacy crash left a temp sibling inside the
+    // governed tree; the governed scan rejects the dotfile, so the
+    // mutating run must reclaim it before its own load succeeds.
+    in_sandbox("stale-temp", "seeds/noncanonical", |root| {
+        let stale = root.join("lekalo/modules/scheduling/.module.yaml.lekalo-format-new");
+        fs::write(&stale, b"orphaned: partial bytes\n").expect("orphan temp");
+        // Sanity: the governed scan really refuses this tree.
+        let blocked = lekalo_core::loader::run(
+            &lekalo_core::loader::LoadSelection {
+                project: Some(".".to_owned()),
+            },
+            false,
+        );
+        assert_ne!(
+            blocked.status(),
+            Status::Valid,
+            "the dotfile blocks readers"
+        );
+        let result = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
+        assert_eq!(result.status(), Status::Valid, "{result:?}");
+        assert!(!stale.exists(), "the orphan was reclaimed");
+        assert!(
+            !root
+                .join(".lekalo/cache/format/temps")
+                .read_dir()
+                .map(|entries| entries.count())
+                .unwrap_or(0)
+                .cast_signed()
+                .is_positive(),
+            "no rename temp survives a committed apply"
         );
     });
 }
