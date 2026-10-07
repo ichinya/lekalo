@@ -88,6 +88,17 @@ for (const script of SCRIPTS) {
   inventory.push(resolve(root, script));
 }
 const SOURCE_EXTENSIONS = new Set([".json", ".yaml", ".yml", ".md", ".mjs"]);
+// Every file without a scannable text extension is opaque inventory:
+// it cannot be neutrality-checked, so it fails the gate instead of
+// silently evading the scan (no binary blobs in a public fixture).
+for (const file of inventory) {
+  const suffix = file.includes(".") ? `.${file.slice(file.lastIndexOf(".") + 1)}` : "";
+  if (SOURCE_EXTENSIONS.has(suffix)) continue;
+  fail(
+    "unscannable-inventory",
+    `${file.slice(root.length + 1)}: no text extension; the public-artifact inventory must stay fully scannable`,
+  );
+}
 let scanned = 0;
 const namespaceSeen = new Set();
 for (const file of inventory) {
