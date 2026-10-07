@@ -670,4 +670,34 @@ if (process.platform === 'win32') {
   assert.equal(incomparable.managed.comparable, false);
 }
 
+// ---- 19. A tampered generation record is refused without touching files
+//          (finding I). --------------------------------------------------
+{
+  const current = readFileSync(join(primary.project, '.lekalo/generated/manifests/managed/current'), 'utf8').trim();
+  const hex = current.slice('sha256:'.length);
+  const recordPath = join(primary.project, '.lekalo/generated/manifests/managed/objects', hex);
+  const original = readFileSync(recordPath, 'utf8');
+  const record = JSON.parse(original);
+  // Retarget one recorded output at an unrelated maintained file.
+  const victim = record.outputs[0];
+  victim.path = 'maintained/handler.ts';
+  record.outputs.sort((left, right) => (left.path < right.path ? -1 : 1));
+  writeFileSync(recordPath, JSON.stringify(record, null, 2) + '\n');
+  const before = snapshot(primary.project);
+  const forgedResolve = invoke(primary.project, ['resolve', '--path', 'maintained/handler.ts', '--restore', '--dry-run'], 'invalid');
+  assert.ok(
+    forgedResolve.reasonCodes.includes('managed.rollback-refused') || forgedResolve.reasonCodes.includes('managed.input-invalid'),
+    `forged resolve refused: ${forgedResolve.reasonCodes}`,
+  );
+  const forgedRollback = invoke(primary.project, ['rollback', '--to', current], 'invalid');
+  assert.ok(
+    forgedRollback.reasonCodes.includes('managed.rollback-refused'),
+    `forged rollback refused: ${forgedRollback.reasonCodes}`,
+  );
+  assertSameTree(before, snapshot(primary.project), 'forged custody never moves a byte');
+  assert.ok(!existsSync(join(primary.project, 'maintained/handler.ts')), 'the forged target was never created');
+  // The authentic record resolves again.
+  writeFileSync(recordPath, original);
+}
+
 console.log(JSON.stringify({ ok: true, gate: 'test-managed-cli', invocations: exits }));
