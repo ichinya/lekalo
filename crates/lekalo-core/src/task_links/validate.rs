@@ -40,7 +40,18 @@ pub const DOMAIN_QUERIES: [&str; 3] = [
     "tasklinks.delivery_status",
 ];
 
-/// One typed validation finding.
+/// The exact ordered external-identity tuple the pilot's uniqueness
+/// guarantee is defined over (scope
+/// `workspace-installation-provider-object-external-id`).
+pub const EXTERNAL_IDENTITY_TUPLE: [&str; 5] = [
+    "workspace_id",
+    "installation_id",
+    "provider_id",
+    "object_type",
+    "external_id",
+];
+
+/// The typed validation finding.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, serde::Serialize)]
 pub struct Finding {
     /// The registered rule id.
@@ -131,6 +142,8 @@ pub struct Checks {
     pub bindings_checked: u64,
     /// Provider contracts checked.
     pub provider_contracts_checked: u64,
+    /// Bound entities checked.
+    pub entities_checked: u64,
     /// Total findings.
     pub findings: u64,
 }
@@ -176,6 +189,7 @@ pub fn validate(
             as u64,
         bindings_checked: attachment.operation_bindings().len() as u64,
         provider_contracts_checked: attachment.provider_contracts().len() as u64,
+        entities_checked: attachment.entities().len() as u64,
         findings: findings.len() as u64,
     };
     let status = if findings.is_empty() {
@@ -258,6 +272,14 @@ fn check_entities(attachment: &Attachment, entities: &EntityTable, findings: &mu
             );
             continue;
         };
+        if binding.identity.is_empty() {
+            finding(
+                findings,
+                diagnostic::INPUT_INVALID,
+                binding.entity.clone(),
+                "identity-member-missing",
+            );
+        }
         for member in &binding.identity {
             if !identity.contains(member) {
                 finding(
@@ -268,11 +290,64 @@ fn check_entities(attachment: &Attachment, entities: &EntityTable, findings: &mu
                 );
             }
         }
+        // `externalIdentity` is a typed claim, not prose: only the link
+        // aggregate carries it, it must actually be bound in the
+        // attachment, and the link entity must carry every tuple field.
+        if binding.external_identity {
+            if !is_link_entity(binding.entity.as_str()) {
+                finding(
+                    findings,
+                    diagnostic::INPUT_INVALID,
+                    binding.entity.clone(),
+                    "external-identity-entity",
+                );
+            }
+            for field in EXTERNAL_IDENTITY_TUPLE {
+                if !fields.contains(&field.to_owned()) {
+                    finding(
+                        findings,
+                        diagnostic::INPUT_INVALID,
+                        binding.entity.clone(),
+                        "identity-tuple-incomplete",
+                    );
+                }
+            }
+        }
         let _ = fields;
+    }
+    // The attachment must bind exactly the link aggregate; the identity
+    // semantics hang off it. A missing binding leaves the uniqueness
+    // guarantee unanchored.
+    if !attachment
+        .entities()
+        .iter()
+        .any(|binding| is_link_entity(binding.entity.as_str()) && binding.external_identity)
+    {
+        finding(
+            findings,
+            diagnostic::INPUT_INVALID,
+            "tasklinks.task_external_link".to_owned(),
+            "external-identity-unbound",
+        );
     }
 }
 
+/// The declaring link aggregate of the pilot (`tasklinks.task_external_link`).
+fn is_link_entity(entity: &str) -> bool {
+    entity == "tasklinks.task_external_link"
+}
+
 fn check_relations(attachment: &Attachment, entities: &EntityTable, findings: &mut Vec<Finding>) {
+    // The relation's local entity is the declaring link aggregate; every
+    // `localFields` entry must exist on that entity, while `targetFields`
+    // are checked against the relation target.
+    let local_entity = attachment
+        .entities()
+        .iter()
+        .map(|binding| binding.entity.as_str())
+        .find(|entity| is_link_entity(entity))
+        .unwrap_or("tasklinks.task_external_link");
+    let local_fields_table = entities.get(local_entity);
     let mut seen_targets: BTreeSet<&str> = BTreeSet::new();
     for relation in attachment.relations() {
         let Some((fields, _)) = entities.get(&relation.target) else {
@@ -284,17 +359,26 @@ fn check_relations(attachment: &Attachment, entities: &EntityTable, findings: &m
             );
             continue;
         };
-        for field in relation
-            .target_fields
-            .iter()
-            .chain(relation.local_fields.iter())
-        {
+        for field in &relation.target_fields {
             if !fields.contains(field) {
                 finding(
                     findings,
                     diagnostic::INPUT_INVALID,
                     relation.id.clone(),
                     "relation-field-missing",
+                );
+            }
+        }
+        for field in &relation.local_fields {
+            let present = local_fields_table
+                .map(|(fields, _)| fields.contains(field))
+                .unwrap_or(false);
+            if !present {
+                finding(
+                    findings,
+                    diagnostic::INPUT_INVALID,
+                    relation.id.clone(),
+                    "relation-local-field-missing",
                 );
             }
         }
@@ -327,7 +411,19 @@ fn check_relations(attachment: &Attachment, entities: &EntityTable, findings: &m
         }
         seen_targets.insert(relation.target.as_str());
     }
-    let _ = seen_targets;
+    // The cardinality declarations must cover both directions of the
+    // pilot's aggregate: Task -> links (`0..N`) and the link child
+    // scope. An unconstrained target set leaves the relation semantics
+    // declared nowhere.
+    let link_entity = "tasklinks.task_external_link";
+    if !seen_targets.contains(link_entity) {
+        finding(
+            findings,
+            diagnostic::INPUT_INVALID,
+            "tasklinks.rel.task_links".to_owned(),
+            "relation-coverage-missing",
+        );
+    }
 }
 
 fn check_unique_constraints(
@@ -335,6 +431,28 @@ fn check_unique_constraints(
     entities: &EntityTable,
     findings: &mut Vec<Finding>,
 ) {
+    // The external-identity constraint is the pilot's core identity
+    // guarantee, so it must exist exactly: one constraint on the link
+    // entity, over the exact ordered tuple, under the exact scope. Any
+    // other constraint row is still shape- and field-checked below.
+    let exact_present = attachment.unique_constraints().iter().any(|constraint| {
+        constraint.entity == "tasklinks.task_external_link"
+            && constraint.scope == "workspace-installation-provider-object-external-id"
+            && constraint.fields.len() == EXTERNAL_IDENTITY_TUPLE.len()
+            && constraint
+                .fields
+                .iter()
+                .zip(EXTERNAL_IDENTITY_TUPLE.iter())
+                .all(|(field, expected)| field == expected)
+    });
+    if !exact_present {
+        finding(
+            findings,
+            diagnostic::INPUT_INVALID,
+            "tasklinks.uq_external_identity".to_owned(),
+            "identity-tuple-missing",
+        );
+    }
     for constraint in attachment.unique_constraints() {
         let Some((fields, _)) = entities.get(&constraint.entity) else {
             finding(
@@ -356,7 +474,12 @@ fn check_unique_constraints(
             }
         }
         if constraint.scope == "workspace-installation-provider-object-external-id"
-            && constraint.fields.len() != super::version::EXTERNAL_IDENTITY_FIELDS
+            && (constraint.fields.len() != EXTERNAL_IDENTITY_TUPLE.len()
+                || !constraint
+                    .fields
+                    .iter()
+                    .zip(EXTERNAL_IDENTITY_TUPLE.iter())
+                    .all(|(field, expected)| field == expected))
         {
             finding(
                 findings,

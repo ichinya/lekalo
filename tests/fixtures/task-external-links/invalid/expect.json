@@ -13,7 +13,7 @@
       "code": "LEK-TASKLINK-001",
       "trigger": "invalid/relation-field-missing.json",
       "command": "validate",
-      "detailTag": "relation-field-missing"
+      "detailTag": "relation-local-field-missing"
     },
     {
       "rule": "tasklink.relation-identity-invalid",
@@ -78,6 +78,48 @@
       "trigger": "invalid/evidence-stale.json",
       "command": "inspect",
       "detailTag": "evidence-stale-pin"
+    },
+    {
+      "rule": "tasklink.relation-identity-invalid",
+      "code": "LEK-TASKLINK-001",
+      "trigger": "invalid/pin-ir-digest-stale.json",
+      "command": "validate",
+      "detailTag": "ir-digest-stale"
+    },
+    {
+      "rule": "tasklink.relation-identity-invalid",
+      "code": "LEK-TASKLINK-001",
+      "trigger": "invalid/pin-owner-pin-stale.json",
+      "command": "validate",
+      "detailTag": "owner-pin-stale"
+    },
+    {
+      "rule": "tasklink.relation-identity-invalid",
+      "code": "LEK-TASKLINK-001",
+      "trigger": "invalid/constraint-wrong-tuple.json",
+      "command": "validate",
+      "detailTag": "constraint-field-missing"
+    },
+    {
+      "rule": "tasklink.relation-identity-invalid",
+      "code": "LEK-TASKLINK-001",
+      "trigger": "invalid/constraint-scope-declared.json",
+      "command": "validate",
+      "detailTag": "identity-tuple-missing"
+    },
+    {
+      "rule": "tasklink.relation-identity-invalid",
+      "code": "LEK-TASKLINK-001",
+      "trigger": "invalid/relation-local-field-missing.json",
+      "command": "validate",
+      "detailTag": "relation-local-field-missing"
+    },
+    {
+      "rule": "tasklink.evidence-invalid",
+      "code": "LEK-TASKLINK-008",
+      "trigger": "invalid/evidence-native-unqualified.json",
+      "command": "inspect",
+      "detailTag": "evidence-native-unqualified"
     }
   ]
 }

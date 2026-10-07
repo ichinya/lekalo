@@ -123,6 +123,14 @@ pub struct EvidenceCoverage {
 /// `from_profile`/`to_profile` are `(id, digest)` pairs of the resolved
 /// target/component profiles; `mock_evidence`/`native_evidence` carry
 /// admitted evidence ids.
+///
+/// Every row is derived, never constant: the core rows read the exact
+/// declarations of this attachment (relations, constraints, policies)
+/// and their evidence source reflects what was actually admitted — a
+/// declared fact without admitted evidence says `unknown`, an admitted
+/// mock leg says `supported` under `mock-evidence`, and a fact this
+/// attachment does not declare at all says `unsupported`. Labels never
+/// outrun their evidence.
 pub fn report(
     attachment: &Attachment,
     from_profile: ProfileRef,
@@ -134,52 +142,106 @@ pub fn report(
     let revision = attachment.attachment_revision().as_str().to_owned();
     let project_id = attachment.project_id().to_owned();
     let ir_digest = attachment.ir_digest().as_str().to_owned();
-    // Declared core facts are pinned to the contract family identity,
-    // not to the input revision: a provider-only change never moves a
-    // core semantics row.
+    // Resolved declarations drive the core rows: each fact is checked
+    // against this attachment's own typed members, so a mutated
+    // attachment cannot ride constant "supported" labels.
+    let declared_tuple = attachment.unique_constraints().iter().any(|constraint| {
+        constraint.entity == "tasklinks.task_external_link"
+            && constraint.scope == "workspace-installation-provider-object-external-id"
+            && constraint.fields.len() == super::validate::EXTERNAL_IDENTITY_TUPLE.len()
+            && constraint
+                .fields
+                .iter()
+                .zip(super::validate::EXTERNAL_IDENTITY_TUPLE.iter())
+                .all(|(field, expected)| field == expected)
+    });
+    let declared_zero_n = attachment
+        .relations()
+        .iter()
+        .any(|relation| relation.target == "tasklinks.task_external_link" && relation.min == 0);
+    let declared_history = attachment.relations().iter().any(|relation| {
+        relation.target == "tasklinks.task_external_link" && relation.on_detach == "retain-history"
+    });
+    let declared_policies =
+        !attachment.field_policies().is_empty() && !attachment.action_policies().is_empty();
     let family_pin = super::version::IDENTITY.to_owned();
+    let has_mock = !mock_evidence.is_empty();
+    let has_native = !native_evidence.is_empty();
+    // A declared fact with no admitted execution evidence is honestly
+    // `unknown` (declaration alone never proves a run); an undeclared
+    // fact is `unsupported` outright.
+    let core_row = |declared: bool, fact: &'static str, pin: String, source_if_declared| {
+        let (provided, source) = match (declared, has_mock || has_native) {
+            (true, true) => (Provided::Supported, source_if_declared),
+            (true, false) => (Provided::Unknown, source_if_declared),
+            (false, _) => (Provided::Unsupported, EvidenceSource::AttachmentDeclaration),
+        };
+        Row {
+            fact,
+            requirement: Requirement::Required,
+            provided,
+            pin,
+            evidence_source: source,
+        }
+    };
     let core_semantics = vec![
-        Row {
-            fact: "external-identity-exact-tuple",
-            requirement: Requirement::Required,
-            provided: Provided::Supported,
-            pin: family_pin.clone(),
-            evidence_source: EvidenceSource::AttachmentDeclaration,
-        },
-        Row {
-            fact: "task-links-0-n",
-            requirement: Requirement::Required,
-            provided: Provided::Supported,
-            pin: family_pin.clone(),
-            evidence_source: EvidenceSource::AttachmentDeclaration,
-        },
-        Row {
-            fact: "detach-preserves-history",
-            requirement: Requirement::Required,
-            provided: Provided::Supported,
-            pin: family_pin.clone(),
-            evidence_source: EvidenceSource::AttachmentDeclaration,
-        },
-        Row {
-            fact: "actor-and-field-policy",
-            requirement: Requirement::Required,
-            provided: Provided::Supported,
-            pin: family_pin.clone(),
-            evidence_source: EvidenceSource::AttachmentDeclaration,
-        },
+        core_row(
+            declared_tuple,
+            "external-identity-exact-tuple",
+            family_pin.clone(),
+            EvidenceSource::AttachmentDeclaration,
+        ),
+        core_row(
+            declared_zero_n,
+            "task-links-0-n",
+            family_pin.clone(),
+            EvidenceSource::AttachmentDeclaration,
+        ),
+        core_row(
+            declared_history,
+            "detach-preserves-history",
+            family_pin.clone(),
+            EvidenceSource::AttachmentDeclaration,
+        ),
+        core_row(
+            declared_policies,
+            "actor-and-field-policy",
+            family_pin,
+            EvidenceSource::AttachmentDeclaration,
+        ),
         Row {
             fact: "version-conflict-detection",
             requirement: Requirement::Required,
-            provided: Provided::Supported,
+            provided: if has_mock || has_native {
+                Provided::Supported
+            } else {
+                Provided::Unknown
+            },
             pin: ir_digest.clone(),
-            evidence_source: EvidenceSource::MockEvidence,
+            evidence_source: if has_mock {
+                EvidenceSource::MockEvidence
+            } else if has_native {
+                EvidenceSource::NativeEvidence
+            } else {
+                EvidenceSource::AttachmentDeclaration
+            },
         },
         Row {
             fact: "idempotent-intent",
             requirement: Requirement::Required,
-            provided: Provided::Supported,
+            provided: if has_mock || has_native {
+                Provided::Supported
+            } else {
+                Provided::Unknown
+            },
             pin: ir_digest,
-            evidence_source: EvidenceSource::MockEvidence,
+            evidence_source: if has_mock {
+                EvidenceSource::MockEvidence
+            } else if has_native {
+                EvidenceSource::NativeEvidence
+            } else {
+                EvidenceSource::AttachmentDeclaration
+            },
         },
     ];
     let mut provider_adapters = Vec::new();

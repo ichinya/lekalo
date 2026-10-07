@@ -378,6 +378,35 @@ if (!schemaOnly) {
     // The trigger matrix: every pair reaches exactly its rule.
     const matrix = read("tests/fixtures/task-external-links/invalid/expect.json");
     for (const pair of matrix.pairs) {
+      if (pair.command === "inspect") {
+        // Evidence-side triggers: the mutated evidence document must
+        // reach its rule through inspect with the valid attachment.
+        const trigger = runCli([
+          "--json",
+          "task-links",
+          "inspect",
+          "tasklinks.task_external_link",
+          "--project",
+          project,
+          "--attachment",
+          attachment,
+          "--evidence",
+          `tests/fixtures/task-external-links/${pair.trigger}`,
+        ]);
+        if (trigger.code !== 1) {
+          fail("trigger-exit", `${pair.rule}: ${trigger.code}`);
+          continue;
+        }
+        const envelope = JSON.parse(trigger.stderr);
+        if (envelope.reasonCodes[0] !== pair.rule) {
+          fail("trigger-rule", `${pair.rule}: ${JSON.stringify(envelope.reasonCodes)}`);
+        }
+        const diagnostic = envelope.diagnostics[0];
+        if (diagnostic.data.detail !== pair.detailTag) {
+          fail("trigger-detail", `${pair.rule}: ${diagnostic.data.detail}`);
+        }
+        continue;
+      }
       if (pair.command === "validate") {
         const trigger = runCli([
           "--json",
@@ -454,6 +483,8 @@ if (!schemaOnly) {
         profileLaravel,
         "--to-profile",
         profileNode,
+        "--evidence",
+        evidence,
         "--profile",
         "permissive",
       ]);
@@ -501,6 +532,8 @@ if (!schemaOnly) {
         profileLaravel,
         "--to-profile",
         profileNode,
+        "--evidence",
+        evidence,
         "--profile",
         "permissive",
       ]);
@@ -546,6 +579,6 @@ process.stdout.write(
     schemaOnly,
     schemasValidated: Object.keys(schemas).length + 1,
     jsonFilesScanned: jsonFiles.length,
-    triggerPairs: schemaOnly ? 0 : 11,
+    triggerPairs: schemaOnly ? 0 : 18,
   })}\n`,
 );

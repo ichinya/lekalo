@@ -13,7 +13,7 @@ use super::{diagnostic, version};
 
 /// One accepted `sha256:` digest pin.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
-pub struct Digest(String);
+pub struct Digest(pub(crate) String);
 
 impl Digest {
     pub(crate) fn parse(text: &str) -> Option<Self> {
@@ -70,7 +70,8 @@ pub struct Relation {
     pub target_fields: Vec<String>,
     /// Minimum cardinality (0 for optional links).
     pub min: u64,
-    /// Maximum cardinality; `None` is unbounded (`0..N`).
+    /// Maximum cardinality; `None` is the explicit `null` unbounded
+    /// spelling (`0..N`). The member itself is required at the wire.
     pub max: Option<u64>,
     /// Which side owns the association.
     pub ownership: String,
@@ -355,44 +356,64 @@ impl Attachment {
     }
 }
 
+/// The closed top-level attachment member set, in canonical document
+/// order. The revision digest covers every member except
+/// `attachmentRevision` itself.
+pub const ATTACHMENT_MEMBERS: [&str; 17] = [
+    "schemaVersion",
+    "identity",
+    "attachmentRevision",
+    "projectId",
+    "modelRef",
+    "irRef",
+    "ownerContractPins",
+    "entities",
+    "relations",
+    "uniqueConstraints",
+    "providerContracts",
+    "linkCapabilityRequirements",
+    "fieldPolicies",
+    "actionPolicies",
+    "operationBindings",
+    "deliveryRules",
+    "contributions",
+];
+
 /// Parse one attachment from exact JSON bytes.
 pub fn parse(bytes: &[u8]) -> Result<Attachment, diagnostic::Failure> {
     if bytes.len() > version::MAX_BYTES {
         return Err(diagnostic::input_invalid("attachment-bound"));
     }
     let value: Json =
-        serde_json::from_slice(bytes).map_err(|_| diagnostic::input_invalid("attachment-json"))?;
+        super::json::parse(bytes).map_err(|_| diagnostic::input_invalid("attachment-json"))?;
     if !matches!(value, Json::Object(_)) {
         return Err(diagnostic::input_invalid("attachment-shape"));
     }
     let object = value.as_object().expect("checked above");
     for key in object.keys() {
-        if !matches!(
-            key.as_str(),
-            "schemaVersion"
-                | "identity"
-                | "attachmentRevision"
-                | "projectId"
-                | "modelRef"
-                | "irRef"
-                | "ownerContractPins"
-                | "entities"
-                | "relations"
-                | "uniqueConstraints"
-                | "providerContracts"
-                | "linkCapabilityRequirements"
-                | "fieldPolicies"
-                | "actionPolicies"
-                | "operationBindings"
-                | "deliveryRules"
-                | "contributions"
-        ) {
+        if !ATTACHMENT_MEMBERS.contains(&key.as_str()) {
             return Err(diagnostic::input_invalid("unknown-field"));
         }
     }
-    if object.get("schemaVersion").and_then(Json::as_str) != Some(version::SCHEMA_VERSION)
-        || object.get("identity").and_then(Json::as_str) != Some(version::IDENTITY)
+    let declared_version = object.get("schemaVersion").and_then(Json::as_str);
+    let declared_identity = object.get("identity").and_then(Json::as_str);
+    if declared_version != Some(version::SCHEMA_VERSION)
+        || declared_identity != Some(version::IDENTITY)
     {
+        // A well-formed discriminator of this same family at a different
+        // version is the accepted exit-5 class: the document is shaped
+        // but its contract version is outside the accepted registry.
+        // Anything else (wrong family stem, wrong identity for the
+        // accepted version, non-strings) stays a plain invalid.
+        const FAMILY_STEM: &str = "lekalo/task-links-integration/v";
+        let version_skew = declared_version
+            .and_then(|text| text.strip_prefix(FAMILY_STEM))
+            .is_some_and(|rest| {
+                !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit() || c == '.')
+            });
+        if version_skew {
+            return Err(diagnostic::input_invalid("schema-version-unsupported"));
+        }
         return Err(diagnostic::input_invalid("identity"));
     }
     let string_member = |name: &str| -> Result<&str, diagnostic::Failure> {
@@ -738,7 +759,11 @@ fn relations(array: &[Json]) -> Result<Vec<Relation>, diagnostic::Failure> {
             .and_then(Json::as_u64)
             .ok_or_else(|| diagnostic::input_invalid("relation-shape"))?;
         let max = match object.get("max") {
-            None | Some(Json::Null) => None,
+            // Runtime/schema parity: the schema requires the member, and
+            // `null` is its explicit unbounded spelling. A missing member
+            // is a shape violation, never a default.
+            None => return Err(diagnostic::input_invalid("relation-shape")),
+            Some(Json::Null) => None,
             Some(value) => Some(
                 value
                     .as_u64()

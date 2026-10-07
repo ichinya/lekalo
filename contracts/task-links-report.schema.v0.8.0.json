@@ -77,6 +77,11 @@
           "minimum": 0,
           "maximum": 1000000
         },
+        "entitiesChecked": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
         "findings": {
           "type": "integer",
           "minimum": 0,
@@ -89,6 +94,7 @@
         "decisionsChecked",
         "bindingsChecked",
         "providerContractsChecked",
+        "entitiesChecked",
         "findings"
       ],
       "additionalProperties": false

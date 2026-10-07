@@ -31,6 +31,8 @@ pub struct View {
     pub provider_contracts: Vec<ProviderRow>,
     /// Sorted operation-binding rows.
     pub bindings: Vec<BindingRow>,
+    /// Sorted bound-entity rows.
+    pub entities: Vec<EntityRow>,
     /// The delivery-rule summary.
     pub delivery: DeliveryRow,
     /// The admitted evidence, when joined.
@@ -119,6 +121,17 @@ pub struct BindingRow {
     pub retry_guarantee: String,
 }
 
+/// One bound-entity row.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct EntityRow {
+    /// Bound entity symbol.
+    pub entity: String,
+    /// Identity field names (ordered).
+    pub identity: Vec<String>,
+    /// Whether the entity carries the external identity tuple.
+    pub external_identity: bool,
+}
+
 /// The delivery-rule summary row.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct DeliveryRow {
@@ -152,6 +165,43 @@ pub struct EvidenceSummary {
     /// Whether the evidence pins match the attachment (always true for
     /// admitted evidence).
     pub pins_match: bool,
+}
+
+/// Whether `symbol` names a row of the view: a relation, unique
+/// constraint, decision, provider contract, binding, or a bound
+/// entity/project id. `inspect SYMBOL` resolves its operand before
+/// anything renders; an unknown symbol is a typed refusal.
+pub fn view_contains_symbol(view: &View, symbol: &str) -> bool {
+    if view.project_id == symbol || view.identity == symbol {
+        return true;
+    }
+    if view.relations.iter().any(|row| row.id == symbol)
+        || view.unique_constraints.iter().any(|row| row.id == symbol)
+        || view.decisions.iter().any(|row| row.policy_id == symbol)
+        || view
+            .provider_contracts
+            .iter()
+            .any(|row| row.contract_id == symbol)
+        || view.bindings.iter().any(|row| row.operation == symbol)
+        || view.entities.iter().any(|row| row.entity == symbol)
+    {
+        return true;
+    }
+    // Bound entity identity fields resolve too (`tasklinks.task_external_link`
+    // and its tuple members), and effect/capability references resolve
+    // through the binding rows.
+    view.entities
+        .iter()
+        .any(|row| row.identity.iter().any(|field| field == symbol))
+        || view.bindings.iter().any(|row| row.effect_ref == symbol)
+        || view.bindings.iter().any(|row| row.capability_ref == symbol)
+        // Decision rows carry their bound action as the subject; an
+        // action symbol resolves through it. Field rows carry a field list.
+        || view.decisions.iter().any(|row| row.subject == symbol)
+        || view
+            .decisions
+            .iter()
+            .any(|row| row.subject.split(',').any(|field| field == symbol))
 }
 
 /// Project one attachment (and optional admitted evidence) into the
@@ -234,6 +284,15 @@ pub fn view(attachment: &Attachment, evidence: Option<EvidenceSummary>) -> View 
             retry_guarantee: binding.retry_guarantee.clone(),
         })
         .collect();
+    let entities = attachment
+        .entities()
+        .iter()
+        .map(|entity| EntityRow {
+            entity: entity.entity.clone(),
+            identity: entity.identity.clone(),
+            external_identity: entity.external_identity,
+        })
+        .collect();
     let rules = attachment.delivery_rules();
     let delivery = DeliveryRow {
         outbox_states: rules.outbox_states.clone(),
@@ -254,6 +313,7 @@ pub fn view(attachment: &Attachment, evidence: Option<EvidenceSummary>) -> View 
         decisions,
         provider_contracts,
         bindings,
+        entities,
         delivery,
         evidence,
     }

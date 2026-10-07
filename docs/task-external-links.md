@@ -38,33 +38,61 @@ reports the same gaps without claiming pass. A declaration defect
 profiles.
 
 `lekalo task-links inspect SYMBOL --project DIR --attachment PATH
-[--evidence PATH]` projects the typed view: sorted relations with
-cardinality and detach semantics, the identity constraints, the
-decision rows, the provider contracts and operation bindings, and the
-delivery rule block. With `--evidence`, an admitted receipt joins the
-view (origin, pins, step count); missing evidence stays explicitly
+[--evidence PATH]` resolves SYMBOL against the typed view (relations,
+constraints, decisions, bindings, provider contracts, bound entities)
+after the attachment passes the full semantic validation; an unknown
+symbol is one typed refusal, a malformed attachment never renders as
+an authoritative view. With `--evidence`, an admitted receipt joins
+the view (origin, pins, step count); missing evidence stays explicitly
 unavailable, and stale or wrong pins fail closed with
-`tasklink.evidence-invalid`.
+`tasklink.evidence-invalid`. A `native` origin claim is admitted only
+under the qualified-environment flag (`LEKALO_TASKLINKS_NATIVE=1`) and
+always requires the wall-clock-native clock policy.
+
+Every digest pin on the attachment is recomputed, never trusted: the
+Model/IR pin against the canonical IR of the live compilation, the
+attachment revision against the canonical attachment-minus-revision
+bytes (compact JSON, recursively byte-sorted keys), and every
+owner-contract pin against the exact accepted contract file in
+`contracts/`. A divergent pin fails closed with
+`tasklink.relation-identity-invalid` before anything else runs.
+Duplicate JSON members are rejected on every input path (attachment,
+evidence, profiles) before serde could silently take the last value. A
+same-family different-version discriminator maps to the accepted
+`unsupported-version` exit class (exit 5). File operands are opened
+no-follow: symlinks and Windows reparse points are refused.
 
 `lekalo task-links portability PATH --project DIR --from-profile PATH
---to-profile PATH --profile strict|permissive` separates unchanged
-core domain semantics from provider adapter facts and target
-guarantees. A provider-only change preserves every core row byte while
-the pinned adapter rows move; target guarantees without native
-evidence stay explicitly `unknown` and are refused under `strict`
-instead of being claimed.
+--to-profile PATH [--evidence PATH]... --profile strict|permissive`
+joins the resolved profiles, provider contract requirements, and any
+admitted evidence into the closed projection: core semantics,
+provider adapter facts, and target guarantees. Every row is derived,
+never constant — a declared fact without admitted execution evidence
+is honestly `unknown`, an undeclared fact is `unsupported` — and the
+shared semantic validation runs before any report. A provider-only
+change preserves the pinned core fact rows while the adapter rows
+move; target guarantees without native evidence stay explicitly
+`unknown` and are refused under `strict` instead of being claimed.
 
 ## Guarantees and limits
 
-The deterministic engine (identity reservation, attributed inbound
-deduplication, decision matrix, outbox leasing with fencing, bounded
-retry, echo suppression, crash recovery) is exercised by the Rust
-battery and the six family gates under `scripts/test-task-links-*.mjs`.
-Mock evidence never satisfies the durable/race assertions: native
-coverage stays unclaimed until a qualified environment runs the native
-gate with provisioning. The external identity tuple is
-`(workspace_id, installation_id, provider_id, object_type,
-external_id)`, compared as exact text; detach retains history and the
-external object; the network call is declared outside every local
-transaction; acceptance before acknowledgement reports unknown
-delivery for reconciliation instead of a guessed success.
+The deterministic engine (identity reservation over typed tuples,
+attributed inbound deduplication keyed by the full installation /
+provider / external / event scope, revision ordering per the declared
+provider contract, decision matrix with explicit partial-capability
+subsets, outbox leasing with fencing and time-bound expiry,
+acceptance-pending-ack uncertainty, bounded retry with durable
+attempt accounting, echo suppression, crash recovery) is exercised by
+the Rust battery and the six family gates under
+`scripts/test-task-links-*.mjs`, and the qualified native legs run a
+pinned transactional DB runner with process-restart failpoints under
+provisioning. Mock evidence never satisfies the durable/race
+assertions: native coverage stays unclaimed until a qualified
+environment runs the native gate with provisioning. The external
+identity tuple is `(workspace_id, installation_id, provider_id,
+object_type, external_id)`, compared as exact text; detach retains
+history and the external object; the network call is declared outside
+every local transaction; acceptance before acknowledgement surfaces
+as the explicit `accepted_pending_ack` state and recovery inside that
+window reports unknown delivery for reconciliation instead of a
+guessed success.

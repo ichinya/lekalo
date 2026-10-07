@@ -38,7 +38,8 @@
       "role": "link aggregate (Model entity)"
     }
   ],
-  "changedRevision": "sha256:52524a4f1c8e0e5e05ee1e51d3dbb986a2a1e5d51b3a3b2f8e6f5f3b3f6b6a02",
+  "baseRevisionToken": "sha256:d098ce1808d50f32458769214f1599f1e802236909d93e42b51f000fae66565f",
+  "changedRevision": "sha256:8f0cf44e6ee1639b7ac85db51f0806e3606dec992fa64cc121b8adc1c7706c3b",
   "attachmentLevelConsumers": [
     {
       "symbol": "tasklinks.cap.issue_write",

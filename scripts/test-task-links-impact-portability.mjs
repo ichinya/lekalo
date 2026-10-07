@@ -7,6 +7,7 @@
 // built binary (fail-closed), like every binary-dependent lane.
 
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -59,7 +60,39 @@ if (!binary) {
   try {
     const changedPath = join(work, "changed-attachment.json");
     writeFileSync(changedPath, changed);
-    const portability = (attachment) =>
+    const evidencePath = "tests/fixtures/task-external-links/evidence/mock-run.json";
+    // The changed attachment is a same-shape provider-only mutation, so
+    // its mock evidence is the base receipt re-pinned to the changed
+    // revision (the canonical revision recomputation mirrors the core).
+    const REVISION_MEMBERS = [
+      "schemaVersion", "identity", "projectId", "modelRef", "irRef",
+      "ownerContractPins", "entities", "relations", "uniqueConstraints",
+      "providerContracts", "linkCapabilityRequirements", "fieldPolicies",
+      "actionPolicies", "operationBindings", "deliveryRules", "contributions",
+    ];
+    const sortDeep = (value) => {
+      if (Array.isArray(value)) return value.map(sortDeep);
+      if (value && typeof value === "object") {
+        const out = {};
+        for (const key of Object.keys(value).sort()) out[key] = sortDeep(value[key]);
+        return out;
+      }
+      return value;
+    };
+    const canonicalRevision = (document) => {
+      const revision = {};
+      for (const member of REVISION_MEMBERS) revision[member] = document[member];
+      return "sha256:" + createHash("sha256")
+        .update(JSON.stringify(sortDeep(revision)))
+        .digest("hex");
+    };
+    const changedEvidence = join(work, "changed-evidence.json");
+    {
+      const baseEvidence = read(attachmentPath.replace("contracts/integration.json", "evidence/mock-run.json"));
+      baseEvidence.attachmentRevision = pair.changedRevision;
+      writeFileSync(changedEvidence, JSON.stringify(baseEvidence, null, 2));
+    }
+    const portability = (attachment, evidenceDoc) =>
       run([
         "--json",
         "task-links",
@@ -71,6 +104,7 @@ if (!binary) {
         fromProfile,
         "--to-profile",
         toProfile,
+        ...(evidenceDoc ? ["--evidence", evidenceDoc] : []),
         "--profile",
         "permissive",
       ]);

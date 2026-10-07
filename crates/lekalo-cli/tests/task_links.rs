@@ -104,6 +104,51 @@ fn strict_validate_is_byte_identical_across_reruns() {
     assert_eq!(stdout_text(&first), stdout_text(&second));
 }
 
+/// The canonical attachment revision: the sha256 of the compact,
+/// recursively byte-sorted serialization of every revision-covered
+/// member — the exact canonicalization the core recomputes.
+fn canonical_revision(document: &Value) -> String {
+    const MEMBERS: [&str; 16] = [
+        "schemaVersion",
+        "identity",
+        "projectId",
+        "modelRef",
+        "irRef",
+        "ownerContractPins",
+        "entities",
+        "relations",
+        "uniqueConstraints",
+        "providerContracts",
+        "linkCapabilityRequirements",
+        "fieldPolicies",
+        "actionPolicies",
+        "operationBindings",
+        "deliveryRules",
+        "contributions",
+    ];
+    fn sort_deep(value: Value) -> Value {
+        match value {
+            Value::Array(items) => Value::Array(items.into_iter().map(sort_deep).collect()),
+            Value::Object(map) => {
+                let mut sorted = serde_json::Map::new();
+                let mut keys: Vec<String> = map.keys().cloned().collect();
+                keys.sort();
+                for key in keys {
+                    sorted.insert(key.clone(), sort_deep(map[&key].clone()));
+                }
+                Value::Object(sorted)
+            }
+            other => other,
+        }
+    }
+    let mut revision = serde_json::Map::new();
+    for member in MEMBERS {
+        revision.insert(member.to_owned(), document[member].clone());
+    }
+    let bytes = serde_json::to_vec(&sort_deep(Value::Object(revision))).expect("canonical bytes");
+    format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes))
+}
+
 /// A declaration defect invalidates under BOTH profiles: permissive
 /// softens only the missing/unsupported required-guarantee class
 /// (LEK-TASKLINK-007, witnessed by the portability gate), never a
@@ -112,13 +157,19 @@ fn strict_validate_is_byte_identical_across_reruns() {
 fn declaration_defects_invalidate_under_both_profiles() {
     let target = workspace_path("target/task-links-defect-copy.json");
     let _ = std::fs::create_dir_all(target.parent().unwrap());
-    let original =
-        std::fs::read_to_string(workspace_path(attachment().as_str())).expect("attachment");
-    let defect = original.replace(
-        "\"policyRef\": \"tasklinks.policy.request_action_member\"",
-        "\"policyRef\": \"tasklinks.policy.missing_owner\"",
-    );
-    std::fs::write(&target, defect).expect("write defect copy");
+    let original: Value = serde_json::from_str(
+        &std::fs::read_to_string(workspace_path(attachment().as_str())).expect("attachment"),
+    )
+    .expect("attachment json");
+    let mut defect = original.clone();
+    defect["fieldPolicies"][2]["policyRef"] =
+        Value::String("tasklinks.policy.missing_owner".to_owned());
+    defect["attachmentRevision"] = Value::String(canonical_revision(&defect));
+    std::fs::write(
+        &target,
+        serde_json::to_vec_pretty(&defect).expect("defect bytes"),
+    )
+    .expect("write defect copy");
     let defect_path = target.to_string_lossy().into_owned();
     for profile in ["strict", "permissive"] {
         let output = lekalo_in(
@@ -257,7 +308,7 @@ fn stale_evidence_fails_closed() {
         std::fs::read_to_string(workspace_path(fixture("evidence/mock-run.json").as_str()))
             .expect("evidence");
     let stale = original.replace(
-        "sha256:52524a4f1c8e0e5e05ee1e51d3dbb986a2a1e5d51b3a3b2f8e6f5f3b3f6b6a01",
+        "sha256:d098ce1808d50f32458769214f1599f1e802236909d93e42b51f000fae66565f",
         "sha256:0000000000000000000000000000000000000000000000000000000000000000",
     );
     std::fs::write(&target, stale).expect("write stale copy");
@@ -290,6 +341,7 @@ fn stale_evidence_fails_closed() {
 fn portability_separates_sections_and_strict_refuses_unknown_required() {
     let from = fixture("profiles/laravel.json");
     let to = fixture("profiles/node.json");
+    let evidence = fixture("evidence/mock-run.json");
     let base = [
         "--json",
         "task-links",
@@ -301,6 +353,8 @@ fn portability_separates_sections_and_strict_refuses_unknown_required() {
         from.as_str(),
         "--to-profile",
         to.as_str(),
+        "--evidence",
+        evidence.as_str(),
     ];
     let permissive = lekalo_in(
         &workspace_path("."),
@@ -361,13 +415,25 @@ fn portability_separates_sections_and_strict_refuses_unknown_required() {
 fn provider_only_change_preserves_core_rows() {
     let target = workspace_path("target/task-links-provider-changed.json");
     let _ = std::fs::create_dir_all(target.parent().unwrap());
-    let original =
-        std::fs::read_to_string(workspace_path(attachment().as_str())).expect("attachment");
-    let changed = original.replace(
-        "\"upstreamPin\": \"github-rest/2022-11-28\"",
-        "\"upstreamPin\": \"github-rest/2026-01-01\"",
-    );
-    std::fs::write(&target, changed).expect("write changed copy");
+    let original: Value = serde_json::from_str(
+        &std::fs::read_to_string(workspace_path(attachment().as_str())).expect("attachment"),
+    )
+    .expect("attachment json");
+    let mut changed = original.clone();
+    for contract in changed["providerContracts"]
+        .as_array_mut()
+        .expect("contracts")
+    {
+        if contract["upstreamPin"] == "github-rest/2022-11-28" {
+            contract["upstreamPin"] = Value::String("github-rest/2026-01-01".to_owned());
+        }
+    }
+    changed["attachmentRevision"] = Value::String(canonical_revision(&changed));
+    std::fs::write(
+        &target,
+        serde_json::to_vec_pretty(&changed).expect("changed bytes"),
+    )
+    .expect("write changed copy");
     let changed_path = target.to_string_lossy().into_owned();
     let from = fixture("profiles/laravel.json");
     let to = fixture("profiles/node.json");
@@ -453,4 +519,331 @@ fn missing_attachment_fails_closed() {
         envelope["reasonCodes"][0],
         "tasklink.relation-identity-invalid"
     );
+}
+
+/// A same-family different-version discriminator maps to the accepted
+/// exit-5 class (unsupported-version), not plain invalid.
+#[test]
+fn wrong_schema_version_maps_to_unsupported_version() {
+    let target = workspace_path("target/task-links-wrong-version.json");
+    let _ = std::fs::create_dir_all(target.parent().unwrap());
+    let original =
+        std::fs::read_to_string(workspace_path(attachment().as_str())).expect("attachment");
+    let wrong = original.replace(
+        "lekalo/task-links-integration/v0.8.0",
+        "lekalo/task-links-integration/v0.7.0",
+    );
+    std::fs::write(&target, wrong).expect("write wrong version");
+    let wrong_path = target.to_string_lossy().into_owned();
+    let output = lekalo_in(
+        &workspace_path("."),
+        &[
+            "--json",
+            "task-links",
+            "validate",
+            &wrong_path,
+            "--project",
+            &project(),
+            "--profile",
+            "strict",
+        ],
+    );
+    assert_eq!(output.status.code(), Some(5), "version skew is exit 5");
+    let envelope: Value = serde_json::from_str(stderr_text(&output).trim()).expect("envelope");
+    assert_eq!(envelope["status"], "unsupported-version");
+    let _ = std::fs::remove_file(&target);
+}
+
+/// Every content pin is recomputed: a forged IR digest, a fabricated
+/// attachment revision, and copied placeholder owner pins all fail
+/// closed with LEK-TASKLINK-001 instead of validating.
+#[test]
+fn forged_pins_fail_closed() {
+    for (pin_fixture, expected_detail) in [
+        ("invalid/pin-ir-digest-stale.json", "ir-digest-stale"),
+        ("invalid/pin-owner-pin-stale.json", "owner-pin-stale"),
+    ] {
+        let output = lekalo_in(
+            &workspace_path("."),
+            &[
+                "--json",
+                "task-links",
+                "validate",
+                &fixture(pin_fixture),
+                "--project",
+                &project(),
+                "--profile",
+                "strict",
+            ],
+        );
+        assert_eq!(output.status.code(), Some(1), "{pin_fixture}");
+        let envelope: Value = serde_json::from_str(stderr_text(&output).trim()).expect("envelope");
+        assert_eq!(envelope["status"], "invalid", "{pin_fixture}");
+        assert_eq!(
+            envelope["diagnostics"][0]["data"]["detail"], expected_detail,
+            "{pin_fixture}"
+        );
+    }
+    // A fabricated attachment revision (any digest that is not the
+    // recomputation of this document) is refused.
+    let target = workspace_path("target/task-links-forged-revision.json");
+    let _ = std::fs::create_dir_all(target.parent().unwrap());
+    let original =
+        std::fs::read_to_string(workspace_path(attachment().as_str())).expect("attachment");
+    let forged = original.replace(
+        &original[original.find("sha256:").expect("digest")
+            ..original.find("sha256:").expect("digest") + 71],
+        &format!("sha256:{}", "e".repeat(64)),
+    );
+    std::fs::write(&target, forged).expect("write forged copy");
+    let forged_path = target.to_string_lossy().into_owned();
+    let output = lekalo_in(
+        &workspace_path("."),
+        &[
+            "--json",
+            "task-links",
+            "validate",
+            &forged_path,
+            "--project",
+            &project(),
+            "--profile",
+            "strict",
+        ],
+    );
+    assert_eq!(output.status.code(), Some(1), "forged revision refused");
+    let envelope: Value = serde_json::from_str(stderr_text(&output).trim()).expect("envelope");
+    assert_eq!(
+        envelope["diagnostics"][0]["data"]["detail"],
+        "revision-digest-stale"
+    );
+    let _ = std::fs::remove_file(&target);
+}
+
+/// Duplicate JSON members are rejected before serde can erase them, on
+/// every input path: attachment, evidence, and profile documents.
+#[test]
+fn duplicate_json_keys_are_rejected() {
+    let target = workspace_path("target/task-links-dup-keys.json");
+    let _ = std::fs::create_dir_all(target.parent().unwrap());
+    let original =
+        std::fs::read_to_string(workspace_path(attachment().as_str())).expect("attachment");
+    // Smuggle a second projectId member after the first: serde would
+    // silently take the last value.
+    let dup = original.replace(
+        "\"projectId\": \"tasklinks\",",
+        "\"projectId\": \"tasklinks\",\"projectId\": \"other\",",
+    );
+    assert_ne!(dup, original, "the mutation must apply");
+    std::fs::write(&target, dup).expect("write dup copy");
+    let dup_path = target.to_string_lossy().into_owned();
+    let output = lekalo_in(
+        &workspace_path("."),
+        &[
+            "--json",
+            "task-links",
+            "validate",
+            &dup_path,
+            "--project",
+            &project(),
+            "--profile",
+            "strict",
+        ],
+    );
+    assert_eq!(output.status.code(), Some(1), "duplicate members refused");
+    let envelope: Value = serde_json::from_str(stderr_text(&output).trim()).expect("envelope");
+    assert_eq!(
+        envelope["diagnostics"][0]["data"]["detail"],
+        "attachment-json"
+    );
+    let _ = std::fs::remove_file(&target);
+
+    // Duplicate members inside an evidence document are refused too.
+    let evidence_target = workspace_path("target/task-links-dup-evidence.json");
+    let evidence_original =
+        std::fs::read_to_string(workspace_path(fixture("evidence/mock-run.json").as_str()))
+            .expect("evidence");
+    let evidence_dup = evidence_original.replace(
+        "\"origin\": \"mock\"",
+        "\"origin\": \"mock\",\"origin\": \"native\"",
+    );
+    std::fs::write(&evidence_target, evidence_dup).expect("write dup evidence");
+    let evidence_dup_path = evidence_target.to_string_lossy().into_owned();
+    let output = lekalo_in(
+        &workspace_path("."),
+        &[
+            "--json",
+            "task-links",
+            "inspect",
+            "tasklinks.task_external_link",
+            "--project",
+            &project(),
+            "--attachment",
+            &attachment(),
+            "--evidence",
+            &evidence_dup_path,
+        ],
+    );
+    assert_eq!(output.status.code(), Some(1), "dup evidence refused");
+    let envelope: Value = serde_json::from_str(stderr_text(&output).trim()).expect("envelope");
+    assert_eq!(
+        envelope["diagnostics"][0]["data"]["detail"],
+        "evidence-json"
+    );
+    let _ = std::fs::remove_file(&evidence_target);
+}
+
+/// A forged native evidence claim is refused without the qualified
+/// environment; schema-valid evidence members (attribution, decision,
+/// observations) admit cleanly.
+#[test]
+fn native_claims_are_qualification_gated() {
+    let output = lekalo_in(
+        &workspace_path("."),
+        &[
+            "--json",
+            "task-links",
+            "inspect",
+            "tasklinks.task_external_link",
+            "--project",
+            &project(),
+            "--attachment",
+            &attachment(),
+            "--evidence",
+            &fixture("invalid/evidence-native-unqualified.json"),
+        ],
+    );
+    assert_eq!(output.status.code(), Some(1), "forged native refused");
+    let envelope: Value = serde_json::from_str(stderr_text(&output).trim()).expect("envelope");
+    assert_eq!(
+        envelope["diagnostics"][0]["data"]["detail"],
+        "evidence-native-unqualified"
+    );
+}
+
+/// The inspect operand resolves against the view: an unknown symbol is
+/// a typed refusal, never the whole view.
+#[test]
+fn unknown_inspect_symbol_is_refused() {
+    let output = lekalo_in(
+        &workspace_path("."),
+        &[
+            "--json",
+            "task-links",
+            "inspect",
+            "bogus.symbol.that.does.not.exist",
+            "--project",
+            &project(),
+            "--attachment",
+            &attachment(),
+        ],
+    );
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value = serde_json::from_str(stderr_text(&output).trim()).expect("envelope");
+    assert_eq!(
+        envelope["diagnostics"][0]["data"]["detail"],
+        "symbol-not-found"
+    );
+}
+
+/// An attachment that fails semantic validation never renders through
+/// inspect or portability: the shared admission runs first.
+#[test]
+fn inspect_and_portability_join_semantic_validation() {
+    let defect = "tests/fixtures/task-external-links/invalid/decision-incomplete.json";
+    let output = lekalo_in(
+        &workspace_path("."),
+        &[
+            "--json",
+            "task-links",
+            "inspect",
+            "tasklinks.task_external_link",
+            "--project",
+            &project(),
+            "--attachment",
+            defect,
+        ],
+    );
+    assert_eq!(output.status.code(), Some(1), "inspect joins validation");
+    let envelope: Value = serde_json::from_str(stderr_text(&output).trim()).expect("envelope");
+    assert_eq!(envelope["reasonCodes"][0], "tasklink.decision-incomplete");
+
+    let portability = lekalo_in(
+        &workspace_path("."),
+        &[
+            "--json",
+            "task-links",
+            "portability",
+            defect,
+            "--project",
+            &project(),
+            "--from-profile",
+            &fixture("profiles/laravel.json"),
+            "--to-profile",
+            &fixture("profiles/node.json"),
+            "--profile",
+            "permissive",
+        ],
+    );
+    assert_eq!(
+        portability.status.code(),
+        Some(1),
+        "portability joins validation"
+    );
+}
+
+/// A symlinked attachment/evidence path is refused (no-follow read
+/// discipline), never silently followed.
+#[test]
+fn symlinked_operand_is_refused() {
+    #[cfg(unix)]
+    {
+        let link = workspace_path("target/task-links-linked-attachment.json");
+        let _ = std::fs::remove_file(&link);
+        std::os::unix::fs::symlink(workspace_path(attachment().as_str()), &link)
+            .expect("create link");
+        let link_path = link.to_string_lossy().into_owned();
+        let output = lekalo_in(
+            &workspace_path("."),
+            &[
+                "--json",
+                "task-links",
+                "validate",
+                &link_path,
+                "--project",
+                &project(),
+                "--profile",
+                "strict",
+            ],
+        );
+        assert_eq!(output.status.code(), Some(1), "symlink refused");
+        let envelope: Value = serde_json::from_str(stderr_text(&output).trim()).expect("envelope");
+        assert_eq!(
+            envelope["diagnostics"][0]["data"]["detail"],
+            "attachment-file"
+        );
+        let _ = std::fs::remove_file(&link);
+    }
+    #[cfg(windows)]
+    {
+        // Reparse points are refused through symlink_metadata; a plain
+        // file copy stays admissible (positive control).
+        let copy = workspace_path("target/task-links-copied-attachment.json");
+        std::fs::copy(workspace_path(attachment().as_str()), &copy).expect("copy");
+        let copy_path = copy.to_string_lossy().into_owned();
+        let output = lekalo_in(
+            &workspace_path("."),
+            &[
+                "--json",
+                "task-links",
+                "validate",
+                &copy_path,
+                "--project",
+                &project(),
+                "--profile",
+                "strict",
+            ],
+        );
+        assert_eq!(output.status.code(), Some(0), "a real file is readable");
+        let _ = std::fs::remove_file(&copy);
+    }
 }

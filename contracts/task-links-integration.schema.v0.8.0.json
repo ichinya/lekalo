@@ -262,7 +262,8 @@
             "null"
           ],
           "minimum": 0,
-          "maximum": 1000000
+          "maximum": 1000000,
+          "description": "The member is required; `null` is the explicit unbounded spelling (runtime/schema parity)."
         },
         "min": {
           "type": "integer",
@@ -604,6 +605,7 @@
           "type": "array",
           "minItems": 7,
           "maxItems": 7,
+          "uniqueItems": true,
           "items": {
             "enum": [
               "pending",
@@ -614,7 +616,8 @@
               "cancelled",
               "dead_letter"
             ]
-          }
+          },
+          "description": "The canonical seven-state machine in canonical order; the wire layer enforces exact order."
         },
         "maxAttempts": {
           "type": "integer",

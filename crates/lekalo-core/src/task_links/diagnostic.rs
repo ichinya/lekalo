@@ -8,7 +8,7 @@
 //! input, paths, provider tokens, digests, or attacker-controlled text.
 
 use crate::diagnostics::normalize::{build, BuildError};
-use crate::diagnostics::types::{bound_token, token_value, DataObject, DataValue};
+use crate::diagnostics::types::{bound_token, token_value, DataObject};
 use crate::diagnostics::{Diagnostic, DiagnosticSet};
 use crate::result::{singleton_set, Status};
 
@@ -48,10 +48,14 @@ impl Failure {
     ///
     /// Required-guarantee and unknown/unsupported capability gaps stay
     /// `invalid` under the task-links owner: they invalidate the
-    /// attachment admission instead of widening the envelope.
+    /// attachment admission instead of widening the envelope. A
+    /// schema-version identity mismatch is the accepted exit-5 class:
+    /// the document is well-formed but its contract version is outside
+    /// the accepted registry.
     pub fn status(&self) -> Status {
-        match self.rule {
-            REQUIRED_GUARANTEE_UNSUPPORTED => Status::Unsupported,
+        match (self.rule, self.detail) {
+            (REQUIRED_GUARANTEE_UNSUPPORTED, _) => Status::Unsupported,
+            (INPUT_INVALID, "schema-version-unsupported") => Status::UnsupportedVersion,
             _ => Status::Invalid,
         }
     }
@@ -102,20 +106,18 @@ pub(crate) fn rule_invalid(
     }
 }
 
-/// Project a failure into the stable [`DomainResult`].
+/// Project a failure into the stable [`DomainResult`], mapping a
+/// version-identity mismatch onto the accepted exit-5 class.
 pub fn into_result(failure: &Failure) -> crate::result::DomainResult {
     let status = failure.status();
     let set = set_for(failure, status);
     match status {
+        Status::UnsupportedVersion => {
+            crate::result::DomainResult::UnsupportedVersion { diagnostics: set }
+        }
         Status::Unsupported => {
             crate::result::DomainResult::UnsupportedOperation { diagnostics: set }
         }
         _ => crate::result::DomainResult::invalid(set),
     }
-}
-
-/// One bounded data value for report counters.
-#[cfg_attr(not(test), allow(dead_code))]
-pub(crate) fn count_value(count: u64) -> DataValue {
-    DataValue::Count(count)
 }

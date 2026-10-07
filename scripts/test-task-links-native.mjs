@@ -50,7 +50,11 @@ const walk = (current) => {
   for (const name of readdirSync(current).sort()) {
     const full = join(current, name);
     if (statSync(full).isDirectory()) walk(full);
-    else if (name.endsWith(".json")) {
+    else if (
+      name.endsWith(".json")
+      && !current.replaceAll("\\", "/").includes("/invalid/")
+      && !current.replaceAll("\\", "/").endsWith("/invalid")
+    ) {
       const text = readFileSync(full, "utf8");
       if (/"origin"\s*:\s*"native"/.test(text) && !text.includes("runtime-boundary")) {
         claimed.push(full.slice(root.length + 1));
@@ -63,22 +67,55 @@ for (const path of claimed) fail("unprovisioned-native-claim", path);
 
 // 3. Provisioned leg: only when explicitly qualified. The durable
 //    restart/race battery runs through cargo with the native marker;
-//    a provisioned run without the toolchain fails loudly.
+//    a provisioned run without the toolchain or the transactional DB
+//    runner fails loudly. Env-var presence alone never qualifies: the
+//    battery must actually execute and pass.
 let nativeLeg = "pending-provisioning";
 if (provisioned) {
-  const rust = spawnSync(
-    "cargo",
-    ["test", "--locked", "-p", "lekalo-core", "--test", "task_links", "synchronized"],
-    { cwd: root, encoding: "utf8", timeout: 600000 },
-  );
-  if (rust.error || rust.status !== 0) {
-    fail("native-battery-failed", String(rust.error ?? (rust.stdout + rust.stderr).slice(0, 400)));
-  } else {
-    nativeLeg = "synchronized-race-executed";
-  }
   const database = process.env.LEKALO_TASKLINKS_NATIVE_DB;
   if (!database) {
-    fail("native-db-unprovisioned", "LEKALO_TASKLINKS_NATIVE_DB must name the transactional DB when LEKALO_TASKLINKS_NATIVE=1");
+    fail(
+      "native-db-unprovisioned",
+      "LEKALO_TASKLINKS_NATIVE_DB must name the transactional DB when LEKALO_TASKLINKS_NATIVE=1",
+    );
+  } else {
+    // The battery itself is the proof: the pinned transactional runner
+    // creates and opens the named DB file with WAL + FULL sync. A run
+    // that does not execute and pass is a provisioning gap, never a
+    // silent mock substitution.
+    const rust = spawnSync(
+      "cargo",
+      [
+        "test",
+        "--locked",
+        "-p",
+        "lekalo-core",
+        "--test",
+        "task_links",
+        "--",
+        "--ignored",
+        "native_leg",
+      ],
+      {
+        cwd: root,
+        encoding: "utf8",
+        timeout: 600000,
+        env: { ...process.env, LEKALO_TASKLINKS_NATIVE_DB: database },
+      },
+    );
+    if (rust.error || rust.status !== 0) {
+      fail(
+        "native-battery-failed",
+        String(rust.error ?? (rust.stdout + rust.stderr).slice(0, 400)),
+      );
+    } else {
+      const ran = rust.stdout.match(/test native_leg\S+ \.\.\. ok/g) ?? [];
+      if (ran.length === 0) {
+        fail("native-battery-empty", "no native_leg_* test executed");
+      } else {
+        nativeLeg = "durable-restart-executed";
+      }
+    }
   }
 }
 

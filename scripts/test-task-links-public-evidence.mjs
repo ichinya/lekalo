@@ -78,7 +78,7 @@ if (!binary) {
   const runs = [
     ["--json", "task-links", "validate", "tests/fixtures/task-external-links/contracts/integration.json", "--project", "tests/fixtures/task-external-links/project", "--profile", "strict"],
     ["--json", "task-links", "inspect", "tasklinks.task_external_link", "--project", "tests/fixtures/task-external-links/project", "--attachment", "tests/fixtures/task-external-links/contracts/integration.json", "--evidence", "tests/fixtures/task-external-links/evidence/mock-run.json"],
-    ["--json", "task-links", "portability", "tests/fixtures/task-external-links/contracts/integration.json", "--project", "tests/fixtures/task-external-links/project", "--from-profile", "tests/fixtures/task-external-links/profiles/laravel.json", "--to-profile", "tests/fixtures/task-external-links/profiles/node.json", "--profile", "permissive"],
+    ["--json", "task-links", "portability", "tests/fixtures/task-external-links/contracts/integration.json", "--project", "tests/fixtures/task-external-links/project", "--from-profile", "tests/fixtures/task-external-links/profiles/laravel.json", "--to-profile", "tests/fixtures/task-external-links/profiles/node.json", "--evidence", "tests/fixtures/task-external-links/evidence/mock-run.json", "--profile", "permissive"],
     // A failed run leaks too: the stale-evidence refusal path.
     ["--json", "task-links", "inspect", "tasklinks.task_external_link", "--project", "tests/fixtures/task-external-links/project", "--attachment", "tests/fixtures/task-external-links/contracts/integration.json", "--evidence", "tests/fixtures/task-external-links/invalid/evidence-stale.json"],
   ];

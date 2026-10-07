@@ -1,7 +1,7 @@
 {
   "schemaVersion": "lekalo/task-links-integration/v0.8.0",
   "identity": "dev.lekalo.task-links-integration@0.8.0",
-  "attachmentRevision": "sha256:52524a4f1c8e0e5e05ee1e51d3dbb986a2a1e5d51b3a3b2f8e6f5f3b3f6b6a01",
+  "attachmentRevision": "sha256:d098ce1808d50f32458769214f1599f1e802236909d93e42b51f000fae66565f",
   "projectId": "tasklinks",
   "modelRef": {
     "schemaVersion": "0.2.16",
@@ -15,27 +15,27 @@
     {
       "family": "authorization",
       "identity": "dev.lekalo.authorization@0.2.16",
-      "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      "digest": "sha256:198c817ab80c7c5d6329cb6a00cc6446db4d1acf2ba8150adf350b66d2aa6583"
     },
     {
       "family": "extended-effects",
       "identity": "dev.lekalo.extended-effects@0.2.16",
-      "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+      "digest": "sha256:57619a7ef4a8dc2e4fb2a2dbd5427421df399634d3a74642cae1f8eed3860197"
     },
     {
       "family": "invariant-transition",
       "identity": "dev.lekalo.invariant-transition@0.2.16",
-      "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+      "digest": "sha256:cd2ee41d9ac2be6ca5789c82a16aadaeecfea5f89822e0dbc9e7ea47fa19e350"
     },
     {
       "family": "storage-projection",
       "identity": "dev.lekalo.storage-projection@0.4.0",
-      "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+      "digest": "sha256:b2f301096129c21fc856f848544a46eede6d98c1ec236c3d4f3045244b366843"
     },
     {
       "family": "transaction-concurrency",
       "identity": "dev.lekalo.transaction-concurrency@0.2.16",
-      "digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+      "digest": "sha256:b7c2b3a821d3d21f033fbc926a72c68d93e75d2489f27fbbfc04bcfae8304229"
     }
   ],
   "entities": [
