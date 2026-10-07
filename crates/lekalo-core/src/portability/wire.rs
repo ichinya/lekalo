@@ -386,10 +386,12 @@ pub struct TargetsInput {
 }
 
 /// The evidence input pin.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct EvidenceInput {
     pub state: EvidencePresence,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub digest: Option<String>,
 }
 
 /// The closed evidence-presence vocabulary.

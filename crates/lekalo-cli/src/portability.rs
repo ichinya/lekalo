@@ -210,9 +210,14 @@ fn execute(args: Args) -> Result<DomainResult, DiagnosticSet> {
     };
 
     // Evidence: optional, pinned, and recipe/project verified.
+    let mut evidence_digest: Option<String> = None;
     let evidence = match &args.evidence {
         Some(path) => {
             let bytes = read_bounded(&root, path)?;
+            evidence_digest = Some(format!(
+                "sha256:{}",
+                lekalo_core::digest::sha256_hex(&bytes)
+            ));
             let document = parse_evidence(&bytes, &compilation, &recipe)?;
             Some(document)
         }
@@ -291,6 +296,7 @@ fn execute(args: Args) -> Result<DomainResult, DiagnosticSet> {
         implementation: implementation.as_ref(),
         targets_input,
         lock_digest,
+        evidence_digest,
     };
     let report = assess(&assessment)?;
 

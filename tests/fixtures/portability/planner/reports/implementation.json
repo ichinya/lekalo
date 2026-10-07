@@ -24,10 +24,6 @@
           "target": "php-laravel",
           "kind": "foreign",
           "symbol": "App\\Schedule\\CalculateSchedule::__invoke"
-        },
-        {
-          "target": "go-service",
-          "kind": "unsupported"
         }
       ]
     },

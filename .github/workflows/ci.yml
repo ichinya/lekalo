@@ -221,6 +221,12 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install --yes bubblewrap
       - run: cargo build --workspace --locked
+      - name: Run the live portability contract gate (issue #19)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-portability-contracts.mjs
       - name: Run neutral trace evidence and assessment contracts (issue #35)
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules

@@ -175,6 +175,7 @@ fn fixture_assessment() -> (lekalo_core::ir::Compilation, wire::Report) {
             )),
         },
         lock_digest: None,
+        evidence_digest: None,
     };
     let report = assess(&assessment).expect("the fixture assessment succeeds");
     (compilation, report)
@@ -227,9 +228,9 @@ mod classification_matrix {
             Dimension::Behavioral,
         );
         assert_eq!(go_schedule.classification, Classification::Unsupported);
-        assert_eq!(go_schedule.binding, Some(wire::Binding::Unsupported));
+        assert_eq!(go_schedule.binding, Some(wire::Binding::Missing));
         assert!(go_schedule.blocking);
-        assert_eq!(go_schedule.reason, "hook-unsupported");
+        assert_eq!(go_schedule.reason, "hook-missing");
         // The publication capability has no owner-registry definition at
         // this product generation: the unsatisfied declaration is an
         // explicit unknown, never a fabricated supported destination.
@@ -559,6 +560,7 @@ mod request_rules {
                 digest: None,
             },
             lock_digest: None,
+            evidence_digest: None,
         };
         let report = assess(&assessment).unwrap();
         assert_eq!(
@@ -710,6 +712,7 @@ mod evidence_gaps {
                 digest: None,
             },
             lock_digest: None,
+            evidence_digest: None,
         };
         let report = assess(&assessment).unwrap();
         // Behavioral and storage rows are unknown; structural stays
@@ -810,6 +813,7 @@ mod evidence_gaps {
                 digest: None,
             },
             lock_digest: None,
+            evidence_digest: None,
         };
         let report = assess(&assessment).unwrap();
         let schedule = report

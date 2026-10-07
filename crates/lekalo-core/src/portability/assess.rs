@@ -46,6 +46,8 @@ pub struct Assessment<'a> {
     pub implementation: Option<&'a crate::implementation::PortabilityReport>,
     pub targets_input: TargetsInput,
     pub lock_digest: Option<String>,
+    /// The exact manifest digest pin, supplied by the caller.
+    pub evidence_digest: Option<String>,
 }
 
 /// The reason tokens of one assessment. The closed vocabulary keeps the
@@ -305,6 +307,7 @@ pub fn assess(input: &Assessment) -> Result<Report, DiagnosticSet> {
                 } else {
                     EvidencePresence::Absent
                 },
+                digest: input.evidence_digest.clone(),
             },
             lock_digest: match &input.lock_digest {
                 Some(value) => LockInput {
