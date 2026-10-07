@@ -319,6 +319,9 @@ dto!(Pending {
     path: String,
     op: PendingOp
 });
+// `beforeDigest` is the exact drifted before-state a resolve preview
+// pinned; the confirmation digest covers it, so a file that moved after
+// the reviewed preview invalidates the confirmation.
 dto!(Transaction {
     schema_version: String,
     identity: String,
@@ -331,7 +334,8 @@ dto!(Transaction {
     after_manifest_digest: State<String>,
     pending: Vec<Pending>,
     affected_files: Vec<String>,
-    conflict: State<Conflict>
+    conflict: State<Conflict>,
+    before_digest: State<String>
 });
 
 dto!(ScenarioVerdict {

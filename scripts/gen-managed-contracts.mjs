@@ -59,7 +59,7 @@ const defs = {
     detail: prose,
     projection: arr(obj({ from: token, to: token }), 64),
     sample: state(obj({ input: { type: 'object', additionalProperties: scalar, maxProperties: 32 }, output: { type: 'object', additionalProperties: scalar, maxProperties: 32 } })),
-  }, ['detail', 'projection', 'sample']),
+  }, ['detail']),
   adapter: obj({ entry: token, packageDigest: pin, protocol: token }),
   outputAction: en('create', 'replace', 'delete', 'unchanged'),
   artifactRole: en('custody', 'implementation', 'manifest', 'map', 'test'),
@@ -107,6 +107,7 @@ export const shapes = {
     pending: arr(ref('pendingOp'), 8192),
     affectedFiles: arr(relPath, 8192),
     conflict: knownConflict,
+    beforeDigest: knownPin,
   },
   'managed-rollback-plan': {
     currentGeneration: knownDigest,

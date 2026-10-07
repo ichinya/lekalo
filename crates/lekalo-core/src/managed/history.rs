@@ -8,9 +8,12 @@
 //! - `transactions/<id>.json`: bounded recovery journals.
 //!
 //! Adapters are denied this whole subtree; the artifact cleaner must treat
-//! it as owner bookkeeping, never as application orphans.
+//! it as owner bookkeeping, never as application orphans. Every custody
+//! read and write goes through the confined filesystem capability: ancestor
+//! links and reparse aliases fail closed instead of escaping the project.
 
 use super::diagnostic;
+use super::fs;
 use super::wire::Transaction;
 use super::{detail, DomainResult, RECOVERY_REQUIRED, ROLLBACK_REFUSED};
 
@@ -31,21 +34,21 @@ fn refused(reason: &str) -> DomainResult {
     diagnostic::failure(ROLLBACK_REFUSED, &detail(reason))
 }
 
-fn custody_path(root: &std::path::Path, relative: &str) -> std::path::PathBuf {
-    root.join(CUSTODY).join(relative)
+/// The project-relative custody coordinate of one custody-relative path.
+fn custody_logical(relative: &str) -> String {
+    format!("{CUSTODY}/{relative}")
 }
 
 /// Whether a project has any managed custody at all.
 pub fn exists(root: &std::path::Path) -> bool {
-    custody_path(root, CURRENT).is_file()
+    matches!(fs::read_file(root, &custody_logical(CURRENT)), Ok(Some(_)))
 }
 
 /// Read the committed generation digest, if any. Unreadable custody fails
 /// closed instead of appearing absent.
 pub fn current(root: &std::path::Path) -> Result<Option<String>, DomainResult> {
-    let path = custody_path(root, CURRENT);
-    match std::fs::read(&path) {
-        Ok(bytes) => {
+    match fs::read_file(root, &custody_logical(CURRENT)) {
+        Ok(Some(bytes)) => {
             let text = String::from_utf8(bytes).map_err(|_| recovery("current-encoding"))?;
             let trimmed = text.trim();
             if super::pin(trimmed) {
@@ -54,12 +57,12 @@ pub fn current(root: &std::path::Path) -> Result<Option<String>, DomainResult> {
                 Err(recovery("current-digest"))
             }
         }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Ok(None) => Ok(None),
         Err(_) => Err(recovery("current-read")),
     }
 }
 
-/// Read one generation record by digest.
+/// Read one generation record by digest, fully verified.
 pub fn record(
     root: &std::path::Path,
     digest: &str,
@@ -69,6 +72,13 @@ pub fn record(
 
 /// Read one generation record plus the custody digest of its exact stored
 /// bytes (the manifest identity a rollback restores).
+///
+/// The record is trusted only after its content-bound identity checks: the
+/// storage name must be the record's own generation digest, the recorded
+/// inventory must re-derive exactly that digest, and every retained object
+/// reference must resolve to bytes matching the recorded output digest. A
+/// tampered record — any edited path, digest, role, or owner — is refused
+/// without touching a single project byte.
 pub fn record_with_custody(
     root: &std::path::Path,
     digest: &str,
@@ -81,9 +91,32 @@ pub fn record_with_custody(
     {
         return Err(refused("generation-digest"));
     }
-    let path = custody_path(root, &format!("{GENERATIONS}/{hex}.json"));
-    let bytes = std::fs::read(&path).map_err(|_| refused("generation-record"))?;
+    let bytes = match fs::read_file(root, &custody_logical(&format!("{GENERATIONS}/{hex}.json"))) {
+        Ok(Some(bytes)) => bytes,
+        Ok(None) => return Err(refused("generation-record")),
+        Err(_) => return Err(refused("generation-record")),
+    };
     let record = super::parse_record(&bytes).map_err(|_| refused("generation-record"))?;
+    // Lookup identity: the stored name is the record's own generation.
+    if record.generation_digest != format!("sha256:{hex}") {
+        return Err(refused("record-identity"));
+    }
+    // Content-bound identity: the recorded inventory re-derives the digest.
+    if super::generation_digest(&record) != record.generation_digest {
+        return Err(refused("record-identity"));
+    }
+    // Every retained object must exist; the after bytes must match the
+    // recorded output digest exactly.
+    for output in &record.outputs {
+        if let Some(reference) = output.before_ref.value() {
+            object(root, reference)?;
+        }
+        if let Some(reference) = output.after_ref.value() {
+            if super::digest(&object(root, reference)?) != output.digest {
+                return Err(refused("record-object"));
+            }
+        }
+    }
     Ok((record, super::digest(&bytes)))
 }
 
@@ -97,8 +130,11 @@ pub fn object(root: &std::path::Path, reference: &str) -> Result<Vec<u8>, Domain
     {
         return Err(refused("object-ref"));
     }
-    let bytes = std::fs::read(custody_path(root, &format!("{OBJECTS}/{hex}")))
-        .map_err(|_| refused("object"))?;
+    let bytes = match fs::read_file(root, &custody_logical(&format!("{OBJECTS}/{hex}"))) {
+        Ok(Some(bytes)) => bytes,
+        Ok(None) => return Err(refused("object")),
+        Err(_) => return Err(refused("object")),
+    };
     if super::digest(&bytes) != format!("sha256:{hex}") {
         return Err(refused("object-digest"));
     }
@@ -108,20 +144,28 @@ pub fn object(root: &std::path::Path, reference: &str) -> Result<Vec<u8>, Domain
 /// Enumerate unresolved journals. Any `prepared`, `publishing`, or
 /// `restoring` transaction blocks further mutation until reconciliation.
 pub fn unresolved(root: &std::path::Path) -> Result<Vec<Transaction>, DomainResult> {
-    let directory = custody_path(root, TRANSACTIONS);
-    let entries = match std::fs::read_dir(&directory) {
+    let directory = custody_logical(TRANSACTIONS);
+    if fs::ensure_dir(root, &directory).is_err() {
+        return Err(recovery("transaction-scan"));
+    }
+    let entries = match std::fs::read_dir(root.join(&directory)) {
         Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(_) => return Err(recovery("transaction-scan")),
     };
     let mut unresolved = Vec::new();
     for entry in entries {
         let entry = entry.map_err(|_| recovery("transaction-scan"))?;
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            return Err(recovery("transaction-scan"));
+        };
+        if !name.ends_with(".json") {
             continue;
         }
-        let bytes = std::fs::read(&path).map_err(|_| recovery("transaction-read"))?;
+        let bytes = match fs::read_file(root, &custody_logical(&format!("{TRANSACTIONS}/{name}"))) {
+            Ok(Some(bytes)) => bytes,
+            _ => return Err(recovery("transaction-read")),
+        };
         let transaction =
             super::parse_transaction(&bytes).map_err(|_| recovery("transaction-shape"))?;
         if transaction.state.unresolved() {
@@ -135,10 +179,12 @@ pub fn unresolved(root: &std::path::Path) -> Result<Vec<Transaction>, DomainResu
 /// The deterministic next journal identity for a plan: no clock, no
 /// randomness, only the plan digest and the existing attempt count.
 pub fn transaction_id(root: &std::path::Path, plan_digest: &str) -> Result<String, DomainResult> {
-    let directory = custody_path(root, TRANSACTIONS);
-    let attempts = match std::fs::read_dir(&directory) {
+    let directory = custody_logical(TRANSACTIONS);
+    if fs::ensure_dir(root, &directory).is_err() {
+        return Err(recovery("transaction-scan"));
+    }
+    let attempts = match std::fs::read_dir(root.join(&directory)) {
         Ok(entries) => entries.count(),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => 0,
         Err(_) => return Err(recovery("transaction-scan")),
     };
     let stem = plan_digest
@@ -156,18 +202,17 @@ pub fn write_transaction(
     root: &std::path::Path,
     transaction: &Transaction,
 ) -> Result<(), DomainResult> {
-    let directory = custody_path(root, TRANSACTIONS);
-    std::fs::create_dir_all(&directory).map_err(|_| recovery("transaction-write"))?;
     let body = format!(
         "{}\n",
         serde_json::to_string_pretty(transaction).expect("typed transaction")
     );
-    std::fs::write(
-        custody_path(
-            root,
-            &format!("{TRANSACTIONS}/{}.json", transaction.transaction_id),
-        ),
-        body,
+    fs::write_file(
+        root,
+        &custody_logical(&format!(
+            "{TRANSACTIONS}/{}.json",
+            transaction.transaction_id
+        )),
+        body.as_bytes(),
     )
     .map_err(|_| recovery("transaction-write"))
 }
@@ -176,12 +221,11 @@ pub fn write_transaction(
 pub fn write_object(root: &std::path::Path, bytes: &[u8]) -> Result<String, DomainResult> {
     let digest = super::digest(bytes);
     let hex = digest.strip_prefix("sha256:").expect("digest");
-    let directory = custody_path(root, OBJECTS);
-    std::fs::create_dir_all(&directory).map_err(|_| recovery("object-write"))?;
-    let path = custody_path(root, &format!("{OBJECTS}/{hex}"));
-    if !path.is_file() {
-        std::fs::write(&path, bytes).map_err(|_| recovery("object-write"))?;
+    let logical = custody_logical(&format!("{OBJECTS}/{hex}"));
+    if matches!(fs::read_file(root, &logical), Ok(Some(_))) {
+        return Ok(digest);
     }
+    fs::write_file(root, &logical, bytes).map_err(|_| recovery("object-write"))?;
     Ok(digest)
 }
 
@@ -199,21 +243,22 @@ pub fn write_record(
         .generation_digest
         .strip_prefix("sha256:")
         .expect("digest");
-    let directory = custody_path(root, GENERATIONS);
-    std::fs::create_dir_all(&directory).map_err(|_| recovery("record-write"))?;
-    let path = custody_path(root, &format!("{GENERATIONS}/{hex}.json"));
-    if !path.is_file() {
-        std::fs::write(&path, custody.as_bytes()).map_err(|_| recovery("record-write"))?;
+    let logical = custody_logical(&format!("{GENERATIONS}/{hex}.json"));
+    if matches!(fs::read_file(root, &logical), Ok(Some(_))) {
+        return Ok(custody_digest);
     }
+    fs::write_file(root, &logical, custody.as_bytes()).map_err(|_| recovery("record-write"))?;
     Ok(custody_digest)
 }
 
 /// Commit the generation pointer.
 pub fn write_current(root: &std::path::Path, generation: &str) -> Result<(), DomainResult> {
-    let directory = custody_path(root, "");
-    std::fs::create_dir_all(&directory).map_err(|_| recovery("current-write"))?;
-    std::fs::write(custody_path(root, CURRENT), format!("{generation}\n"))
-        .map_err(|_| recovery("current-write"))
+    fs::write_file(
+        root,
+        &custody_logical(CURRENT),
+        format!("{generation}\n").as_bytes(),
+    )
+    .map_err(|_| recovery("current-write"))
 }
 
 /// Remove the journal of a resolved transaction (the closed document with
@@ -225,18 +270,35 @@ pub fn close_transaction(
     write_transaction(root, transaction)
 }
 
+/// The centralized unresolved-journal barrier: every mutator calls this
+/// before taking the mutation lock and again after acquiring it. Any
+/// `prepared`, `publishing`, or `restoring` journal — interrupted
+/// publication — blocks every further mutation until reconciliation.
+pub fn assert_reconciled(root: &std::path::Path) -> Result<(), DomainResult> {
+    let unresolved = unresolved(root)?;
+    if let Some(transaction) = unresolved.first() {
+        return Err(diagnostic::failure(
+            RECOVERY_REQUIRED,
+            &[
+                ("pin", transaction.transaction_id.as_str()),
+                ("reason", "unresolved-transaction"),
+            ],
+        ));
+    }
+    Ok(())
+}
+
 /// Take the exclusive mutation lock; an existing lock is an unresolved
 /// mutation and blocks until reconciled.
 pub fn lock(root: &std::path::Path) -> Result<Guard, DomainResult> {
-    let directory = custody_path(root, "");
-    std::fs::create_dir_all(&directory).map_err(|_| recovery("lock-write"))?;
+    fs::ensure_dir(root, CUSTODY).map_err(|_| recovery("lock-write"))?;
     match std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
-        .open(custody_path(root, MUTATION_LOCK))
+        .open(root.join(custody_logical(MUTATION_LOCK)))
     {
         Ok(_) => Ok(Guard {
-            path: custody_path(root, MUTATION_LOCK),
+            path: root.join(custody_logical(MUTATION_LOCK)),
         }),
         Err(_) => Err(recovery("mutation-lock")),
     }

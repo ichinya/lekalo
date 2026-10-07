@@ -12,6 +12,7 @@ pub mod canonical;
 pub mod coverage;
 pub mod diagnostic;
 pub mod equivalence;
+pub mod fs;
 pub mod history;
 pub mod plan;
 pub mod receipts;
@@ -168,6 +169,58 @@ pub fn sorted<T: Ord>(rows: &[T]) -> bool {
     rows.windows(2).all(|window| window[0] < window[1])
 }
 
+/// Whether `text` is a bounded prose note: no control characters.
+fn prose(text: &str) -> bool {
+    !text.is_empty()
+        && text.len() <= 2000
+        && !text
+            .chars()
+            .any(|c| c.is_ascii_control() || c == '\u{7f}')
+}
+
+/// Published nested-reference constraints: the closed `Reference` shape.
+fn reference(reference: &Reference) -> bool {
+    token(&reference.id) && token(&reference.version) && pin(&reference.digest)
+}
+
+/// Published nested-adapter constraints: the closed `Adapter` shape.
+fn adapter(adapter: &Adapter) -> bool {
+    token(&adapter.entry) && pin(&adapter.package_digest) && token(&adapter.protocol)
+}
+
+/// Published nested-assignment constraints: references, roots, extensions.
+fn target_assignment(target: &TargetAssignment) -> bool {
+    token(&target.target)
+        && rel_path(&target.generated_root)
+        && reference(&target.profile_ref)
+        && reference(&target.implementation_ref)
+        && target.extensions.len() <= 64
+        && sorted(&target.extensions.iter().map(|e| &e.symbol).collect::<Vec<_>>())
+        && target.extensions.iter().all(|extension| {
+            token(&extension.symbol) && token(&extension.binding) && pin(&extension.contract_digest)
+        })
+}
+
+/// Published sample bounds: at most 32 scalar fields per side.
+fn sample(sample: &Sample) -> bool {
+    sample.input.len() <= 32 && sample.output.len() <= 32
+}
+
+/// Published requirement constraints beyond ordering: kinds, witness pins,
+/// projection bounds, sample bounds, and the closed prose note.
+fn requirement(requirement: &Requirement) -> bool {
+    token(&requirement.id)
+        && requirement.projection.len() <= 64
+        && sorted(&requirement.projection.iter().map(|p| &p.to).collect::<Vec<_>>())
+        && requirement
+            .projection
+            .iter()
+            .all(|p| token(&p.from) && token(&p.to))
+        && requirement.witness.value().map_or(true, |witness| pin(witness))
+        && requirement.detail.as_ref().map_or(true, |detail| prose(detail))
+        && requirement.sample.value().map_or(true, sample)
+}
+
 /// Whether the ordered projection contains duplicates.
 pub fn has_duplicates<'a, T: Ord + 'a>(mut rows: impl Iterator<Item = &'a T>) -> bool {
     let mut seen = std::collections::BTreeSet::new();
@@ -207,6 +260,7 @@ pub fn parse_ownership(bytes: &[u8]) -> Result<Ownership, DomainResult> {
         return Err(invalid("project"));
     }
     if document.modules.is_empty()
+        || document.modules.len() > 64
         || !sorted(
             &document
                 .modules
@@ -221,32 +275,15 @@ pub fn parse_ownership(bytes: &[u8]) -> Result<Ownership, DomainResult> {
     let mut seen_keys = std::collections::BTreeSet::new();
     let mut seen_roots = std::collections::BTreeSet::new();
     for module in &document.modules {
-        if !token(&module.module) || module.targets.is_empty() {
+        if !token(&module.module) || module.targets.is_empty() || module.targets.len() > 8 {
             return Err(invalid("module"));
         }
         if !sorted(&module.targets.iter().map(|t| &t.target).collect::<Vec<_>>()) {
             return Err(invalid("target-order"));
         }
         for target in &module.targets {
-            if !token(&target.target) || !rel_path(&target.generated_root) {
+            if !target_assignment(target) {
                 return Err(invalid("generated-root"));
-            }
-            if !sorted(
-                &target
-                    .extensions
-                    .iter()
-                    .map(|e| &e.symbol)
-                    .collect::<Vec<_>>(),
-            ) {
-                return Err(invalid("extension-order"));
-            }
-            for extension in &target.extensions {
-                if !token(&extension.symbol)
-                    || !token(&extension.binding)
-                    || !pin(&extension.contract_digest)
-                {
-                    return Err(invalid("extension"));
-                }
             }
             let key = (module.module.clone(), target.target.clone());
             if !seen_keys.insert(key) || !seen_roots.insert(target.generated_root.clone()) {
@@ -259,14 +296,17 @@ pub fn parse_ownership(bytes: &[u8]) -> Result<Ownership, DomainResult> {
         }
     }
     // Generated roots may not nest: two overlapping roots would give one
-    // file two owners.
+    // file two owners. Sorting alone never proves independence — a sibling
+    // spelled between a root and its descendant (e.g. `gen` < `gen-x` <
+    // `gen/inner`) hides the nesting from adjacent pairs — so every root is
+    // prefix-checked against every later root.
     roots.sort_by(|left, right| left.1.cmp(&right.1));
-    for window in roots.windows(2) {
-        if window[1].1.starts_with(&format!("{}/", window[0].1)) {
+    for (index, (_, candidate)) in roots.iter().enumerate() {
+        let prefix = format!("{candidate}/");
+        if roots[index + 1..].iter().any(|(_, other)| other.starts_with(&prefix)) {
             return Err(invalid("root-overlap"));
         }
     }
-    let _ = roots;
     Ok(document)
 }
 
@@ -277,6 +317,9 @@ pub fn parse_coverage(bytes: &[u8]) -> Result<Coverage, DomainResult> {
     if !token(&document.module) || !token(&document.target) {
         return Err(invalid("subject"));
     }
+    if !reference(&document.recipe) || !adapter(&document.adapter) {
+        return Err(invalid("coverage-pins"));
+    }
     if document.requirements.len() > 4096
         || !sorted(
             &document
@@ -285,26 +328,15 @@ pub fn parse_coverage(bytes: &[u8]) -> Result<Coverage, DomainResult> {
                 .map(|r| &r.id)
                 .collect::<Vec<_>>(),
         )
+        || !document.requirements.iter().all(requirement)
     {
         return Err(invalid("requirement-order"));
     }
     for requirement in &document.requirements {
-        if !token(&requirement.id) {
-            return Err(invalid("requirement-id"));
-        }
         if let Some(witness) = requirement.witness.value() {
             if !pin(witness) {
                 return Err(invalid("witness"));
             }
-        }
-        if !sorted(
-            &requirement
-                .projection
-                .iter()
-                .map(|p| &p.to)
-                .collect::<Vec<_>>(),
-        ) {
-            return Err(invalid("projection-order"));
         }
         if let Some(sample) = requirement.sample.value() {
             let inputs: Vec<&String> = sample.input.keys().collect();
@@ -314,13 +346,18 @@ pub fn parse_coverage(bytes: &[u8]) -> Result<Coverage, DomainResult> {
             }
         }
     }
-    if !sorted(
-        &document
-            .extensions
-            .iter()
-            .map(|e| &e.symbol)
-            .collect::<Vec<_>>(),
-    ) {
+    if document.extensions.len() > 64
+        || !sorted(
+            &document
+                .extensions
+                .iter()
+                .map(|e| &e.symbol)
+                .collect::<Vec<_>>(),
+        )
+        || !document.extensions.iter().all(|check| {
+            token(&check.symbol) && token(&check.binding) && pin(&check.contract_digest)
+        })
+    {
         return Err(invalid("extension-order"));
     }
     Ok(document)
@@ -332,21 +369,27 @@ pub fn verify_plan(bytes: &[u8]) -> Result<GenerationPlan, DomainResult> {
     let document: GenerationPlan = decode(bytes, "managed-generation-plan")?;
     if document.modules.is_empty()
         || document.targets.is_empty()
+        || document.modules.len() > 64
+        || document.targets.len() > 8
+        || document.input_closure.len() > 4096
+        || document.extensions.len() > 64
         || !sorted(&document.modules)
         || !sorted(&document.targets)
     {
         return Err(invalid("plan-scope"));
     }
-    if !sorted(
-        &document
+    if document.input_closure.len() > 4096
+        || !sorted(
+            &document
+                .input_closure
+                .iter()
+                .map(|p| &p.path)
+                .collect::<Vec<_>>(),
+        )
+        || document
             .input_closure
             .iter()
-            .map(|p| &p.path)
-            .collect::<Vec<_>>(),
-    ) || document
-        .input_closure
-        .iter()
-        .any(|p| !rel_path(&p.path) || !pin(&p.digest))
+            .any(|p| !rel_path(&p.path) || !pin(&p.digest))
     {
         return Err(invalid("input-closure"));
     }
@@ -360,12 +403,20 @@ pub fn verify_plan(bytes: &[u8]) -> Result<GenerationPlan, DomainResult> {
         return Err(invalid("plan-targets"));
     }
     if document.outputs.is_empty()
+        || document.outputs.len() > 8192
         || !sorted(&document.outputs.iter().map(|o| &o.path).collect::<Vec<_>>())
     {
         return Err(invalid("output-order"));
     }
     for output in &document.outputs {
-        if !rel_path(&output.path) || !token(&output.owner_module) || !token(&output.owner_target) {
+        if !rel_path(&output.path)
+            || !token(&output.owner_module)
+            || !token(&output.owner_target)
+            || output
+                .before_digest
+                .value()
+                .map_or(false, |before| !pin(before))
+        {
             return Err(invalid("output"));
         }
         match (output.action, &output.before_digest, &output.after_digest) {
@@ -416,20 +467,23 @@ pub fn parse_record(bytes: &[u8]) -> Result<GenerationRecord, DomainResult> {
     if !pin(&document.plan_digest) || !pin(&document.generation_digest) {
         return Err(invalid("record-digest"));
     }
-    if !sorted(
-        &document
+    if document.input_closure.len() > 4096
+        || !sorted(
+            &document
+                .input_closure
+                .iter()
+                .map(|p| &p.path)
+                .collect::<Vec<_>>(),
+        )
+        || document
             .input_closure
             .iter()
-            .map(|p| &p.path)
-            .collect::<Vec<_>>(),
-    ) || document
-        .input_closure
-        .iter()
-        .any(|p| !rel_path(&p.path) || !pin(&p.digest))
+            .any(|p| !rel_path(&p.path) || !pin(&p.digest))
     {
         return Err(invalid("input-closure"));
     }
     if document.outputs.is_empty()
+        || document.outputs.len() > 8192
         || !sorted(&document.outputs.iter().map(|o| &o.path).collect::<Vec<_>>())
     {
         return Err(invalid("output-order"));
@@ -468,16 +522,21 @@ pub fn parse_transaction(bytes: &[u8]) -> Result<Transaction, DomainResult> {
     if !token(&document.transaction_id) {
         return Err(invalid("transaction-id"));
     }
-    if !sorted(&document.affected_files) || document.affected_files.iter().any(|p| !rel_path(p)) {
+    if document.affected_files.len() > 8192
+        || !sorted(&document.affected_files)
+        || document.affected_files.iter().any(|p| !rel_path(p))
+    {
         return Err(invalid("affected-files"));
     }
-    if !sorted(
-        &document
-            .pending
-            .iter()
-            .map(|p| (&p.path, &p.op))
-            .collect::<Vec<_>>(),
-    ) || document.pending.iter().any(|p| !rel_path(&p.path))
+    if document.pending.len() > 8192
+        || !sorted(
+            &document
+                .pending
+                .iter()
+                .map(|p| (&p.path, &p.op))
+                .collect::<Vec<_>>(),
+        )
+        || document.pending.iter().any(|p| !rel_path(&p.path))
     {
         return Err(invalid("pending-order"));
     }
@@ -490,7 +549,8 @@ pub fn verify_rollback_plan(bytes: &[u8]) -> Result<RollbackPlan, DomainResult> 
     if !pin(&document.destination_generation_digest) || !pin(&document.manifest_digest) {
         return Err(invalid("rollback-destination"));
     }
-    if !sorted(&document.restore.iter().map(|r| &r.path).collect::<Vec<_>>())
+    if document.restore.len() > 8192
+        || !sorted(&document.restore.iter().map(|r| &r.path).collect::<Vec<_>>())
         || document
             .restore
             .iter()
@@ -498,7 +558,8 @@ pub fn verify_rollback_plan(bytes: &[u8]) -> Result<RollbackPlan, DomainResult> 
     {
         return Err(invalid("restore-order"));
     }
-    if !sorted(&document.delete.iter().map(|d| &d.path).collect::<Vec<_>>())
+    if document.delete.len() > 8192
+        || !sorted(&document.delete.iter().map(|d| &d.path).collect::<Vec<_>>())
         || document
             .delete
             .iter()
@@ -532,6 +593,8 @@ pub fn parse_equivalence(bytes: &[u8]) -> Result<Equivalence, DomainResult> {
         }
     }
     if document.scenarios.is_empty()
+        || document.scenarios.len() > 4096
+        || document.gaps.len() > 4096
         || !sorted(
             &document
                 .scenarios

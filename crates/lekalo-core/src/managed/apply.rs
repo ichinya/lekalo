@@ -5,10 +5,15 @@
 //! byte moves — the plan digest, the coverage pin, the ownership roots, the
 //! input closure, and the recorded generated before-state — then journals
 //! each phase, publishes inside one recoverable transaction, and records
-//! the committed generation. Dry runs touch nothing.
+//! the committed generation. Dry runs touch nothing. Every filesystem move
+//! runs through the confined capability, the unresolved-journal barrier is
+//! rechecked under the mutation lock, deletes are custody-checked at the
+//! moment of consumption, and the committed record merges every unaffected
+//! managed module so scoped applies never drop preserved outputs.
 
 use super::canonical::{render_inventory, Rendered};
 use super::diagnostic;
+use super::fs;
 use super::history;
 use super::plan::{preflight, require_confirmation, BeforeState};
 use super::wire::{
@@ -16,9 +21,9 @@ use super::wire::{
     PendingOp, RecordOutput, State, Transaction, TransactionAction, TransactionState,
 };
 use super::{
-    detail, parse_coverage, verify_plan, DomainResult, GENERATED_DRIFT, INPUT_INVALID, PLAN_STALE,
+    detail, hash, parse_coverage, verify_plan, DomainResult, GENERATED_DRIFT, INPUT_INVALID,
+    PLAN_STALE,
 };
-use crate::result::Status;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// The apply receipt: what the confirmed transaction did (or would do).
@@ -47,24 +52,6 @@ fn stale(path: &str, reason: &str) -> DomainResult {
     diagnostic::failure(PLAN_STALE, &[("path", path), ("reason", reason)])
 }
 
-/// Read the exact bytes of one project-relative path (files only; symlinks
-/// and special files fail closed).
-fn read_project_file(root: &std::path::Path, relative: &str) -> std::io::Result<Option<Vec<u8>>> {
-    let path = root.join(relative);
-    let metadata = match std::fs::symlink_metadata(&path) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(error),
-    };
-    if metadata.is_symlink() || !metadata.is_file() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "not-a-file",
-        ));
-    }
-    std::fs::read(&path).map(Some)
-}
-
 /// Collect actual input digests for the plan closure.
 fn inputs_actual(
     root: &std::path::Path,
@@ -72,7 +59,7 @@ fn inputs_actual(
 ) -> Result<BTreeMap<String, String>, DomainResult> {
     let mut actual = BTreeMap::new();
     for input in closure {
-        match read_project_file(root, &input.path) {
+        match fs::read_file(root, &input.path) {
             Ok(Some(bytes)) => {
                 actual.insert(input.path.clone(), super::digest(&bytes));
             }
@@ -100,7 +87,7 @@ fn before_state(
     };
     let mut actual = BTreeMap::new();
     for path in recorded.keys() {
-        match read_project_file(root, path) {
+        match fs::read_file(root, path) {
             Ok(Some(bytes)) => {
                 actual.insert(path.clone(), super::digest(&bytes));
             }
@@ -115,7 +102,7 @@ fn before_state(
             if actual.contains_key(&output.path) {
                 continue;
             }
-            match read_project_file(root, &output.path) {
+            match fs::read_file(root, &output.path) {
                 Ok(Some(bytes)) => {
                     actual.insert(output.path.clone(), super::digest(&bytes));
                 }
@@ -145,22 +132,6 @@ fn before_state(
     })
 }
 
-/// The generated-root coordinate map of one ownership document.
-fn generated_roots(ownership: &Ownership) -> BTreeMap<(String, String), String> {
-    ownership
-        .modules
-        .iter()
-        .flat_map(|module| {
-            module.targets.iter().map(move |target| {
-                (
-                    (module.module.clone(), target.target.clone()),
-                    target.generated_root.clone(),
-                )
-            })
-        })
-        .collect()
-}
-
 /// The ownership assignment of the plan's single module, if managed.
 fn assignment<'a>(
     ownership: &'a Ownership,
@@ -180,15 +151,6 @@ fn target<'a>(
         .targets
         .iter()
         .find(|candidate| candidate.target == target)
-}
-
-/// Write one project file, creating bounded parent directories.
-fn publish_file(root: &std::path::Path, relative: &str, bytes: &[u8]) -> Result<(), DomainResult> {
-    let path = root.join(relative);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|_| invalid("publish-mkdir"))?;
-    }
-    std::fs::write(&path, bytes).map_err(|_| invalid("publish-write"))
 }
 
 /// Execute (or preview) one confirmed generation apply.
@@ -246,19 +208,8 @@ pub fn apply(
         return error;
     }
     // Whole-custody gates: unresolved journals block any further mutation.
-    match history::unresolved(root) {
-        Ok(unresolved) => {
-            if let Some(transaction) = unresolved.first() {
-                return diagnostic::failure(
-                    super::RECOVERY_REQUIRED,
-                    &[
-                        ("pin", transaction.transaction_id.as_str()),
-                        ("reason", "unresolved-transaction"),
-                    ],
-                );
-            }
-        }
-        Err(error) => return error,
+    if let Err(error) = history::assert_reconciled(root) {
+        return error;
     }
     // Preflight: every reviewed pin is rechecked against the live project.
     let inputs = match inputs_actual(root, &plan.input_closure) {
@@ -269,7 +220,7 @@ pub fn apply(
         Ok(before) => before,
         Err(error) => return error,
     };
-    let roots = generated_roots(ownership);
+    let roots = super::plan::generated_roots(ownership);
     if let Err(error) = preflight(&plan, &roots, &inputs, &before) {
         return error;
     }
@@ -285,14 +236,12 @@ pub fn apply(
             OutputAction::Unchanged => unchanged.push(output.path.clone()),
         }
     }
-    // The generation identity over the closure + complete inventory only.
-    let generation = generation_identity(&plan);
     if dry_run {
         return super::render(&ApplyReceipt {
             action: "apply",
             dry_run: true,
             plan_digest: plan.plan_digest.clone(),
-            generation_digest: generation,
+            generation_digest: generation_identity(&plan, &BTreeMap::new(), &plan.input_closure),
             created,
             replaced,
             deleted,
@@ -302,47 +251,68 @@ pub fn apply(
     let guard = match history::lock(root) {
         Ok(guard) => guard,
         Err(error) => return error,
-    };
-    let result = staged_apply(root, &plan, &inventory, &before, generation.clone());
+        };
+    // Recheck under the mutation lock: the barrier, the inputs, and the
+    // before-state are revalidated now that this caller owns mutation, so
+    // a racer that moved a pin between preflight and lock cannot win.
+    let result = (|| {
+        history::assert_reconciled(root)?;
+        let inputs = inputs_actual(root, &plan.input_closure)?;
+        let before = before_state(root, Some(&plan))?;
+        let roots = super::plan::generated_roots(ownership);
+        preflight(&plan, &roots, &inputs, &before)?;
+        staged_apply(root, &plan, &inventory, ownership, &before)
+    })();
     drop(guard);
-    if result.status() == Status::Valid {
-        super::render(&ApplyReceipt {
+    match result {
+        Ok(committed) => super::render(&ApplyReceipt {
             action: "apply",
             dry_run: false,
             plan_digest: plan.plan_digest.clone(),
-            generation_digest: generation,
+            generation_digest: committed,
             created,
             replaced,
             deleted,
             unchanged,
-        })
-    } else {
-        result
+        }),
+        Err(error) => error,
     }
 }
 
 /// The stable generation digest over the pinned input closure and the
-/// complete output inventory only.
-fn generation_identity(plan: &GenerationPlan) -> String {
-    super::inventory_digest(
-        plan.input_closure.iter(),
-        plan.outputs
-            .iter()
-            .filter(|output| output.action != OutputAction::Delete)
-            .map(|output| {
-                (
-                    output.path.as_str(),
-                    &output.role,
-                    output.owner_module.as_str(),
-                    output.owner_target.as_str(),
-                    output
-                        .after_digest
-                        .value()
-                        .map(|digest| digest.as_str())
-                        .unwrap_or_default(),
-                )
-            }),
-    )
+/// complete committed output inventory: the plan's own outputs plus every
+/// preserved output of unaffected managed modules.
+fn generation_identity(
+    plan: &GenerationPlan,
+    preserved: &BTreeMap<String, RecordOutput>,
+    closure: &[InputPin],
+) -> String {
+    let plan_outputs = plan.outputs.iter().filter_map(|output| {
+        if output.action == OutputAction::Delete {
+            return None;
+        }
+        Some((
+            output.path.as_str(),
+            &output.role,
+            output.owner_module.as_str(),
+            output.owner_target.as_str(),
+            output
+                .after_digest
+                .value()
+                .map(|digest| digest.as_str())
+                .unwrap_or_default(),
+        ))
+    });
+    let preserved_outputs = preserved.values().map(|output| {
+        (
+            output.path.as_str(),
+            &output.role,
+            output.owner_module.as_str(),
+            output.owner_target.as_str(),
+            output.digest.as_str(),
+        )
+    });
+    super::inventory_digest(closure.iter(), plan_outputs.chain(preserved_outputs))
 }
 
 /// The reviewed plan must be the exact deterministic inventory.
@@ -385,20 +355,56 @@ fn inventory_matches(plan: &GenerationPlan, inventory: &[Rendered]) -> Result<()
 /// The staged transaction: journal prepared, snapshots, publishing,
 /// committed. Any failure leaves the journal unresolved, which blocks
 /// every further mutation until reconciliation.
+///
+/// The committed record is the whole project custody: every output of an
+/// unaffected managed module is preserved verbatim and every preserved
+/// input pin rides the closure, so a scoped apply never orphans another
+/// module's files (one file, one owner, at every generation).
 fn staged_apply(
     root: &std::path::Path,
     plan: &GenerationPlan,
     inventory: &[Rendered],
+    ownership: &Ownership,
     before: &BeforeState,
-    generation: String,
-) -> DomainResult {
+) -> Result<String, DomainResult> {
     let previous = match history::current(root) {
         Ok(current) => current,
-        Err(error) => return error,
+        Err(error) => return Err(error),
     };
+    let previous_record = match &previous {
+        Some(digest) => Some(history::record(root, digest)?),
+        None => None,
+    };
+    // Preserved custody: outputs owned by any other module stay in the
+    // committed record; the plan never touches their bytes.
+    let mut preserved: BTreeMap<String, RecordOutput> = BTreeMap::new();
+    if let Some(record) = &previous_record {
+        for output in &record.outputs {
+            if plan
+                .outputs
+                .iter()
+                .any(|planned| planned.path == output.path)
+            {
+                continue;
+            }
+            preserved.insert(output.path.clone(), output.clone());
+        }
+    }
+    // Input provenance: the committed closure unions the previous closure
+    // with the plan's; the plan's own pins win on a shared path.
+    let mut closure: BTreeMap<String, InputPin> = BTreeMap::new();
+    if let Some(record) = &previous_record {
+        for pin in &record.input_closure {
+            closure.insert(pin.path.clone(), pin.clone());
+        }
+    }
+    for pin in &plan.input_closure {
+        closure.insert(pin.path.clone(), pin.clone());
+    }
+    let closure: Vec<InputPin> = closure.into_values().collect();
     let transaction_id = match history::transaction_id(root, &plan.plan_digest) {
         Ok(id) => id,
-        Err(error) => return error,
+        Err(error) => return Err(error),
     };
     let mut transaction = Transaction {
         schema_version: super::header("managed-transaction").0,
@@ -408,17 +414,18 @@ fn staged_apply(
         action: TransactionAction::Apply,
         plan_digest: State::known(plan.plan_digest.clone()),
         generation_digest: State::known(GenerationDigest {
-            generation_digest: generation.clone(),
+            generation_digest: String::new(),
         }),
         before_manifest_digest: State::Absent,
         after_manifest_digest: State::Absent,
         pending: Vec::new(),
         affected_files: plan.outputs.iter().map(|o| o.path.clone()).collect(),
         conflict: State::Absent,
+        before_digest: State::Absent,
     };
     transaction.affected_files.sort();
     if let Err(error) = history::write_transaction(root, &transaction) {
-        return error;
+        return Err(error);
     }
     // Content-addressed snapshots: exact before bytes of every replaced or
     // deleted file, exact after bytes of every published file.
@@ -445,7 +452,7 @@ fn staged_apply(
     transaction.pending = pending;
     transaction.state = TransactionState::Publishing;
     if let Err(error) = history::write_transaction(root, &transaction) {
-        return error;
+        return Err(error);
     }
     // Build the committed record while every before byte is still on disk.
     let mut record_outputs = Vec::new();
@@ -459,11 +466,11 @@ fn staged_apply(
         };
         let bytes = match bytes_of.get(output.path.as_str()) {
             Some(bytes) => *bytes,
-            None => return invalid("inventory"),
+            None => return Err(invalid("inventory")),
         };
         let after_ref = match history::write_object(root, bytes) {
             Ok(reference) => State::known(reference),
-            Err(error) => return error,
+            Err(error) => return Err(error),
         };
         let before_ref = match output.action {
             OutputAction::Create => State::Absent,
@@ -474,16 +481,16 @@ fn staged_apply(
                     .and_then(|recorded| recorded.object_ref.clone())
                 {
                     Some(reference) => State::known(reference),
-                    None => match read_project_file(root, &output.path) {
+                    None => match fs::read_file(root, &output.path) {
                         // First-generation replaces may lack a retained
                         // object; snapshot the live bytes so rollback stays
                         // exact.
                         Ok(Some(live)) => match history::write_object(root, &live) {
                             Ok(reference) => State::known(reference),
-                            Err(error) => return error,
+                            Err(error) => return Err(error),
                         },
                         Ok(None) => State::Absent,
-                        Err(_) => return drift(&output.path, "snapshot"),
+                        Err(_) => return Err(drift(&output.path, "snapshot")),
                     },
                 }
             }
@@ -498,12 +505,20 @@ fn staged_apply(
             after_ref,
         });
     }
-    let ownership_digest = plan.coverage_digest.clone();
+    for output in preserved.values() {
+        record_outputs.push(output.clone());
+    }
+    record_outputs.sort_by(|left, right| left.path.cmp(&right.path));
+    if super::has_duplicates(record_outputs.iter().map(|o| &o.path)) {
+        return Err(invalid("record-order"));
+    }
+    // The ownership pin is the exact ownership configuration this commit
+    // was admitted under, never the coverage evidence.
     let record = GenerationRecord {
         schema_version: super::header("managed-generation-record").0,
         identity: super::header("managed-generation-record").1,
         plan_digest: plan.plan_digest.clone(),
-        generation_digest: generation.clone(),
+        generation_digest: String::new(),
         previous_generation: previous
             .map(|digest| {
                 State::known(GenerationDigest {
@@ -511,46 +526,78 @@ fn staged_apply(
                 })
             })
             .unwrap_or(State::Absent),
-        input_closure: plan.input_closure.clone(),
+        input_closure: closure.clone(),
         outputs: record_outputs,
-        ownership_digest,
+        ownership_digest: hash(ownership),
         lock_pin: State::Absent,
     };
+    let generation = super::generation_digest(&record);
+    let mut record = record;
+    record.generation_digest = generation.clone();
     if super::generation_digest(&record) != generation {
-        return invalid("generation-identity");
+        return Err(invalid("generation-identity"));
     }
     let after_manifest = match history::write_record(root, &record) {
         Ok(custody) => custody,
-        Err(error) => return error,
+        Err(error) => return Err(error),
     };
+    transaction.generation_digest = State::known(GenerationDigest {
+        generation_digest: generation.clone(),
+    });
     transaction.after_manifest_digest = State::known(after_manifest.clone());
     if let Err(error) = history::write_transaction(root, &transaction) {
-        return error;
+        return Err(error);
     }
-    // Publication: create/replace first, then deletions.
+    // Publication: create/replace first, then deletions. Deletes are
+    // custody-checked at the moment of consumption: the live bytes must
+    // still be the reviewed before bytes under the lock.
     for output in &plan.outputs {
         match output.action {
             OutputAction::Create | OutputAction::Replace | OutputAction::Unchanged => {
                 let bytes = bytes_of.get(output.path.as_str()).copied().unwrap_or(&[]);
-                if publish_file(root, &output.path, bytes).is_err() {
+                if fs::write_file(root, &output.path, bytes).is_err() {
                     transaction.conflict = State::known(super::wire::Conflict {
                         path: output.path.clone(),
                         reason: "publish".to_owned(),
                     });
                     let _ = history::write_transaction(root, &transaction);
-                    return invalid("publish-write");
+                    return Err(invalid("publish-write"));
                 }
             }
             OutputAction::Delete => {
-                let path = root.join(&output.path);
-                if let Err(error) = std::fs::remove_file(&path) {
-                    if error.kind() != std::io::ErrorKind::NotFound {
+                let live = match fs::read_file(root, &output.path) {
+                    Ok(live) => live,
+                    Err(_) => {
                         transaction.conflict = State::known(super::wire::Conflict {
                             path: output.path.clone(),
                             reason: "delete".to_owned(),
                         });
                         let _ = history::write_transaction(root, &transaction);
-                        return invalid("publish-delete");
+                        return Err(drift(&output.path, "delete"));
+                    }
+                };
+                let matches = live
+                    .map(|bytes| {
+                        Some(super::digest(&bytes)) == output.before_digest.value().cloned()
+                    })
+                    .unwrap_or(false);
+                if !matches {
+                    transaction.conflict = State::known(super::wire::Conflict {
+                        path: output.path.clone(),
+                        reason: "delete".to_owned(),
+                    });
+                    let _ = history::write_transaction(root, &transaction);
+                    return Err(drift(&output.path, "edited"));
+                }
+                match fs::remove_file(root, &output.path) {
+                    Ok(_) => {}
+                    Err(_) => {
+                        transaction.conflict = State::known(super::wire::Conflict {
+                            path: output.path.clone(),
+                            reason: "delete".to_owned(),
+                        });
+                        let _ = history::write_transaction(root, &transaction);
+                        return Err(invalid("publish-delete"));
                     }
                 }
             }
@@ -558,12 +605,11 @@ fn staged_apply(
     }
     // Pointer commit completes the generation.
     if let Err(error) = history::write_current(root, &generation) {
-        return error;
+        return Err(error);
     }
     transaction.state = TransactionState::Committed;
     match history::write_transaction(root, &transaction) {
-        // The caller renders the real receipt; this payload is discarded.
-        Ok(()) => DomainResult::receipt("{}".to_owned(), "committed".to_owned()),
-        Err(error) => error,
+        Ok(()) => Ok(generation),
+        Err(error) => Err(error),
     }
 }

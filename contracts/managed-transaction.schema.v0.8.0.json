@@ -243,6 +243,39 @@
           "additionalProperties": false
         }
       ]
+    },
+    "beforeDigest": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            }
+          },
+          "required": [
+            "state",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "const": "absent"
+            }
+          },
+          "required": [
+            "state"
+          ],
+          "additionalProperties": false
+        }
+      ]
     }
   },
   "required": [
@@ -257,7 +290,8 @@
     "afterManifestDigest",
     "pending",
     "affectedFiles",
-    "conflict"
+    "conflict",
+    "beforeDigest"
   ],
   "additionalProperties": false,
   "$defs": {

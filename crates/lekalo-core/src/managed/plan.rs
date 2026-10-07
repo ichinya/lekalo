@@ -42,6 +42,22 @@ fn invalid(reason: &str) -> DomainResult {
     diagnostic::failure(INPUT_INVALID, &detail(reason))
 }
 
+/// The generated-root coordinate map of one ownership document.
+pub fn generated_roots(ownership: &crate::managed::wire::Ownership) -> BTreeMap<(String, String), String> {
+    ownership
+        .modules
+        .iter()
+        .flat_map(|module| {
+            module.targets.iter().map(move |target| {
+                (
+                    (module.module.clone(), target.target.clone()),
+                    target.generated_root.clone(),
+                )
+            })
+        })
+        .collect()
+}
+
 /// Build the deterministic plan for one admitted module/target.
 ///
 /// `inputs` must already be the caller's exact closure; ordering and pin

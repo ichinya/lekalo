@@ -422,7 +422,7 @@ fn apply_transaction_is_recoverable_and_exact() {
         Some(built.plan_digest.as_str()),
         true,
     );
-    assert_eq!(preview.status(), Status::Valid);
+    assert_eq!(preview.status(), Status::Valid, "{preview:?}");
     assert!(!history::exists(&root));
     // The confirmed apply publishes and records custody.
     let applied = apply::apply(
@@ -564,6 +564,7 @@ fn apply_transaction_is_recoverable_and_exact() {
         pending: Vec::new(),
         affected_files: Vec::new(),
         conflict: State::Absent,
+        before_digest: State::Absent,
     };
     history::write_transaction(&root, &blocker).expect("journal");
     let blocked = apply::apply(
@@ -702,6 +703,17 @@ fn rollback_restores_the_exact_previous_generation() {
     let bytes = serde_json::to_vec(&preview).expect("wire");
     let refused = rollback::apply(&root, &bytes, None, false);
     assert_eq!(refused.status(), Status::Invalid);
+    // The destination input closure is checked against the live inputs:
+    // the model moved between generations, so the destination is refused
+    // until the pinned input bytes are back (finding G).
+    let stale = rollback::apply(&root, &bytes, Some(preview.plan_digest.as_str()), false);
+    assert_eq!(stale.status(), Status::Invalid, "{stale:?}");
+    assert_eq!(
+        stale.reason_codes().first().map(|code| code.as_str()),
+        Some("managed.plan-stale")
+    );
+    // With the destination's pinned inputs restored, the rollback runs.
+    write_input(&root, "model/planner.model.json", model);
     let restored = rollback::apply(&root, &bytes, Some(preview.plan_digest.as_str()), false);
     assert_eq!(restored.status(), Status::Valid, "{restored:?}");
     assert_eq!(

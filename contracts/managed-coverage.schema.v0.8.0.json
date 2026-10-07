@@ -330,7 +330,9 @@
         "id",
         "kind",
         "support",
-        "witness"
+        "witness",
+        "projection",
+        "sample"
       ],
       "additionalProperties": false
     },

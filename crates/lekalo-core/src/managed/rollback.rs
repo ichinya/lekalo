@@ -3,9 +3,15 @@
 //!
 //! Restoration consumes retained exact bytes through the same path and
 //! before-state transaction checks as apply. Model and custom sources are
-//! never restored, and an old adapter is never executed.
+//! never restored, and an old adapter is never executed. Every mutator
+//! passes the centralized unresolved-journal barrier before taking the
+//! mutation lock and rechecks under it, every restored and deleted byte is
+//! revalidated against the committed baseline so a rollback can never
+//! silently overwrite manual edits, and the resolve confirmation digest
+//! pins the exact drifted before-state it was reviewed against.
 
 use super::diagnostic;
+use super::fs;
 use super::history;
 use super::plan::require_confirmation;
 use super::wire::{
@@ -41,23 +47,6 @@ fn drift(path: &str, reason: &str) -> DomainResult {
     diagnostic::failure(GENERATED_DRIFT, &[("path", path), ("reason", reason)])
 }
 
-/// Read the exact bytes of one project-relative path (files only).
-fn read_project_file(root: &std::path::Path, relative: &str) -> std::io::Result<Option<Vec<u8>>> {
-    let path = root.join(relative);
-    let metadata = match std::fs::symlink_metadata(&path) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(error),
-    };
-    if metadata.is_symlink() || !metadata.is_file() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "not-a-file",
-        ));
-    }
-    std::fs::read(&path).map(Some)
-}
-
 /// Build the exact rollback plan for the retained destination generation.
 pub fn build(root: &std::path::Path, destination: &str) -> Result<RollbackPlan, DomainResult> {
     let current = match history::current(root)? {
@@ -67,6 +56,8 @@ pub fn build(root: &std::path::Path, destination: &str) -> Result<RollbackPlan, 
     if current == destination {
         return Err(invalid("already-current"));
     }
+    // Both records pass the content-bound custody verification: a tampered
+    // generation record is refused before any restore authority exists.
     let (destination_record, manifest_digest) = history::record_with_custody(root, destination)?;
     let (current_record, _) = history::record_with_custody(root, &current)?;
     let mut restore = Vec::new();
@@ -114,6 +105,56 @@ pub fn build(root: &std::path::Path, destination: &str) -> Result<RollbackPlan, 
     Ok(plan)
 }
 
+/// The committed baseline digests of the current generation: every path a
+/// rollback mutation may touch must still carry exactly these bytes.
+fn current_baseline(
+    root: &std::path::Path,
+) -> Result<std::collections::BTreeMap<String, String>, DomainResult> {
+    let current = match history::current(root)? {
+        Some(current) => current,
+        None => return Err(refused("no-generation")),
+    };
+    let (record, _) = history::record_with_custody(root, &current)?;
+    Ok(record
+        .outputs
+        .into_iter()
+        .map(|output| (output.path, output.digest))
+        .collect())
+}
+
+/// Revalidate the live baseline of one mutation target: the live bytes
+/// must still be the committed bytes (a missing file is drift on a restore
+/// path and already-gone on a delete path).
+fn check_baseline(
+    root: &std::path::Path,
+    baseline: &std::collections::BTreeMap<String, String>,
+    path: &str,
+    restore: bool,
+) -> Result<(), DomainResult> {
+    let recorded = match baseline.get(path) {
+        Some(recorded) => recorded,
+        None => return Err(drift(path, "unclaimed")),
+    };
+    match fs::read_file(root, path) {
+        Ok(Some(live)) => {
+            if &super::digest(&live) != recorded {
+                // Manual drift is resolved only by the exact resolve
+                // transaction; a rollback never overwrites an edited file.
+                return Err(drift(path, "edited"));
+            }
+            Ok(())
+        }
+        Ok(None) => {
+            if restore {
+                Err(drift(path, "missing"))
+            } else {
+                Ok(())
+            }
+        }
+        Err(_) => Err(drift(path, "unreadable")),
+    }
+}
+
 /// Execute (or preview) one confirmed rollback.
 pub fn apply(
     root: &std::path::Path,
@@ -132,35 +173,79 @@ pub fn apply(
     }
     // The current generation must still match the reviewed before-state.
     let current = match history::current(root) {
-        Ok(current) => current,
+        Ok(Some(current)) => current,
+        Ok(None) => return refused("no-generation"),
         Err(error) => return error,
     };
     let expected = plan
         .current_generation
         .value()
         .map(|digest| digest.generation_digest.clone());
-    if current != expected {
+    if Some(&current) != expected.as_ref() {
         return diagnostic::failure(PLAN_STALE, &detail("current-generation"));
     }
-    if let Err(error) = history::record(root, &plan.destination_generation_digest) {
-        return error;
+    // The destination record is trusted only after full custody
+    // verification (identity, inventory digest, retained objects).
+    let destination_record = match history::record(root, &plan.destination_generation_digest) {
+        Ok(record) => record,
+        Err(error) => return error,
+    };
+    // Ownership compatibility: the destination generation was committed
+    // under a different ownership configuration than the project's current
+    // generation; restoration would resurrect stale owners.
+    let (current_record, _) = match history::record_with_custody(root, &current) {
+        Ok(result) => result,
+        Err(error) => return error,
+    };
+    if current_record.ownership_digest != destination_record.ownership_digest {
+        return refused("ownership");
     }
-    // Deletion targets must match their recorded bytes exactly; a missing
-    // file is already gone, an edited file blocks the rollback.
-    for op in &plan.delete {
-        match read_project_file(root, &op.path) {
+    // Destination input closure: every pinned input of the destination
+    // generation must still exist with its exact recorded bytes — the
+    // current Model and attachments are still the ones the destination was
+    // generated from.
+    for pin in &destination_record.input_closure {
+        match fs::read_file(root, &pin.path) {
             Ok(Some(bytes)) => {
-                if super::digest(&bytes) != op.digest {
-                    return drift(&op.path, "edited");
+                if super::digest(&bytes) != pin.digest {
+                    return diagnostic::failure(
+                        PLAN_STALE,
+                        &[("path", pin.path.as_str()), ("reason", "input")],
+                    );
                 }
             }
-            Ok(None) => {}
-            Err(_) => return drift(&op.path, "unreadable"),
+            Ok(None) => {
+                return diagnostic::failure(
+                    PLAN_STALE,
+                    &[("path", pin.path.as_str()), ("reason", "input")],
+                )
+            }
+            Err(_) => {
+                return diagnostic::failure(
+                    PLAN_STALE,
+                    &[("path", pin.path.as_str()), ("reason", "input")],
+                )
+            }
+        }
+    }
+    // The baseline of every touched path is the committed current bytes:
+    // restore and delete targets alike are revalidated before any plan
+    // exists, so manual edits always require the exact resolve first.
+    let baseline = match current_baseline(root) {
+        Ok(baseline) => baseline,
+        Err(error) => return error,
+    };
+    for op in &plan.delete {
+        if let Err(error) = check_baseline(root, &baseline, &op.path, false) {
+            return error;
         }
     }
     // Every restored byte is re-verified from custody before publishing.
     let mut bytes = Vec::new();
     for op in &plan.restore {
+        if let Err(error) = check_baseline(root, &baseline, &op.path, true) {
+            return error;
+        }
         match history::object(root, &op.object_ref) {
             Ok(object) => {
                 if super::digest(&object) != op.digest {
@@ -181,23 +266,38 @@ pub fn apply(
             deleted: plan.delete.iter().map(|op| op.path.clone()).collect(),
         });
     }
+    // The unresolved-journal barrier holds before and under the lock.
+    if let Err(error) = history::assert_reconciled(root) {
+        return error;
+    }
     let guard = match history::lock(root) {
         Ok(guard) => guard,
         Err(error) => return error,
     };
-    let result = staged(root, &plan, &bytes);
+    let result = (|| {
+        history::assert_reconciled(root)?;
+        // The baseline is revalidated under the mutation lock: a racer
+        // that edited a touched file after the preflight cannot win.
+        let baseline = current_baseline(root)?;
+        for op in &plan.delete {
+            check_baseline(root, &baseline, &op.path, false)?;
+        }
+        for op in &plan.restore {
+            check_baseline(root, &baseline, &op.path, true)?;
+        }
+        staged(root, &plan, &bytes)
+    })();
     drop(guard);
-    if result.status() == crate::result::Status::Valid {
-        super::render(&RestoreReceipt {
+    match result {
+        Ok(()) => super::render(&RestoreReceipt {
             action: "rollback",
             dry_run: false,
             plan_digest: plan.plan_digest.clone(),
             generation_digest: plan.destination_generation_digest.clone(),
             restored: plan.restore.iter().map(|op| op.path.clone()).collect(),
             deleted: plan.delete.iter().map(|op| op.path.clone()).collect(),
-        })
-    } else {
-        result
+        }),
+        Err(error) => error,
     }
 }
 
@@ -205,10 +305,10 @@ fn staged(
     root: &std::path::Path,
     plan: &RollbackPlan,
     bytes: &[(&RestoreOp, Vec<u8>)],
-) -> DomainResult {
+) -> Result<(), DomainResult> {
     let transaction_id = match history::transaction_id(root, &plan.plan_digest) {
         Ok(id) => id,
-        Err(error) => return error,
+        Err(error) => return Err(error),
     };
     let mut transaction = Transaction {
         schema_version: super::header("managed-transaction").0,
@@ -230,6 +330,7 @@ fn staged(
             .chain(plan.delete.iter().map(|op| op.path.clone()))
             .collect(),
         conflict: State::Absent,
+        before_digest: State::Absent,
     };
     transaction.affected_files.sort();
     let mut pending: Vec<Pending> = bytes
@@ -247,55 +348,45 @@ fn staged(
     transaction.pending = pending;
     transaction.state = TransactionState::Restoring;
     if let Err(error) = history::write_transaction(root, &transaction) {
-        return error;
+        return Err(error);
     }
     for (op, bytes) in bytes {
-        let path = root.join(&op.path);
-        if let Some(parent) = path.parent() {
-            if std::fs::create_dir_all(parent).is_err() {
-                transaction.conflict = State::known(super::wire::Conflict {
-                    path: op.path.clone(),
-                    reason: "restore".to_owned(),
-                });
-                let _ = history::write_transaction(root, &transaction);
-                return invalid("restore-mkdir");
-            }
-        }
-        if std::fs::write(&path, bytes).is_err() {
+        if fs::write_file(root, &op.path, bytes).is_err() {
             transaction.conflict = State::known(super::wire::Conflict {
                 path: op.path.clone(),
                 reason: "restore".to_owned(),
             });
             let _ = history::write_transaction(root, &transaction);
-            return invalid("restore-write");
+            return Err(invalid("restore-write"));
         }
     }
     for op in &plan.delete {
-        let path = root.join(&op.path);
-        if let Err(error) = std::fs::remove_file(&path) {
-            if error.kind() != std::io::ErrorKind::NotFound {
+        match fs::remove_file(root, &op.path) {
+            Ok(_) => {}
+            Err(_) => {
                 transaction.conflict = State::known(super::wire::Conflict {
                     path: op.path.clone(),
                     reason: "delete".to_owned(),
                 });
                 let _ = history::write_transaction(root, &transaction);
-                return invalid("restore-delete");
+                return Err(invalid("restore-delete"));
             }
         }
     }
     if let Err(error) = history::write_current(root, &plan.destination_generation_digest) {
-        return error;
+        return Err(error);
     }
     transaction.state = TransactionState::Committed;
     match history::write_transaction(root, &transaction) {
-        // The caller renders the real receipt; this payload is discarded.
-        Ok(()) => DomainResult::receipt("{}".to_owned(), "committed".to_owned()),
-        Err(error) => error,
+        Ok(()) => Ok(()),
+        Err(error) => Err(error),
     }
 }
 
 /// Build and execute (or preview) the resolve of one drifted generated
 /// path: exact recorded bytes, same transaction checks, no new baseline.
+/// The previewed transaction pins the drifted before-state; only the
+/// caller's confirmation over that exact digest can move the file.
 pub fn resolve(
     root: &std::path::Path,
     path: &str,
@@ -315,6 +406,7 @@ pub fn resolve(
         }
         Err(error) => return error,
     };
+    // The record is trusted only after the content-bound custody checks.
     let record = match history::record(root, &current) {
         Ok(record) => record,
         Err(error) => return error,
@@ -339,15 +431,19 @@ pub fn resolve(
     if super::digest(&bytes) != output.digest {
         return refused("snapshot");
     }
-    match read_project_file(root, path) {
+    // The drifted before-state rides the transaction: the confirmation
+    // digest covers it, so a stale preview (the file moved after the
+    // caller reviewed it) can never publish over unseen bytes.
+    let before_digest = match fs::read_file(root, path) {
         Ok(Some(live)) => {
             if super::digest(&live) == output.digest {
                 return invalid("not-drifted");
             }
+            State::known(super::digest(&live))
         }
-        Ok(None) => {}
+        Ok(None) => State::Absent,
         Err(_) => return drift(path, "unreadable"),
-    }
+    };
     let mut transaction = Transaction {
         schema_version: super::header("managed-transaction").0,
         identity: super::header("managed-transaction").1,
@@ -366,6 +462,7 @@ pub fn resolve(
         }],
         affected_files: vec![path.to_owned()],
         conflict: State::Absent,
+        before_digest,
     };
     transaction.plan_digest = State::known(plan_digest(&transaction));
     let expected = transaction.plan_digest.value().expect("digest").clone();
@@ -384,27 +481,53 @@ pub fn resolve(
             deleted: Vec::new(),
         });
     }
+    // The unresolved-journal barrier holds before and under the lock.
+    if let Err(error) = history::assert_reconciled(root) {
+        return error;
+    }
     let guard = match history::lock(root) {
         Ok(guard) => guard,
         Err(error) => return error,
     };
-    transaction.transaction_id = match history::transaction_id(root, &expected) {
-        Ok(id) => id,
-        Err(error) => return error,
-    };
-    let result = staged_resolve(root, &transaction, &bytes);
+    let result = (|| -> Result<(), DomainResult> {
+        history::assert_reconciled(root)?;
+        // The pinned before-state is revalidated under the lock: the live
+        // bytes must still be exactly the reviewed drifted bytes.
+        match fs::read_file(root, path) {
+            Ok(Some(live)) => {
+                if Some(super::digest(&live)) != transaction.before_digest.value().cloned() {
+                    return Err(drift(path, "moved"));
+                }
+            }
+            Ok(None) => {
+                if transaction.before_digest.value().is_some() {
+                    return Err(drift(path, "moved"));
+                }
+            }
+            Err(_) => return Err(drift(path, "unreadable")),
+        }
+        transaction.transaction_id = match history::transaction_id(root, &expected) {
+            Ok(id) => id,
+            Err(error) => return Err(error),
+        };
+        let outcome = staged_resolve(root, &transaction, &bytes);
+        if outcome.status() == crate::result::Status::Valid {
+            Ok(())
+        } else {
+            Err(outcome)
+        }
+    })();
     drop(guard);
-    if result.status() == crate::result::Status::Valid {
-        super::render(&RestoreReceipt {
+    match result {
+        Ok(()) => super::render(&RestoreReceipt {
             action: "resolve",
             dry_run: false,
             plan_digest: expected,
             generation_digest: current,
             restored: vec![path.to_owned()],
             deleted: Vec::new(),
-        })
-    } else {
-        result
+        }),
+        Err(error) => error,
     }
 }
 
@@ -417,13 +540,8 @@ fn staged_resolve(root: &std::path::Path, transaction: &Transaction, bytes: &[u8
     if let Err(error) = history::write_transaction(root, &restoring) {
         return error;
     }
-    let path = root.join(&transaction.affected_files[0]);
-    if let Some(parent) = path.parent() {
-        if std::fs::create_dir_all(parent).is_err() {
-            return invalid("restore-mkdir");
-        }
-    }
-    if std::fs::write(&path, bytes).is_err() {
+    let path = &transaction.affected_files[0];
+    if fs::write_file(root, path, bytes).is_err() {
         return invalid("restore-write");
     }
     restoring.state = TransactionState::Committed;
