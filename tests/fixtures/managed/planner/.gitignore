@@ -2,3 +2,5 @@
 apps/
 plan.json
 plan-out.json
+coverage-parity.json
+ownership-parity.json
