@@ -338,7 +338,7 @@ const RESULT_BRANCHES = {
       schemaVersion: idConst("lekalo/trace-manifest/v0.2.16"),
       identity: idConst("dev.lekalo.trace-manifest@0.2.16"),
       trace: { type: "object" },
-      manifestDigest: { type: "string", pattern: "^[0-9a-f]{64}$" },
+      manifestDigest: { type: "string", pattern: "^sha256:[0-9a-f]{64}$" },
     },
     required: ["schemaVersion", "identity", "trace", "manifestDigest"],
     additionalProperties: false,
