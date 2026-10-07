@@ -1,0 +1,108 @@
+# Portability
+
+Status: **Implemented** for the assessment surface (`lekalo portability`): the
+capability-based, four-dimension portability report over the typed IR, exact
+target/profile pins, and qualified recorded evidence. Native execution and
+migration itself stay out of scope; this command never launches anything.
+
+Owner: portability
+
+## What the command answers
+
+```bash
+lekalo portability
+lekalo portability --from node-typescript --to php-laravel
+lekalo portability --to go-service --json
+```
+
+One report binds one exact source target and one or more destination targets.
+Every classification is a capability question ("what does the destination
+profile resolve to, what does the recorded evidence prove"), never a
+hard-coded product-name comparison. Unknown capability is never treated as
+supported, and unsupported never collapses into untested or unknown.
+
+## The four dimensions
+
+Each subject is assessed per destination across the orthogonal dimensions the
+reviewed recipe assigns to its definition kind:
+
+| Dimension | Question it answers |
+| --- | --- |
+| Structural | Do the type, references, and annotations carry a target-specific risk? |
+| Behavioral | Does the destination have the operation hook (generated, custom, foreign, external), and does a qualified mapping cover it? |
+| Storage | Do required semantic policies (decimal, isolation, ordering, null-handling, rounding) survive onto the destination's offered policies? |
+| Operational | Do declared publication obligations and qualified operational requirements join the destination's declared capabilities? |
+
+## Reading a report
+
+- **Portable** — the destination covers the obligation with no recorded loss.
+- **Supported with mapping** — a reviewed semantic mapping credits the row;
+  the mapping is scoped to exactly this destination, and the mapped
+  capability must be declared by the destination profile's resolved
+  capability set at full support. A mapping authored for another target is
+  invisible here.
+- **Partial / behavior loss** — restricted coverage (a weaker capability, a
+  narrowed decimal policy, an unsupported implicit hook). These rows block
+  the strict gate.
+- **Target-specific** — declared on the subject or reached through the
+  bounded dependency closure; needs an explicit replacement obligation.
+- **Unsupported / missing** — an explicit verdict from a complete
+  implementation inventory, never a guess.
+- **Unknown** — an evidence gap with a name (`evidenceNeeded` on the
+  planning row says what to collect). Unknown is not failure and not safety.
+
+The report carries three separate surfaces: the per-subject obligation rows,
+the per-destination dimension summaries (the published ratio is structural
+`portable / eligibleApplicableSubjects`, an integer ratio with an explicit
+basis — one percentage never hides the risk classes behind it), and the
+advisory migration surface: stable planning rows with actions
+(`implement-hook`, `replace-mapping`, `review-storage-policy`, `bind-target`,
+`verify-scenario`, `collect-evidence`), each with prerequisites, affected
+scenarios and gates, and the evidence still needed. A recorded scenario
+failure surfaces as its own `failed` join state, never as "planned".
+
+## Inputs and provenance
+
+- **Targets configuration** (`config/portability-targets.json`): the closed
+  binding of target ids to exact profile documents and digest pairs, plus the
+  source/destination defaults. Absent defaults derive from the declared Model
+  targets.
+- **Evidence manifest** (`--evidence`): digest-pinned families, recorded
+  adapter snapshots, reviewed semantic mappings (destination-scoped),
+  required/offered storage policies, operational requirements, scenario
+  receipts, gates, and observed implicit hooks. The manifest pins the exact
+  project IR revision and the exact reviewed recipe; anything stale is
+  refused before assessment.
+- **Profile documents**: resolved through the existing target-profile
+  resolver; the report carries the exact id, version, declaration digest,
+  effective digest, component versions, and composed capabilities of every
+  pinned profile.
+- **Lock**: when `lekalo.lock` exists at the project root, its digest is
+  recorded in the report's input pins.
+
+Every artifact read goes through the confined, reparse-checked project
+filesystem: a symlink or junction inside the project can never redirect a
+read outside the root, and every declared reference (profile document,
+storage profile, adapter evidence, implementation artifact) is read and
+digest-verified before it may influence any verdict.
+
+## The strict gate
+
+```bash
+lekalo portability --check
+```
+
+`--check` denies (exit 3, report preserved in the envelope) when any required
+obligation is unresolved: unsupported or missing hooks, lossy or partial
+policies, unknown evidence, a truncated extraction, or an empty assessment.
+A pass means the assessed scope has no known unresolved obligation — it is
+never a claim that two native implementations behave equivalently.
+
+## Contracts
+
+- `lekalo/portability-targets/v0.8.0` — the targets configuration.
+- `lekalo/portability-evidence/v0.8.0` — the evidence manifest.
+- `lekalo/portability-recipe/v0.8.0` — the reviewed extraction recipe
+  (embedded; the report binds its digest).
+- `lekalo/portability-report/v0.8.0` — the closed report shape, also the
+  machine contract the migration-planning consumer reads.

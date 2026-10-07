@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
-  "productVersion": "0.6.5",
-  "cliSourceDigest": "sha256:181e7cef1d85b55aa87f8984546ea4a9ee294082b60a6c4f4dbeb8667f05f6e3",
+  "productVersion": "0.8.0",
+  "cliSourceDigest": "sha256:db26f4d612fe35091cd147a57ef8135d94df8185b9e828fa2989e2317a26ed91",
   "p0Pages": [
     {
       "page": "README.md",
@@ -1334,6 +1334,17 @@
       "status": "implemented"
     },
     {
+      "id": "cli:portability",
+      "kind": "command",
+      "command": "portability",
+      "usage": "lekalo portability [OPTIONS]",
+      "helpDigest": "sha256:6a636e6beae67d490161c8090aeeaf8245d079474b756f54eb7e8bb93a337e0e",
+      "summary": "Assess the capability-based portability of the project's typed symbols across exact target/profile pins and qualified recorded evidence (issue #19). Read-only: consumes recorded evidence by default and launches no adapter, generator, or provider",
+      "leaf": true,
+      "owner": "docs/portability.md",
+      "status": "implemented"
+    },
+    {
       "id": "cli:privacy",
       "kind": "command",
       "command": "privacy",
@@ -2397,6 +2408,15 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/diagnostic-registry.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/diagnostic-registry.schema.v0.8.0.json",
+      "sourceDigest": "sha256:56e70ef5a44ff460d42ed3d8b66dc0c4b59771316acaeb0e2536b383c4ffed4d",
+      "owner": "docs/diagnostics.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/diagnostic-registry.v0.2.16.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.2.16.json",
@@ -2428,6 +2448,15 @@
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.6.5.json",
       "sourceDigest": "sha256:7b2be768be48050057682980b240f109d33adc56b1b4cb4b27848507df22b130",
+      "owner": "docs/diagnostics.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/diagnostic-registry.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/diagnostic-registry.v0.8.0.json",
+      "sourceDigest": "sha256:9d5e26f716d1575291c9be73eeaef8dc293d5e36c91bbdc8306d129253d8d065",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2861,6 +2890,51 @@
       "source": "contracts/php-types-map.schema.v0.4.0.json",
       "sourceDigest": "sha256:daab17787839136b336e2a23deeb19a346342bb6249889971b656ddf96f1769c",
       "owner": "adapters/php-laravel/README.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/portability-evidence.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/portability-evidence.schema.v0.8.0.json",
+      "sourceDigest": "sha256:761e72924ce57bf2df7ca57816e34361f6acc2f34f9648d1e602e1abce5cd302",
+      "owner": "docs/portability.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/portability-recipe.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/portability-recipe.schema.v0.8.0.json",
+      "sourceDigest": "sha256:0ecb324ef84658009d843fb384ba3da280335fe8be0fefbd5f9e158952d924a5",
+      "owner": "docs/portability.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/portability-recipe.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/portability-recipe.v0.8.0.json",
+      "sourceDigest": "sha256:16f195b6aa1c068fc932a1a7047334855292bfdf0eba5ef65339b379ca30a0bb",
+      "owner": "docs/portability.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/portability-report.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/portability-report.schema.v0.8.0.json",
+      "sourceDigest": "sha256:fbafae796d28e05b89b74fcc54ab7e8595795fbaa263f72e97c127cf1588ed21",
+      "owner": "docs/portability.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/portability-targets.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/portability-targets.schema.v0.8.0.json",
+      "sourceDigest": "sha256:e43aadfe9445ca4fccfcf431b1547a1103d903ba457d0abfa36566162440eef0",
+      "owner": "docs/portability.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
