@@ -9,11 +9,6 @@
       "origin": "synthetic"
     },
     {
-      "family": "architecture-profile",
-      "origin": "synthetic",
-      "note": "Issue #84: authored architecture policy, resolution, scope, lock, diff, baseline and adoption goldens over the synthetic context-budget planner. No native runtime or AI task outcome claims."
-    },
-    {
       "family": "adapter-manifest",
       "origin": "synthetic"
     },
@@ -59,6 +54,11 @@
       "family": "ai-workspace",
       "origin": "synthetic",
       "note": "issue #37 ai-workspace integration: the reviewed routing-manifest example and the change-event envelope example are exclusively synthetic, authored in-repo from public contract identities and neutral role aliases; no private checkout content"
+    },
+    {
+      "family": "architecture-profile",
+      "origin": "synthetic",
+      "note": "Issue #84: authored architecture policy, resolution, scope, lock, diff, baseline and adoption goldens over the synthetic context-budget planner. No native runtime or AI task outcome claims."
     },
     {
       "family": "artifacts",
@@ -219,6 +219,11 @@
     {
       "family": "model-v1",
       "origin": "synthetic"
+    },
+    {
+      "family": "module-api",
+      "origin": "synthetic",
+      "note": "Issue #113: authored module API attachment/public/consumer/lock/context fixture corpus with synthetic tasks/planner/provider projects, boundary violation and valid-control variants, and committed goldens; no private inputs or executed application behavior."
     },
     {
       "family": "nfr",
