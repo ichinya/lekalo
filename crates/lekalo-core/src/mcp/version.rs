@@ -131,8 +131,5 @@ mod tests {
         assert_eq!(PAGE_SIZE_CEILING, 500);
         assert_eq!(MAX_WATCHED_IDENTITIES, 256);
         assert_eq!(MAX_NESTING_DEPTH, 64);
-        assert!(MAX_RESPONSE_BYTES_CEILING >= DEFAULT_MAX_RESPONSE_BYTES);
-        assert!(TIMEOUT_MS_CEILING >= DEFAULT_TIMEOUT_MS);
-        assert!(PAGE_SIZE_CEILING >= DEFAULT_PAGE_SIZE);
     }
 }

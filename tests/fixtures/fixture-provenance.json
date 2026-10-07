@@ -369,6 +369,11 @@
       "family": "waiver-input",
       "origin": "synthetic",
       "note": "Issue 88 scoped governance live CLI fixtures."
+    },
+    {
+      "family": "mcp",
+      "origin": "synthetic",
+      "note": "Issue #33: authored trusted-catalog config, sensitive-path recipes, and the synthetic planner reuse by pinned reference (tests/fixtures/inspect/planner, tests/fixtures/trace/full.trace.json); hostile operands are materialized only in disposable test roots. No private code, real secrets, or executed application behavior."
     }
   ]
 }
