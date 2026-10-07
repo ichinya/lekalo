@@ -388,7 +388,11 @@ fn execute(command: ApiCommands) -> Result<DomainResult, Failure> {
                 module,
                 bundle.api_version.as_deref().unwrap_or("digest-only")
             );
-            Ok(envelope("modulePublicContract", serde_json::to_value(&bundle).expect("typed payload serializes"), human))
+            Ok(envelope(
+                "modulePublicContract",
+                serde_json::to_value(&bundle).expect("typed payload serializes"),
+                human,
+            ))
         }
         ApiCommands::Consumers {
             module,
@@ -403,7 +407,11 @@ fn execute(command: ApiCommands) -> Result<DomainResult, Failure> {
                 snapshot.consumers.len(),
                 module
             );
-            Ok(envelope("moduleApiConsumers", serde_json::to_value(&snapshot).expect("typed payload serializes"), human))
+            Ok(envelope(
+                "moduleApiConsumers",
+                serde_json::to_value(&snapshot).expect("typed payload serializes"),
+                human,
+            ))
         }
         ApiCommands::Lock {
             project,
@@ -426,7 +434,11 @@ fn execute(command: ApiCommands) -> Result<DomainResult, Failure> {
                 let findings = check_lock(&current, &supplied);
                 if findings.is_empty() {
                     let human = format!("Module API lock: fresh for {consumer}.");
-                    return Ok(envelope("moduleApiLock", serde_json::to_value(&current).expect("typed payload serializes"), human));
+                    return Ok(envelope(
+                        "moduleApiLock",
+                        serde_json::to_value(&current).expect("typed payload serializes"),
+                        human,
+                    ));
                 }
                 // Stale/foreign lock: policy denial with full evidence.
                 let detail = findings
@@ -463,7 +475,11 @@ fn execute(command: ApiCommands) -> Result<DomainResult, Failure> {
                 ));
             }
             let human = format!("Module API lock candidate for {consumer} (stdout only).");
-            Ok(envelope("moduleApiLock", serde_json::to_value(&current).expect("typed payload serializes"), human))
+            Ok(envelope(
+                "moduleApiLock",
+                serde_json::to_value(&current).expect("typed payload serializes"),
+                human,
+            ))
         }
         ApiCommands::Diff {
             base,
@@ -512,7 +528,11 @@ fn execute(command: ApiCommands) -> Result<DomainResult, Failure> {
                     denied,
                 ));
             }
-            Ok(envelope("moduleApiDiff", serde_json::to_value(&report).expect("typed payload serializes"), human))
+            Ok(envelope(
+                "moduleApiDiff",
+                serde_json::to_value(&report).expect("typed payload serializes"),
+                human,
+            ))
         }
         ApiCommands::Context {
             public,
@@ -536,7 +556,11 @@ fn execute(command: ApiCommands) -> Result<DomainResult, Failure> {
                 capsule.required_cost,
                 budget
             );
-            Ok(envelope("moduleConsumerContext", serde_json::to_value(&capsule).expect("typed payload serializes"), human))
+            Ok(envelope(
+                "moduleConsumerContext",
+                serde_json::to_value(&capsule).expect("typed payload serializes"),
+                human,
+            ))
         }
     }
 }
