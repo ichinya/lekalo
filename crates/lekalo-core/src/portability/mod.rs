@@ -97,7 +97,9 @@ pub struct ResolvedTargets {
 /// declared Model target; multiple candidates refuse with an actionable
 /// ambiguity diagnostic. Destination precedence: `--to`, then
 /// `defaultDestinations`, then every other configured target sorted. An
-/// explicitly selected unknown target id is invalid.
+/// explicitly selected unknown target id is invalid, and a resolved
+/// empty destination set is invalid: a zero-destination assessment is
+/// never a valid green report.
 pub fn resolve_targets(
     request: &Request,
     document: Option<&wire::TargetsDocument>,
@@ -145,8 +147,13 @@ pub fn resolve_targets(
             }
             request.destinations.clone()
         }
-        true => match document.map(|d| d.default_destinations.as_slice()) {
-            Some(list) if !list.is_empty() => list.to_vec(),
+        true => match document.and_then(|d| d.default_destinations.as_deref()) {
+            Some([first, rest @ ..]) => {
+                let mut resolved = Vec::with_capacity(1 + rest.len());
+                resolved.push((*first).to_owned());
+                resolved.extend(rest.iter().map(|d| (*d).to_owned()));
+                resolved
+            }
             _ => universe
                 .iter()
                 .filter(|t| **t != source_id)
@@ -156,6 +163,11 @@ pub fn resolve_targets(
     };
     destinations.sort();
     destinations.dedup();
+    if destinations.is_empty() {
+        // An assessment with zero destinations is the vacuous green
+        // report; the selection refuses instead of emitting one.
+        return Err(diagnostic_module::invalid("destination-empty"));
+    }
     let pin_state = |target: &str| {
         let _ = target;
         if document.is_some() {
