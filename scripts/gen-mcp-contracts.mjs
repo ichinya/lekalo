@@ -545,7 +545,7 @@ out("mcp-capabilities.schema.v0.8.0.json", {
           kind: {
             enum: RESOURCE_FAMILIES.map((family) => family.kind),
           },
-          uriTemplate: { type: "string", pattern: "^lekalo://\\{projectId\\}/[a-z{}A-Z-]+$" },
+          uriTemplate: { type: "string", pattern: "^lekalo://\\{projectId\\}/[a-z{}A-Z/-]+$" },
           description: { type: "string", minLength: 1, maxLength: 256 },
         },
         required: ["kind", "uriTemplate", "description"],
@@ -555,10 +555,10 @@ out("mcp-capabilities.schema.v0.8.0.json", {
     pins: {
       type: "object",
       properties: {
-        diagnostic: idConst("0.2.16"),
-        diagnosticRegistry: idConst("0.8.0"),
-        serverConfig: idConst(VERSION),
-        graphQuery: idConst(VERSION),
+        diagnostic: idConst("lekalo/diagnostic/v0.2.16"),
+        diagnosticRegistry: idConst("dev.lekalo.diagnostic-registry@0.8.0"),
+        serverConfig: idConst("dev.lekalo.mcp-server-config@0.8.0"),
+        graphQuery: idConst(`dev.lekalo.mcp-graph-query@${VERSION}`),
       },
       required: ["diagnostic", "diagnosticRegistry", "serverConfig", "graphQuery"],
       additionalProperties: false,

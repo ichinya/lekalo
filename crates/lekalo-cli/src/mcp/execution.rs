@@ -290,6 +290,7 @@ fn finish_envelope(
     tool: &str,
     scope: &Scope,
     inputs: Inputs,
+    mode_tag: Option<&str>,
     result: DomainResult,
 ) -> Result<ToolOutput, String> {
     let raw = result.to_json_string();
@@ -327,6 +328,17 @@ fn finish_envelope(
                 }
                 receipt.push('}');
                 receipt
+            } else if family.slug == "graph" {
+                // The frozen core query payloads ride unmodified under the
+                // mode tag; export carries the canonical whole-graph
+                // document with its own discriminator. No discriminator is
+                // ever injected into a query payload.
+                let mode = mode_tag.unwrap_or("show");
+                if mode == "export" {
+                    format!("\"result\":{{\"mode\":\"export\",\"export\":{}}}", spliced)
+                } else {
+                    format!("\"result\":{{\"mode\":\"{}\",\"query\":{}}}", mode, spliced)
+                }
             } else {
                 pinned_result(family, &spliced)
             };
@@ -710,7 +722,16 @@ fn run(
         (Some(_), Some(_)) => return Ok(stale(family, request.tool_name(), scope)),
         _ => {}
     }
-    finish_envelope(family, request.tool_name(), scope, inputs, result)
+    let mode_tag = match request {
+        ToolRequest::Graph { mode, .. } => Some(match mode {
+            GraphMode::Show => "show",
+            GraphMode::Callers => "callers",
+            GraphMode::Path => "path",
+            GraphMode::Export => "export",
+        }),
+        _ => None,
+    };
+    finish_envelope(family, request.tool_name(), scope, inputs, mode_tag, result)
 }
 
 /// `lekalo_target_status`: the typed doctor lock/inventory/capability-

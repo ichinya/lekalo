@@ -575,6 +575,13 @@ fn resources_read(session: &Arc<Session>, incoming: &Incoming) -> String {
     }
 }
 
+/// The resource revision: the domain digest re-spelled into the
+/// contract's closed sha256-`<hex>` form.
+fn resource_revision(domain: &str, bytes: &[u8]) -> String {
+    let digest = crate::mcp::snapshot::domain_digest(domain, bytes);
+    format!("sha256-{}", digest.split_once(':').expect("domain prefix").1)
+}
+
 /// Build the closed `lekalo/mcp-resource/v0.8.0` payload for one
 /// authorized read. The typed projections reuse the same command seams as
 /// the tools so both surfaces stay semantically identical; the underlying
@@ -604,7 +611,7 @@ fn build_resource(
                 Ok(compilation) => compilation,
                 Err(_) => return Err(denied_summary(scope)),
             };
-            let revision = crate::mcp::snapshot::domain_digest(
+            let revision = resource_revision(
                 "model",
                 lekalo_core::loader::canonical_model_bytes(&model).as_bytes(),
             );
@@ -631,7 +638,7 @@ fn build_resource(
                 Ok(compilation) => compilation,
                 Err(_) => return Err(denied_summary(scope)),
             };
-            let revision = crate::mcp::snapshot::domain_digest(
+            let revision = resource_revision(
                 "model",
                 lekalo_core::loader::canonical_model_bytes(&model).as_bytes(),
             );
@@ -670,7 +677,7 @@ fn build_resource(
             let payload = view
                 .payload_for(&execution::family_of("lekalo_inspect"))
                 .ok_or_else(|| refused(scope, "symbol", "invalid"))?;
-            let revision = crate::mcp::snapshot::domain_digest("symbol", payload.get().as_bytes());
+            let revision = resource_revision("symbol", payload.get().as_bytes());
             (
                 revision,
                 format!(
@@ -683,7 +690,7 @@ fn build_resource(
             result @ lekalo_core::DomainResult::Valid { .. } => {
                 let raw = result.to_json_string();
                 // The doctor document is the whole envelope.
-                let revision = crate::mcp::snapshot::domain_digest("doctor", raw.as_bytes());
+                let revision = resource_revision("doctor", raw.as_bytes());
                 (
                     revision,
                     format!(
@@ -703,8 +710,7 @@ fn build_resource(
                         .and_then(|diagnostics| diagnostics.as_array())
                         .map(|items| items.len())
                         .unwrap_or(0);
-                    let revision =
-                        crate::mcp::snapshot::domain_digest("validation", raw.as_bytes());
+                    let revision = resource_revision("validation", raw.as_bytes());
                     (
                         revision,
                         format!(

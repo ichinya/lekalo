@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
-  "productVersion": "0.6.5",
-  "cliSourceDigest": "sha256:181e7cef1d85b55aa87f8984546ea4a9ee294082b60a6c4f4dbeb8667f05f6e3",
+  "productVersion": "0.8.0",
+  "cliSourceDigest": "sha256:5f36647a202f7c284e0be71ad7c361bc775d326dd22b8e2d32668e5817e0f23a",
   "p0Pages": [
     {
       "page": "README.md",
@@ -1001,6 +1001,39 @@
       "summary": "Create the committed project lock, or check an existing one",
       "leaf": true,
       "owner": "docs/lockfile.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:mcp",
+      "kind": "command",
+      "command": "mcp",
+      "usage": "lekalo mcp [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:d4df9b8fb23c0d70adeedcd191acd1d95230e2d45e778b210c3609eae780d6d0",
+      "summary": "The issue #33 read-only MCP surface: the embedded capability manifest, or one stdio server over an explicitly granted project. Write/generate tools do not exist on this surface",
+      "leaf": false,
+      "owner": "docs/mcp.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:mcp describe",
+      "kind": "command",
+      "command": "mcp describe",
+      "usage": "lekalo mcp describe [OPTIONS]",
+      "helpDigest": "sha256:dfefa1abfe47c5900bfffa2ad7dde0eac9d9c696a3c165c850128d628337ebc8",
+      "summary": "Emit the embedded deterministic schema/capability manifest",
+      "leaf": true,
+      "owner": "docs/mcp.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:mcp serve",
+      "kind": "command",
+      "command": "mcp serve",
+      "usage": "lekalo mcp serve [OPTIONS]",
+      "helpDigest": "sha256:4f5c85c91fb582e23721e62d739cad6540544bfc47ece8b8288b8ca093696f71",
+      "summary": "Serve the read-only MCP session over one stdio transport",
+      "leaf": true,
+      "owner": "docs/mcp.md",
       "status": "implemented"
     },
     {
@@ -2397,6 +2430,15 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/diagnostic-registry.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/diagnostic-registry.schema.v0.8.0.json",
+      "sourceDigest": "sha256:1d80b42a9f3639769ffc6b77f2ea0c4db43bc31e2581c5fa2a395de29c8ede23",
+      "owner": "docs/diagnostics.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/diagnostic-registry.v0.2.16.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.2.16.json",
@@ -2428,6 +2470,15 @@
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.6.5.json",
       "sourceDigest": "sha256:7b2be768be48050057682980b240f109d33adc56b1b4cb4b27848507df22b130",
+      "owner": "docs/diagnostics.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/diagnostic-registry.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/diagnostic-registry.v0.8.0.json",
+      "sourceDigest": "sha256:08147016c91261ad5460fdbdcbbc529484d8464fa473908129050c7e928dc2ba",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2645,6 +2696,168 @@
       "source": "contracts/lock.schema.v0.3.2.json",
       "sourceDigest": "sha256:b322338b131db7b9c61ef91ea4457036aa001139f31877a229d9a49c80bca3d8",
       "owner": "docs/lockfile.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/mcp-capabilities.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/mcp-capabilities.schema.v0.8.0.json",
+      "sourceDigest": "sha256:97c3f10b37c55c8ddcb83db64dc0ea689375c85031e7f1595e0e77e2d7d799d6",
+      "owner": "docs/mcp.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/mcp-graph-query.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/mcp-graph-query.schema.v0.8.0.json",
+      "sourceDigest": "sha256:d4f260bb11fbdf756634b45be6c4d93ab9ac765f2adb74f526b9912a9b3ecddf",
+      "owner": "docs/mcp.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/mcp-resource.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/mcp-resource.schema.v0.8.0.json",
+      "sourceDigest": "sha256:016de2121aec778f05c0bda4bdc4bbf3ea7a3cf0b4c57cc3eefc45b753df5615",
+      "owner": "docs/mcp.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/mcp-server-config.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/mcp-server-config.schema.v0.8.0.json",
+      "sourceDigest": "sha256:93a3ae719eccbf66972af162d170c52a5555ff3a142ff16d6cbc7f2583abd36d",
+      "owner": "docs/mcp.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/mcp-tool-context-input.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/mcp-tool-context-input.schema.v0.8.0.json",
+      "sourceDigest": "sha256:93a2b4434b8099fff10320302b7b33a95b42be94f04fa872851958766f725ea6",
+      "owner": "docs/mcp.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/mcp-tool-context-output.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/mcp-tool-context-output.schema.v0.8.0.json",
+      "sourceDigest": "sha256:3145e96f1c481510b55f2236363f62a2bfa9156f1d8df743f90f83437353fd21",
+      "owner": "docs/mcp.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/mcp-tool-graph-input.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/mcp-tool-graph-input.schema.v0.8.0.json",
+      "sourceDigest": "sha256:e882d23428f8dd42a884e6264fcccfb848e1e23a53497be4595e63875f117ac8",
+      "owner": "docs/mcp.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/mcp-tool-graph-output.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/mcp-tool-graph-output.schema.v0.8.0.json",
+      "sourceDigest": "sha256:f07088e7400e87509370a2d87e84a1cea48021249e5fe2c6839f54a113cce0ec",
+      "owner": "docs/mcp.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/mcp-tool-impact-input.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/mcp-tool-impact-input.schema.v0.8.0.json",
+      "sourceDigest": "sha256:5087a999e1929e1db23273165183861fa30a9b6b11eebc0989f638d53243747f",
+      "owner": "docs/mcp.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/mcp-tool-impact-output.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/mcp-tool-impact-output.schema.v0.8.0.json",
+      "sourceDigest": "sha256:889fa4044edd21e56ae18c19994c4a98af08ad45692734354e2b572c90340481",
+      "owner": "docs/mcp.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/mcp-tool-inspect-input.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/mcp-tool-inspect-input.schema.v0.8.0.json",
+      "sourceDigest": "sha256:97526ad5b80b9d90e18b3e6659d0b0a553f48f033685511aaa7801e38ba83b0b",
+      "owner": "docs/mcp.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/mcp-tool-inspect-output.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/mcp-tool-inspect-output.schema.v0.8.0.json",
+      "sourceDigest": "sha256:c8ccf9e06e6d6d3823f6c5773f2ebbad0465f6c207d468cae6bf4f757ac26e8f",
+      "owner": "docs/mcp.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/mcp-tool-target-status-input.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/mcp-tool-target-status-input.schema.v0.8.0.json",
+      "sourceDigest": "sha256:8d1f1a695cba7a059ac8e1863948f227d08de079170763e5ae62d0316d46b730",
+      "owner": "docs/mcp.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/mcp-tool-target-status-output.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/mcp-tool-target-status-output.schema.v0.8.0.json",
+      "sourceDigest": "sha256:0998d95230fdce5ff08b56996aea01c562d90270e72e673261e8f3cce13308cf",
+      "owner": "docs/mcp.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/mcp-tool-trace-export-input.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/mcp-tool-trace-export-input.schema.v0.8.0.json",
+      "sourceDigest": "sha256:7f640ddc18e0128912e32b3906440b94e23cd1e990d8e4683e828ae1277f374c",
+      "owner": "docs/mcp.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/mcp-tool-trace-export-output.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/mcp-tool-trace-export-output.schema.v0.8.0.json",
+      "sourceDigest": "sha256:c10e64fea8062cae893b659bef1853524861d8db7b65a28f05dd60c18747c32f",
+      "owner": "docs/mcp.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/mcp-tool-validate-input.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/mcp-tool-validate-input.schema.v0.8.0.json",
+      "sourceDigest": "sha256:2c3c2da6d60f8942d46d3b9cbc074749c1f06f5db6585acbcc8d66d1fbcef733",
+      "owner": "docs/mcp.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/mcp-tool-validate-output.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/mcp-tool-validate-output.schema.v0.8.0.json",
+      "sourceDigest": "sha256:b3441c9d1cfd335e0d06d4f3b6e87a95c17399c3392681a91a26e2634075ce13",
+      "owner": "docs/mcp.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },

@@ -99,6 +99,8 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-run-history-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-ai-workspace-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-provider-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-mcp-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-mcp-boundaries.mjs
       - name: Execute protocol semantic vectors through production Rust decoding
         run: cargo test -p lekalo-core target_protocol_conformance --locked
       - name: Run contract checkers and suites
@@ -221,6 +223,12 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install --yes bubblewrap
       - run: cargo build --workspace --locked
+      - name: Run the read-only MCP stdio gate (issue #33)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-mcp-stdio.mjs
       - name: Run neutral trace evidence and assessment contracts (issue #35)
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules

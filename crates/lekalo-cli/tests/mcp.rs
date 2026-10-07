@@ -495,10 +495,13 @@ fn inspect_impact_graph_validate_target_status_return_contract_outputs() {
     let impact = session.tool(11);
     assert_eq!(impact["status"], "valid");
     assert_eq!(impact["result"]["schemaVersion"], "lekalo/impact/v0.2.16");
-    // graph show: the frozen query payload.
+    // graph show: the frozen query payload under the mode tag, with no
+    // discriminator injected into it.
     let graph = session.tool(12);
     assert_eq!(graph["status"], "valid");
-    assert!(graph["result"]["graph"]["node"].is_object());
+    assert_eq!(graph["result"]["mode"], "show");
+    assert!(graph["result"]["query"]["node"].is_object());
+    assert!(graph["result"]["query"]["schemaVersion"].is_null());
     // validate: the receipt with the exact model version.
     let validate = session.tool(13);
     assert_eq!(validate["status"], "valid");

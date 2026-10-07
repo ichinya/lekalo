@@ -189,7 +189,7 @@
           },
           "uriTemplate": {
             "type": "string",
-            "pattern": "^lekalo://\\{projectId\\}/[a-z{}A-Z-]+$"
+            "pattern": "^lekalo://\\{projectId\\}/[a-z{}A-Z/-]+$"
           },
           "description": {
             "type": "string",
@@ -209,16 +209,16 @@
       "type": "object",
       "properties": {
         "diagnostic": {
-          "const": "0.2.16"
+          "const": "lekalo/diagnostic/v0.2.16"
         },
         "diagnosticRegistry": {
-          "const": "0.8.0"
+          "const": "dev.lekalo.diagnostic-registry@0.8.0"
         },
         "serverConfig": {
-          "const": "0.8.0"
+          "const": "dev.lekalo.mcp-server-config@0.8.0"
         },
         "graphQuery": {
-          "const": "0.8.0"
+          "const": "dev.lekalo.mcp-graph-query@0.8.0"
         }
       },
       "required": [

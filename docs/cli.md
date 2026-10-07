@@ -1122,7 +1122,7 @@ the redaction diff contract and never writes.
 <!-- issue-105-command-index -->
 ## Command index
 
-Status: **Implemented** command handlers for product 0.6.5. Handler existence does not imply every target capability, migration or native execution is available. Each row comes from recursive CLI help and has one owner in [the checked ownership inventory](documentation-owners.json). `init --adopt` is described in [adopt](adopt.md); native execution remains a typed refusal in the production CLI.
+Status: **Implemented** command handlers for product 0.8.0. Handler existence does not imply every target capability, migration or native execution is available. Each row comes from recursive CLI help and has one owner in [the checked ownership inventory](documentation-owners.json). `init --adopt` is described in [adopt](adopt.md); native execution remains a typed refusal in the production CLI.
 
 | Command | Synopsis from this binary | Reference owner |
 | --- | --- | --- |
@@ -1212,6 +1212,9 @@ Status: **Implemented** command handlers for product 0.6.5. Handler existence do
 | `lekalo inspect` | `lekalo inspect [OPTIONS] <SYMBOL>` | [reference](inspect.md) |
 | `lekalo load` | `lekalo load [OPTIONS]` | [reference](loader.md) |
 | `lekalo lock` | `lekalo lock [OPTIONS] [PROGRAM_ARGS]...` | [reference](lockfile.md) |
+| `lekalo mcp` | `lekalo mcp [OPTIONS] <COMMAND>` | [reference](mcp.md) |
+| `lekalo mcp describe` | `lekalo mcp describe [OPTIONS]` | [reference](mcp.md) |
+| `lekalo mcp serve` | `lekalo mcp serve [OPTIONS]` | [reference](mcp.md) |
 | `lekalo metrics` | `lekalo metrics [OPTIONS] <COMMAND>` | [reference](metrics-export.md) |
 | `lekalo metrics export` | `lekalo metrics export [OPTIONS] --evaluation <FILE> --scope <TOKEN>` | [reference](metrics-export.md) |
 | `lekalo metrics status` | `lekalo metrics status [OPTIONS] --scope <TOKEN> <EXPORT_ID>` | [reference](metrics-export.md) |
