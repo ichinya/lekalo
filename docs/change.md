@@ -71,8 +71,10 @@ The sealed plan carries both the semantic diff and the exact bounded
 file diff (byte-identity outside declared edit ranges, refusal instead
 of guessing for comment-adjacent or ambiguous layouts,
 `change.source-preservation-unavailable`, denied 3). The request digest
-pins the canonical re-serialization of the request, so pretty file JSON
-and compact CLI-sugar bytes of one request carry the same identity.
+pins the exact request bytes: differently formatted request files of
+the same operation batch legitimately carry different digests, and the
+sugar lowers to one canonical byte form, so CLI sugar and a request
+file written from the sugar stay byte-identical.
 
 ## Application, idempotency, recovery
 
