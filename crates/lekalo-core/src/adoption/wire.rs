@@ -128,6 +128,7 @@ impl<'de> Deserialize<'de> for Unique {
 pub(crate) fn decode<T: serde::de::DeserializeOwned>(
     bytes: &[u8],
     expected_schema_version: &'static str,
+    required_keys: &'static [&'static str],
 ) -> Result<T, WireError> {
     let value = unique_json(bytes)?;
     let object = value.as_object().ok_or(WireError::Shape)?;
@@ -135,6 +136,11 @@ pub(crate) fn decode<T: serde::de::DeserializeOwned>(
         Some(actual) if actual == expected_schema_version => {}
         Some(actual) => return Err(WireError::Version(actual.to_owned())),
         None => return Err(WireError::Shape),
+    }
+    for key in required_keys {
+        if !object.contains_key(*key) {
+            return Err(WireError::Shape);
+        }
     }
     serde_json::from_value(value).map_err(|_| WireError::Shape)
 }
@@ -297,10 +303,31 @@ fn check_scope(scope: &Scope) -> Result<(), WireError> {
 /// The closed post-decode vocabulary and bounds every document must
 /// hold; the Ajv schema gate is the second independent implementation.
 trait ClosedValidate {
+    /// The exact member keys every accepted document carries; the
+    /// Ajv schemas' `required` lists. Decode checks them over the
+    /// raw object before typed deserialization, so a missing key
+    /// refuses as a Shape error exactly like the schema (X8).
+    const REQUIRED_KEYS: &'static [&'static str];
     fn validate(&self) -> Result<(), WireError>;
 }
 
 impl ClosedValidate for AnalysisDocument {
+    const REQUIRED_KEYS: &'static [&'static str] = &[
+        "schema_version",
+        "identity",
+        "project",
+        "scope",
+        "target",
+        "profile",
+        "pins",
+        "module",
+        "definitions",
+        "bindings",
+        "contracts",
+        "unknowns",
+        "ambiguities",
+        "discrepancies",
+    ];
     fn validate(&self) -> Result<(), WireError> {
         check_scope(&self.scope)?;
         check_pins(&self.pins)?;
@@ -342,6 +369,18 @@ impl ClosedValidate for AnalysisDocument {
 }
 
 impl ClosedValidate for ConfirmationPlan {
+    const REQUIRED_KEYS: &'static [&'static str] = &[
+        "schema_version",
+        "identity",
+        "plan",
+        "project",
+        "analysis",
+        "selections",
+        "writes",
+        "pins",
+        "unresolved",
+        "rollback",
+    ];
     fn validate(&self) -> Result<(), WireError> {
         check_pins(&self.pins)?;
         check_writes(&self.writes, false)?;
@@ -355,6 +394,14 @@ impl ClosedValidate for ConfirmationPlan {
 }
 
 impl ClosedValidate for PatchDocument {
+    const REQUIRED_KEYS: &'static [&'static str] = &[
+        "schema_version",
+        "identity",
+        "patch",
+        "origin",
+        "scope",
+        "files",
+    ];
     fn validate(&self) -> Result<(), WireError> {
         check_writes(&self.files, true)?;
         check_member(
@@ -369,6 +416,23 @@ impl ClosedValidate for PatchDocument {
 }
 
 impl ClosedValidate for RefactorPlan {
+    const REQUIRED_KEYS: &'static [&'static str] = &[
+        "schema_version",
+        "identity",
+        "plan",
+        "project",
+        "analysis",
+        "selection",
+        "patch",
+        "verification",
+        "recommendations",
+        "unsupported",
+        "read_scope",
+        "mutation_scope",
+        "preservation",
+        "pins",
+        "rollback",
+    ];
     fn validate(&self) -> Result<(), WireError> {
         check_scope(&self.selection)?;
         check_pins(&self.pins)?;
@@ -387,6 +451,18 @@ impl ClosedValidate for RefactorPlan {
 }
 
 impl ClosedValidate for VerificationDocument {
+    const REQUIRED_KEYS: &'static [&'static str] = &[
+        "schema_version",
+        "identity",
+        "variant",
+        "verification",
+        "spec",
+        "plan",
+        "tool",
+        "baseline_source",
+        "checks",
+        "confinement",
+    ];
     fn validate(&self) -> Result<(), WireError> {
         check_member(&self.variant, &KINDS_VARIANT)?;
         if self.checks.len() > version::MAX_CHECKS {
@@ -437,6 +513,21 @@ impl ClosedValidate for VerificationDocument {
 }
 
 impl ClosedValidate for AdoptionReceipt {
+    const REQUIRED_KEYS: &'static [&'static str] = &[
+        "schema_version",
+        "identity",
+        "receipt",
+        "phase",
+        "project",
+        "plan",
+        "outcome",
+        "writes",
+        "journal",
+        "snapshots",
+        "verification",
+        "pins",
+        "analysis",
+    ];
     fn validate(&self) -> Result<(), WireError> {
         check_member(&self.phase, &KINDS_PHASE)?;
         check_member(&self.outcome, &KINDS_RECEIPT_OUTCOME)?;
@@ -447,6 +538,17 @@ impl ClosedValidate for AdoptionReceipt {
 }
 
 impl ClosedValidate for CoverageDocument {
+    const REQUIRED_KEYS: &'static [&'static str] = &[
+        "schema_version",
+        "identity",
+        "project",
+        "scope",
+        "revision",
+        "pins",
+        "rows",
+        "counts",
+        "gaps",
+    ];
     fn validate(&self) -> Result<(), WireError> {
         check_scope(&self.scope)?;
         if self.rows.len() > version::MAX_ROWS {
@@ -467,6 +569,14 @@ impl ClosedValidate for CoverageDocument {
 }
 
 impl ClosedValidate for StatusReport {
+    const REQUIRED_KEYS: &'static [&'static str] = &[
+        "schema_version",
+        "identity",
+        "upstream",
+        "coverage",
+        "panels",
+        "gaps",
+    ];
     fn validate(&self) -> Result<(), WireError> {
         for panel in &self.panels {
             check_member(&panel.mode, &KINDS_EFFECTIVE)?;
@@ -481,6 +591,14 @@ impl ClosedValidate for StatusReport {
 }
 
 impl ClosedValidate for ImpactReport {
+    const REQUIRED_KEYS: &'static [&'static str] = &[
+        "schema_version",
+        "identity",
+        "upstream",
+        "coverage",
+        "boundaries",
+        "gaps",
+    ];
     fn validate(&self) -> Result<(), WireError> {
         for boundary in &self.boundaries {
             check_member(&boundary.mode, &KINDS_EFFECTIVE)?;
@@ -490,6 +608,16 @@ impl ClosedValidate for ImpactReport {
 }
 
 impl ClosedValidate for TraceReport {
+    const REQUIRED_KEYS: &'static [&'static str] = &[
+        "schema_version",
+        "identity",
+        "manifest",
+        "query",
+        "coverage",
+        "verification",
+        "uncovered",
+        "stale",
+    ];
     fn validate(&self) -> Result<(), WireError> {
         Ok(())
     }
@@ -952,10 +1080,10 @@ pub struct RollbackHome {
 // ---------------------------------------------------------------------------
 
 macro_rules! decode_entry {
-    ($name:ident, $ty:ty, $version:expr) => {
+    ($name:ident, $ty:ty, $version:expr, $keys:expr) => {
         /// Decode one closed document from raw bytes.
         pub fn $name(bytes: &[u8]) -> Result<$ty, WireError> {
-            let document = decode(bytes, $version)?;
+            let document = decode(bytes, $version, $keys)?;
             ClosedValidate::validate(&document)?;
             Ok(document)
         }
@@ -965,38 +1093,50 @@ macro_rules! decode_entry {
 decode_entry!(
     analysis_of_bytes,
     AnalysisDocument,
-    version::ANALYSIS_SCHEMA_VERSION
+    version::ANALYSIS_SCHEMA_VERSION,
+    AnalysisDocument::REQUIRED_KEYS
 );
 decode_entry!(
     confirmation_plan_of_bytes,
     ConfirmationPlan,
-    version::CONFIRMATION_PLAN_SCHEMA_VERSION
+    version::CONFIRMATION_PLAN_SCHEMA_VERSION,
+    ConfirmationPlan::REQUIRED_KEYS
 );
-decode_entry!(patch_of_bytes, PatchDocument, version::PATCH_SCHEMA_VERSION);
+decode_entry!(
+    patch_of_bytes,
+    PatchDocument,
+    version::PATCH_SCHEMA_VERSION,
+    PatchDocument::REQUIRED_KEYS
+);
 decode_entry!(
     refactor_plan_of_bytes,
     RefactorPlan,
-    version::REFACTOR_PLAN_SCHEMA_VERSION
+    version::REFACTOR_PLAN_SCHEMA_VERSION,
+    RefactorPlan::REQUIRED_KEYS
 );
 decode_entry!(
     verification_of_bytes,
     VerificationDocument,
-    version::VERIFICATION_SCHEMA_VERSION
+    version::VERIFICATION_SCHEMA_VERSION,
+    VerificationDocument::REQUIRED_KEYS
 );
 decode_entry!(
     execution_of_bytes,
     VerificationDocument,
-    version::VERIFICATION_SCHEMA_VERSION
+    version::VERIFICATION_SCHEMA_VERSION,
+    VerificationDocument::REQUIRED_KEYS
 );
 decode_entry!(
     receipt_of_bytes,
     AdoptionReceipt,
-    version::RECEIPT_SCHEMA_VERSION
+    version::RECEIPT_SCHEMA_VERSION,
+    AdoptionReceipt::REQUIRED_KEYS
 );
 decode_entry!(
     coverage_of_bytes,
     CoverageDocument,
-    version::COVERAGE_SCHEMA_VERSION
+    version::COVERAGE_SCHEMA_VERSION,
+    CoverageDocument::REQUIRED_KEYS
 );
 
 #[cfg(test)]
@@ -1059,5 +1199,60 @@ mod tests {
         let value = serde_json::to_value(&document).expect("serializes");
         let recomputed = digest("adoption-patch", &without_member(&value, "patch"));
         assert_eq!(recomputed, document.patch);
+    }
+}
+
+#[cfg(test)]
+mod parity_tests {
+    use super::*;
+
+    /// X8: the closed Rust admission is schema-equivalent for the
+    /// required-key classes — a missing `tool`, `baseline`, or
+    /// `conclusion` key decodes as a Shape error exactly like the Ajv
+    /// schema's `required` list, and foreign identities stay
+    /// version-refusals.
+    #[test]
+    fn missing_required_option_keys_are_shape_errors() {
+        let base = br#"{
+            "schema_version": "lekalo/adoption-verification/v0.8.0",
+            "identity": "dev.lekalo.adoption-verification@0.8.0",
+            "variant": "specification",
+            "verification": "x",
+            "spec": null,
+            "plan": null,
+            "checks": [],
+            "confinement": ["bounded-output"]
+        }"#;
+        // tool/baseline_source/baseline/candidate/oracle/conclusion all
+        // missing: the raw-object required-key check refuses before the
+        // typed deserialization ever sees the document.
+        assert_eq!(
+            verification_of_bytes(base).unwrap_err(),
+            WireError::Shape,
+            "missing required keys must refuse"
+        );
+    }
+
+    #[test]
+    fn complete_document_with_nulls_decodes() {
+        let bytes = br#"{
+            "schema_version": "lekalo/adoption-verification/v0.8.0",
+            "identity": "dev.lekalo.adoption-verification@0.8.0",
+            "variant": "specification",
+            "verification": "x",
+            "spec": null,
+            "plan": null,
+            "tool": null,
+            "baseline_source": null,
+            "checks": [],
+            "confinement": ["bounded-output"],
+            "baseline": null,
+            "candidate": null,
+            "oracle": null,
+            "conclusion": null
+        }"#;
+        let document = verification_of_bytes(bytes).expect("decodes");
+        assert_eq!(document.variant, "specification");
+        assert!(document.tool.is_none());
     }
 }
