@@ -1095,15 +1095,8 @@ fn an_orphaned_rename_temp_in_a_source_directory_is_reclaimed_by_apply() {
         let result = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
         assert_eq!(result.status(), Status::Valid, "{result:?}");
         assert!(!stale.exists(), "the orphan was reclaimed");
-        assert!(
-            !root
-                .join(".lekalo/cache/format/temps")
-                .read_dir()
-                .map(|entries| entries.count())
-                .unwrap_or(0)
-                .cast_signed()
-                .is_positive(),
-            "no rename temp survives a committed apply"
-        );
+        let temps = root.join(".lekalo/cache/format/temps");
+        let leftover = temps.read_dir().map(|entries| entries.count()).unwrap_or(0);
+        assert_eq!(leftover, 0, "no rename temp survives a committed apply");
     });
 }

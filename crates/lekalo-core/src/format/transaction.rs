@@ -1348,6 +1348,17 @@ impl FormatWrite {
     /// reclaimable custody. Links, directories, and foreign spellings
     /// refuse the sweep instead of being followed or removed.
     fn sweep_stale_temps(&self) -> Result<(), ()> {
+        self.sweep_home_temps()?;
+        self.sweep_legacy_source_temps()
+    }
+
+    /// Reclaim orphaned temps inside the runtime temp home: any plain
+    /// file spelled `*.new` under the temp home is a crashed rename temp
+    /// — the exclusive owner (this caller) is the only legitimate writer
+    /// of this home, so every orphan is reclaimable custody. Links,
+    /// directories, and foreign spellings refuse the sweep instead of
+    /// being followed or removed.
+    fn sweep_home_temps(&self) -> Result<(), ()> {
         let home = self.physical(TEMP_HOME, false)?;
         for entry in std::fs::read_dir(&home).map_err(|_| ())? {
             let entry = entry.map_err(|_| ())?;
@@ -1373,6 +1384,77 @@ impl FormatWrite {
             }
         }
         sync_dir(&home);
+        Ok(())
+    }
+
+    /// Reclaim legacy rename temps that an older binary stranded inside
+    /// the governed source tree: `.{name}.lekalo-format-new` siblings in
+    /// the admitted module directories. The governed scan rejects those
+    /// dotfiles — the project stays unloadable until this owned sweep
+    /// reclaims them — so the mutating run removes exactly that fixed
+    /// legacy spelling beside the loader's own enumeration, never any
+    /// other source entry.
+    fn sweep_legacy_source_temps(&self) -> Result<(), ()> {
+        // The closed set of admitted source directories: every module of
+        // the project. `lekalo/modules` itself is scanned for the module
+        // directory names; nothing outside it is ever touched.
+        let modules_home = "lekalo/modules".to_owned();
+        let module_dirs: Vec<String> = {
+            let Ok(home) = self.physical(&modules_home, false) else {
+                return Ok(());
+            };
+            let Ok(read) = std::fs::read_dir(&home) else {
+                return Ok(());
+            };
+            read.flatten()
+                .filter(|entry| {
+                    entry
+                        .metadata()
+                        .map(|metadata| metadata.is_dir() && !metadata.file_type().is_symlink())
+                        .unwrap_or(false)
+                })
+                .filter_map(|entry| entry.file_name().to_str().map(str::to_owned))
+                .map(|name| format!("{modules_home}/{name}"))
+                .collect()
+        };
+        for directory in module_dirs {
+            let Ok(dir_path) = self.physical(&directory, false) else {
+                continue;
+            };
+            let Ok(read) = std::fs::read_dir(&dir_path) else {
+                continue;
+            };
+            for entry in read.flatten() {
+                let Ok(metadata) = entry.metadata() else {
+                    continue;
+                };
+                if metadata.file_type().is_symlink() || !metadata.is_file() {
+                    continue;
+                }
+                #[cfg(windows)]
+                {
+                    if reparse_point(&metadata) {
+                        continue;
+                    }
+                }
+                let name = entry.file_name();
+                let Some(name) = name.to_str() else {
+                    continue;
+                };
+                // Exactly the legacy fixed spelling: a dotfile whose stem
+                // ends in `.lekalo-format-new`.
+                let is_legacy_temp = name.starts_with('.')
+                    && name
+                        .strip_prefix('.')
+                        .and_then(|rest| rest.strip_suffix(TEMP_SUFFIX))
+                        .map(|stem| stem.ends_with('.'))
+                        .unwrap_or(false);
+                if is_legacy_temp {
+                    let _ = std::fs::remove_file(entry.path());
+                }
+            }
+            sync_dir(&dir_path);
+        }
         Ok(())
     }
 
