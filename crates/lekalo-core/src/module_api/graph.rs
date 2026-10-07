@@ -23,13 +23,10 @@ pub fn import_edges(modules: &[crate::ir::Module]) -> Vec<ImportEdge> {
     let mut edges: Vec<ImportEdge> = modules
         .iter()
         .flat_map(|module| {
-            module
-                .imports
-                .iter()
-                .map(|import| ImportEdge {
-                    from: module.id.as_str().to_owned(),
-                    to: import.as_str().to_owned(),
-                })
+            module.imports.iter().map(|import| ImportEdge {
+                from: module.id.as_str().to_owned(),
+                to: import.as_str().to_owned(),
+            })
         })
         .collect();
     edges.sort();
@@ -47,8 +44,14 @@ pub fn import_sccs(edges: &[ImportEdge]) -> Vec<CycleWitness> {
     let mut adjacency: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
     let mut reverse: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
     for edge in edges {
-        adjacency.entry(edge.from.as_str()).or_default().push(edge.to.as_str());
-        reverse.entry(edge.to.as_str()).or_default().push(edge.from.as_str());
+        adjacency
+            .entry(edge.from.as_str())
+            .or_default()
+            .push(edge.to.as_str());
+        reverse
+            .entry(edge.to.as_str())
+            .or_default()
+            .push(edge.from.as_str());
     }
     let nodes: BTreeSet<&str> = edges
         .iter()
@@ -156,9 +159,7 @@ fn smallest_rotation(members: &[String]) -> Vec<String> {
 
 /// The public dependency projection: edges between bundles from the exact
 /// public dependency pins. Used by the check command's public cycle row.
-pub fn public_edges(
-    bundles: &BTreeMap<String, super::wire::PublicBundle>,
-) -> Vec<ImportEdge> {
+pub fn public_edges(bundles: &BTreeMap<String, super::wire::PublicBundle>) -> Vec<ImportEdge> {
     let mut edges: Vec<ImportEdge> = bundles
         .iter()
         .flat_map(|(module, bundle)| {

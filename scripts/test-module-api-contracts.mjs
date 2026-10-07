@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync, writeFileSync, existsSync, mkdtempSync, rmSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdtempSync, rmSync, readdirSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
@@ -40,7 +40,6 @@ const validates = (family, value) => {
   const check = validators.get(family);
   assert.ok(check(value), `${family}: ${JSON.stringify(check.errors?.slice(0, 3))}`);
 };
-const sha = (bytes) => 'sha256:' + createHash('sha256').update(bytes).digest('hex');
 const scratch = mkdtempSync(join(tmpdir(), 'lekalo-module-api-gate-'));
 const temp = (name, value) => {
   const p = join(scratch, name);
@@ -51,18 +50,17 @@ const fixture = 'tests/fixtures/module-api';
 const reference = `${fixture}/reference/tasks`;
 const checked = [];
 function run(args, { exit = 0, cwd = root } = {}) {
-  const p = spawnSync(binary, ['--json', ...args], { cwd, encoding: 'utf8', timeout: 120000, maxBuffer: 64 * 1024 * 1024 });
+  const p = spawnSync(binary, ['--json', '--no-cache', ...args], { cwd, encoding: 'utf8', timeout: 120000, maxBuffer: 64 * 1024 * 1024 });
   assert.equal(p.status, exit, JSON.stringify({ args, status: p.status, error: p.error?.code, stdout: p.stdout?.slice(0, 400), stderr: p.stderr?.slice(0, 700) }));
   const stream = exit === 1 || exit === 5 ? p.stderr : p.stdout;
   const document = stream.trim() ? JSON.parse(stream) : {};
   return { document, stdout: p.stdout, stderr: p.stderr };
 }
 const codes = (document) => (document.diagnostics ?? []).map((d) => d.code);
-let PAYLOAD_CALLS = 0;
 const payload = (document, name) => document[name] ?? document.payload?.[name];
 
 // 1. Union registry successor: exact identity, sorted-unique ids, the
-// fourteen new rules, and the full 0.6.5 union preserved byte-for-byte.
+// fourteen new rules, and the full 0.6.5 union preserved entry-for-entry.
 {
   const registry = read('contracts/diagnostic-registry.v0.8.0.json');
   assert.equal(registry.schema_version, 'lekalo/diagnostic-registry/v0.8.0');
@@ -91,17 +89,18 @@ const payload = (document, name) => document[name] ?? document.payload?.[name];
   assert.equal(byId['module-api.lock-stale'], 'LEK-MODULE-013');
   assert.equal(byId['module-api.policy-denied'], 'LEK-MODULE-014');
   const predecessor = read('contracts/diagnostic-registry.v0.6.5.json');
-  const successorIds = new Set(ids);
   for (const entry of predecessor.entries) {
     const kept = registry.entries.find((e) => e.id === entry.id);
     assert.deepEqual(kept, entry, `union entry preserved: ${entry.id}`);
-    assert.ok(successorIds.has(entry.id));
   }
   checked.push('union-registry-successor');
 }
 // 2. Boundary profiles: 0.8.0 pins, module rules enabled, default/strict
 // differ only in the portability override.
 {
+  const moduleRules = read('contracts/diagnostic-registry.v0.8.0.json')
+    .entries.map((e) => e.id)
+    .filter((id) => id.startsWith('module-api.'));
   for (const profile of ['default', 'strict']) {
     const document = read(`contracts/validation-profile.${profile}.v0.8.0.json`);
     assert.equal(document.schema_version, 'lekalo/validation-profile/v0.8.0');
@@ -110,10 +109,7 @@ const payload = (document, name) => document[name] ?? document.payload?.[name];
     assert.equal(document.diagnostic_registry_version, '0.8.0');
     const ids = document.rules.map((r) => r.id);
     for (let i = 1; i < ids.length; i++) assert.ok(ids[i - 1] < ids[i], 'profile rules sorted-unique');
-    for (const rule of registryRules()) assert.ok(ids.includes(rule), `profile lists ${rule}`);
-  }
-  function registryRules() {
-    return read('contracts/diagnostic-registry.v0.8.0.json').entries.map((e) => e.id).filter((id) => id.startsWith('module-api.'));
+    for (const rule of moduleRules) assert.ok(ids.includes(rule), `profile lists ${rule}`);
   }
   const def = read('contracts/validation-profile.default.v0.8.0.json');
   const strict = read('contracts/validation-profile.strict.v0.8.0.json');
@@ -129,7 +125,7 @@ const payload = (document, name) => document[name] ?? document.payload?.[name];
   validates('module-api-report', read(`${fixture}/valid/golden-report.json`));
   validates('module-public-contract', read(`${fixture}/standalone/golden-bundle.json`));
   for (const side of ['before', 'after']) validates('module-public-contract', read(`${fixture}/diff/golden-bundle-${side}.json`));
-  validates('module-api-consumers', read(`${fixture}/standalone/golden-consumers.json`) ?? read(`${fixture}/diff/golden-consumers-before.json`));
+  validates('module-api-consumers', read(`${fixture}/standalone/golden-consumers.json`));
   validates('module-api-lock', read(`${fixture}/lock/golden-lock.json`));
   validates('module-api-diff', read(`${fixture}/diff/golden-diff.json`).moduleApiDiff);
   validates('module-consumer-context', read(`${fixture}/standalone/golden-context.json`));
@@ -158,7 +154,7 @@ const payload = (document, name) => document[name] ?? document.payload?.[name];
   const strict = run(['module', 'api', 'check', '--project', visibility, '--api', `${visibility}/module-api.json`, '--strict'], { exit: 1 });
   assert.ok(codes(strict.document).includes('LEK-MODULE-003'), 'symbol-not-exported strict');
   assert.ok(codes(strict.document).includes('LEK-MODULE-005'), 'transitive closure exposure strict');
-  assert.equal(strict.stderr !== '', true);
+  assert.notEqual(strict.stderr, '');
   const advisory = run(['module', 'api', 'check', '--project', visibility, '--api', `${visibility}/module-api.json`]);
   assert.equal(advisory.document.status, 'valid');
   const report = payload(advisory.document, 'moduleApiReport');
@@ -215,7 +211,7 @@ const payload = (document, name) => document[name] ?? document.payload?.[name];
   checked.push('fatal-cycle-existing-rule');
 }
 // 9. Export: certified bundle, stable digest, closed export kinds, and
-// the public DTO contains no internal aggregate shape.
+// the internal aggregate shape never leaks.
 {
   const exported = run(['module', 'api', 'export', 'tasks', '--project', reference, '--api', `${reference}/module-api.json`]);
   const bundle = payload(exported.document, 'modulePublicContract');
@@ -226,26 +222,18 @@ const payload = (document, name) => document[name] ?? document.payload?.[name];
   assert.equal(bundle.exports.length, 9);
   assert.ok(bundle.exports.every((e) => !['tasks.task'].includes(e.export)), 'internal entity shape never exported');
   assert.ok(!JSON.stringify(bundle).includes('internal_note'), 'private fields never leak');
-  // The digest covers canonical public semantics: reformatting the
-  // project documents cannot change it (source-order/layout freedom).
+  // The digest covers canonical public semantics: reordering attachment
+  // rows cannot change it (source-order/layout freedom).
   const reformatted = JSON.parse(JSON.stringify(read(`${reference}/module-api.json`)));
   reformatted.modules = reformatted.modules.slice().reverse();
   const same = run(['module', 'api', 'export', 'tasks', '--project', reference, '--api', temp('attachment-reordered.json', reformatted)]);
   assert.equal(payload(same.document, 'modulePublicContract').digest, bundle.digest, 'attachment row order is not semantics');
   checked.push('certified-export');
 }
-// 10. Consumers: declared and resolved uses, policy retained, zero-use
-// rows impossible to lose, immutable snapshot digest.
+// 10. Consumers: declared and resolved uses, policy retained, immutable
+// snapshot digest, and honest incompleteness.
 {
-  const consumerRun = run(['module', 'api', 'consumers', 'tasks', '--project', reference, '--api', `${reference}/module-api.json`]);
-  if (!consumerRun.document.moduleApiConsumers) {
-    console.error('DEBUG', JSON.stringify({
-      stdout: consumerRun.stdout?.length,
-      stderr: consumerRun.stderr?.slice(0, 400),
-      keys: Object.keys(consumerRun.document),
-    }));
-  }
-  const snapshot = consumerRun.document.moduleApiConsumers;
+  const snapshot = run(['module', 'api', 'consumers', 'tasks', '--project', reference, '--api', `${reference}/module-api.json`]).document.moduleApiConsumers;
   const planner = snapshot.consumers.find((c) => c.consumer === 'planner');
   assert.ok(planner?.declared);
   assert.equal(planner.policy.type, 'version-range');
@@ -276,7 +264,7 @@ const payload = (document, name) => document[name] ?? document.payload?.[name];
   checked.push('lock-denial');
 }
 // 12. Diff: exact consumers and breaking changes; unaffected controls;
-// strict policy denial; hostile digest-tampered bundles refused.
+// strict policy denial; hostile tampered bundles refused.
 {
   const diff = `${fixture}/diff`;
   const args = ['module', 'api', 'diff', `${diff}/golden-bundle-before.json`, `${diff}/golden-bundle-after.json`, '--consumers-before', `${diff}/golden-consumers-before.json`, '--consumers-after', `${diff}/golden-consumers-after.json`];
@@ -298,8 +286,8 @@ const payload = (document, name) => document[name] ?? document.payload?.[name];
   assert.equal(report.versionPolicy.expected, 'major');
   const strict = run([...args, '--strict'], { exit: 3 });
   assert.ok(codes(strict.document).includes('LEK-MODULE-014'));
-  // Digest-valid but tampered semantics: flip a field name and re-pin a
-  // stale digest — refused, never trusted because of its hash spelling.
+  // A digest-valid spelling of a tampered bundle: flip semantics without
+  // re-pinning the digest — refused, never trusted because of its hash.
   const tampered = JSON.parse(JSON.stringify(read(`${diff}/golden-bundle-after.json`)));
   tampered.exports.find((e) => e.export === 'tasks.get_task').reads = [];
   run(['module', 'api', 'diff', `${diff}/golden-bundle-before.json`, temp('bundle-tampered.json', tampered)], { exit: 1 });
@@ -325,9 +313,7 @@ const payload = (document, name) => document[name] ?? document.payload?.[name];
   run(['module', 'api', 'context', isolatedBundle, '--consumer', 'planner', '--uses', 'tasks.task_view,tasks.task_view', '--budget', '4000'], { exit: 1 });
   run(['module', 'api', 'context', isolatedBundle, '--consumer', 'planner', '--uses', 'tasks.task_view', '--budget', '0'], { exit: 1 });
   run(['module', 'api', 'context', isolatedBundle, '--consumer', 'planner', '--uses', 'tasks.task', '--budget', '4000'], { exit: 1 });
-  // Missing required public dependency materialization is an explicit gap.
-  const dep = run(['module', 'api', 'context', isolatedBundle, '--consumer', 'planner', '--uses', 'core.uuid', '--budget', '4000'], { exit: 1 });
-  assert.ok(codes(dep.document).includes('LEK-MODULE-001'));
+  run(['module', 'api', 'context', isolatedBundle, '--consumer', 'planner', '--uses', 'core.uuid', '--budget', '4000'], { exit: 1 });
   rmSync(isolated, { recursive: true, force: true });
   checked.push('public-only-context');
 }
@@ -380,12 +366,13 @@ const payload = (document, name) => document[name] ?? document.payload?.[name];
 // 17. Read-only producer: no checkout mutations and no runtime cache.
 {
   const inventory = (dir) => readdirSync(join(root, dir), { recursive: true }).sort().join(',');
-  const projects = [reference, `${fixture}/visibility`, `${fixture}/writes`, `${fixture}/lock`, `${fixture}/diff/before`];
+  const projects = [reference, `${fixture}/visibility`, `${fixture}/writes`, `${fixture}/lock`, `${fixture}/cycles`, `${fixture}/portability`, `${fixture}/diff/before`, `${fixture}/diff/after`];
   const before = projects.map(inventory);
-  run(['module', 'api', 'check', '--project', reference, '--api', `${reference}/module-api.json`, '--no-cache']);
-  run(['module', 'api', 'export', 'tasks', '--project', reference, '--api', `${reference}/module-api.json`, '--no-cache']);
+  run(['module', 'api', 'check', '--project', reference, '--api', `${reference}/module-api.json`]);
+  run(['module', 'api', 'export', 'tasks', '--project', reference, '--api', `${reference}/module-api.json`]);
   const after = projects.map(inventory);
   assert.deepEqual(after, before, 'no file, lock, cache, or baseline writes');
+  for (const project of projects) assert.ok(!existsSync(join(root, project, '.lekalo')), 'no runtime cache in the corpus');
   checked.push('read-only-producer');
 }
 

@@ -277,8 +277,12 @@ pub struct ConsumerDeclaration {
     deny_unknown_fields
 )]
 pub enum VersionPolicyWire {
-    ExactDigest { digest: String },
-    ExactVersion { version: String },
+    ExactDigest {
+        digest: String,
+    },
+    ExactVersion {
+        version: String,
+    },
     VersionRange {
         lower: String,
         lower_inclusive: bool,
@@ -780,8 +784,11 @@ mod probe_tests {
     use super::*;
     #[test]
     fn probe_attachment_decode() {
-        let bytes =
-            std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/fixtures/module-api/reference/tasks/module-api.json")).unwrap();
+        let bytes = std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/fixtures/module-api/reference/tasks/module-api.json"
+        ))
+        .unwrap();
         let value: Result<Attachment, _> = serde_json::from_slice(&bytes);
         match value {
             Ok(a) => println!("OK modules={}", a.modules.len()),

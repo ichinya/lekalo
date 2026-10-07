@@ -10,13 +10,13 @@
 //! (descriptions, spans, and physical locations never do).
 
 use super::diagnostic::invalid;
+use super::resolve::Resolved;
 use super::version::is_digest;
 use super::wire::{
     self, EffectObligation, ProducerPin, PublicBundle, PublicDependency, PublicExport, PublicField,
     PublicPins, TypeExpr,
 };
 use crate::diagnostics::DiagnosticSet;
-use super::resolve::Resolved;
 use crate::error_contract::registry::ErrorRegistry;
 use crate::ir::{Compilation, Definition, Portability, TypeRef};
 use std::collections::BTreeMap;
@@ -129,11 +129,11 @@ pub fn export_public(
     // below carries an empty digest field so equivalent bundles agree.
     let mut without_digest = partial.clone();
     without_digest.digest = String::new();
-    let digest = wire::digest(wire::DIGEST_DOMAIN_PUBLIC, &wire::canonical(&without_digest));
-    Ok(PublicBundle {
-        digest,
-        ..partial
-    })
+    let digest = wire::digest(
+        wire::DIGEST_DOMAIN_PUBLIC,
+        &wire::canonical(&without_digest),
+    );
+    Ok(PublicBundle { digest, ..partial })
 }
 
 /// Recursively resolve public dependency digests; the nesting bound keeps
@@ -191,7 +191,13 @@ fn project_export(
     };
     match definition {
         Definition::Scalar(scalar) => {
-            push_type("scalar", Some(scalar.base.as_str().to_owned()), vec![], vec![], vec![])?;
+            push_type(
+                "scalar",
+                Some(scalar.base.as_str().to_owned()),
+                vec![],
+                vec![],
+                vec![],
+            )?;
         }
         Definition::Enum(enum_def) => {
             push_type(
@@ -242,13 +248,7 @@ fn project_export(
             // Effect obligations are part of the public signature: the
             // affected entity and its events must be exported here too.
             for obligation in &effects {
-                record_public_ref(
-                    by_id,
-                    module,
-                    &obligation.entity,
-                    foreign,
-                    path,
-                )?;
+                record_public_ref(by_id, module, &obligation.entity, foreign, path)?;
                 for event in &obligation.emits {
                     record_public_ref(by_id, module, event, foreign, path)?;
                 }
@@ -439,19 +439,18 @@ fn record_public_ref(
 /// fields never cross the boundary.
 fn error_export(id: &str) -> Result<PublicExport, DiagnosticSet> {
     let registry = ErrorRegistry::embedded()?;
-    let Some(error) = registry.errors().iter().find(|error| error.id().as_str() == id) else {
+    let Some(error) = registry
+        .errors()
+        .iter()
+        .find(|error| error.id().as_str() == id)
+    else {
         return Err(invalid("unknown-error"));
     };
     let payload = error
         .payload()
         .fields()
         .iter()
-        .filter(|field| {
-            matches!(
-                field.exposure(),
-                crate::error_contract::Exposure::Public
-            )
-        })
+        .filter(|field| matches!(field.exposure(), crate::error_contract::Exposure::Public))
         .map(|field| PublicField {
             name: field.name().to_owned(),
             r#type: convert_error_type(field.field_type()),
@@ -493,14 +492,19 @@ pub fn parse_bundle(bytes: &[u8]) -> Result<PublicBundle, DiagnosticSet> {
     if bundle.schema_version != format!("{}/v{}", wire::PUBLIC_SCHEMA, wire::VERSION)
         || bundle.identity != format!("{}@{}", wire::PUBLIC_IDENTITY, wire::VERSION)
     {
-        return Err(super::diagnostic::unsupported_version(&bundle.schema_version));
+        return Err(super::diagnostic::unsupported_version(
+            &bundle.schema_version,
+        ));
     }
     if !is_digest(&bundle.digest) {
         return Err(invalid("bundle-digest"));
     }
     let mut without_digest = bundle.clone();
     without_digest.digest = String::new();
-    let expected = wire::digest(wire::DIGEST_DOMAIN_PUBLIC, &wire::canonical(&without_digest));
+    let expected = wire::digest(
+        wire::DIGEST_DOMAIN_PUBLIC,
+        &wire::canonical(&without_digest),
+    );
     if expected != bundle.digest {
         return Err(invalid("bundle-digest-mismatch"));
     }

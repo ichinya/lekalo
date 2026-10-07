@@ -2468,13 +2468,13 @@ fn runtime() -> u8 {
                 if let Err(result) = request.validate() {
                     return emit(result, json_requested);
                 }
-                if module_api.is_some() {
+                if let Some(attachment) = module_api {
                     return emit(
                         module_api::run_validate_seam(module_api::ValidateSeam {
                             project,
                             module,
                             strict,
-                            attachment: module_api.expect("checked above"),
+                            attachment,
                             lock: module_api_lock,
                         }),
                         json_requested,

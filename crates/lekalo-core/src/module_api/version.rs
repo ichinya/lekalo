@@ -145,7 +145,9 @@ impl ConsumerPolicy {
     /// input, not unknown policy.
     pub fn parse(policy: &VersionPolicyWire) -> Option<Self> {
         match policy {
-            VersionPolicyWire::ExactDigest { digest } => is_digest(digest).then(|| Self::ExactDigest(digest.clone())),
+            VersionPolicyWire::ExactDigest { digest } => {
+                is_digest(digest).then(|| Self::ExactDigest(digest.clone()))
+            }
             VersionPolicyWire::ExactVersion { version } => {
                 ApiVersion::parse(version).map(Self::ExactVersion)
             }
@@ -248,7 +250,10 @@ pub fn is_digest(text: &str) -> bool {
     let Some(rest) = text.strip_prefix("sha256:") else {
         return false;
     };
-    rest.len() == 64 && rest.bytes().all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    rest.len() == 64
+        && rest
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
 }
 
 #[cfg(test)]
@@ -332,6 +337,9 @@ mod tests {
             RequiredBump::Patch
         );
         // Digest-only modules carry no SemVer claim.
-        assert_eq!(RequiredBump::evaluate(None, None, true, false), RequiredBump::None);
+        assert_eq!(
+            RequiredBump::evaluate(None, None, true, false),
+            RequiredBump::None
+        );
     }
 }

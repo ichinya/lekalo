@@ -67,12 +67,10 @@ fn uses_export(bundle: &PublicBundle, exports: &[String]) -> bool {
         .exports
         .iter()
         .any(|export| export.reads.iter().any(|read| exports.contains(read)))
-        || bundle.exports.iter().any(|export| {
-            export
-                .emits
-                .iter()
-                .any(|event| exports.contains(event))
-        })
+        || bundle
+            .exports
+            .iter()
+            .any(|export| export.emits.iter().any(|event| exports.contains(event)))
         || bundle.exports.iter().any(|export| {
             export
                 .operations
@@ -115,14 +113,9 @@ pub fn parse_lock(bytes: &[u8]) -> Result<ConsumerLock, DiagnosticSet> {
 /// evidence carries the expected/actual pins; empty means fresh.
 pub fn check_lock(current: &ConsumerLock, supplied: &ConsumerLock) -> Vec<Evidence> {
     let mut evidence = Vec::new();
-    if current.producer != supplied.producer
-        || current.consumer != supplied.consumer
-    {
-        let mut finding = Evidence::new(
-            "module-api.lock-stale",
-            &supplied.consumer,
-            "lock-identity",
-        );
+    if current.producer != supplied.producer || current.consumer != supplied.consumer {
+        let mut finding =
+            Evidence::new("module-api.lock-stale", &supplied.consumer, "lock-identity");
         finding.consumer = Some(supplied.consumer.clone());
         finding.producer = Some(current.producer.module.clone());
         finding.expected = Some(format!(

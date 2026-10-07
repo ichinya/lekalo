@@ -90,7 +90,10 @@ pub fn resolve(bytes: &[u8], compilation: &Compilation) -> Result<Resolved, Diag
         // Attachment imports must agree with the declared Model imports;
         // the attachment adds policy and use detail, never hidden imports.
         for declared in &module.imports {
-            if !definition.imports.iter().any(|import| import.as_str() == declared.module_id)
+            if !definition
+                .imports
+                .iter()
+                .any(|import| import.as_str() == declared.module_id)
             {
                 return Err(invalid("import-contradiction"));
             }
@@ -261,4 +264,3 @@ pub(crate) fn validate_policy(policy: &VersionPolicyWire) -> Result<(), Diagnost
         _ => Err(invalid("lock-policy-digest")),
     }
 }
-

@@ -111,7 +111,9 @@ pub fn plan_consumer_context(
             .map(|obligation| {
                 format!(
                     "{}|{}|{}",
-                    obligation.entity, obligation.operation, obligation.emits.len()
+                    obligation.entity,
+                    obligation.operation,
+                    obligation.emits.len()
                 )
             })
             .collect();
@@ -284,7 +286,10 @@ fn signature_text(export: &PublicExport) -> String {
             }
             text.push('}');
             for obligation in &export.effects {
-                text.push_str(&format!(" -> {} {}", obligation.operation, obligation.entity));
+                text.push_str(&format!(
+                    " -> {} {}",
+                    obligation.operation, obligation.entity
+                ));
             }
         }
         "query" => {

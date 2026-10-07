@@ -24,7 +24,10 @@ pub(crate) fn owner_of(symbol: &str) -> Option<&str> {
 /// The owner module of one kind-qualified graph id
 /// (`operation:module.symbol`, `entity:module.symbol`).
 pub(crate) fn owner_of_qualified(qualified: &str) -> Option<&str> {
-    let symbol = qualified.split_once(':').map(|(_, id)| id).unwrap_or(qualified);
+    let symbol = qualified
+        .split_once(':')
+        .map(|(_, id)| id)
+        .unwrap_or(qualified);
     owner_of(symbol)
 }
 
@@ -47,7 +50,10 @@ pub fn check_writes(
     let mut grants: BTreeMap<&str, Vec<&GrantPolicy>> = BTreeMap::new();
     for module in resolved.modules.values() {
         for grant in &module.grants {
-            grants.entry(grant.consumer.as_str()).or_default().push(grant);
+            grants
+                .entry(grant.consumer.as_str())
+                .or_default()
+                .push(grant);
         }
     }
     let mut evidence = Vec::new();
@@ -57,7 +63,10 @@ pub fn check_writes(
             EffectKind::Create => ("create", None),
             EffectKind::Update => ("update", None),
             EffectKind::Delete => ("delete", None),
-            EffectKind::WriteField { .. } => ("update", edge.key().subject().field().map(|f| f.as_str().to_owned())),
+            EffectKind::WriteField { .. } => (
+                "update",
+                edge.key().subject().field().map(|f| f.as_str().to_owned()),
+            ),
             _ => continue,
         };
         let resource = edge.key().subject().resource().as_str();
@@ -120,14 +129,19 @@ fn covers(scope: &GrantScope, resource: &str, operation: &str, field: Option<&st
     if scope.aggregate != resource {
         return false;
     }
-    if !scope.operations.iter().any(|candidate| candidate == operation) {
+    if !scope
+        .operations
+        .iter()
+        .any(|candidate| candidate == operation)
+    {
         return false;
     }
     match field {
         None => scope.fields.iter().any(|candidate| candidate == "*"),
-        Some(field) => {
-            scope.fields.iter().any(|candidate| candidate == "*" || candidate == field)
-        }
+        Some(field) => scope
+            .fields
+            .iter()
+            .any(|candidate| candidate == "*" || candidate == field),
     }
 }
 

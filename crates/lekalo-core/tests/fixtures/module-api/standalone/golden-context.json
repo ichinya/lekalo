@@ -1,0 +1,50 @@
+{
+  "apiVersion": "1.2.0",
+  "budget": 4000,
+  "consumer": "planner",
+  "dependencies": [],
+  "digest": "sha256:783a868ab8e21f269afab3157d3d9fd49247e6e5e4f6722824d46d88d6424cb3",
+  "estimator": {
+    "id": "module-context-estimator",
+    "recipe": "public-facts-chars4/1",
+    "version": "1"
+  },
+  "exports": [
+    {
+      "apiVersion": "1.2.0",
+      "capabilities": [
+        "http"
+      ],
+      "deprecation": null,
+      "effects": [],
+      "errors": [],
+      "export": "tasks.get_task",
+      "kind": "query",
+      "signature": "query -> tasks.task_view"
+    },
+    {
+      "apiVersion": "1.2.0",
+      "capabilities": [
+        "http"
+      ],
+      "deprecation": null,
+      "effects": [],
+      "errors": [],
+      "export": "tasks.task_view",
+      "kind": "value-object",
+      "signature": "value-object { task_id!: tasks.task_id title!: tasks.title state!: tasks.task_state }"
+    }
+  ],
+  "fits": true,
+  "gaps": [],
+  "identity": "dev.lekalo.module-consumer-context@0.8.0",
+  "omissions": [],
+  "producer": {
+    "module": "tasks",
+    "project": "tasks"
+  },
+  "producerDigest": "sha256:0e258ab140e6a10bdfd4b87fb6ee84060c7415c0dc686225a59d7a4f7084c0aa",
+  "requiredCost": 101,
+  "schemaVersion": "lekalo/module-consumer-context/v0.8.0",
+  "selectedCost": 101
+}

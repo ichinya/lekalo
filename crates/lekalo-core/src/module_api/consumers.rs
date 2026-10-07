@@ -11,9 +11,7 @@
 
 use super::diagnostic::invalid;
 use super::resolve::Resolved;
-use super::wire::{
-    self, ConsumerRow, ConsumerSnapshot, ConsumerUse, ProducerPin, SnapshotPins,
-};
+use super::wire::{self, ConsumerRow, ConsumerSnapshot, ConsumerUse, ProducerPin, SnapshotPins};
 use crate::diagnostics::DiagnosticSet;
 use crate::ir::Compilation;
 use std::collections::BTreeMap;
@@ -28,9 +26,12 @@ pub fn consumer_snapshot(
         return Err(invalid("unknown-module"));
     };
     let project = &compilation.project;
-    let exports: Vec<String> = policy.exports.iter().map(|entry| entry.export.clone()).collect();
-    let export_set: std::collections::BTreeSet<&str> =
-        exports.iter().map(String::as_str).collect();
+    let exports: Vec<String> = policy
+        .exports
+        .iter()
+        .map(|entry| entry.export.clone())
+        .collect();
+    let export_set: std::collections::BTreeSet<&str> = exports.iter().map(String::as_str).collect();
     // Resolve actual uses: every cross-module reference to an export with
     // its original definition occurrence as the edge key.
     let mut resolved_uses: BTreeMap<&str, Vec<ConsumerUse>> = BTreeMap::new();
@@ -54,11 +55,7 @@ pub fn consumer_snapshot(
                 origin: "resolved".to_owned(),
                 sensitivity: "whole-shape".to_owned(),
                 transitive: false,
-                edges: vec![format!(
-                    "{}->{}",
-                    definition.id().as_str(),
-                    reference
-                )],
+                edges: vec![format!("{}->{}", definition.id().as_str(), reference)],
             };
             resolved_uses.entry(owner).or_default().push(use_row);
         }
@@ -87,7 +84,11 @@ pub fn consumer_snapshot(
             uses.extend(resolved_rows.iter().cloned());
         }
         uses.sort_by(|left, right| {
-            (left.export.as_str(), left.origin.as_str(), left.member.as_deref())
+            (
+                left.export.as_str(),
+                left.origin.as_str(),
+                left.member.as_deref(),
+            )
                 .cmp(&(
                     right.export.as_str(),
                     right.origin.as_str(),
@@ -95,7 +96,9 @@ pub fn consumer_snapshot(
                 ))
         });
         uses.dedup_by(|left, right| {
-            left.export == right.export && left.origin == right.origin && left.member == right.member
+            left.export == right.export
+                && left.origin == right.origin
+                && left.member == right.member
         });
         rows.push(ConsumerRow {
             consumer: consumer.consumer.clone(),
@@ -154,18 +157,21 @@ pub fn parse_snapshot(bytes: &[u8]) -> Result<ConsumerSnapshot, DiagnosticSet> {
     if snapshot.schema_version != format!("{}/v{}", wire::CONSUMERS_SCHEMA, wire::VERSION)
         || snapshot.identity != format!("{}@{}", wire::CONSUMERS_IDENTITY, wire::VERSION)
     {
-        return Err(super::diagnostic::unsupported_version(&snapshot.schema_version));
+        return Err(super::diagnostic::unsupported_version(
+            &snapshot.schema_version,
+        ));
     }
     if !super::version::is_digest(&snapshot.digest) {
         return Err(invalid("snapshot-digest"));
     }
     let mut without_digest = snapshot.clone();
     without_digest.digest = String::new();
-    let expected = wire::digest(wire::DIGEST_DOMAIN_CONSUMERS, &wire::canonical(&without_digest));
+    let expected = wire::digest(
+        wire::DIGEST_DOMAIN_CONSUMERS,
+        &wire::canonical(&without_digest),
+    );
     if expected != snapshot.digest {
         return Err(invalid("snapshot-digest-mismatch"));
     }
     Ok(snapshot)
 }
-
-

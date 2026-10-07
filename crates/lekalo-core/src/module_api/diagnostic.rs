@@ -57,9 +57,7 @@ pub fn meta(rule: &str) -> (&'static str, &'static str, &'static str) {
         "module-api.dependency-cycle" => ("LEK-MODULE-008", "error", "semantic"),
         "module-api.consumer-incompatible" => ("LEK-MODULE-009", "warning", "compatibility"),
         "module-api.version-policy-violation" => ("LEK-MODULE-010", "warning", "compatibility"),
-        "module-api.deprecation-window-violation" => {
-            ("LEK-MODULE-011", "warning", "compatibility")
-        }
+        "module-api.deprecation-window-violation" => ("LEK-MODULE-011", "warning", "compatibility"),
         "module-api.evidence-incomplete" => ("LEK-MODULE-012", "warning", "semantic"),
         "module-api.lock-stale" => ("LEK-MODULE-013", "warning", "compatibility"),
         "module-api.policy-denied" => ("LEK-MODULE-014", "error", "compatibility"),
@@ -148,7 +146,13 @@ pub(crate) fn diagnostic(evidence: &Evidence) -> Result<Diagnostic, DiagnosticSe
             );
             data.insert(
                 "effect".to_owned(),
-                token_value(evidence.path.first().map(String::as_str).unwrap_or_default()),
+                token_value(
+                    evidence
+                        .path
+                        .first()
+                        .map(String::as_str)
+                        .unwrap_or_default(),
+                ),
             );
             data.insert(
                 "grant".to_owned(),
@@ -178,7 +182,13 @@ pub(crate) fn diagnostic(evidence: &Evidence) -> Result<Diagnostic, DiagnosticSe
             );
             data.insert(
                 "policy".to_owned(),
-                token_value(evidence.path.first().map(String::as_str).unwrap_or_default()),
+                token_value(
+                    evidence
+                        .path
+                        .first()
+                        .map(String::as_str)
+                        .unwrap_or_default(),
+                ),
             );
             data.insert(
                 "expected".to_owned(),
@@ -201,7 +211,13 @@ pub(crate) fn diagnostic(evidence: &Evidence) -> Result<Diagnostic, DiagnosticSe
             if evidence.rule == "module-api.version-policy-violation" {
                 data.insert(
                     "policy".to_owned(),
-                    token_value(evidence.path.first().map(String::as_str).unwrap_or_default()),
+                    token_value(
+                        evidence
+                            .path
+                            .first()
+                            .map(String::as_str)
+                            .unwrap_or_default(),
+                    ),
                 );
             }
         }

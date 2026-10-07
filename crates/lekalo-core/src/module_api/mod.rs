@@ -28,8 +28,8 @@ pub mod validate;
 pub mod version;
 pub mod wire;
 
-pub use context::{estimate, plan_consumer_context};
 pub use consumers::{consumer_snapshot, parse_snapshot};
+pub use context::{estimate, plan_consumer_context};
 pub use diff::compare_public;
 pub use lock::{bundle_lock_evidence, check_lock, parse_lock, resolve_lock};
 pub use public::{export_public, parse_bundle};

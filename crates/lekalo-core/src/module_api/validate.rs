@@ -58,7 +58,11 @@ pub fn check(
     for cycle in &cycles {
         let mut finding = Evidence::new(
             "module-api.dependency-cycle",
-            cycle.members.first().map(String::as_str).unwrap_or_default(),
+            cycle
+                .members
+                .first()
+                .map(String::as_str)
+                .unwrap_or_default(),
             "boundary-dependency-scc",
         );
         finding.path = cycle.path.clone();
@@ -139,10 +143,7 @@ pub fn check(
             // Declared imports: every resolved cross-module use edge must
             // agree with the Model imports (unused imports stay visible,
             // never an error).
-            let imports = declared_imports
-                .get(consumer)
-                .cloned()
-                .unwrap_or_default();
+            let imports = declared_imports.get(consumer).cloned().unwrap_or_default();
             if !imports.contains(&producer) {
                 let mut finding = Evidence::new(
                     "module-api.import-undeclared",
@@ -198,7 +199,11 @@ pub fn check(
     for cycle in graph::import_sccs(&public_edges) {
         let mut finding = Evidence::new(
             "module-api.dependency-cycle",
-            cycle.members.first().map(String::as_str).unwrap_or_default(),
+            cycle
+                .members
+                .first()
+                .map(String::as_str)
+                .unwrap_or_default(),
             "public-dependency-scc",
         );
         finding.path = cycle.path.clone();
@@ -224,8 +229,11 @@ pub fn check(
         });
     }
     evidence.sort_by(|left, right| {
-        (left.rule, left.subject.as_str(), left.detail.as_str())
-            .cmp(&(right.rule, right.subject.as_str(), right.detail.as_str()))
+        (left.rule, left.subject.as_str(), left.detail.as_str()).cmp(&(
+            right.rule,
+            right.subject.as_str(),
+            right.detail.as_str(),
+        ))
     });
     evidence.dedup_by(|left, right| {
         left.rule == right.rule
@@ -263,7 +271,13 @@ pub fn check(
         modules.dedup_by(|left, right| left.module_id == right.module_id);
     }
     modules.sort_by(|left, right| left.module_id.cmp(&right.module_id));
-    if bundles.len() < resolved.modules.values().filter(|m| !m.exports.is_empty()).count() {
+    if bundles.len()
+        < resolved
+            .modules
+            .values()
+            .filter(|m| !m.exports.is_empty())
+            .count()
+    {
         gaps.push("public-closure-incomplete".to_owned());
     }
     // The verdict: exact semantic violations are invalid under strict;
@@ -283,7 +297,14 @@ pub fn check(
         })
         .count();
     let (assessment, class) = if boundary_violations > 0 {
-        ("fail", if strict { FindingClass::Invalid } else { FindingClass::Boundary })
+        (
+            "fail",
+            if strict {
+                FindingClass::Invalid
+            } else {
+                FindingClass::Boundary
+            },
+        )
     } else if !gaps.is_empty() {
         ("indeterminate", FindingClass::Evidence)
     } else {
@@ -334,7 +355,13 @@ fn closure_findings(
     let exported: Vec<String> = resolved
         .modules
         .get(module)
-        .map(|policy| policy.exports.iter().map(|entry| entry.export.clone()).collect())
+        .map(|policy| {
+            policy
+                .exports
+                .iter()
+                .map(|entry| entry.export.clone())
+                .collect()
+        })
         .unwrap_or_default();
     // Bounded worklist over (symbol, path) pairs with a visited set.
     let mut visited: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
@@ -357,10 +384,7 @@ fn closure_findings(
         }
         // The root export itself is admitted; anything reachable beyond it
         // must be exported too.
-        if path.len() > 1
-            && owner_of(&symbol) == Some(module)
-            && !exported.contains(&symbol)
-        {
+        if path.len() > 1 && owner_of(&symbol) == Some(module) && !exported.contains(&symbol) {
             let mut finding = Evidence::new(
                 "module-api.public-private-exposure",
                 module,
