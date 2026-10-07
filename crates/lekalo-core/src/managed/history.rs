@@ -3,8 +3,11 @@
 //!
 //! Layout inside `<project>/.lekalo/generated/manifests/managed/`:
 //! - `current`: the committed generation digest (plain pin, private state),
-//! - `generations/<digest>.json`: one closed generation record per commit,
-//! - `objects/<hex>`: content-addressed exact byte snapshots,
+//! - `objects/<hex>`: content-addressed exact byte snapshots AND the
+//!   generation records themselves — a record is stored under its own
+//!   generation digest, so the storage name is the content identity (the
+//!   project path policy bounds every name at 64 characters, which rules
+//!   out a `generations/<64hex>.json` spelling),
 //! - `transactions/<id>.json`: bounded recovery journals.
 //!
 //! Adapters are denied this whole subtree; the artifact cleaner must treat
@@ -20,7 +23,6 @@ use super::{detail, DomainResult, RECOVERY_REQUIRED, ROLLBACK_REFUSED};
 /// The custody subtree inside the accepted generated-intermediate home.
 pub const CUSTODY: &str = ".lekalo/generated/manifests/managed";
 const CURRENT: &str = "current";
-const GENERATIONS: &str = "generations";
 const OBJECTS: &str = "objects";
 const TRANSACTIONS: &str = "transactions";
 /// The exclusive project mutation lock (never held across processes).
@@ -35,7 +37,7 @@ fn refused(reason: &str) -> DomainResult {
 }
 
 /// The project-relative custody coordinate of one custody-relative path.
-fn custody_logical(relative: &str) -> String {
+pub fn custody_logical(relative: &str) -> String {
     format!("{CUSTODY}/{relative}")
 }
 
@@ -91,7 +93,7 @@ pub fn record_with_custody(
     {
         return Err(refused("generation-digest"));
     }
-    let bytes = match fs::read_file(root, &custody_logical(&format!("{GENERATIONS}/{hex}.json"))) {
+    let bytes = match fs::read_file(root, &custody_logical(&format!("{OBJECTS}/{hex}"))) {
         Ok(Some(bytes)) => bytes,
         Ok(None) => return Err(refused("generation-record")),
         Err(_) => return Err(refused("generation-record")),
@@ -243,7 +245,7 @@ pub fn write_record(
         .generation_digest
         .strip_prefix("sha256:")
         .expect("digest");
-    let logical = custody_logical(&format!("{GENERATIONS}/{hex}.json"));
+    let logical = custody_logical(&format!("{OBJECTS}/{hex}"));
     if matches!(fs::read_file(root, &logical), Ok(Some(_))) {
         return Ok(custody_digest);
     }

@@ -166,6 +166,7 @@ pub fn apply(
     ownership: &Ownership,
     confirm: Option<&str>,
     dry_run: bool,
+    authority: Option<&super::authority::Authority>,
 ) -> DomainResult {
     let plan = match verify_plan(plan_bytes) {
         Ok(plan) => plan,
@@ -255,13 +256,22 @@ pub fn apply(
     // Recheck under the mutation lock: the barrier, the inputs, and the
     // before-state are revalidated now that this caller owns mutation, so
     // a racer that moved a pin between preflight and lock cannot win.
-    let result = (|| {
+    let result = (|| -> Result<String, DomainResult> {
         history::assert_reconciled(root)?;
         let inputs = inputs_actual(root, &plan.input_closure)?;
         let before = before_state(root, Some(&plan))?;
         let roots = super::plan::generated_roots(ownership);
         preflight(&plan, &roots, &inputs, &before)?;
-        staged_apply(root, &plan, &inventory, ownership, &before)
+        staged_apply(
+            root,
+            &plan,
+            &inventory,
+            ownership,
+            &before,
+            authority,
+            &coverage,
+            &admission.generated_root,
+        )
     })();
     drop(guard);
     match result {
@@ -366,6 +376,9 @@ fn staged_apply(
     inventory: &[Rendered],
     ownership: &Ownership,
     before: &BeforeState,
+    authority: Option<&super::authority::Authority>,
+    coverage: &super::wire::Coverage,
+    generated_root: &str,
 ) -> Result<String, DomainResult> {
     let previous = match history::current(root) {
         Ok(current) => current,
@@ -609,7 +622,14 @@ fn staged_apply(
     }
     transaction.state = TransactionState::Committed;
     match history::write_transaction(root, &transaction) {
-        Ok(()) => Ok(generation),
-        Err(error) => Err(error),
+        Ok(()) => {}
+        Err(error) => return Err(error),
     }
+    // Custody publication: the governed ownership manifest of the exact
+    // committed bytes (finding E), bound to the derived generation
+    // authority. The project authority is mandatory here.
+    if let Some(authority) = authority {
+        super::custody::publish(root, plan, coverage, generated_root, authority, inventory)?;
+    }
+    Ok(generation)
 }

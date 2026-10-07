@@ -1,0 +1,54 @@
+{
+  "schemaVersion": "lekalo/managed-transaction/v0.8.0",
+  "identity": "dev.lekalo.managed-transaction@0.8.0",
+  "transactionId": "5687e7a196c7ab4e-0000",
+  "state": "committed",
+  "action": "apply",
+  "planDigest": {
+    "state": "known",
+    "value": "sha256:5687e7a196c7ab4e92f16ce91c3d4fa84a5534471206d05743c75058b373b7d6"
+  },
+  "generationDigest": {
+    "state": "known",
+    "value": {
+      "generationDigest": "sha256:1d19ac1354c1e4d908de4db12abeb9acd8a176b66f1d491cee191260c91eb9cd"
+    }
+  },
+  "beforeManifestDigest": {
+    "state": "absent"
+  },
+  "afterManifestDigest": {
+    "state": "known",
+    "value": "sha256:84a2d92f9605c824d54a067202971ac76b4432161c8f95eb179ef136f774e05a"
+  },
+  "pending": [
+    {
+      "path": "apps/planner/gen/src/complete-task.ts",
+      "op": "publish"
+    },
+    {
+      "path": "apps/planner/gen/src/focus-task.ts",
+      "op": "publish"
+    },
+    {
+      "path": "apps/planner/gen/test/complete-task.test.ts",
+      "op": "publish"
+    },
+    {
+      "path": "apps/planner/gen/test/focus-task.test.ts",
+      "op": "publish"
+    }
+  ],
+  "affectedFiles": [
+    "apps/planner/gen/src/complete-task.ts",
+    "apps/planner/gen/src/focus-task.ts",
+    "apps/planner/gen/test/complete-task.test.ts",
+    "apps/planner/gen/test/focus-task.test.ts"
+  ],
+  "conflict": {
+    "state": "absent"
+  },
+  "beforeDigest": {
+    "state": "absent"
+  }
+}

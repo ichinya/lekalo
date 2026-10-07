@@ -148,6 +148,12 @@ pub enum ManagedCommands {
     Rollback(RollbackArgs),
     /// Restore one drifted generated path from recorded bytes.
     Resolve(ResolveArgs),
+    /// Reconcile interrupted publications: complete or undo every
+    /// unresolved journal and clear a stale mutation lock.
+    Recover {
+        #[command(flatten)]
+        project: ProjectArgs,
+    },
     /// Adjudicate one neutral behavioral-equivalence evidence document.
     Equivalence {
         /// The closed equivalence evidence document.
@@ -186,6 +192,14 @@ fn root(project: &Option<String>) -> std::path::PathBuf {
     match project {
         Some(directory) => std::path::PathBuf::from(directory),
         None => std::path::PathBuf::from("."),
+    }
+}
+
+/// The loader selection of one invocation: the same `--project` selector
+/// the accepted pipeline uses for root discovery.
+fn selection(project: &Option<String>) -> lekalo_core::loader::LoadSelection {
+    lekalo_core::loader::LoadSelection {
+        project: project.clone(),
     }
 }
 
@@ -232,9 +246,49 @@ fn run_check(args: CheckArgs) -> Outcome {
             .iter()
             .find(|target| target.target == coverage.target)
             .ok_or_else(|| invalid("target"))?;
+        // The generation authority is derived from the exact project: the
+        // coverage evidence must pin it and discharge every required
+        // obligation before it admits (finding D).
+        let authority = core::authority::derive(&selection(&args.project.project), &coverage.module)?;
+        core::authority::qualify(&coverage, &authority)?;
+        core::authority::ledger_complete(&coverage, &authority)?;
         core::coverage::admit(assignment, target, &coverage)?;
         admitted.push(format!("{}/{}", coverage.module, coverage.target));
         coverage_digest = Some(core::hash(&coverage));
+    }
+    // Custody drift observation (finding R): with a committed managed
+    // generation, every recorded output must still carry its exact
+    // recorded bytes; any drift is reported read-only.
+    let mut drifted: Vec<String> = Vec::new();
+    if core::history::exists(&root(&args.project.project)) {
+        let current = match core::history::current(&root(&args.project.project)) {
+            Ok(Some(current)) => current,
+            Ok(None) => String::new(),
+            Err(error) => return Err(error),
+        };
+        if !current.is_empty() {
+            let record = core::history::record(&root(&args.project.project), &current)?;
+            for output in &record.outputs {
+                match core::fs::read_file(&root(&args.project.project), &output.path) {
+                    Ok(Some(bytes)) => {
+                        if core::digest(&bytes) != output.digest {
+                            drifted.push(output.path.clone());
+                        }
+                    }
+                    Ok(None) => drifted.push(output.path.clone()),
+                    Err(_) => drifted.push(output.path.clone()),
+                }
+            }
+        }
+    }
+    if !drifted.is_empty() {
+        return Err(core::diagnostic::failure(
+            core::GENERATED_DRIFT,
+            &[
+                ("path", drifted[0].as_str()),
+                ("reason", "custody-drift"),
+            ],
+        ));
     }
     Ok(core::render(&CheckReceipt {
         project: ownership.project,
@@ -262,6 +316,13 @@ fn run_plan(args: PlanArgs) -> Outcome {
         .find(|target| target.target == args.target)
         .ok_or_else(|| invalid("target"))?;
     let admission = core::coverage::admit(assignment, target, &coverage)?;
+    // The generation authority: the exact canonical Model/IR/lock the plan
+    // is derived under, qualified against the coverage evidence; every
+    // required obligation must be discharged before any plan exists
+    // (finding D).
+    let authority = core::authority::derive(&selection(&args.project.project), &args.module)?;
+    core::authority::qualify(&coverage, &authority)?;
+    core::authority::ledger_complete(&coverage, &authority)?;
     // The complete pinned input closure: every explicit input plus the
     // ownership configuration itself.
     let project_root = root(&args.project.project);
@@ -356,6 +417,14 @@ fn run_apply(args: ApplyArgs) -> Outcome {
     let plan = read(&args.plan)?;
     let coverage = read(&args.coverage)?;
     let ownership = core::parse_ownership(&read(&args.ownership)?)?;
+    // The generation authority is re-derived and requalified at apply
+    // time: a plan whose Model/IR/lock moved since the review is stale
+    // (finding D).
+    let parsed_plan = core::verify_plan(&plan)?;
+    let coverage_doc = core::parse_coverage(&coverage)?;
+    let authority = core::authority::derive(&selection(&args.project.project), &parsed_plan.modules[0])?;
+    core::authority::qualify(&coverage_doc, &authority)?;
+    core::authority::ledger_complete(&coverage_doc, &authority)?;
     Err(core::apply::apply(
         &root(&args.project.project),
         &plan,
@@ -363,6 +432,7 @@ fn run_apply(args: ApplyArgs) -> Outcome {
         &ownership,
         args.confirm.as_deref(),
         args.dry_run,
+        Some(&authority),
     ))
 }
 
@@ -446,27 +516,14 @@ fn run_resolve(args: ResolveArgs) -> Outcome {
         return Err(DomainResult::usage_error());
     }
     let project_root = root(&args.project.project);
-    if args.dry_run {
-        return Err(core::rollback::resolve(
-            &project_root,
-            &args.path,
-            None,
-            true,
-        ));
-    }
-    // The confirmed resolve consumes the exact previewed plan identity.
-    let preview = core::rollback::resolve(&project_root, &args.path, None, true);
-    let json = preview.to_json_string();
-    let value: serde_json::Value = serde_json::from_str(&json).map_err(|_| invalid("receipt"))?;
-    let digest = value["managed"]["planDigest"]
-        .as_str()
-        .ok_or_else(|| invalid("receipt"))?
-        .to_owned();
+    // The previewed plan identity is exactly what the caller confirms; the
+    // confirmation digest covers the drifted before-state, so a file that
+    // moved after the reviewed preview invalidates it (finding A).
     Err(core::rollback::resolve(
         &project_root,
         &args.path,
-        Some(digest.as_str()),
-        false,
+        args.confirm.as_deref(),
+        args.dry_run,
     ))
 }
 
@@ -485,6 +542,7 @@ fn execute(command: ManagedCommands) -> Outcome {
         ManagedCommands::UpgradePlan(args) => run_upgrade_plan(args),
         ManagedCommands::Rollback(args) => run_rollback(args),
         ManagedCommands::Resolve(args) => run_resolve(args),
+        ManagedCommands::Recover { project } => Err(core::recovery::run(&root(&project.project))),
         ManagedCommands::Equivalence { evidence } => {
             Err(core::equivalence::adjudicate(&read(&evidence)?))
         }

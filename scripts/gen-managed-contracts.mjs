@@ -75,7 +75,7 @@ const shape = (family, properties) => obj({ ...Object.fromEntries(Object.entries
 
 export const shapes = {
   'managed-ownership': { project: token, modules: arr(ref('assignment'), 64, 1) },
-  'managed-coverage': { module: ref('moduleRef'), target: ref('targetRef'), recipe: ref('reference'), adapter: ref('adapter'), requirements: arr(ref('requirement'), 4096), extensions: arr(ref('extensionCheck'), 64), complete: { type: 'boolean' } },
+  'managed-coverage': { module: ref('moduleRef'), target: ref('targetRef'), recipe: ref('reference'), adapter: ref('adapter'), authority: state(obj({ model: pin, ir: pin, lock: pin })), requirements: arr(ref('requirement'), 4096), extensions: arr(ref('extensionCheck'), 64), complete: { type: 'boolean' } },
   'managed-generation-plan': {
     action: en('promotion', 'regeneration', 'upgrade'),
     modules: arr(ref('moduleRef'), 64, 1),

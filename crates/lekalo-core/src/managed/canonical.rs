@@ -53,6 +53,12 @@ pub fn camel(name: &str) -> String {
     out
 }
 
+/// `focus_task` renders as `focus-task`: the artifact file spelling (the
+/// accepted artifact path policy only admits portable lowercase names).
+pub fn file_stem(name: &str) -> String {
+    name.replace('_', "-")
+}
+
 /// `focus_task` renders as `FocusTask` for type names.
 pub fn pascal(name: &str) -> String {
     let camel = camel(name);
@@ -111,7 +117,7 @@ pub fn output_paths(
     requirement: &Requirement,
 ) -> Option<(String, String)> {
     let name = requirement_name(module, &requirement.id)?;
-    let stem = camel(name);
+    let stem = file_stem(name);
     Some((
         format!("{generated_root}/src/{stem}.ts"),
         format!("{generated_root}/test/{stem}.test.ts"),
@@ -206,7 +212,7 @@ fn render_test(
          \n\
          assert.deepStrictEqual(\n  {function}({input}),\n  {output},\n);\n",
         function = function,
-        file = function,
+        file = file_stem(name),
         input = record_literal(&sample.input),
         output = record_literal(&sample.output),
     ));

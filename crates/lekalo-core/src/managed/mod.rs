@@ -8,14 +8,17 @@
 //! [`apply`] and [`rollback`].
 
 pub mod apply;
+pub mod authority;
 pub mod canonical;
 pub mod coverage;
+pub mod custody;
 pub mod diagnostic;
 pub mod equivalence;
 pub mod fs;
 pub mod history;
 pub mod plan;
 pub mod receipts;
+pub mod recovery;
 pub mod rollback;
 #[cfg(test)]
 mod tests;

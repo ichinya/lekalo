@@ -177,6 +177,15 @@ dto!(Reference {
     version: String,
     digest: String
 });
+// The generation-authority pins of one coverage document: the canonical
+// Model, the canonical typed IR, and the exact lock revision the evidence
+// was derived under. A coverage document without its authority is not
+// evidence.
+dto!(AuthorityPin {
+    model: String,
+    ir: String,
+    lock: String
+});
 dto!(Extension {
     symbol: String,
     binding: String,
@@ -241,6 +250,7 @@ dto!(Coverage {
     target: String,
     recipe: Reference,
     adapter: Adapter,
+    authority: State<AuthorityPin>,
     requirements: Vec<Requirement>,
     extensions: Vec<ExtensionCheck>,
     complete: bool
