@@ -777,16 +777,35 @@ fn witness_matches(card: &Card, action: &str, selector: &str, scope: EffectScope
             Some((resource, field)) => (resource, Some(field)),
             None => (subject, None),
         };
-        match selector.rsplit_once('.') {
-            Some((wanted_resource, wanted_field)) => {
-                // An exact field selector admits only the exact field,
-                // except where overlapping scope accepts an entity-wide
-                // mutation explicitly labeled possible overlap.
-                resource == wanted_resource
-                    && (field == Some(wanted_field)
-                        || (scope == EffectScope::Overlapping && field.is_none()))
+        match field {
+            // Entity-wide witness: an exact entity selector names this
+            // scope; a field selector admits it only as possible overlap.
+            None => {
+                if resource == selector {
+                    true
+                } else {
+                    match selector.rsplit_once('.') {
+                        Some((wanted_resource, _)) if wanted_resource == resource => {
+                            scope == EffectScope::Overlapping
+                        }
+                        _ => false,
+                    }
+                }
             }
-            None => resource == selector,
+            // Field-scoped witness: a single field effect is never an
+            // entity-wide write, so an exact entity selector refuses.
+            Some(name) => {
+                if resource == selector {
+                    false
+                } else {
+                    match selector.rsplit_once('.') {
+                        Some((wanted_resource, wanted_field)) => {
+                            resource == wanted_resource && name == wanted_field
+                        }
+                        None => false,
+                    }
+                }
+            }
         }
     })
 }
