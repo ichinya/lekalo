@@ -2273,7 +2273,7 @@
       "id": "contract:contracts/change-history.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/change-history.schema.v0.8.0.json",
-      "sourceDigest": "sha256:1cd9d955a9188ae48ffd3d9dbb96b18390593755a791079881efcb3f97f2af4b",
+      "sourceDigest": "sha256:947ead8bd1c8a76891e0d4bce275a27f867dcac0357c5c95041414789e877877",
       "owner": "docs/change.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2282,7 +2282,7 @@
       "id": "contract:contracts/change-plan.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/change-plan.schema.v0.8.0.json",
-      "sourceDigest": "sha256:79080f2d8330c402ef3b60cfc2375dd5d2674fe6b8a46632e80790f1aa884271",
+      "sourceDigest": "sha256:78ab5713a79effcf7acb9ae5b80a1f9550e4ad1fdad4e45a74ceca49b410fe20",
       "owner": "docs/change.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2300,7 +2300,7 @@
       "id": "contract:contracts/change-receipt.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/change-receipt.schema.v0.8.0.json",
-      "sourceDigest": "sha256:f1bce512430f1e0e55e0551730af6b577f217c7ea33d07fa02f47d80436777c6",
+      "sourceDigest": "sha256:64ddc83fc361f804f888c2b37990bf57601958ce2e43fdaffd876ffbe9974c1a",
       "owner": "docs/change.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

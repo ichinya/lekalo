@@ -79,6 +79,9 @@ pub struct FileOutcome {
 /// The closed wire projection of one receipt.
 #[derive(Clone, Debug, Serialize, Eq, PartialEq)]
 pub struct Receipt {
+    /// The envelope status of the run (`valid`; failure runs carry no
+    /// receipt payload).
+    pub status: String,
     pub state: String,
     #[serde(rename = "planId")]
     pub plan_id: Option<String>,
@@ -100,6 +103,7 @@ impl Receipt {
     pub fn to_json_string(&self) -> String {
         #[derive(Serialize)]
         struct Wire<'a> {
+            status: &'a str,
             #[serde(rename = "schemaVersion")]
             schema_version: &'a str,
             identity: &'a str,
@@ -107,6 +111,7 @@ impl Receipt {
             receipt: &'a Receipt,
         }
         let wire = Wire {
+            status: "valid",
             schema_version: version::RECEIPT_SCHEMA_VERSION,
             identity: version::RECEIPT_IDENTITY,
             receipt: self,

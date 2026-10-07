@@ -6,6 +6,7 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
+    "status",
     "schemaVersion",
     "identity",
     "planId",
@@ -124,6 +125,10 @@
           "type": "null"
         }
       ]
+    },
+    "status": {
+      "const": "valid",
+      "description": "The envelope status of the run; only valid runs carry a plan or receipt payload."
     }
   },
   "$defs": {
@@ -385,6 +390,48 @@
     },
     "changeKind": {
       "enum": [
+        "symbol.added",
+        "symbol.removed",
+        "symbol.renamed",
+        "symbol.replaced",
+        "symbol.tombstoned",
+        "symbol.kind-changed",
+        "symbol.visibility-changed",
+        "symbol.portability-changed",
+        "symbol.version-changed",
+        "symbol.derived-from-changed",
+        "module.imports-changed",
+        "field.added",
+        "field.removed",
+        "field.type-changed",
+        "field.nullability-changed",
+        "field.presence-changed",
+        "type.shape-changed",
+        "type.member-added",
+        "type.member-removed",
+        "signature.input-added",
+        "signature.input-removed",
+        "signature.input-type-changed",
+        "signature.input-presence-changed",
+        "signature.output-changed",
+        "signature.reads-changed",
+        "signature.effects-changed",
+        "invariant.identity-changed",
+        "policy.decision-changed",
+        "policy.scope-changed",
+        "effect.operation-changed",
+        "effect.entity-changed",
+        "effect.emits-changed",
+        "endpoint.method-changed",
+        "endpoint.path-changed",
+        "endpoint.invokes-changed",
+        "scenario.summary-changed",
+        "scenario.covers-changed",
+        "binding.target-changed"
+      ]
+    },
+    "compatibilityClass": {
+      "enum": [
         "unknown",
         "data-loss-risk",
         "storage-migration-required",
@@ -394,9 +441,6 @@
         "target-specific",
         "additive"
       ]
-    },
-    "compatibilityClass": {
-      "$ref": "#/$defs/changeKind"
     },
     "subjectFamily": {
       "enum": [

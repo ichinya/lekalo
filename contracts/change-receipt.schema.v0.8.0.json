@@ -6,6 +6,7 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
+    "status",
     "schemaVersion",
     "identity",
     "state",
@@ -113,6 +114,10 @@
     },
     "replayed": {
       "type": "boolean"
+    },
+    "status": {
+      "const": "valid",
+      "description": "The envelope status of the run; only valid runs carry a plan or receipt payload."
     }
   },
   "$defs": {

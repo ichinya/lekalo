@@ -130,10 +130,10 @@ fn dry_run_reports_both_diffs_and_writes_nothing() {
     assert_eq!(json["status"], "valid");
     // The plan wire rides the domain envelope and carries both diffs and
     // the impact/generation projections.
-    assert_eq!(json["plan"]["schemaVersion"], "lekalo/change-plan/v0.8.0");
-    assert!(json["plan"]["fileDiff"].as_array().expect("fileDiff").len() == 1);
-    assert!(json["plan"]["semanticDiff"]["changes"].as_array().is_some());
-    assert_eq!(json["plan"]["generation"]["executed"], false);
+    assert_eq!(json["schemaVersion"], "lekalo/change-plan/v0.8.0");
+    assert!(json["fileDiff"].as_array().expect("fileDiff").len() == 1);
+    assert!(json["semanticDiff"]["changes"].as_array().is_some());
+    assert_eq!(json["generation"]["executed"], false);
     // Preview never writes: no history, no cache, no source change.
     assert!(!sandbox.root.join("lekalo/change-history.json").exists());
     assert!(!sandbox.root.join(".lekalo").exists());
@@ -174,11 +174,11 @@ fn sugar_and_json_request_lower_to_the_same_plan() {
     ]);
     assert_eq!(exit, 0);
     assert_eq!(
-        sugar["plan"]["planId"], file["plan"]["planId"],
+        sugar["planId"], file["planId"],
         "byte-identical plan identity"
     );
-    assert_eq!(sugar["plan"]["semanticDiff"], file["plan"]["semanticDiff"]);
-    assert_eq!(sugar["plan"]["fileDiff"], file["plan"]["fileDiff"]);
+    assert_eq!(sugar["semanticDiff"], file["semanticDiff"]);
+    assert_eq!(sugar["fileDiff"], file["fileDiff"]);
 }
 
 #[test]
@@ -199,8 +199,8 @@ fn apply_is_durable_and_replay_returns_the_original_receipt() {
         "--json",
     ]);
     assert_eq!(exit, 0);
-    assert_eq!(first["change"]["state"], "committed");
-    assert_eq!(first["change"]["replayed"], false);
+    assert_eq!(first["state"], "committed");
+    assert_eq!(first["replayed"], false);
     assert!(sandbox.entities_path().exists());
     let after = std::fs::read_to_string(sandbox.entities_path()).expect("utf8");
     assert!(after.contains("- name: \"priority\""));
@@ -219,8 +219,8 @@ fn apply_is_durable_and_replay_returns_the_original_receipt() {
         "--json",
     ]);
     assert_eq!(exit, 0);
-    assert_eq!(second["change"]["state"], "replayed");
-    assert_eq!(second["change"]["planId"], first["change"]["planId"]);
+    assert_eq!(second["state"], "replayed");
+    assert_eq!(second["planId"], first["planId"]);
     // The receipt surface finds the committed record by key.
     let (_, receipt, _) = sandbox.run(&[
         "change",
@@ -231,8 +231,8 @@ fn apply_is_durable_and_replay_returns_the_original_receipt() {
         "task-priority-v1",
         "--json",
     ]);
-    assert_eq!(receipt["change"]["state"], "committed");
-    assert_eq!(receipt["change"]["planId"], first["change"]["planId"]);
+    assert_eq!(receipt["state"], "committed");
+    assert_eq!(receipt["planId"], first["planId"]);
     // The project still loads and carries exactly one new field.
     let (_, model, _) = sandbox.run(&["load", "--project", &selection, "--json"]);
     assert_eq!(model["status"], "valid");
@@ -325,7 +325,7 @@ fn breaking_operation_denies_without_the_explicit_flag() {
         "--json",
     ]);
     assert_eq!(exit, 0);
-    assert_eq!(receipt["change"]["state"], "committed");
+    assert_eq!(receipt["state"], "committed");
 }
 
 #[test]

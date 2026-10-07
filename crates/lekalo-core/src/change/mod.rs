@@ -702,6 +702,7 @@ pub fn apply_prepared(
         ),
     };
     let receipt = receipt::Receipt {
+        status: "valid".to_owned(),
         state: state.as_str().to_owned(),
         plan_id: Some(prepared.plan_id()),
         request_digest: Some(prepared.request_digest()),
@@ -845,6 +846,7 @@ fn stored_receipt(record: &HistoryRecord) -> Receipt {
         .unwrap_or("committed")
         .to_owned();
     Receipt {
+        status: "valid".to_owned(),
         state,
         plan_id: value
             .get("planId")

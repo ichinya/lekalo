@@ -103,6 +103,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
+        "status",
         "schemaVersion",
         "identity",
         "state",
@@ -171,6 +172,9 @@
         },
         "replayed": {
           "const": false
+        },
+        "status": {
+          "const": "valid"
         }
       }
     },

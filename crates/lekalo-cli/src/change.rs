@@ -310,6 +310,7 @@ pub(crate) fn run(command: ChangeCommands) -> DomainResult {
         } => match change::recover_transaction(project.as_deref(), &transaction) {
             Ok(()) => {
                 let receipt = serde_json::json!({
+                    "status": "valid",
                     "schemaVersion": "lekalo/change-receipt/v0.8.0",
                     "identity": "dev.lekalo.change-receipt@0.8.0",
                     "state": "committed",
@@ -407,27 +408,22 @@ fn execute(
     }
 }
 
-/// A preview success: the domain envelope with the exact plan wire bytes
-/// (`{"status":"valid","plan":{...}}`, the fixed key order of the
-/// repository envelope convention) plus the bounded human summary.
+/// A preview success: the exact plan wire bytes (the closed document
+/// carries its own `status`) plus the bounded human summary.
 fn preview_result(prepared: &change::PreparedChange, human_subject: &str) -> DomainResult {
     let plan = prepared.to_json_string();
-    let json = format!("{{\"status\":\"valid\",\"plan\":{plan}}}");
     let human = format!(
         "{human_subject}: {} operation(s), {} file edit(s), equal={}",
         prepared.operations().len(),
         prepared.file_edits().len(),
         prepared.is_no_op()
     );
-    DomainResult::receipt(json, human)
+    DomainResult::receipt(plan, human)
 }
 
-/// A receipt success: the domain envelope with the exact receipt wire
-/// bytes plus the summary.
+/// A receipt success: the exact receipt wire bytes plus the summary.
 fn receipt_result(receipt: &change::Receipt, human: impl std::fmt::Display) -> DomainResult {
-    let receipt_bytes = receipt.to_json_string();
-    let json = format!("{{\"status\":\"valid\",\"change\":{receipt_bytes}}}");
-    DomainResult::receipt(json, human.to_string())
+    DomainResult::receipt(receipt.to_json_string(), human.to_string())
 }
 
 /// The stable human summary of one receipt state.

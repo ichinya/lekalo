@@ -1,0 +1,294 @@
+{
+  "status": "valid",
+  "schemaVersion": "lekalo/change-plan/v0.8.0",
+  "identity": "dev.lekalo.change-plan@0.8.0",
+  "planId": "sha256:39cd0aece77351166ded338045da3fc60fdaa3b328be994c78a7202bec4b4817",
+  "requestDigest": "sha256:d4512aa94f9458bb36a78869e4db527ec8bde05527ed56550dc5e81134e20f6a",
+  "catalogDigest": "sha256:467a8466d9c8a6538b0d2a6e841f1cb7ebdd9a96152f7d6d79fbc62a209d7e80",
+  "policyDigest": null,
+  "mode": "preview",
+  "equal": false,
+  "operations": [
+    {
+      "operation": "entity-field:add",
+      "subject": "tasks.task",
+      "subjectFamily": "entity",
+      "status": "resolved"
+    }
+  ],
+  "inputs": [
+    {
+      "path": "lekalo/change-history.json",
+      "digest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "lekalo/modules/tasks/entities.yaml",
+      "digest": "sha256:dc401ad9d6a36a57ff957196bf51f8b95a646722acbf350a08233802b6cae40d"
+    },
+    {
+      "path": "lekalo/modules/tasks/module.yaml",
+      "digest": "sha256:cdc3ec3d81ca4758e3349aa2526e9112074b9b35c54135641d781fa8a6e0a44d"
+    },
+    {
+      "path": "lekalo/project.yaml",
+      "digest": "sha256:9e197783cae1bdde94f3191bfe0e4d1ef6aaf59eedff6dd3198dbc3f38117849"
+    }
+  ],
+  "fileEdits": [
+    {
+      "path": "lekalo/modules/tasks/entities.yaml",
+      "beforeDigest": "sha256:dc401ad9d6a36a57ff957196bf51f8b95a646722acbf350a08233802b6cae40d",
+      "afterDigest": "sha256:60ff5c08036f30b9ae8e2771d2d6f080eb92ee321eac1cc16abccc4cbaa3bab1"
+    }
+  ],
+  "fileDiff": [
+    {
+      "path": "lekalo/modules/tasks/entities.yaml",
+      "before": "schema_version: \"0.2.16\"\ndefinitions:\n  # The text scalar keeps its own documentation comment; a change to the\n  # entity below must not touch this line or its placement.\n  - id: tasks.text\n    kind: scalar\n    version: 1\n    base: string\n  - id: tasks.bool\n    kind: scalar\n    version: 1\n    base: boolean\n  # The closed delivery priority vocabulary.\n  - id: tasks.priority\n    kind: enum\n    version: 1\n    values:\n      - value: low\n      - value: normal\n      - value: high\n  - id: tasks.task\n    kind: entity\n    version: 1\n    fields:\n      - name: title\n        type: \"tasks.text\"\n        required: true\n      - name: done\n        type: \"tasks.bool\"\n    identity:\n      - title\n",
+      "after": "schema_version: \"0.2.16\"\ndefinitions:\n  # The text scalar keeps its own documentation comment; a change to the\n  # entity below must not touch this line or its placement.\n  - id: tasks.text\n    kind: scalar\n    version: 1\n    base: string\n  - id: tasks.bool\n    kind: scalar\n    version: 1\n    base: boolean\n  # The closed delivery priority vocabulary.\n  - id: tasks.priority\n    kind: enum\n    version: 1\n    values:\n      - value: low\n      - value: normal\n      - value: high\n  - id: tasks.task\n    kind: entity\n    version: 1\n    fields:\n      - name: title\n        type: \"tasks.text\"\n        required: true\n      - name: done\n        type: \"tasks.bool\"\n      - name: \"priority\"\n        type: \"tasks.priority\"\n    identity:\n      - title\n",
+      "patch": [
+        {
+          "kind": "equal",
+          "beforeLine": 1,
+          "afterLine": 1,
+          "text": "schema_version: \"0.2.16\""
+        },
+        {
+          "kind": "equal",
+          "beforeLine": 2,
+          "afterLine": 2,
+          "text": "definitions:"
+        },
+        {
+          "kind": "equal",
+          "beforeLine": 3,
+          "afterLine": 3,
+          "text": "  # The text scalar keeps its own documentation comment; a change to the"
+        },
+        {
+          "kind": "equal",
+          "beforeLine": 4,
+          "afterLine": 4,
+          "text": "  # entity below must not touch this line or its placement."
+        },
+        {
+          "kind": "equal",
+          "beforeLine": 5,
+          "afterLine": 5,
+          "text": "  - id: tasks.text"
+        },
+        {
+          "kind": "equal",
+          "beforeLine": 6,
+          "afterLine": 6,
+          "text": "    kind: scalar"
+        },
+        {
+          "kind": "equal",
+          "beforeLine": 7,
+          "afterLine": 7,
+          "text": "    version: 1"
+        },
+        {
+          "kind": "equal",
+          "beforeLine": 8,
+          "afterLine": 8,
+          "text": "    base: string"
+        },
+        {
+          "kind": "equal",
+          "beforeLine": 9,
+          "afterLine": 9,
+          "text": "  - id: tasks.bool"
+        },
+        {
+          "kind": "equal",
+          "beforeLine": 10,
+          "afterLine": 10,
+          "text": "    kind: scalar"
+        },
+        {
+          "kind": "equal",
+          "beforeLine": 11,
+          "afterLine": 11,
+          "text": "    version: 1"
+        },
+        {
+          "kind": "equal",
+          "beforeLine": 12,
+          "afterLine": 12,
+          "text": "    base: boolean"
+        },
+        {
+          "kind": "equal",
+          "beforeLine": 13,
+          "afterLine": 13,
+          "text": "  # The closed delivery priority vocabulary."
+        },
+        {
+          "kind": "equal",
+          "beforeLine": 14,
+          "afterLine": 14,
+          "text": "  - id: tasks.priority"
+        },
+        {
+          "kind": "equal",
+          "beforeLine": 15,
+          "afterLine": 15,
+          "text": "    kind: enum"
+        },
+        {
+          "kind": "equal",
+          "beforeLine": 16,
+          "afterLine": 16,
+          "text": "    version: 1"
+        },
+        {
+          "kind": "equal",
+          "beforeLine": 17,
+          "afterLine": 17,
+          "text": "    values:"
+        },
+        {
+          "kind": "equal",
+          "beforeLine": 18,
+          "afterLine": 18,
+          "text": "      - value: low"
+        },
+        {
+          "kind": "equal",
+          "beforeLine": 19,
+          "afterLine": 19,
+          "text": "      - value: normal"
+        },
+        {
+          "kind": "equal",
+          "beforeLine": 20,
+          "afterLine": 20,
+          "text": "      - value: high"
+        },
+        {
+          "kind": "equal",
+          "beforeLine": 21,
+          "afterLine": 21,
+          "text": "  - id: tasks.task"
+        },
+        {
+          "kind": "equal",
+          "beforeLine": 22,
+          "afterLine": 22,
+          "text": "    kind: entity"
+        },
+        {
+          "kind": "equal",
+          "beforeLine": 23,
+          "afterLine": 23,
+          "text": "    version: 1"
+        },
+        {
+          "kind": "equal",
+          "beforeLine": 24,
+          "afterLine": 24,
+          "text": "    fields:"
+        },
+        {
+          "kind": "equal",
+          "beforeLine": 25,
+          "afterLine": 25,
+          "text": "      - name: title"
+        },
+        {
+          "kind": "equal",
+          "beforeLine": 26,
+          "afterLine": 26,
+          "text": "        type: \"tasks.text\""
+        },
+        {
+          "kind": "equal",
+          "beforeLine": 27,
+          "afterLine": 27,
+          "text": "        required: true"
+        },
+        {
+          "kind": "equal",
+          "beforeLine": 28,
+          "afterLine": 28,
+          "text": "      - name: done"
+        },
+        {
+          "kind": "equal",
+          "beforeLine": 29,
+          "afterLine": 29,
+          "text": "        type: \"tasks.bool\""
+        },
+        {
+          "kind": "insert",
+          "beforeLine": 29,
+          "afterLine": 30,
+          "text": "      - name: \"priority\""
+        },
+        {
+          "kind": "insert",
+          "beforeLine": 29,
+          "afterLine": 31,
+          "text": "        type: \"tasks.priority\""
+        },
+        {
+          "kind": "equal",
+          "beforeLine": 30,
+          "afterLine": 32,
+          "text": "    identity:"
+        },
+        {
+          "kind": "equal",
+          "beforeLine": 31,
+          "afterLine": 33,
+          "text": "      - title"
+        }
+      ]
+    }
+  ],
+  "semanticDiff": {
+    "equal": false,
+    "classification": [
+      "additive"
+    ],
+    "changes": [
+      {
+        "changeId": "sha256:1d018cb725d07a89d548bf497d708c4c4d4b7fe917fbca810938fccd807dc46e",
+        "kind": "field.added",
+        "subject": {
+          "family": "entity",
+          "id": "tasks.task",
+          "member": "field.priority"
+        },
+        "reasons": [
+          "field.added"
+        ]
+      }
+    ],
+    "complete": true,
+    "completeReason": null
+  },
+  "impact": {
+    "seeds": [
+      {
+        "family": "entity",
+        "id": "tasks.task",
+        "member": "field.priority",
+        "side": "candidate"
+      }
+    ],
+    "affected": [],
+    "complete": true
+  },
+  "generation": {
+    "executed": false,
+    "targets": [],
+    "note": "plan-only; run `lekalo generate --locked` to execute"
+  },
+  "breakingClasses": [],
+  "policyAllowed": true,
+  "complete": true,
+  "completeReason": null
+}

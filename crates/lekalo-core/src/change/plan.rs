@@ -228,7 +228,8 @@ impl PreparedChange {
         &self.file_edits
     }
 
-    /// The exact wire bytes of the plan projection (pretty, no status).
+    /// The exact wire bytes of the plan projection (pretty; the document
+    /// carries its own envelope status).
     pub fn to_json_string(&self) -> String {
         let wire = self.wire();
         serde_json::to_string_pretty(&wire).unwrap_or_default()
@@ -255,6 +256,7 @@ impl PreparedChange {
             .cloned()
             .collect();
         PlanWire {
+            status: "valid".to_owned(),
             schema_version: version::PLAN_SCHEMA_VERSION.to_owned(),
             identity: version::PLAN_IDENTITY.to_owned(),
             plan_id: String::new(),
@@ -285,6 +287,7 @@ impl PreparedChange {
 /// The closed wire projection of one plan.
 #[derive(Serialize)]
 struct PlanWire {
+    status: String,
     #[serde(rename = "schemaVersion")]
     schema_version: String,
     identity: String,
