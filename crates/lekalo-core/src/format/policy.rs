@@ -227,6 +227,27 @@ impl Policy {
         if policy.ordering.set_lists.len() > 16 {
             return Err(PolicyError);
         }
+        // The published numeric bounds and the modelVersion shape
+        // (finding r2 5): a re-signed policy that leaves the digest valid
+        // but violates the closed schema's minimums, maximums, pattern,
+        // or length still refuses — runtime admission is exactly as
+        // strict as the published Ajv schema.
+        const MAX_FILES_CEILING: usize = 1_048_576;
+        const BYTE_CEILING: usize = 1_073_741_824;
+        if policy.limits.max_files == 0
+            || policy.limits.max_files > MAX_FILES_CEILING
+            || policy.limits.max_candidate_total_bytes == 0
+            || policy.limits.max_candidate_total_bytes > BYTE_CEILING
+            || policy.limits.max_loss_rows == 0
+            || policy.limits.max_loss_rows > 4096
+            || policy.limits.max_document_bytes == 0
+            || policy.limits.max_document_bytes > BYTE_CEILING
+        {
+            return Err(PolicyError);
+        }
+        if policy.model_version.len() > 32 || !valid_model_version(&policy.model_version) {
+            return Err(PolicyError);
+        }
         let value: serde_json::Value = serde_json::from_slice(bytes).map_err(|_| PolicyError)?;
         let digest = policy.digest.clone();
         if compute_policy_digest(&value)? != digest {
@@ -240,6 +261,16 @@ impl Clone for Policy {
     fn clone(&self) -> Self {
         Self::from_bytes(crate::format::POLICY_BYTES).expect("embedded policy is pinned")
     }
+}
+
+/// The published `modelVersion` pattern `^[0-9]+\.[0-9]+\.[0-9]+$`
+/// (finding r2 5).
+fn valid_model_version(text: &str) -> bool {
+    let parts: Vec<&str> = text.split('.').collect();
+    parts.len() == 3
+        && parts
+            .iter()
+            .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
 }
 
 /// The canonical compact JSON of one value: byte-sorted object keys, no
@@ -361,6 +392,71 @@ mod tests {
         }));
         assert!(resign(&|value| {
             value["ordering"]["setLists"][0]["ordering"] = serde_json::json!("source");
+        }));
+        // The published numeric bounds (finding r2 5): below the minimum
+        // or above the maximum of every limit, re-signed to stay
+        // digest-valid, must still refuse.
+        assert!(resign(&|value| {
+            value["limits"]["maxFiles"] = serde_json::json!(0);
+        }));
+        assert!(resign(&|value| {
+            value["limits"]["maxFiles"] = serde_json::json!(1_048_577);
+        }));
+        assert!(resign(&|value| {
+            value["limits"]["maxDocumentBytes"] = serde_json::json!(1_073_741_825);
+        }));
+        assert!(resign(&|value| {
+            value["limits"]["maxCandidateTotalBytes"] = serde_json::json!(0);
+        }));
+        assert!(resign(&|value| {
+            value["limits"]["maxLossRows"] = serde_json::json!(4097);
+        }));
+        // The modelVersion pattern and length (finding r2 5).
+        assert!(resign(&|value| {
+            value["modelVersion"] = serde_json::json!("invalid");
+        }));
+        assert!(resign(&|value| {
+            value["modelVersion"] = serde_json::json!("0.2.x");
+        }));
+        assert!(resign(&|value| {
+            value["modelVersion"] = serde_json::json!("0..16");
+        }));
+        assert!(resign(&|value| {
+            value["modelVersion"] = serde_json::json!("0.2.16.");
+        }));
+        assert!(resign(&|value| {
+            value["modelVersion"] = serde_json::json!("1".repeat(33));
+        }));
+        // The exact boundary spellings stay acceptable.
+        let accept = |mutate: &dyn Fn(&mut serde_json::Value)| {
+            let mut value: serde_json::Value =
+                serde_json::from_slice(crate::format::POLICY_BYTES).expect("policy json");
+            mutate(&mut value);
+            value["policyDigest"] = {
+                let mut reduced = value.clone();
+                reduced.as_object_mut().unwrap().remove("policyDigest");
+                let mut canonical = String::new();
+                canonical_json(&reduced, &mut canonical);
+                serde_json::Value::String(format!(
+                    "sha256:{}",
+                    crate::digest::sha256_hex(canonical.as_bytes())
+                ))
+            };
+            let mut bytes = Vec::new();
+            serde_json::to_writer(&mut bytes, &value).expect("serialize");
+            Policy::from_bytes(&bytes).is_ok()
+        };
+        assert!(accept(&|value| {
+            value["limits"]["maxFiles"] = serde_json::json!(1);
+        }));
+        assert!(accept(&|value| {
+            value["limits"]["maxFiles"] = serde_json::json!(1_048_576);
+        }));
+        assert!(accept(&|value| {
+            value["limits"]["maxDocumentBytes"] = serde_json::json!(1_073_741_824);
+        }));
+        assert!(accept(&|value| {
+            value["modelVersion"] = serde_json::json!("9.999.16");
         }));
     }
 

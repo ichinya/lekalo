@@ -95,6 +95,19 @@ struct RenderedFile {
     path: String,
     candidate: Vec<u8>,
     row: wire::FileRow,
+    /// The loss rows with their exact source spans in the original
+    /// buffer (finding r2 8): line/column and the byte range of the
+    /// lost comment line, so every diagnostic coordinate agrees.
+    losses: Vec<LossSpan>,
+}
+
+/// One enumerated comment loss with its exact span in the source text.
+#[derive(Clone, Debug)]
+struct LossSpan {
+    line: usize,
+    reason: String,
+    start: crate::diagnostics::Position,
+    end: crate::diagnostics::Position,
 }
 
 /// Load, pin, render, verify, and build the bounded report. No writes.
@@ -142,7 +155,13 @@ fn plan(request: &FormatRequest, stdin_bytes: Option<&[u8]>) -> Result<Planned, 
 
     // Resolve the scope against the closed inventory. Stdin mode is bound
     // to its declared document path, and the unsaved buffer is the
-    // original state the whole overlay is built from (finding G).
+    // original state the whole overlay is built from (finding G). The
+    // public core refuses the Stdin pairing with any non-Document scope
+    // (finding r2 13): the editor replacement is defined as the one
+    // declared document, never an arbitrary file of a wider overlay.
+    if request.mode == FormatMode::Stdin && !matches!(request.scope, FormatScope::Document(_)) {
+        return Err(failure_selection("scope", "stdin-requires-document"));
+    }
     let mut rendered: Vec<RenderedFile> = Vec::new();
     let selected: Vec<(&crate::loader::LoadedDocument, Option<Vec<u8>>)> = match &request.scope {
         FormatScope::All => load.documents.iter().map(|d| (d, None)).collect(),
@@ -220,6 +239,25 @@ fn plan(request: &FormatRequest, stdin_bytes: Option<&[u8]>) -> Result<Planned, 
         } else {
             "changed"
         };
+        // The exact loss spans are derived from the original text via
+        // the same LineIndex the loader parses with (finding r2 8): the
+        // diagnostic range and the report row can never disagree.
+        let text = Source::validate_encoding(&document.document.path, source)
+            .map_err(|diagnostic| loader_diagnostic::failure(Status::Invalid, vec![diagnostic]))?;
+        let index = LineIndex::new(&text);
+        let loss_spans: Vec<LossSpan> = candidate
+            .losses
+            .iter()
+            .map(|loss| {
+                let (start, end) = loss_line_span(&text, &index, loss.line);
+                LossSpan {
+                    line: loss.line,
+                    reason: loss.reason.as_str().to_owned(),
+                    start,
+                    end,
+                }
+            })
+            .collect();
         rendered.push(RenderedFile {
             path: document.document.path.clone(),
             candidate: candidate.text.clone().into_bytes(),
@@ -234,7 +272,7 @@ fn plan(request: &FormatRequest, stdin_bytes: Option<&[u8]>) -> Result<Planned, 
                 equal: true,
                 loss: candidate
                     .losses
-                    .into_iter()
+                    .iter()
                     .map(|loss| wire::FileLoss {
                         line: loss.line,
                         reason: loss.reason.as_str().to_owned(),
@@ -242,6 +280,7 @@ fn plan(request: &FormatRequest, stdin_bytes: Option<&[u8]>) -> Result<Planned, 
                     .collect(),
                 replacement: None,
             },
+            losses: loss_spans,
         });
     }
     rendered.sort_by(|left, right| left.path.as_bytes().cmp(right.path.as_bytes()));
@@ -274,15 +313,17 @@ fn plan(request: &FormatRequest, stdin_bytes: Option<&[u8]>) -> Result<Planned, 
     semantic::verify(&original_state, model_version, &replacements)?;
 
     let rows: Vec<wire::FileRow> = rendered.iter().map(|file| file.row.clone()).collect();
-    let losses: Vec<wire::LossRow> = rows
+    let losses: Vec<wire::LossRow> = rendered
         .iter()
-        .flat_map(|row| {
-            row.loss
+        .flat_map(|file| {
+            file.losses
                 .iter()
                 .map(|loss| wire::LossRow {
-                    path: row.path.clone(),
+                    path: file.path.clone(),
                     line: loss.line,
                     reason: loss.reason.clone(),
+                    start: loss.start,
+                    end: loss.end,
                 })
                 .collect::<Vec<_>>()
         })
@@ -452,16 +493,19 @@ fn dispatch(request: &FormatRequest, planned: Planned) -> DomainResult {
         }
         FormatMode::Stdin => {
             // Comment loss refuses the editor return outright (finding F):
-            // the buffer is the only copy of the text, so the registered
-            // loss diagnostic must gate the replacement exactly like the
-            // disk path, never exit 0 with a comment-dropped buffer.
+            // the buffer is the only copy of the text, so the loss must
+            // gate the replacement exactly like the disk path, never
+            // exit 0 with a comment-dropped buffer. The refusal carries
+            // the registered editor-mode identity `format.stdin-loss`
+            // (finding r2 9) so editor consumers can distinguish a
+            // buffer-loss refusal from a disk-mode loss denial.
             if planned.stdin_losses {
                 let mut diagnostics: Vec<Wire> = Vec::new();
-                push_loss_diagnostic(&mut diagnostics, &planned.losses, "blocked");
+                push_stdin_loss_diagnostic(&mut diagnostics, &planned.losses);
                 let set = DomainResult::from_wire_set(Status::Denied, diagnostics);
                 return DomainResult::denied_json(
                     planned.report_json.clone(),
-                    human_lossy(&planned),
+                    human_stdin_lossy(&planned),
                     set,
                 );
             }
@@ -610,6 +654,57 @@ fn module_prefix(selector: &str) -> Option<String> {
     Some(format!("lekalo/modules/{directory}/"))
 }
 
+/// The exact span of one 1-based source line, clamped to the text
+/// (finding r2 8): start = the line's first byte, end = one past its
+/// last content byte (EOL/CR excluded), both mapped through the loader's
+/// `LineIndex` so byte, line, and column always agree.
+fn loss_line_span(
+    text: &str,
+    index: &LineIndex,
+    line: usize,
+) -> (crate::diagnostics::Position, crate::diagnostics::Position) {
+    let total_lines =
+        text.matches('\n').count() + usize::from(!text.is_empty() && !text.ends_with('\n'));
+    let line = line.max(1);
+    let line_starts: Vec<usize> = std::iter::once(0usize)
+        .chain(
+            text.as_bytes()
+                .iter()
+                .enumerate()
+                .filter(|(_, byte)| **byte == b'\n')
+                .map(|(position, _)| position + 1),
+        )
+        .collect();
+    let start_byte = line_starts.get(line - 1).copied().unwrap_or(text.len());
+    let end_byte = if line < total_lines {
+        line_starts.get(line).copied().unwrap_or(text.len())
+    } else {
+        text.len()
+    };
+    // Exclude the line break itself from the span end.
+    let mut end_byte = end_byte.min(text.len());
+    if end_byte > start_byte && text.as_bytes()[end_byte - 1] == b'\n' {
+        end_byte -= 1;
+        if end_byte > start_byte && text.as_bytes()[end_byte - 1] == b'\r' {
+            end_byte -= 1;
+        }
+    }
+    let start = index.position(text, start_byte);
+    let end = index.position(text, end_byte);
+    (
+        crate::diagnostics::Position {
+            byte: start.byte,
+            line: start.line,
+            column: start.column,
+        },
+        crate::diagnostics::Position {
+            byte: end.byte,
+            line: end.line,
+            column: end.column,
+        },
+    )
+}
+
 /// One admitted document -> canonical candidate text plus its loss rows.
 /// The exact loader admission path runs first: encoding gate, strict
 /// parse, document shape, and version extraction. A parse error stays a
@@ -756,20 +851,46 @@ fn push_loss_diagnostic(diagnostics: &mut Vec<Wire>, losses: &[wire::LossRow], d
     );
     // One bounded location (the first loss row); the full inventory lives
     // in the report, never in unbounded diagnostics. Raw comment text
-    // never enters the diagnostic.
-    let position = crate::diagnostics::Position {
-        byte: 0,
-        line: first.line,
-        column: 1,
-    };
+    // never enters the diagnostic. The range is the loss row's exact
+    // span (finding r2 8): byte offsets and line/column are derived from
+    // the same LineIndex, so every client projection agrees.
     let source = source_location(
         Some(first.path.clone()),
         Some(crate::diagnostics::Range {
-            start: position,
-            end: position,
+            start: first.start,
+            end: first.end,
         }),
     );
     if let Ok(diagnostic) = build("format.comments-loss", None, source, data) {
+        diagnostics.push(diagnostic);
+    }
+}
+
+/// The registered `format.stdin-loss` producer (LEK-FORMAT-011, finding
+/// r2 9): editor mode's refusal of a comment-losing buffer. The buffer
+/// is the only copy of the text, so the loss is reported with its exact
+/// span and the replacement is withheld — distinct from the disk-path
+/// `format.comments-loss` so editor consumers can tell the two apart.
+fn push_stdin_loss_diagnostic(diagnostics: &mut Vec<Wire>, losses: &[wire::LossRow]) {
+    let Some(first) = losses.first() else {
+        return;
+    };
+    let mut data = DataObject::new();
+    data.insert("losses".to_owned(), DataValue::Count(losses.len() as u64));
+    data.insert(
+        "disposition".to_owned(),
+        DataValue::Token("blocked".to_owned()),
+    );
+    // The registered `span` requirement: the exact first-loss span from
+    // the unsaved buffer (finding r2 8).
+    let source = source_location(
+        Some(first.path.clone()),
+        Some(crate::diagnostics::Range {
+            start: first.start,
+            end: first.end,
+        }),
+    );
+    if let Ok(diagnostic) = build("format.stdin-loss", None, source, data) {
         diagnostics.push(diagnostic);
     }
 }
@@ -817,4 +938,23 @@ fn human_lossy(planned: &Planned) -> String {
         ));
     }
     lines.join("\n")
+}
+
+/// The editor-mode loss refusal projection: there is no lossy opt-in on
+/// the buffer path — the consumer must keep the comment in the buffer.
+fn human_stdin_lossy(planned: &Planned) -> String {
+    let mut lines = vec![format!(
+        "comment loss refuses the editor replacement: {} loss row(s); every comment must stay in the buffer",
+        planned.losses.len()
+    )];
+    for loss in &planned.losses {
+        lines.push(format!(
+            "comment loss {}:{} ({})",
+            loss.path, loss.line, loss.reason
+        ));
+    }
+    lines.join(
+        "
+",
+    )
 }

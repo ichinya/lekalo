@@ -399,8 +399,29 @@ fn editor_stdin_refuses_comment_losing_buffers() {
     assert_eq!(exit_code(&output), 3, "{}", stdout_text(&output));
     let stdout = stdout_text(&output);
     assert!(
-        stdout.contains("format.comments-loss"),
-        "the registered loss diagnostic gates the editor return: {stdout}"
+        stdout.contains("format.stdin-loss"),
+        "the registered editor-mode loss diagnostic gates the editor return: {stdout}"
+    );
+    assert!(
+        !stdout.contains("format.comments-loss"),
+        "the disk-mode loss identity is never used for a buffer refusal: {stdout}"
+    );
+    // The span is exact (finding r2 8): line 7, byte offset beyond 0.
+    let envelope: serde_json::Value = serde_json::from_str(&stdout).expect("envelope json");
+    let range = envelope
+        .pointer("/diagnostics/0/source/range")
+        .cloned()
+        .expect("the loss diagnostic carries its exact span");
+    assert_eq!(range["start"]["line"], 7, "the loss line: {range}");
+    assert!(
+        range["start"]["byte"].as_u64().expect("byte") > 0,
+        "the real byte offset, never hardcoded 0: {range}"
+    );
+    assert_eq!(range["end"]["line"], 7, "a same-line span: {range}");
+    assert!(
+        range["end"]["byte"].as_u64().expect("byte")
+            > range["start"]["byte"].as_u64().expect("byte"),
+        "the span covers the lost comment line: {range}"
     );
     assert!(
         !stdout.contains("\"replacement\""),

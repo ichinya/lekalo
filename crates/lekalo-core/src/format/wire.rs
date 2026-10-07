@@ -56,13 +56,19 @@ impl FileRow {
     }
 }
 
-/// One aggregated loss row used by the human projection and the
-/// `format.comments-loss` diagnostic.
+/// One aggregated loss row used by the human projection and the loss
+/// diagnostics. The span is exact (finding r2 8): derived from the
+/// original text via `LineIndex`, so line/column and byte offsets
+/// always agree.
 #[derive(Clone, Debug)]
 pub struct LossRow {
     pub path: String,
     pub line: usize,
     pub reason: String,
+    /// The 0-based byte offset of the lost line's first byte.
+    pub start: crate::diagnostics::Position,
+    /// The 0-based byte offset one past the lost line's content.
+    pub end: crate::diagnostics::Position,
 }
 
 /// The closed report document.
