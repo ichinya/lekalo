@@ -68,10 +68,14 @@ export async function serve(adapter, io = defaultIo()) {
   if (response === null) return 1;
   // Bounded emission (issue #106): the completed envelope is admitted and
   // serialized into a bounded buffer before a single stdout byte is
-  // written. A response over the accepted output ceiling refuses here —
-  // never a truncated ok written to the stream.
+  // written. The ceiling is the accepted default OR the request's
+  // declared `limits.max_output_bytes`, whichever is tighter — a valid
+  // request that declares a small output budget must never receive a
+  // larger envelope, and nothing truncated is ever written.
+  const declared = request.limits?.max_output_bytes;
+  const ceiling = typeof declared === "number" && declared >= 1 ? Math.min(declared, MAX_OUTPUT_BYTES) : MAX_OUTPUT_BYTES;
   const bytes = responseBytes(response);
-  if (bytes.length > MAX_OUTPUT_BYTES) {
+  if (bytes.length > ceiling) {
     log.error(`response refused: output-limit`);
     return 1;
   }

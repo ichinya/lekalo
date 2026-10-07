@@ -81,11 +81,18 @@ func Serve(adapter Adapter) int {
 	}
 	// Bounded emission (issue #106): the completed envelope is admitted
 	// (builders already validate the full closed contract) and serialized
-	// into a bounded buffer before a single stdout byte is written. A
-	// response over the accepted output ceiling refuses here — never a
-	// truncated ok written to the stream.
+	// into a bounded buffer before a single stdout byte is written. The
+	// ceiling is the accepted default OR the request's declared
+	// limits.max_output_bytes, whichever is tighter. A response over the
+	// ceiling refuses here — never a truncated ok written to the stream.
 	bytes := ResponseBytes(response)
-	if int64(len(bytes)) > generatedBounds.DefaultMaxOutputBytes {
+	ceiling := generatedBounds.DefaultMaxOutputBytes
+	if limits, ok := valueOf(request, "limits").(map[string]any); ok {
+		if declared, ok := limits["max_output_bytes"].(float64); ok && declared >= 1 && int64(declared) < ceiling {
+			ceiling = int64(declared)
+		}
+	}
+	if int64(len(bytes)) > ceiling {
 		Error(tag, "response refused: output-limit")
 		return 1
 	}

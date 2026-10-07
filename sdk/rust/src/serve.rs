@@ -102,10 +102,21 @@ pub fn serve(adapter: &dyn Adapter) -> i32 {
         // Bounded emission (issue #106): the completed envelope is admitted
         // (builders already validate the full closed contract) and
         // serialized into a bounded buffer before a single stdout byte is
-        // written. A response over the accepted output ceiling refuses
-        // here — never a truncated ok written to the stream.
+        // written. The ceiling is the accepted default OR the request's
+        // declared limits.max_output_bytes, whichever is tighter; a
+        // response over the ceiling refuses here — never a truncated ok.
         let bytes = response_bytes(&response);
-        if bytes.len() > protocol::bounds::DEFAULT_MAX_OUTPUT_BYTES as usize {
+        let mut ceiling = protocol::bounds::DEFAULT_MAX_OUTPUT_BYTES as usize;
+        if let Some(declared) = request
+            .get("limits")
+            .and_then(|limits| limits.get("max_output_bytes"))
+            .and_then(Value::as_u64)
+        {
+            if declared >= 1 && (declared as usize) < ceiling {
+                ceiling = declared as usize;
+            }
+        }
+        if bytes.len() > ceiling {
             logger::error(tag, "response refused: output-limit");
             return 1;
         }

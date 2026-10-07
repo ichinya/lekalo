@@ -2107,7 +2107,7 @@ final class Serve {
             if ($response === null) {
                 return 1;
             }
-            return self::emit($response);
+            return self::emit($response, $request);
         }
         $output = $handler($request);
         $response = self::buildResponse($request, $identity, $operation, is_array($output) ? $output : []);
@@ -2118,18 +2118,26 @@ final class Serve {
                 return 1;
             }
         }
-        return self::emit($response);
+        return self::emit($response, $request);
     }
 
     /**
      * Bounded emission (issue #106): the completed envelope is serialized
      * into a bounded buffer and measured before a single stdout byte is
-     * written; a response over the accepted output ceiling refuses with a
-     * nonzero exit instead of writing a truncated ok.
+     * written. The ceiling is the accepted default OR the request's
+     * declared limits.max_output_bytes, whichever is tighter; a response
+     * over the ceiling refuses with a nonzero exit instead of writing a
+     * truncated ok. The request is supplied by the caller for the
+     * declared-limit check; null uses the default ceiling only.
      */
-    private static function emit(array $response): int {
+    private static function emit(array $response, ?array $request): int {
         $bytes = Build::responseBytes($response);
-        if (strlen($bytes) > Protocol::BOUNDS['DEFAULT_MAX_OUTPUT_BYTES']) {
+        $ceiling = Protocol::BOUNDS['DEFAULT_MAX_OUTPUT_BYTES'];
+        $declared = $request['limits']['max_output_bytes'] ?? null;
+        if (is_int($declared) && $declared >= 1 && $declared < $ceiling) {
+            $ceiling = $declared;
+        }
+        if (strlen($bytes) > $ceiling) {
             return 1;
         }
         fwrite(STDOUT, $bytes);
