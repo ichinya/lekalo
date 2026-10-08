@@ -730,7 +730,12 @@ fn run(
             target_id,
             profile_id,
             ..
-        } => run_target_status(project.clone(), target_id.as_deref(), profile_id.as_deref()),
+        } => run_target_status(
+            catalog,
+            project.clone(),
+            target_id.as_deref(),
+            profile_id.as_deref(),
+        ),
         ToolRequest::TraceExport { .. } => unreachable!("matched above"),
     };
     let digest_after = model_digest(&project);
@@ -760,6 +765,7 @@ fn run(
 /// vocabulary is closed; anything else is a typed input refusal before
 /// any read.
 fn run_target_status(
+    catalog: &ServerCatalog,
     project: Option<String>,
     target_id: Option<&str>,
     profile_id: Option<&str>,
@@ -773,7 +779,15 @@ fn run_target_status(
             ));
         }
     }
-    crate::run_status(project)
+    // F9: a spawned `git` is reachable only through the catalog-gated
+    // capability. Without the explicit changed-mode admission the status
+    // projection degrades to typed git-unavailable facts instead of
+    // spawning any process.
+    if catalog.core.admits_git_changed_mode() {
+        crate::run_status(project)
+    } else {
+        crate::run_status_without_git(project)
+    }
 }
 
 /// `lekalo_trace_export`: the manifest reference is an opaque catalog id;
