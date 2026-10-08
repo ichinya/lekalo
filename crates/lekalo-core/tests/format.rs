@@ -515,7 +515,11 @@ fn plan_record(
 }
 
 /// Plant a valid single-file interrupted transaction over `root`'s
-/// scheduling module (current source bytes = `current`).
+/// scheduling module (current source bytes = `current`). The only
+/// caller is the live-writer test, which plants through a Windows
+/// share-mode-zero handle and is `#[cfg(windows)]` — on unix the helper
+/// stays for platform parity and is deliberately unused.
+#[cfg_attr(not(windows), allow(dead_code))]
 fn plant_interrupted(root: &Path, current: &[u8]) -> (PathBuf, String) {
     let module = root.join("lekalo/modules/scheduling/module.yaml");
     let before = fs::read(&module).expect("preimage");
