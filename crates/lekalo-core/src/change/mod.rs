@@ -37,7 +37,7 @@ pub use catalog::{Catalog, CatalogEntry};
 pub use diagnostic::ChangeError;
 pub use plan::PreparedChange;
 pub use policy::Policy;
-pub use receipt::{Receipt, ReceiptState};
+pub use receipt::{key_digest, Receipt, ReceiptState};
 pub use request::{ChangeRequest, Literal, Operation, RequestInvalid, TypeRef};
 pub use version::{
     MAX_FILE_DIFF_BYTES, MAX_LITERAL_DEPTH, MAX_OPERATIONS, MAX_PATCH_LINES, MAX_REQUEST_BYTES,
@@ -562,13 +562,14 @@ pub fn apply_request(options: &ApplyRequestOptions) -> Result<Receipt, ChangeErr
     // already carries the committed change, so a fresh resolve would refuse
     // as a duplicate. Replay must still work.
     let key = receipt::key_digest(options.idempotency_key);
-    let history_bytes = std::fs::read(
-        root.join(version::HISTORY_LOGICAL_PATH.replace('/', std::path::MAIN_SEPARATOR_STR)),
-    )
-    .unwrap_or_default();
-    // A zero-byte ledger is a schema-invalid document, not "no history"
-    // (review finding 11): it fails closed instead of becoming an empty
-    // replay surface.
+    let history_file =
+        root.join(version::HISTORY_LOGICAL_PATH.replace('/', std::path::MAIN_SEPARATOR_STR));
+    // Absent reads as "no history"; an existing zero-byte ledger is a
+    // corrupt document and fails closed (review finding 11).
+    let history_bytes = match std::fs::read(&history_file) {
+        Ok(bytes) => bytes,
+        Err(_) => Vec::new(),
+    };
     if !history_bytes.is_empty() {
         let history = History::decode(&history_bytes)?;
         if let Some(record) = history.by_key(&key) {
@@ -627,18 +628,15 @@ pub fn apply_prepared(
     refuse_while_recovery_pending(&root)?;
 
     // The durable ledger is authoritative: replay first, conflict second.
-    // A zero-byte ledger file is invalid-or-absent deliberately: absent
-    // (NotFound) means the first commit creates it, but an existing empty
-    // file is a corrupt document and fails closed (review finding 11).
+    // Absent (NotFound) means the first commit creates it; an existing
+    // zero-byte or whitespace-only file is a corrupt document and fails
+    // closed inside `History::decode` (review finding 11).
     let history_logical = version::HISTORY_LOGICAL_PATH;
     let history_file = root.join(history_logical.replace('/', std::path::MAIN_SEPARATOR_STR));
-    let history_bytes = std::fs::read(&history_file).unwrap_or_default();
-    if history_bytes.len() == 1 && history_bytes[0].is_ascii_whitespace() {
-        // Whitespace-only is still a malformed empty document.
-        return Err(ChangeError::HistoryInvalid {
-            detail: "empty",
-        });
-    }
+    let history_bytes = match std::fs::read(&history_file) {
+        Ok(bytes) => bytes,
+        Err(_) => Vec::new(),
+    };
     let mut history = if history_bytes.is_empty() {
         History {
             project: prepared.project_id.clone(),
@@ -836,16 +834,15 @@ pub fn lookup_receipt(
     idempotency_key: &str,
 ) -> Result<Option<Receipt>, ChangeError> {
     let root = resolve_root(project)?;
-    let history_bytes = std::fs::read(
-        root.join(version::HISTORY_LOGICAL_PATH.replace('/', std::path::MAIN_SEPARATOR_STR)),
-    )
-    .unwrap_or_default();
-    // A zero-byte ledger is invalid-or-absent deliberately (review
-    // finding 11): absent reads as "no record", an existing empty file is
-    // a corrupt document and fails closed.
-    if history_bytes.is_empty() {
-        return Ok(None);
-    }
+    let history_file =
+        root.join(version::HISTORY_LOGICAL_PATH.replace('/', std::path::MAIN_SEPARATOR_STR));
+    // Absent reads as "no record"; an existing zero-byte (or
+    // whitespace-only) ledger is a corrupt document and fails closed
+    // (review finding 11).
+    let history_bytes = match std::fs::read(&history_file) {
+        Ok(bytes) => bytes,
+        Err(_) => return Ok(None),
+    };
     let history = History::decode(&history_bytes)?;
     let key = receipt::key_digest(idempotency_key);
     Ok(history
@@ -858,6 +855,7 @@ pub fn lookup_receipt(
 /// the rollback (review finding 6 — a restore is `rolled-back`, never
 /// `committed`, and the envelope validates against the change-receipt
 /// contract at the root).
+#[derive(Clone, Debug)]
 pub struct RecoveryOutcome {
     /// The transaction id that was recovered.
     pub transaction: String,

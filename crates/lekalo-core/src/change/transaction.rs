@@ -337,10 +337,7 @@ impl Transaction {
                 detail: "before-digest",
             });
         }
-        let mut after_bytes = current.clone();
-        for edit in &plan.edits {
-            after_bytes = edit.apply(&after_bytes);
-        }
+        let after_bytes = ByteEdit::apply_all(&current, &plan.edits);
         let after_digest = format!("sha256:{}", crate::digest::sha256_hex(&after_bytes));
         if after_digest != plan.after_digest {
             return Err(ChangeError::CommitFailed {

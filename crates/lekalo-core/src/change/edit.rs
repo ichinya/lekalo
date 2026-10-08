@@ -33,6 +33,20 @@ impl ByteEdit {
         out.extend_from_slice(&bytes[self.end..]);
         out
     }
+
+    /// Apply a set of disjoint original-relative edits in
+    /// descending-offset order so every range is interpreted against the
+    /// original bytes (the multi-operation batch convention, review
+    /// finding 7). Single-edit sets are the degenerate case.
+    pub fn apply_all(bytes: &[u8], edits: &[ByteEdit]) -> Vec<u8> {
+        let mut sorted: Vec<&ByteEdit> = edits.iter().collect();
+        sorted.sort_by(|left, right| left.start.cmp(&right.start).then(left.end.cmp(&right.end)));
+        let mut out = bytes.to_vec();
+        for edit in sorted.iter().rev() {
+            out = edit.apply(&out);
+        }
+        out
+    }
 }
 
 /// The first byte offset after the line break that follows `offset`.
