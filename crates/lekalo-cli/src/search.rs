@@ -183,11 +183,17 @@ pub enum SearchIndexCommands {
 }
 
 /// The admitted service context of one run: the loaded projection, its
-/// immutable content digest, and the per-domain admitted coverage.
+/// immutable content digest, the per-domain admitted coverage, the
+/// admitted input pins, and the run's security/policy digest.
 struct Service {
     projection: Projection,
     project_id: Option<String>,
     coverage: Vec<lekalo_core::search::CoverageRow>,
+    pins: Vec<lekalo_core::search::InputPin>,
+    policy_digest: String,
+    /// Producer rows the projection could not attach (counted, never
+    /// silent): surfaced as a `search.result-limit` warning.
+    dropped_rows: u64,
 }
 
 /// Run one `search` command.
@@ -228,6 +234,15 @@ pub fn run_find(page: &PageArgs, filters: &SearchFilters, no_cache: bool) -> Dom
 
 /// The shared query path: load, admit, execute, and render.
 fn run_query(request: &QueryRequest, page: &PageArgs, no_cache: bool) -> DomainResult {
+    // A cursor binds an immutable persisted generation; under the
+    // durable-store bypass no such generation exists, so the pair is
+    // refused before any load (the research contract is verbatim).
+    if no_cache && request.cursor.is_some() {
+        return DomainResult::invalid(lekalo_core::search::diagnostic_query_invalid(
+            "cursor",
+            "no-cache-bypass",
+        ));
+    }
     let service = match assemble(page, no_cache) {
         Ok(service) => service,
         Err(result) => return result,
@@ -235,8 +250,8 @@ fn run_query(request: &QueryRequest, page: &PageArgs, no_cache: bool) -> DomainR
     let cap = lekalo_core::search::MAX_POSTINGS;
     let index = match lekalo_core::search::SearchIndex::from_projection(
         &service.projection,
-        &[],
-        &service.policy_digest(),
+        &service.pins,
+        &service.policy_digest,
         service.project_id.as_deref(),
         cap,
     ) {
@@ -245,10 +260,29 @@ fn run_query(request: &QueryRequest, page: &PageArgs, no_cache: bool) -> DomainR
     };
     let document = snapshot_document(&service);
     let index_digest = format!("sha256:{}", lekalo_core::search::digest_of(&document));
+    // Coverage honesty: a needed domain that is not complete is warned
+    // about once per domain so absence is never read as proof.
+    let mut diagnostics: Vec<lekalo_core::diagnostics::Diagnostic> = Vec::new();
+    for row in &service.coverage {
+        if row.state != "complete" {
+            diagnostics.extend(
+                lekalo_core::search::emit_coverage_incomplete(&row.domain, row.state.as_str())
+                    .as_slice()
+                    .to_vec(),
+            );
+        }
+    }
+    if service.dropped_rows > 0 {
+        diagnostics.extend(
+            lekalo_core::search::emit_dropped_rows(service.dropped_rows)
+                .as_slice()
+                .to_vec(),
+        );
+    }
     let outcome = match lekalo_core::search::execute(
         &index,
         &index_digest,
-        &index_digest,
+        &service.policy_digest,
         service.project_id.as_deref(),
         request,
         service.coverage,
@@ -256,15 +290,18 @@ fn run_query(request: &QueryRequest, page: &PageArgs, no_cache: bool) -> DomainR
         Ok(outcome) => outcome,
         Err(set) => return DomainResult::invalid(set),
     };
-    DomainResult::graph(outcome.json, outcome.human, outcome.diagnostics)
+    diagnostics.extend(outcome.diagnostics);
+    DomainResult::graph(outcome.json, outcome.human, diagnostics)
 }
 
+/// The durable snapshot document of one admitted run: the exact cards,
+/// postings, qualified identities, input pins, and policy digest.
 fn snapshot_document(service: &Service) -> lekalo_core::search::IndexDocument {
     let index = lekalo_core::search::SearchIndex::from_projection(
         &service.projection,
-        &[],
-        "",
-        None,
+        &service.pins,
+        &service.policy_digest,
+        service.project_id.as_deref(),
         lekalo_core::search::MAX_POSTINGS,
     );
     let (cards, postings, qualified_ids) = match index {
@@ -277,8 +314,8 @@ fn snapshot_document(service: &Service) -> lekalo_core::search::IndexDocument {
         recipe: lekalo_core::search::RECIPE.to_owned(),
         project_id: service.project_id.clone(),
         digest: String::new(),
-        inputs: Vec::new(),
-        policy_digest: service.policy_digest(),
+        inputs: service.pins.clone(),
+        policy_digest: service.policy_digest.clone(),
         cards,
         postings,
         qualified_ids,
@@ -286,16 +323,26 @@ fn snapshot_document(service: &Service) -> lekalo_core::search::IndexDocument {
 }
 
 impl Service {
-    /// The admitted policy digest: the snapshot content itself. Policy
-    /// tightening therefore rebinds every cursor coherently.
-    fn policy_digest(&self) -> String {
+    /// The admitted policy digest: the coverage facts plus the input
+    /// pins of this run. Policy tightening (a different admitted
+    /// coverage or pin set) rebinds every cursor coherently and is
+    /// distinct from the index content digest.
+    fn compute_policy_digest(&self) -> String {
+        let mut input = String::from("search-policy/1\u{0}");
+        for row in &self.coverage {
+            input.push_str(&format!("{}={}\u{0}", row.domain, row.state));
+        }
+        for pin in &self.pins {
+            input.push_str(&format!(
+                "{}:{}:{}\u{0}",
+                pin.kind,
+                pin.path,
+                pin.digest.as_deref().unwrap_or("")
+            ));
+        }
         format!(
             "sha256:{}",
-            lekalo_core::search::sha256_of(
-                serde_json::to_vec(&self.coverage)
-                    .unwrap_or_default()
-                    .as_slice()
-            )
+            lekalo_core::search::sha256_of(input.as_bytes())
         )
     }
 }
@@ -321,6 +368,11 @@ fn assemble(page: &PageArgs, no_cache: bool) -> Result<Service, DomainResult> {
         coverage_row("ir", "complete"),
         coverage_row("effects", "complete"),
     ];
+    let root = lekalo_core::doctor::project_root(&selection)
+        .map_err(|result: DomainResult| result)
+        .ok();
+    let mut pins: Vec<lekalo_core::search::InputPin> = Vec::new();
+    let mut dropped_rows: u64 = 0;
     match &page.inputs {
         Some(path) => {
             let bytes = read_admitted(path).map_err(|detail| {
@@ -329,14 +381,42 @@ fn assemble(page: &PageArgs, no_cache: bool) -> Result<Service, DomainResult> {
                 ))
             })?;
             let manifest = SearchInputs::parse(&bytes).map_err(DomainResult::invalid)?;
-            if let Some(project) = &compilation.project.project {
-                if manifest.project_id() != project.id.as_str() {
+            let project_id = compilation
+                .project
+                .project
+                .as_ref()
+                .map(|project| project.id.as_str().to_owned());
+            if let Some(project) = &project_id {
+                if manifest.project_id() != project.as_str() {
                     return Err(DomainResult::invalid(
                         lekalo_core::search::diagnostic_input_invalid("project-mismatch", None),
                     ));
                 }
             }
-            admit_producers(&selection, &manifest, &mut projection, &mut coverage)?;
+            // The consumed input pins ride the snapshot and the policy
+            // digest so a generation can prove what it was built from;
+            // each pin records the exact live bytes digest it consumed.
+            pins = lekalo_core::search::pins_of(&manifest)
+                .into_iter()
+                .map(|mut pin| {
+                    if let Some(root) = &root {
+                        if let Ok(produced) = std::fs::read(root.join(&pin.path)) {
+                            pin.digest = Some(format!(
+                                "sha256:{}",
+                                lekalo_core::search::sha256_of(&produced)
+                            ));
+                        }
+                    }
+                    pin
+                })
+                .collect();
+            dropped_rows = admit_producers(
+                &selection,
+                project_id.as_deref(),
+                &manifest,
+                &mut projection,
+                &mut coverage,
+            )?;
         }
         None => {
             // Without an explicit manifest the optional producers are
@@ -352,7 +432,7 @@ fn assemble(page: &PageArgs, no_cache: bool) -> Result<Service, DomainResult> {
             }
         }
     }
-    Ok(Service {
+    let service = Service {
         projection,
         project_id: compilation
             .project
@@ -360,6 +440,13 @@ fn assemble(page: &PageArgs, no_cache: bool) -> Result<Service, DomainResult> {
             .as_ref()
             .map(|project| project.id.as_str().to_owned()),
         coverage,
+        policy_digest: String::new(),
+        pins,
+        dropped_rows,
+    };
+    Ok(Service {
+        policy_digest: service.compute_policy_digest(),
+        ..service
     })
 }
 
@@ -368,6 +455,360 @@ fn coverage_row(domain: &'static str, state: &'static str) -> lekalo_core::searc
         domain: domain.to_owned(),
         state: state.to_owned(),
     }
+}
+
+/// A producer document's project binding: refused with a bounded
+/// producer diagnostic when it names a different project (custody: no
+/// foreign evidence ever joins this project's view).
+fn check_producer_project(declared: &str, project: &str) -> Result<(), DomainResult> {
+    if declared != project {
+        return Err(DomainResult::invalid(
+            lekalo_core::search::diagnostic_input_invalid("project-mismatch", None),
+        ));
+    }
+    Ok(())
+}
+
+/// Decode one producer document as exact UTF-8 JSON with duplicate
+/// keys rejected before any decode (the closed-document convention of
+/// every admitted search byte source).
+fn producer_json(bytes: &[u8], producer: &str) -> Result<serde_json::Value, DomainResult> {
+    let text = std::str::from_utf8(bytes).map_err(|_| {
+        DomainResult::invalid(lekalo_core::search::diagnostic_input_invalid(
+            "invalid-encoding",
+            Some(producer),
+        ))
+    })?;
+    lekalo_core::search::reject_duplicate_keys(text).map_err(|_| {
+        DomainResult::invalid(lekalo_core::search::diagnostic_input_invalid(
+            "duplicate-key",
+            Some(producer),
+        ))
+    })?;
+    serde_json::from_str(text).map_err(|_| {
+        DomainResult::invalid(lekalo_core::search::diagnostic_input_invalid(
+            "producer-malformed",
+            Some(producer),
+        ))
+    })
+}
+
+/// The custody envelope the effects producer document must carry: the
+/// exact published contract identity plus its declared project.
+struct EffectsCustody {
+    project: String,
+}
+
+/// Run the effects producer document through its published typed
+/// decoder (`lekalo/effects/v0.2.16`): contract identity, closed row
+/// grammar, and envelope cross-checks (metadata counts, project) are
+/// enforced before any row is projected.
+fn decode_effects_envelope(
+    _bytes: &[u8],
+    value: &serde_json::Value,
+) -> Result<EffectsCustody, DomainResult> {
+    const EFFECTS_IDENTITY: &str = lekalo_core::effects::version::IDENTITY;
+    const EFFECTS_SCHEMA: &str = lekalo_core::effects::version::SCHEMA_VERSION;
+    let identity = value
+        .get("identity")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| producer_invalid("producer-shape", "effects"))?;
+    let schema_version = value
+        .get("schemaVersion")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| producer_invalid("producer-shape", "effects"))?;
+    if identity != EFFECTS_IDENTITY || schema_version != EFFECTS_SCHEMA {
+        return Err(DomainResult::invalid(
+            lekalo_core::search::diagnostic_input_invalid("identity-mismatch", Some("effects")),
+        ));
+    }
+    // The published typed row decoder refuses any malformed row (closed
+    // grammar over operation/subject/kind/provenance), so no hand-picked
+    // row can silently enter the projection.
+    let detected_rows = decode_effects_rows(value)?;
+    // The declared rows are rebuilt from the canonical IR at admission,
+    // so only the producer's own detected rows are custody-checked here;
+    // a snapshot that also carries declared rows is a foreign shape.
+    let declared = value
+        .get("effects")
+        .and_then(|effects| effects.as_array())
+        .map(|rows| {
+            rows.iter()
+                .filter(|row| {
+                    row.get("provenance")
+                        .and_then(|provenance| provenance.get("type"))
+                        .and_then(|value| value.as_str())
+                        == Some("canonical-ir")
+                })
+                .count()
+        })
+        .unwrap_or(0);
+    if declared > 0 {
+        return Err(producer_invalid("producer-shape", "effects"));
+    }
+    let detected = value
+        .get("effects")
+        .and_then(|effects| effects.as_array())
+        .map(|rows| {
+            rows.iter()
+                .filter(|row| {
+                    row.get("provenance")
+                        .and_then(|provenance| provenance.get("type"))
+                        .and_then(|value| value.as_str())
+                        == Some("evidence")
+                })
+                .count()
+        })
+        .unwrap_or(0);
+    // Envelope cross-check: the document's own metadata must describe
+    // exactly the rows it carries and the typed decoder must accept
+    // exactly those rows (a spliced/edited snapshot refuses).
+    let metadata = value
+        .get("metadata")
+        .ok_or_else(|| producer_invalid("producer-shape", "effects"))?;
+    let metadata_count = |key: &str| -> Option<usize> {
+        metadata
+            .get(key)
+            .and_then(|value| value.as_u64())
+            .map(|count| count as usize)
+    };
+    let rows = value
+        .get("effects")
+        .and_then(|effects| effects.as_array())
+        .map(|rows| rows.len())
+        .unwrap_or(0);
+    if metadata_count("detectedCount") != Some(detected)
+        || metadata_count("declaredCount") != Some(declared)
+        || metadata_count("effectCount") != Some(rows)
+        || detected_rows.len() != detected
+    {
+        return Err(producer_invalid("producer-shape", "effects"));
+    }
+    let project = value
+        .get("project")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| producer_invalid("producer-shape", "effects"))?;
+    Ok(EffectsCustody {
+        project: project.to_owned(),
+    })
+}
+
+/// Decode the effects snapshot's evidence rows through the published
+/// #14 typed constructors: operation, kind, resource/field subject,
+/// occurrence, trust state, and the envelope identity fields are each
+/// grammar-checked by their owners, never hand-picked here.
+fn decode_effects_rows(
+    value: &serde_json::Value,
+) -> Result<Vec<lekalo_core::effects::EvidenceEntry>, DomainResult> {
+    let rows = value
+        .get("effects")
+        .and_then(|effects| effects.as_array())
+        .ok_or_else(|| producer_invalid("producer-shape", "effects"))?;
+    let mut entries = Vec::with_capacity(rows.len());
+    for row in rows {
+        let provenance = row
+            .get("provenance")
+            .ok_or_else(|| producer_invalid("producer-malformed", "effects"))?;
+        if provenance.get("type").and_then(|value| value.as_str()) != Some("evidence") {
+            continue;
+        }
+        let operation = row
+            .get("operation")
+            .and_then(|value| value.as_str())
+            .and_then(lekalo_core::effects::OperationId::from_qualified)
+            .ok_or_else(|| producer_invalid("producer-malformed", "effects"))?;
+        let kind = row
+            .get("kind")
+            .and_then(|value| value.as_str())
+            .and_then(effects_kind_from_key)
+            .ok_or_else(|| producer_invalid("producer-malformed", "effects"))?;
+        let resource_id = row
+            .get("resource")
+            .and_then(|resource| resource.get("id"))
+            .and_then(|value| value.as_str())
+            .ok_or_else(|| producer_invalid("producer-malformed", "effects"))?;
+        let resource_kind = row
+            .get("resource")
+            .and_then(|resource| resource.get("kind"))
+            .and_then(|value| value.as_str())
+            .and_then(effects_resource_kind_from_key)
+            .ok_or_else(|| producer_invalid("producer-malformed", "effects"))?;
+        let resource = lekalo_core::effects::ResourceId::new(resource_kind, resource_id)
+            .ok_or_else(|| producer_invalid("producer-malformed", "effects"))?;
+        let subject = match row.get("field").and_then(|value| value.as_str()) {
+            Some(field) => lekalo_core::effects::Subject::with_field(
+                resource,
+                lekalo_core::effects::FieldName::new(field)
+                    .ok_or_else(|| producer_invalid("producer-malformed", "effects"))?,
+            ),
+            None => lekalo_core::effects::Subject::new(resource),
+        };
+        let occurrence = row
+            .get("occurrence")
+            .and_then(|value| value.as_u64())
+            .filter(|occurrence| *occurrence <= u32::MAX as u64)
+            .ok_or_else(|| producer_invalid("producer-malformed", "effects"))?
+            as u32;
+        let trust = row
+            .get("provenance")
+            .and_then(|provenance| provenance.get("trust"))
+            .and_then(|value| value.as_str())
+            .and_then(lekalo_core::effects::TrustState::from_key)
+            .filter(|trust| *trust != lekalo_core::effects::TrustState::Rejected)
+            .ok_or_else(|| producer_invalid("producer-malformed", "effects"))?;
+        // The envelope identity fields are grammar-checked by the same
+        // rules the #14 decoder applies to them (namespaced adapter and
+        // target ids, exact protocol semver, sha256 evidence digest).
+        for (field, valid) in [
+            (
+                "adapterId",
+                is_namespaced_adapter_id(
+                    provenance
+                        .get("adapterId")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or_default(),
+                ),
+            ),
+            (
+                "targetId",
+                is_namespaced_adapter_id(
+                    provenance
+                        .get("targetId")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or_default(),
+                ),
+            ),
+            (
+                "protocolVersion",
+                is_semver(
+                    provenance
+                        .get("protocolVersion")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or_default(),
+                ),
+            ),
+            (
+                "evidenceDigest",
+                lekalo_core::search::is_sha256_digest(
+                    provenance
+                        .get("evidenceDigest")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or_default(),
+                ),
+            ),
+        ] {
+            if !valid {
+                return Err(producer_invalid("producer-malformed", "effects"));
+            }
+            let _ = field;
+        }
+        entries.push(lekalo_core::effects::EvidenceEntry {
+            operation,
+            kind,
+            subject,
+            occurrence,
+            trust: Some(trust),
+            transaction_group: None,
+            sensitivity: None,
+        });
+    }
+    Ok(entries)
+}
+
+/// The namespaced adapter/target id grammar (`ns…/name`, at most 64
+/// bytes) — the same shape the #14 decoder requires.
+fn is_namespaced_adapter_id(text: &str) -> bool {
+    if text.len() > 64 {
+        return false;
+    }
+    match text.split_once('/') {
+        Some((namespace, name)) => {
+            !namespace.is_empty()
+                && !name.is_empty()
+                && namespace
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte == b'.')
+                && name
+                    .bytes()
+                    .next()
+                    .is_some_and(|first| first.is_ascii_lowercase())
+                && name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+        }
+        None => false,
+    }
+}
+
+/// Exact `major.minor.patch` without build metadata.
+fn is_semver(text: &str) -> bool {
+    let parts: Vec<&str> = text.split('.').collect();
+    parts.len() == 3
+        && parts
+            .iter()
+            .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
+        && text.len() <= 32
+}
+
+/// The closed effect-kind key lookup (the wire spelling is action-free).
+fn effects_kind_from_key(key: &str) -> Option<lekalo_core::effects::EffectKind> {
+    use lekalo_core::effects::EffectKind as Kind;
+    use lekalo_core::effects::WriteAction;
+    Some(match key {
+        "read" => Kind::Read,
+        "create" => Kind::Create,
+        "update" => Kind::Update,
+        "delete" => Kind::Delete,
+        "write-field" => Kind::WriteField {
+            action: WriteAction::Set,
+        },
+        "emit-event" => Kind::EmitEvent,
+        "enqueue-job" => Kind::EnqueueJob,
+        "external-call" => Kind::ExternalCall,
+        "cache-read" => Kind::CacheRead,
+        "cache-write" => Kind::CacheWrite,
+        "cache-invalidate" => Kind::CacheInvalidate,
+        "publish-output" => Kind::PublishOutput,
+        "audit-log" => Kind::AuditLog,
+        "transaction-boundary" => Kind::TransactionBoundary,
+        _ => return None,
+    })
+}
+
+/// The closed resource-kind key lookup.
+fn effects_resource_kind_from_key(key: &str) -> Option<lekalo_core::effects::ResourceKind> {
+    use lekalo_core::effects::ResourceKind as Kind;
+    Some(match key {
+        "canonical" => Kind::Canonical,
+        "target-resource" => Kind::TargetResource,
+        "external-service" => Kind::ExternalService,
+        "cache" => Kind::Cache,
+        "event" => Kind::Event,
+        "job" => Kind::Job,
+        "output" => Kind::Output,
+        "audit" => Kind::Audit,
+        _ => return None,
+    })
+}
+
+/// Run the waivers producer document through its published typed
+/// decoder: the governance store parser rejects duplicate keys, closed
+/// shapes, registry pins, approval bindings, and lineage conflicts
+/// before any waiver card is projected.
+fn decode_waivers_store(
+    _bytes: &[u8],
+    value: &serde_json::Value,
+) -> Result<lekalo_core::waivers::Store, DomainResult> {
+    if value.get("schemaVersion").and_then(|value| value.as_str())
+        != Some("lekalo/ai-lint-waivers/v0.6.5")
+    {
+        return Err(producer_invalid("identity-mismatch", "waivers"));
+    }
+    let store: lekalo_core::waivers::Store = lekalo_core::waivers::parse(_bytes)
+        .map_err(|_| producer_invalid("producer-malformed", "waivers"))?;
+    lekalo_core::waivers::validate_store(&store)
+        .map_err(|_| producer_invalid("producer-shape", "waivers"))?;
+    Ok(store)
 }
 
 /// Read one admitted input file (bounded).
@@ -383,24 +824,101 @@ fn read_admitted(path: &str) -> Result<Vec<u8>, &'static str> {
     Ok(bytes)
 }
 
+/// One producer-custody refusal with a bounded producer reason.
+fn producer_invalid(detail: &'static str, producer: &'static str) -> DomainResult {
+    DomainResult::invalid(lekalo_core::search::diagnostic_input_invalid(
+        detail,
+        Some(producer),
+    ))
+}
+
+/// The snapshot content digest a fresh build would publish for one
+/// project right now: the exact same admitted assembly the build path
+/// runs (canonical Model + manifest producers, bounded reads), hashed
+/// over its own snapshot document. `Ok(None)` when no manifest exists
+/// at the standard location (admission-dependent freshness is then the
+/// build path's business, never a silent stale verdict).
+fn current_snapshot_digest(
+    selection: &lekalo_core::loader::LoadSelection,
+) -> Result<Option<String>, ()> {
+    let root = lekalo_core::doctor::project_root(selection).map_err(|_| ())?;
+    let manifest_path = root.join("evidence").join("search-inputs.json");
+    if !manifest_path.is_file() {
+        return Ok(None);
+    }
+    let page = PageArgs {
+        limit: None,
+        cursor: None,
+        project: selection.project.clone(),
+        inputs: Some(
+            manifest_path
+                .strip_prefix(&root)
+                .map_err(|_| ())?
+                .to_string_lossy()
+                .replace('\\', "/"),
+        ),
+    };
+    let service = assemble(&page, false).map_err(|_| ())?;
+    let document = snapshot_document(&service);
+    Ok(Some(lekalo_core::search::digest_of(&document)))
+}
+
 /// Parse every admitted producer document with its own published
 /// decoder and project the typed facts onto the shared projection.
+///
+/// Custody: every producer document must bind the declared project, its
+/// published contract identity (when pinned), and its declared bytes
+/// digest (when pinned); the read is confined under the project root by
+/// a typed canonical-path containment check (belt and braces over the
+/// manifest grammar), so no manifest spelling can escape the project.
 fn admit_producers(
     selection: &lekalo_core::loader::LoadSelection,
+    project_id: Option<&str>,
     manifest: &SearchInputs,
     projection: &mut Projection,
     coverage: &mut Vec<lekalo_core::search::CoverageRow>,
-) -> Result<(), DomainResult> {
+) -> Result<u64, DomainResult> {
     let root = lekalo_core::doctor::project_root(selection)?;
+    let canonical_root = std::fs::canonicalize(&root).map_err(|_| {
+        DomainResult::invalid(lekalo_core::search::diagnostic_input_invalid(
+            "root-unresolvable",
+            None,
+        ))
+    })?;
     let cap = lekalo_core::search::MAX_POSTINGS;
     let mut states: Vec<(&'static str, &'static str)> = Vec::new();
+    let mut dropped_effects: u64 = 0;
     for entry in manifest.entries() {
-        let bytes = std::fs::read(root.join(&entry.path)).map_err(|_| {
+        // Confined read: the manifest grammar already refuses absolute
+        // and traversal spellings; this second barrier refuses any path
+        // that resolves (junctions/symlinks included) outside the
+        // canonical project root.
+        let path = root.join(&entry.path);
+        let contained = std::fs::canonicalize(&path)
+            .ok()
+            .is_some_and(|resolved| resolved.starts_with(&canonical_root));
+        if !contained {
+            return Err(DomainResult::invalid(
+                lekalo_core::search::diagnostic_input_invalid(
+                    "path-confinement",
+                    Some(entry.kind.key()),
+                ),
+            ));
+        }
+        let bytes = std::fs::read(&path).map_err(|_| {
             DomainResult::invalid(lekalo_core::search::diagnostic_input_invalid(
                 "producer-unreadable",
                 Some(entry.kind.key()),
             ))
         })?;
+        if bytes.len() > 32 * 1024 * 1024 {
+            return Err(DomainResult::invalid(
+                lekalo_core::search::diagnostic_input_invalid(
+                    "producer-bytes",
+                    Some(entry.kind.key()),
+                ),
+            ));
+        }
         if let Some(expected) = &entry.digest {
             let actual = format!("sha256:{}", lekalo_core::search::sha256_of(&bytes));
             if &actual != expected {
@@ -416,27 +934,45 @@ fn admit_producers(
             lekalo_core::search::ProducerKind::Trace => {
                 let document = lekalo_core::trace::TraceManifest::parse(&bytes)
                     .map_err(DomainResult::invalid)?;
+                if let Some(project) = project_id {
+                    // The neutral trace names its project reference; a
+                    // foreign manifest never joins this project's view.
+                    check_producer_project(&document.manifest().project_ref, project)?;
+                }
                 let complete = project_trace(projection, &document, cap);
                 states.push(("trace", if complete { "complete" } else { "partial" }));
             }
             lekalo_core::search::ProducerKind::ObservedIndex => {
                 let index =
                     lekalo_core::observed::parse_index(&bytes).map_err(DomainResult::invalid)?;
+                if let Some(project) = project_id {
+                    check_producer_project(&index.project, project)?;
+                }
                 project_observed(projection, &index, cap);
                 states.push(("bindings", "complete"));
             }
             lekalo_core::search::ProducerKind::Effects => {
-                let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| {
-                    DomainResult::invalid(lekalo_core::search::diagnostic_input_invalid(
-                        "producer-malformed",
-                        Some("effects"),
-                    ))
-                })?;
-                project_effects_document(projection, &value);
+                let value = producer_json(&bytes, "effects")?;
+                let envelope = decode_effects_envelope(&bytes, &value)?;
+                if let Some(project) = project_id {
+                    check_producer_project(&envelope.project, project)?;
+                }
+                let omitted = project_effects_document(projection, &value, cap);
+                // Lost candidates are counted, never silent: rows the
+                // projection cannot attach surface as a work-cap
+                // warning with the admitting producer named.
+                if omitted > 0 {
+                    dropped_effects += omitted as u64;
+                }
                 states.push(("effects", "complete"));
             }
             lekalo_core::search::ProducerKind::Waivers => {
-                project_waivers(projection, &bytes, cap)?;
+                let value = producer_json(&bytes, "waivers")?;
+                let store = decode_waivers_store(&bytes, &value)?;
+                if let Some(project) = project_id {
+                    check_producer_project(&store.project_id, project)?;
+                }
+                project_waivers(projection, &store, cap)?;
                 states.push(("waivers", "complete"));
             }
         }
@@ -453,9 +989,10 @@ fn admit_producers(
             None => coverage.push(coverage_row(domain, state)),
         }
     }
-    Ok(())
+    // Lost candidates are counted, never silent: the caller surfaces a
+    // bounded work-cap warning beside the (explicitly partial) answer.
+    Ok(dropped_effects)
 }
-
 /// Project the neutral trace relations onto requirement/symbol/gate
 /// cards with per-relationship trust.
 fn project_trace(
@@ -539,6 +1076,13 @@ fn project_trace(
             provenance: "trace".to_owned(),
         };
         add_card(projection, card, cap);
+        // The bare external requirement ID is an exact qualified
+        // identity of its provider-qualified card: a query naming the
+        // recorded external spelling must never degrade to a lexical
+        // tier (duplicates across providers stay ambiguous by rank).
+        if let CardKind::Requirement = kind {
+            lekalo_core::search::add_qualified_id(projection, &key, id.clone(), cap);
+        }
     }
     let relations: Vec<(String, String, String)> = manifest
         .relations()
@@ -610,6 +1154,35 @@ fn project_observed(
     let target = index.target.as_deref().unwrap_or(index.adapter.id.as_str());
     for record in &index.symbols {
         let key = format!("def:{}", record.id);
+        // Sensitive/excluded-path policy: recorded native locations are
+        // projected only through the frozen privacy path grammar. A
+        // location outside the portable project-relative spelling
+        // (dotfiles like `.env`, absolute/UNC spellings, traversal
+        // segments) is withheld — the card stays visible but carries no
+        // sensitive path/symbol bytes, and its completeness discloses
+        // the withholding instead of leaking the subject.
+        let location_path = record
+            .location
+            .as_ref()
+            .map(|location| location.path.clone())
+            .unwrap_or_default();
+        let path_admitted = location_path.is_empty()
+            || lekalo_core::project_fs::path_violation(&location_path).is_none();
+        let stable_key = if path_admitted {
+            record
+                .stable_key
+                .clone()
+                .unwrap_or_else(|| record.id.clone())
+        } else {
+            record.id.clone()
+        };
+        let admitted_symbol = || {
+            record
+                .candidates
+                .first()
+                .map(|candidate| candidate.native.clone())
+                .filter(|native| native_path_admitted(native))
+        };
         // The binding card exists alongside the definition card so a
         // native lookup finds recorded evidence either way.
         let binding = Card {
@@ -627,20 +1200,14 @@ fn project_observed(
             relations: Vec::new(),
             effects: Vec::new(),
             bindings: vec![NativeBinding {
-                key: record
-                    .stable_key
-                    .clone()
-                    .unwrap_or_else(|| record.id.clone()),
+                key: stable_key.clone(),
                 target: target.to_owned(),
-                path: record
-                    .location
-                    .as_ref()
-                    .map(|location| location.path.clone())
-                    .unwrap_or_default(),
-                symbol: record
-                    .candidates
-                    .first()
-                    .map(|candidate| candidate.native.clone()),
+                path: if path_admitted {
+                    location_path.clone()
+                } else {
+                    String::new()
+                },
+                symbol: admitted_symbol(),
                 status: record.status.key().to_owned(),
             }],
             locations: Vec::new(),
@@ -651,18 +1218,46 @@ fn project_observed(
             visibility: None,
             confidence: Confidence::Extracted,
             freshness: Freshness::AsRecorded,
-            completeness: Completeness::Complete,
+            completeness: if path_admitted {
+                Completeness::Complete
+            } else {
+                Completeness::Withheld
+            },
             omitted: 0,
             provenance: "observed".to_owned(),
         };
+        let binding_key = format!("bind:{}", record.id);
         add_card(projection, binding, cap);
+        // Exact qualified identities: the stable binding key, the
+        // symbol spelling, and every recorded candidate native spelling
+        // all answer the exact-qualified tier for both cards. Sensitive
+        // paths never enter the identity set (the tier is byte-exact:
+        // an unadmitted spelling is not a legal query identity).
+        for identity in [
+            path_admitted.then(|| record.stable_key.clone()).flatten(),
+            path_admitted.then_some(location_path.clone()),
+        ]
+        .into_iter()
+        .flatten()
+        .chain(
+            record
+                .candidates
+                .iter()
+                .map(|candidate| candidate.native.clone())
+                .filter(|native| native_path_admitted(native)),
+        ) {
+            lekalo_core::search::add_qualified_id(projection, &binding_key, identity.clone(), cap);
+            lekalo_core::search::add_qualified_id(projection, &key, identity, cap);
+        }
         // Attach the recorded native path/symbol onto the definition
         // card's exact qualified identities so `--native-symbol` and
-        // `--binding-path` resolve through typed identities.
+        // `--binding-path` resolve through typed identities. Sensitive
+        // candidate paths are withheld with the same grammar.
         if let Some(card) = projection.cards.get_mut(&key) {
             let bindings: Vec<NativeBinding> = record
                 .candidates
                 .iter()
+                .filter(|candidate| native_path_admitted(&candidate.path))
                 .map(|candidate| NativeBinding {
                     key: candidate.native.clone(),
                     target: target.to_owned(),
@@ -681,8 +1276,19 @@ fn project_observed(
                 (&left.key[..], &left.path[..]).cmp(&(&right.key[..], &right.path[..]))
             });
             card.bindings = merged;
+            if !path_admitted && card.completeness == Completeness::Complete {
+                card.completeness = Completeness::Withheld;
+            }
         }
     }
+}
+
+/// Whether one recorded native candidate path is admissible under the
+/// frozen privacy path grammar (portable project-relative POSIX). A
+/// sensitive/excluded spelling (dotfiles, absolute forms, traversal)
+/// is never projected onto cards, postings, or identities.
+fn native_path_admitted(path: &str) -> bool {
+    path.is_empty() || lekalo_core::project_fs::path_violation(path).is_none()
 }
 
 /// Project the admitted producer's effect rows: the exact detected
@@ -693,33 +1299,45 @@ fn project_observed(
 /// a saved snapshot could only ever double-count. Every row keeps its
 /// exact subject (resource plus optional field) so an entity-wide
 /// effect can never claim a field it did not name, and the row's own
-/// recorded trust state is preserved per relationship.
-fn project_effects_document(projection: &mut Projection, document: &serde_json::Value) {
+/// recorded trust state is preserved per relationship. Rows that name
+/// an operation this projection does not know are recorded as omitted
+/// (lost candidates are counted, never silently dropped).
+fn project_effects_document(
+    projection: &mut Projection,
+    document: &serde_json::Value,
+    cap: usize,
+) -> usize {
     let Some(rows) = document
         .get("effects")
         .and_then(|effects| effects.as_array())
     else {
-        return;
+        return 0;
     };
     let mut witnesses: Vec<(String, lekalo_core::search::RelationWitness)> = Vec::new();
+    let mut omitted = 0u32;
     for row in rows {
         let Some(operation) = row.get("operation").and_then(|value| value.as_str()) else {
+            omitted += 1;
             continue;
         };
         let Some(semantic) = operation.strip_prefix("operation:") else {
+            omitted += 1;
             continue;
         };
         let card_key = format!("def:{semantic}");
         if !projection.cards.contains_key(&card_key) {
+            omitted += 1;
             continue;
         }
         let Some(provenance) = row.get("provenance") else {
+            omitted += 1;
             continue;
         };
         if provenance.get("type").and_then(|value| value.as_str()) != Some("evidence") {
             continue;
         }
         let Some(kind) = row.get("kind").and_then(|value| value.as_str()) else {
+            omitted += 1;
             continue;
         };
         let action = match kind {
@@ -732,6 +1350,7 @@ fn project_effects_document(projection: &mut Projection, document: &serde_json::
             .and_then(|value| value.get("id"))
             .and_then(|value| value.as_str())
         else {
+            omitted += 1;
             continue;
         };
         let field = row.get("field").and_then(|value| value.as_str());
@@ -775,48 +1394,33 @@ fn project_effects_document(projection: &mut Projection, document: &serde_json::
         if let Some(card) = projection.cards.get_mut(&card_key) {
             if !card.effects.contains(&witness) {
                 card.effects.push(witness.clone());
+                for term in lekalo_core::search::effect_posting_terms(&witness.relation) {
+                    lekalo_core::search::post_term(projection, &term, &card_key, cap);
+                }
             }
         }
     }
+    omitted as usize
 }
 
-/// Project qualified waiver cards from one AI-lint waiver set. Active
-/// entries are current; revoked/superseded entries stay visibly stale
-/// and are excluded unless the request explicitly includes stale rows.
+/// Project qualified waiver cards from one typed governance waiver
+/// store. Active entries are current; revoked/superseded entries stay
+/// visibly stale and are excluded unless the request explicitly
+/// includes stale rows.
 fn project_waivers(
     projection: &mut Projection,
-    bytes: &[u8],
+    store: &lekalo_core::waivers::Store,
     cap: usize,
 ) -> Result<(), DomainResult> {
-    let value: serde_json::Value = serde_json::from_slice(bytes).map_err(|_| {
-        DomainResult::invalid(lekalo_core::search::diagnostic_input_invalid(
-            "producer-malformed",
-            Some("waivers"),
-        ))
-    })?;
-    let entries = value
-        .get("entries")
-        .and_then(|entries| entries.as_array())
-        .ok_or_else(|| {
-            DomainResult::invalid(lekalo_core::search::diagnostic_input_invalid(
-                "producer-shape",
-                Some("waivers"),
-            ))
-        })?;
-    for entry in entries {
-        let Some(id) = entry.get("id").and_then(|id| id.as_str()) else {
-            continue;
+    for entry in &store.entries {
+        let id = entry.id.as_str();
+        let lifecycle = &entry.lifecycle;
+        let subject = Some(entry.subject.as_str()).filter(|subject| !subject.is_empty());
+        let rule = match &entry.selector.kind {
+            lekalo_core::waivers::SelectorKind::Rule => Some(entry.selector.id.as_str()),
+            _ => None,
         };
-        let lifecycle = entry
-            .get("lifecycle")
-            .and_then(|value| value.as_str())
-            .unwrap_or("active");
-        let subject = entry.get("subject").and_then(|value| value.as_str());
-        let rule = entry
-            .get("selector")
-            .and_then(|selector| selector.get("id"))
-            .and_then(|value| value.as_str());
-        let freshness = if lifecycle == "active" {
+        let freshness = if *lifecycle == lekalo_core::waivers::Lifecycle::Active {
             Freshness::Current
         } else {
             Freshness::Stale
@@ -824,7 +1428,7 @@ fn project_waivers(
         let mut card = Card {
             key: format!("waiv:{id}"),
             kind: CardKind::Waiver,
-            subkind: Some(lifecycle.to_owned()),
+            subkind: Some(lifecycle_key(lifecycle).to_owned()),
             module: None,
             id: Some(id.to_owned()),
             name: Some(id.to_owned()),
@@ -909,6 +1513,15 @@ fn project_waivers(
     Ok(())
 }
 
+/// The exact wire spelling of one governance lifecycle state.
+fn lifecycle_key(lifecycle: &lekalo_core::waivers::Lifecycle) -> &'static str {
+    match lifecycle {
+        lekalo_core::waivers::Lifecycle::Active => "active",
+        lekalo_core::waivers::Lifecycle::Revoked => "revoked",
+        lekalo_core::waivers::Lifecycle::Superseded => "superseded",
+    }
+}
+
 /// Run one `search-index` command.
 pub fn run_search_index(command: SearchIndexCommands, no_cache: bool) -> DomainResult {
     match command {
@@ -930,9 +1543,44 @@ pub fn run_search_index(command: SearchIndexCommands, no_cache: bool) -> DomainR
                 }
             };
             let status = store.status();
+            // Freshness: the read-only status re-admits the canonical
+            // Model plus manifest inputs with bounded reads, recomputes
+            // the exact snapshot content digest a fresh build would
+            // publish, and compares it against the stored generation. A
+            // changed input, pin, or model makes the generation stale
+            // (LEK-SRCH-004). This never repairs and never enumerates
+            // source.
+            let mut diagnostics: Vec<lekalo_core::diagnostics::Diagnostic> = Vec::new();
+            let state = if status.state == "ready" {
+                let generation = status.generation.clone().unwrap_or_default();
+                match current_snapshot_digest(&selection) {
+                    Ok(Some(fresh)) => {
+                        if fresh == generation {
+                            "ready"
+                        } else {
+                            diagnostics.extend(
+                                lekalo_core::search::emit_index_stale("input-pin")
+                                    .as_slice()
+                                    .to_vec(),
+                            );
+                            "stale"
+                        }
+                    }
+                    Ok(None) => "ready",
+                    Err(_) => {
+                        diagnostics.extend(
+                            lekalo_core::search::emit_index_stale("input-admission")
+                                .as_slice()
+                                .to_vec(),
+                        );
+                        "stale"
+                    }
+                }
+            } else {
+                status.state
+            };
             let json = format!(
-                "{{\"status\":\"valid\",\"searchIndex\":{{\"state\":\"{}\",\"generation\":{},\"cards\":{},\"postings\":{}}}}}",
-                status.state,
+                "{{\"status\":\"valid\",\"searchIndex\":{{\"state\":\"{state}\",\"generation\":{},\"cards\":{},\"postings\":{}}}}}",
                 status
                     .generation
                     .as_deref()
@@ -949,12 +1597,19 @@ pub fn run_search_index(command: SearchIndexCommands, no_cache: bool) -> DomainR
             );
             let human = format!(
                 "search index {} : {}",
-                status.state,
+                state,
                 status.generation.clone().unwrap_or_default()
             );
-            DomainResult::graph(json, human, Vec::new())
+            DomainResult::graph(json, human, diagnostics)
         }
-        SearchIndexCommands::Build { page } | SearchIndexCommands::Update { page } => {
+        command @ (SearchIndexCommands::Build { .. } | SearchIndexCommands::Update { .. }) => {
+            let (SearchIndexCommands::Build { page } | SearchIndexCommands::Update { page }) =
+                &command
+            else {
+                unreachable!("arm matches only build/update");
+            };
+            let is_update = matches!(command, SearchIndexCommands::Update { .. });
+            let page = &page;
             if no_cache {
                 // A build never runs under the bypass: publishing is
                 // the whole point, and --no-cache bypasses every write.
@@ -979,12 +1634,30 @@ pub fn run_search_index(command: SearchIndexCommands, no_cache: bool) -> DomainR
                     ))
                 }
             };
-            let service = match assemble(&page, no_cache) {
+            let service = match assemble(page, no_cache) {
                 Ok(service) => service,
                 Err(result) => return result,
             };
             let document = snapshot_document(&service);
             let digest = lekalo_core::search::digest_of(&document);
+            // Incremental semantics: when the recomputed content digest
+            // equals the published generation, update is a no-op
+            // republish of that same immutable generation (partition
+            // reuse); any changed input rewrites the whole snapshot.
+            // Content identity, not a rebuild alias, decides.
+            if let Ok(Some(current)) = store.current() {
+                if current == digest {
+                    let json = format!(
+                        "{{\"status\":\"valid\",\"operation\":\"search-index-update\",\"digest\":\"sha256:{digest}\",\"cards\":{},\"reused\":true}}",
+                        document.cards.len()
+                    );
+                    let human = format!(
+                        "search index current : {} cards, digest sha256:{digest}",
+                        document.cards.len()
+                    );
+                    return DomainResult::receipt(json, human);
+                }
+            }
             let mut document = document;
             document.digest = format!("sha256:{digest}");
             if store.publish(&document).is_err() {
@@ -994,7 +1667,8 @@ pub fn run_search_index(command: SearchIndexCommands, no_cache: bool) -> DomainR
                 ));
             }
             let json = format!(
-                "{{\"status\":\"valid\",\"operation\":\"search-index-build\",\"digest\":\"sha256:{digest}\",\"cards\":{}}}",
+                "{{\"status\":\"valid\",\"operation\":\"search-index-{}\",\"digest\":\"sha256:{digest}\",\"cards\":{}}}",
+                if is_update { "update" } else { "build" },
                 document.cards.len()
             );
             let human = format!(
