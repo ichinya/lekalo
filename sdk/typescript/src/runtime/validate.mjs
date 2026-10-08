@@ -56,8 +56,14 @@ export function validateRequest(request) {
       bindingKeys.add(key);
     }
     // Pins are State-tagged; a known value must be a digest, and the
-    // revision pin's known value a token.
+    // revision pin's known value a token. The model/ir pins are REQUIRED
+    // known digests (issue #106 review r2 #2: production wire.rs refuses
+    // unknown and malformed spellings; the SDK must refuse exactly the
+    // same requests or the host boundary never sees them).
     const pinKnown = (pin) => (pin.state === "known" ? pin.value : undefined);
+    for (const pin of ["model", "ir"]) {
+      if (!isSha256Digest(pinKnown(lint.pins[pin]) ?? "")) return invalid("lint-pin");
+    }
     for (const pin of ["observed", "profile", "capabilities"]) {
       if (pinKnown(lint.pins[pin]) !== undefined && !isSha256Digest(lint.pins[pin].value)) return invalid("lint-pin");
     }

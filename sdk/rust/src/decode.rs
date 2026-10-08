@@ -1300,6 +1300,14 @@ pub fn validate_request(value: &Value) -> Result<(), Refusal> {
                 None
             }
         };
+        for pin in ["model", "ir"] {
+            // Required known digests (issue #106 review r2 #2): the
+            // production wire decoder refuses unknown and malformed
+            // spellings of the model/ir pins; mirror it exactly.
+            if !is_sha256_digest(&pin_known(pins.get(pin).unwrap_or(&Value::Null)).unwrap_or_default()) {
+                return invalid("lint-pin");
+            }
+        }
         for pin in ["observed", "profile", "capabilities"] {
             if let Some(value) = pin_known(pins.get(pin).unwrap_or(&Value::Null)) {
                 if !is_sha256_digest(&value) {

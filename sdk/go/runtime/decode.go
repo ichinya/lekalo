@@ -997,6 +997,13 @@ func ValidateRequest(value Value) *Refusal {
 			}
 			return "", false
 		}
+		for _, pin := range []string{"model", "ir"} {
+			// Required known digests (issue #106 review r2 #2): production
+			// refuses unknown and malformed spellings of the model/ir pins.
+			if known, ok := pinKnown(pins.(map[string]any)[pin]); !ok || !IsSha256Digest(known) {
+				return refuse(stageValidate, "lint-pin")
+			}
+		}
 		for _, pin := range []string{"observed", "profile", "capabilities"} {
 			if known, ok := pinKnown(pins.(map[string]any)[pin]); ok && !IsSha256Digest(known) {
 				return refuse(stageValidate, "lint-pin")

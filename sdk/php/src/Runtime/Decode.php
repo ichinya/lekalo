@@ -938,6 +938,15 @@ final class Decode {
             $pinKnown = static function ($pin): ?string {
                 return ($pin['state'] ?? null) === 'known' ? ($pin['value'] ?? null) : null;
             };
+            foreach (['model', 'ir'] as $pin) {
+                // Required known digests (issue #106 review r2 #2):
+                // production refuses unknown and malformed spellings of
+                // the model/ir pins; mirror it exactly.
+                $known = $pinKnown($pins[$pin] ?? null);
+                if ($known === null || !Ids::isSha256Digest($known)) {
+                    return $invalid('lint-pin');
+                }
+            }
             foreach (['observed', 'profile', 'capabilities'] as $pin) {
                 $known = $pinKnown($pins[$pin] ?? null);
                 if ($known !== null && !Ids::isSha256Digest($known)) {
