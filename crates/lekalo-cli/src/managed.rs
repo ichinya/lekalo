@@ -549,14 +549,28 @@ fn run_upgrade_plan(args: UpgradePlanArgs) -> Outcome {
     let authority = core::authority::derive(&selection(&args.project.project), &args.module)?;
     let mut comparable = true;
     let mut changes = Vec::new();
-    if let Err(error) = core::authority::qualify(&root(&args.project.project), &base, &authority) {
+    // The shared full admission pipeline qualifies both documents
+    // (finding 13): authority pins, ledger completeness (both
+    // directions), locked-adapter binding, binding resolution, and
+    // semantic admission. A candidate the plan lane would refuse is
+    // incomparable — comparable never means admissible.
+    let live_root = root(&args.project.project);
+    if let Err(error) = core::authority::qualify(&live_root, &base, &authority) {
         let _ = error;
         comparable = false;
     }
-    if let Err(error) =
-        core::authority::qualify(&root(&args.project.project), &candidate, &authority)
-    {
+    if let Err(error) = core::authority::qualify(&live_root, &candidate, &authority) {
         let _ = error;
+        comparable = false;
+    }
+    if core::authority::ledger_complete(&base, &authority).is_err()
+        || core::authority::ledger_complete(&candidate, &authority).is_err()
+    {
+        comparable = false;
+    }
+    if core::bindings::resolve(&live_root, target, &base).is_err()
+        || core::bindings::resolve(&live_root, target, &candidate).is_err()
+    {
         comparable = false;
     }
     let _ = core::coverage::admit(assignment, target, &base).map_err(|_| comparable = false);

@@ -283,17 +283,18 @@ pub fn run(root: &std::path::Path) -> DomainResult {
     // The committed public ownership manifest is part of the recoverable
     // state (finding 9): every undo that restores committed application
     // bytes also restores the exact published manifest of the committed
-    // generation from the retained public evidence.
+    // generation from the retained public evidence. A blocked manifest
+    // destination (the directory-conflict case the transaction could not
+    // publish through) reads as absent evidence, not as corruption: the
+    // undo restores the committed manifest through the normal path, and
+    // that restore fails loudly if the destination is still blocked.
     let manifest_before = match std::fs::read(root.join(super::custody::MANIFEST_LOGICAL)) {
-        Ok(bytes) => Some(bytes),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
-        Err(_) => return invalid("recovery-manifest"),
+        Ok(bytes) => match crate::artifacts::ArtifactManifest::parse_canonical(&bytes) {
+            Ok(_) => Some(bytes),
+            Err(_) => None,
+        },
+        Err(_) => None,
     };
-    if let Some(bytes) = &manifest_before {
-        if crate::artifacts::ArtifactManifest::parse_canonical(bytes).is_err() {
-            return invalid("recovery-manifest");
-        }
-    }
     let mut reconciled = Vec::new();
     for transaction in &unresolved {
         let action = match transaction.action {

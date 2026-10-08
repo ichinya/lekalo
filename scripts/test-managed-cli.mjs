@@ -22,13 +22,19 @@ const bin = join(root, 'target/debug', process.platform === 'win32' ? 'lekalo.ex
 assert.ok(existsSync(bin), 'binary-missing: cargo build --workspace --locked must precede gate');
 
 function snapshot(directory) {
+  // Files by exact bytes PLUS the directory inventory: a gate must not
+  // miss empty-directory writes (finding 12).
   const files = new Map();
   const walk = (current, logical) => {
     for (const name of readdirSync(current).sort()) {
       const full = join(current, name);
       const child = logical ? `${logical}/${name}` : name;
-      if (statSync(full).isDirectory()) walk(full, child);
-      else files.set(child, readFileSync(full).toString('base64'));
+      if (statSync(full).isDirectory()) {
+        files.set(`${child}/`, 'directory');
+        walk(full, child);
+      } else {
+        files.set(child, readFileSync(full).toString('base64'));
+      }
     }
   };
   walk(directory, '');
@@ -113,7 +119,8 @@ function apply(project, status, planFile = 'plan.json', coverage = 'coverage.jso
   ], status);
 }
 
-// ---- 1. Read-only surfaces never write: check and plan previews. ----------
+// ---- 1. Read-only surfaces never write: check, plan, and dry-run apply.
+// The full tree including directories must be unchanged (finding 12).
 {
   const { project } = sandbox('zero');
   const before = snapshot(project);
@@ -121,6 +128,16 @@ function apply(project, status, planFile = 'plan.json', coverage = 'coverage.jso
   assertSameTree(before, snapshot(project), 'check');
   planReceipt(project);
   assertSameTree(before, snapshot(project), 'plan preview');
+  // A dry-run apply touches nothing: no custody directories appear.
+  const previewPlan = planReceipt(project);
+  writeFileSync(join(project, 'plan-dry.json'), JSON.stringify(previewPlan, null, 2) + '\n');
+  const beforeDry = snapshot(project);
+  invoke(project, [
+    'apply', '--plan', 'plan-dry.json', '--coverage', 'coverage.json',
+    '--ownership', 'ownership.json', '--dry-run', '--confirm', previewPlan.planDigest,
+  ], 'valid');
+  assertSameTree(beforeDry, snapshot(project), 'dry-run apply');
+  assert.ok(!existsSync(join(project, '.lekalo')), 'dry run creates no custody tree');
   rmSync(project, { recursive: true, force: true });
 }
 
@@ -565,25 +582,70 @@ if (process.platform === 'win32') {
   rmSync(directory, { recursive: true, force: true });
 }
 
-// ---- 15. Custody publication is verified by generate --check (E). --------
+// ---- 15. Custody publication is verified by generate --check (E, finding
+// 14). The supported selector is `--project .` invoked from the project's
+// cwd (an absolute selector is a structure refusal, never drift evidence);
+// every verdict is asserted with its concrete diagnostics, and every
+// check is verified read-only over the full tree including directories.
+function generateCheck(project, status, label) {
+  const before = snapshot(project);
+  const child = spawnSync(bin, ['--json', 'generate', '--check', '--project', '.'], { cwd: project, encoding: 'utf8' });
+  const envelope = JSON.parse((child.stdout.trim() || child.stderr.trim()));
+  assert.equal(envelope.status, status, `${label}: ${JSON.stringify(envelope).slice(0, 400)}`);
+  assert.equal(child.status, { valid: 0, invalid: 1 }[status], `${label}: exit`);
+  assertSameTree(before, snapshot(project), `${label}: read-only`);
+  return envelope;
+}
+function assertFullManifest(project, label) {
+  const manifest = JSON.parse(readFileSync(join(project, '.lekalo/generated/manifests/ownership.json'), 'utf8'));
+  const custody = readFileSync(join(project, '.lekalo/generated/manifests/managed/current'), 'utf8').trim();
+  const record = JSON.parse(readFileSync(join(project, '.lekalo/generated/manifests/managed/objects', custody.slice('sha256:'.length)), 'utf8'));
+  const recorded = new Set(record.outputs.map((output) => output.path));
+  const published = new Set(manifest.artifacts.map((artifact) => artifact.path));
+  assert.deepEqual([...published].sort(), [...recorded].sort(), `${label}: manifest bijects with the committed record`);
+  for (const artifact of manifest.artifacts) {
+    const live = sha256(readFileSync(join(project, artifact.path)));
+    assert.equal(live, artifact.content.digest, `${label}: ${artifact.path} bytes`);
+  }
+  for (const map of manifest.source_maps) {
+    assert.ok(recorded.has(map.artifact.path), `${label}: map artifact ${map.artifact.path}`);
+  }
+}
+function sha256(bytes) {
+  return 'sha256:' + createHash('sha256').update(bytes).digest('hex');
+}
 {
-  // Clean committed custody: the ownership manifest matches every byte.
-  spawnSync(bin, ['--json', 'generate', '--check', '--project', primary.project], { cwd: primary.project, encoding: 'utf8' });
-  // A manual edit of a recorded output is a blocking verdict.
+  // Clean committed custody: the ownership manifest matches every byte
+  // and bijects with the committed record; the check is valid/0.
+  const clean = generateCheck(primary.project, 'valid', 'generate-check clean');
+  assert.ok(clean.manifestDigest, 'clean check names the manifest digest');
+  assertFullManifest(primary.project, 'clean');
+  // A manual edit of a recorded output is a blocking verdict naming the
+  // path and the drift kind.
   const handler = join(primary.project, 'apps/planner/gen/src/focus-task.ts');
   writeFileSync(handler, '// drifted for generate check\n');
-  const drifted = spawnSync(bin, ['--json', 'generate', '--check', '--project', primary.project], { cwd: primary.project, encoding: 'utf8' });
-  assert.equal(JSON.parse(drifted.stderr.trim()).status, 'invalid');
+  const drifted = generateCheck(primary.project, 'invalid', 'generate-check drift');
+  assert.ok(
+    (drifted.findings ?? []).some((finding) => finding.path?.includes('focus-task.ts'))
+      || (drifted.diagnostics ?? []).some(
+        (diagnostic) => diagnostic.id.startsWith('lock.') || diagnostic.id.startsWith('managed.'),
+      ),
+    'drift verdict carries a concrete blocking diagnostic',
+  );
   // Restore through the exact resolve, then the check is clean again.
   const preview = invoke(primary.project, ['resolve', '--path', 'apps/planner/gen/src/focus-task.ts', '--restore', '--dry-run'], 'valid');
   invoke(primary.project, ['resolve', '--path', 'apps/planner/gen/src/focus-task.ts', '--restore', '--confirm', preview.managed.planDigest], 'valid');
-  spawnSync(bin, ['--json', 'generate', '--check', '--project', primary.project], { cwd: primary.project, encoding: 'utf8' });
+  generateCheck(primary.project, 'valid', 'generate-check restored');
+  assertFullManifest(primary.project, 'restored');
   // A missing recorded output is a blocking verdict too.
   rmSync(join(primary.project, 'apps/planner/gen/src/complete-task.ts'));
-  const missing = spawnSync(bin, ['--json', 'generate', '--check', '--project', primary.project], { cwd: primary.project, encoding: 'utf8' });
-  assert.equal(JSON.parse(missing.stderr.trim()).status, 'invalid');
+  generateCheck(primary.project, 'invalid', 'generate-check missing');
   const missingPreview = invoke(primary.project, ['resolve', '--path', 'apps/planner/gen/src/complete-task.ts', '--restore', '--dry-run'], 'valid');
   invoke(primary.project, ['resolve', '--path', 'apps/planner/gen/src/complete-task.ts', '--restore', '--confirm', missingPreview.managed.planDigest], 'valid');
+  // Control: the absolute selector is a selection refusal, never drift
+  // evidence — the gate must not accept it as a check result.
+  const absolute = spawnSync(bin, ['--json', 'generate', '--check', '--project', primary.project], { cwd: primary.project, encoding: 'utf8' });
+  assert.equal(JSON.parse(absolute.stderr.trim()).diagnostics[0].id, 'structure.selection-absolute');
 }
 
 // ---- 16. Interrupted publication recovers through the defined path (J). --
@@ -684,6 +746,31 @@ if (process.platform === 'win32') {
   writeFileSync(join(primary.project, 'coverage-incomparable.json'), JSON.stringify(retired, null, 2) + '\n');
   const incomparable = invoke(primary.project, ['upgrade-plan', '--module', 'planner', '--target', 'node-typescript', '--ownership', 'ownership.json', '--base', 'coverage.json', '--candidate', 'coverage-incomparable.json'], 'valid');
   assert.equal(incomparable.managed.comparable, false);
+  // A candidate that omits a real Model obligation is a capability gap
+  // in the plan lane; upgrade-plan must not call it comparable (finding
+  // 13 / N).
+  const omitted = JSON.parse(read(`${wire}/planner/coverage.json`));
+  omitted.requirements = omitted.requirements.filter((requirement) => requirement.id !== 'planner.focus_task');
+  writeFileSync(join(primary.project, 'coverage-omitted.json'), JSON.stringify(omitted, null, 2) + '\n');
+  const omission = invoke(primary.project, ['upgrade-plan', '--module', 'planner', '--target', 'node-typescript', '--ownership', 'ownership.json', '--base', 'coverage.json', '--candidate', 'coverage-omitted.json'], 'valid');
+  assert.equal(omission.managed.comparable, false, 'omitted obligation is incomparable');
+  assert.deepEqual(omission.managed.requirementsRemoved, ['planner.focus_task']);
+  // A candidate whose extension binding does not resolve (missing
+  // export) is incomparable too.
+  const bound = JSON.parse(read(`${wire}/planner/coverage.json`));
+  const emptyBinding = 'export {};\n';
+  mkdirSync(join(primary.project, 'custom'), { recursive: true });
+  writeFileSync(join(primary.project, 'custom/empty.ts'), emptyBinding);
+  bound.extensions = [{
+    symbol: 'missing_hook',
+    binding: 'custom/empty.ts',
+    contractDigest: `sha256:${createHash('sha256').update(emptyBinding).digest('hex')}`,
+    validated: true,
+  }];
+  bound.extensions.sort((a, b) => (a.symbol < b.symbol ? -1 : 1));
+  writeFileSync(join(primary.project, 'coverage-unbound.json'), JSON.stringify(bound, null, 2) + '\n');
+  const unbound = invoke(primary.project, ['upgrade-plan', '--module', 'planner', '--target', 'node-typescript', '--ownership', 'ownership.json', '--base', 'coverage.json', '--candidate', 'coverage-unbound.json'], 'valid');
+  assert.equal(unbound.managed.comparable, false, 'unresolved binding is incomparable');
 }
 
 // ---- 19. A tampered generation record is refused without touching files
