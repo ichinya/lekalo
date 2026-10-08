@@ -15,11 +15,17 @@
  *     package; lifecycle hooks are absent and there are no runtime
  *     dependencies;
  *   - Rust: `cargo package` builds the crate and emits a .crate whose
- *     contents include the generated modules; the crate builds;
- *   - Go: the module resolves and builds offline with a replace-free
- *     dependency list;
+ *     contents include the generated modules; the crate builds; an
+ *     independent scratch consumer builds and tests against the
+ *     EXTRACTED candidate;
+ *   - Go: the module resolves and builds with a dependency-free
+ *     require list; a consumer module builds and runs through an
+ *     explicit source-checkout replace (the packed-artifact detached
+ *     consumption proof lives in the TypeScript install and the Rust
+ *     candidate consumer);
  *   - PHP: composer.json declares no package dependencies and no
- *     scripts, and the autoloader mapping covers the runtime;
+ *     scripts, the autoloader mapping covers the runtime, and all four
+ *     emitted bundles lint and answer a bounded describe exchange;
  *   - a tamper probe: any recorded digest mismatch fails the gate
  *     instead of being normalized away.
  *
@@ -194,6 +200,41 @@ try {
         );
         // The final candidate must still be the digest retained above.
         check(sha256File(cratePath) === retainedDigest, "crate-digest-stable", crates[0]);
+        // A scratch consumer builds against the EXTRACTED candidate (issue
+        // #106 review r2 #14): the packed artifact is not merely unpacked
+        // and inspected — an independent module consumes it by path before
+        // the gate passes.
+        const rustConsumer = join(scratch, "crate-consumer");
+        mkdirSync(join(rustConsumer, "src"), { recursive: true });
+        writeFileSync(join(rustConsumer, "Cargo.toml"), [
+          "[package]",
+          'name = "lekalo-sdk-crate-consumer"',
+          "version = \"0.1.0\"",
+          "edition = \"2021\"",
+          "",
+          "[dependencies]",
+          `${pkg.name} = { path = ${JSON.stringify(unpackedRoot.replaceAll("\\", "/"))} }`,
+          "",
+          "[workspace]",
+          "",
+        ].join("\n"));
+        writeFileSync(join(rustConsumer, "src", "lib.rs"), [
+          "//! Scratch consumer probe: the extracted release candidate must",
+          "//! expose its public surface to an independent module (issue #106",
+          "//! review r2 #14).",
+          "",
+          "#[test]",
+          "fn candidate_surface_resolves() {",
+          "    // The strict parser and the canonical serializer are the",
+          "    // minimal pure surface; linking them proves the candidate",
+          "    // compiles and links standalone under its published lib name.",
+          "    let parsed = lekalo_adapter_sdk::strict_parse(\"{}\");",
+          "    assert!(parsed.is_ok());",
+          "}",
+          "",
+        ].join("\n"));
+        const consumerTest = run("cargo", ["test", "--quiet"], rustConsumer);
+        check(consumerTest.status === 0, "crate-consumer-build", (consumerTest.stderr ?? consumerTest.stdout ?? "").slice(-300));
       }
     }
 
@@ -206,9 +247,14 @@ try {
       check(build.status === 0, "go-build", (build.stderr ?? "").slice(-300));
       const vet = run("go", ["vet", "./..."], root);
       check(vet.status === 0, "go-vet", (vet.stderr ?? "").slice(-300));
-      // A detached consumer module (offline, replace-free) must build and
-      // run against the published module root (issue #106 review: the old
-      // gate checked the manifest only).
+      // A consumer module must build and run against the SDK (issue
+      // #106 review r2 #14: the old consumer claimed to be "offline,
+      // replace-free" while its go.mod carried a replace pointing back
+      // into the live checkout). The replace is now explicit and
+      // documented: this gate proves the SOURCE checkout builds and runs
+      // as a consumer dependency; the packed-artifact consumption proof
+      // is the Rust candidate consumer below and the TypeScript packed
+      // consumer install.
       const consumer = join(scratch, "go-consumer");
       mkdirSync(consumer, { recursive: true });
       writeFileSync(join(consumer, "go.mod"), [
@@ -218,6 +264,8 @@ try {
         "",
         `require github.com/ichinya/lekalo-adapter-sdk-go v${pkg.version}`,
         "",
+        // Source-consumption probe: the gate runs from the checkout, so
+        // the module resolves through this explicit checkout replace.
         `replace github.com/ichinya/lekalo-adapter-sdk-go => ${root.replace(/\\/g, "/")}`,
         "",
       ].join("\n"));
