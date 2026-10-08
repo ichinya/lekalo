@@ -14,7 +14,10 @@ const IDENTITY = buildAdapterIdentity({
   version: "0.1.0",
 });
 
-serve({
+// The bounded serve loop returns the process exit code: refusal classes
+// (malformed input, oversize, output-limit, …) must surface as nonzero
+// process status (issue #106 review r2 #7).
+process.exitCode = await serve({
   handlers: {
     async describe() {
       return buildCapabilities({
@@ -43,3 +46,4 @@ serve({
   },
   identity: IDENTITY,
 });
+

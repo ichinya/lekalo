@@ -1023,11 +1023,206 @@ function decodeResult(value) {
   if (value.lint_evidence !== undefined) {
     const absent = optional(value.lint_evidence);
     if (absent) return absent;
-    if (value.lint_evidence === null || typeof value.lint_evidence !== "object" || Array.isArray(value.lint_evidence)) {
-      return failure("shape");
-    }
+    // The closed LintEvidence subtree is validated before emission
+    // (issue #106 review r2 #3): a shallow object check admitted `{}` as
+    // `status:"ok"`; the full pinned schema subtree must hold instead.
+    const decoded = decodeLintEvidence(value.lint_evidence);
+    if (!decoded.ok) return decoded;
   }
   return { ok: true, value };
+}
+
+/**
+ * The closed `LintEvidence` subtree of a lint result (issue #106 review
+ * r2 #3): every member of the pinned 0.6.4 schema is required, the
+ * identity/schemaVersion are consts, and each nested object is closed.
+ * A shallow object check used to admit `{}` and emit `status:"ok"`.
+ * Refusal reasons stay inside the closed decoder vocabulary.
+ */
+const LINT_EVIDENCE_MEMBERS = [
+  "coverage", "identity", "inputManifestDigest", "limitations", "locations",
+  "pins", "producer", "records", "schemaVersion", "scope", "sources", "target",
+];
+const LINT_STRING256 = /^[A-Za-z0-9][A-Za-z0-9_.:\/#@\\-]*$/;
+const LINT_SHA256 = /^sha256:[0-9a-f]{64}$/;
+
+const lintBounded256 = (value) => typeof value === "string" && value.length > 0 && value.length <= 256 && LINT_STRING256.test(value);
+
+const lintStringArray = (value, max, unique) => {
+  if (!Array.isArray(value) || value.length > max) return false;
+  if (unique && new Set(value).size !== value.length) return false;
+  return value.every(lintBounded256);
+};
+
+const lintStateString = (value) => {
+  const closed = closeObject(value, ["state", "value"]);
+  if (closed) return false;
+  if (!["known", "unknown", "withheld", "unsupported"].includes(value.state)) return false;
+  if (value.state === "known") return lintBounded256(value.value);
+  return value.value === undefined;
+};
+
+const lintStateBool = (value) => {
+  const closed = closeObject(value, ["state", "value"]);
+  if (closed) return false;
+  if (!["known", "unknown", "withheld", "unsupported"].includes(value.state)) return false;
+  if (value.state === "known") return typeof value.value === "boolean";
+  return value.value === undefined;
+};
+
+const lintStateU64 = (value) => {
+  const closed = closeObject(value, ["state", "value"]);
+  if (closed) return false;
+  if (!["known", "unknown", "withheld", "unsupported"].includes(value.state)) return false;
+  if (value.state === "known") return isInt(value.value) && value.value <= 10_000_000;
+  return value.value === undefined;
+};
+
+const lintPins = (value) => {
+  const closed = closeObject(value, ["capabilities", "ir", "model", "observed", "profile", "revision"]);
+  if (closed) return false;
+  return ["capabilities", "ir", "model", "observed", "profile", "revision"].every((pin) => lintStateString(value[pin]));
+};
+
+const lintProducer = (value) => {
+  const closed = closeObject(value, ["artifactDigest", "compiler", "framework", "id", "recipe", "tool", "version"]);
+  if (closed) return false;
+  return lintBounded256(value.id)
+    && lintBounded256(value.version)
+    && typeof value.artifactDigest === "string" && value.artifactDigest.length <= 71 && LINT_SHA256.test(value.artifactDigest)
+    && lintBounded256(value.tool)
+    && lintBounded256(value.recipe)
+    && lintStateString(value.compiler)
+    && lintStateString(value.framework);
+};
+
+const lintSource = (value) => {
+  const closed = closeObject(value, ["bytes", "fingerprint", "id", "path"]);
+  if (closed) return false;
+  return lintBounded256(value.id)
+    && typeof value.path === "string" && value.path.length <= 512 && isLogicalPath(value.path)
+    && typeof value.fingerprint === "string" && value.fingerprint.length <= 71 && LINT_SHA256.test(value.fingerprint)
+    && isInt(value.bytes) && value.bytes <= BOUNDS.MAX_REQUEST_BYTES;
+};
+
+const lintSpan = (value) => {
+  const closed = closeObject(value, ["column", "end", "endColumn", "endLine", "id", "line", "source", "start"]);
+  if (closed) return false;
+  const bounded = (member, min) => isInt(value[member]) && value[member] >= min && value[member] <= BOUNDS.MAX_REQUEST_BYTES;
+  return lintBounded256(value.id)
+    && lintBounded256(value.source)
+    && bounded("start", 0)
+    && bounded("end", 0)
+    && bounded("line", 1)
+    && bounded("column", 1)
+    && bounded("endLine", 1)
+    && bounded("endColumn", 1);
+};
+
+const lintCoverage = (value) => {
+  const closed = closeObject(value, ["eligible", "examined", "limitations", "rule", "scope", "state", "target"]);
+  if (closed) return false;
+  return lintBounded256(value.rule)
+    && lintBounded256(value.target)
+    && lintBounded256(value.scope)
+    && ["complete", "partial", "unknown", "unsupported", "withheld", "disabled"].includes(value.state)
+    && lintStateU64(value.eligible)
+    && lintStateU64(value.examined)
+    && lintStringArray(value.limitations, 10_000, true);
+};
+
+const lintRecord = (value) => {
+  const closed = closeObject(value, [
+    "activation", "binding", "candidates", "claim", "confidence", "configuration",
+    "currency", "field", "guards", "id", "key", "kind", "locations", "mechanism",
+    "nativeId", "operation", "origin", "ownership", "resource", "semanticSymbol",
+    "subject", "trace", "value",
+  ]);
+  if (closed) return false;
+  const enumsOk = ["binding-candidates", "dispatch", "convention", "effect", "path", "reflection", "string-reference", "default", "native-edge", "field-write"].includes(value.kind)
+    && ["direct", "observer", "hook", "magic"].includes(value.mechanism)
+    && ["unknown", "low", "medium", "high", "exact"].includes(value.confidence)
+    && ["current", "stale", "unknown"].includes(value.currency)
+    && ["explicit", "extracted", "inferred"].includes(value.origin)
+    && ["structural", "possible-behavior", "verified-behavior"].includes(value.claim);
+  const stringsOk = lintBounded256(value.id)
+    && lintBounded256(value.subject)
+    && lintBounded256(value.nativeId);
+  const route = (entry) => {
+    if (closeObject(entry, ["confidence", "currency", "identity", "origin"])) return false;
+    return lintBounded256(entry.identity)
+      && ["unknown", "low", "medium", "high", "exact"].includes(entry.confidence)
+      && ["current", "stale", "unknown"].includes(entry.currency)
+      && ["explicit", "extracted", "inferred"].includes(entry.origin);
+  };
+  const step = (entry) => {
+    if (closeObject(entry, ["confidence", "guards", "identity", "locations", "role"])) return false;
+    return ["binding", "trigger", "registration", "callback", "effect"].includes(entry.role)
+      && lintBounded256(entry.identity)
+      && lintStringArray(entry.locations, 32, true)
+      && lintStringArray(entry.guards, 32, true)
+      && ["unknown", "low", "medium", "high", "exact"].includes(entry.confidence);
+  };
+  const stateMembers = ["semanticSymbol", "operation", "resource", "field", "value", "key"].every((member) => lintStateString(value[member]));
+  const boolMembers = ["binding", "configuration", "ownership", "trace"].every((member) => lintStateBool(value[member]));
+  const arraysOk = Array.isArray(value.candidates) && value.candidates.length <= 32 && value.candidates.every(route)
+    && Array.isArray(value.activation) && value.activation.length <= 32 && value.activation.every(step)
+    && lintStringArray(value.locations, 32, true)
+    && lintStringArray(value.guards, 32, true);
+  return enumsOk && stringsOk && stateMembers && boolMembers && arraysOk;
+};
+
+function decodeLintEvidence(value) {
+  const closed = closeObject(value, LINT_EVIDENCE_MEMBERS);
+  if (closed) return closed;
+  for (const member of LINT_EVIDENCE_MEMBERS) {
+    if (value[member] === undefined) return failure("shape", member);
+  }
+  if (value.schemaVersion !== "lekalo/ai-lint-evidence/v0.6.4") return failure("shape");
+  if (value.identity !== "dev.lekalo.ai-lint-evidence@0.6.4") return failure("shape");
+  if (!lintBounded256(value.target)) return failure("bounds");
+  if (!lintStringArray(value.scope, 10_000, true)) return failure("bounds");
+  const producer = lintProducer(value.producer);
+  if (!producer) return failure("bounds");
+  if (!lintPins(value.pins)) return failure("bounds");
+  if (typeof value.inputManifestDigest !== "string" || value.inputManifestDigest.length > 71 || !LINT_SHA256.test(value.inputManifestDigest)) {
+    return failure("bounds");
+  }
+  if (!Array.isArray(value.sources) || value.sources.length > 10_000) return failure("bounds");
+  for (const source of value.sources) {
+    if (!lintSource(source)) return failure("bounds");
+  }
+  if (!Array.isArray(value.locations) || value.locations.length > 32) return failure("bounds");
+  if (new Set(value.locations.map(canonicalKey)).size !== value.locations.length) return failure("bounds");
+  for (const span of value.locations) {
+    if (!lintSpan(span)) return failure("bounds");
+  }
+  if (!Array.isArray(value.coverage) || value.coverage.length > 10_000) return failure("bounds");
+  for (const coverage of value.coverage) {
+    if (!lintCoverage(coverage)) return failure("bounds");
+  }
+  if (!Array.isArray(value.records) || value.records.length > 10_000) return failure("bounds");
+  for (const record of value.records) {
+    if (!lintRecord(record)) return failure("bounds");
+  }
+  if (!lintStringArray(value.limitations, 10_000, true)) return failure("bounds");
+  return { ok: true, value };
+}
+
+/** Stable structural key for array-of-object uniqueness checks. */
+const canonicalKey = (value) => JSON.stringify(value, Object.keys(flattenMembers(value)));
+
+/** Deterministic deep member order for the canonical key above. */
+function flattenMembers(value) {
+  const out = [];
+  const walk = (member) => {
+    out.push(member);
+    if (member !== null && typeof member === "object") {
+      for (const key of Object.keys(member)) walk(member[key]);
+    }
+  };
+  walk(value);
+  return out;
 }
 
 function decodeScanEntry(value) {
@@ -1307,8 +1502,14 @@ function validateRequest(request) {
       bindingKeys.add(key);
     }
     // Pins are State-tagged; a known value must be a digest, and the
-    // revision pin's known value a token.
+    // revision pin's known value a token. The model/ir pins are REQUIRED
+    // known digests (issue #106 review r2 #2: production wire.rs refuses
+    // unknown and malformed spellings; the SDK must refuse exactly the
+    // same requests or the host boundary never sees them).
     const pinKnown = (pin) => (pin.state === "known" ? pin.value : undefined);
+    for (const pin of ["model", "ir"]) {
+      if (!isSha256Digest(pinKnown(lint.pins[pin]) ?? "")) return invalid("lint-pin");
+    }
     for (const pin of ["observed", "profile", "capabilities"]) {
       if (pinKnown(lint.pins[pin]) !== undefined && !isSha256Digest(lint.pins[pin].value)) return invalid("lint-pin");
     }
@@ -1643,7 +1844,7 @@ function buildDiagnostic(codes, { code, data, message, rule }) {
   return { code, ...(data === undefined ? {} : { data }), message, rule };
 }
 
-/** The canonical bytes of one envelope: the exact stdout form. */
+/** The canonical wire form of one envelope (encoded to UTF-8 bytes at the emission boundary). */
 function responseBytes(envelope) {
   return canonicalJson(envelope);
 }
@@ -1725,10 +1926,13 @@ async function serve(adapter, io = defaultIo()) {
   // written. The ceiling is the accepted default OR the request's
   // declared `limits.max_output_bytes`, whichever is tighter — a valid
   // request that declares a small output budget must never receive a
-  // larger envelope, and nothing truncated is ever written.
+  // larger envelope, and nothing truncated is ever written. The measure
+  // is encoded UTF-8 bytes (issue #106 review r2 #6): `.length` counts
+  // UTF-16 code units, silently widening the budget for non-ASCII
+  // payloads; the same buffer is written so the check covers exact bytes.
   const declared = request.limits?.max_output_bytes;
   const ceiling = typeof declared === "number" && declared >= 1 ? Math.min(declared, MAX_OUTPUT_BYTES) : MAX_OUTPUT_BYTES;
-  const bytes = responseBytes(response);
+  const bytes = Buffer.from(responseBytes(response), "utf8");
   if (bytes.length > ceiling) {
     log.error(`response refused: output-limit`);
     return 1;
@@ -1899,7 +2103,10 @@ function deterministicWrites(request) {
 
 const WRITE_SCOPES = [`${WRITE_ROOT}/${IDENTITY.id}/**`];
 
-serve({
+// The bounded serve loop returns the process exit code: refusal classes
+// (malformed input, oversize, output-limit, …) must surface as nonzero
+// process status (issue #106 review r2 #7).
+process.exitCode = await serve({
   handlers: {
     async describe() {
       return buildCapabilities({
@@ -1947,4 +2154,5 @@ serve({
   },
   identity: IDENTITY,
 });
+
 

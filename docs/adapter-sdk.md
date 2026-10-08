@@ -68,7 +68,9 @@ const identity = buildAdapterIdentity({
   version: "0.1.0",
 });
 
-serve({
+// The bounded serve loop returns the process exit code; propagation is
+// required so refusal classes surface as nonzero process status.
+process.exitCode = await serve({
   identity,
   handlers: {
     describe: () =>
@@ -84,8 +86,6 @@ serve({
   },
 });
 ```
-
-Run it through the real battery:
 
 ```sh
 lekalo adapter test --profile default --report json --repeats 3 --timeout-ms 60000 node adapter.mjs
