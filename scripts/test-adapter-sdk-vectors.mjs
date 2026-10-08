@@ -174,10 +174,34 @@ const expectedTerminals = {
   "extra-write": (report) => report.verdict !== "pass" && report.checks.some((entry) => entry.state === "fail"),
 };
 
+/** Real per-language SDK lifecycle lanes (issue #106 review r2 #8): each
+ * cooperative recipe replays through THAT language's emitted reference
+ * adapter, so a serve-loop defect (output-cap bypass, exit-code loss,
+ * evidence drift) fails here instead of hiding behind the handwritten
+ * control. The control adapter remains a separate independence leg
+ * (`control`) whose hostile fault knobs keep the battery's
+ * classification honest; the `file-only` fixture drives the
+ * `--lekalo-request-file` transport end to end (the reference adapters
+ * declare stdin too, so the host would pick stdin for them). */
+const rustReference = join(ROOT, "sdk/templates/rust/reference/target/debug", process.platform === "win32" ? "sdk-reference-adapter.exe" : "sdk-reference-adapter");
+const goReference = join(ROOT, "sdk/templates/go/reference", process.platform === "win32" ? "sdk-reference.exe" : "sdk-reference");
 const lifecycleAdapters = {
-  typescript: ["node", "tests/fixtures/target-protocol/fake-adapter.mjs", "--lekalo-adapter-variant", "fluent"],
-  rust: ["node", "tests/fixtures/target-protocol/fake-adapter.mjs", "--lekalo-adapter-variant", "fluent"],
+  typescript: ["node", join(ROOT, "sdk/templates/typescript/reference/adapter.mjs")],
+  rust: [rustReference],
+  go: [goReference],
+  php: ["php", join(ROOT, "sdk/templates/php/reference/adapter.php")],
+  control: ["node", "tests/fixtures/target-protocol/fake-adapter.mjs", "--lekalo-adapter-variant", "fluent"],
 };
+const FILE_ONLY_ADAPTER = ["node", "tests/fixtures/target-protocol/file-only-adapter.mjs"];
+/** Ensure the native template binaries exist before the lane runs. */
+for (const executable of [rustReference, goReference]) {
+  if (!existsSync(executable)) {
+    const buildDir = executable.includes("templates/rust") ? join(ROOT, "sdk/templates/rust/reference") : join(ROOT, "sdk/templates/go/reference");
+    const build = run("cargo", ["build", "--quiet"], buildDir);
+    if (build.status !== 0) fail("lifecycle-template-build", `${buildDir}: ${(build.stderr ?? "").slice(-300)}`);
+    if (!existsSync(executable)) fail("lifecycle-template-binary", executable);
+  }
+}
 /** adapterMode → the control adapter's --lekalo-fault knob (null = none).
  * The mapping preserves each recipe's SEMANTIC with the control's closed
  * fault vocabulary: a hostile recipe must never report pass, a
@@ -200,11 +224,44 @@ if (lifecycleLanguages.length === 0 && languages.length > 0) {
   // always present, so at least one language runs it per invocation.
   lifecycleLanguages.push("typescript");
 }
+// The independence control leg rides along exactly once per invocation.
+if (!lifecycleLanguages.includes("control")) lifecycleLanguages.push("control");
 for (const lang of lifecycleLanguages) {
   const adapterArgs = [...lifecycleAdapters[lang]];
+  const isControl = adapterArgs.includes("fake-adapter.mjs");
   for (const name of lifecycleNames) {
     const recipe = JSON.parse(readFileSync(join(lifecycleDir, name), "utf8"));
-    const fault = MODE_FAULTS[recipe.adapterMode];
+    // The file-exchange transport recipe drives the file-only fixture
+    // once per invocation (from the first lane language): the fixture
+    // declares transports ["file"], so every session exchange after the
+    // stdin-delivered handshake must arrive through the file coordinate.
+    if (recipe.adapter === "file-only") {
+      if (!isControl) continue;
+      const fileBattery = run(hostCli, [
+        "adapter", "test",
+        "--profile", "default",
+        "--report", "json",
+        "--repeats", "1",
+        "--timeout-ms", "10000",
+        ...FILE_ONLY_ADAPTER,
+      ]);
+      let fileReport = null;
+      const fileStdout = fileBattery.stdout ?? "";
+      const fileStart = fileStdout.indexOf("{");
+      if (fileStart !== -1) {
+        try { fileReport = JSON.parse(fileStdout.slice(fileStart, fileStdout.lastIndexOf("}") + 1)).report; } catch { fileReport = null; }
+      }
+      if (fileReport === null || fileReport.verdict !== "pass") {
+        fail("lifecycle-terminal", `file-exchange: expected ok, got ${fileReport?.verdict ?? "no report"} (${fileBattery.status})`);
+      }
+      continue;
+    }
+    // Hostile modes ride the control leg only: the SDK reference adapters
+    // are cooperative by construction and must never pass a hostile
+    // recipe, so those recipes simply do not run against them.
+    const hostile = MODE_FAULTS[recipe.adapterMode] !== null && MODE_FAULTS[recipe.adapterMode] !== undefined;
+    if (!isControl && hostile) continue;
+    const fault = isControl ? MODE_FAULTS[recipe.adapterMode] : null;
     const argv = [...adapterArgs];
     if (fault) argv.push("--lekalo-fault", fault);
     const battery = run(hostCli, [

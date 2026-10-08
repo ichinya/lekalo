@@ -818,7 +818,8 @@ final class Decode {
         return is_int($value) || (is_float($value) && floor($value) === $value);
     }
 
-    private static function numberInRange(mixed $value, int $min, int $max): bool {
+    /** The integral-number range test; shared with the serve emit ceiling. */
+    public static function numberInRange(mixed $value, int $min, int $max): bool {
         if (is_int($value)) {
             return $value >= $min && $value <= $max;
         }
@@ -2462,7 +2463,7 @@ final class Serve {
         // #5): admission accepts integral floats (1.0), so emit must apply
         // the ceiling through the same integral-number semantics — an
         // is_int-only check silently ignored the float spelling.
-        if (self::numberInRange($declared, 1, Protocol::BOUNDS['LIMITS_OUTPUT_MAX']) && $declared < $ceiling) {
+        if (Decode::numberInRange($declared, 1, Protocol::BOUNDS['LIMITS_OUTPUT_MAX']) && $declared < $ceiling) {
             $ceiling = (int) $declared;
         }
         if (strlen($bytes) > $ceiling) {

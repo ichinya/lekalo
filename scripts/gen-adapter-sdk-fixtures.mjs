@@ -389,7 +389,109 @@ const lintResponse = {
   protocol: "lekalo.target/v1",
   protocol_version: "0.6.4",
   request_id: R("lint"),
-  result: { lint_evidence: { records: [] } },
+  // The full closed LintEvidence subtree (issue #106 review r2 #3): all
+  // twelve schema-required members, const identity/schemaVersion, and
+  // the nested closed StateString/Producer/Pins/Coverage/Record shapes.
+  result: {
+    lint_evidence: {
+      coverage: [
+        {
+          eligible: { state: "unknown" },
+          examined: { state: "known", value: 2 },
+          limitations: ["no-native-gates"],
+          rule: "binding-coverage",
+          scope: "src",
+          state: "partial",
+          target: "sdk-reference",
+        },
+      ],
+      identity: "dev.lekalo.ai-lint-evidence@0.6.4",
+      inputManifestDigest: D("lint-input-manifest"),
+      limitations: ["no-native-gates"],
+      locations: [
+        {
+          column: 1,
+          end: 12,
+          endColumn: 3,
+          endLine: 2,
+          id: "span-user-model",
+          line: 1,
+          source: "src/domain/user.php",
+          start: 0,
+        },
+      ],
+      pins: {
+        capabilities: { state: "unknown" },
+        ir: { state: "known", value: D("lint-ir") },
+        model: { state: "known", value: D("lint-model") },
+        observed: { state: "unknown" },
+        profile: { state: "unknown" },
+        revision: { state: "unknown" },
+      },
+      producer: {
+        artifactDigest: D("lint-producer-artifact"),
+        compiler: { state: "known", value: "php-8.5.0" },
+        framework: { state: "known", value: "laravel-12" },
+        id: "sdk-reference-linter",
+        recipe: "lekalo-reference",
+        tool: "lekalo-lint",
+        version: "0.1.0",
+      },
+      records: [
+        {
+          activation: [
+            {
+              confidence: "exact",
+              guards: ["is-admin"],
+              identity: "app-console-inspect",
+              locations: ["src/console/inspect.php"],
+              role: "callback",
+            },
+          ],
+          binding: { state: "known", value: true },
+          candidates: [
+            {
+              confidence: "high",
+              currency: "current",
+              identity: "app-models-user",
+              origin: "extracted",
+            },
+          ],
+          claim: "structural",
+          confidence: "high",
+          configuration: { state: "unknown" },
+          currency: "current",
+          field: { state: "unknown" },
+          guards: [],
+          id: "record-user-entity",
+          key: { state: "unknown" },
+          kind: "dispatch",
+          locations: ["src/domain/user.php"],
+          mechanism: "direct",
+          nativeId: "app-models-user",
+          operation: { state: "unknown" },
+          origin: "extracted",
+          ownership: { state: "unknown" },
+          resource: { state: "unknown" },
+          semanticSymbol: { state: "known", value: "App-Models-User" },
+          subject: "App-Models-User",
+          trace: { state: "unknown" },
+          value: { state: "unknown" },
+        },
+      ],
+      schemaVersion: "lekalo/ai-lint-evidence/v0.6.4",
+      scope: ["src"],
+      sources: [
+        {
+          bytes: 512,
+          fingerprint: D("lint-source-user"),
+          id: "source-user-model",
+          path: "src/domain/user.php",
+        },
+      ],
+      target: "sdk-reference",
+    },
+  },
   status: "ok",
 };
 const verifyResponseFindings = {
@@ -737,7 +839,11 @@ for (const vector of securityVectors) {
 
 const lifecycleRecipes = [
   { adapterMode: "cooperative", case: "stdin-exchange", expectedTerminal: "ok" },
-  { adapterMode: "cooperative", case: "file-exchange", expectedTerminal: "ok" },
+  // A real file-transport exchange: the SDK reference adapters declare
+  // ["stdin","file"], so the host picks stdin for them (issue #106 review
+  // r2 #8). The transport fixture adapter declares ["file"] alone, so
+  // this recipe drives the actual --lekalo-request-file delivery path.
+  { adapterMode: "cooperative", case: "file-exchange", adapter: "file-only", expectedTerminal: "ok" },
   { adapterMode: "silent-exit", case: "callback-crash", expectedTerminal: "process-failure" },
   { adapterMode: "stdout-noise", case: "stdout-pollution", expectedTerminal: "response-invalid" },
   { adapterMode: "stderr-verbose", case: "bounded-stderr-logging", expectedTerminal: "ok" },

@@ -81,7 +81,8 @@ final class Decode {
         return is_int($value) || (is_float($value) && floor($value) === $value);
     }
 
-    private static function numberInRange(mixed $value, int $min, int $max): bool {
+    /** The integral-number range test; shared with the serve emit ceiling. */
+    public static function numberInRange(mixed $value, int $min, int $max): bool {
         if (is_int($value)) {
             return $value >= $min && $value <= $max;
         }

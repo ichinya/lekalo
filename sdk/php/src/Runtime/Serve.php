@@ -90,7 +90,7 @@ final class Serve {
         // #5): admission accepts integral floats (1.0), so emit must apply
         // the ceiling through the same integral-number semantics — an
         // is_int-only check silently ignored the float spelling.
-        if (self::numberInRange($declared, 1, Protocol::BOUNDS['LIMITS_OUTPUT_MAX']) && $declared < $ceiling) {
+        if (Decode::numberInRange($declared, 1, Protocol::BOUNDS['LIMITS_OUTPUT_MAX']) && $declared < $ceiling) {
             $ceiling = (int) $declared;
         }
         if (strlen($bytes) > $ceiling) {
