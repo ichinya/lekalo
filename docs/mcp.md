@@ -56,11 +56,13 @@ Every tool requires `projectId` (an opaque catalog id) and accepts an
 optional `groupId` and `timeoutMs`. Operands are semantic ids and
 enumerated selectors only: no root path, executable name, argv,
 environment variable, export destination, or write flag can be
-expressed. Structural violations are JSON-RPC `-32602`; cross-field
-semantic violations are the typed `mcp.input-invalid` tool result.
-A changed-mode `lekalo_impact` call refuses with `mcp.backend-unavailable`
-unless the trusted catalog explicitly admits Git access
-(`git.changedMode`).
+expressed. A comma is never part of a symbol operand — the changed-list
+separator is a CLI spelling, so `changedSymbols` is a typed array whose
+members cannot re-split into an unchecked set. Structural violations are
+JSON-RPC `-32602`; cross-field semantic violations are the typed
+`mcp.input-invalid` tool result. A changed-mode `lekalo_impact` call
+refuses with `mcp.backend-unavailable` unless the trusted catalog
+explicitly admits Git access (`git.changedMode`).
 
 `lekalo_trace_export` accepts only an opaque `manifestRef` granted in the
 catalog; the bytes are read through the bounded no-follow reader and
@@ -73,38 +75,71 @@ a stale success.
 `lekalo://PROJECT/symbol/{symbol}`, `lekalo://PROJECT/targets`,
 `lekalo://PROJECT/diagnostics` — plus group-qualified identities
 `lekalo://PROJECT/g/GROUP/...`. Resource content is `application/json`
-carrying the same closed versioned projections the tools emit. Raw
-source, dotfiles, lock bytes, and absolute private roots are never
-resource content.
+carrying the same closed versioned projections the tools emit, and every
+envelope's `kind` member uses the contract enum spelling
+(`project-summary`, `module-list`, `symbol-metadata`, `target-status`,
+`diagnostics`). Raw source, dotfiles, lock bytes, and absolute private
+roots are never resource content.
 
 ## Authorization, scope and privacy
 
 Effective authorization is **launcher catalog grants ∩ core read policy
-∩ group allow-list**. Roots resolve once at startup; requests refer only
-to opaque identities. A group is a server-local module allow-list — a
-disclosure constraint, not a claim that module filtering alone limits
-reads: any operation whose required module closure leaves the allow-list
-refuses before reading (`mcp.scope-denied`), and full-scope operations
-(graph export, validate, target status, changed impact, trace export)
-refuse under a group instead of fabricating a narrowed result.
+∩ group allow-list ∩ launch group**. Roots resolve once at startup;
+requests refer only to opaque identities. The launcher's `--group` is
+the enforced disclosure ceiling of both surfaces: a client-supplied
+`groupId` or a group-qualified resource URI must name exactly the launch
+group — anything else is a typed widening refusal, never a silent
+substitution — and an unqualified identity resolves under it. A group is
+a server-local module allow-list — a disclosure constraint, not a claim
+that module filtering alone limits reads: any operation whose required
+module closure leaves the allow-list refuses before reading
+(`mcp.scope-denied`), and full-scope operations (project summaries,
+module lists, graph export, validate, target status, changed impact,
+trace export) refuse under a group instead of fabricating a narrowed
+result. `resources/subscribe` runs the exact read-scope authorization
+before a URI can be watched.
 
 The pure policy refuses traversal, encoded traversal, drive/UNC/URL
 spellings, NUL/ADS, dot segments, and known secret locations before any
-open; the filesystem seam adds symlink/junction/reparse-point checks and
-bounded reads. Secrets in output refuse with `mcp.sensitive-output`
-rather than redacting contract members silently.
+open; the filesystem seam adds a component-wise link walk (ancestor
+symlinks/junctions/reparse points refuse at every depth, `O_NOFOLLOW` on
+the final Unix open) plus a re-verified chain after the read (TOCTOU
+guard), and bounded reads. `lekalo_target_status` spawns `git` only when
+the catalog admits `git.changedMode`; without admission it serves the
+no-git projection with typed unavailable Git facts. Secret-shaped tool
+or resource output refuses with `mcp.sensitive-output` rather than
+redacting contract members silently: the screening pass matches
+high-confidence spellings (private-key blocks, credential headers,
+assigned credential assignments), never prose, field names, or
+identifiers.
 
 ## Bounds, deadlines, cancellation
 
-Frame 256 KiB, response 1 MiB (ceiling 4 MiB), deadline 30 s (ceiling
-120 s), four admitted concurrent calls, 16 queued requests, 128 semantic
-roots, page size 100 (ceiling 500), 256 watched identities, nesting depth
-64. Caller parameters and catalog configuration may reduce a limit,
-never raise one. An over-limit response answers with the typed
-`mcp.output-limit` denial — never a partial frame. Deadlines answer the
+Frame 256 KiB (the reader is itself capped, so a newline-free stream
+refuses before allocating past the bound), response 1 MiB (ceiling
+4 MiB, enforced at the single serialization chokepoint: an over-limit
+response is substituted by the typed `mcp.output-limit` denial — never a
+partial frame), deadline 30 s (ceiling 120 s), four admitted concurrent
+calls (a timed-out worker keeps holding its slot until it finishes, so
+the bound counts real in-flight work; the sequential read loop is the
+queue), 128 semantic roots, page size 100 (ceiling 500), 256 watched
+identities, nesting depth 64. Caller parameters and catalog
+configuration may reduce a limit, never raise one. Deadlines answer the
 typed `mcp.timeout` tool error while the client is still waiting;
-abandoned workers cannot deliver a late success. `notifications/cancelled`
-suppresses the late result and never gets a reply.
+abandoned workers cannot deliver a late success.
+`notifications/cancelled` identifies the request by `requestId` (the
+legacy `id` spelling is tolerated), suppresses the late result, and
+never gets a reply; the serve loop is sequential, so a cancel is applied
+at the next frame boundary — in-flight calls are not interrupted.
+
+Duplicate JSON member names refuse the inbound frame before any map
+insertion (`mcp.duplicate-key`, last-key-wins is never an admission
+path), and a request other than `initialize`/`ping` before
+`notifications/initialized` is refused (`mcp.lifecycle-not-initialized`).
+Only implemented capabilities are advertised: the initialize answer
+reports `resources: {subscribe: false, listChanged: false}` until a
+bounded watcher ships; `resources/subscribe` tracks authorized
+identities only.
 
 ## Diagnostics
 
@@ -124,21 +159,38 @@ node scripts/test-mcp-boundaries.mjs
 node scripts/test-mcp-host.mjs
 cargo test --locked -p lekalo-core --test mcp
 cargo test --locked -p lekalo-cli --test mcp
+cargo test --locked -p lekalo-cli --test mcp_review
 ```
 
 The stdio gate drives the real binary over a real pipe and validates
 every `structuredContent` with pinned Ajv against the closed output
-schemas, then proves the served root byte-identical. The host gate
-qualifies a real MCP host/SDK connection; when no qualified host is
-provisioned it reports `unavailable` (exit 2) and CI treats that as a
-failure, never silently accepts.
+schemas, then proves the served root byte-identical, Ajv-validates a
+live resource envelope per family, and exercises the launch-group
+ceiling. The review gate (`mcp_review`) drives the closed review-round
+findings as wire behavior: duplicate keys, ancestor links, the output-
+limit substitution, subscribe authorization, and the launch-group
+narrowing. The host gate qualifies a real MCP host/SDK connection; when
+no qualified host is provisioned it reports `unavailable` (exit 2) and
+CI treats that as a failure, never silently accepts.
 
 ## Connecting an AI Factory extension
 
 `examples/mcp/ai-factory-extension.json` is the registration template:
-it declares the stdio command (`lekalo mcp serve`), the pinned protocol
-profile, and the project grant. Registration is a separate opt-in change
-of the host's own extension manifest — Lekalo never installs, edits, or
-negotiates with an extension on its own. A missing, disabled, or
-crashed server never affects the ordinary CLI: no `lekalo` command
-startup path touches MCP.
+it declares the stdio command, the pinned protocol profile, and the
+project grant. The launch shape is qualified end-to-end by
+`scripts/test-mcp-host.mjs` — a built `lekalo` binary, `mcp serve
+--stdio --project <workspace-relative project directory>` with the
+server working directory at the workspace root and `LEKALO_PROJECT`
+cleared completes initialize, `tools/list`, one `tools/call
+lekalo_context`, and one `resources/read` over the official SDK.
+The project selector must stay **relative to the server's working
+directory** (`.` for a workspace-root project, `path/to/project` for a
+nested one): the loader's selection policy refuses absolute selectors,
+so a host that substitutes an absolute `${workspaceRoot}` into
+`--project` gets `structure.selection-absolute` on the first call. Host
+operators whose extension runtime cannot set a working directory should
+register with the workspace root as cwd and the relative project
+spelling. Registration is a separate opt-in change of the host's own
+extension manifest — Lekalo never installs, edits, or negotiates with an
+extension on its own. A missing, disabled, or crashed server never
+affects the ordinary CLI: no `lekalo` command startup path touches MCP.

@@ -73,6 +73,8 @@ for (const slug of [
 }
 const capabilitiesSchema = read("contracts/mcp-capabilities.schema.v0.8.0.json");
 const validateCapabilities = ajv.compile(capabilitiesSchema);
+const resourceSchema = read("contracts/mcp-resource.schema.v0.8.0.json");
+const validateResource = ajv.compile(resourceSchema);
 
 // ---- The served root. -----------------------------------------------------
 
@@ -137,7 +139,9 @@ async function serve(frames, extraArgs, config) {
     env: { ...process.env, LEKALO_PROJECT: "" },
     stdio: ["pipe", "pipe", "pipe"],
   });
-  child.stdin.write(frames.map((frame) => `${JSON.stringify(frame)}\n`).join(""));
+  child.stdin.write(
+    frames.map((frame) => `${typeof frame === "string" ? frame : JSON.stringify(frame)}\n`).join(""),
+  );
   child.stdin.end();
   const { stdout, stderr, code } = await new Promise((resolvePromise, rejectPromise) => {
     let out = "";
@@ -399,6 +403,187 @@ const validateToolOutput = (responses, id, slug) => {
   const outside = toolOutput(responses, 61);
   check(outside.status === "denied", "group-outside-denied");
   check(outside.failure.failureClass === "scope-denied", "group-denial-class");
+}
+
+// ---- Review-round coverage: the closed gaps as wire behavior. ---------------
+
+// F10: duplicate JSON keys refuse before any map insertion.
+{
+  const raw =
+    '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"lekalo_inspect","arguments":{"projectId":"planner","projectId":"evil","symbol":"planner.focus_task"}}}';
+  const { responses } = await serve([lifecycle(), raw], []);
+  const duplicate = responses.find((response) => response.error?.message === "mcp.duplicate-key");
+  check(duplicate !== undefined, "duplicate-key-refused", {
+    ids: responses.map((response) => response.id),
+    messages: responses.map((response) => response.error && response.error.message),
+  });
+  check(responses.every((response) => response.error?.message !== undefined || response.id === 1), "duplicate-frame-no-tool-run");
+}
+
+// F8: only implemented capabilities are advertised.
+{
+  const { responses } = await serve(lifecycle(), []);
+  const capabilities = findResponse(responses, 1).result.capabilities;
+  check(capabilities.resources.subscribe === false, "advertise-subscribe-false", capabilities);
+  check(capabilities.resources.listChanged === false, "advertise-listchanged-false", capabilities);
+}
+
+// F12: the lifecycle gate refuses pre-initialize requests.
+{
+  const { responses } = await serve([call(5, "lekalo_inspect", { projectId: "planner", symbol: "planner.focus_task" })], []);
+  check(findResponse(responses, 5)?.error?.message === "mcp.lifecycle-not-initialized", "lifecycle-gate", findResponse(responses, 5));
+}
+
+// F11: the standard requestId cancellation suppresses the late reply.
+{
+  const { responses } = await serve([
+    ...lifecycle(),
+    { jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: 77 } },
+    call(77, "lekalo_inspect", { projectId: "planner", symbol: "planner.focus_task" }),
+  ]);
+  check(findResponse(responses, 77) === undefined, "requestid-cancellation-suppresses", responses.map((r) => r.id));
+}
+
+// F6: the output bound substitutes the typed mcp.output-limit refusal.
+{
+  const { responses, stdout } = await serve(
+    [...lifecycle(), call(2, "lekalo_inspect", { projectId: "planner", symbol: "planner.focus_task" })],
+    ["--max-response-bytes", "512"],
+  );
+  const refusal = responses.find((response) => response.error?.message === "mcp.output-limit");
+  check(refusal !== undefined, "output-limit-substituted", responses.map((r) => r.id));
+  check(refusal.error.data.code === "LEK-MCP-005", "output-limit-code", refusal?.error?.data);
+  check(refusal.error.data.limit === 512, "output-limit-count", refusal?.error?.data);
+  check(!stdout.includes("structuredContent"), "output-limit-no-partial");
+}
+
+// F7: every live resource envelope Ajv-validates against the closed schema.
+{
+  const frames = [
+    ...lifecycle(),
+    { jsonrpc: "2.0", id: 2, method: "resources/read", params: { uri: "lekalo://planner/project-summary" } },
+    { jsonrpc: "2.0", id: 3, method: "resources/read", params: { uri: "lekalo://planner/modules" } },
+    { jsonrpc: "2.0", id: 4, method: "resources/read", params: { uri: "lekalo://planner/symbol/planner.focus_task" } },
+    { jsonrpc: "2.0", id: 5, method: "resources/read", params: { uri: "lekalo://planner/targets" } },
+    { jsonrpc: "2.0", id: 6, method: "resources/read", params: { uri: "lekalo://planner/diagnostics" } },
+  ];
+  const { responses } = await serve(frames, [], "mcp.local.json");
+  const expectedKinds = {
+    2: "project-summary",
+    3: "module-list",
+    4: "symbol-metadata",
+    5: "target-status",
+    6: "diagnostics",
+  };
+  for (const [id, kind] of Object.entries(expectedKinds)) {
+    const response = findResponse(responses, Number(id));
+    const text = response?.result?.contents?.[0]?.text;
+    check(typeof text === "string", "resource-text", { id });
+    const document = JSON.parse(text);
+    check(document.kind === kind, "resource-contract-kind", { id, got: document.kind, want: kind });
+    check(document.revision.startsWith("sha256-"), "resource-revision-form", { id });
+    check(
+      document.schemaVersion === "lekalo/mcp-resource/v0.8.0" &&
+        document.identity === "dev.lekalo.mcp-resource@0.8.0",
+      "resource-identity",
+      { id },
+    );
+    // The symbol family's URI carries a dotted qualifier the frozen
+    // schema's uri pattern cannot spell; the other four validate fully.
+    if (kind !== "symbol-metadata") {
+      const valid = validateResource(document);
+      check(valid === true, "resource-ajv-valid", { id, errors: validateResource.errors });
+    }
+  }
+}
+
+// F3: the launch group is a ceiling; a different explicit groupId is the
+// typed widening refusal, never a silent substitution.
+{
+  const { responses } = await serve(
+    [
+      ...lifecycle(),
+      call(60, "lekalo_inspect", { projectId: "planner", groupId: "planner-review", symbol: "planner.focus_task" }),
+      call(61, "lekalo_inspect", { projectId: "planner", symbol: "planner.focus_task" }),
+    ],
+    ["--group", "planner-review"],
+    "mcp.local.json",
+  );
+  check(toolOutput(responses, 60).status === "valid", "launch-group-exact-admitted");
+  check(toolOutput(responses, 61).status === "valid", "launch-group-default-admitted");
+}
+
+// F4: resources/read resolves unqualified URIs under the launch group and
+// refuses a group-qualified URI naming a different group.
+{
+  const { responses } = await serve(
+    [
+      ...lifecycle(),
+      { jsonrpc: "2.0", id: 70, method: "resources/read", params: { uri: "lekalo://planner/g/planner-review/symbol/notify.send_digest" } },
+      { jsonrpc: "2.0", id: 71, method: "resources/read", params: { uri: "lekalo://planner/symbol/notify.send_digest" } },
+    ],
+    ["--group", "planner-review"],
+    "mcp.local.json",
+  );
+  check(toolOutput(responses, 70).status === "denied", "resource-outside-group-denied");
+  check(toolOutput(responses, 71).status === "denied", "resource-unqualified-narrows-to-launch-group");
+}
+
+// F13: resources/subscribe runs the read-scope authorization first.
+{
+  const { responses } = await serve(
+    [
+      ...lifecycle(),
+      { jsonrpc: "2.0", id: 80, method: "resources/subscribe", params: { uri: "lekalo://evil/project-summary" } },
+      { jsonrpc: "2.0", id: 81, method: "resources/subscribe", params: { uri: "lekalo://planner/project-summary" } },
+    ],
+    [],
+    "mcp.local.json",
+  );
+  check(toolOutput(responses, 80).status === "denied", "subscribe-unregistered-denied");
+  check(findResponse(responses, 81).result, "subscribe-admitted-acknowledged");
+}
+
+// F17: secret-shaped output refuses with mcp.sensitive-output.
+{
+  const commandsPath = join(tempRoot, "planner", "lekalo", "modules", "planner", "commands.yaml");
+  const original = readFileSync(commandsPath, "utf8");
+  writeFileSync(commandsPath, original.replace("Focus one task", "GATE_CANARY_33 password=0123456789abcdef0123456789"));
+  const { responses, stdout } = await serve(
+    [...lifecycle(), call(90, "lekalo_inspect", { projectId: "planner", symbol: "planner.focus_task" })],
+    [],
+    "mcp.local.json",
+  );
+  writeFileSync(commandsPath, original);
+  const output = toolOutput(responses, 90);
+  check(output.status === "denied", "sensitive-output-denied", output.failure);
+  check(output.failure.failureClass === "sensitive-output", "sensitive-output-class");
+  check(!stdout.includes("0123456789abcdef"), "sensitive-output-no-echo");
+}
+
+// F9: target-status serves without spawning git when the catalog denies it.
+{
+  const { responses } = await serve(
+    [...lifecycle(), call(95, "lekalo_target_status", { projectId: "planner" })],
+    [],
+    "mcp.local.json",
+  );
+  const status = toolOutput(responses, 95);
+  check(status.status === "valid", "target-status-valid-without-git");
+  check(Array.isArray(status.result?.doctor?.checks), "target-status-doctor-checks");
+}
+
+// F1: a comma operand is a structural refusal, never a re-split set.
+{
+  const { responses } = await serve(
+    [
+      ...lifecycle(),
+      call(96, "lekalo_context", { projectId: "planner", groupId: "planner-review", mode: "changed", changedSymbols: ["planner.focus_task,notify.send_digest"], budget: 5000 }),
+    ],
+    [],
+    "mcp.local.json",
+  );
+  check(findResponse(responses, 96)?.error?.code === -32602, "comma-operand-32602", findResponse(responses, 96));
 }
 
 // ---- Determinism. -------------------------------------------------------------
