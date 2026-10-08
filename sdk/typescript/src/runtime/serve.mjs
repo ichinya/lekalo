@@ -71,10 +71,13 @@ export async function serve(adapter, io = defaultIo()) {
   // written. The ceiling is the accepted default OR the request's
   // declared `limits.max_output_bytes`, whichever is tighter — a valid
   // request that declares a small output budget must never receive a
-  // larger envelope, and nothing truncated is ever written.
+  // larger envelope, and nothing truncated is ever written. The measure
+  // is encoded UTF-8 bytes (issue #106 review r2 #6): `.length` counts
+  // UTF-16 code units, silently widening the budget for non-ASCII
+  // payloads; the same buffer is written so the check covers exact bytes.
   const declared = request.limits?.max_output_bytes;
   const ceiling = typeof declared === "number" && declared >= 1 ? Math.min(declared, MAX_OUTPUT_BYTES) : MAX_OUTPUT_BYTES;
-  const bytes = responseBytes(response);
+  const bytes = Buffer.from(responseBytes(response), "utf8");
   if (bytes.length > ceiling) {
     log.error(`response refused: output-limit`);
     return 1;

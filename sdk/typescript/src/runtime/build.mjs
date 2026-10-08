@@ -218,7 +218,7 @@ export function buildDiagnostic(codes, { code, data, message, rule }) {
   return { code, ...(data === undefined ? {} : { data }), message, rule };
 }
 
-/** The canonical bytes of one envelope: the exact stdout form. */
+/** The canonical wire form of one envelope (encoded to UTF-8 bytes at the emission boundary). */
 export function responseBytes(envelope) {
   return canonicalJson(envelope);
 }
