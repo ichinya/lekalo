@@ -238,6 +238,147 @@ fn negative_vectors_refuse_with_the_registered_rule_and_detail() {
         let (rule, detail) = validate(&document).unwrap_err();
         assert_eq!(rule, "worklog-changelog.evidence-incomplete");
         assert_eq!(detail, "publish.approval");
+
+        // C7: a required operation member disappears — the wire refuses
+        // with the schema's required-member token, never a default.
+        let mut document = valid_document();
+        document["operations"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("defaultSelection");
+        let (rule, detail) = validate(&document).unwrap_err();
+        assert_eq!(rule, "worklog-changelog.input-invalid");
+        assert_eq!(detail, "missing-member");
+
+        // C7: an inline `replay` member is decoded and validated, never
+        // ignored — an unknown member inside it refuses.
+        let mut document = valid_document();
+        document["operations"][0]["replay"] = serde_json::json!({"unexpected": "ignored"});
+        let (rule, detail) = validate(&document).unwrap_err();
+        assert_eq!(rule, "worklog-changelog.input-invalid");
+        assert_eq!(detail, "unknown-field");
+
+        // C7: an inline `replay` naming another operation refuses.
+        let mut document = valid_document();
+        document["operations"][0]["replay"] = serde_json::json!({
+            "operation": "worklog.write_worklog",
+            "scope": "taskhub.scope.inline",
+            "keyRef": "correlation_key",
+            "duplicate": "replay_result",
+            "sameKeyDifferentRequest": "conflict",
+            "payloadBinding": "canonical_digest"
+        });
+        let (rule, detail) = validate(&document).unwrap_err();
+        assert_eq!(rule, "worklog-changelog.input-invalid");
+        assert_eq!(detail, "replay-operation");
+
+        // C4: a writing operation cannot claim the read-only boundary;
+        // eligibility is derived from the compiled operation kind.
+        let mut document = valid_document();
+        let edit = document["operations"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|role| role["operation"] == "worklog.edit_worklog")
+            .unwrap();
+        edit["commitBoundary"] = serde_json::json!("read_only");
+        edit["effects"] = serde_json::json!([
+            {"kind": "read", "effectId": "worklog.fabricated_read_0"}
+        ]);
+        let (rule, detail) = validate(&document).unwrap_err();
+        assert_eq!(rule, "worklog-changelog.effects-coupled");
+        assert_eq!(detail, "read-only-disguise");
+
+        // C4: erasing the public query's read projection refuses.
+        let mut document = valid_document();
+        document["operations"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|role| role["operation"] == "changelog.public_entry")
+            .unwrap()["effects"] = serde_json::json!([]);
+        let (rule, detail) = validate(&document).unwrap_err();
+        assert_eq!(rule, "worklog-changelog.effects-coupled");
+        assert_eq!(detail, "read-count-mismatch");
+
+        // C4: every claimed read resolves to one compiled read
+        // subject; a fabricated read refuses.
+        let mut document = valid_document();
+        document["operations"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|role| role["operation"] == "changelog.public_entry")
+            .unwrap()["effects"] = serde_json::json!([
+            {"kind": "read", "effectId": "changelog.audit"}
+        ]);
+        let (rule, detail) = validate(&document).unwrap_err();
+        assert_eq!(rule, "worklog-changelog.effects-coupled");
+        assert_eq!(detail, "read-set-mismatch");
+
+        // C8: a replay key must be a declared input of its own
+        // operation.
+        let mut document = valid_document();
+        document["replayScopes"][0]["keyRef"] = serde_json::json!("nonexistent_field");
+        let (rule, detail) = validate(&document).unwrap_err();
+        assert_eq!(rule, "worklog-changelog.replay-scope-invalid");
+        assert_eq!(detail, "unresolved-replay-key");
+
+        // C8: a correlation key must resolve on every member.
+        let mut document = valid_document();
+        document["correlations"][0]["keyRef"] = serde_json::json!("body");
+        let (rule, detail) = validate(&document).unwrap_err();
+        assert_eq!(rule, "worklog-changelog.replay-scope-invalid");
+        assert_eq!(detail, "unresolved-correlation-key");
+
+        // C9: weakening a mandatory guarantee below its full minimum
+        // refuses.
+        let mut document = valid_document();
+        document["capabilityRequirements"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|requirement| requirement["capability"] == "publish.approval")
+            .unwrap()["minimum"] = serde_json::json!("partial");
+        let (rule, detail) = validate(&document).unwrap_err();
+        assert_eq!(rule, "worklog-changelog.evidence-incomplete");
+        assert_eq!(detail, "publish.approval");
+
+        // C9: binding a mandatory guarantee to the wrong operation
+        // refuses.
+        let mut document = valid_document();
+        document["capabilityRequirements"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|requirement| requirement["capability"] == "publish.approval")
+            .unwrap()["operationRefs"] = serde_json::json!(["worklog.complete_task"]);
+        let (rule, detail) = validate(&document).unwrap_err();
+        assert_eq!(rule, "worklog-changelog.evidence-incomplete");
+        assert_eq!(detail, "publish.approval");
+
+        // C9: dropping one replayed operation from the durable-key
+        // guarantee refuses.
+        let mut document = valid_document();
+        document["capabilityRequirements"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|requirement| requirement["capability"] == "idempotency.durable_key")
+            .unwrap()["operationRefs"] =
+            serde_json::json!(["worklog.complete_task", "worklog.request_provider_comment"]);
+        let (rule, detail) = validate(&document).unwrap_err();
+        assert_eq!(rule, "worklog-changelog.evidence-incomplete");
+        assert_eq!(detail, "idempotency.durable_key");
+
+        // C3: two pins for one consumed family conflict instead of
+        // silently deduplicating.
+        let mut document = valid_document();
+        let clone = document["consumed"][0].clone();
+        document["consumed"].as_array_mut().unwrap().push(clone);
+        let (rule, detail) = validate(&document).unwrap_err();
+        assert_eq!(rule, "worklog-changelog.input-invalid");
+        assert_eq!(detail, "duplicate-consumed-family");
     });
 }
 

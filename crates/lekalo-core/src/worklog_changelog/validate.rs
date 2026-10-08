@@ -59,7 +59,7 @@ impl Composition {
         self.check_approvals(&index)?;
         self.check_snapshots(&index)?;
         self.check_allowlist(&index)?;
-        self.check_replay()?;
+        self.check_replay(&index)?;
         self.check_capabilities()?;
         Ok(())
     }
@@ -86,29 +86,46 @@ impl Composition {
 
     /// Every role resolves to a declared command or query, and the
     /// declared effect set equals the command's canonical effect list.
+    /// Read-only eligibility is derived from the compiled operation,
+    /// never from the report-controlled boundary string: only a query
+    /// may be read-only, and every claimed read must resolve 1:1 to a
+    /// compiled read subject. A writing operation that claims the
+    /// read-only boundary is a disguise and refuses.
     fn check_roles(&self, index: &ProjectIndex) -> Result<(), DiagnosticSet> {
         for role in &self.operations {
             let kind = index
                 .operations
                 .get(role.operation.as_str())
                 .ok_or_else(|| super::diagnostic::input_invalid("unresolved-role"))?;
-            let expected = index
-                .effect_projection
-                .get(role.operation.as_str())
-                .map(Vec::as_slice)
-                .unwrap_or(&[]);
-            if *kind == "query" && role.commit_boundary() != "read_only" {
-                return Err(super::diagnostic::effects_coupled("query-committed"));
-            }
             if role.commit_boundary() == "read_only" {
-                // Read projections are anonymous (`#N`): a read-only
-                // role declares one read entry per projected read
-                // subject, matched by count and kind only.
-                if role.effects().iter().any(|effect| effect.kind() != "read") {
-                    return Err(super::diagnostic::effects_coupled("read-kind-mismatch"));
+                // Eligibility: a compiled query, never a command.
+                if *kind != "query" {
+                    return Err(super::diagnostic::effects_coupled("read-only-disguise"));
                 }
-                if role.effects().len() != expected.len() && *kind == "command" {
+                // Every declared read resolves to one compiled read
+                // subject, matched by exact set equality: erasing a
+                // read or fabricating one cannot validate.
+                let compiled_reads = index
+                    .query_reads
+                    .get(role.operation.as_str())
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]);
+                if role.effects().is_empty() || role.effects().len() != compiled_reads.len() {
                     return Err(super::diagnostic::effects_coupled("read-count-mismatch"));
+                }
+                let mut declared_reads = Vec::with_capacity(role.effects().len());
+                for effect in role.effects() {
+                    if effect.kind() != "read" {
+                        return Err(super::diagnostic::effects_coupled("read-kind-mismatch"));
+                    }
+                    declared_reads.push(effect.effect_id());
+                }
+                declared_reads.sort_unstable();
+                let mut expected_reads: Vec<&str> =
+                    compiled_reads.iter().map(String::as_str).collect();
+                expected_reads.sort_unstable();
+                if declared_reads.as_slice() != expected_reads.as_slice() {
+                    return Err(super::diagnostic::effects_coupled("read-set-mismatch"));
                 }
                 continue;
             }
@@ -118,6 +135,11 @@ impl Composition {
             if role.effects().is_empty() {
                 return Err(super::diagnostic::effects_coupled("undeclared-effects"));
             }
+            let expected = index
+                .effect_projection
+                .get(role.operation.as_str())
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
             // The canonical projection is exactly the command's
             // declared effects; both counts must agree and every
             // declaration must resolve to one of them.
@@ -347,9 +369,17 @@ impl Composition {
     }
 
     /// Replay scopes stay operation-unique and payload-bound where
-    /// replay is declared.
-    fn check_replay(&self) -> Result<(), DiagnosticSet> {
-        for scope in &self.replay_scopes {
+    /// replay is declared, and every replay key resolves to a declared
+    /// input of its own operation: a durable key no operation can
+    /// supply is not a replay guarantee. Correlation keys resolve
+    /// against every member operation the same way.
+    fn check_replay(&self, index: &ProjectIndex) -> Result<(), DiagnosticSet> {
+        let scopes = self.replay_scopes.iter().chain(
+            self.operations
+                .iter()
+                .filter_map(|role| role.replay.as_ref()),
+        );
+        for scope in scopes {
             let Some(role) = self.role(scope.operation()) else {
                 return Err(super::diagnostic::replay_scope_invalid(
                     "unresolved-operation",
@@ -367,48 +397,88 @@ impl Composition {
                     "drift-not-conflict",
                 ));
             }
+            // The key must be a declared input of this very operation.
+            let Some(inputs) = index.operation_inputs.get(scope.operation()) else {
+                return Err(super::diagnostic::replay_scope_invalid(
+                    "unresolved-operation",
+                ));
+            };
+            if !inputs.iter().any(|input| input == scope.key_ref()) {
+                return Err(super::diagnostic::replay_scope_invalid(
+                    "unresolved-replay-key",
+                ));
+            }
+        }
+        for correlation in &self.correlations {
+            for member in correlation.member_operations() {
+                let Some(inputs) = index.operation_inputs.get(member) else {
+                    return Err(super::diagnostic::replay_scope_invalid(
+                        "unresolved-correlation-member",
+                    ));
+                };
+                if !inputs.iter().any(|input| input == correlation.key_ref()) {
+                    return Err(super::diagnostic::replay_scope_invalid(
+                        "unresolved-correlation-key",
+                    ));
+                }
+            }
         }
         Ok(())
     }
 
-    /// The publication guarantees stay explicit: approval, revisioned
-    /// snapshot, review gate, atomic group, and durable replay keys
-    /// cannot vanish, and provider idempotency stays an honest
-    /// partial row.
+    /// The publication guarantees stay explicit and correctly bound:
+    /// approval, revisioned snapshot, review gate, and atomic group
+    /// must each name the publication operation at the full minimum, a
+    /// replayed operation must carry the durable-key guarantee at the
+    /// full minimum, and provider idempotency stays an honest partial
+    /// row bound to the delivery operation. A capability row bound to
+    /// the wrong operation, or weakened below its minimum, does not
+    /// establish the guarantee.
     fn check_capabilities(&self) -> Result<(), DiagnosticSet> {
-        let covers = |capability: &str| {
-            self.capability_requirements
-                .iter()
-                .any(|requirement| requirement.capability() == capability)
+        let bound = |capability: &str, operation: &str, minimum: &str| {
+            self.capability_requirements.iter().any(|requirement| {
+                requirement.capability() == capability
+                    && requirement.minimum() == minimum
+                    && requirement
+                        .operation_refs()
+                        .iter()
+                        .any(|bound_operation| bound_operation == operation)
+            })
         };
         for capability in [
             "publish.approval",
             "publish.revisioned_snapshot",
             "security.review_gate",
             "transaction.atomic_group",
-            "idempotency.durable_key",
         ] {
-            if !covers(capability) {
+            if !bound(capability, "changelog.publish_entry", "full") {
                 return Err(super::diagnostic::evidence_incomplete(capability));
             }
         }
-        let publication = self.capability_requirements.iter().any(|requirement| {
-            requirement
-                .operation_refs()
-                .contains(&"changelog.publish_entry".to_owned())
-        });
-        if !publication {
-            return Err(super::diagnostic::evidence_incomplete(
-                "publication-coverage",
-            ));
+        // Every replayed operation carries the durable-key guarantee.
+        let scopes = self.replay_scopes.iter().chain(
+            self.operations
+                .iter()
+                .filter_map(|role| role.replay.as_ref()),
+        );
+        for scope in scopes {
+            if scope.duplicate() != "replay_result" {
+                continue;
+            }
+            if !bound("idempotency.durable_key", scope.operation(), "full") {
+                return Err(super::diagnostic::evidence_incomplete(
+                    "idempotency.durable_key",
+                ));
+            }
         }
-        let delivery = self.capability_requirements.iter().any(|requirement| {
-            requirement
-                .operation_refs()
-                .contains(&"worklog.deliver_provider_comment".to_owned())
-                && requirement.minimum() == "partial"
-        });
-        if !delivery {
+        // The delivery operation carries the explicit partial
+        // provider-idempotency row: only a provider-supported
+        // idempotent write resolves an ambiguous remote acceptance.
+        if !bound(
+            "call.idempotent_write",
+            "worklog.deliver_provider_comment",
+            "partial",
+        ) {
             return Err(super::diagnostic::evidence_incomplete(
                 "provider-idempotency-partial",
             ));
@@ -431,6 +501,8 @@ pub(crate) struct ProjectIndex {
     effect_projection: std::collections::BTreeMap<String, Vec<(String, String)>>,
     /// Declared entity/value-object fields by semantic id.
     entity_fields: std::collections::BTreeMap<String, Vec<String>>,
+    /// Declared read subjects per query.
+    query_reads: std::collections::BTreeMap<String, Vec<String>>,
 }
 
 impl ProjectIndex {
@@ -444,6 +516,7 @@ impl ProjectIndex {
         let mut effects: std::collections::BTreeMap<String, (String, String, String, String)> =
             std::collections::BTreeMap::new();
         let mut entity_fields = std::collections::BTreeMap::new();
+        let mut query_reads = std::collections::BTreeMap::new();
         for definition in &project.definitions {
             match definition {
                 Definition::Command(command) => {
@@ -459,6 +532,14 @@ impl ProjectIndex {
                 }
                 Definition::Query(query) => {
                     operations.insert(query.id.as_str().to_owned(), "query");
+                    query_reads.insert(
+                        query.id.as_str().to_owned(),
+                        query
+                            .reads
+                            .iter()
+                            .map(|symbol| symbol.as_str().to_owned())
+                            .collect(),
+                    );
                 }
                 Definition::Effect(effect) => {
                     effects.insert(
@@ -516,6 +597,7 @@ impl ProjectIndex {
             effects,
             effect_projection,
             entity_fields,
+            query_reads,
         }
     }
 }

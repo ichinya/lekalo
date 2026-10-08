@@ -265,7 +265,14 @@ fn consume_all(json: Option<&Json>) -> Result<Vec<ConsumedRef>, DiagnosticSet> {
         });
     }
     consumed.sort_by(|left, right| left.family.cmp(&right.family));
-    consumed.dedup_by(|left, right| left.family == right.family);
+    // One family, one pin: two entries for the same family are one
+    // declaration said twice with different custody — a conflict, never
+    // a silent deduplication that hides which bytes are consumed.
+    for pair in consumed.windows(2) {
+        if pair[0].family == pair[1].family {
+            return Err(diagnostic::input_invalid("duplicate-consumed-family"));
+        }
+    }
     Ok(consumed)
 }
 
@@ -324,14 +331,33 @@ fn parse_operations(json: Option<&Json>) -> Result<Vec<OperationRole>, Diagnosti
             "commit-boundary",
         )?;
         let default_selection = match object.get("defaultSelection") {
-            Some(Json::Bool(false)) | None => false,
-            _ => return Err(diagnostic::input_invalid("default-selection")),
+            // The closed schema requires `defaultSelection` on every
+            // operation and pins it to the literal `false`: no action
+            // is enabled implicitly. A missing member is the schema's
+            // required-member refusal, never a defaulted read.
+            Some(Json::Bool(false)) => false,
+            Some(_) => return Err(diagnostic::input_invalid("default-selection")),
+            None => return Err(diagnostic::input_invalid("missing-member")),
         };
+        // The optional per-operation `replay` member: the schema allows
+        // it through the same closed replay-scope definition, so the
+        // decoder must accept and validate it whenever present — never
+        // silently ignore a member the wire inventory admits.
+        let operation_replay = match object.get("replay") {
+            Some(value) => Some(parse_replay_scope(value)?),
+            None => None,
+        };
+        if let Some(replay) = &operation_replay {
+            if replay.operation() != operation {
+                return Err(diagnostic::input_invalid("replay-operation"));
+            }
+        }
         operations.push(OperationRole {
             operation,
             effects,
             commit_boundary,
             default_selection,
+            replay: operation_replay,
         });
     }
     operations.sort_by(|left, right| left.operation.cmp(&right.operation));
@@ -619,44 +645,50 @@ fn parse_replay(json: Option<&Json>) -> Result<Vec<ReplayScope>, DiagnosticSet> 
     }
     let mut scopes = Vec::with_capacity(items.len());
     for item in items {
-        let object = item
-            .as_object()
-            .ok_or_else(|| diagnostic::input_invalid("replay-shape"))?;
-        check_members(object, REPLAY_KEYS)?;
-        let operation = bounded_text(require_str(object, "operation")?, 128)?;
-        if !version::OPERATION_ROLES.contains(&operation.as_str()) {
-            return Err(diagnostic::input_invalid("unknown-role"));
-        }
-        let scope = CompositionId::parse(require_str(object, "scope")?)
-            .ok_or_else(|| diagnostic::input_invalid("replay-scope-id"))?;
-        let key_ref = bounded_text(require_str(object, "keyRef")?, 64)?;
-        let duplicate = closed_member(
-            require_str(object, "duplicate")?,
-            &["replay_result", "conflict"],
-            "replay-duplicate",
-        )?;
-        let same_key = closed_member(
-            require_str(object, "sameKeyDifferentRequest")?,
-            &["conflict"],
-            "replay-conflict",
-        )?;
-        let payload_binding = closed_member(
-            require_str(object, "payloadBinding")?,
-            &["canonical_digest", "none"],
-            "replay-payload-binding",
-        )?;
-        scopes.push(ReplayScope {
-            operation,
-            scope,
-            key_ref,
-            duplicate,
-            same_key_different_request: same_key,
-            payload_binding,
-        });
+        scopes.push(parse_replay_scope(item)?);
     }
     scopes.sort_by(|left, right| left.operation.cmp(&right.operation));
     scopes.dedup_by(|left, right| left.operation == right.operation);
     Ok(scopes)
+}
+
+/// One closed replay-scope object (shared by the top-level
+/// `replayScopes` array and an operation role's inline `replay`).
+fn parse_replay_scope(item: &Json) -> Result<ReplayScope, DiagnosticSet> {
+    let object = item
+        .as_object()
+        .ok_or_else(|| diagnostic::input_invalid("replay-shape"))?;
+    check_members(object, REPLAY_KEYS)?;
+    let operation = bounded_text(require_str(object, "operation")?, 128)?;
+    if !version::OPERATION_ROLES.contains(&operation.as_str()) {
+        return Err(diagnostic::input_invalid("unknown-role"));
+    }
+    let scope = CompositionId::parse(require_str(object, "scope")?)
+        .ok_or_else(|| diagnostic::input_invalid("replay-scope-id"))?;
+    let key_ref = bounded_text(require_str(object, "keyRef")?, 64)?;
+    let duplicate = closed_member(
+        require_str(object, "duplicate")?,
+        &["replay_result", "conflict"],
+        "replay-duplicate",
+    )?;
+    let same_key = closed_member(
+        require_str(object, "sameKeyDifferentRequest")?,
+        &["conflict"],
+        "replay-conflict",
+    )?;
+    let payload_binding = closed_member(
+        require_str(object, "payloadBinding")?,
+        &["canonical_digest", "none"],
+        "replay-payload-binding",
+    )?;
+    Ok(ReplayScope {
+        operation,
+        scope,
+        key_ref,
+        duplicate,
+        same_key_different_request: same_key,
+        payload_binding,
+    })
 }
 
 fn parse_capabilities(json: Option<&Json>) -> Result<Vec<CapabilityRequirement>, DiagnosticSet> {

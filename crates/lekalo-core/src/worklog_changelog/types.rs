@@ -88,13 +88,15 @@ impl EffectDeclaration {
 
 /// One declared operation role with its explicit effect set and commit
 /// boundary. `default_selection` is always `false`: no action enables
-/// another implicitly.
+/// another implicitly. The optional inline `replay` scope, when
+/// declared, belongs to this operation exactly.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OperationRole {
     pub(crate) operation: String,
     pub(crate) effects: Vec<EffectDeclaration>,
     pub(crate) commit_boundary: String,
     pub(crate) default_selection: bool,
+    pub(crate) replay: Option<ReplayScope>,
 }
 
 impl OperationRole {
@@ -112,6 +114,11 @@ impl OperationRole {
 
     pub const fn default_selection(&self) -> bool {
         self.default_selection
+    }
+
+    /// The inline replay scope, when this operation declares one.
+    pub const fn replay(&self) -> Option<&ReplayScope> {
+        self.replay.as_ref()
     }
 }
 
@@ -470,9 +477,14 @@ impl Composition {
         }
         // Replay scopes are operation-unique and their scopes
         // operation-scoped: two operations may never share one scope
-        // identity, and one operation may never appear twice.
+        // identity, one operation may never appear twice, and an
+        // operation's inline `replay` may never collide with a
+        // top-level scope (the effective policy must be unambiguous).
         let mut scopes_seen = std::collections::BTreeSet::new();
-        for scope in &replay_scopes {
+        for scope in replay_scopes
+            .iter()
+            .chain(operations.iter().filter_map(|role| role.replay.as_ref()))
+        {
             if !scopes_seen.insert(scope.scope().to_owned()) {
                 return Err(super::diagnostic::input_invalid("replay-scope-collision"));
             }

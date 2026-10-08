@@ -175,7 +175,7 @@ const attachment = {
     },
     {
       operation: "changelog.public_entry",
-      effects: [{ kind: "read", effectId: "changelog.effect_snapshot_read" }],
+      effects: [{ kind: "read", effectId: "changelog.snapshot" }],
       commitBoundary: "read_only",
       defaultSelection: false,
     },
@@ -385,7 +385,12 @@ const attachment = {
       capability: "idempotency.durable_key",
       minimum: "full",
       reason: "Duplicate requests replay their recorded result under the payload-bound key.",
-      operationRefs: ["worklog.complete_task", "worklog.request_provider_comment"],
+      operationRefs: [
+        "worklog.complete_task",
+        "worklog.write_worklog",
+        "worklog.request_provider_comment",
+        "changelog.publish_entry",
+      ],
     },
     {
       requirementId: "taskhub.req/tenant-isolation",
