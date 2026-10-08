@@ -14,7 +14,12 @@ use std::process::{Command, Output};
 
 const FIXTURE: &str = "tests/fixtures/search/planner";
 
-/// Serializes tests that mutate the shared fixture's cache home.
+/// Serializes tests that mutate the shared fixture's cache home. Tests
+/// that only read (every command without `--no-cache` touches the
+/// shared cache home's lock) hold this lock for their whole run, so a
+/// concurrent `cache clear` from a sibling test can never race a
+/// reader; the two tests that build/clear copy the fixture to a
+/// disposable temp project instead and run lock-free.
 static CWD_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn lekalo_in(dir: &Path, args: &[&str]) -> Output {
@@ -62,6 +67,39 @@ fn fixture_path() -> PathBuf {
     )
 }
 
+/// A disposable copy of the fixture in its own temp dir: cache-mutating
+/// tests (build/clear) run here lock-free and never touch the shared
+/// fixture's cache home. The alias-free spelling keeps the selection
+/// policy happy on Windows runners.
+fn disposable_project() -> PathBuf {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let project = temp.path().join("project");
+    copy_dir(&fixture_path(), &project);
+    std::fs::remove_dir_all(project.join(".lekalo")).ok();
+    // Keep the temp dir alive for the run by forgetting the guard: the
+    // test process is short-lived and the OS reclaims the path.
+    let path = alias_free_path(&project);
+    std::mem::forget(temp);
+    path
+}
+
+fn copy_dir(source: &Path, target: &Path) {
+    std::fs::create_dir_all(target).expect("create target dir");
+    for entry in std::fs::read_dir(source).expect("read source") {
+        let entry = entry.expect("entry");
+        let target_path = target.join(entry.file_name());
+        if entry.file_type().expect("type").is_dir() {
+            copy_dir(&entry.path(), &target_path);
+        } else {
+            std::fs::copy(entry.path(), target_path).expect("copy file");
+        }
+    }
+}
+
+/// A disposable copy of the fixture in its own temp dir: cache-mutating
+/// tests (build/clear) run here lock-free and never touch the shared
+/// fixture's cache home. The alias-free spelling keeps the selection
+/// policy happy on Windows runners.
 fn json(output: &Output) -> serde_json::Value {
     let text = stdout_text(output);
     let text = if text.trim().is_empty() {
@@ -78,6 +116,7 @@ fn json(output: &Output) -> serde_json::Value {
 #[test]
 fn find_by_exact_id_answers_unique_with_a_bounded_card() {
     let project = fixture_path();
+    let _guard = CWD_LOCK.lock().expect("lock");
     let output = lekalo_in(
         &project,
         &[
@@ -107,6 +146,7 @@ fn find_by_exact_id_answers_unique_with_a_bounded_card() {
 #[test]
 fn search_exact_id_outranks_the_lexical_tail() {
     let project = fixture_path();
+    let _guard = CWD_LOCK.lock().expect("lock");
     let output = lekalo_in(
         &project,
         &["--json", "search", "planner.focus_task", "--project", "."],
@@ -126,6 +166,7 @@ fn search_exact_id_outranks_the_lexical_tail() {
 #[test]
 fn fuzzy_is_opt_in_labeled_and_ambiguity_honest() {
     let project = fixture_path();
+    let _guard = CWD_LOCK.lock().expect("lock");
     let plain = json(&lekalo_in(
         &project,
         &["--json", "search", "fokus", "--project", "."],
@@ -160,6 +201,7 @@ fn fuzzy_is_opt_in_labeled_and_ambiguity_honest() {
 #[test]
 fn same_name_symbols_are_ambiguous_not_silently_resolved() {
     let project = fixture_path();
+    let _guard = CWD_LOCK.lock().expect("lock");
     let output = lekalo_in(
         &project,
         &["--json", "search", "get_status", "--project", "."],
@@ -182,6 +224,7 @@ fn same_name_symbols_are_ambiguous_not_silently_resolved() {
 #[test]
 fn bare_find_refuses_with_the_registered_query_invalid_rule() {
     let project = fixture_path();
+    let _guard = CWD_LOCK.lock().expect("lock");
     let output = lekalo_in(&project, &["--json", "find", "--project", "."]);
     assert_eq!(exit_code(&output), 1, "{}", stdout_text(&output));
     let envelope = json(&output);
@@ -196,6 +239,7 @@ fn bare_find_refuses_with_the_registered_query_invalid_rule() {
 #[test]
 fn cursor_refuses_a_foreign_query() {
     let project = fixture_path();
+    let _guard = CWD_LOCK.lock().expect("lock");
     let first = lekalo_in(
         &project,
         &[
@@ -265,8 +309,10 @@ fn pagination_concatenates_without_repeats_or_skips() {
     let mut seen: Vec<String> = Vec::new();
     let mut cursor: Option<String> = None;
     for _ in 0..20 {
+        // A cursor requires the immutable persisted generation, so the
+        // warm (cache-backed) path pages here; the no-cache bypass is
+        // refused with --cursor by contract.
         let mut args = vec![
-            "--no-cache".to_owned(),
             "--json".to_owned(),
             "search".to_owned(),
             "task".to_owned(),
@@ -303,8 +349,7 @@ fn pagination_concatenates_without_repeats_or_skips() {
 /// survives untouched.
 #[test]
 fn index_lifecycle_and_cache_custody() {
-    let project = fixture_path();
-    let _guard = CWD_LOCK.lock().expect("lock");
+    let project = disposable_project();
     let build = lekalo_in(
         &project,
         &[
@@ -366,6 +411,7 @@ fn index_lifecycle_and_cache_custody() {
 #[test]
 fn coverage_states_are_honest_with_and_without_producers() {
     let project = fixture_path();
+    let _guard = CWD_LOCK.lock().expect("lock");
     let without = json(&lekalo_in(
         &project,
         &["--json", "find", "--kind", "command", "--project", "."],
@@ -403,6 +449,7 @@ fn coverage_states_are_honest_with_and_without_producers() {
 #[test]
 fn stale_waivers_are_excluded_until_explicitly_included() {
     let project = fixture_path();
+    let _guard = CWD_LOCK.lock().expect("lock");
     let run = |args: &[&str]| {
         let output = lekalo_in(&project, args);
         assert_eq!(exit_code(&output), 0, "{}", stderr_text(&output));
@@ -460,6 +507,7 @@ fn stale_waivers_are_excluded_until_explicitly_included() {
 #[test]
 fn zero_matches_is_valid() {
     let project = fixture_path();
+    let _guard = CWD_LOCK.lock().expect("lock");
     let output = lekalo_in(
         &project,
         &["--json", "search", "xyzzynomatch", "--project", "."],
