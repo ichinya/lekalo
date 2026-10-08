@@ -88,8 +88,11 @@ func Serve(adapter Adapter) int {
 	bytes := ResponseBytes(response)
 	ceiling := generatedBounds.DefaultMaxOutputBytes
 	if limits, ok := valueOf(request, "limits").(map[string]any); ok {
-		if declared, ok := limits["max_output_bytes"].(float64); ok && declared >= 1 && int64(declared) < ceiling {
-			ceiling = int64(declared)
+		// Both admitted spellings bind the ceiling (issue #106 review r2
+		// #4): the strict parser emits int64 for integer literals, so a
+		// float64-only assertion silently ignored the normal case.
+		if declared, ok := GetNumber(limits, "max_output_bytes"); ok && declared >= 1 && declared < ceiling {
+			ceiling = declared
 		}
 	}
 	if int64(len(bytes)) > ceiling {

@@ -86,8 +86,12 @@ final class Serve {
         $bytes = Build::responseBytes($response);
         $ceiling = Protocol::BOUNDS['DEFAULT_MAX_OUTPUT_BYTES'];
         $declared = $request['limits']['max_output_bytes'] ?? null;
-        if (is_int($declared) && $declared >= 1 && $declared < $ceiling) {
-            $ceiling = $declared;
+        // Both admitted spellings bind the ceiling (issue #106 review r2
+        // #5): admission accepts integral floats (1.0), so emit must apply
+        // the ceiling through the same integral-number semantics — an
+        // is_int-only check silently ignored the float spelling.
+        if (self::numberInRange($declared, 1, Protocol::BOUNDS['LIMITS_OUTPUT_MAX']) && $declared < $ceiling) {
+            $ceiling = (int) $declared;
         }
         if (strlen($bytes) > $ceiling) {
             return 1;
