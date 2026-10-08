@@ -403,17 +403,20 @@ pub fn parse(bytes: &[u8]) -> Result<Attachment, diagnostic::Failure> {
     if declared_version != Some(version::SCHEMA_VERSION)
         || declared_identity != Some(version::IDENTITY)
     {
-        // A well-formed discriminator of this same family at a different
-        // version is the accepted exit-5 class: the document is shaped
-        // but its contract version is outside the accepted registry.
-        // Anything else (wrong family stem, wrong identity for the
-        // accepted version, non-strings) stays a plain invalid.
+        // A well-formed discriminator of this same family at a
+        // DIFFERENT version than the accepted one is the exit-5 class:
+        // the document is shaped but its contract version is outside
+        // the accepted registry. A corrupted identity under the
+        // accepted discriminator is a plain invalid (exit 1), never a
+        // version skew; anything else (wrong family stem, non-strings)
+        // stays invalid too.
         const FAMILY_STEM: &str = "lekalo/task-links-integration/v";
-        let version_skew = declared_version
-            .and_then(|text| text.strip_prefix(FAMILY_STEM))
-            .is_some_and(|rest| {
-                !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit() || c == '.')
-            });
+        let version_skew = declared_version.is_some_and(|text| {
+            text != version::SCHEMA_VERSION
+                && text.strip_prefix(FAMILY_STEM).is_some_and(|rest| {
+                    !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit() || c == '.')
+                })
+        });
         if version_skew {
             return Err(diagnostic::input_invalid("schema-version-unsupported"));
         }

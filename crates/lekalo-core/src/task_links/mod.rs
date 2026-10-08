@@ -361,10 +361,24 @@ pub fn admit_evidence(
         json::parse(bytes).map_err(|_| evidence_invalid("evidence-json", None))?;
     let evidence: Evidence =
         serde_json::from_value(value).map_err(|_| evidence_invalid("evidence-shape", None))?;
-    if evidence.schema_version != version::EVIDENCE_SCHEMA_VERSION {
-        return Err(evidence_invalid("evidence-identity", None));
-    }
-    if evidence.identity != version::EVIDENCE_IDENTITY {
+    if evidence.schema_version != version::EVIDENCE_SCHEMA_VERSION
+        || evidence.identity != version::EVIDENCE_IDENTITY
+    {
+        // Same-family different-version evidence is the accepted exit-5
+        // class, coherent with the attachment family convention; a
+        // malformed identity pair under the accepted discriminator
+        // stays plain invalid (exit 1).
+        const FAMILY_STEM: &str = "lekalo/task-links-evidence/v";
+        let version_skew = evidence.schema_version != version::EVIDENCE_SCHEMA_VERSION
+            && evidence
+                .schema_version
+                .strip_prefix(FAMILY_STEM)
+                .is_some_and(|rest| {
+                    !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit() || c == '.')
+                });
+        if version_skew {
+            return Err(evidence_invalid("evidence-version-unsupported", None));
+        }
         return Err(evidence_invalid("evidence-identity", None));
     }
     // Public evidence ids are qualified symbols before anything can

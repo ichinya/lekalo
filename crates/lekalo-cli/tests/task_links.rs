@@ -578,7 +578,120 @@ fn wrong_schema_version_maps_to_unsupported_version() {
     assert_eq!(output.status.code(), Some(5), "version skew is exit 5");
     let envelope: Value = serde_json::from_str(stderr_text(&output).trim()).expect("envelope");
     assert_eq!(envelope["status"], "unsupported-version");
+    // The exit-5 refusal carries the family's own registered diagnostic
+    // (never the registry-invariant fallback) with the version detail.
+    assert_eq!(
+        envelope["reasonCodes"][0],
+        "tasklink.relation-identity-invalid"
+    );
+    assert_eq!(
+        envelope["diagnostics"][0]["data"]["detail"],
+        "schema-version-unsupported"
+    );
+    assert_ne!(
+        envelope["reasonCodes"][0], "diagnostics.registry-invalid",
+        "the typed diagnostic must not collapse to the registry invariant"
+    );
     let _ = std::fs::remove_file(&target);
+}
+
+/// A corrupted identity under the accepted discriminator is a plain
+/// invalid (exit 1), never a version skew: the version is exactly the
+/// supported one, so only the identity pair is wrong.
+#[test]
+fn wrong_identity_at_the_accepted_version_is_plain_invalid() {
+    let target = workspace_path("target/task-links-wrong-identity.json");
+    let _ = std::fs::create_dir_all(target.parent().unwrap());
+    let original =
+        std::fs::read_to_string(workspace_path(attachment().as_str())).expect("attachment");
+    let wrong = original.replace(
+        "dev.lekalo.task-links-integration@0.8.0",
+        "dev.lekalo.task-links-integration@0.7.0",
+    );
+    assert_ne!(wrong, original, "the identity mutation must apply");
+    std::fs::write(&target, wrong).expect("write wrong identity");
+    let wrong_path = target.to_string_lossy().into_owned();
+    let output = lekalo_in(
+        &workspace_path("."),
+        &[
+            "--json",
+            "task-links",
+            "validate",
+            &wrong_path,
+            "--project",
+            &project(),
+            "--profile",
+            "strict",
+        ],
+    );
+    assert_eq!(output.status.code(), Some(1), "wrong identity is exit 1");
+    let envelope: Value = serde_json::from_str(stderr_text(&output).trim()).expect("envelope");
+    assert_eq!(envelope["status"], "invalid");
+    assert_eq!(envelope["diagnostics"][0]["data"]["detail"], "identity");
+    let _ = std::fs::remove_file(&target);
+}
+
+/// Evidence version handling is coherent with the attachment family:
+/// same-family different-version evidence maps to exit 5 with its
+/// registered detail; a corrupted identity under the accepted
+/// discriminator stays plain invalid.
+#[test]
+fn evidence_version_skew_is_coherent_with_the_attachment_family() {
+    let original =
+        std::fs::read_to_string(workspace_path(fixture("evidence/mock-run.json").as_str()))
+            .expect("evidence");
+    for (replacement, expected_code, expected_detail) in [
+        (
+            (
+                "lekalo/task-links-evidence/v0.8.0",
+                "lekalo/task-links-evidence/v0.9.0",
+            ),
+            Some(5),
+            "evidence-version-unsupported",
+        ),
+        (
+            (
+                "dev.lekalo.task-links-evidence@0.8.0",
+                "dev.lekalo.task-links-evidence@0.7.0",
+            ),
+            Some(1),
+            "evidence-identity",
+        ),
+    ] {
+        let target = workspace_path("target/task-links-evidence-version.json");
+        let wrong = original.replace(replacement.0, replacement.1);
+        assert_ne!(wrong, original, "the mutation must apply");
+        std::fs::write(&target, wrong).expect("write mutated evidence");
+        let evidence_path = target.to_string_lossy().into_owned();
+        let output = lekalo_in(
+            &workspace_path("."),
+            &[
+                "--json",
+                "task-links",
+                "inspect",
+                "tasklinks.task_external_link",
+                "--project",
+                &project(),
+                "--attachment",
+                &attachment(),
+                "--evidence",
+                &evidence_path,
+            ],
+        );
+        assert_eq!(
+            output.status.code(),
+            expected_code,
+            "{}",
+            stderr_text(&output)
+        );
+        let envelope: Value = serde_json::from_str(stderr_text(&output).trim()).expect("envelope");
+        assert_eq!(
+            envelope["diagnostics"][0]["data"]["detail"], expected_detail,
+            "envelope: {}",
+            envelope
+        );
+        let _ = std::fs::remove_file(&target);
+    }
 }
 
 /// Every content pin is recomputed: a forged IR digest, a fabricated

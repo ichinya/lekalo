@@ -10508,7 +10508,8 @@
       "category": "compatibility",
       "default_severity": "error",
       "allowed_statuses": [
-        "invalid"
+        "invalid",
+        "unsupported-version"
       ],
       "message_id": "tasklink.evidence-invalid",
       "default_message": "Task-link evidence carries stale or wrong pins, fabricated counts, missing source attribution, or an unadmitted claim stronger than its mock or native receipt supports.",
@@ -10580,7 +10581,8 @@
       "category": "model",
       "default_severity": "error",
       "allowed_statuses": [
-        "invalid"
+        "invalid",
+        "unsupported-version"
       ],
       "message_id": "tasklink.relation-identity-invalid",
       "default_message": "Missing or invalid tasklink relation cardinality, identity field, installation scope, or Model-to-storage uniqueness disagreement.",

@@ -21,7 +21,6 @@ pub(crate) const FANOUT_NOT_ADMITTED: &str = "tasklink.fanout-not-admitted";
 /// The registered rule for a broken delivery/outbox declaration.
 pub(crate) const DELIVERY_CONTRACT_INVALID: &str = "tasklink.delivery-contract-invalid";
 /// The registered rule for an invalid conflict resolution declaration.
-#[allow(dead_code)]
 pub(crate) const CONFLICT_RESOLUTION_INVALID: &str = "tasklink.conflict-resolution-invalid";
 /// The registered rule for history/ownership violations.
 pub(crate) const HISTORY_OR_OWNERSHIP_VIOLATION: &str = "tasklink.history-or-ownership-violation";
@@ -56,6 +55,7 @@ impl Failure {
         match (self.rule, self.detail) {
             (REQUIRED_GUARANTEE_UNSUPPORTED, _) => Status::Unsupported,
             (INPUT_INVALID, "schema-version-unsupported") => Status::UnsupportedVersion,
+            (EVIDENCE_INVALID, "evidence-version-unsupported") => Status::UnsupportedVersion,
             _ => Status::Invalid,
         }
     }
