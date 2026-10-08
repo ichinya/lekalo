@@ -76,11 +76,14 @@ pub fn record(
 /// bytes (the manifest identity a rollback restores).
 ///
 /// The record is trusted only after its content-bound identity checks: the
-/// storage name must be the record's own generation digest, the recorded
-/// inventory must re-derive exactly that digest, and every retained object
-/// reference must resolve to bytes matching the recorded output digest. A
-/// tampered record — any edited path, digest, role, or owner — is refused
-/// without touching a single project byte.
+/// storage name must be the record's own stable generation digest, the
+/// authenticated custody identity must cover the exact document
+/// (`recordDigest`, finding 3 — binding the plan, ownership, and lock pins
+/// a rehashed self-consistent inventory never authenticates), and every
+/// retained object reference must resolve to bytes matching the recorded
+/// output digest. A tampered record — any edited path, digest, role,
+/// owner, plan pin, ownership pin, or lock pin — is refused without
+/// touching a single project byte.
 pub fn record_with_custody(
     root: &std::path::Path,
     digest: &str,
@@ -98,17 +101,19 @@ pub fn record_with_custody(
         Ok(None) => return Err(refused("generation-record")),
         Err(_) => return Err(refused("generation-record")),
     };
+    // parse_record already verifies the authenticated custody identity
+    // (recordDigest over the exact document) and every pin shape.
     let record = super::parse_record(&bytes).map_err(|_| refused("generation-record"))?;
-    // Lookup identity: the stored name is the record's own generation.
+    // Lookup identity: the storage name is the stable generation digest.
     if record.generation_digest != format!("sha256:{hex}") {
         return Err(refused("record-identity"));
     }
-    // Content-bound identity: the recorded inventory re-derives the digest.
+    // Content-bound identity: the recorded inventory re-derives the stable
+    // generation digest and every retained object must exist; the after
+    // bytes must match the recorded output digest exactly.
     if super::generation_digest(&record) != record.generation_digest {
         return Err(refused("record-identity"));
     }
-    // Every retained object must exist; the after bytes must match the
-    // recorded output digest exactly.
     for output in &record.outputs {
         if let Some(reference) = output.before_ref.value() {
             object(root, reference)?;
@@ -145,10 +150,21 @@ pub fn object(root: &std::path::Path, reference: &str) -> Result<Vec<u8>, Domain
 
 /// Enumerate unresolved journals. Any `prepared`, `publishing`, or
 /// `restoring` transaction blocks further mutation until reconciliation.
+///
+/// Read-only scan (finding 12): a missing journal directory means *no
+/// journals*, so previews and dry runs never create the custody tree.
 pub fn unresolved(root: &std::path::Path) -> Result<Vec<Transaction>, DomainResult> {
     let directory = custody_logical(TRANSACTIONS);
-    if fs::ensure_dir(root, &directory).is_err() {
-        return Err(recovery("transaction-scan"));
+    // The logical coordinate must not be a file; absence of the directory
+    // is the legal empty state. Hostile leaves fail closed.
+    match std::fs::symlink_metadata(root.join(&directory)) {
+        Ok(metadata) => {
+            if metadata.is_symlink() || !metadata.is_dir() {
+                return Err(recovery("transaction-scan"));
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(_) => return Err(recovery("transaction-scan")),
     }
     let entries = match std::fs::read_dir(root.join(&directory)) {
         Ok(entries) => entries,
@@ -182,6 +198,8 @@ pub fn unresolved(root: &std::path::Path) -> Result<Vec<Transaction>, DomainResu
 /// randomness, only the plan digest and the existing attempt count.
 pub fn transaction_id(root: &std::path::Path, plan_digest: &str) -> Result<String, DomainResult> {
     let directory = custody_logical(TRANSACTIONS);
+    // Creating the journal directory is fine here: the caller is inside a
+    // confirmed mutation (the plan is about to be journaled).
     if fs::ensure_dir(root, &directory).is_err() {
         return Err(recovery("transaction-scan"));
     }
@@ -232,6 +250,12 @@ pub fn write_object(root: &std::path::Path, bytes: &[u8]) -> Result<String, Doma
 }
 
 /// Store one generation record; storing is idempotent.
+///
+/// The storage name stays the record's stable generation identity (what
+/// `current`, receipts, and `rollback --to` name); the authenticated
+/// custody identity (`recordDigest`, finding 3) rides inside the document
+/// and is verified on every read, binding the plan, ownership, and lock
+/// pins the stable identity deliberately ignores.
 pub fn write_record(
     root: &std::path::Path,
     record: &super::wire::GenerationRecord,

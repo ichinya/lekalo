@@ -511,7 +511,12 @@ fn staged_apply(
         return Err(invalid("record-order"));
     }
     // The ownership pin is the exact ownership configuration this commit
-    // was admitted under, never the coverage evidence.
+    // was admitted under, never the coverage evidence; the lock pin is
+    // the exact lock revision the authority derived its semantics under
+    // (findings 3 and 8). Both ride the authenticated custody identity.
+    let lock_pin = authority
+        .map(|authority| State::known(authority.lock_digest.clone()))
+        .unwrap_or(State::Absent);
     let record = GenerationRecord {
         schema_version: super::header("managed-generation-record").0,
         identity: super::header("managed-generation-record").1,
@@ -527,7 +532,8 @@ fn staged_apply(
         input_closure: closure.clone(),
         outputs: record_outputs,
         ownership_digest: hash(ownership),
-        lock_pin: State::Absent,
+        lock_pin: lock_pin.clone(),
+        record_digest: String::new(),
     };
     let generation = super::generation_digest(&record);
     let mut record = record;
@@ -535,6 +541,12 @@ fn staged_apply(
     if super::generation_digest(&record) != generation {
         return Err(invalid("generation-identity"));
     }
+    if !super::pin(lock_pin.value().map(|lock| lock.as_str()).unwrap_or("")) {
+        // The lock revision is mandatory custody evidence (finding 8);
+        // the caller must derive the generation authority first.
+        return Err(invalid("generation-identity"));
+    }
+    record.record_digest = super::record_identity(&record);
     let after_manifest = history::write_record(root, &record)?;
     transaction.generation_digest = State::known(GenerationDigest {
         generation_digest: generation.clone(),
@@ -605,9 +617,25 @@ fn staged_apply(
     }
     // Custody publication: the governed ownership manifest of the exact
     // committed bytes (finding E), bound to the derived generation
-    // authority. The project authority is mandatory here.
-    if let Some(authority) = authority {
-        super::custody::publish(root, plan, coverage, generated_root, authority, inventory)?;
+    // authority. The project authority is mandatory here. Publication is
+    // journal-covered: a failure leaves the committed transaction with a
+    // conflict the recovery path completes from the retained after
+    // evidence (finding 10).
+    match authority {
+        Some(authority) => {
+            if super::custody::publish(root, plan, coverage, generated_root, authority, inventory)
+                .is_err()
+            {
+                transaction.conflict = State::known(super::wire::Conflict {
+                    path: super::custody::MANIFEST_LOGICAL.to_owned(),
+                    reason: "manifest-publish".to_owned(),
+                });
+                transaction.state = TransactionState::Publishing;
+                let _ = history::write_transaction(root, &transaction);
+                return Err(invalid("manifest-publish"));
+            }
+        }
+        None => return Err(invalid("generation-identity")),
     }
     Ok(generation)
 }

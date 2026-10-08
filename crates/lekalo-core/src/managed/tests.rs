@@ -114,6 +114,22 @@ fn project_root(name: &str) -> PathBuf {
     root
 }
 
+/// A test generation authority: the lock-revision pin every committed
+/// record must carry (findings 3 and 8). The digest value is a fixture
+/// constant; the real CLI path always derives the live authority.
+fn test_authority() -> super::authority::Authority {
+    super::authority::Authority {
+        model_digest: PIN_A.to_owned(),
+        ir_digest: PIN_B.to_owned(),
+        lock_digest: "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+            .to_owned(),
+        lock_protocol: Some(PROTOCOL.to_owned()),
+        model_version: "0.2.16".to_owned(),
+        project_id: "demo".to_owned(),
+        ledger: Vec::new(),
+    }
+}
+
 #[test]
 fn canonical_renderer_is_byte_stable_and_ordered() {
     let coverage = coverage_doc();
@@ -412,7 +428,7 @@ fn apply_transaction_is_recoverable_and_exact() {
         &ownership,
         None,
         false,
-        None,
+        Some(&test_authority()),
     );
     assert_eq!(refused.status(), Status::Invalid);
     assert!(!history::exists(&root));
@@ -424,7 +440,7 @@ fn apply_transaction_is_recoverable_and_exact() {
         &ownership,
         Some(PIN_A),
         false,
-        None,
+        Some(&test_authority()),
     );
     assert_eq!(refused.status(), Status::Invalid);
     // Dry run writes nothing but previews the inventory.
@@ -435,7 +451,7 @@ fn apply_transaction_is_recoverable_and_exact() {
         &ownership,
         Some(built.plan_digest.as_str()),
         true,
-        None,
+        Some(&test_authority()),
     );
     assert_eq!(preview.status(), Status::Valid, "{preview:?}");
     assert!(!history::exists(&root));
@@ -447,7 +463,7 @@ fn apply_transaction_is_recoverable_and_exact() {
         &ownership,
         Some(built.plan_digest.as_str()),
         false,
-        None,
+        Some(&test_authority()),
     );
     assert_eq!(applied.status(), Status::Valid, "{applied:?}");
     let generation = history::current(&root)
@@ -460,6 +476,8 @@ fn apply_transaction_is_recoverable_and_exact() {
         assert!(root.join(path).is_file(), "{path} published");
     }
     // Re-applying the identical plan is stale, never a silent rewrite.
+    // The create coordinates are now claimed, so the refusal is the
+    // ownership denial of the create-conflict preflight (finding 2).
     let stale = apply::apply(
         &root,
         &plan_bytes,
@@ -467,12 +485,12 @@ fn apply_transaction_is_recoverable_and_exact() {
         &ownership,
         Some(built.plan_digest.as_str()),
         false,
-        None,
+        Some(&test_authority()),
     );
-    assert_eq!(stale.status(), Status::Invalid);
+    assert_eq!(stale.status(), Status::Denied);
     assert_eq!(
         stale.reason_codes().first().map(|code| code.as_str()),
-        Some("managed.plan-stale")
+        Some("managed.ownership-denied")
     );
     // A regeneration plan over the committed generation is Unchanged.
     let record = history::record(&root, &generation).expect("record");
@@ -524,7 +542,7 @@ fn apply_transaction_is_recoverable_and_exact() {
         &ownership,
         Some(rebuilt.plan_digest.as_str()),
         false,
-        None,
+        Some(&test_authority()),
     );
     assert_eq!(drifted.status(), Status::Invalid);
     assert_eq!(
@@ -592,7 +610,7 @@ fn apply_transaction_is_recoverable_and_exact() {
         &ownership,
         Some(rebuilt.plan_digest.as_str()),
         false,
-        None,
+        Some(&test_authority()),
     );
     assert_eq!(
         blocked.reason_codes().first().map(|code| code.as_str()),
@@ -662,7 +680,7 @@ fn rollback_restores_the_exact_previous_generation() {
         &ownership,
         Some(first.plan_digest.as_str()),
         false,
-        None,
+        Some(&test_authority()),
     );
     assert_eq!(applied.status(), Status::Valid, "{applied:?}");
     let first_generation = history::current(&root)
@@ -711,7 +729,7 @@ fn rollback_restores_the_exact_previous_generation() {
         &ownership,
         Some(second.plan_digest.as_str()),
         false,
-        None,
+        Some(&test_authority()),
     );
     assert_eq!(applied.status(), Status::Valid, "{applied:?}");
     let second_generation = history::current(&root)
@@ -908,7 +926,7 @@ fn tampered_records_are_refused_without_touching_files() {
         &ownership,
         Some(built.plan_digest.as_str()),
         false,
-        None,
+        Some(&test_authority()),
     );
     assert_eq!(applied.status(), Status::Valid, "{applied:?}");
     let generation = history::current(&root)
@@ -990,7 +1008,7 @@ fn interrupted_publication_recovers_to_a_defined_state() {
         &ownership,
         Some(built.plan_digest.as_str()),
         false,
-        None,
+        Some(&test_authority()),
     );
     assert_eq!(applied.status(), Status::Valid, "{applied:?}");
     // A prepared journal with no disk effect abandons cleanly.
@@ -1024,7 +1042,7 @@ fn interrupted_publication_recovers_to_a_defined_state() {
         &ownership,
         Some(built.plan_digest.as_str()),
         false,
-        None,
+        Some(&test_authority()),
     );
     assert_eq!(blocked.status(), Status::Invalid);
     assert_eq!(
@@ -1074,7 +1092,7 @@ fn resolve_confirmation_binds_the_drifted_before_state() {
         &ownership,
         Some(built.plan_digest.as_str()),
         false,
-        None,
+        Some(&test_authority()),
     );
     assert_eq!(applied.status(), Status::Valid, "{applied:?}");
     let path = "apps/planner/gen/src/focus-task.ts";

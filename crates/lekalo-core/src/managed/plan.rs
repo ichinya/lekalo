@@ -188,8 +188,11 @@ fn classify(
     }
 }
 
-/// Adjudicate a reviewed plan against the live state. Every refusal names
-/// the exact pin that moved; the plan is never silently refreshed.
+/// The reviewed plan must be the exact deterministic inventory *and* carry
+/// the exact recorded ownership for every file it replaces or deletes
+/// (finding 2 / finding Q): a plan edit that turns a create into a
+/// replace, or invents a delete for an unclaimed path, is refused here
+/// before any byte moves, even when its self digest was recomputed.
 pub fn preflight(
     plan: &GenerationPlan,
     generated_roots: &BTreeMap<(String, String), String>,
@@ -210,6 +213,52 @@ pub fn preflight(
                 OWNERSHIP_DENIED,
                 &[("path", output.path.as_str()), ("reason", "outside-root")],
             ));
+        }
+        // Custody authority for destructive and overwriting actions: the
+        // recorded owner triple must match the plan's owner triple
+        // exactly (same path, same recorded owner module/target/role),
+        // and the recorded digest must equal the reviewed before digest.
+        match output.action {
+            OutputAction::Replace | OutputAction::Delete | OutputAction::Unchanged => {
+                let recorded = before.recorded.get(output.path.as_str()).ok_or_else(|| {
+                    diagnostic::failure(
+                        OWNERSHIP_DENIED,
+                        &[("path", output.path.as_str()), ("reason", "unclaimed")],
+                    )
+                })?;
+                if recorded.owner_module != output.owner_module
+                    || recorded.owner_target != output.owner_target
+                    || recorded.role != output.role
+                {
+                    return Err(diagnostic::failure(
+                        OWNERSHIP_DENIED,
+                        &[("path", output.path.as_str()), ("reason", "owner-mismatch")],
+                    ));
+                }
+                let Some(before_digest) = output.before_digest.value() else {
+                    return Err(invalid("output-action"));
+                };
+                if recorded.digest != *before_digest {
+                    return Err(diagnostic::failure(
+                        OWNERSHIP_DENIED,
+                        &[
+                            ("path", output.path.as_str()),
+                            ("reason", "before-mismatch"),
+                        ],
+                    ));
+                }
+            }
+            OutputAction::Create => {
+                if before.recorded.contains_key(output.path.as_str()) {
+                    return Err(diagnostic::failure(
+                        OWNERSHIP_DENIED,
+                        &[
+                            ("path", output.path.as_str()),
+                            ("reason", "create-conflict"),
+                        ],
+                    ));
+                }
+            }
         }
     }
     for input in &plan.input_closure {

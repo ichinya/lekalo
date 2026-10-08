@@ -154,11 +154,14 @@ const primary = sandbox('primary');
 }
 const primaryGeneration = readFileSync(join(primary.project, '.lekalo/generated/manifests/managed/current'), 'utf8').trim();
 
-// ---- 3. Re-applying the identical plan is stale, never a silent rewrite. --
+// ---- 3. Re-applying the identical plan is refused, never a silent rewrite.
+// The create coordinates are now claimed by the committed generation, so
+// the identical promotion plan is an ownership denial (create-conflict,
+// finding 2) — the plan is stale by construction and never re-runs.
 {
   const before = snapshot(primary.project);
-  const stale = apply(primary.project, 'invalid');
-  assert.deepEqual(stale.diagnostics[0].data, { path: ORACLE ? 'apps/planner/gen/src/complete-task.ts' : '', reason: 'already-applied' });
+  const stale = apply(primary.project, 'denied');
+  assert.deepEqual(stale.diagnostics[0].data, { path: ORACLE ? 'apps/planner/gen/src/complete-task.ts' : '', reason: 'create-conflict' });
   assertSameTree(before, snapshot(primary.project), 'stale re-apply');
 }
 

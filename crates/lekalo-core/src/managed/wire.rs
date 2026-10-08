@@ -307,7 +307,8 @@ dto!(GenerationRecord {
     input_closure: Vec<InputPin>,
     outputs: Vec<RecordOutput>,
     ownership_digest: String,
-    lock_pin: State<String>
+    lock_pin: State<String>,
+    record_digest: String
 });
 
 dto!(DeleteOp {

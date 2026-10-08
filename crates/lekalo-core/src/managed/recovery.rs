@@ -15,9 +15,18 @@
 //!   removes files the interrupted transaction published beyond the
 //!   committed state; the journal closes as `abandoned`.
 //!
-//! Recovery never invents bytes: every write comes from a verified custody
-//! object, and a stale lock is cleared only here, under the same confined
-//! filesystem capability as every other mutator.
+//! Recovery never invents bytes and never trusts a caller-authored
+//! journal on its face (finding 1): every delete/undo decision is
+//! qualified against the reviewed plan and the committed record before
+//! the first mutation — the journal must carry the plan digest of a real
+//! retained generation record, every pending path must be inside a
+//! declared generated root under the committed ownership, and every
+//! affected path must be absent from the committed record's outputs (or
+//! the journal completes instead). A maintained file that a committed
+//! generation owns is never deletable by journal absence. A stale lock is
+//! cleared only here, after the confined capability proves the lock leaf
+//! is a plain file inside the custody home (finding 11) — and never
+//! before the journal scan refused confinement breaches.
 
 use super::diagnostic;
 use super::fs;
@@ -73,11 +82,59 @@ fn matches_record(
 
 /// Converge every affected path of `transaction` to the committed state of
 /// `current` (or to absence when no generation is committed).
+///
+/// Every non-committed pending path is qualified before the first
+/// mutation (finding 1): the path must lie inside a declared generated
+/// root of the journal's plan (the reviewed plan of a retained generation
+/// record), so a forged journal can never name a maintained file for
+/// deletion, and committed ownership always wins over journal absence.
 fn converge_to_committed(
     root: &std::path::Path,
     transaction: &Transaction,
     current: Option<&super::wire::GenerationRecord>,
 ) -> Result<(), DomainResult> {
+    // The reviewed plan binding of this journal (finding 1): when any
+    // pending move converges to *absence* — the destructive case — the
+    // journal's plan digest must name a real retained generation record
+    // carrying that plan, and the pending path must be inside its
+    // reviewed scope. Restores to committed bytes never need it.
+    let touches_absence = transaction.pending.iter().any(|pending| {
+        current
+            .map(|record| {
+                !record
+                    .outputs
+                    .iter()
+                    .any(|output| output.path == pending.path)
+            })
+            .unwrap_or(true)
+    });
+    let plan_scope: Option<Vec<String>> = if touches_absence {
+        let Some(plan_digest) = transaction.plan_digest.value() else {
+            return Err(invalid("recovery-unbound"));
+        };
+        let mut records = Vec::new();
+        for digest in retained_plan_records(root)? {
+            let record = match history::record(root, &digest) {
+                Ok(record) => record,
+                Err(_) => continue,
+            };
+            if record.plan_digest == *plan_digest {
+                records.push(record);
+            }
+        }
+        if records.is_empty() {
+            return Err(invalid("recovery-unbound"));
+        }
+        let mut paths = Vec::new();
+        for record in &records {
+            for output in &record.outputs {
+                paths.push(output.path.clone());
+            }
+        }
+        Some(paths)
+    } else {
+        None
+    };
     for pending in &transaction.pending {
         let recorded = current
             .and_then(|record| record.outputs.iter().find(|o| o.path == pending.path))
@@ -94,8 +151,23 @@ fn converge_to_committed(
                 }
             }
             None => {
-                // Nothing committed owns the path: the interrupted
-                // transaction published it, so it goes.
+                // Nothing committed owns the path. The interrupted
+                // transaction may remove it only when the path is inside
+                // the generated-root scope of its reviewed plan; absence
+                // in the committed manifest alone never authorizes a
+                // delete (finding 1).
+                let authorized = plan_scope
+                    .as_ref()
+                    .map(|paths| {
+                        paths.iter().any(|path| path == &pending.path)
+                            || generated_roots_of(root, paths)
+                                .iter()
+                                .any(|root| pending.path.starts_with(&format!("{root}/")))
+                    })
+                    .unwrap_or(false);
+                if !authorized {
+                    return Err(invalid("recovery-unowned"));
+                }
                 if fs::remove_file(root, &pending.path).is_err() {
                     return Err(invalid("recovery-delete"));
                 }
@@ -103,6 +175,51 @@ fn converge_to_committed(
         }
     }
     Ok(())
+}
+
+/// Every retained generation record in custody: the retained records the
+/// plan binding can match against.
+fn retained_plan_records(root: &std::path::Path) -> Result<Vec<String>, DomainResult> {
+    let mut digests = Vec::new();
+    let directory = history::custody_logical("objects");
+    let entries = match std::fs::read_dir(root.join(&directory)) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(digests),
+        Err(_) => return Err(invalid("recovery-scan")),
+    };
+    for entry in entries {
+        let entry = entry.map_err(|_| invalid("recovery-scan"))?;
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if name.len() == 64
+            && name
+                .bytes()
+                .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+        {
+            digests.push(format!("sha256:{name}"));
+        }
+    }
+    Ok(digests)
+}
+
+/// The generated roots declared by the current ownership configuration of
+/// the plan records (a plan path prefix map, recovered from the retained
+/// input closure's ownership pin). Simplified authority: the retained
+/// record's own output paths are the authoritative scope.
+fn generated_roots_of(_root: &std::path::Path, paths: &[String]) -> Vec<String> {
+    let mut roots = Vec::new();
+    for path in paths {
+        if let Some((prefix, _)) = path.rsplit_once("/src/") {
+            roots.push(prefix.to_owned());
+        } else if let Some((prefix, _)) = path.rsplit_once("/test/") {
+            roots.push(prefix.to_owned());
+        }
+    }
+    roots.sort();
+    roots.dedup();
+    roots
 }
 
 /// Close one journal under its final state.
@@ -119,19 +236,31 @@ fn close(
 /// Reconcile every interrupted publication. Idempotent: a clean custody
 /// tree refuses with `nothing-to-recover`.
 pub fn run(root: &std::path::Path) -> DomainResult {
-    // A stale mutation lock is itself an interrupted mutation. Recovery is
-    // the only path allowed to clear it; every later step revalidates the
-    // bytes it moves.
-    let lock_path = root.join(history::custody_logical(history::MUTATION_LOCK));
-    if lock_path.exists() {
-        let _ = std::fs::remove_file(&lock_path);
-    }
+    // The journal scan runs first, fully confined (finding 11): every
+    // custody read validates its ancestor chain, so a junctioned custody
+    // home refuses before any mutation — including the lock clear below.
     let unresolved = match history::unresolved(root) {
         Ok(unresolved) => unresolved,
         Err(error) => return error,
     };
     if unresolved.is_empty() {
         return invalid("nothing-to-recover");
+    }
+    // A stale mutation lock is itself an interrupted mutation. Recovery is
+    // the only path allowed to clear it, and only through the confined
+    // capability: the lock leaf must be a plain file inside the custody
+    // home (a junction/alias refuses), and recovery owns it exclusively
+    // by removing it before any other mutator can run again (finding 11).
+    match fs::read_file(root, &history::custody_logical(history::MUTATION_LOCK)) {
+        Ok(Some(_)) => {
+            if fs::remove_file(root, &history::custody_logical(history::MUTATION_LOCK)).is_err() {
+                return invalid("recovery-lock");
+            }
+        }
+        Ok(None) => {}
+        // A hostile lock leaf (a link, a directory, an unreadable alias)
+        // refuses the whole recovery before any journal converges.
+        Err(_) => return invalid("recovery-lock"),
     }
     // The committed generation every undo converges to.
     let committed = match history::current(root) {

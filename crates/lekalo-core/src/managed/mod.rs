@@ -66,6 +66,36 @@ pub fn generation_digest(record: &GenerationRecord) -> String {
     )
 }
 
+/// The authenticated custody-record identity: the exact digest over the
+/// whole canonical retained document with the self digest field zeroed
+/// (the storage name stays the stable generation identity). Distinct from
+/// the stable [`generation_digest`]: the stable identity names *what* was
+/// generated, the record identity authenticates *the retained evidence*
+/// that binds it to the plan, the ownership policy, and the lock revision
+/// it was admitted under.
+pub fn record_identity(record: &GenerationRecord) -> String {
+    let mut document = serde_json::to_value(record).expect("typed record");
+    if let serde_json::Value::Object(ref mut fields) = document {
+        fields.remove("recordDigest");
+    }
+    digest(document.to_string().as_bytes())
+}
+
+/// Verify the authenticated record identity: the record must carry its own
+/// exact custody digest (`recordDigest`), binding every pin the stable
+/// generation identity deliberately ignores — the plan digest, the
+/// ownership digest, the lock pin, and the previous-generation link.
+/// A forged or tampered record never authenticates.
+pub fn verify_record_identity(record: &GenerationRecord) -> Result<(), DomainResult> {
+    if !pin(&record.record_digest) || record_identity(record) != record.record_digest {
+        return Err(diagnostic::failure(
+            diagnostic::ROLLBACK_REFUSED,
+            &detail("record-identity"),
+        ));
+    }
+    Ok(())
+}
+
 /// The digest over one closure and one output inventory (plan or record).
 pub fn inventory_digest<'a>(
     inputs: impl Iterator<Item = &'a InputPin>,
@@ -490,6 +520,12 @@ pub fn parse_record(bytes: &[u8]) -> Result<GenerationRecord, DomainResult> {
     if !pin(&document.plan_digest) || !pin(&document.generation_digest) {
         return Err(invalid("record-digest"));
     }
+    // The authenticated custody identity must be present and cover the
+    // exact document (finding 3): ownership, lock, plan, and previous-
+    // generation pins are bound through it.
+    if !pin(&document.record_digest) || record_identity(&document) != document.record_digest {
+        return Err(invalid("record-digest"));
+    }
     if document.input_closure.len() > 4096
         || !sorted(
             &document
@@ -535,6 +571,11 @@ pub fn parse_record(bytes: &[u8]) -> Result<GenerationRecord, DomainResult> {
         if !pin(lock) {
             return Err(invalid("lock-pin"));
         }
+    } else {
+        // Generation identity carries the exact lock revision: same IR +
+        // lock is the determinism contract, so a record without its lock
+        // pin is not a complete generation (finding 8).
+        return Err(invalid("lock-pin"));
     }
     Ok(document)
 }
