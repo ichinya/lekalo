@@ -101,6 +101,25 @@
       "preconditions": [
         "recorded-scenario-receipt"
       ]
+    },
+    {
+      "requirement": "behavior.hook",
+      "capability": "runtime.async",
+      "definitionVersion": "0.2.16",
+      "preconditions": [
+        "replacement-binding-declared",
+        "php-84",
+        "laravel-11"
+      ]
+    },
+    {
+      "requirement": "behavior.hook",
+      "capability": "storage.returning",
+      "definitionVersion": "0.2.16",
+      "preconditions": [
+        "replacement-binding-declared",
+        "go-122"
+      ]
     }
   ]
 }

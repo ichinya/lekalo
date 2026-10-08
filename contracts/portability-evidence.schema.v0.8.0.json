@@ -125,8 +125,8 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 256,
-      "pattern": "^[a-z0-9](?:[a-z0-9._-]*/)*[a-z0-9][a-z0-9._-]*$",
-      "description": "Bounded project-relative artifact reference; never an absolute path, glob, traversal segment, or command. Segments must already satisfy the closed project path grammar."
+      "pattern": "^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?(?:/(?:[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?))*$",
+      "description": "Bounded project-relative artifact reference; never an absolute path, glob, traversal segment, empty or dot segment, or segment with a leading/trailing dot, or command. Every segment already satisfies the closed project path grammar (lowercase, at most 64 characters, portable characters)."
     },
     "digest": {
       "type": "string",
@@ -349,6 +349,33 @@
         "protocol",
         "capabilityDigest"
       ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "recorded"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "identity": {
+                "type": "string"
+              },
+              "version": {
+                "type": "string"
+              },
+              "protocol": {
+                "type": "string"
+              },
+              "capabilityDigest": {
+                "$ref": "#/$defs/digest"
+              }
+            }
+          }
+        }
+      ],
       "unevaluatedProperties": false
     },
     "mapping": {
@@ -527,6 +554,7 @@
     "scenarioRecord": {
       "type": "object",
       "additionalProperties": false,
+      "description": "One recorded scenario receipt reference. A claimed execution result is admitted only together with a project-relative receipt artifact and its exact digest; an untested record never carries receipt custody.",
       "properties": {
         "scenario": {
           "$ref": "#/$defs/semanticId"
@@ -560,13 +588,70 @@
               "type": "null"
             }
           ]
+        },
+        "receiptDigest": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
         "scenario",
         "targetId",
         "state",
-        "receiptRef"
+        "receiptRef",
+        "receiptDigest"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "recorded-pass",
+                  "recorded-fail"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "receiptRef": {
+                "type": "string"
+              },
+              "receiptDigest": {
+                "$ref": "#/$defs/digest"
+              },
+              "targetId": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "untested"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "receiptRef": {
+                "type": "null"
+              },
+              "receiptDigest": {
+                "type": "null"
+              }
+            }
+          }
+        }
       ],
       "unevaluatedProperties": false
     },

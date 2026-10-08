@@ -409,6 +409,17 @@
                       "type": "null"
                     }
                   ]
+                },
+                "evidenceDigest": {
+                  "description": "Exact digest of the adapter evidence artifact read through the confined project filesystem, when the target binding named one; absent otherwise.",
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/digest"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 }
               },
               "required": [

@@ -54,8 +54,8 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 256,
-      "pattern": "^[a-z0-9](?:[a-z0-9._-]*/)*[a-z0-9][a-z0-9._-]*$",
-      "description": "Bounded project-relative artifact reference; never an absolute path, glob, traversal segment, or command. Segments must already satisfy the closed project path grammar."
+      "pattern": "^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?(?:/(?:[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?))*$",
+      "description": "Bounded project-relative artifact reference; never an absolute path, glob, traversal segment, empty or dot segment, or segment with a leading/trailing dot, or command. Every segment already satisfies the closed project path grammar (lowercase, at most 64 characters, portable characters)."
     },
     "digest": {
       "type": "string",
