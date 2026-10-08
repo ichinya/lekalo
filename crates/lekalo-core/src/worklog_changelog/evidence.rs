@@ -270,6 +270,7 @@ fn text_member<'a>(
 }
 
 /// One decoded evidence report.
+#[derive(Debug)]
 struct EvidenceReport {
     composition_digest: String,
     targets: Vec<DecodedTarget>,
@@ -279,6 +280,7 @@ struct EvidenceReport {
     permissive_claim: &'static str,
 }
 
+#[derive(Debug)]
 struct DecodedTarget {
     target: String,
     backend_state: &'static str,
@@ -290,12 +292,14 @@ struct DecodedTarget {
     blocking: Vec<String>,
 }
 
+#[derive(Debug)]
 struct DecodedCapability {
     capability: String,
     support: &'static str,
     blocking: bool,
 }
 
+#[derive(Debug)]
 struct DecodedScenario {
     scenario: String,
     status: &'static str,
@@ -963,6 +967,15 @@ fn singleton_set_evidence() -> DiagnosticSet {
 mod tests {
     use super::*;
 
+    /// Decode raw bytes the way admission does (the same IO failure
+    /// mapping for a non-UTF-8 body).
+    fn try_decode(bytes: &[u8]) -> Result<EvidenceReport, DomainResult> {
+        decode(
+            std::str::from_utf8(bytes)
+                .map_err(|_| DomainResult::invalid(io_failure("invalid-encoding")))?,
+        )
+    }
+
     #[test]
     fn profile_names_are_the_wire_spellings() {
         assert_eq!(AdmissionProfile::Strict.wire_name(), "strict");
@@ -971,7 +984,7 @@ mod tests {
 
     #[test]
     fn evidence_incomplete_is_a_registered_unsupported_rule() {
-        let set = evidence_incomplete_set();
+        let set = singleton_set_evidence();
         assert_eq!(set.as_slice().len(), 1);
         assert_eq!(
             set.as_slice()[0].id(),
@@ -1020,10 +1033,7 @@ mod tests {
             "verdict": {"strict": "unsupported", "permissive": "degraded", "degraded": true},
         });
         let bytes = serde_json::to_vec(&report).expect("report serializes");
-        let set = std::str::from_utf8(&bytes)
-            .map_err(DomainResult::invalid)
-            .and_then(decode)
-            .unwrap_err();
+        let set = try_decode(&bytes).unwrap_err();
         assert_eq!(set.status(), Status::Invalid);
         let rendered = serde_json::to_string(set.diagnostics().first().expect("one diagnostic"))
             .expect("diagnostic serializes");
@@ -1054,10 +1064,7 @@ mod tests {
             "verdict": {"strict": "unsupported", "permissive": "degraded", "degraded": true},
         });
         let bytes = serde_json::to_vec(&report).expect("report serializes");
-        let set = std::str::from_utf8(&bytes)
-            .map_err(DomainResult::invalid)
-            .and_then(decode)
-            .unwrap_err();
+        let set = try_decode(&bytes).unwrap_err();
         let rendered = serde_json::to_string(set.diagnostics().first().expect("one diagnostic"))
             .expect("diagnostic serializes");
         let value: serde_json::Value = serde_json::from_str(&rendered).expect("diagnostic JSON");

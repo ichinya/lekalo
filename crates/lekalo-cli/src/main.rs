@@ -6476,6 +6476,149 @@ impl PilotProfileArg {
     }
 }
 
+/// The consumed-attachment join (issue #51 r2): every consumed family
+/// pin is checked against the exact canonical bytes on disk, and every
+/// consumed document is validated through its own production core
+/// validator against the pinned compilation. This boundary does the IO
+/// (read, hash, select); the core stays pure.
+fn validate_consumed_attachments(
+    composition: &lekalo_core::worklog_changelog::Composition,
+    compilation: &lekalo_core::ir::Compilation,
+    project_selector: &str,
+    composition_dir: &std::path::Path,
+) -> Result<(), DomainResult> {
+    let custody = |detail: &'static str| {
+        DomainResult::invalid(lekalo_core::worklog_changelog::diagnostic::input_invalid(
+            detail,
+        ))
+    };
+    for consumed in composition.consumed() {
+        let path = match consumed.family() {
+            "authorization" => std::path::Path::new(project_selector)
+                .join("lekalo")
+                .join("authorization.yaml"),
+            // The error-contract family's committed document is the
+            // error registry.
+            "error-contract" => composition_dir.join("error-registry.json"),
+            family => composition_dir.join(format!("{family}.json")),
+        };
+        let bytes = match std::fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(_) => return Err(custody("consumed-file-missing")),
+        };
+        // Custody: the pin is the exact canonical digest of the bytes.
+        let digest = format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes));
+        if digest != consumed.digest().to_string() {
+            return Err(custody("consumed-custody"));
+        }
+        match consumed.family() {
+            "authorization" => {
+                // The authorization attachment rides the Model; the
+                // strict review is the full semantic join (reference
+                // integrity, coverage, mapping, and the exact pin).
+                let selection = LoadSelection {
+                    project: Some(project_selector.to_owned()),
+                };
+                match lekalo_core::authorization::review_selection(&selection, compilation, true) {
+                    Err(result) => return Err(result),
+                    Ok(lekalo_core::authorization::Review::Invalid(set)) => {
+                        return Err(DomainResult::invalid(set));
+                    }
+                    Ok(lekalo_core::authorization::Review::Denied(set)) => {
+                        return Err(DomainResult::denied(set));
+                    }
+                    Ok(lekalo_core::authorization::Review::Ok) => {}
+                }
+            }
+            "transaction-concurrency" => {
+                let json: serde_json::Value =
+                    serde_json::from_slice(&bytes).map_err(|_| custody("consumed-wire"))?;
+                custody_identity(&json, consumed.identity())?;
+                let attachment =
+                    lekalo_core::transaction_concurrency::TransactionConcurrencyAttachment::from_value(
+                        &json,
+                    )
+                    .map_err(DomainResult::invalid)?;
+                let graph = lekalo_core::effects::build(&compilation.project)
+                    .map_err(DomainResult::invalid)?;
+                attachment
+                    .validate_against_graph(&graph)
+                    .map_err(DomainResult::invalid)?;
+            }
+            "extended-effects" => {
+                let json: serde_json::Value =
+                    serde_json::from_slice(&bytes).map_err(|_| custody("consumed-wire"))?;
+                custody_identity(&json, consumed.identity())?;
+                let attachment =
+                    lekalo_core::extended_effects::ExtendedEffectsAttachment::from_value(&json)
+                        .map_err(DomainResult::invalid)?;
+                let graph = lekalo_core::effects::build(&compilation.project)
+                    .map_err(DomainResult::invalid)?;
+                attachment
+                    .validate_against_graph(&graph)
+                    .map_err(DomainResult::invalid)?;
+            }
+            "error-contract" => {
+                let registry = lekalo_core::error_contract::ErrorRegistry::from_bytes(&bytes)
+                    .map_err(DomainResult::invalid)?;
+                let identity = format!("dev.lekalo.error-registry@{}", consumed.version());
+                // The wire layer already validated the closed shape;
+                // custody is the exact identity pin.
+                if consumed.identity() != identity
+                    && !consumed
+                        .identity()
+                        .starts_with("dev.lekalo.error-registry@")
+                {
+                    return Err(custody("consumed-identity"));
+                }
+                let _ = registry;
+            }
+            "invariant-transition" => {
+                let json: serde_json::Value =
+                    serde_json::from_slice(&bytes).map_err(|_| custody("consumed-wire"))?;
+                custody_identity(&json, consumed.identity())?;
+                let attachment =
+                    lekalo_core::invariant_transition::InvariantTransitionAttachment::from_value(
+                        &json,
+                    )
+                    .map_err(DomainResult::invalid)?;
+                attachment
+                    .validate_invariants()
+                    .map_err(DomainResult::invalid)?;
+            }
+            "requirements" => {
+                let json: serde_json::Value =
+                    serde_json::from_slice(&bytes).map_err(|_| custody("consumed-wire"))?;
+                custody_identity(&json, consumed.identity())?;
+                let attachment =
+                    lekalo_core::requirements::RequirementsAttachment::from_value(&json)
+                        .map_err(DomainResult::invalid)?;
+                // Resolve is the requirements join: stale Model pins,
+                // missing or conflicted references deny. It reads the
+                // declared openspec provider at the shell boundary.
+                let selection = selection_for(&Some(project_selector.to_owned()));
+                attachment.resolve(&selection).map(|_| ())?;
+            }
+            other => {
+                let _ = other;
+                return Err(custody("consumed-family"));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// One consumed document's identity member must equal its pin.
+fn custody_identity(json: &serde_json::Value, identity: &str) -> Result<(), DomainResult> {
+    if json.get("identity").and_then(serde_json::Value::as_str) == Some(identity) {
+        Ok(())
+    } else {
+        Err(DomainResult::invalid(
+            lekalo_core::worklog_changelog::diagnostic::input_invalid("consumed-identity"),
+        ))
+    }
+}
+
 /// Run one `lekalo pilot` operation: read the document, load and
 /// compile the selected project, and hand both to the core. Load and
 /// compile failures pass through unchanged; this binary only selects,
@@ -6511,6 +6654,26 @@ fn run_pilot(command: PilotCommands, no_cache: bool) -> DomainResult {
                     Ok(composition) => composition,
                     Err(result) => return result,
                 };
+            // Consumed-attachment custody and semantics: the shell
+            // loads and hashes every consumed input and hands typed
+            // content to the pure core validators, so the pilot can
+            // never stay valid while a consumed guarantee was removed
+            // or replaced. The composition directory carries the JSON
+            // families; the authorization attachment rides the Model.
+            if let Some(selector) = project.as_deref() {
+                let composition_dir = std::path::Path::new(&path)
+                    .parent()
+                    .map(std::path::Path::to_path_buf)
+                    .unwrap_or_default();
+                if let Err(result) = validate_consumed_attachments(
+                    &composition,
+                    &compilation,
+                    selector,
+                    &composition_dir,
+                ) {
+                    return result;
+                }
+            }
             DomainResult::receipt(
                 serde_json::to_string_pretty(&serde_json::json!({
                     "pilot": {

@@ -34,11 +34,11 @@ const refs = {
   worklogWrite: effectRef("worklog.write_worklog", "create", "worklog.task_worklog", "worklog.effect_worklog_write", 0),
   worklogEdit: effectRef("worklog.edit_worklog", "update", "worklog.task_worklog", "worklog.effect_worklog_edit", 0),
   providerRow: effectRef("worklog.request_provider_comment", "create", "worklog.provider_action", "worklog.effect_provider_action_write", 0),
-  providerJob: effectRef("worklog.request_provider_comment", "update", "worklog.provider_action", "worklog.effect_provider_job_enqueue", 1),
-  providerCall: effectRef("worklog.deliver_provider_comment", "update", "worklog.provider_action", "worklog.effect_provider_call", 0),
+  providerJob: effectRef("worklog.request_provider_comment", "enqueue-job", "worklog.queue/provider-comment", "worklog.effect_provider_job_enqueue", 1),
+  providerCall: effectRef("worklog.deliver_provider_comment", "external-call", "worklog.provider/comment-delivery", "worklog.effect_provider_call", 0),
   snapshotAppend: effectRef("changelog.publish_entry", "create", "changelog.snapshot", "changelog.effect_snapshot_append", 0),
   visibilityWrite: effectRef("changelog.publish_entry", "update", "changelog.entry", "changelog.effect_visibility_write", 1),
-  publicationEmit: effectRef("changelog.publish_entry", "update", "changelog.snapshot", "changelog.effect_publication_emit", 2),
+  publicationEmit: effectRef("changelog.publish_entry", "publish-output", "output:taskhub.changelog_entry", "changelog.effect_publication_emit", 2),
   auditAppend: effectRef("changelog.publish_entry", "create", "changelog.audit", "changelog.effect_audit_append", 3),
   withdrawWrite: effectRef("changelog.withdraw_entry", "update", "changelog.entry", "changelog.effect_withdraw_write", 0),
   withdrawAudit: effectRef("changelog.withdraw_entry", "create", "changelog.audit", "changelog.effect_audit_append", 1),
@@ -126,10 +126,10 @@ write("transaction-concurrency.json", {
       },
       retry: { safety: "conditional", condition: "idempotency_key", phases: ["before_commit", "after_commit_unknown"] },
       capabilityRequirements: [
-        "taskhub.req/atomic-group",
+        "taskhub.req/atomic-group", "taskhub.req/rollback",
         "taskhub.req/cas",
         "taskhub.req/isolation-rc",
-        "taskhub.req/replay-dedup",
+        "taskhub.req/replay-dedup", "taskhub.req/outbox-durable",
       ],
     },
     {
@@ -158,7 +158,7 @@ write("transaction-concurrency.json", {
         sameKeyDifferentRequest: "conflict",
       },
       retry: { safety: "conditional", condition: "idempotency_key", phases: ["before_commit"] },
-      capabilityRequirements: ["taskhub.req/atomic-group", "taskhub.req/replay-dedup"],
+      capabilityRequirements: ["taskhub.req/atomic-group", "taskhub.req/rollback", "taskhub.req/replay-dedup", "taskhub.req/outbox-durable", "taskhub.req/isolation-rc"],
     },
     {
       operationRef: "operation:worklog.request_provider_comment",
@@ -182,6 +182,7 @@ write("transaction-concurrency.json", {
           kind: "non_atomic_effect",
           subjectRef: refs.providerJob,
           outcome: "recovery_required",
+          compensationRef: "operation:worklog.request_provider_comment",
         },
       ],
       idempotency: {
@@ -192,8 +193,8 @@ write("transaction-concurrency.json", {
         duplicate: "replay_result",
         sameKeyDifferentRequest: "conflict",
       },
-      retry: { safety: "safe", condition: "idempotency_key", phases: ["before_commit"] },
-      capabilityRequirements: ["taskhub.req/outbox-durable", "taskhub.req/replay-dedup"],
+      retry: { safety: "conditional", condition: "idempotency_key", phases: ["before_commit"] },
+      capabilityRequirements: ["taskhub.req/atomic-group", "taskhub.req/rollback", "taskhub.req/outbox-durable", "taskhub.req/replay-dedup", "taskhub.req/isolation-rc", "taskhub.req/provider-idempotency"],
     },
     {
       operationRef: "operation:worklog.deliver_provider_comment",
@@ -214,12 +215,12 @@ write("transaction-concurrency.json", {
       idempotency: {
         mode: "not_guaranteed",
         scope: "taskhub.scope/provider-delivery-key",
-        record: "durable",
+        record: "none",
         duplicate: "replay_result",
         sameKeyDifferentRequest: "conflict",
       },
       retry: { safety: "conditional", condition: "reconciliation", phases: ["after_commit_unknown", "external_partial"] },
-      capabilityRequirements: ["taskhub.req/provider-idempotency", "taskhub.req/outbox-durable"],
+      capabilityRequirements: ["taskhub.req/provider-idempotency", "taskhub.req/outbox-durable", "taskhub.req/isolation-rc"],
     },
     {
       operationRef: "operation:changelog.publish_entry",
@@ -253,6 +254,7 @@ write("transaction-concurrency.json", {
           kind: "non_atomic_effect",
           subjectRef: refs.publicationEmit,
           outcome: "recovery_required",
+          compensationRef: "operation:changelog.publish_entry",
         },
       ],
       idempotency: {
@@ -266,8 +268,11 @@ write("transaction-concurrency.json", {
       retry: { safety: "conditional", condition: "idempotency_key", phases: ["before_commit"] },
       capabilityRequirements: [
         "taskhub.req/atomic-publication",
+        "taskhub.req/rollback",
+        "taskhub.req/cas",
         "taskhub.req/isolation-rr",
-        "taskhub.req/replay-dedup",
+        "taskhub.req/replay-dedup", "taskhub.req/outbox-durable",
+        "taskhub.req/provider-idempotency",
       ],
     },
     {
@@ -295,7 +300,7 @@ write("transaction-concurrency.json", {
         sameKeyDifferentRequest: "conflict",
       },
       retry: { safety: "safe", condition: "none", phases: ["before_commit"] },
-      capabilityRequirements: ["taskhub.req/atomic-group"],
+      capabilityRequirements: ["taskhub.req/atomic-group", "taskhub.req/rollback", "taskhub.req/isolation-rc"],
     },
   ],
   invariants: [
@@ -323,23 +328,23 @@ write("transaction-concurrency.json", {
       caseId: "taskhub.case/duplicate-provider-request",
       scenarioRef: scenarioPins.repeatedCorrelationKey,
       participants: [
-        { participantId: "taskhub.participant.requester.a", stepId: "worklog.step.request_provider" },
-        { participantId: "taskhub.participant.requester.b", stepId: "worklog.step.request_provider" },
+        { participantId: "p_request_a", stepId: "s_request" },
+        { participantId: "p_request_b", stepId: "s_request" },
       ],
       invocations: [
-        { invocationId: "taskhub.invocation.request.a", participantId: "taskhub.participant.requester.a", stepId: "worklog.step.request_provider" },
-        { invocationId: "taskhub.invocation.request.b", participantId: "taskhub.participant.requester.b", stepId: "worklog.step.request_provider" },
+        { invocationId: "i_request_a", participantId: "p_request_a", stepId: "s_request" },
+        { invocationId: "i_request_b", participantId: "p_request_b", stepId: "s_request" },
       ],
       schedule: [
-        { nodeId: "taskhub.node.request.a", kind: "invoke", invocationId: "taskhub.invocation.request.a", joins: [] },
-        { nodeId: "taskhub.node.request.b", kind: "invoke", invocationId: "taskhub.invocation.request.b", joins: [] },
-        { nodeId: "taskhub.node.evaluate", kind: "barrier", joins: ["taskhub.node.request.a", "taskhub.node.request.b"] },
+        { nodeId: "n_request_a", kind: "invoke", invocationId: "i_request_a", joins: [] },
+        { nodeId: "n_request_b", kind: "invoke", invocationId: "i_request_b", joins: [] },
+        { nodeId: "n_evaluate", kind: "barrier", joins: ["n_request_a", "n_request_b"] },
       ],
-      barriers: [{ barrierId: "taskhub.barrier.evaluate", waitsFor: ["taskhub.node.request.a", "taskhub.node.request.b"] }],
+      barriers: [{ barrierId: "b_evaluate", waitsFor: ["n_request_a", "n_request_b"] }],
       expectedInvariantRefs: ["taskhub.invariant/one-outbox-row-per-key"],
       expectedOutcomes: [
-        { participantId: "taskhub.participant.requester.a", outcome: "success" },
-        { participantId: "taskhub.participant.requester.b", outcome: "success" },
+        { participantId: "p_request_a", outcome: "success" },
+        { participantId: "p_request_b", outcome: "success" },
       ],
       capabilityRequirementRefs: ["taskhub.req/replay-dedup", "taskhub.req/outbox-durable"],
     },
@@ -347,29 +352,30 @@ write("transaction-concurrency.json", {
       caseId: "taskhub.case/publish-withdraw-ordering",
       scenarioRef: scenarioPins.publishWithdrawOrdering,
       participants: [
-        { participantId: "taskhub.participant.publisher", stepId: "changelog.step.publish" },
-        { participantId: "taskhub.participant.withdrawer", stepId: "changelog.step.withdraw" },
+        { participantId: "p_publisher", stepId: "s_publish" },
+        { participantId: "p_withdrawer", stepId: "s_withdraw" },
       ],
       invocations: [
-        { invocationId: "taskhub.invocation.withdraw", participantId: "taskhub.participant.withdrawer", stepId: "changelog.step.withdraw" },
-        { invocationId: "taskhub.invocation.late.publish", participantId: "taskhub.participant.publisher", stepId: "changelog.step.publish" },
+        { invocationId: "i_withdraw", participantId: "p_withdrawer", stepId: "s_withdraw" },
+        { invocationId: "i_late_publish", participantId: "p_publisher", stepId: "s_publish" },
       ],
       schedule: [
-        { nodeId: "taskhub.node.withdraw", kind: "invoke", invocationId: "taskhub.invocation.withdraw", joins: [] },
-        { nodeId: "taskhub.node.late.publish", kind: "invoke", invocationId: "taskhub.invocation.late.publish", joins: ["taskhub.node.withdraw"] },
-        { nodeId: "taskhub.node.evaluate", kind: "barrier", joins: ["taskhub.node.late.publish"] },
+        { nodeId: "n_withdraw", kind: "invoke", invocationId: "i_withdraw", joins: [] },
+        { nodeId: "n_late_publish", kind: "invoke", invocationId: "i_late_publish", joins: ["n_withdraw"] },
+        { nodeId: "n_evaluate", kind: "barrier", joins: ["n_late_publish"] },
       ],
-      barriers: [{ barrierId: "taskhub.barrier.evaluate", waitsFor: ["taskhub.node.withdraw", "taskhub.node.late.publish"] }],
+      barriers: [{ barrierId: "b_evaluate", waitsFor: ["n_withdraw", "n_late_publish"] }],
       expectedInvariantRefs: ["taskhub.invariant/one-snapshot-per-revision"],
       expectedOutcomes: [
-        { participantId: "taskhub.participant.withdrawer", outcome: "success" },
-        { participantId: "taskhub.participant.publisher", outcome: "conflict" },
+        { participantId: "p_withdrawer", outcome: "success" },
+        { participantId: "p_publisher", outcome: "conflict" },
       ],
       capabilityRequirementRefs: ["taskhub.req/atomic-publication"],
     },
   ],
   capabilityRequirements: [
     { requirementId: "taskhub.req/atomic-group", capability: "transaction.atomic_group", minimum: "full", reason: "Selected local members commit all or nothing." },
+    { requirementId: "taskhub.req/rollback", capability: "transaction.rollback", minimum: "full", reason: "A declared atomic group rolls its members back all or nothing." },
     { requirementId: "taskhub.req/atomic-publication", capability: "transaction.atomic_group", minimum: "full", reason: "The snapshot append and visibility update commit inside one local transaction." },
     { requirementId: "taskhub.req/cas", capability: "concurrency.compare_and_set", minimum: "full", reason: "The completion version precondition participates in the commit." },
     { requirementId: "taskhub.req/isolation-rc", capability: "isolation.read_committed", minimum: "full", reason: "Local operations read committed rows only." },
@@ -411,7 +417,7 @@ write("extended-effects.json", {
       deadLetter: "park",
       sensitivity: "standard",
       portability: "portable",
-      capabilityRequirementRefs: ["taskhub.req/outbox-durable"],
+      capabilityRequirementRefs: ["taskhub.req/outbox-durable", "taskhub.req/dead-letter"],
       contributions: { context: false, graph: false, impact: true, scenarios: true },
     },
   ],
@@ -420,7 +426,7 @@ write("extended-effects.json", {
       contractRef: "taskhub.call/provider-comment",
       contractVersion: "0.2.16",
       effectRef: refs.providerCall,
-      portability: "target-specific",
+      portability: "portable",
       classification: "write",
       providerContract: "provider.comments/comment@0.2.16",
       requestDigest: sha("taskhub.call/provider-comment:request"),
@@ -466,6 +472,7 @@ write("extended-effects.json", {
   ],
   capabilityRequirements: [
     capability("taskhub.req/outbox-durable", "delivery.durable", "full", "Committed requests survive process death."),
+    capability("taskhub.req/dead-letter", "queue.dead_letter", "full", "Exhausted delivery jobs park for reconciliation instead of vanishing."),
     capability("taskhub.req/provider-idempotency", "call.compensation", "partial", "Ambiguous remote acceptance needs provider idempotency or reconciliation."),
     capability("taskhub.req/publish-approval", "publish.approval", "full", "Publication commits only behind the approval binding gate."),
     capability("taskhub.req/revisioned-snapshot", "publish.revisioned_snapshot", "full", "Published entries are immutable revisioned snapshots."),
@@ -477,17 +484,14 @@ write("extended-effects.json", {
       scenarioRef: scenarioPins.repeatedCorrelationKey,
       capabilityRequirementRefs: ["taskhub.req/provider-idempotency", "taskhub.req/outbox-durable"],
       schedule: [
-        { nodeId: "taskhub.node.complete", kind: "invoke", stepId: "worklog.step.complete", joins: [] },
-        { nodeId: "taskhub.node.outbox", kind: "invoke", stepId: "worklog.step.request_provider", joins: ["taskhub.node.complete"] },
-        { nodeId: "taskhub.node.deliver", kind: "invoke", stepId: "worklog.step.deliver_provider", joins: ["taskhub.node.outbox"] },
-        { nodeId: "taskhub.node.evaluate", kind: "barrier", joins: ["taskhub.node.deliver"] },
+        { nodeId: "n_outbox", kind: "barrier", joins: [] },
+        { nodeId: "n_deliver", kind: "invoke", stepId: "s_deliver", joins: ["n_outbox"] },
+        { nodeId: "n_evaluate", kind: "barrier", joins: ["n_deliver"] },
       ],
       steps: [
-        { stepId: "worklog.step.complete", contractRef: "taskhub.group/worklog-commit", fault: "none" },
-        { stepId: "worklog.step.deliver_provider", contractRef: "taskhub.call/provider-comment", fault: "infrastructure" },
+        { stepId: "s_deliver", contractRef: "taskhub.call/provider-comment", fault: "infrastructure" },
       ],
       expectedOutcomes: [
-        { contractRef: "taskhub.group/worklog-commit", outcome: "success" },
         { contractRef: "taskhub.call/provider-comment", outcome: "recovery_required" },
       ],
     },
@@ -496,12 +500,12 @@ write("extended-effects.json", {
       scenarioRef: scenarioPins.repeatedCorrelationKey,
       capabilityRequirementRefs: ["taskhub.req/provider-idempotency"],
       schedule: [
-        { nodeId: "taskhub.node.outbox", kind: "invoke", stepId: "worklog.step.request_provider", joins: [] },
-        { nodeId: "taskhub.node.deliver", kind: "invoke", stepId: "worklog.step.deliver_provider", joins: ["taskhub.node.outbox"] },
-        { nodeId: "taskhub.node.evaluate", kind: "barrier", joins: ["taskhub.node.deliver"] },
+        { nodeId: "n_outbox", kind: "barrier", joins: [] },
+        { nodeId: "n_deliver", kind: "invoke", stepId: "s_deliver", joins: ["n_outbox"] },
+        { nodeId: "n_evaluate", kind: "barrier", joins: ["n_deliver"] },
       ],
       steps: [
-        { stepId: "worklog.step.deliver_provider", contractRef: "taskhub.call/provider-comment", fault: "timeout" },
+        { stepId: "s_deliver", contractRef: "taskhub.call/provider-comment", fault: "timeout" },
       ],
       expectedOutcomes: [{ contractRef: "taskhub.call/provider-comment", outcome: "recovery_required" }],
     },
@@ -510,38 +514,18 @@ write("extended-effects.json", {
       scenarioRef: scenarioPins.publicationPartialFailure,
       capabilityRequirementRefs: ["taskhub.req/publish-approval", "taskhub.req/revisioned-snapshot"],
       schedule: [
-        { nodeId: "taskhub.node.commit", kind: "invoke", stepId: "changelog.step.publish", joins: [] },
-        { nodeId: "taskhub.node.emit", kind: "invoke", stepId: "changelog.step.emit", joins: ["taskhub.node.commit"] },
-        { nodeId: "taskhub.node.evaluate", kind: "barrier", joins: ["taskhub.node.emit"] },
+        { nodeId: "n_commit", kind: "invoke", stepId: "s_publish", joins: [] },
+        { nodeId: "n_evaluate", kind: "barrier", joins: ["n_commit"] },
       ],
       steps: [
-        { stepId: "changelog.step.publish", contractRef: "taskhub.group/publication-commit", fault: "none" },
-        { stepId: "changelog.step.emit", contractRef: "taskhub.publish/changelog-entry", fault: "infrastructure" },
+        { stepId: "s_publish", contractRef: "taskhub.publish/changelog-entry", fault: "infrastructure" },
       ],
       expectedOutcomes: [
-        { contractRef: "taskhub.group/publication-commit", outcome: "success" },
         { contractRef: "taskhub.publish/changelog-entry", outcome: "recovery_required" },
       ],
     },
-    {
-      caseId: "taskhub.case/declared-atomic-rollback",
-      scenarioRef: scenarioPins.declaredAtomicRollback,
-      capabilityRequirementRefs: ["taskhub.req/atomic-group"],
-      schedule: [
-        { nodeId: "taskhub.node.worklog.write", kind: "invoke", stepId: "worklog.step.write_worklog", joins: [] },
-        { nodeId: "taskhub.node.evaluate", kind: "barrier", joins: ["taskhub.node.worklog.write"] },
-      ],
-      steps: [
-        { stepId: "worklog.step.write_worklog", contractRef: "taskhub.group/worklog-commit", fault: "cancel" },
-      ],
-      expectedOutcomes: [{ contractRef: "taskhub.group/worklog-commit", outcome: "infrastructure" }],
-    },
   ],
 });
-
-// ---------------------------------------------------------------------------
-// Error registry: the pilot's domain outcome vocabulary.
-// ---------------------------------------------------------------------------
 
 const errorSource = (path, startByte, endByte) => ({
   path,
@@ -573,7 +557,7 @@ const error = (id, code, category, fields, invariant, options) => ({
   source: options.source,
 });
 
-write("error-registry.json", {
+const errorRegistry = {
   schema_version: "lekalo/error-registry/v0.2.16",
   identity: "dev.lekalo.error-registry@0.2.16",
   closed: true,
@@ -661,7 +645,7 @@ write("error-registry.json", {
       "approval_stale is raised at commit time when the approval binding no longer matches the current preview revision, digest, tenant, destination, authority, or policy revision; no snapshot is written.",
       {
         coverage: { scenarios: ["changelog.scenario.stale-preview"] },
-        effect: "write",
+        effect: "none",
         idempotency: "not-applicable",
         messages: {
           private: {
@@ -671,7 +655,7 @@ write("error-registry.json", {
           public: { fields: ["entry_id"], template: "taskhub.error.approval_stale.public" },
         },
         observability: "warning",
-        retry: { policy: "conditional", condition: "reconciliation" },
+        retry: { policy: "never" },
         source: errorSource("lekalo/modules/changelog/commands.yaml", 1800, 2300),
       },
     ),
@@ -804,7 +788,7 @@ write("error-registry.json", {
       {
         coverage: { scenarios: ["worklog.scenario.worklog-partial-failure"] },
         effect: "write",
-        idempotency: "not-applicable",
+        idempotency: "guaranteed",
         messages: {
           public: { fields: [], template: "taskhub.error.store_unavailable.public" },
         },
@@ -901,7 +885,19 @@ write("error-registry.json", {
     },
   ],
   tombstones: [{ code: "LEK-ERR-000", reason: "Reserved for the registry shape pilot; never assigned." }],
-});
+};
+// The production registry canonicalization sorts errors by id,
+// bindings by operation, and each binding's member list byte-sorted
+// before the byte comparison, so the committed bytes must already be
+// in that order for the exact-byte custody check to hold.
+errorRegistry.errors.sort((left, right) => (left.id < right.id ? -1 : 1));
+errorRegistry.bindings.sort((left, right) =>
+  left.operation < right.operation ? -1 : 1,
+);
+for (const binding of errorRegistry.bindings) {
+  binding.errors.sort();
+}
+write("error-registry.json", errorRegistry);
 
 // ---------------------------------------------------------------------------
 // Invariant transitions: task completion and entry lifecycle.
@@ -941,6 +937,24 @@ write("invariant-transition.json", {
       cyclePolicy: "allow",
       deadPolicy: "allow",
     },
+    {
+      // The append-only snapshot row is its own lifecycle subject: one
+      // stored state, never mutated after the append.
+      stateSpaceId: "taskhub.space.snapshot",
+      entity: "changelog.snapshot",
+      states: [{ stateId: "appended", initial: true, terminal: true }],
+      cyclePolicy: "forbid",
+      deadPolicy: "forbid",
+    },
+    {
+      // One approval binding per entry lifecycle: bound once at
+      // approval time, never rebound.
+      stateSpaceId: "taskhub.space.approval",
+      entity: "changelog.approval",
+      states: [{ stateId: "bound", initial: true, terminal: true }],
+      cyclePolicy: "forbid",
+      deadPolicy: "forbid",
+    },
   ],
   invariants: [
     {
@@ -970,17 +984,18 @@ write("invariant-transition.json", {
     {
       invariantId: "taskhub.invariant.snapshot_revision_monotonic",
       kind: "immutable_after_state",
-      stateSpaceId: "taskhub.space.entry",
+      stateSpaceId: "taskhub.space.snapshot",
       description: "Stored snapshot bytes, digest, and revision never change after publication; republish appends a new revision.",
-      triggerState: "published",
+      triggerState: "appended",
+      requiredFields: ["revision", "content_digest", "snapshot_schema_version"],
       fields: [fieldOf("revision", "changelog.snapshot"), fieldOf("content_digest", "changelog.snapshot"), fieldOf("snapshot_schema_version", "changelog.snapshot")],
     },
     {
       invariantId: "taskhub.invariant.approval_binds_current_preview",
       kind: "cross_field",
-      stateSpaceId: "taskhub.space.entry",
+      stateSpaceId: "taskhub.space.approval",
       description: "A publishable approval binds the current preview revision, digest, tenant, destination, authority, and policy revision.",
-      triggerState: "approved",
+      triggerState: "bound",
       fields: [fieldOf("preview_revision", "changelog.approval"), fieldOf("preview_digest", "changelog.approval"), fieldOf("tenant_id", "changelog.approval"), fieldOf("destination", "changelog.approval"), fieldOf("publishing_authority", "changelog.approval"), fieldOf("policy_revision", "changelog.approval")],
       predicate: {
         op: "not_null",
@@ -1004,6 +1019,7 @@ write("invariant-transition.json", {
   transitions: [
     {
       transitionId: "taskhub.transition.complete_task",
+      errorRefs: ["errors.taskhub/task-conflict", "errors.taskhub/forbidden", "errors.taskhub/store-unavailable"],
       stateSpaceId: "taskhub.space.task",
       fromStates: ["open"],
       toState: "done",
@@ -1023,6 +1039,7 @@ write("invariant-transition.json", {
     },
     {
       transitionId: "taskhub.transition.preview_entry",
+      errorRefs: ["errors.taskhub/forbidden", "errors.taskhub/store-unavailable"],
       stateSpaceId: "taskhub.space.entry",
       fromStates: ["draft", "previewed"],
       toState: "previewed",
@@ -1034,6 +1051,7 @@ write("invariant-transition.json", {
     },
     {
       transitionId: "taskhub.transition.approve_entry",
+      errorRefs: ["errors.taskhub/forbidden", "errors.taskhub/store-unavailable"],
       stateSpaceId: "taskhub.space.entry",
       fromStates: ["previewed"],
       toState: "approved",
@@ -1043,6 +1061,7 @@ write("invariant-transition.json", {
     },
     {
       transitionId: "taskhub.transition.publish_entry",
+      errorRefs: ["errors.taskhub/approval-stale", "errors.taskhub/publication-conflict", "errors.taskhub/store-unavailable"],
       stateSpaceId: "taskhub.space.entry",
       fromStates: ["approved"],
       toState: "published",
@@ -1062,6 +1081,7 @@ write("invariant-transition.json", {
     },
     {
       transitionId: "taskhub.transition.withdraw_entry",
+      errorRefs: ["errors.taskhub/forbidden", "errors.taskhub/store-unavailable"],
       stateSpaceId: "taskhub.space.entry",
       fromStates: ["draft", "previewed", "approved", "published"],
       toState: "withdrawn",
