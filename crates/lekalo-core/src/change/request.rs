@@ -616,7 +616,7 @@ fn literal_of(value: &Json, depth: usize) -> Result<Literal, ()> {
 
 /// Recursive duplicate-key refusal before typed decoding (repository
 /// `Unique` convention); `serde_json::Value` alone discards this evidence.
-fn unique_json(bytes: &[u8]) -> Result<Json, ()> {
+pub(crate) fn unique_json(bytes: &[u8]) -> Result<Json, ()> {
     let mut de = serde_json::Deserializer::from_slice(bytes);
     let value = Unique::deserialize(&mut de).map_err(|_| ())?.0;
     de.end().map_err(|_| ())?;

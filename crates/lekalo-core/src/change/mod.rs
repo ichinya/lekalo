@@ -209,7 +209,6 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
 
     // Build the candidate documents with typed tree edits.
     let mut documents = load.documents.clone();
-    let mut per_file_edits: Vec<(String, Vec<ByteEdit>)> = Vec::new();
     for (row, operation) in resolved_rows.iter().zip(&request.operations) {
         if row.status != "resolved" {
             return Err(ChangeError::OperationUnsupported {
@@ -219,10 +218,14 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
         apply_tree_edit(&mut documents, operation)?;
     }
 
-    // Plan the exact byte edits for every changed document. The edits are
-    // planned against the ORIGINAL pinned bytes and spans; the mutated
-    // candidate trees above exist only for the semantic comparison.
-    let mut changed_documents: Vec<LoadedDocument> = Vec::new();
+    // Plan the exact byte edits for every changed document. Every
+    // operation in the batch contributes its own edits against the
+    // ORIGINAL pinned bytes and spans (the ranges are original-relative
+    // and must not overlap); the mutated candidate trees above exist only
+    // for the semantic comparison. Batches on one file are legal (review
+    // finding 7): the edits accumulate per file, are verified disjoint,
+    // and apply in descending-offset order.
+    let mut per_file_planned: Vec<(String, Vec<ByteEdit>)> = Vec::new();
     for operation in &request.operations {
         let subject = operation
             .subject()
@@ -240,12 +243,6 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
                 detail: "definition-missing",
             })?;
         let path = definition.path.clone();
-        if changed_documents
-            .iter()
-            .any(|document| document.document.path == path)
-        {
-            continue;
-        }
         let document = load
             .documents
             .iter()
@@ -265,26 +262,59 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
                 detail: "document-definition-missing",
             })?;
         let edits = plan_source_edits(&bytes, tree_definition, &load.model, operation)?;
-        if !edits.is_empty() {
-            let edited = edits.iter().fold(bytes, |bytes, edit| edit.apply(&bytes));
-            let decoded = crate::loader::decode_document_bytes(
-                &path,
-                crate::loader::DocKind::Symbol,
-                &edited,
-            )
-            .map_err(|diagnostics| {
-                ChangeError::LoadFailed(crate::loader::diagnostic::failure(
-                    crate::result::Status::Invalid,
-                    diagnostics,
-                ))
-            })?;
-            changed_documents.push(LoadedDocument {
-                document: decoded,
-                bytes: edited,
-            });
-            per_file_edits.push((path, edits));
+        if edits.is_empty() {
+            continue;
+        }
+        match per_file_planned
+            .iter_mut()
+            .find(|(planned, _)| planned == &path)
+        {
+            Some((_, planned)) => planned.extend(edits),
+            None => per_file_planned.push((path, edits)),
         }
     }
+    // Verify every per-file edit set is sorted and non-overlapping, then
+    // fold in descending-offset order so each range stays original-relative.
+    for (path, edits) in per_file_planned.iter_mut() {
+        edits.sort_by(|left, right| left.start.cmp(&right.start).then(left.end.cmp(&right.end)));
+        for pair in edits.windows(2) {
+            if pair[0].end > pair[1].start {
+                return Err(ChangeError::SourcePreservation {
+                    subject: path.clone(),
+                    detail: "edit-overlap",
+                });
+            }
+        }
+    }
+    per_file_planned.sort_by(|left, right| left.0.as_bytes().cmp(right.0.as_bytes()));
+    let mut changed_documents: Vec<LoadedDocument> = Vec::new();
+    for (path, edits) in &per_file_planned {        let document = load
+            .documents
+            .iter()
+            .find(|document| &document.document.path == path)
+            .ok_or(ChangeError::SubjectConflict {
+                subject: path.clone(),
+                detail: "document-missing",
+            })?;
+        let bytes = document.bytes.clone();
+        let edited = apply_edits_descending(&bytes, edits);
+        let decoded = crate::loader::decode_document_bytes(
+            path,
+            crate::loader::DocKind::Symbol,
+            &edited,
+        )
+        .map_err(|diagnostics| {
+            ChangeError::LoadFailed(crate::loader::diagnostic::failure(
+                crate::result::Status::Invalid,
+                diagnostics,
+            ))
+        })?;
+        changed_documents.push(LoadedDocument {
+            document: decoded,
+            bytes: edited,
+        });
+    }
+    let per_file_edits = per_file_planned;
 
     // Rebuild the candidate from the re-decoded prospective bytes and
     // assert compiled-candidate equality with the tree-edited candidate.
@@ -306,15 +336,16 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
     let byte_candidate =
         crate::loader::build_normalized_model(load.model.model_version, byte_documents)
             .map_err(ChangeError::LoadFailed)?;
-    if ir::compile(&tree_candidate)
-        .expect("candidate compiles")
-        .project
-        .to_canonical_json()
-        != ir::compile(&byte_candidate)
-            .expect("candidate compiles")
-            .project
-            .to_canonical_json()
-    {
+    // A candidate that does not compile is request-controlled data: the
+    // failure is a typed diagnostic (invalid), never a panic (issue review
+    // finding 2 — every outcome is a DomainResult with a registered rule).
+    let tree_compiled = ir::compile(&tree_candidate)
+        .map_err(|failure| ChangeError::LoadFailed(failure.into_result()))?
+        .project;
+    let byte_compiled = ir::compile(&byte_candidate)
+        .map_err(|failure| ChangeError::LoadFailed(failure.into_result()))?
+        .project;
+    if tree_compiled.to_canonical_json() != byte_compiled.to_canonical_json() {
         return Err(ChangeError::SourcePreservation {
             subject: "candidate".to_owned(),
             detail: "reparse-mismatch",
@@ -444,9 +475,7 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
                 .find(|document| &document.document.path == path)
                 .expect("pinned document");
             let before = &original.bytes;
-            let after = edits
-                .iter()
-                .fold(before.clone(), |bytes: Vec<u8>, edit| edit.apply(&bytes));
+            let after = apply_edits_descending(before, edits);
             FileEdit {
                 path: path.clone(),
                 before_digest: format!("sha256:{}", crate::digest::sha256_hex(before)),
@@ -467,11 +496,7 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
                 subject: path.clone(),
                 detail: "encoding",
             })?;
-        let after_bytes = edits
-            .iter()
-            .fold(original.bytes.clone(), |bytes: Vec<u8>, edit| {
-                edit.apply(&bytes)
-            });
+        let after_bytes = apply_edits_descending(&original.bytes, edits);
         let after =
             std::str::from_utf8(&after_bytes).map_err(|_| ChangeError::SourcePreservation {
                 subject: path.clone(),
@@ -541,6 +566,9 @@ pub fn apply_request(options: &ApplyRequestOptions) -> Result<Receipt, ChangeErr
         root.join(version::HISTORY_LOGICAL_PATH.replace('/', std::path::MAIN_SEPARATOR_STR)),
     )
     .unwrap_or_default();
+    // A zero-byte ledger is a schema-invalid document, not "no history"
+    // (review finding 11): it fails closed instead of becoming an empty
+    // replay surface.
     if !history_bytes.is_empty() {
         let history = History::decode(&history_bytes)?;
         if let Some(record) = history.by_key(&key) {
@@ -599,9 +627,18 @@ pub fn apply_prepared(
     refuse_while_recovery_pending(&root)?;
 
     // The durable ledger is authoritative: replay first, conflict second.
+    // A zero-byte ledger file is invalid-or-absent deliberately: absent
+    // (NotFound) means the first commit creates it, but an existing empty
+    // file is a corrupt document and fails closed (review finding 11).
     let history_logical = version::HISTORY_LOGICAL_PATH;
     let history_file = root.join(history_logical.replace('/', std::path::MAIN_SEPARATOR_STR));
     let history_bytes = std::fs::read(&history_file).unwrap_or_default();
+    if history_bytes.len() == 1 && history_bytes[0].is_ascii_whitespace() {
+        // Whitespace-only is still a malformed empty document.
+        return Err(ChangeError::HistoryInvalid {
+            detail: "empty",
+        });
+    }
     let mut history = if history_bytes.is_empty() {
         History {
             project: prepared.project_id.clone(),
@@ -652,9 +689,7 @@ pub fn apply_prepared(
         .map(|(path, edits)| {
             let before = std::fs::read(root.join(path.replace('/', std::path::MAIN_SEPARATOR_STR)))
                 .unwrap_or_default();
-            let after = edits
-                .iter()
-                .fold(before.clone(), |bytes: Vec<u8>, edit| edit.apply(&bytes));
+            let after = apply_edits_descending(&before, edits);
             ReplacementPlan {
                 logical: path.clone(),
                 before_digest: format!("sha256:{}", crate::digest::sha256_hex(&before)),
@@ -685,20 +720,46 @@ pub fn apply_prepared(
     // Eight hex characters after the `sha256:` prefix: the transaction id
     // must stay a portable directory name.
     let transaction_id = format!("change-{}-{}", &prepared.plan_id()[7..15], sequence);
+    // The record's operation discriminators and logical paths, exactly the
+    // fields the record wire and its receipt projection carry.
+    let record_operations: Vec<String> = prepared
+        .operations
+        .iter()
+        .map(|operation| operation.operation.clone())
+        .collect();
+    let record_files: Vec<String> = prepared
+        .edits
+        .iter()
+        .map(|(path, _)| path.clone())
+        .collect();
+    // The chain anchor: the digest over the previous record's digest plus
+    // this record's pinned fields and receipt state. The anchor value is
+    // embedded in the receipt projection below, so decode recomputes and
+    // verifies the whole chain (review finding 5).
+    let previous_digest = history
+        .records
+        .last()
+        .map(|record| {
+            record
+                .receipt
+                .get("history")
+                .and_then(|anchor| anchor.get("recordDigest"))
+                .and_then(Json::as_str)
+                .unwrap_or_default()
+                .to_owned()
+        })
+        .unwrap_or_else(|| receipt::GENESIS_DIGEST.to_owned());
     let anchor = HistoryAnchor {
         sequence,
-        record_digest: format!(
-            "sha256:{}",
-            crate::digest::sha256_hex(
-                format!(
-                    "{}{}{}{}",
-                    key,
-                    prepared.request_digest(),
-                    prepared.plan_id(),
-                    state.as_str()
-                )
-                .as_bytes()
-            )
+        record_digest: receipt::record_digest(
+            &previous_digest,
+            sequence,
+            &key,
+            prepared.request_digest().as_str(),
+            prepared.plan_id().as_str(),
+            &record_operations,
+            &record_files,
+            state.as_str(),
         ),
     };
     let receipt = receipt::Receipt {
@@ -722,16 +783,8 @@ pub fn apply_prepared(
         key_digest: key,
         request_digest: prepared.request_digest(),
         plan_id: prepared.plan_id(),
-        operations: prepared
-            .operations
-            .iter()
-            .map(|operation| operation.operation.clone())
-            .collect(),
-        files: prepared
-            .edits
-            .iter()
-            .map(|(path, _)| path.clone())
-            .collect(),
+        operations: record_operations,
+        files: record_files,
         receipt: receipt
             .history_projection()
             .ok_or(ChangeError::HistoryInvalid {
@@ -787,20 +840,47 @@ pub fn lookup_receipt(
         root.join(version::HISTORY_LOGICAL_PATH.replace('/', std::path::MAIN_SEPARATOR_STR)),
     )
     .unwrap_or_default();
+    // A zero-byte ledger is invalid-or-absent deliberately (review
+    // finding 11): absent reads as "no record", an existing empty file is
+    // a corrupt document and fails closed.
     if history_bytes.is_empty() {
         return Ok(None);
     }
     let history = History::decode(&history_bytes)?;
     let key = receipt::key_digest(idempotency_key);
-    Ok(history.by_key(&key).map(stored_receipt))
+    Ok(history
+        .by_key(&key)
+        .map(stored_receipt)
+        .transpose()?)
+}
+
+/// The outcome of one successful recovery: the flat receipt document of
+/// the rollback (review finding 6 — a restore is `rolled-back`, never
+/// `committed`, and the envelope validates against the change-receipt
+/// contract at the root).
+pub struct RecoveryOutcome {
+    /// The transaction id that was recovered.
+    pub transaction: String,
+    /// The bounded per-file outcomes of the restoration (sorted).
+    pub files: Vec<FileOutcome>,
 }
 
 /// Recover one interrupted transaction explicitly; readers stay blocked
 /// until this succeeds and the journal is gone.
-pub fn recover_transaction(project: Option<&str>, transaction: &str) -> Result<(), ChangeError> {
+pub fn recover_transaction(
+    project: Option<&str>,
+    transaction: &str,
+) -> Result<RecoveryOutcome, ChangeError> {
     let root = resolve_root(project)?;
-    let _lock = transaction::WriterLock::acquire(&root)?;
-    transaction::recover(&root, transaction)
+    // Recovery is definitionally the lock-holder's successor: a stale lock
+    // (dead owner) is reclaimed instead of bricking recovery, while a live
+    // holder still denies (review finding 3).
+    let _lock = transaction::WriterLock::reclaim_stale(&root)?;
+    let files = transaction::recover(&root, transaction)?;
+    Ok(RecoveryOutcome {
+        transaction: transaction.to_owned(),
+        files,
+    })
 }
 
 /// The logical transaction ids currently awaiting recovery.
@@ -811,75 +891,77 @@ pub fn pending_transactions(project: Option<&str>) -> Result<Vec<String>, Change
 
 /// Rebuild the replayed receipt from its stored record.
 fn replayed_receipt(record: &HistoryRecord) -> Result<Receipt, ChangeError> {
-    let mut receipt = stored_receipt(record);
+    let mut receipt = stored_receipt(record)?;
     receipt.state = ReceiptState::Replayed.as_str().to_owned();
     receipt.replayed = true;
     Ok(receipt)
 }
 
-/// Parse one stored record receipt back into the typed wire.
-fn stored_receipt(record: &HistoryRecord) -> Receipt {
+/// Parse one stored record receipt back into the typed wire. Every member
+/// is required and strictly typed (no `filter_map(.ok())` drops, no
+/// defaulted state — review finding 5). The record already passed
+/// [`History::decode`]'s binding and chain verification, so the strict
+/// parse is guaranteed to succeed for a decoder-accepted record.
+fn stored_receipt(record: &HistoryRecord) -> Result<Receipt, ChangeError> {
+    let invalid = || ChangeError::HistoryInvalid {
+        detail: "receipt-projection",
+    };
     let value: Json = record.receipt.clone();
     let operations: Vec<ResolvedOperation> = value
         .get("operations")
         .and_then(Json::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| serde_json::from_value(item.clone()).ok())
-                .collect()
-        })
-        .unwrap_or_default();
+        .ok_or_else(invalid)?
+        .iter()
+        .map(|item| serde_json::from_value(item.clone()))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| invalid())?;
     let files: Vec<FileOutcome> = value
         .get("files")
         .and_then(Json::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| serde_json::from_value(item.clone()).ok())
-                .collect()
-        })
-        .unwrap_or_default();
+        .ok_or_else(invalid)?
+        .iter()
+        .map(|item| serde_json::from_value(item.clone()))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| invalid())?;
     let state: String = value
         .get("state")
         .and_then(Json::as_str)
-        .unwrap_or("committed")
+        .ok_or_else(invalid)?
         .to_owned();
-    Receipt {
+    let history = value
+        .get("history")
+        .map(|history| serde_json::from_value(history.clone()))
+        .transpose()
+        .map_err(|_| invalid())?;
+    let transaction = value
+        .get("transaction")
+        .map(|transaction| serde_json::from_value(transaction.clone()))
+        .transpose()
+        .map_err(|_| invalid())?;
+    Ok(Receipt {
         status: "valid".to_owned(),
         state,
-        plan_id: value
-            .get("planId")
-            .and_then(Json::as_str)
-            .map(str::to_owned),
-        request_digest: value
-            .get("requestDigest")
-            .and_then(Json::as_str)
-            .map(str::to_owned),
-        key_digest: value
-            .get("keyDigest")
-            .and_then(Json::as_str)
-            .map(str::to_owned),
+        plan_id: Some(record.plan_id.clone()),
+        request_digest: Some(record.request_digest.clone()),
+        key_digest: Some(record.key_digest.clone()),
         operations,
         files,
-        history: value
-            .get("history")
-            .and_then(|history| serde_json::from_value(history.clone()).ok()),
-        transaction: value
-            .get("transaction")
-            .and_then(|transaction| serde_json::from_value(transaction.clone()).ok()),
+        history,
+        transaction,
         diagnostic_ids: value
             .get("diagnosticIds")
             .and_then(Json::as_array)
             .map(|items| {
                 items
                     .iter()
-                    .filter_map(|item| item.as_str().map(str::to_owned))
-                    .collect()
+                    .map(|item| item.as_str().map(str::to_owned))
+                    .collect::<Option<Vec<_>>>()
+                    .ok_or_else(invalid)
             })
+            .transpose()?
             .unwrap_or_default(),
         replayed: false,
-    }
+    })
 }
 
 /// Resolve one operation against the typed model: exact identity, exact
@@ -1250,6 +1332,19 @@ fn rename_member_item(
     })?;
     entry.value = Value::Scalar(Scalar::Str(to.to_owned()));
     Ok(())
+}
+
+/// Apply disjoint original-relative edits in descending-offset order so
+/// every range is interpreted against the original bytes. An unsorted set
+/// is sorted first; the ranges must already be verified non-overlapping.
+fn apply_edits_descending(bytes: &[u8], edits: &[ByteEdit]) -> Vec<u8> {
+    let mut sorted: Vec<&ByteEdit> = edits.iter().collect();
+    sorted.sort_by(|left, right| left.start.cmp(&right.start).then(left.end.cmp(&right.end)));
+    let mut out = bytes.to_vec();
+    for edit in sorted.iter().rev() {
+        out = edit.apply(&out);
+    }
+    out
 }
 
 /// Rebuild the candidate normalized model from the edited documents.

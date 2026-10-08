@@ -15,6 +15,12 @@ use super::plan::ResolvedOperation;
 use super::version;
 use crate::digest::sha256_hex;
 
+/// Maximum canonical history bytes accepted before decoding.
+const MAX_HISTORY_BYTES: usize = 4 * 1024 * 1024;
+
+/// The exact member count of one canonical history record.
+const RECORD_MEMBERS: usize = 7;
+
 /// The closed receipt state vocabulary.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ReceiptState {
@@ -80,7 +86,10 @@ pub struct FileOutcome {
 #[derive(Clone, Debug, Serialize, Eq, PartialEq)]
 pub struct Receipt {
     /// The envelope status of the run (`valid`; failure runs carry no
-    /// receipt payload).
+    /// receipt payload). The wire layer emits it exactly once — the
+    /// flattened projection skips it (review finding 8: no duplicate keys
+    /// in emitted documents).
+    #[serde(skip_serializing)]
     pub status: String,
     pub state: String,
     #[serde(rename = "planId")]
@@ -116,7 +125,12 @@ impl Receipt {
             identity: version::RECEIPT_IDENTITY,
             receipt: self,
         };
-        serde_json::to_string_pretty(&wire).unwrap_or_default()
+        let bytes = serde_json::to_string_pretty(&wire).unwrap_or_default();
+        debug_assert!(
+            !has_duplicate_keys(&bytes),
+            "receipt documents must be dup-free JSON"
+        );
+        bytes
     }
 
     /// The state of this receipt.
@@ -189,13 +203,29 @@ pub struct HistoryRecord {
 
 impl History {
     /// Parse and validate canonical history bytes. A malformed, unordered,
-    /// or duplicated history fails closed: replay never guesses.
+    /// duplicated, tampered, or internally inconsistent history fails
+    /// closed: replay never guesses. Duplicate JSON keys are refused before
+    /// typing, every record is bound to its embedded receipt and to the
+    /// chain of all earlier records, and no member is defaulted.
     pub fn decode(bytes: &[u8]) -> Result<Self, super::diagnostic::ChangeError> {
-        let value: Json = serde_json::from_slice(bytes).map_err(|_| {
-            super::diagnostic::ChangeError::HistoryInvalid {
-                detail: "json-shape",
-            }
-        })?;
+        // A zero-byte ledger file is a corrupt document, not an empty
+        // history (review finding 11): decode fails closed on it.
+        if bytes.is_empty() || bytes.iter().all(|byte| byte.is_ascii_whitespace()) {
+            return Err(super::diagnostic::ChangeError::HistoryInvalid {
+                detail: "empty",
+            });
+        }
+        if bytes.len() > MAX_HISTORY_BYTES {
+            return Err(super::diagnostic::ChangeError::HistoryInvalid {
+                detail: "over-limit",
+            });
+        }
+        let value: Json =
+            super::request::unique_json(bytes).map_err(|_| {
+                super::diagnostic::ChangeError::HistoryInvalid {
+                    detail: "json-shape",
+                }
+            })?;
         let map = value
             .as_object()
             .ok_or(super::diagnostic::ChangeError::HistoryInvalid {
@@ -217,6 +247,11 @@ impl History {
             .ok_or(super::diagnostic::ChangeError::HistoryInvalid { detail: "records" })?;
         let mut records = Vec::with_capacity(records_value.len());
         let mut seen_keys = std::collections::BTreeSet::new();
+        // The chain digest starts at the empty-bytes sentinel; every
+        // record must continue it exactly (tamper evidence, review
+        // finding 5: insertion, deletion, reorder, and field tampering
+        // all break the chain and fail closed).
+        let mut chain = super::absent_digest();
         for (index, record_value) in records_value.iter().enumerate() {
             let record_map =
                 record_value
@@ -224,6 +259,11 @@ impl History {
                     .ok_or(super::diagnostic::ChangeError::HistoryInvalid {
                         detail: "record-shape",
                     })?;
+            if record_map.len() != RECORD_MEMBERS {
+                return Err(super::diagnostic::ChangeError::HistoryInvalid {
+                    detail: "record-members",
+                });
+            }
             let sequence = record_map
                 .get("sequence")
                 .and_then(Json::as_u64)
@@ -281,6 +321,41 @@ impl History {
                 .get("receipt")
                 .cloned()
                 .ok_or(super::diagnostic::ChangeError::HistoryInvalid { detail: "receipt" })?;
+            // The embedded receipt must agree with the record's own pinned
+            // fields and carry its own chain anchor: a forged record with
+            // invented plan/files/receipt members is refused here, and
+            // decode never defaults a missing state (review finding 5).
+            let receipt_state = verify_receipt_projection(
+                &receipt,
+                &key_digest,
+                &request_digest,
+                &plan_id,
+                &operations,
+                &files,
+            )?;
+            let digest = record_digest(
+                &chain,
+                sequence,
+                &key_digest,
+                &request_digest,
+                &plan_id,
+                &operations,
+                &files,
+                receipt_state,
+            );
+            let anchor = receipt
+                .get("history")
+                .and_then(|history| history.get("recordDigest"))
+                .and_then(Json::as_str)
+                .ok_or(super::diagnostic::ChangeError::HistoryInvalid {
+                    detail: "record-digest-missing",
+                })?;
+            if anchor != &digest {
+                return Err(super::diagnostic::ChangeError::HistoryInvalid {
+                    detail: "record-digest",
+                });
+            }
+            chain = digest;
             records.push(HistoryRecord {
                 sequence,
                 key_digest,
@@ -356,8 +431,173 @@ impl History {
     }
 }
 
+/// The chain anchor of the first history record (the empty-bytes digest).
+pub(crate) const GENESIS_DIGEST: &str =
+    "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+/// The canonical per-record digest: binds one history record to its exact
+/// fields, to its embedded receipt's pinned state, and — through the
+/// previous record's digest — to every earlier record (chain; the genesis
+/// uses the empty-bytes digest). Insertion, deletion, reorder, and field
+/// tampering all break the chain and fail decode closed (review finding
+/// 5). Encode ([`super::apply_prepared`]) and decode
+/// ([`History::decode`]) compute exactly this formula.
+pub(crate) fn record_digest(
+    previous: &str,
+    sequence: u64,
+    key_digest: &str,
+    request_digest: &str,
+    plan_id: &str,
+    operations: &[String],
+    files: &[String],
+    state: &str,
+) -> String {
+    let canonical = format!(
+        "{previous}\u{1f}{sequence}\u{1f}{key_digest}\u{1f}{request_digest}\u{1f}{plan_id}\
+         \u{1f}{state}\u{1f}{}\u{1f}{}",
+        operations.join("\u{1e}"),
+        files.join("\u{1e}"),
+    );
+    format!("sha256:{}", sha256_hex(canonical.as_bytes()))
+}
+
 /// The bounded `sha256:` digest of one raw idempotency key. The raw key
 /// never enters diagnostics, receipts, or the history wire.
 pub fn key_digest(key: &str) -> String {
     format!("sha256:{}", sha256_hex(key.as_bytes()))
+}
+
+/// Whether one serialized JSON object document contains any duplicate key
+/// at any nesting level (strict-parser safety assertion for emitted
+/// change documents).
+pub(crate) fn has_duplicate_keys(document: &str) -> bool {    fn walk(value: &Json) -> bool {
+        match value {
+            Json::Object(map) => {
+                let mut keys = std::collections::BTreeSet::new();
+                for key in map.keys() {
+                    if !keys.insert(key.clone()) {
+                        return true;
+                    }
+                }
+                map.values().any(walk)
+            }
+            Json::Array(items) => items.iter().any(walk),
+            _ => false,
+        }
+    }
+    serde_json::from_str::<Json>(document)
+        .map(|value| walk(&value))
+        .unwrap_or(true)
+}
+
+/// Verify one stored receipt projection against the record's pinned
+/// fields (review finding 5). Every identity member is required, strictly
+/// typed, and must equal the record's own binding; the receipt state is
+/// returned (never defaulted) so the chain digest pins it. A forged
+/// record — right key digest, invented plan/receipt — fails here.
+fn verify_receipt_projection<'a>(
+    receipt: &'a Json,
+    key_digest: &str,
+    request_digest: &str,
+    plan_id: &str,
+    operations: &[String],
+    files: &[String],
+) -> Result<&'a str, super::diagnostic::ChangeError> {
+    let invalid = |detail: &'static str| {
+        Err(super::diagnostic::ChangeError::HistoryInvalid { detail })
+    };
+    let map = receipt.as_object().ok_or_else(|| {
+        super::diagnostic::ChangeError::HistoryInvalid {
+            detail: "receipt-shape",
+        }
+    })?;
+    let text = |name: &str| {
+        map.get(name)
+            .and_then(Json::as_str)
+            .ok_or_else(|| super::diagnostic::ChangeError::HistoryInvalid {
+                detail: "receipt-member",
+            })
+    };
+    if map.get("schemaVersion").and_then(Json::as_str) != Some(version::RECEIPT_SCHEMA_VERSION)
+        || map.get("identity").and_then(Json::as_str) != Some(version::RECEIPT_IDENTITY)
+        || map.get("status").and_then(Json::as_str) != Some("valid")
+        || map.get("replayed").and_then(Json::as_bool) != Some(false)
+    {
+        return invalid("receipt-identity");
+    }
+    if text("keyDigest")? != key_digest
+        || text("requestDigest")? != request_digest
+        || text("planId")? != plan_id
+    {
+        return invalid("receipt-binding");
+    }
+    let state = text("state")?;
+    if !matches!(
+        state,
+        "committed" | "no-op" | "replayed" | "rejected" | "rolled-back" | "recovery-required"
+    ) {
+        return invalid("receipt-state");
+    }
+    let receipt_operations = map
+        .get("operations")
+        .and_then(Json::as_array)
+        .ok_or_else(|| super::diagnostic::ChangeError::HistoryInvalid {
+            detail: "receipt-operations",
+        })?;
+    let receipt_operations: Option<Vec<&str>> = receipt_operations
+        .iter()
+        .map(|value| value.get("operation").and_then(Json::as_str))
+        .collect();
+    let receipt_operations = receipt_operations.ok_or_else(|| {
+        super::diagnostic::ChangeError::HistoryInvalid {
+            detail: "receipt-operations",
+        }
+    })?;
+    if receipt_operations.len() != operations.len()
+        || receipt_operations
+            .iter()
+            .zip(operations.iter())
+            .any(|(receipt, record)| receipt != &record.as_str())
+    {
+        return invalid("receipt-operations-mismatch");
+    }
+    let receipt_files = map
+        .get("files")
+        .and_then(Json::as_array)
+        .ok_or_else(|| super::diagnostic::ChangeError::HistoryInvalid {
+            detail: "receipt-files",
+        })?;
+    let receipt_files: Option<Vec<&str>> = receipt_files
+        .iter()
+        .map(|value| value.get("path").and_then(Json::as_str))
+        .collect();
+    let receipt_files =
+        receipt_files.ok_or_else(|| super::diagnostic::ChangeError::HistoryInvalid {
+            detail: "receipt-files",
+        })?;
+    if receipt_files.len() != files.len()
+        || receipt_files
+            .iter()
+            .zip(files.iter())
+            .any(|(receipt, record)| receipt != &record.as_str())
+    {
+        return invalid("receipt-files-mismatch");
+    }
+    // The history anchor must be a well-formed sequence + digest pair.
+    let history = map
+        .get("history")
+        .and_then(Json::as_object)
+        .ok_or_else(|| super::diagnostic::ChangeError::HistoryInvalid {
+            detail: "receipt-history",
+        })?;
+    if history.len() != 2
+        || history.get("sequence").and_then(Json::as_u64).is_none()
+        || history
+            .get("recordDigest")
+            .and_then(Json::as_str)
+            .is_none()
+    {
+        return invalid("receipt-history");
+    }
+    Ok(state)
 }

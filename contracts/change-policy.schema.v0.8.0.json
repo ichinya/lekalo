@@ -7,8 +7,7 @@
   "additionalProperties": false,
   "required": [
     "schemaVersion",
-    "identity",
-    "allowBreakingClasses"
+    "identity"
   ],
   "properties": {
     "schemaVersion": {

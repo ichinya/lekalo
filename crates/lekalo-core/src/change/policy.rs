@@ -17,6 +17,9 @@ pub const BREAKING_CLASSES: [&str; 4] = [
     "source-breaking",
 ];
 
+/// Maximum accepted policy bytes before any decode runs.
+const MAX_POLICY_BYTES: usize = 64 * 1024;
+
 /// The effective, pinned change policy of one preparation run.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Policy {
@@ -33,10 +36,19 @@ impl Policy {
         Self::default()
     }
 
-    /// Decode and pin policy bytes.
+    /// Decode and pin policy bytes. Duplicate JSON keys are refused (the
+    /// repository `Unique` convention), the input is byte-bounded like the
+    /// request decoder, and every member is required except the
+    /// restrictive-default `allowBreakingClasses` — matching the closed
+    /// schema (review finding 9).
     pub fn decode(bytes: &[u8]) -> Result<Self, ChangeError> {
+        if bytes.len() > MAX_POLICY_BYTES || bytes.is_empty() {
+            return Err(ChangeError::PolicyInvalid {
+                detail: "policy-bounds",
+            });
+        }
         let value: Json =
-            serde_json::from_slice(bytes).map_err(|_| ChangeError::PolicyInvalid {
+            super::request::unique_json(bytes).map_err(|_| ChangeError::PolicyInvalid {
                 detail: "json-shape",
             })?;
         let map = value.as_object().ok_or(ChangeError::PolicyInvalid {
@@ -160,5 +172,47 @@ mod tests {
                 detail: "unknown-member"
             })
         ));
+    }
+
+    #[test]
+    fn duplicate_members_are_refused_not_last_wins() {
+        // A reviewed policy showing `[]` must never silently carry a
+        // hidden authorizing duplicate (review finding 9).
+        let invalid = Policy::decode(
+            format!(
+                "{HEADER},\"allowBreakingClasses\":[],\"allowBreakingClasses\":[\"wire-breaking\"]}}"
+            )
+            .as_bytes(),
+        );
+        assert!(matches!(
+            invalid,
+            Err(ChangeError::PolicyInvalid {
+                detail: "json-shape"
+            })
+        ));
+    }
+
+    #[test]
+    fn absent_and_over_limit_policy_bytes_fail_closed() {
+        assert!(matches!(
+            Policy::decode(b""),
+            Err(ChangeError::PolicyInvalid {
+                detail: "policy-bounds"
+            })
+        ));
+        let oversized = vec![b' '; MAX_POLICY_BYTES + 1];
+        assert!(matches!(
+            Policy::decode(&oversized),
+            Err(ChangeError::PolicyInvalid {
+                detail: "policy-bounds"
+            })
+        ));
+    }
+
+    #[test]
+    fn restrictive_header_without_classes_is_valid() {
+        let policy = Policy::decode(format!("{HEADER}}}").as_bytes()).expect("decodes");
+        assert!(policy.allow_breaking_classes.is_empty());
+        assert!(!policy.allows("wire-breaking"));
     }
 }
