@@ -159,6 +159,10 @@ pub enum ToolRequest {
         mode: ContextMode,
         symbol: Option<String>,
         changed_symbols: Vec<String>,
+        /// The exact changed-symbol count the caller declared (and the
+        /// dispatcher re-verified); the seam re-checks it at dispatch so
+        /// a comma-split downstream cannot widen the evaluated set.
+        changed_symbol_count: u64,
         budget: u64,
         spans: bool,
     },
@@ -225,10 +229,15 @@ impl ToolRequest {
         }
     }
 
-    /// Apply a trusted launcher group only when the caller did not supply
-    /// one. A client can narrow this default further, never widen it.
-    pub fn set_default_group(&mut self, group: Option<&str>) {
-        let Some(group) = group else { return };
+    /// Apply the trusted launcher group as the disclosure ceiling. A
+    /// client-supplied `groupId` is admitted only when it names exactly
+    /// the launch group; any other spelling is a widening refusal, never
+    /// a silent substitution (the closure then runs against the effective
+    /// group, which is always the launch group or nothing when unset).
+    pub fn apply_launch_group(&mut self, launch_group: Option<&str>) -> Result<(), SemanticError> {
+        let Some(launch_group) = launch_group else {
+            return Ok(());
+        };
         let common = match self {
             Self::Inspect { common, .. }
             | Self::Impact { common, .. }
@@ -238,8 +247,16 @@ impl ToolRequest {
             | Self::TargetStatus { common, .. }
             | Self::TraceExport { common, .. } => common,
         };
-        if common.group_id.is_none() {
-            common.group_id = Some(group.to_owned());
+        match &common.group_id {
+            None => {
+                common.group_id = Some(launch_group.to_owned());
+                Ok(())
+            }
+            Some(requested) if requested == launch_group => Ok(()),
+            Some(_) => Err(SemanticError {
+                field: "groupId",
+                reason: "widen-past-launch-group",
+            }),
         }
     }
 
@@ -273,7 +290,14 @@ fn known_members(tool: &str) -> &'static [&'static str] {
             "relations",
             "profile",
         ],
-        "lekalo_context" => &["mode", "symbol", "changedSymbols", "budget", "spans"],
+        "lekalo_context" => &[
+            "mode",
+            "symbol",
+            "changedSymbols",
+            "budget",
+            "spans",
+            "changedSymbolCount",
+        ],
         "lekalo_graph" => &["mode", "symbol", "from", "to", "transitive"],
         "lekalo_validate" => &["module", "strict"],
         "lekalo_target_status" => &["targetId", "profileId"],
@@ -361,6 +385,12 @@ pub fn parse_request(tool: &str, arguments: &Value) -> Result<ToolRequest, Reque
             if symbol.is_empty() || symbol.len() > 192 {
                 return Err(field("symbol"));
             }
+            // A comma is the CLI's changed-list separator, never part of a
+            // semantic id: refusing it here keeps one operand from
+            // smuggle-splitting into a set the closure never checked.
+            if symbol.contains(',') {
+                return Err(field("symbol"));
+            }
             let include = match arguments.get("include") {
                 None => Vec::new(),
                 Some(Value::Array(items)) => {
@@ -395,7 +425,7 @@ pub fn parse_request(tool: &str, arguments: &Value) -> Result<ToolRequest, Reque
             let symbol = match arguments.get("symbol") {
                 None => None,
                 Some(Value::String(symbol)) => {
-                    if symbol.is_empty() || symbol.len() > 192 {
+                    if symbol.is_empty() || symbol.len() > 192 || symbol.contains(',') {
                         return Err(field("symbol"));
                     }
                     Some(symbol.clone())
@@ -556,7 +586,14 @@ pub fn parse_request(tool: &str, arguments: &Value) -> Result<ToolRequest, Reque
                         let Value::String(symbol) = item else {
                             return Err(field("changedSymbols"));
                         };
-                        if symbol.is_empty() || symbol.len() > 192 || parsed.contains(symbol) {
+                        // A comma is the CLI's list separator; a member
+                        // carrying one would re-split downstream into a
+                        // symbol set the closure never checked.
+                        if symbol.is_empty()
+                            || symbol.len() > 192
+                            || symbol.contains(',')
+                            || parsed.contains(symbol)
+                        {
                             return Err(field("changedSymbols"));
                         }
                         parsed.push(symbol.clone());
@@ -566,6 +603,18 @@ pub fn parse_request(tool: &str, arguments: &Value) -> Result<ToolRequest, Reque
                 Some(_) => return Err(field("changedSymbols")),
             };
             let spans = bool_field(arguments, "spans").unwrap_or(false);
+            let changed_symbol_count = match arguments.get("changedSymbolCount") {
+                None => changed_symbols.len() as u64,
+                Some(value) => {
+                    let count = value.as_u64().ok_or(field("changedSymbolCount"))?;
+                    if count != changed_symbols.len() as u64 {
+                        return Err(field("changedSymbolCount"));
+                    }
+                    count
+                }
+            };
+            let _ = changed_symbol_count;
+            let changed_symbols_len = changed_symbols.len() as u64;
             match mode {
                 ContextMode::Symbol if symbol.is_none() => {
                     return Err(semantic("symbol", "required-for-symbol-mode"))
@@ -586,6 +635,7 @@ pub fn parse_request(tool: &str, arguments: &Value) -> Result<ToolRequest, Reque
                 mode,
                 symbol,
                 changed_symbols,
+                changed_symbol_count: changed_symbols_len,
                 budget,
                 spans,
             })

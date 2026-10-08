@@ -1,25 +1,43 @@
 //! Decode JSON with member uniqueness checked before any map insertion.
 //! Serde supplies decoded keys, so escaped spellings share one identity.
+//! The transport crate (MCP stdio, issue #33) reuses the same
+//! duplicate-refusing deserializer for every inbound frame and every
+//! backend-output parse; a duplicate member is refused, never last-key-wins.
 
 use serde::de::{DeserializeSeed, MapAccess, SeqAccess, Visitor};
 use serde::Deserializer;
 use serde_json::Value;
 
 pub(super) fn parse(text: &str) -> Result<Value, crate::diagnostics::DiagnosticSet> {
+    parse_checked(text).map_err(|failure| match failure {
+        ParseFailure::Duplicate => super::diagnostic::document_invalid("duplicate-key", None),
+        ParseFailure::Malformed => super::diagnostic::document_invalid("malformed-json", None),
+    })
+}
+
+/// Why one JSON document failed the checked decode.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ParseFailure {
+    /// Two members of one object decoded to the same key.
+    Duplicate,
+    /// The document is not valid JSON (or not valid UTF-8 text).
+    Malformed,
+}
+
+/// The checked decode over `&str` bytes: `Ok(())` only when the document
+/// carries a unique JSON value.
+pub fn parse_checked(text: &str) -> Result<Value, ParseFailure> {
     let mut duplicate = false;
     let mut decoder = serde_json::Deserializer::from_str(text);
     let result = Checked(&mut duplicate)
         .deserialize(&mut decoder)
         .and_then(|value| decoder.end().map(|()| value));
     result.map_err(|_| {
-        super::diagnostic::document_invalid(
-            if duplicate {
-                "duplicate-key"
-            } else {
-                "malformed-json"
-            },
-            None,
-        )
+        if duplicate {
+            ParseFailure::Duplicate
+        } else {
+            ParseFailure::Malformed
+        }
     })
 }
 

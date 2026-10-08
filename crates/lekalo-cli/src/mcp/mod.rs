@@ -197,7 +197,7 @@ fn serve_start(
         catalog,
         limits,
         group,
-        stdio::Writer::new(Box::new(std::io::stdout())),
+        stdio::Writer::new(Box::new(std::io::stdout()), limits.max_response_bytes),
     ));
     dispatch::serve(session);
     DomainResult::receipt(

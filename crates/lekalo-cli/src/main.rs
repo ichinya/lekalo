@@ -5586,8 +5586,9 @@ fn run_context(
     spans: bool,
     project: &Option<String>,
 ) -> DomainResult {
-    let scope = match (symbol, changed) {
-        (Some(symbol), None) => lekalo_core::context::CapsuleScope::Symbol(symbol),
+    let changed = match (symbol.clone(), changed) {
+        (Some(_), Some(_)) | (None, None) => return DomainResult::usage_error(),
+        (Some(_), None) => None,
         (None, Some(changed)) => {
             let mut roots = Vec::new();
             for name in changed.split(',') {
@@ -5597,8 +5598,26 @@ fn run_context(
                 }
                 roots.push(name.to_owned());
             }
-            lekalo_core::context::CapsuleScope::Changed(roots)
+            Some(roots)
         }
+    };
+    run_context_typed(symbol, changed, budget, spans, project)
+}
+
+/// The typed changed-list seam: the exact `Vec` of changed symbols rides
+/// to the capsule planner with no separator round-trip (the MCP surface
+/// dispatches through this seam so one operand can never re-split into a
+/// set the admission closure never checked).
+fn run_context_typed(
+    symbol: Option<String>,
+    changed: Option<Vec<String>>,
+    budget: u64,
+    spans: bool,
+    project: &Option<String>,
+) -> DomainResult {
+    let scope = match (symbol, changed) {
+        (Some(symbol), None) => lekalo_core::context::CapsuleScope::Symbol(symbol),
+        (None, Some(changed)) => lekalo_core::context::CapsuleScope::Changed(changed),
         (Some(_), Some(_)) | (None, None) => return DomainResult::usage_error(),
     };
     let selection = LoadSelection {

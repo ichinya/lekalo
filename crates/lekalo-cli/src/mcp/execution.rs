@@ -654,24 +654,44 @@ fn run(
             mode,
             symbol,
             changed_symbols,
+            changed_symbol_count,
             budget,
             spans,
             ..
-        } => crate::run_context(
-            if *mode == ContextMode::Symbol {
-                symbol.clone()
-            } else {
-                None
-            },
-            if *mode == ContextMode::Changed {
-                Some(changed_symbols.join(","))
-            } else {
-                None
-            },
-            *budget,
-            *spans,
-            &project,
-        ),
+        } => {
+            // The exact evaluated set is the typed vector the closure
+            // checked: no comma round-trip, and the declared count must
+            // still match the dispatched symbols.
+            if *changed_symbol_count != changed_symbols.len() as u64 {
+                return Ok(refusal(
+                    family,
+                    request.tool_name(),
+                    scope,
+                    lekalo_core::mcp::diagnostic::input_invalid_set(
+                        "changedSymbolCount",
+                        "count-mismatch",
+                    ),
+                    "invalid",
+                    "input-invalid",
+                    "mcp.input-invalid",
+                ));
+            }
+            crate::run_context_typed(
+                if *mode == ContextMode::Symbol {
+                    symbol.clone()
+                } else {
+                    None
+                },
+                if *mode == ContextMode::Changed {
+                    Some(changed_symbols.clone())
+                } else {
+                    None
+                },
+                *budget,
+                *spans,
+                &project,
+            )
+        }
         ToolRequest::Graph {
             mode,
             symbol,

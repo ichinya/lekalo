@@ -23,12 +23,12 @@ use lekalo_core::mcp::tools::{self, parse_request, RequestError};
 
 use super::catalog::ServerCatalog;
 use super::execution;
-use super::stdio::{error_response, log_event, result_response, Writer};
+use super::stdio::log_event;
+use super::stdio::Writer;
 
 /// The JSON-RPC protocol codes this server uses.
 const PARSE_ERROR: i64 = -32700;
 const INVALID_REQUEST: i64 = -32600;
-const METHOD_NOT_FOUND: i64 = -32601;
 const INVALID_PARAMS: i64 = -32602;
 
 /// One live server session: the immutable catalog plus the mutable
@@ -44,6 +44,10 @@ pub struct Session {
     cancelled: Mutex<BTreeSet<String>>,
     subscriptions: Mutex<BTreeSet<String>>,
     live: AtomicUsize,
+    /// Workers abandoned after their deadline: they keep executing, so
+    /// they stay counted against the concurrency bound until they
+    /// finish (their slot is never freed early).
+    detached: AtomicUsize,
 }
 
 impl Session {
@@ -63,6 +67,7 @@ impl Session {
             cancelled: Mutex::new(BTreeSet::new()),
             subscriptions: Mutex::new(BTreeSet::new()),
             live: AtomicUsize::new(0),
+            detached: AtomicUsize::new(0),
         }
     }
 }
@@ -97,51 +102,83 @@ pub fn serve(session: Arc<Session>) {
             Err(super::stdio::FrameError::OverLimit) => {
                 // A bounded error, never a partial JSON frame; the id is
                 // unknowable without parsing, so the error id is null.
-                session.writer.send(&error_response(
-                    &Value::Null,
-                    INVALID_REQUEST,
-                    "mcp.request-limit",
-                ));
+                session
+                    .writer
+                    .send_error(&Value::Null, INVALID_REQUEST, "mcp.request-limit");
                 continue;
             }
             Err(_) => {
                 session
                     .writer
-                    .send(&error_response(&Value::Null, PARSE_ERROR, "parse-error"));
+                    .send_error(&Value::Null, PARSE_ERROR, "parse-error");
                 continue;
             }
         };
-        // One structural parse: nesting depth first, then the header.
-        let document: Result<Value, _> = serde_json::from_str(&frame);
-        let document = match document {
+        // One checked parse: duplicate keys are refused before any map
+        // insertion (last-key-wins is never an admission path), then the
+        // nesting depth, then the header.
+        let document = match lekalo_core::mcp::parse_checked(&frame) {
             Ok(document) => document,
-            Err(_) => {
+            Err(lekalo_core::mcp::ParseFailure::Duplicate) => {
                 session
                     .writer
-                    .send(&error_response(&Value::Null, PARSE_ERROR, "parse-error"));
+                    .send_error(&Value::Null, INVALID_REQUEST, "mcp.duplicate-key");
+                continue;
+            }
+            Err(lekalo_core::mcp::ParseFailure::Malformed) => {
+                session
+                    .writer
+                    .send_error(&Value::Null, PARSE_ERROR, "parse-error");
                 continue;
             }
         };
         if super::stdio::check_depth(&document).is_err() {
-            session.writer.send(&error_response(
-                &Value::Null,
-                INVALID_REQUEST,
-                "mcp.request-limit",
-            ));
+            session
+                .writer
+                .send_error(&Value::Null, INVALID_REQUEST, "mcp.request-limit");
             continue;
         }
         let Some(incoming) = header_from_value(&document) else {
             session
                 .writer
-                .send(&error_response(&Value::Null, PARSE_ERROR, "parse-error"));
+                .send_error(&Value::Null, PARSE_ERROR, "parse-error");
             continue;
         };
         if incoming.method.starts_with("notifications/") {
             handle_notification(&session, &incoming.method, incoming.params);
             continue;
         }
+        // The lifecycle gate: before `notifications/initialized`, the
+        // only served requests are `initialize` and `ping` (hosts probe
+        // during the handshake); every other method is refused.
+        if !*session.initialized.lock().expect("flag")
+            && !matches!(incoming.method.as_str(), "initialize" | "ping")
+        {
+            session.writer.send_error(
+                &incoming.id,
+                INVALID_REQUEST,
+                "mcp.lifecycle-not-initialized",
+            );
+            continue;
+        }
         if let Some(response) = route(&session, &incoming) {
-            session.writer.send(&response);
+            // The single outbound chokepoint: a routed result is the
+            // success member; the closed protocol-error marker becomes a
+            // JSON-RPC error frame (measure-and-substitute happens in the
+            // writer for both).
+            if let Some(error) = response.get("lekaloProtocolError") {
+                let code = error
+                    .get("code")
+                    .and_then(Value::as_i64)
+                    .unwrap_or(INVALID_REQUEST);
+                let message = error
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .unwrap_or("protocol-error");
+                session.writer.send_error(&incoming.id, code, message);
+            } else {
+                session.writer.send_result(&incoming.id, response);
+            }
         }
     }
     // EOF shuts down outstanding work; dropped receivers suppress any
@@ -158,8 +195,12 @@ fn handle_notification(session: &Session, method: &str, params: Option<Value>) {
             // Cancelled notifications themselves have no reply. The late
             // result of a cancelled request is suppressed by registering
             // the id; the completing worker consults this set before the
-            // reply is written.
-            if let Some(id) = params.as_ref().and_then(|params| params.get("id")) {
+            // reply is written. The 2025-11-25 profile names the member
+            // `requestId`; the legacy `id` spelling is tolerated.
+            let id = params
+                .as_ref()
+                .and_then(|params| params.get("requestId").or_else(|| params.get("id")));
+            if let Some(id) = id {
                 session
                     .cancelled
                     .lock()
@@ -181,23 +222,19 @@ fn id_to_key(id: &Value) -> String {
     }
 }
 
-/// Route one request; `None` means no reply.
-fn route(session: &Arc<Session>, incoming: &Incoming) -> Option<String> {
+/// Route one request; the payload is the JSON-RPC `result` member.
+fn route(session: &Arc<Session>, incoming: &Incoming) -> Option<Value> {
     match incoming.method.as_str() {
-        "initialize" => Some(initialize(incoming)),
-        "ping" => Some(result_response(&incoming.id, "{}")),
-        "tools/list" => Some(tools_list(incoming)),
+        "initialize" => Some(initialize()),
+        "ping" => Some(serde_json::json!({})),
+        "tools/list" => Some(tools_list()),
         "tools/call" => Some(tools_call(session, incoming)),
         "resources/list" => Some(resources_list(session, incoming)),
-        "resources/templates/list" => Some(templates_list(incoming)),
+        "resources/templates/list" => Some(templates_list()),
         "resources/read" => Some(resources_read(session, incoming)),
         "resources/subscribe" => Some(resources_subscribe(session, incoming)),
         "resources/unsubscribe" => Some(resources_unsubscribe(session, incoming)),
-        _ => Some(error_response(
-            &incoming.id,
-            METHOD_NOT_FOUND,
-            "method-not-found",
-        )),
+        _ => None,
     }
 }
 
@@ -205,21 +242,23 @@ fn route(session: &Arc<Session>, incoming: &Incoming) -> Option<String> {
 /// only implemented capabilities are advertised. A host advertising a
 /// different date gets the pinned profile back and may disconnect; no
 /// universal compatibility is claimed.
-fn initialize(incoming: &Incoming) -> String {
+fn initialize() -> Value {
     let profile = lekalo_core::mcp::version::PROTOCOL_PROFILE;
     let version = env!("CARGO_PKG_VERSION");
-    result_response(
-        &incoming.id,
-        &format!(
-            "{{\"protocolVersion\":\"{profile}\",\"capabilities\":{{\"tools\":{{\"listChanged\":false}},\"resources\":{{\"subscribe\":true,\"listChanged\":true}}}},\"serverInfo\":{{\"name\":\"lekalo\",\"version\":\"{version}\"}}}}"
-        ),
-    )
+    serde_json::json!({
+        "protocolVersion": profile,
+        "capabilities": {
+            "tools": {"listChanged": false},
+            "resources": {"subscribe": false, "listChanged": false}
+        },
+        "serverInfo": {"name": "lekalo", "version": version}
+    })
 }
 
 /// The exact seven read tools with their embedded closed schemas and
 /// read-only annotations.
-fn tools_list(incoming: &Incoming) -> String {
-    let descriptors: Vec<String> = tools::CATALOG
+fn tools_list() -> Value {
+    let tools: Vec<Value> = tools::CATALOG
         .iter()
         .map(|tool| {
             let slug = tool.slug;
@@ -227,51 +266,73 @@ fn tools_list(incoming: &Incoming) -> String {
                 table
                     .iter()
                     .find(|(name, _)| *name == slug)
-                    .map(|(_, bytes)| super::stdio::compact_json(&String::from_utf8_lossy(bytes)))
-                    .unwrap_or_default()
+                    .map(|(_, bytes)| serde_json::from_slice::<Value>(bytes).ok())
+                    .flatten()
+                    .unwrap_or(Value::Null)
             };
             let input_schema = find(&lekalo_core::mcp::schemas::INPUT_SCHEMAS);
             let output_schema = find(&lekalo_core::mcp::schemas::OUTPUT_SCHEMAS);
-            let name = tool.name;
-            let title = tool.title;
-            format!(
-                "{{\"name\":\"{name}\",\"title\":\"{title}\",\"description\":\"Read-only Lekalo {slug} projection over the admitted project scope; the output matches its pinned core contract.\",\"inputSchema\":{input_schema},\"outputSchema\":{output_schema},\"annotations\":{{\"readOnlyHint\":true,\"destructiveHint\":false,\"openWorldHint\":false}}}}"
-            )
+            serde_json::json!({
+                "name": tool.name,
+                "title": tool.title,
+                "description": format!("Read-only Lekalo {slug} projection over the admitted project scope; the output matches its pinned core contract."),
+                "inputSchema": input_schema,
+                "outputSchema": output_schema,
+                "annotations": {
+                    "readOnlyHint": true,
+                    "destructiveHint": false,
+                    "openWorldHint": false
+                }
+            })
         })
         .collect();
-    result_response(
-        &incoming.id,
-        &format!("{{\"tools\":[{}]}}", descriptors.join(",")),
-    )
+    serde_json::json!({ "tools": tools })
 }
 
 /// The tools/call admission and execution path: structural parameter
 /// violations are -32602; a known tool's semantic failure is a typed
 /// tool result; timeouts are typed bounded errors; a live cancellation
 /// suppresses the late result.
-fn tools_call(session: &Arc<Session>, incoming: &Incoming) -> String {
+fn tools_call(session: &Arc<Session>, incoming: &Incoming) -> Value {
     let Some(params) = incoming.params.as_ref() else {
-        return error_response(&incoming.id, INVALID_PARAMS, "invalid-params");
+        return protocol_error_value(INVALID_PARAMS, "invalid-params");
     };
     let Some(name) = params.get("name").and_then(Value::as_str) else {
-        return error_response(&incoming.id, INVALID_PARAMS, "invalid-params");
+        return protocol_error_value(INVALID_PARAMS, "invalid-params");
     };
     let arguments = params.get("arguments").cloned().unwrap_or(Value::Null);
     if tools::descriptor(name).is_none() {
         // Unknown tools are -32602; the name is a wire token and never an
         // echoed operand.
-        return error_response(&incoming.id, INVALID_PARAMS, "unknown-tool");
+        return protocol_error_value(INVALID_PARAMS, "unknown-tool");
     }
     let request = match parse_request(name, &arguments) {
         Ok(mut request) => {
-            // The trusted launcher group is the default disclosure scope;
-            // a client may narrow it with an explicit groupId, never widen
-            // past it (the closure check runs against the effective one).
-            request.set_default_group(session.default_group.as_deref());
-            request
+            // The trusted launcher group is the disclosure ceiling: a
+            // client may name exactly that group, never any other; a
+            // different explicit groupId is the typed widening refusal.
+            match request.apply_launch_group(session.default_group.as_deref()) {
+                Ok(()) => request,
+                Err(boundary) => {
+                    let set = lekalo_core::mcp::diagnostic::input_invalid_set(
+                        boundary.field,
+                        boundary.reason,
+                    );
+                    let envelope = execution::refusal_envelope(
+                        name,
+                        request_project(&arguments).as_deref(),
+                        None,
+                        set,
+                        "invalid",
+                        "input-invalid",
+                        "mcp.input-invalid",
+                    );
+                    return tool_result(&incoming.id, &envelope, true);
+                }
+            }
         }
         Err(RequestError::Params(field)) => {
-            return error_response(&incoming.id, INVALID_PARAMS, field.field);
+            return protocol_error_value(INVALID_PARAMS, field.field);
         }
         Err(RequestError::Semantic(boundary)) => {
             // The typed mcp.input-invalid refusal as a tool result.
@@ -311,12 +372,39 @@ fn tools_call(session: &Arc<Session>, incoming: &Incoming) -> String {
     let worker_session = Arc::clone(session);
     let worker_request = request.clone();
     let (sender, receiver) = mpsc::channel();
+    // The detached flag marks a timed-out worker: it keeps executing, so
+    // it must keep holding its concurrency slot (F14/F19).
+    let detached_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let worker_detached = std::sync::Arc::clone(&detached_flag);
     let spawned = std::thread::Builder::new()
         .name("lekalo-mcp-worker".to_owned())
         .spawn(move || {
             let output = execution::execute(&worker_session.catalog, &worker_request);
+            if worker_detached.load(Ordering::SeqCst) {
+                // The dispatcher already answered the timeout; the
+                // abandoned worker releases its own slot on completion.
+                worker_session.live.fetch_sub(1, Ordering::SeqCst);
+                worker_session.detached.fetch_sub(1, Ordering::SeqCst);
+            } else {
+                worker_session.live.fetch_sub(1, Ordering::SeqCst);
+            }
             let _ = sender.send(output);
         });
+    if spawned.is_err() {
+        // A spawn failure frees the slot it reserved.
+        session.live.fetch_sub(1, Ordering::SeqCst);
+        let set = lekalo_core::mcp::diagnostic::backend_unavailable_set("worker");
+        let envelope = execution::refusal_envelope(
+            name,
+            Some(request.common().project_id.as_str()),
+            request.common().group_id.as_deref(),
+            set,
+            "unavailable",
+            "backend-unavailable",
+            "mcp.backend-unavailable",
+        );
+        return tool_result(&incoming.id, &envelope, true);
+    }
     // The worker owns the sender from here; this thread holds only the
     // receiver, so a dropped receiver reliably suppresses late results.
     drop(spawned);
@@ -332,7 +420,14 @@ fn tools_call(session: &Arc<Session>, incoming: &Incoming) -> String {
             Err(mpsc::RecvTimeoutError::Disconnected) => break None,
         }
     };
-    session.live.fetch_sub(1, Ordering::SeqCst);
+    if outcome.is_none() {
+        // Timeout: the worker is abandoned while still running; it keeps
+        // its slot and decrements the counters itself on completion.
+        detached_flag.store(true, Ordering::SeqCst);
+        session.detached.fetch_add(1, Ordering::SeqCst);
+    } else {
+        session.live.fetch_sub(1, Ordering::SeqCst);
+    }
     // The late-success suppression: a cancelled request id never
     // receives the completed envelope, and a timed-out worker is
     // abandoned with the receiver dropped.
@@ -343,7 +438,7 @@ fn tools_call(session: &Arc<Session>, incoming: &Incoming) -> String {
         .contains(&id_to_key(&incoming.id))
     {
         drop(receiver);
-        return String::new();
+        return Value::Null;
     }
     match outcome {
         Some(Ok(output)) => tool_result(&incoming.id, &output.envelope, output.is_error),
@@ -390,17 +485,26 @@ fn request_project(arguments: &Value) -> Option<String> {
         .map(str::to_owned)
 }
 
+/// The protocol-level error marker: `route` cannot answer a
+/// tools/call refusal itself (the id belongs to the writer), so the
+/// marked value is converted into a JSON-RPC error frame in the serve
+/// loop — one serialization chokepoint, no string interpolation.
+fn protocol_error_value(code: i64, message: &str) -> Value {
+    serde_json::json!({ "lekaloProtocolError": { "code": code, "message": message } })
+}
+
 /// The MCP tool result: `structuredContent` plus a text content block
-/// carrying the same serialized JSON for compatible clients. The output
-/// bound counts the entire encoded frame, including the duplication.
-fn tool_result(id: &Value, envelope: &str, is_error: bool) -> String {
-    let text = serde_json::to_string(envelope).unwrap_or_else(|_| "\"\"".to_owned());
-    result_response(
-        id,
-        &format!(
-            "{{\"content\":[{{\"type\":\"text\",\"text\":{text}}}],\"structuredContent\":{envelope},\"isError\":{is_error}}}"
-        ),
-    )
+/// carrying the same serialized JSON for compatible clients. The envelope
+/// is parsed once into a `serde_json::Value` (the single serialization
+/// chokepoint in the writer measures the whole encoded frame).
+fn tool_result(_id: &Value, envelope: &str, is_error: bool) -> Value {
+    let structured: Value = serde_json::from_str(envelope).unwrap_or_else(|_| Value::Null);
+    let text = serde_json::to_string(&structured).unwrap_or_else(|_| "\"\"".to_owned());
+    serde_json::json!({
+        "content": [{"type": "text", "text": text}],
+        "structuredContent": structured,
+        "isError": is_error
+    })
 }
 
 /// The admitted resource identities: project- and group-qualified family
@@ -440,8 +544,9 @@ fn enumerate(session: &Session) -> (Vec<String>, String) {
 }
 
 /// resources/list with the bounded page and the snapshot-bound cursor; a
-/// stale cursor refuses instead of answering.
-fn resources_list(session: &Session, incoming: &Incoming) -> String {
+/// stale cursor refuses instead of answering. Enumeration discloses only
+/// identities inside the effective launch-group scope (F4).
+fn resources_list(session: &Session, incoming: &Incoming) -> Value {
     let (uris, snapshot) = enumerate(session);
     let requested_cursor = incoming
         .params
@@ -472,65 +577,89 @@ fn resources_list(session: &Session, incoming: &Incoming) -> String {
         .skip(offset)
         .take(session.limits.page_size)
         .collect();
-    let items: Vec<String> = page
+    let items: Vec<Value> = page
         .iter()
         .map(|uri| {
-            format!("{{\"uri\":\"{uri}\",\"name\":\"{uri}\",\"mimeType\":\"application/json\"}}")
+            serde_json::json!({
+                "uri": uri,
+                "name": uri,
+                "mimeType": "application/json"
+            })
         })
         .collect();
     let next = offset + page.len();
-    let next_cursor = if next < uris.len() && !page.is_empty() {
-        format!(
-            ",\"nextCursor\":\"{}\"",
-            Cursor {
-                snapshot: snapshot.clone(),
-                offset: next
-            }
-            .encode()
-        )
-    } else {
-        String::new()
-    };
-    result_response(
-        &incoming.id,
-        &format!("{{\"resources\":[{}]{next_cursor}}}", items.join(",")),
-    )
+    let mut response = serde_json::json!({ "resources": items });
+    if next < uris.len() && !page.is_empty() {
+        let cursor = Cursor {
+            snapshot: snapshot.clone(),
+            offset: next,
+        }
+        .encode();
+        response["nextCursor"] = Value::from(cursor);
+    }
+    response
 }
 
-fn templates_list(incoming: &Incoming) -> String {
-    let templates: Vec<String> = resources::templates()
+fn templates_list() -> Value {
+    let templates: Vec<Value> = resources::templates()
         .iter()
         .map(|template| {
-            format!(
-                "{{\"uriTemplate\":\"{}\",\"name\":\"{}\",\"mimeType\":\"application/json\"}}",
-                template.uri_template, template.name
-            )
+            serde_json::json!({
+                "uriTemplate": template.uri_template,
+                "name": template.name,
+                "mimeType": template.mime_type
+            })
         })
         .collect();
-    result_response(
-        &incoming.id,
-        &format!("{{\"resourceTemplates\":[{}]}}", templates.join(",")),
-    )
+    serde_json::json!({ "resourceTemplates": templates })
 }
 
 /// resources/read: parse, authorize, and produce the closed resource
 /// envelope as application/json text. Content never contains raw source,
-/// dotfiles, or absolute private roots.
-fn resources_read(session: &Arc<Session>, incoming: &Incoming) -> String {
+/// dotfiles, or absolute private roots. The launch group is the enforced
+/// ceiling (F4): an unqualified URI resolves under the launch group; a
+/// group-qualified URI must name exactly that group; the effective
+/// group's module closure is checked on the projected payload families.
+fn resources_read(session: &Arc<Session>, incoming: &Incoming) -> Value {
     let uri = incoming
         .params
         .as_ref()
         .and_then(|params| params.get("uri"))
         .and_then(Value::as_str)
         .unwrap_or_default();
-    let (scope, family, qualifier) = match resources::parse_uri(uri) {
+    let (mut scope, family, qualifier) = match resources::parse_uri(uri) {
         Ok(parsed) => parsed,
         Err(_) => {
-            return error_response(&incoming.id, INVALID_PARAMS, "invalid-resource-uri");
+            return protocol_error_value(INVALID_PARAMS, "invalid-resource-uri");
         }
     };
-    // Authorization: the project must be admitted, and a group-qualified
-    // URI must name a group of exactly that project.
+    // The launcher's --group is the disclosure ceiling for the whole
+    // resource surface too: an unqualified identity resolves under the
+    // launch group, and a group-qualified identity must name exactly it.
+    if let Some(launch_group) = session.default_group.as_deref() {
+        match &scope.group {
+            None => scope.group = Some(launch_group.to_owned()),
+            Some(requested) if requested == launch_group => {}
+            Some(_) => {
+                let set = lekalo_core::mcp::diagnostic::scope_denied_set(
+                    "group",
+                    "widen-past-launch-group",
+                );
+                let envelope = execution::refusal_envelope(
+                    "lekalo_inspect",
+                    Some(&scope.project),
+                    Some(launch_group),
+                    set,
+                    "denied",
+                    "scope-denied",
+                    "mcp.scope-denied",
+                );
+                return tool_result(&incoming.id, &envelope, true);
+            }
+        }
+    }
+    // Authorization: the project must be admitted, and the effective
+    // group (if any) must belong to exactly that project.
     if !session.catalog.core.admits_project(&scope.project) {
         let set = lekalo_core::mcp::diagnostic::scope_denied_set("project", "unregistered");
         let envelope = execution::refusal_envelope(
@@ -561,16 +690,67 @@ fn resources_read(session: &Arc<Session>, incoming: &Incoming) -> String {
             return tool_result(&incoming.id, &envelope, true);
         }
     }
-    match build_resource(session, &scope, family, qualifier.as_deref()) {
-        Ok(data) => {
-            let text = serde_json::to_string(data.as_str()).unwrap_or_else(|_| "\"\"".to_owned());
-            result_response(
-                &incoming.id,
-                &format!(
-                    "{{\"contents\":[{{\"uri\":\"{uri}\",\"mimeType\":\"application/json\",\"text\":{text}}}]}}"
-                ),
+    // Family closure: symbol/targets/diagnostics read module-scoped
+    // payload; under an effective group the required module must stay
+    // inside the allow-list (the same closure rule tools/call applies).
+    if let Some(group) = &scope.group {
+        let required = match (&family, qualifier.as_deref()) {
+            (Family::SymbolMetadata, Some(symbol)) => {
+                let mut set = std::collections::BTreeSet::new();
+                if let Some(head) = symbol.split('.').next() {
+                    if lekalo_core::mcp::policy::admit_module_id(head).is_ok() {
+                        set.insert(head.to_owned());
+                    }
+                }
+                set
+            }
+            (Family::ProjectSummary | Family::ModuleList, _) => {
+                // Whole-project projections refuse under a group instead
+                // of fabricating a narrowed result (same rule as tools).
+                let set =
+                    lekalo_core::mcp::diagnostic::scope_denied_set("module", "requires-full-scope");
+                let envelope = execution::refusal_envelope(
+                    "lekalo_inspect",
+                    Some(&scope.project),
+                    Some(group),
+                    set,
+                    "denied",
+                    "scope-denied",
+                    "mcp.scope-denied",
+                );
+                return tool_result(&incoming.id, &envelope, true);
+            }
+            _ => std::collections::BTreeSet::new(),
+        };
+        if lekalo_core::mcp::policy::ScopeDecision::Admitted
+            != lekalo_core::mcp::policy::modules_admitted(
+                &session.catalog.core,
+                &scope.project,
+                Some(group),
+                &required,
             )
+        {
+            let set = lekalo_core::mcp::diagnostic::scope_denied_set("module", "outside-group");
+            let envelope = execution::refusal_envelope(
+                "lekalo_inspect",
+                Some(&scope.project),
+                Some(group),
+                set,
+                "denied",
+                "scope-denied",
+                "mcp.scope-denied",
+            );
+            return tool_result(&incoming.id, &envelope, true);
         }
+    }
+    match build_resource(session, &scope, family, qualifier.as_deref()) {
+        Ok(document) => serde_json::json!({
+            "contents": [{
+                "uri": uri,
+                "mimeType": "application/json",
+                "text": document
+            }]
+        }),
         Err(refusal_envelope) => tool_result(&incoming.id, &refusal_envelope, true),
     }
 }
@@ -588,7 +768,9 @@ fn resource_revision(domain: &str, bytes: &[u8]) -> String {
 /// Build the closed `lekalo/mcp-resource/v0.8.0` payload for one
 /// authorized read. The typed projections reuse the same command seams as
 /// the tools so both surfaces stay semantically identical; the underlying
-/// failures project as the family's typed refusal.
+/// failures project as the family's typed refusal. The document is a
+/// closed `serde_json::Value`; `kind` carries the contract enum spelling
+/// (F7), never the URI family key.
 fn build_resource(
     session: &Arc<Session>,
     scope: &UriScope,
@@ -725,20 +907,31 @@ fn build_resource(
             }
         }
     };
-    Ok(format!(
-        "{{\"schemaVersion\":\"{}\",\"identity\":\"{}\",\"kind\":\"{}\",\"uri\":\"{}\",\"scope\":{{\"projectId\":\"{}\",\"groupId\":{}}},\"revision\":\"{}\",\"data\":{}}}",
-        lekalo_core::mcp::version::RESOURCE_SCHEMA_VERSION,
-        lekalo_core::mcp::version::RESOURCE_IDENTITY,
-        family.key(),
-        resources::build_uri(scope, family, qualifier),
-        scope.project,
-        match &scope.group {
-            Some(group) => format!("\"{group}\""),
-            None => "null".to_owned(),
+    let data: serde_json::Value = serde_json::from_str(&data).map_err(|_| {
+        let set = lekalo_core::mcp::diagnostic::result_invalid_set("resource-payload");
+        execution::refusal_envelope(
+            "lekalo_inspect",
+            Some(&scope.project),
+            scope.group.as_deref(),
+            set,
+            "invalid",
+            "result-invalid",
+            "mcp.result-invalid",
+        )
+    })?;
+    let document = serde_json::json!({
+        "schemaVersion": lekalo_core::mcp::version::RESOURCE_SCHEMA_VERSION,
+        "identity": lekalo_core::mcp::version::RESOURCE_IDENTITY,
+        "kind": family.contract_key(),
+        "uri": resources::build_uri(scope, family, qualifier),
+        "scope": {
+            "projectId": scope.project,
+            "groupId": scope.group
         },
-        revision,
-        data
-    ))
+        "revision": revision,
+        "data": data
+    });
+    serde_json::to_string(&document).map_err(|_| "resource-serialize".to_owned())
 }
 
 /// The scope-refusal envelope for the resource dispatcher.
@@ -769,15 +962,72 @@ fn denied_summary(scope: &UriScope) -> String {
     )
 }
 
-fn resources_subscribe(session: &Arc<Session>, incoming: &Incoming) -> String {
+fn resources_subscribe(session: &Arc<Session>, incoming: &Incoming) -> Value {
     let uri = incoming
         .params
         .as_ref()
         .and_then(|params| params.get("uri"))
         .and_then(Value::as_str)
         .unwrap_or_default();
-    if resources::parse_uri(uri).is_err() {
-        return error_response(&incoming.id, INVALID_PARAMS, "invalid-resource-uri");
+    let (scope, _family, _qualifier) = match resources::parse_uri(uri) {
+        Ok(parsed) => parsed,
+        Err(_) => {
+            return protocol_error_value(INVALID_PARAMS, "invalid-resource-uri");
+        }
+    };
+    // Subscribe is an authorization decision, not a bookkeeping one
+    // (F13): the exact read-scope check of resources/read runs first —
+    // project admission, launch-group ceiling, and group membership —
+    // and only an identity this session may read can be watched.
+    if !session.catalog.core.admits_project(&scope.project) {
+        let set = lekalo_core::mcp::diagnostic::scope_denied_set("project", "unregistered");
+        let envelope = execution::refusal_envelope(
+            "lekalo_inspect",
+            Some(&scope.project),
+            scope.group.as_deref(),
+            set,
+            "denied",
+            "scope-denied",
+            "mcp.scope-denied",
+        );
+        return tool_result(&incoming.id, &envelope, true);
+    }
+    if let Some(group) = &scope.group {
+        if lekalo_core::mcp::policy::ScopeDecision::Admitted
+            != session.catalog.core.admits_group(&scope.project, group)
+        {
+            let set = lekalo_core::mcp::diagnostic::scope_denied_set("group", "unregistered");
+            let envelope = execution::refusal_envelope(
+                "lekalo_inspect",
+                Some(&scope.project),
+                Some(group),
+                set,
+                "denied",
+                "scope-denied",
+                "mcp.scope-denied",
+            );
+            return tool_result(&incoming.id, &envelope, true);
+        }
+    }
+    if let Some(launch_group) = session.default_group.as_deref() {
+        let inside = match &scope.group {
+            Some(requested) => requested == launch_group,
+            None => true,
+        };
+        if !inside {
+            let set =
+                lekalo_core::mcp::diagnostic::scope_denied_set("group", "widen-past-launch-group");
+            let envelope = execution::refusal_envelope(
+                "lekalo_inspect",
+                Some(&scope.project),
+                Some(launch_group),
+                set,
+                "denied",
+                "scope-denied",
+                "mcp.scope-denied",
+            );
+            return tool_result(&incoming.id, &envelope, true);
+        }
     }
     let mut subscriptions = session.subscriptions.lock().expect("flag");
     if subscriptions.len() >= lekalo_core::mcp::version::MAX_WATCHED_IDENTITIES {
@@ -794,10 +1044,10 @@ fn resources_subscribe(session: &Arc<Session>, incoming: &Incoming) -> String {
         return tool_result(&incoming.id, &envelope, true);
     }
     subscriptions.insert(uri.to_owned());
-    result_response(&incoming.id, "{}")
+    serde_json::json!({})
 }
 
-fn resources_unsubscribe(session: &Arc<Session>, incoming: &Incoming) -> String {
+fn resources_unsubscribe(session: &Arc<Session>, incoming: &Incoming) -> Value {
     let uri = incoming
         .params
         .as_ref()
@@ -805,5 +1055,5 @@ fn resources_unsubscribe(session: &Arc<Session>, incoming: &Incoming) -> String 
         .and_then(Value::as_str)
         .unwrap_or_default();
     session.subscriptions.lock().expect("flag").remove(uri);
-    result_response(&incoming.id, "{}")
+    serde_json::json!({})
 }

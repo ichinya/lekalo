@@ -20,6 +20,7 @@ pub mod schemas;
 pub mod tools;
 pub mod version;
 
+pub use crate::classification::{parse_checked, ParseFailure};
 #[cfg(test)]
 mod tests {
     use crate::diagnostics::{DiagnosticRegistry, DiagnosticSet};

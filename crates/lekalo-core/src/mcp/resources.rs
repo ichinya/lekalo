@@ -32,13 +32,30 @@ pub const FAMILY_KEYS: [&str; 5] = [
 ];
 
 impl Family {
-    /// The exact family key used in URIs and the resource contract.
-    pub const fn key(self) -> &'static str {
+    /// The URI family key: the spelling inside `lekalo://` resource URIs
+    /// (`modules`, `symbol`, `targets`). This is the accepted wire
+    /// spelling of `parse_uri` and `build_uri` only.
+    pub const fn uri_key(self) -> &'static str {
         match self {
-            Self::ProjectSummary => "project-summary",
+            Self::ProjectSummary => "summary",
             Self::ModuleList => "modules",
             Self::SymbolMetadata => "symbol",
             Self::TargetStatus => "targets",
+            Self::DiagnosticsSummary => "diagnostics",
+        }
+    }
+
+    /// The contract `kind` spelling: the exact enum member of
+    /// `mcp-resource.schema.v0.8.0` emitted into the resource envelope
+    /// (`module-list`, `symbol-metadata`, `target-status`). The URI key
+    /// and the contract key are deliberately distinct vocabularies; the
+    /// envelope is schema-validated per family by the contract gate.
+    pub const fn contract_key(self) -> &'static str {
+        match self {
+            Self::ProjectSummary => "project-summary",
+            Self::ModuleList => "module-list",
+            Self::SymbolMetadata => "symbol-metadata",
+            Self::TargetStatus => "target-status",
             Self::DiagnosticsSummary => "diagnostics",
         }
     }
@@ -147,8 +164,12 @@ pub fn build_uri(scope: &UriScope, family: Family, qualifier: Option<&str>) -> S
         None => format!("lekalo://{}", encode_component(&scope.project)),
     };
     match qualifier {
-        Some(qualifier) => format!("{prefix}/{}/{}", family.key(), encode_component(qualifier)),
-        None => format!("{prefix}/{}", family.key()),
+        Some(qualifier) => format!(
+            "{prefix}/{}/{}",
+            family.uri_key(),
+            encode_component(qualifier)
+        ),
+        None => format!("{prefix}/{}", family.uri_key()),
     }
 }
 
@@ -313,6 +334,25 @@ mod tests {
     use super::*;
 
     #[test]
+    fn uri_keys_and_contract_keys_are_distinct_vocabularies() {
+        // The URI spelling and the contract `kind` enum are deliberately
+        // different (F7); both are closed and total.
+        let pairs = [
+            (Family::ProjectSummary, "summary", "project-summary"),
+            (Family::ModuleList, "modules", "module-list"),
+            (Family::SymbolMetadata, "symbol", "symbol-metadata"),
+            (Family::TargetStatus, "targets", "target-status"),
+            (Family::DiagnosticsSummary, "diagnostics", "diagnostics"),
+        ];
+        for (family, uri_key, contract_key) in pairs {
+            assert_eq!(family.uri_key(), uri_key);
+            assert_eq!(family.contract_key(), contract_key);
+            // Every contract key is a member of the closed schema enum.
+            assert!(FAMILY_KEYS.contains(&family.contract_key()));
+        }
+    }
+
+    #[test]
     fn families_are_the_exact_five() {
         assert_eq!(FAMILY_KEYS.len(), 5);
         assert_eq!(
@@ -355,7 +395,7 @@ mod tests {
     #[test]
     fn group_qualified_uris_round_trip() {
         let uri = group_resource_uri("planner", "planner-review", Family::ProjectSummary, None);
-        assert_eq!(uri, "lekalo://planner/g/planner-review/project-summary");
+        assert_eq!(uri, "lekalo://planner/g/planner-review/summary");
         let parsed = parse_uri("lekalo://planner/g/planner-review/summary").expect("group uri");
         assert_eq!(parsed.0.project, "planner");
         assert_eq!(parsed.0.group.as_deref(), Some("planner-review"));
