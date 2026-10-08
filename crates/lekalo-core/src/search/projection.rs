@@ -440,6 +440,18 @@ fn post(postings: &mut BTreeMap<String, Vec<String>>, term: &str, key: &str, cap
     }
 }
 
+/// Append one term posting to a projection (bounded). The admission-time
+/// helper for producer-projected witnesses outside `add_card`.
+pub fn post_term(projection: &mut Projection, term: &str, key: &str, cap: usize) {
+    post(&mut projection.postings, term, key, cap);
+}
+
+/// The lexical terms of one effect witness relation (the same split the
+/// frozen recipe applies to IDs: whitespace plus `.` `_` `-` `/` `#`).
+pub fn effect_posting_terms(relation: &str) -> Vec<String> {
+    tokenize(relation)
+}
+
 /// Project every definition, module, and rename/tombstone fact of the
 /// compiled IR into cards and postings.
 pub fn project_ir(project: &CompiledProject, cap: usize) -> Projection {
@@ -768,6 +780,27 @@ pub fn requirement_key(source: &str, requirement: &str) -> String {
     } else {
         format!("req:{source}:{requirement}")
     }
+}
+
+/// Record one additional exact qualified identity for a card (the
+/// byte-exact `exact-qualified` ranking tier source). Bounded per card
+/// and deduplicated; the identity set never widens a card's key.
+pub fn add_qualified_id(projection: &mut Projection, key: &str, identity: String, cap: usize) {
+    if identity.is_empty() || identity.len() > 256 {
+        return;
+    }
+    let entry = projection
+        .qualified_ids
+        .entry(key.to_owned())
+        .or_insert_with(|| Vec::with_capacity(1));
+    if entry.len() >= 32 {
+        return;
+    }
+    if !entry.contains(&identity) {
+        entry.push(identity);
+        entry.sort();
+    }
+    let _ = cap;
 }
 
 #[cfg(test)]

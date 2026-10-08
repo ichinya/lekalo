@@ -34,12 +34,13 @@ pub mod wire;
 
 pub use cursor::{Cursor, CursorBinding, CursorError, LastTuple};
 pub use index::{
-    digest_of, pins_of, sha256_of, IndexDocument, IndexStatus, SearchIndex, SearchStore,
+    digest_of, pins_of, sha256_of, IndexDocument, IndexStatus, InputPin, SearchIndex, SearchStore,
 };
 pub use input::{InputEntry, ProducerKind, SearchInputs};
 pub use projection::{
-    add_card, attach_effects, bounded_push, project_ir, Card, CardKind, Completeness, Confidence,
-    Freshness, NativeBinding, Projection, RelationWitness, SignatureRef, Trust,
+    add_card, add_qualified_id, attach_effects, bounded_push, effect_posting_terms, post_term,
+    project_ir, Card, CardKind, Completeness, Confidence, Freshness, NativeBinding, Projection,
+    RelationWitness, SignatureRef, Trust,
 };
 pub use query::{
     execute, CoverageRow, EffectScope, FilterSet, QueryRequest, SearchOutcome, SearchResult,
@@ -54,12 +55,37 @@ pub fn diagnostic_input_invalid(
     input::input_invalid(detail, producer)
 }
 
+/// Reject duplicate JSON keys anywhere in one JSON text before decode
+/// (the closed-document convention of every admitted search byte source).
+#[allow(clippy::result_unit_err)]
+pub fn reject_duplicate_keys(text: &str) -> Result<(), ()> {
+    wire::reject_duplicate_keys(text)
+}
+
 /// `search.query-invalid` rejection with a bounded member and reason.
 pub fn diagnostic_query_invalid(
     member: &str,
     detail: &'static str,
 ) -> crate::diagnostics::DiagnosticSet {
     diagnostic::query_invalid(member, detail)
+}
+
+/// The `search.coverage-incomplete` warning for a needed domain whose
+/// admitted state is not complete (missing/stale/partial/unsupported).
+pub fn emit_coverage_incomplete(domain: &str, state: &str) -> crate::diagnostics::DiagnosticSet {
+    diagnostic::coverage_incomplete(domain, state)
+}
+
+/// The `search.index-stale` warning for pins that no longer match.
+pub fn emit_index_stale(pin: &str) -> crate::diagnostics::DiagnosticSet {
+    diagnostic::index_stale(pin, false)
+}
+
+/// The `search.result-limit` warning counting producer rows the
+/// projection could not attach (lost candidates are counted, never
+/// silent).
+pub fn emit_dropped_rows(count: u64) -> crate::diagnostics::DiagnosticSet {
+    diagnostic::dropped_rows(count)
 }
 
 /// The exact `sha256:<64 lowercase hex>` spelling.

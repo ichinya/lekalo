@@ -136,3 +136,13 @@ pub fn ambiguous(candidates: u64) -> DiagnosticSet {
     data.insert("candidates".to_owned(), DataValue::Count(candidates));
     set(AMBIGUOUS, None, data, Status::Valid)
 }
+
+/// The `valid` warning counting producer rows the projection could not
+/// attach: the answer is explicitly partial, never silently so.
+pub fn dropped_rows(count: u64) -> DiagnosticSet {
+    let mut data = DataObject::new();
+    data.insert("detail".to_owned(), token_value("cap-reached"));
+    data.insert("limit".to_owned(), token_value("dropped-producer-rows"));
+    data.insert("rows".to_owned(), DataValue::Count(count));
+    set(RESULT_LIMIT, None, data, Status::Valid)
+}
