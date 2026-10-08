@@ -4,7 +4,7 @@
       "acceptedRisk": "correctness",
       "approvalRef": {
         "id": "decision/88/approval",
-        "subjectDigest": "sha256:6878e1354482482618ba8ee8469fab4da9186ac1348a826478d3995d6ad1b293"
+        "subjectDigest": "sha256:b157c65e85c765319ca9f13b4a6b6b7112345505af5a8776aa3da98f06bf1dc0"
       },
       "approver": "fixture-reviewer",
       "conditionDigest": "sha256:c07e6af17ab6065ecc1cd3bace62c767b5667d691c709d8549bbb2334c4cd69f",
@@ -72,7 +72,7 @@
       "acceptedRisk": "correctness",
       "approvalRef": {
         "id": "decision/88/approval",
-        "subjectDigest": "sha256:6878e1354482482618ba8ee8469fab4da9186ac1348a826478d3995d6ad1b293"
+        "subjectDigest": "sha256:66c2979efa152db279516073a793c9256c5f2d2e1c20adff90eaffbdcc6de925"
       },
       "approver": "fixture-reviewer",
       "conditionDigest": "sha256:c07e6af17ab6065ecc1cd3bace62c767b5667d691c709d8549bbb2334c4cd69f",
