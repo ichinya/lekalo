@@ -2,7 +2,7 @@ schema_version: "lekalo/authorization/v0.2.16"
 identity: "dev.lekalo.authorization@0.2.16"
 model_ref:
   schema_version: "0.2.16"
-  ir_digest: "sha256:d3691b23b33e7d4dd9764671ec1040f8ec3080fa2b3d1b8e2857a4547fb56d41"
+  ir_digest: "sha256:98de268ede7439f220221fd1e771454e9f478d7daf9c9d1ea25092d6bed41e41"
 profile_ref: "dev.lekalo.authorization-profile@0.2.16"
 capabilities:
   - id: taskhub.cap.task_write
