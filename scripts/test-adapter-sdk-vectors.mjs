@@ -97,12 +97,24 @@ if (missing.length > 0) {
 }
 
 // Cross-language canonical byte comparison: every language must emit the
-// exact same canonical bytes for the same values.
+// exact same canonical bytes for the same values, and the OUTPUT NAME SET
+// must match the baseline exactly — a missing or extra canonical output
+// is a mismatch, never a skip (issue #106 review r2 #11).
 const baseline = Object.entries(verdicts)[0][1].canonicalOutputs ?? {};
+if (Object.keys(baseline).length === 0) {
+  fail("canonical-baseline-empty", "the first language emitted zero canonical outputs");
+}
 for (const [lang, verdict] of Object.entries(verdicts)) {
   const outputs = verdict.canonicalOutputs ?? {};
+  const baselineNames = Object.keys(baseline).sort();
+  const actualNames = Object.keys(outputs).sort();
+  const missing = baselineNames.filter((name) => outputs[name] === undefined);
+  const extra = actualNames.filter((name) => baseline[name] === undefined);
+  if (missing.length > 0 || extra.length > 0) {
+    fail("canonical-output-set", lang + ": missing " + JSON.stringify(missing) + " extra " + JSON.stringify(extra));
+  }
   for (const [name, bytes] of Object.entries(baseline)) {
-    if (outputs[name] !== undefined && outputs[name] !== bytes) {
+    if (outputs[name] !== bytes) {
       fail("canonical-bytes", `${lang} emitted different bytes for ${name}`);
     }
   }
