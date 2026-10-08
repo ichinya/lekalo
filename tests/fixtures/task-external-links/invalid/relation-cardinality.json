@@ -1,7 +1,7 @@
 {
   "schemaVersion": "lekalo/task-links-integration/v0.8.0",
   "identity": "dev.lekalo.task-links-integration@0.8.0",
-  "attachmentRevision": "sha256:a0f3f961d2ff4497c3c9312eb367c5760f1c9b04c258654845ed066dbf0790fb",
+  "attachmentRevision": "sha256:47f3656a5a4168b0a2b57f09b4d0b3c9a017f2c8e83a1172099e958c0323e795",
   "projectId": "tasklinks",
   "modelRef": {
     "schemaVersion": "0.2.16",
@@ -41,13 +41,17 @@
   "entities": [
     {
       "entity": "tasklinks.task_external_link",
-      "identity": ["link_id"],
+      "identity": [
+        "link_id"
+      ],
       "externalIdentity": true,
       "description": "The typed link aggregate with independent inbound/outbound cursors"
     },
     {
       "entity": "planner.task",
-      "identity": ["task_id"],
+      "identity": [
+        "task_id"
+      ],
       "description": "The bound local task; links refer to it 0..N times"
     }
   ],
@@ -55,8 +59,12 @@
     {
       "id": "tasklinks.rel.task_links",
       "target": "planner.task",
-      "localFields": ["task_id"],
-      "targetFields": ["task_id"],
+      "localFields": [
+        "task_id"
+      ],
+      "targetFields": [
+        "task_id"
+      ],
       "min": 5,
       "max": 1,
       "ownership": "local",
@@ -67,8 +75,12 @@
     {
       "id": "tasklinks.rel.link_outbox",
       "target": "tasklinks.task_external_link",
-      "localFields": ["link_id"],
-      "targetFields": ["link_id"],
+      "localFields": [
+        "link_id"
+      ],
+      "targetFields": [
+        "link_id"
+      ],
       "min": 0,
       "max": null,
       "ownership": "local",
@@ -81,7 +93,13 @@
     {
       "id": "tasklinks.uq_external_identity",
       "entity": "tasklinks.task_external_link",
-      "fields": ["workspace_id", "installation_id", "provider_id", "object_type", "external_id"],
+      "fields": [
+        "workspace_id",
+        "installation_id",
+        "provider_id",
+        "object_type",
+        "external_id"
+      ],
       "comparison": "exact-text",
       "scope": "workspace-installation-provider-object-external-id",
       "description": "The exact five-part identity tuple; no prefix index or collation may stand in for it"
@@ -147,7 +165,10 @@
       "entity": "planner.task",
       "direction": "inbound",
       "decision": "allow",
-      "fields": ["state", "title"],
+      "fields": [
+        "state",
+        "title"
+      ],
       "actor": "provider.event",
       "policyRef": "tasklinks.policy.inbound_canonical_fields",
       "revision": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
@@ -158,7 +179,12 @@
       "entity": "planner.task",
       "direction": "inbound",
       "decision": "deny",
-      "fields": ["planned_for", "position", "focused_at", "paused_at"],
+      "fields": [
+        "planned_for",
+        "position",
+        "focused_at",
+        "paused_at"
+      ],
       "actor": "provider.event",
       "policyRef": "tasklinks.policy.planning_fields_protected",
       "revision": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
@@ -169,7 +195,10 @@
       "entity": "planner.task",
       "direction": "outbound",
       "decision": "allow",
-      "fields": ["state", "title"],
+      "fields": [
+        "state",
+        "title"
+      ],
       "actor": "identity.user",
       "policyRef": "tasklinks.policy.request_action_member",
       "revision": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
@@ -237,7 +266,17 @@
     }
   ],
   "deliveryRules": {
-    "outboxStates": ["pending", "leased", "delivered", "retry_wait", "conflicted", "cancelled", "dead_letter"],
+    "outboxStates": [
+      "pending",
+      "leased",
+      "accepted_pending_ack",
+      "delivered",
+      "retry_wait",
+      "conflicted",
+      "cancelled",
+      "dead_letter",
+      "unknown_delivery"
+    ],
     "maxAttempts": 5,
     "backoffMs": 100,
     "leaseMs": 30000,

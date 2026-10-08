@@ -222,8 +222,10 @@ fn scenario_attributed_inbound_dedupes_and_suppresses_echoes() {
     let mut inbox = BTreeMap::new();
     let event = InboundEvent {
         event_identity: "evt-primary-0001".to_owned(),
+        workspace_id: WORKSPACE.to_owned(),
         installation_id: INSTALLATION_A.to_owned(),
         provider_id: PROVIDER_A.to_owned(),
+        object_type: OBJECT_TYPE.to_owned(),
         external_id: EXTERNAL_ID.to_owned(),
         revision: "r7".to_owned(),
         causation_id: "cause-1".to_owned(),
@@ -249,8 +251,10 @@ fn scenario_attributed_inbound_dedupes_and_suppresses_echoes() {
     assert_eq!(inbox.len(), 1);
     // Attribution survives: provider/installation/revision distinguishable.
     let scope = decision::EventScope {
+        workspace_id: WORKSPACE.to_owned(),
         installation_id: INSTALLATION_A.to_owned(),
         provider_id: PROVIDER_A.to_owned(),
+        object_type: OBJECT_TYPE.to_owned(),
         external_id: EXTERNAL_ID.to_owned(),
         event_identity: "evt-primary-0001".to_owned(),
     };
@@ -269,8 +273,10 @@ fn scenario_incomparable_revision_is_a_conflict_not_a_sort() {
     let mut inbox = BTreeMap::new();
     let event = InboundEvent {
         event_identity: "evt-primary-0002".to_owned(),
+        workspace_id: WORKSPACE.to_owned(),
         installation_id: INSTALLATION_A.to_owned(),
         provider_id: PROVIDER_A.to_owned(),
+        object_type: OBJECT_TYPE.to_owned(),
         external_id: EXTERNAL_ID.to_owned(),
         revision: "zz-unrelated".to_owned(),
         causation_id: "cause-2".to_owned(),
@@ -378,9 +384,12 @@ fn scenario_partial_delivery_keeps_receipts_and_partial_status() {
         .map(|i| i.intent_id.clone())
         .expect("intent A");
     let intent = intents.get_mut(&key).unwrap();
-    assert_eq!(decision::claim(intent, 7, 0, 30_000), DispatchStep::Claimed);
     assert_eq!(
-        decision::dispatch(intent, &DispatchEvent::Acknowledged, 7, 10, 5, 100),
+        decision::claim(intent, 7, 0, 30_000, 1, 5),
+        DispatchStep::Claimed
+    );
+    assert_eq!(
+        decision::dispatch(intent, &DispatchEvent::Acknowledged, 7, 10, 5, 100, 1),
         DispatchStep::Delivered
     );
     // Time out B.
@@ -388,9 +397,12 @@ fn scenario_partial_delivery_keeps_receipts_and_partial_status() {
         .values_mut()
         .find(|i| i.idempotency_key == "k-b")
         .unwrap();
-    assert_eq!(decision::claim(intent, 9, 0, 30_000), DispatchStep::Claimed);
     assert_eq!(
-        decision::dispatch(intent, &DispatchEvent::ProviderFailed, 9, 10, 5, 100),
+        decision::claim(intent, 9, 0, 30_000, 1, 5),
+        DispatchStep::Claimed
+    );
+    assert_eq!(
+        decision::dispatch(intent, &DispatchEvent::ProviderFailed, 9, 10, 5, 100, 1),
         DispatchStep::RetryScheduled
     );
     let summary = decision::delivery_summary(&intents);
@@ -403,7 +415,7 @@ fn scenario_partial_delivery_keeps_receipts_and_partial_status() {
         .find(|i| i.idempotency_key == "k-b")
         .unwrap();
     assert_eq!(
-        decision::claim(intent, 11, 200, 30_000),
+        decision::claim(intent, 11, 200, 30_000, 1, 5),
         DispatchStep::Claimed
     );
     assert_eq!(intent.idempotency_key, "k-b");
@@ -432,9 +444,12 @@ fn scenario_stale_conflict_and_bounded_retry_dead_letter() {
             .values_mut()
             .find(|i| i.idempotency_key == "k-dead")
             .unwrap();
-        assert_eq!(decision::claim(intent, 1, 0, 1), DispatchStep::Claimed);
         assert_eq!(
-            decision::dispatch(intent, &DispatchEvent::ProviderConflict, 1, 0, 3, 100),
+            decision::claim(intent, 1, 0, 1, 1, 5),
+            DispatchStep::Claimed
+        );
+        assert_eq!(
+            decision::dispatch(intent, &DispatchEvent::ProviderConflict, 1, 0, 3, 100, 1),
             DispatchStep::Conflicted
         );
     }
@@ -470,7 +485,7 @@ fn scenario_stale_conflict_and_bounded_retry_dead_letter() {
             OutboxState::Pending | OutboxState::RetryWait => {
                 attempts += 1;
                 assert_eq!(
-                    decision::claim(intent, attempts, (attempts - 1) * 1000, 1),
+                    decision::claim(intent, attempts, (attempts - 1) * 1000, 1, 1, 3),
                     DispatchStep::Claimed
                 );
                 let step = decision::dispatch(
@@ -480,6 +495,7 @@ fn scenario_stale_conflict_and_bounded_retry_dead_letter() {
                     (attempts - 1) * 1000,
                     3,
                     100,
+                    1,
                 );
                 if attempts < 3 {
                     assert_eq!(step, DispatchStep::RetryScheduled);
@@ -559,13 +575,13 @@ fn lease_expiry_is_fenced_by_time() {
     let intent_id = planned.intent_id.clone();
     let intent = intents.get_mut(&intent_id).unwrap();
     assert_eq!(
-        decision::claim(intent, 5, 100, 1_000),
+        decision::claim(intent, 5, 100, 1_000, 1, 5),
         DispatchStep::Claimed
     );
     assert!(!decision::lease_expired(intent, 1_099));
     assert!(decision::lease_expired(intent, 1_100));
     assert_eq!(
-        decision::recover_expired_lease(intent, 1_100),
+        decision::recover_expired_lease(intent, 1_100, 1),
         DispatchStep::LeaseExpired
     );
     assert_eq!(intent.state, OutboxState::Pending);
@@ -631,11 +647,11 @@ fn bounded_retries_exhaust_into_dead_letter_keeping_the_key() {
             .find(|i| i.idempotency_key == "k-bounded")
             .unwrap();
         assert_eq!(
-            decision::claim(intent, attempt, 0, 1),
+            decision::claim(intent, attempt, 0, 1, 1, 5),
             DispatchStep::Claimed,
             "attempt {attempt}"
         );
-        let step = decision::dispatch(intent, &DispatchEvent::ProviderFailed, attempt, 0, 5, 0);
+        let step = decision::dispatch(intent, &DispatchEvent::ProviderFailed, attempt, 0, 5, 0, 1);
         if attempt < 5 {
             assert_eq!(step, DispatchStep::RetryScheduled);
         } else {
@@ -722,8 +738,10 @@ fn scenario_retry_echo_crash_preserves_key_and_uncertainty() {
     let mut inbox = BTreeMap::new();
     let echo = InboundEvent {
         event_identity: "evt-primary-echo".to_owned(),
+        workspace_id: WORKSPACE.to_owned(),
         installation_id: INSTALLATION_A.to_owned(),
         provider_id: PROVIDER_A.to_owned(),
+        object_type: OBJECT_TYPE.to_owned(),
         external_id: EXTERNAL_ID.to_owned(),
         revision: "r8".to_owned(),
         causation_id: original_id.clone(),
@@ -753,36 +771,106 @@ fn scenario_retry_echo_crash_preserves_key_and_uncertainty() {
     // the explicit accepted-pending-ack state, never delivered.
     {
         let intent = intents.get_mut(&original_id).unwrap();
-        assert_eq!(decision::claim(intent, 3, 0, 1), DispatchStep::Claimed);
         assert_eq!(
-            decision::dispatch(intent, &DispatchEvent::ProviderAccepted, 3, 1, 5, 0),
+            decision::claim(intent, 3, 0, 1, 1, 5),
+            DispatchStep::Claimed
+        );
+        assert_eq!(
+            decision::dispatch(intent, &DispatchEvent::ProviderAccepted, 3, 0, 5, 0, 1),
             DispatchStep::AcceptedPendingAck,
             "acceptance alone never marks delivered"
         );
         assert_eq!(intent.state, OutboxState::AcceptedPendingAck);
-        // Simulated crash inside the ack window: recovery reports the
-        // explicit unknown-delivery observation and returns the intent
-        // to pending under the same key (reconciliation, not a guess).
+        // The live ack completes the intent from the ack window.
         assert_eq!(
-            decision::recover_lease(intent, 3),
-            DispatchStep::UnknownDelivery
+            decision::dispatch(intent, &DispatchEvent::Acknowledged, 3, 0, 5, 0, 1),
+            DispatchStep::Delivered,
+            "accepted_pending_ack is acknowledgeable, never a dead state"
         );
-        assert_eq!(intent.state, OutboxState::Pending);
-        assert_eq!(intent.idempotency_key, "k-echo");
+        assert_eq!(intent.state, OutboxState::Delivered);
+        assert!(intent.receipt_digest.is_some());
+    }
+    // A second intent re-enters the window and crashes there: recovery
+    // moves the durable record to the persistent unknown_delivery
+    // state, which is not dispatchable and survives until the explicit
+    // reconciliation command resolves it.
+    {
+        let replayed = decision::plan_intent(
+            &mut intents,
+            &link_row,
+            decision::DecisionOutcome::Allowed,
+            "x",
+            "k-echo-2".into(),
+            5,
+        )
+        .expect("second intent");
+        let second_id = replayed.intent_id.clone();
+        {
+            let intent = intents.get_mut(&second_id).unwrap();
+            assert_eq!(
+                decision::claim(intent, 3, 5, 1, 1, 5),
+                DispatchStep::Claimed
+            );
+            assert_eq!(
+                decision::dispatch(intent, &DispatchEvent::ProviderAccepted, 3, 5, 5, 0, 1),
+                DispatchStep::AcceptedPendingAck
+            );
+            // Crash inside the ack window.
+            assert_eq!(
+                decision::recover_lease(intent, 3, 1),
+                DispatchStep::UnknownDelivery
+            );
+            assert_eq!(
+                intent.state,
+                OutboxState::UnknownDelivery,
+                "the uncertainty is a durable, persistent state"
+            );
+            assert_eq!(intent.idempotency_key, "k-echo-2");
+            // The unknown-delivery state is not dispatchable: no silent re-send.
+            assert_eq!(
+                decision::claim(intent, 4, 10, 1, 1, 5),
+                DispatchStep::Ignored,
+                "unknown delivery needs reconciliation first"
+            );
+        }
+        // The summary counts the unknown row as unknown, not pending.
+        let summary = decision::delivery_summary(&intents);
+        assert_eq!(summary.unknown, 1);
+        // Explicit reconciliation proves the write landed.
+        {
+            let intent = intents.get_mut(&second_id).unwrap();
+            assert_eq!(
+                decision::reconcile_unknown_delivery(intent, decision::Reconciliation::Delivered),
+                DispatchStep::Delivered
+            );
+            assert_eq!(intent.state, OutboxState::Delivered);
+        }
     }
     // A stale fence is refused.
     {
         let intent = intents.get_mut(&original_id).unwrap();
         assert_eq!(
-            decision::recover_lease(intent, 99),
+            decision::recover_lease(intent, 99, 1),
             DispatchStep::LeaseStale
         );
     }
     // Authority revoked after enqueue: cancelled, never delivered.
-    let intent = intents.get_mut(&original_id).unwrap();
-    assert_eq!(decision::claim(intent, 4, 10, 1), DispatchStep::Claimed);
+    let revoked = decision::plan_intent(
+        &mut intents,
+        &link_row,
+        decision::DecisionOutcome::Allowed,
+        "x",
+        "k-echo-3".into(),
+        20,
+    )
+    .expect("third intent");
+    let intent = intents.get_mut(&revoked.intent_id).unwrap();
     assert_eq!(
-        decision::dispatch(intent, &DispatchEvent::AuthorityRevoked, 4, 11, 5, 0),
+        decision::claim(intent, 4, 20, 1, 1, 5),
+        DispatchStep::Claimed
+    );
+    assert_eq!(
+        decision::dispatch(intent, &DispatchEvent::AuthorityRevoked, 4, 20, 5, 0, 1),
         DispatchStep::Cancelled
     );
     assert_eq!(intent.state, OutboxState::Cancelled);
@@ -807,8 +895,10 @@ fn scenario_secret_canary_absent_from_engine_artifacts() {
     let mut inbox = BTreeMap::new();
     let event = InboundEvent {
         event_identity: "evt-canary".to_owned(),
+        workspace_id: WORKSPACE.to_owned(),
         installation_id: INSTALLATION_A.to_owned(),
         provider_id: PROVIDER_A.to_owned(),
+        object_type: OBJECT_TYPE.to_owned(),
         external_id: EXTERNAL_ID.to_owned(),
         revision: "r9".to_owned(),
         causation_id: "cause-canary".to_owned(),
@@ -828,6 +918,278 @@ fn scenario_secret_canary_absent_from_engine_artifacts() {
         !rendered.contains("handle-primary-1"),
         "credential handle leaked"
     );
+}
+
+/// An expired lease fences every dispatch path: the deadline recorded
+/// at claim time refuses accept, ack, and failure events alike until
+/// the explicit expired-lease recovery runs.
+#[test]
+fn expired_lease_fences_every_dispatch_path() {
+    let mut intents = BTreeMap::new();
+    let link_row = link(LINK_A, TASK_ONE, INSTALLATION_A, PROVIDER_A);
+    let planned = decision::plan_intent(
+        &mut intents,
+        &link_row,
+        decision::DecisionOutcome::Allowed,
+        "x",
+        "k-expired".into(),
+        0,
+    )
+    .expect("intent");
+    let intent = intents.get_mut(&planned.intent_id).unwrap();
+    assert_eq!(
+        decision::claim(intent, 5, 0, 10, 1, 5),
+        DispatchStep::Claimed
+    );
+    for event in [
+        DispatchEvent::ProviderAccepted,
+        DispatchEvent::Acknowledged,
+        DispatchEvent::ProviderFailed,
+        DispatchEvent::ProviderConflict,
+        DispatchEvent::AuthorityRevoked,
+    ] {
+        assert_eq!(
+            decision::dispatch(intent, &event, 5, 1_000_000, 5, 0, 1),
+            DispatchStep::LeaseExpired,
+            "a token holder past its deadline is fenced out"
+        );
+    }
+    assert_eq!(intent.state, OutboxState::Leased, "refusal mutates nothing");
+    // The explicit recovery is the only exit.
+    assert_eq!(
+        decision::recover_expired_lease(intent, 1_000_000, 1),
+        DispatchStep::LeaseExpired
+    );
+    assert_eq!(intent.state, OutboxState::Pending);
+}
+
+/// Crash-recovery cycles can never bypass the durable attempt bound:
+/// claim, crash before recording any provider event, recover — the
+/// row eventually dead-letters at maxAttempts instead of retrying
+/// forever.
+#[test]
+fn crash_recovery_cycles_cannot_bypass_the_attempt_bound() {
+    let mut intents = BTreeMap::new();
+    let link_row = link(LINK_A, TASK_ONE, INSTALLATION_A, PROVIDER_A);
+    let planned = decision::plan_intent(
+        &mut intents,
+        &link_row,
+        decision::DecisionOutcome::Allowed,
+        "x",
+        "k-crash-loop".into(),
+        0,
+    )
+    .expect("intent");
+    let intent_id = planned.intent_id.clone();
+    for cycle in 1..=6u64 {
+        let intent = intents.get_mut(&intent_id).unwrap();
+        let step = decision::claim(intent, cycle, cycle * 10, 1, 1, 5);
+        if cycle < 6 {
+            assert_eq!(step, DispatchStep::Claimed, "cycle {cycle}");
+            // Crash: no provider event is ever recorded; the lease is
+            // recovered as expired and the row returns to pending.
+            assert_eq!(
+                decision::recover_expired_lease(intent, cycle * 10 + 1, 1),
+                DispatchStep::LeaseExpired
+            );
+            assert_eq!(intent.state, OutboxState::Pending);
+        } else {
+            assert_eq!(
+                step,
+                DispatchStep::DeadLettered,
+                "the budget bound dead-letters at maxAttempts"
+            );
+        }
+    }
+    let intent = intents.get(&intent_id).unwrap();
+    assert_eq!(intent.state, OutboxState::DeadLetter);
+    assert_eq!(intent.attempts, 5, "every claim counted toward the bound");
+}
+
+/// Generation fencing is enforced at every consume point: a leased
+/// intent whose link generation moved on is cancelled at dispatch, and
+/// a stale pending intent is cancelled at claim.
+#[test]
+fn generation_fencing_cancels_stale_intents_at_consume() {
+    let mut link_row = link(LINK_A, TASK_ONE, INSTALLATION_A, PROVIDER_A);
+    let mut intents = BTreeMap::new();
+    let planned = decision::plan_intent(
+        &mut intents,
+        &link_row,
+        decision::DecisionOutcome::Allowed,
+        "x",
+        "k-gen".into(),
+        0,
+    )
+    .expect("intent");
+    let intent_id = planned.intent_id.clone();
+    {
+        let intent = intents.get_mut(&intent_id).unwrap();
+        assert_eq!(
+            decision::claim(intent, 7, 0, 30_000, 1, 5),
+            DispatchStep::Claimed
+        );
+    }
+    // Detach bumps the generation; the leased intent survives the call
+    // itself but can never dispatch again.
+    decision::detach_link(&mut link_row);
+    {
+        let intent = intents.get_mut(&intent_id).unwrap();
+        assert_eq!(
+            decision::dispatch(intent, &DispatchEvent::ProviderAccepted, 7, 1, 5, 0, 2),
+            DispatchStep::GenerationStale,
+            "a stale-generation intent never dispatches"
+        );
+        assert_eq!(intent.state, OutboxState::Cancelled);
+    }
+    // A stale pending intent is fenced at claim time too.
+    let planned = decision::plan_intent(
+        &mut intents,
+        &link_row,
+        decision::DecisionOutcome::Allowed,
+        "x",
+        "k-gen-2".into(),
+        5,
+    );
+    assert!(planned.is_none(), "a detached link plans nothing");
+    let mut stale_row = link(LINK_B, TASK_TWO, INSTALLATION_B, PROVIDER_B);
+    let planned = decision::plan_intent(
+        &mut intents,
+        &stale_row,
+        decision::DecisionOutcome::Allowed,
+        "x",
+        "k-gen-3".into(),
+        5,
+    )
+    .expect("intent on generation 1");
+    stale_row.generation = 2; // the link moved on without cancellation
+    let intent = intents.get_mut(&planned.intent_id).unwrap();
+    assert_eq!(
+        decision::claim(intent, 9, 10, 30_000, 2, 5),
+        DispatchStep::GenerationStale,
+        "a stale pending intent is cancelled at claim"
+    );
+    assert_eq!(intent.state, OutboxState::Cancelled);
+}
+
+/// Inbound admission is fenced by the full link identity, lifecycle,
+/// and sync mode; the dedup scope spans workspace and object type, so
+/// same-text events in different scopes never alias.
+#[test]
+fn inbound_events_are_scope_fenced_and_fully_scoped_in_dedup() {
+    let mut link_row = link(LINK_A, TASK_ONE, INSTALLATION_A, PROVIDER_A);
+    let mut inbox = BTreeMap::new();
+    let own = InboundEvent {
+        event_identity: "evt-own".to_owned(),
+        workspace_id: WORKSPACE.to_owned(),
+        installation_id: INSTALLATION_A.to_owned(),
+        provider_id: PROVIDER_A.to_owned(),
+        object_type: OBJECT_TYPE.to_owned(),
+        external_id: EXTERNAL_ID.to_owned(),
+        revision: "r-1".to_owned(),
+        causation_id: "c1".to_owned(),
+    };
+    // A foreign installation never applies and never moves the cursor.
+    let foreign = InboundEvent {
+        installation_id: INSTALLATION_B.to_owned(),
+        ..own.clone()
+    };
+    assert_eq!(
+        decision::ingest_event(
+            &mut link_row,
+            &mut inbox,
+            decision::RevisionOrdering::ComparableTotal,
+            &foreign
+        ),
+        (false, "foreign-scope")
+    );
+    // A foreign workspace or object type is equally foreign.
+    let foreign_workspace = InboundEvent {
+        workspace_id: "ws-other".to_owned(),
+        ..own.clone()
+    };
+    assert_eq!(
+        decision::ingest_event(
+            &mut link_row,
+            &mut inbox,
+            decision::RevisionOrdering::ComparableTotal,
+            &foreign_workspace
+        ),
+        (false, "foreign-scope")
+    );
+    // A detached link observes nothing, not even its own events.
+    let mut detached = link(LINK_A, TASK_ONE, INSTALLATION_A, PROVIDER_A);
+    decision::detach_link(&mut detached);
+    assert_eq!(
+        decision::ingest_event(
+            &mut detached,
+            &mut inbox,
+            decision::RevisionOrdering::ComparableTotal,
+            &own
+        ),
+        (false, "detached")
+    );
+    // Outbound-only and disabled links admit no inbound traffic.
+    let mut outbound_only = link(LINK_A, TASK_ONE, INSTALLATION_A, PROVIDER_A);
+    outbound_only.sync_mode = SyncMode::Outbound;
+    assert_eq!(
+        decision::ingest_event(
+            &mut outbound_only,
+            &mut inbox,
+            decision::RevisionOrdering::ComparableTotal,
+            &own
+        ),
+        (false, "inbound-disabled")
+    );
+    // The own event applies exactly once.
+    assert_eq!(
+        decision::ingest_event(
+            &mut link_row,
+            &mut inbox,
+            decision::RevisionOrdering::ComparableTotal,
+            &own
+        ),
+        (true, "applied")
+    );
+    // Same event text in a different workspace or object scope is a
+    // distinct receipt: the typed tuple is the dedup key.
+    let other_scope = InboundEvent {
+        workspace_id: "ws-other".to_owned(),
+        ..own.clone()
+    };
+    let mut other_link = link(LINK_B, TASK_ONE, INSTALLATION_A, PROVIDER_A);
+    other_link.workspace_id = "ws-other".to_owned();
+    other_link.inbound_cursor = Some("r-0".to_owned());
+    assert_eq!(
+        decision::ingest_event(
+            &mut other_link,
+            &mut inbox,
+            decision::RevisionOrdering::ComparableTotal,
+            &other_scope
+        ),
+        (true, "applied"),
+        "workspace scope never aliases another scope's receipt"
+    );
+    let other_object = InboundEvent {
+        object_type: "pull_request".to_owned(),
+        ..own.clone()
+    };
+    let mut object_link = link(LINK_B, TASK_ONE, INSTALLATION_A, PROVIDER_A);
+    object_link.object_type = "pull_request".to_owned();
+    object_link.inbound_cursor = Some("r-0".to_owned());
+    assert_eq!(
+        decision::ingest_event(
+            &mut object_link,
+            &mut inbox,
+            decision::RevisionOrdering::ComparableTotal,
+            &other_object
+        ),
+        (true, "applied"),
+        "object-type scope never aliases another scope's receipt"
+    );
+    assert_eq!(inbox.len(), 3);
+    // Refused events reserved no receipts and moved no cursors.
+    assert_eq!(link_row.inbound_cursor.as_deref(), Some("r-1"));
 }
 
 /// The registry chain admits the eight new rules while predecessor
@@ -972,12 +1334,12 @@ mod native_leg {
             let connection = open(&path);
             let intent = intents.get_mut(&intent_id).unwrap();
             assert_eq!(
-                decision::claim(intent, 41, 0, 30_000),
+                decision::claim(intent, 41, 0, 30_000, 1, 5),
                 DispatchStep::Claimed
             );
             persist(&connection, intent);
             assert_eq!(
-                decision::dispatch(intent, &DispatchEvent::ProviderAccepted, 41, 1, 5, 100),
+                decision::dispatch(intent, &DispatchEvent::ProviderAccepted, 41, 1, 5, 100, 1),
                 DispatchStep::AcceptedPendingAck
             );
             persist(&connection, intent);
@@ -1014,9 +1376,12 @@ mod native_leg {
         {
             let connection = open(&path);
             let intent = intents.get_mut(&intent_id).unwrap();
-            assert_eq!(decision::claim(intent, 7, 0, 30_000), DispatchStep::Claimed);
             assert_eq!(
-                decision::dispatch(intent, &DispatchEvent::ProviderFailed, 7, 0, 2, 0),
+                decision::claim(intent, 7, 0, 30_000, 1, 5),
+                DispatchStep::Claimed
+            );
+            assert_eq!(
+                decision::dispatch(intent, &DispatchEvent::ProviderFailed, 7, 0, 2, 0, 1),
                 DispatchStep::RetryScheduled
             );
             persist(&connection, intent);
@@ -1042,11 +1407,19 @@ mod native_leg {
         let mut restored = intents.get_mut(&intent_id).unwrap().clone();
         restored.attempts = attempts as u64; // from the durable row
         assert_eq!(
-            decision::claim(&mut restored, 8, 100, 30_000),
+            decision::claim(&mut restored, 8, 100, 30_000, 1, 2),
             DispatchStep::Claimed
         );
         assert_eq!(
-            decision::dispatch(&mut restored, &DispatchEvent::ProviderFailed, 8, 100, 2, 0),
+            decision::dispatch(
+                &mut restored,
+                &DispatchEvent::ProviderFailed,
+                8,
+                100,
+                2,
+                0,
+                1
+            ),
             DispatchStep::DeadLettered,
             "the durable attempt count enforces the bound across restarts"
         );

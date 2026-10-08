@@ -18,16 +18,18 @@ const failures = [];
 const fail = (reason, detail) => failures.push({ reason, detail });
 const read = (relative) => JSON.parse(readFileSync(join(root, relative), "utf8"));
 
-// 1. The attachment's delivery rules carry the closed state machine
+// 1. The attachment's delivery rules carry the closed nine-state machine
 //    and the hard boundaries.
 const EXPECTED_STATES = [
   "pending",
   "leased",
+  "accepted_pending_ack",
   "delivered",
   "retry_wait",
   "conflicted",
   "cancelled",
   "dead_letter",
+  "unknown_delivery",
 ];
 {
   const attachment = read("tests/fixtures/task-external-links/contracts/integration.json");

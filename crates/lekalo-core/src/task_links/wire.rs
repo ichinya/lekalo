@@ -202,7 +202,10 @@ pub struct OperationBinding {
 /// The delivery rule block: durable outbox states and hard boundaries.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DeliveryRules {
-    /// The exact seven-state outbox machine, in canonical order.
+    /// The exact nine-state outbox machine, in canonical order: the
+    /// seven durable delivery states plus the two uncertainty states
+    /// (`accepted_pending_ack`, `unknown_delivery`) the engine
+    /// actually implements.
     pub outbox_states: Vec<String>,
     /// Bounded attempts before dead-letter.
     pub max_attempts: u64,
@@ -1410,11 +1413,13 @@ fn delivery_rules(
     let expected = [
         "pending",
         "leased",
+        "accepted_pending_ack",
         "delivered",
         "retry_wait",
         "conflicted",
         "cancelled",
         "dead_letter",
+        "unknown_delivery",
     ];
     if states.len() != expected.len()
         || states

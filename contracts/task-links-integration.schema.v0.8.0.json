@@ -603,21 +603,23 @@
       "properties": {
         "outboxStates": {
           "type": "array",
-          "minItems": 7,
-          "maxItems": 7,
+          "minItems": 9,
+          "maxItems": 9,
           "uniqueItems": true,
           "items": {
             "enum": [
               "pending",
               "leased",
+              "accepted_pending_ack",
               "delivered",
               "retry_wait",
               "conflicted",
               "cancelled",
-              "dead_letter"
+              "dead_letter",
+              "unknown_delivery"
             ]
           },
-          "description": "The canonical seven-state machine in canonical order; the wire layer enforces exact order."
+          "description": "The canonical nine-state machine in canonical order: the seven durable delivery states plus the two uncertainty states the engine implements (accepted_pending_ack, unknown_delivery); the wire layer enforces exact order."
         },
         "maxAttempts": {
           "type": "integer",

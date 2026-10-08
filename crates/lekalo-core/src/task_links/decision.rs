@@ -6,9 +6,13 @@
 //! authorization (`allowed|denied`) observations; only an `allowed`
 //! outcome may produce an outbox intent. The outbox engine is a pure
 //! deterministic state machine over typed state: leased dispatch uses a
-//! fencing token, retries keep their idempotency key, echoes never spawn
-//! fresh intents, and acceptance-before-acknowledgement surfaces as an
-//! explicit `unknown_delivery` observation instead of a guessed success.
+//! fencing token honored to its deadline, retries keep their idempotency
+//! key, echoes never spawn fresh intents, foreign-scope and
+//! detached-link events never mutate a link, stale link generations
+//! cancel their intents at every consume point, and
+//! acceptance-before-acknowledgement surfaces as an explicit durable
+//! `unknown_delivery` observation that stays un-re-sendable until an
+//! explicit reconciliation resolves it.
 //! A deterministic injected clock (`now_ms`) owns all timing; there is
 //! no host I/O, thread, scheduler, or network access anywhere in this
 //! module.
@@ -241,6 +245,12 @@ pub enum OutboxState {
     Cancelled,
     /// Bounded attempts exhausted.
     DeadLetter,
+    /// The durable unknown-delivery state: recovery inside the
+    /// acceptance-before-acknowledgement window lands here. The state
+    /// is persistent and non-dispatchable — no claim and no dispatch
+    /// applies — until the explicit reconciliation command resolves it
+    /// to delivered or back to pending.
+    UnknownDelivery,
 }
 
 impl OutboxState {
@@ -255,6 +265,7 @@ impl OutboxState {
             Self::Conflicted => "conflicted",
             Self::Cancelled => "cancelled",
             Self::DeadLetter => "dead_letter",
+            Self::UnknownDelivery => "unknown_delivery",
         }
     }
 }
@@ -293,10 +304,14 @@ pub struct Link {
 pub struct InboundEvent {
     /// Scoped provider event identity (dedup key).
     pub event_identity: String,
+    /// Owning workspace.
+    pub workspace_id: String,
     /// Originating installation.
     pub installation_id: String,
     /// Originating provider.
     pub provider_id: String,
+    /// Provider object type.
+    pub object_type: String,
     /// Originating external object.
     pub external_id: String,
     /// Provider revision.
@@ -330,6 +345,9 @@ pub enum DispatchStep {
     LeaseStale,
     /// The lease expired by time (the intent becomes recoverable).
     LeaseExpired,
+    /// The intent's link generation moved on: the intent is fenced out
+    /// and cancelled (a stale generation never dispatches).
+    GenerationStale,
     /// The provider accepted; the intent awaits acknowledgement.
     AcceptedPendingAck,
     /// Recovery inside the acceptance-before-ack window: the outcome is
@@ -345,8 +363,19 @@ pub enum DispatchStep {
     Conflicted,
     /// The intent was cancelled.
     Cancelled,
+    /// A live lease was recovered back to pending (the key is kept).
+    Recovered,
     /// The step was a no-op (wrong state, exhausted, not yet eligible).
     Ignored,
+}
+
+/// The explicit outcome of one unknown-delivery reconciliation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Reconciliation {
+    /// The provider (or its receipt) proved the write landed.
+    Delivered,
+    /// The write provably never landed; the intent may dispatch again.
+    NotDelivered,
 }
 
 /// The declared revision-ordering behavior of one provider contract.
@@ -378,8 +407,13 @@ pub fn revision_incomparable(ordering: RevisionOrdering, cursor: &str, revision:
             if cursor == revision {
                 return false;
             }
+            // The suffix convention is only decidable within one
+            // revision family: distinct prefixes are unrelated tokens,
+            // never a lexical progress ordering.
             match (cursor.split_once('-'), revision.split_once('-')) {
-                (Some((_, left)), Some((_, right))) => {
+                (Some((left_prefix, left)), Some((right_prefix, right)))
+                    if left_prefix == right_prefix =>
+                {
                     match (left.parse::<u64>(), right.parse::<u64>()) {
                         (Ok(l), Ok(r)) => r <= l,
                         _ => true,
@@ -393,14 +427,19 @@ pub fn revision_incomparable(ordering: RevisionOrdering, cursor: &str, revision:
 }
 
 /// The typed scope key of one inbound event: the full
-/// installation/provider/external tuple. String concatenation with a
-/// separator is not injective, so the map key is the struct itself.
+/// workspace/installation/provider/object/external tuple plus the
+/// scoped event identity. String concatenation with a separator is not
+/// injective, so the map key is the struct itself.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct EventScope {
+    /// Owning workspace.
+    pub workspace_id: String,
     /// Originating installation.
     pub installation_id: String,
     /// Originating provider.
     pub provider_id: String,
+    /// Provider object type.
+    pub object_type: String,
     /// External object id (exact text).
     pub external_id: String,
     /// Scoped event identity within the scope.
@@ -409,21 +448,49 @@ pub struct EventScope {
 
 /// Ingest one inbound event against the current inbox.
 ///
-/// The inbox is keyed by the typed scope tuple, so a foreign or
-/// detached-link event with a colliding text identity never aliases an
-/// existing receipt. Returns `(applied, receipt)`: a repeated scoped
-/// event identity replays the original outcome (`applied == false`)
-/// without repeating effects. Non-comparable revisions with the cursor
-/// produce the `conflict` receipt and never guess an ordering.
+/// The engine enforces full admission itself: the event's complete
+/// workspace/installation/provider/object/external tuple must match
+/// the link's own identity (`foreign-scope`), the link must be active
+/// (`detached`), and its sync mode must admit inbound traffic
+/// (`inbound-disabled`). The inbox is keyed by the typed scope tuple,
+/// so events in different workspace or object scopes never alias one
+/// another. Refused events reserve no receipt, mutate no cursor, and
+/// touch no state. Returns `(applied, receipt)`: a repeated scoped
+/// event identity replays the original outcome
+/// (`applied == false`) without repeating effects. Non-comparable
+/// revisions with the cursor produce the `conflict` receipt and never
+/// guess an ordering.
 pub fn ingest_event(
     link: &mut Link,
     inbox: &mut BTreeMap<EventScope, String>,
     ordering: RevisionOrdering,
     event: &InboundEvent,
 ) -> (bool, &'static str) {
+    // A detached link observes nothing: history is retained, but no
+    // further event mutates the aggregate or its cursors.
+    if link.state == LinkState::Detached {
+        return (false, "detached");
+    }
+    // Inbound traffic needs an inbound-admitting sync mode.
+    if matches!(link.sync_mode, SyncMode::Disabled | SyncMode::Outbound) {
+        return (false, "inbound-disabled");
+    }
+    // The link's own identity tuple fences foreign-scope events: an
+    // event for another workspace/installation/provider/object never
+    // applies and never advances this link's cursor.
+    if event.workspace_id != link.workspace_id
+        || event.installation_id != link.installation_id
+        || event.provider_id != link.provider_id
+        || event.object_type != link.object_type
+        || event.external_id != link.external_id
+    {
+        return (false, "foreign-scope");
+    }
     let scope = EventScope {
+        workspace_id: event.workspace_id.clone(),
         installation_id: event.installation_id.clone(),
         provider_id: event.provider_id.clone(),
+        object_type: event.object_type.clone(),
         external_id: event.external_id.clone(),
         event_identity: event.event_identity.clone(),
     };
@@ -572,12 +639,39 @@ fn injective_intent_id(link_id: &str, key: &str) -> String {
 
 /// Claim one eligible intent under a fenced, time-bounded lease.
 ///
-/// The lease expires at `now_ms + lease_ms`; a later claim attempt
-/// after expiry is fenced out (`LeaseExpired`) and [`recover_lease`]
-/// can return the intent to pending for a fresh claim.
-pub fn claim(intent: &mut Intent, lease_token: u64, now_ms: u64, lease_ms: u64) -> DispatchStep {
+/// The lease expires at `now_ms + lease_ms`; a later dispatch after
+/// expiry is fenced out (`LeaseExpired`) and [`recover_lease`] can
+/// return the intent to pending for a fresh claim. Every fence is
+/// enforced before a lease is handed out: the durable retry budget
+/// (`attempts >= max_attempts` dead-letters the row, including after
+/// claim/crash/recover cycles), the current link generation (a stale
+/// generation cancels the intent), and the persistent
+/// `unknown_delivery` state (claimable only after an explicit
+/// [`reconcile_unknown_delivery`]).
+pub fn claim(
+    intent: &mut Intent,
+    lease_token: u64,
+    now_ms: u64,
+    lease_ms: u64,
+    link_generation: u64,
+    max_attempts: u64,
+) -> DispatchStep {
     if intent.state != OutboxState::Pending && intent.state != OutboxState::RetryWait {
         return DispatchStep::Ignored;
+    }
+    // The durable retry budget is enforced before every send: repeated
+    // claim/crash/recover cycles can never bypass the bound.
+    if intent.attempts >= max_attempts {
+        intent.state = OutboxState::DeadLetter;
+        intent.lease_token = None;
+        intent.lease_expires_ms = None;
+        return DispatchStep::DeadLettered;
+    }
+    if intent.link_generation != link_generation {
+        intent.state = OutboxState::Cancelled;
+        intent.lease_token = None;
+        intent.lease_expires_ms = None;
+        return DispatchStep::GenerationStale;
     }
     if now_ms < intent.next_attempt_ms {
         return DispatchStep::Ignored;
@@ -592,7 +686,17 @@ pub fn claim(intent: &mut Intent, lease_token: u64, now_ms: u64, lease_ms: u64) 
     DispatchStep::Claimed
 }
 
-/// Apply one dispatch event to a leased intent.
+/// Apply one dispatch event to a leased (or acceptance-pending-ack)
+/// intent.
+///
+/// Every path is fenced three ways: the state must be dispatchable,
+/// the caller must hold the exact lease token, the intent's link
+/// generation must still be current (`link_generation`), and the lease
+/// must not have expired by time at `now_ms`. An expired lease is a
+/// [`DispatchStep::LeaseExpired`] refusal that mutates nothing: only
+/// [`recover_expired_lease`] may move an expired row. A stale
+/// generation cancels the intent outright — a leased intent may not
+/// survive its link's generation bump as dispatchable.
 pub fn dispatch(
     intent: &mut Intent,
     event: &DispatchEvent,
@@ -600,15 +704,28 @@ pub fn dispatch(
     now_ms: u64,
     max_attempts: u64,
     backoff_ms: u64,
+    link_generation: u64,
 ) -> DispatchStep {
-    if intent.state != OutboxState::Leased {
+    if intent.state != OutboxState::Leased && intent.state != OutboxState::AcceptedPendingAck {
         return DispatchStep::Ignored;
     }
     if intent.lease_token != Some(fence) {
         return DispatchStep::LeaseStale;
     }
+    if intent.link_generation != link_generation {
+        intent.state = OutboxState::Cancelled;
+        intent.lease_token = None;
+        intent.lease_expires_ms = None;
+        return DispatchStep::GenerationStale;
+    }
+    if lease_expired(intent, now_ms) {
+        return DispatchStep::LeaseExpired;
+    }
     match event {
         DispatchEvent::ProviderAccepted => {
+            if intent.state == OutboxState::AcceptedPendingAck {
+                return DispatchStep::Ignored;
+            }
             // Acceptance before acknowledgement: the durable record moves
             // to the explicit `accepted_pending_ack` state. It never
             // claims delivered and never silently re-sends; recovery in
@@ -617,9 +734,9 @@ pub fn dispatch(
             DispatchStep::AcceptedPendingAck
         }
         DispatchEvent::Acknowledged => {
-            if intent.state == OutboxState::AcceptedPendingAck {
-                intent.attempts = intent.attempts.saturating_sub(0);
-            }
+            // The acknowledgement completes the intent from either the
+            // leased state or the acceptance-before-ack window: a live
+            // worker that delivered successfully can always finish.
             intent.state = OutboxState::Delivered;
             intent.lease_token = None;
             intent.lease_expires_ms = None;
@@ -635,13 +752,16 @@ pub fn dispatch(
             intent.lease_expires_ms = None;
             DispatchStep::Cancelled
         }
-        DispatchEvent::ProviderConflict => {
+        // Failure and conflict paths are lease-state transitions: after
+        // a provider acceptance there is nothing to retry, so those
+        // events are no-ops inside the ack window.
+        DispatchEvent::ProviderConflict if intent.state == OutboxState::Leased => {
             intent.state = OutboxState::Conflicted;
             intent.lease_token = None;
             intent.lease_expires_ms = None;
             DispatchStep::Conflicted
         }
-        DispatchEvent::ProviderFailed => {
+        DispatchEvent::ProviderFailed if intent.state == OutboxState::Leased => {
             if intent.attempts >= max_attempts {
                 intent.state = OutboxState::DeadLetter;
             } else {
@@ -656,6 +776,7 @@ pub fn dispatch(
                 DispatchStep::RetryScheduled
             }
         }
+        DispatchEvent::ProviderConflict | DispatchEvent::ProviderFailed => DispatchStep::Ignored,
     }
 }
 
@@ -663,12 +784,13 @@ pub fn dispatch(
 ///
 /// A live lease returns the intent to pending under the same
 /// idempotency key, preserving delivery uncertainty. Recovery from the
-/// acceptance-before-acknowledgement window returns the explicit
-/// `unknown_delivery` step: the record cannot distinguish "never
-/// sent" from "accepted, ack lost", so it reports the uncertainty
-/// instead of guessing. A stale fence is refused in both states.
-pub fn recover_lease(intent: &mut Intent, fence: u64) -> DispatchStep {
-    if intent.lease_token != Some(fence) {
+/// acceptance-before-acknowledgement window moves the durable record
+/// to the persistent `unknown_delivery` state: the outcome cannot be
+/// proven locally, the state is not dispatchable, and only the
+/// explicit [`reconcile_unknown_delivery`] command resolves it. A
+/// stale fence or a moved link generation is refused.
+pub fn recover_lease(intent: &mut Intent, fence: u64, link_generation: u64) -> DispatchStep {
+    if intent.lease_token != Some(fence) || intent.link_generation != link_generation {
         return DispatchStep::LeaseStale;
     }
     match intent.state {
@@ -676,10 +798,10 @@ pub fn recover_lease(intent: &mut Intent, fence: u64) -> DispatchStep {
             intent.state = OutboxState::Pending;
             intent.lease_token = None;
             intent.lease_expires_ms = None;
-            DispatchStep::Claimed
+            DispatchStep::Recovered
         }
         OutboxState::AcceptedPendingAck => {
-            intent.state = OutboxState::Pending;
+            intent.state = OutboxState::UnknownDelivery;
             intent.lease_token = None;
             intent.lease_expires_ms = None;
             DispatchStep::UnknownDelivery
@@ -698,15 +820,28 @@ pub fn lease_expired(intent: &Intent, now_ms: u64) -> bool {
         .is_some_and(|deadline| now_ms >= deadline)
 }
 
-/// Recover one expired lease: a time-expired lease (live or
-/// accepted-pending-ack) returns the intent to pending, preserving the
-/// key. A non-expired or non-leased intent is a no-op.
-pub fn recover_expired_lease(intent: &mut Intent, now_ms: u64) -> DispatchStep {
+/// Recover one expired lease: a time-expired live lease returns the
+/// intent to pending; recovery from the ack window moves the row to
+/// the persistent `unknown_delivery` state instead, so it stays
+/// unre-sendable until reconciliation. A non-expired or non-leased
+/// intent is a no-op. The link generation must still be current.
+pub fn recover_expired_lease(
+    intent: &mut Intent,
+    now_ms: u64,
+    link_generation: u64,
+) -> DispatchStep {
+    if intent.link_generation != link_generation {
+        return DispatchStep::LeaseStale;
+    }
     if !lease_expired(intent, now_ms) {
         return DispatchStep::Ignored;
     }
     let was_accepted = intent.state == OutboxState::AcceptedPendingAck;
-    intent.state = OutboxState::Pending;
+    intent.state = if was_accepted {
+        OutboxState::UnknownDelivery
+    } else {
+        OutboxState::Pending
+    };
     intent.lease_token = None;
     intent.lease_expires_ms = None;
     if was_accepted {
@@ -716,13 +851,43 @@ pub fn recover_expired_lease(intent: &mut Intent, now_ms: u64) -> DispatchStep {
     }
 }
 
+/// Reconcile one durable unknown-delivery record (the explicit
+/// reconciliation command for the acceptance-before-ack window).
+///
+/// `Reconciliation::Delivered` completes the intent as delivered with
+/// its receipt; `Reconciliation::NotDelivered` returns the intent to
+/// pending so it may claim again. An intent in any other state is a
+/// no-op: reconciliation exists only for the recorded uncertainty.
+pub fn reconcile_unknown_delivery(intent: &mut Intent, outcome: Reconciliation) -> DispatchStep {
+    if intent.state != OutboxState::UnknownDelivery {
+        return DispatchStep::Ignored;
+    }
+    match outcome {
+        Reconciliation::Delivered => {
+            intent.state = OutboxState::Delivered;
+            intent.lease_token = None;
+            intent.lease_expires_ms = None;
+            intent.receipt_digest = Some(format!(
+                "sha256:{}",
+                crate::digest::sha256_hex(intent.idempotency_key.as_bytes(),)
+            ));
+            DispatchStep::Delivered
+        }
+        Reconciliation::NotDelivered => {
+            intent.state = OutboxState::Pending;
+            DispatchStep::Recovered
+        }
+    }
+}
+
 /// Cancel every cancellable intent of a detached or revoked link:
 /// pending/retry intents and any still-leased intent (generation
 /// fencing means a leased intent may not survive its link's generation
 /// bump as dispatchable). Delivered, conflicted, cancelled, and
-/// dead-lettered rows are terminal and stay untouched; an accepted
-/// pending-ack row is cancelled too, its receipt must be reconciled
-/// and can never be silently re-sent.
+/// dead-lettered rows are terminal and stay untouched; accepted
+/// pending-ack and durable unknown-delivery rows are cancelled too —
+/// their receipts must be reconciled and can never be silently
+/// re-sent.
 pub fn cancel_link_intents(intents: &mut BTreeMap<String, Intent>, link_id: &str) -> usize {
     let mut cancelled = 0;
     for intent in intents.values_mut() {
@@ -733,6 +898,7 @@ pub fn cancel_link_intents(intents: &mut BTreeMap<String, Intent>, link_id: &str
                     | OutboxState::RetryWait
                     | OutboxState::Leased
                     | OutboxState::AcceptedPendingAck
+                    | OutboxState::UnknownDelivery
             )
         {
             intent.state = OutboxState::Cancelled;
@@ -776,8 +942,9 @@ impl DeliverySummary {
 
 /// Summarize one fan-out from the typed intent map. The taxonomy is
 /// honest: conflicted/cancelled/dead-letter are *known* terminal
-/// outcomes (`resolved_terminal`); only the acceptance-before-ack
-/// window (`accepted_pending_ack`) is genuinely `unknown`.
+/// outcomes (`resolved_terminal`); the acceptance-before-ack window
+/// (`accepted_pending_ack`) and any pending row carrying the durable
+/// unknown-delivery marker are genuinely `unknown`.
 pub fn delivery_summary(intents: &BTreeMap<String, Intent>) -> DeliverySummary {
     let mut summary = DeliverySummary {
         delivered: 0,
@@ -793,7 +960,7 @@ pub fn delivery_summary(intents: &BTreeMap<String, Intent>) -> DeliverySummary {
             OutboxState::Pending | OutboxState::Leased | OutboxState::RetryWait => {
                 summary.pending += 1
             }
-            OutboxState::AcceptedPendingAck => summary.unknown += 1,
+            OutboxState::AcceptedPendingAck | OutboxState::UnknownDelivery => summary.unknown += 1,
             OutboxState::Conflicted | OutboxState::Cancelled | OutboxState::DeadLetter => {
                 summary.resolved_terminal += 1
             }

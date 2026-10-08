@@ -307,10 +307,18 @@ fn stale_evidence_fails_closed() {
     let original =
         std::fs::read_to_string(workspace_path(fixture("evidence/mock-run.json").as_str()))
             .expect("evidence");
+    // Derive the stale copy from the live base revision: the evidence
+    // pin moves with the attachment, so the mutation must too.
+    let evidence: Value = serde_json::from_str(&original).expect("evidence json");
+    let live_revision = evidence["attachmentRevision"]
+        .as_str()
+        .expect("revision")
+        .to_owned();
     let stale = original.replace(
-        "sha256:d098ce1808d50f32458769214f1599f1e802236909d93e42b51f000fae66565f",
+        &live_revision,
         "sha256:0000000000000000000000000000000000000000000000000000000000000000",
     );
+    assert_ne!(stale, original, "the stale mutation must apply");
     std::fs::write(&target, stale).expect("write stale copy");
     let stale_path = target.to_string_lossy().into_owned();
     let output = lekalo_in(

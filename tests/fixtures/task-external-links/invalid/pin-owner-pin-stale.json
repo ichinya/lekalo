@@ -1,7 +1,7 @@
 {
   "schemaVersion": "lekalo/task-links-integration/v0.8.0",
   "identity": "dev.lekalo.task-links-integration@0.8.0",
-  "attachmentRevision": "sha256:216ebab1fda19df21b222c5a92a65fc8b27dc6de3096269af9b4dc9e500d3a14",
+  "attachmentRevision": "sha256:ecf0f217ad4d005d94824a6be0b7fa56a1cf4cb1bcf1531e23be16a68db79ea6",
   "projectId": "tasklinks",
   "modelRef": {
     "schemaVersion": "0.2.16",
@@ -269,11 +269,13 @@
     "outboxStates": [
       "pending",
       "leased",
+      "accepted_pending_ack",
       "delivered",
       "retry_wait",
       "conflicted",
       "cancelled",
-      "dead_letter"
+      "dead_letter",
+      "unknown_delivery"
     ],
     "maxAttempts": 5,
     "backoffMs": 100,
