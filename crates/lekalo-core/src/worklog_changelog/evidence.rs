@@ -10,16 +10,26 @@
 //! - **Permissive** degrades the verdict while keeping every gap
 //!   visible. It can never turn a strict blocker into a pass.
 //!
-//! Both profiles refuse honestly: the admission derives the verdict
-//! from the report's own rows, never from a claim.
+//! Admission is a bound join, never a trust of report-controlled
+//! lists: the report is decoded through the complete closed wire
+//! contract (the same member sets, types, bounds, enums, and
+//! additional-property rejections the published 0.8.0 schema
+//! enforces), pinned to the exact composition document by its
+//! domain-prefixed digest, and joined to the pinned compilation's
+//! scenario catalog and the composition's required capability
+//! inventory. A report author cannot remove a required guarantee by
+//! clearing a flag or deleting a row: the required inventory comes
+//! from the composition and the compilation, not from the report.
 
 use serde::Serialize;
 use serde_json::Value as Json;
 
 use super::diagnostic;
+use super::types::Composition;
 use super::version;
 
 use crate::diagnostics::DiagnosticSet;
+use crate::ir::{CompiledProject, Definition};
 use crate::result::{singleton_set, DomainResult, Status};
 
 /// The closed admission profile.
@@ -82,7 +92,14 @@ pub fn io_failure(detail: &str) -> DiagnosticSet {
     diagnostic::input_invalid(detail)
 }
 
-/// The closed top-level member set of the evidence report.
+// ---------------------------------------------------------------------------
+// The closed wire contract: the exact mirror of the published 0.8.0
+// evidence schema. Every member set is closed, every required member
+// is required, every enum is closed, every string is bounded, and
+// nested objects reject additional members. Required-key presence is
+// not schema parity.
+// ---------------------------------------------------------------------------
+
 const TOP_LEVEL_KEYS: &[&str] = &[
     "schemaVersion",
     "identity",
@@ -97,10 +114,8 @@ const TOP_LEVEL_KEYS: &[&str] = &[
     "verdict",
 ];
 
-/// The schema-required top-level members: admission enforces their
-/// presence exactly like the closed schema does.
-const TOP_LEVEL_REQUIRED: &[&str] = TOP_LEVEL_KEYS;
-
+const COMPOSITION_REF_KEYS: &[&str] = &["identity", "digest"];
+const TOOLCHAIN_KEYS: &[&str] = &["harness", "node", "ajv"];
 const TARGET_KEYS: &[&str] = &[
     "target",
     "backend",
@@ -109,64 +124,257 @@ const TARGET_KEYS: &[&str] = &[
     "assertions",
     "blocking",
 ];
-
-/// The schema-required per-target members.
-const TARGET_REQUIRED: &[&str] = TARGET_KEYS;
-
+const BACKEND_KEYS: &[&str] = &["state", "identity", "digest"];
+const BACKEND_REQUIRED: &[&str] = &["state"];
 const CAPABILITY_KEYS: &[&str] = &["capability", "support", "approval", "blocking", "note"];
+const CAPABILITY_REQUIRED: &[&str] = &["capability", "support", "blocking", "note"];
+const ASSERTION_KEYS: &[&str] = &["scenario", "status"];
+const SCENARIO_RESULT_KEYS: &[&str] = &["scenario", "status", "targets"];
+const CONSUMER_KEYS: &[&str] = &["consumer", "witness", "relation"];
+const COMPLETENESS_KEYS: &[&str] = &["consumerClosure", "coverage", "unknownExternalConsumers"];
+const VERDICT_KEYS: &[&str] = &["strict", "permissive", "degraded"];
 
+/// The closed target vocabulary.
+const TARGETS: &[&str] = &["php", "go"];
+/// The closed per-scenario target vocabulary (the reference evaluator
+/// is an admitted scenario target; it is not a portability backend).
+const SCENARIO_TARGETS: &[&str] = &["php", "go", "fake-reference"];
 /// The closed support vocabulary.
 const SUPPORT: &[&str] = &["supported", "partial", "unsupported", "unknown"];
-
 /// The closed assertion status vocabulary.
 const ASSERTION_STATUS: &[&str] = &["pass", "fail", "unsupported", "not_executed"];
+/// The closed execution vocabulary.
+const EXECUTION: &[&str] = &["executed", "not_executed"];
+/// The closed backend-state vocabulary.
+const BACKEND_STATE: &[&str] = &["bound", "absent"];
+/// The closed approval vocabulary.
+const APPROVAL: &[&str] = &["not_required", "reviewed"];
+/// The closed profile vocabulary.
+const PROFILES: &[&str] = &["strict", "permissive"];
+/// The closed completeness vocabularies.
+const CLOSURE: &[&str] = &["complete", "incomplete"];
+const COVERAGE: &[&str] = &["full", "partial"];
+/// The closed verdict-claim vocabularies.
+const STRICT_CLAIM: &[&str] = &["pass", "denied", "unsupported"];
+const PERMISSIVE_CLAIM: &[&str] = &["pass", "degraded"];
 
-/// Admit one evidence report (exact UTF-8 JSON bytes) under the
-/// selected profile, or return the typed rejection result. The
-/// receipt keeps every per-target row; a strict refusal lists its
-/// blockers and still carries the rows.
-pub fn admit(bytes: &[u8], profile: AdmissionProfile) -> Result<AdmissionReceipt, DomainResult> {
-    if bytes.len() > version::MAX_DOC_BYTES {
-        return Err(DomainResult::UnsupportedOperation {
-            diagnostics: evidence_incomplete_set(),
+/// `^[A-Za-z0-9_.:/@-]+$`, 1..=256.
+fn pin_text(raw: &str) -> Result<(), DiagnosticSet> {
+    let ok = !raw.is_empty()
+        && raw.len() <= 256
+        && raw.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b':' | b'/' | b'@' | b'-')
         });
+    if ok {
+        Ok(())
+    } else {
+        Err(diagnostic::input_invalid("pin-text"))
     }
-    let text = std::str::from_utf8(bytes)
-        .map_err(|_| DomainResult::invalid(io_failure("invalid-encoding")))?;
+}
+
+/// The closed lowercase semantic-id shape: dotted lowercase segments,
+/// optional slash-separated trailing segments, 1..=256.
+fn id_text(raw: &str) -> Result<(), DiagnosticSet> {
+    let segment_ok = |segment: &str| {
+        !segment.is_empty() && segment.len() <= 256 && {
+            let bytes = segment.as_bytes();
+            bytes[0].is_ascii_lowercase()
+                && bytes[1..].iter().all(|byte| {
+                    byte.is_ascii_lowercase()
+                        || byte.is_ascii_digit()
+                        || *byte == b'_'
+                        || *byte == b'-'
+                })
+        }
+    };
+    // Either one segment, or dotted segments with optional
+    // slash-separated trailing segments.
+    let dotted: Vec<&str> = raw.split('/').collect();
+    let head = dotted[0];
+    let head_ok = {
+        let parts: Vec<&str> = head.split('.').collect();
+        !parts.is_empty() && parts.iter().all(|part| segment_ok(part))
+    };
+    let tail_ok = dotted[1..].iter().all(|part| segment_ok(part));
+    let dotted_ok = head.contains('.') || dotted.len() > 1;
+    if !raw.is_empty() && raw.len() <= 256 && head_ok && tail_ok && (dotted_ok || dotted.len() == 1)
+    {
+        Ok(())
+    } else {
+        Err(diagnostic::input_invalid("id-text"))
+    }
+}
+
+/// 1..=2000 scalar units, no control characters.
+fn note_text(raw: &str) -> Result<(), DiagnosticSet> {
+    let ok = !raw.is_empty()
+        && raw.len() <= 2000
+        && !raw.chars().any(|character| character.is_control());
+    if ok {
+        Ok(())
+    } else {
+        Err(diagnostic::input_invalid("note-text"))
+    }
+}
+
+/// `sha256:` plus exactly 64 lowercase hex digits.
+fn digest_text(raw: &str) -> Result<(), DiagnosticSet> {
+    let rest = raw
+        .strip_prefix("sha256:")
+        .ok_or_else(|| diagnostic::input_invalid("digest-shape"))?;
+    if rest.len() == 64
+        && rest
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    {
+        Ok(())
+    } else {
+        Err(diagnostic::input_invalid("digest-shape"))
+    }
+}
+
+fn closed<'v>(raw: &str, vocabulary: &[&'v str]) -> Result<&'v str, DiagnosticSet> {
+    if let Some(found) = vocabulary.iter().find(|candidate| **candidate == raw) {
+        Ok(*found)
+    } else {
+        Err(diagnostic::input_invalid("closed-vocabulary"))
+    }
+}
+
+fn members(object: &serde_json::Map<String, Json>, keys: &[&str]) -> Result<(), DiagnosticSet> {
+    for key in object.keys() {
+        if !keys.contains(&key.as_str()) {
+            return Err(diagnostic::input_invalid("unknown-field"));
+        }
+    }
+    Ok(())
+}
+
+fn required(object: &serde_json::Map<String, Json>, keys: &[&str]) -> Result<(), DiagnosticSet> {
+    for key in keys {
+        if !object.contains_key(*key) {
+            return Err(diagnostic::input_invalid("missing-member"));
+        }
+    }
+    Ok(())
+}
+
+fn text_member<'a>(
+    object: &'a serde_json::Map<String, Json>,
+    key: &str,
+) -> Result<&'a str, DiagnosticSet> {
+    object
+        .get(key)
+        .and_then(Json::as_str)
+        .ok_or_else(|| diagnostic::input_invalid("member-type"))
+}
+
+/// One decoded evidence report.
+struct EvidenceReport {
+    composition_digest: String,
+    targets: Vec<DecodedTarget>,
+    scenarios: Vec<DecodedScenario>,
+    closure_complete: bool,
+    strict_claim: &'static str,
+    permissive_claim: &'static str,
+}
+
+struct DecodedTarget {
+    target: String,
+    backend_state: &'static str,
+    backend_identity: Option<String>,
+    backend_digest: Option<String>,
+    execution: &'static str,
+    capabilities: Vec<DecodedCapability>,
+    assertions: Vec<(String, &'static str)>,
+    blocking: Vec<String>,
+}
+
+struct DecodedCapability {
+    capability: String,
+    support: &'static str,
+    blocking: bool,
+}
+
+struct DecodedScenario {
+    scenario: String,
+    status: &'static str,
+}
+
+/// Decode the complete closed wire contract, or refuse.
+fn decode(text: &str) -> Result<EvidenceReport, DomainResult> {
     let json = super::canonical::parse_unique(text).map_err(DomainResult::invalid)?;
     let object = json
         .as_object()
         .ok_or_else(|| DomainResult::invalid(diagnostic::input_invalid("top-level-shape")))?;
-    for key in object.keys() {
-        if !TOP_LEVEL_KEYS.contains(&key.as_str()) {
-            return Err(DomainResult::invalid(diagnostic::input_invalid(
-                "unknown-field",
-            )));
-        }
-    }
-    // The closed member set is also a required member set: a report
-    // missing any schema-required member is structurally incomplete
-    // (mirror of the schema's `required` list; admission never admits
-    // an absent member behind a defaulted read).
-    for required in TOP_LEVEL_REQUIRED {
-        if !object.contains_key(*required) {
-            return Err(DomainResult::invalid(diagnostic::input_invalid(
-                "missing-member",
-            )));
-        }
-    }
-    if object.get("schemaVersion").and_then(Json::as_str)
-        != Some(super::version::EVIDENCE_SCHEMA_VERSION)
+    members(object, TOP_LEVEL_KEYS).map_err(DomainResult::invalid)?;
+    required(object, TOP_LEVEL_KEYS).map_err(DomainResult::invalid)?;
+    if object.get("schemaVersion").and_then(Json::as_str) != Some(version::EVIDENCE_SCHEMA_VERSION)
     {
         return Err(DomainResult::invalid(diagnostic::input_invalid(
             "schema-version",
         )));
     }
-    if object.get("identity").and_then(Json::as_str) != Some(super::version::EVIDENCE_IDENTITY) {
+    if object.get("identity").and_then(Json::as_str) != Some(version::EVIDENCE_IDENTITY) {
         return Err(DomainResult::invalid(diagnostic::input_invalid(
             "contract-identity",
         )));
     }
+    let report_version = text_member(object, "reportVersion").map_err(DomainResult::invalid)?;
+    if report_version != version::VERSION {
+        return Err(DomainResult::invalid(diagnostic::input_invalid(
+            "report-version",
+        )));
+    }
+    let composition_ref = object
+        .get("compositionRef")
+        .and_then(Json::as_object)
+        .ok_or_else(|| DomainResult::invalid(diagnostic::input_invalid("composition-ref-shape")))?;
+    members(composition_ref, COMPOSITION_REF_KEYS).map_err(DomainResult::invalid)?;
+    required(composition_ref, COMPOSITION_REF_KEYS).map_err(DomainResult::invalid)?;
+    if text_member(composition_ref, "identity").map_err(DomainResult::invalid)? != version::IDENTITY
+    {
+        return Err(DomainResult::invalid(diagnostic::input_invalid(
+            "composition-identity",
+        )));
+    }
+    let composition_digest = text_member(composition_ref, "digest")
+        .map_err(DomainResult::invalid)?
+        .to_owned();
+    digest_text(&composition_digest).map_err(DomainResult::invalid)?;
+
+    let toolchain = object
+        .get("toolchain")
+        .and_then(Json::as_object)
+        .ok_or_else(|| DomainResult::invalid(diagnostic::input_invalid("toolchain-shape")))?;
+    members(toolchain, TOOLCHAIN_KEYS).map_err(DomainResult::invalid)?;
+    required(toolchain, TOOLCHAIN_KEYS).map_err(DomainResult::invalid)?;
+    for key in TOOLCHAIN_KEYS {
+        pin_text(text_member(toolchain, key).map_err(DomainResult::invalid)?)
+            .map_err(DomainResult::invalid)?;
+    }
+
+    let profiles_json = object
+        .get("profiles")
+        .and_then(Json::as_array)
+        .ok_or_else(|| DomainResult::invalid(diagnostic::input_invalid("profiles-shape")))?;
+    if profiles_json.is_empty() || profiles_json.len() > PROFILES.len() {
+        return Err(DomainResult::invalid(diagnostic::input_invalid(
+            "profiles-bound",
+        )));
+    }
+    let mut profile_seen = std::collections::BTreeSet::new();
+    for profile in profiles_json {
+        let profile = profile
+            .as_str()
+            .ok_or_else(|| DomainResult::invalid(diagnostic::input_invalid("profiles-shape")))?;
+        if !profile_seen.insert(closed(profile, PROFILES).map_err(DomainResult::invalid)?) {
+            return Err(DomainResult::invalid(diagnostic::input_invalid(
+                "profiles-unique",
+            )));
+        }
+    }
+
     let targets_json = object
         .get("targets")
         .and_then(Json::as_array)
@@ -176,143 +384,471 @@ pub fn admit(bytes: &[u8], profile: AdmissionProfile) -> Result<AdmissionReceipt
             "targets-bound",
         )));
     }
-    let scenarios = object
+    let mut targets = Vec::with_capacity(targets_json.len());
+    let mut target_seen = std::collections::BTreeSet::new();
+    for target_json in targets_json {
+        targets.push(decode_target(target_json, &mut target_seen)?);
+    }
+
+    let scenarios_json = object
         .get("scenarios")
         .and_then(Json::as_array)
         .ok_or_else(|| DomainResult::invalid(diagnostic::input_invalid("scenarios-shape")))?;
-    let consumers = object
+    if scenarios_json.is_empty() || scenarios_json.len() > version::MAX_SCENARIOS {
+        return Err(DomainResult::invalid(diagnostic::input_invalid(
+            "scenarios-bound",
+        )));
+    }
+    let mut scenarios = Vec::with_capacity(scenarios_json.len());
+    let mut scenario_seen = std::collections::BTreeSet::new();
+    for scenario_json in scenarios_json {
+        let scenario_object = scenario_json
+            .as_object()
+            .ok_or_else(|| DomainResult::invalid(diagnostic::input_invalid("scenarios-shape")))?;
+        members(scenario_object, SCENARIO_RESULT_KEYS).map_err(DomainResult::invalid)?;
+        required(scenario_object, SCENARIO_RESULT_KEYS).map_err(DomainResult::invalid)?;
+        let scenario = text_member(scenario_object, "scenario").map_err(DomainResult::invalid)?;
+        id_text(scenario).map_err(DomainResult::invalid)?;
+        if !scenario_seen.insert(scenario.to_owned()) {
+            return Err(DomainResult::invalid(diagnostic::input_invalid(
+                "scenarios-unique",
+            )));
+        }
+        let status = closed(
+            text_member(scenario_object, "status").map_err(DomainResult::invalid)?,
+            ASSERTION_STATUS,
+        )
+        .map_err(DomainResult::invalid)?;
+        let scenario_targets = scenario_object
+            .get("targets")
+            .and_then(Json::as_array)
+            .ok_or_else(|| DomainResult::invalid(diagnostic::input_invalid("scenarios-shape")))?;
+        if scenario_targets.is_empty() || scenario_targets.len() > 8 {
+            return Err(DomainResult::invalid(diagnostic::input_invalid(
+                "scenarios-bound",
+            )));
+        }
+        let mut target_row_seen = std::collections::BTreeSet::new();
+        for target in scenario_targets {
+            let target = target.as_str().ok_or_else(|| {
+                DomainResult::invalid(diagnostic::input_invalid("scenarios-shape"))
+            })?;
+            if !target_row_seen
+                .insert(closed(target, SCENARIO_TARGETS).map_err(DomainResult::invalid)?)
+            {
+                return Err(DomainResult::invalid(diagnostic::input_invalid(
+                    "scenarios-unique",
+                )));
+            }
+        }
+        scenarios.push(DecodedScenario {
+            scenario: scenario.to_owned(),
+            status,
+        });
+    }
+
+    let consumers_json = object
         .get("consumers")
         .and_then(Json::as_array)
         .ok_or_else(|| DomainResult::invalid(diagnostic::input_invalid("consumers-shape")))?;
-    if consumers.len() > version::MAX_CONSUMERS {
+    if consumers_json.len() > version::MAX_CONSUMERS {
         return Err(DomainResult::invalid(diagnostic::input_invalid(
             "consumers-bound",
         )));
     }
+    let mut consumer_seen = std::collections::BTreeSet::new();
+    for consumer_json in consumers_json {
+        let consumer_object = consumer_json
+            .as_object()
+            .ok_or_else(|| DomainResult::invalid(diagnostic::input_invalid("consumers-shape")))?;
+        members(consumer_object, CONSUMER_KEYS).map_err(DomainResult::invalid)?;
+        required(consumer_object, CONSUMER_KEYS).map_err(DomainResult::invalid)?;
+        let consumer = text_member(consumer_object, "consumer").map_err(DomainResult::invalid)?;
+        id_text(consumer).map_err(DomainResult::invalid)?;
+        if !consumer_seen.insert(consumer.to_owned()) {
+            return Err(DomainResult::invalid(diagnostic::input_invalid(
+                "consumers-unique",
+            )));
+        }
+        pin_text(text_member(consumer_object, "witness").map_err(DomainResult::invalid)?)
+            .map_err(DomainResult::invalid)?;
+        pin_text(text_member(consumer_object, "relation").map_err(DomainResult::invalid)?)
+            .map_err(DomainResult::invalid)?;
+    }
+
     let completeness = object
         .get("completeness")
         .and_then(Json::as_object)
         .ok_or_else(|| DomainResult::invalid(diagnostic::input_invalid("completeness-shape")))?;
-    let closure_complete =
-        completeness.get("consumerClosure").and_then(Json::as_str) == Some("complete");
+    members(completeness, COMPLETENESS_KEYS).map_err(DomainResult::invalid)?;
+    required(completeness, COMPLETENESS_KEYS).map_err(DomainResult::invalid)?;
+    let closure_complete = closed(
+        text_member(completeness, "consumerClosure").map_err(DomainResult::invalid)?,
+        CLOSURE,
+    )
+    .map_err(DomainResult::invalid)?
+        == "complete";
+    let _coverage = closed(
+        text_member(completeness, "coverage").map_err(DomainResult::invalid)?,
+        COVERAGE,
+    )
+    .map_err(DomainResult::invalid)?;
+    if completeness.get("unknownExternalConsumers") != Some(&Json::Bool(true)) {
+        return Err(DomainResult::invalid(diagnostic::input_invalid(
+            "completeness-unknown-consumers",
+        )));
+    }
 
-    let mut receipt_targets = Vec::with_capacity(targets_json.len());
-    let mut blockers: Vec<String> = Vec::new();
-    for target_json in targets_json {
-        let target_object = target_json
-            .as_object()
-            .ok_or_else(|| DomainResult::invalid(diagnostic::input_invalid("targets-shape")))?;
-        for key in target_object.keys() {
-            if !TARGET_KEYS.contains(&key.as_str()) {
+    let verdict = object
+        .get("verdict")
+        .and_then(Json::as_object)
+        .ok_or_else(|| DomainResult::invalid(diagnostic::input_invalid("verdict-shape")))?;
+    members(verdict, VERDICT_KEYS).map_err(DomainResult::invalid)?;
+    required(verdict, VERDICT_KEYS).map_err(DomainResult::invalid)?;
+    let strict_claim = closed(
+        text_member(verdict, "strict").map_err(DomainResult::invalid)?,
+        STRICT_CLAIM,
+    )
+    .map_err(DomainResult::invalid)?;
+    let permissive_claim = closed(
+        text_member(verdict, "permissive").map_err(DomainResult::invalid)?,
+        PERMISSIVE_CLAIM,
+    )
+    .map_err(DomainResult::invalid)?;
+    if !matches!(verdict.get("degraded"), Some(Json::Bool(_))) {
+        return Err(DomainResult::invalid(diagnostic::input_invalid(
+            "verdict-degraded-type",
+        )));
+    }
+
+    Ok(EvidenceReport {
+        composition_digest,
+        targets,
+        scenarios,
+        closure_complete,
+        strict_claim,
+        permissive_claim,
+    })
+}
+
+fn decode_target(
+    target_json: &Json,
+    target_seen: &mut std::collections::BTreeSet<String>,
+) -> Result<DecodedTarget, DomainResult> {
+    let object = target_json
+        .as_object()
+        .ok_or_else(|| DomainResult::invalid(diagnostic::input_invalid("targets-shape")))?;
+    members(object, TARGET_KEYS).map_err(DomainResult::invalid)?;
+    required(object, TARGET_KEYS).map_err(DomainResult::invalid)?;
+    let target = closed(
+        text_member(object, "target").map_err(DomainResult::invalid)?,
+        TARGETS,
+    )
+    .map_err(DomainResult::invalid)?;
+    if !target_seen.insert(target.to_owned()) {
+        return Err(DomainResult::invalid(diagnostic::input_invalid(
+            "targets-unique",
+        )));
+    }
+    let backend = object
+        .get("backend")
+        .and_then(Json::as_object)
+        .ok_or_else(|| DomainResult::invalid(diagnostic::input_invalid("backend-shape")))?;
+    members(backend, BACKEND_KEYS).map_err(DomainResult::invalid)?;
+    required(backend, BACKEND_REQUIRED).map_err(DomainResult::invalid)?;
+    let backend_state = closed(
+        text_member(backend, "state").map_err(DomainResult::invalid)?,
+        BACKEND_STATE,
+    )
+    .map_err(DomainResult::invalid)?;
+    let backend_identity = match backend.get("identity") {
+        Some(Json::Null) | None => None,
+        Some(Json::String(raw)) => {
+            if raw.is_empty() || raw.len() > 128 {
                 return Err(DomainResult::invalid(diagnostic::input_invalid(
-                    "unknown-field",
+                    "backend-identity",
                 )));
             }
+            Some(raw.clone())
         }
-        let target = target_object
-            .get("target")
-            .and_then(Json::as_str)
-            .ok_or_else(|| DomainResult::invalid(diagnostic::input_invalid("target-id")))?;
-        let execution = target_object
-            .get("execution")
-            .and_then(Json::as_str)
-            .ok_or_else(|| DomainResult::invalid(diagnostic::input_invalid("execution")))?
-            .to_owned();
-        // The target member set is required as well as closed: a
-        // missing backend, capabilities, assertions, or blocking list
-        // is structural incompleteness, never a defaulted empty set.
-        for required in TARGET_REQUIRED {
-            if !target_object.contains_key(*required) {
-                return Err(DomainResult::invalid(diagnostic::input_invalid(
-                    "missing-member",
-                )));
-            }
-        }
-        let capabilities_json = target_object
-            .get("capabilities")
-            .and_then(Json::as_array)
-            .ok_or_else(|| {
-                DomainResult::invalid(diagnostic::input_invalid("capabilities-shape"))
-            })?;
-        if capabilities_json.len() > version::MAX_CAPABILITIES_PER_TARGET {
+        Some(_) => {
             return Err(DomainResult::invalid(diagnostic::input_invalid(
-                "capabilities-bound",
+                "backend-identity",
+            )))
+        }
+    };
+    let backend_digest = match backend.get("digest") {
+        Some(Json::Null) | None => None,
+        Some(Json::String(raw)) => {
+            digest_text(raw).map_err(DomainResult::invalid)?;
+            Some(raw.clone())
+        }
+        Some(_) => {
+            return Err(DomainResult::invalid(diagnostic::input_invalid(
+                "backend-digest",
+            )))
+        }
+    };
+    let execution = closed(
+        text_member(object, "execution").map_err(DomainResult::invalid)?,
+        EXECUTION,
+    )
+    .map_err(DomainResult::invalid)?;
+
+    let capabilities_json = object
+        .get("capabilities")
+        .and_then(Json::as_array)
+        .ok_or_else(|| DomainResult::invalid(diagnostic::input_invalid("capabilities-shape")))?;
+    if capabilities_json.len() > version::MAX_CAPABILITIES_PER_TARGET {
+        return Err(DomainResult::invalid(diagnostic::input_invalid(
+            "capabilities-bound",
+        )));
+    }
+    let mut capabilities = Vec::with_capacity(capabilities_json.len());
+    let mut capability_seen = std::collections::BTreeSet::new();
+    for capability_json in capabilities_json {
+        let capability_object = capability_json.as_object().ok_or_else(|| {
+            DomainResult::invalid(diagnostic::input_invalid("capabilities-shape"))
+        })?;
+        members(capability_object, CAPABILITY_KEYS).map_err(DomainResult::invalid)?;
+        required(capability_object, CAPABILITY_REQUIRED).map_err(DomainResult::invalid)?;
+        let capability_text =
+            text_member(capability_object, "capability").map_err(DomainResult::invalid)?;
+        pin_text(capability_text).map_err(DomainResult::invalid)?;
+        if !capability_seen.insert(capability_text.to_owned()) {
+            return Err(DomainResult::invalid(diagnostic::input_invalid(
+                "capabilities-unique",
             )));
         }
-        let mut supported = 0usize;
-        let mut target_blockers: Vec<String> = Vec::new();
-        for capability_json in capabilities_json {
-            let capability_object = capability_json.as_object().ok_or_else(|| {
-                DomainResult::invalid(diagnostic::input_invalid("capabilities-shape"))
+        let support = closed(
+            text_member(capability_object, "support").map_err(DomainResult::invalid)?,
+            SUPPORT,
+        )
+        .map_err(DomainResult::invalid)?;
+        if !matches!(capability_object.get("blocking"), Some(Json::Bool(_))) {
+            return Err(DomainResult::invalid(diagnostic::input_invalid(
+                "capability-blocking-type",
+            )));
+        }
+        let blocking = capability_object["blocking"] == Json::Bool(true);
+        note_text(text_member(capability_object, "note").map_err(DomainResult::invalid)?)
+            .map_err(DomainResult::invalid)?;
+        if let Some(approval) = capability_object.get("approval") {
+            let approval = approval.as_str().ok_or_else(|| {
+                DomainResult::invalid(diagnostic::input_invalid("capability-approval"))
             })?;
-            for key in capability_object.keys() {
-                if !CAPABILITY_KEYS.contains(&key.as_str()) {
-                    return Err(DomainResult::invalid(diagnostic::input_invalid(
-                        "unknown-field",
-                    )));
+            closed(approval, APPROVAL).map_err(DomainResult::invalid)?;
+        }
+        capabilities.push(DecodedCapability {
+            capability: capability_text.to_owned(),
+            support,
+            blocking,
+        });
+    }
+
+    let assertions_json = object
+        .get("assertions")
+        .and_then(Json::as_array)
+        .ok_or_else(|| DomainResult::invalid(diagnostic::input_invalid("assertions-shape")))?;
+    if assertions_json.len() > version::MAX_ASSERTIONS_PER_SCENARIO * 64 {
+        return Err(DomainResult::invalid(diagnostic::input_invalid(
+            "assertions-bound",
+        )));
+    }
+    let mut assertions = Vec::with_capacity(assertions_json.len());
+    let mut assertion_seen = std::collections::BTreeSet::new();
+    for assertion_json in assertions_json {
+        let assertion = assertion_json
+            .as_object()
+            .ok_or_else(|| DomainResult::invalid(diagnostic::input_invalid("assertions-shape")))?;
+        members(assertion, ASSERTION_KEYS).map_err(DomainResult::invalid)?;
+        required(assertion, ASSERTION_KEYS).map_err(DomainResult::invalid)?;
+        let scenario = text_member(assertion, "scenario").map_err(DomainResult::invalid)?;
+        id_text(scenario).map_err(DomainResult::invalid)?;
+        let status = closed(
+            text_member(assertion, "status").map_err(DomainResult::invalid)?,
+            ASSERTION_STATUS,
+        )
+        .map_err(DomainResult::invalid)?;
+        if !assertion_seen.insert(format!("{scenario}:{status}")) {
+            return Err(DomainResult::invalid(diagnostic::input_invalid(
+                "assertions-unique",
+            )));
+        }
+        assertions.push((scenario.to_owned(), status));
+    }
+
+    let blocking_json = object
+        .get("blocking")
+        .and_then(Json::as_array)
+        .ok_or_else(|| DomainResult::invalid(diagnostic::input_invalid("blocking-shape")))?;
+    if blocking_json.len() > version::MAX_CAPABILITIES_PER_TARGET {
+        return Err(DomainResult::invalid(diagnostic::input_invalid(
+            "blocking-bound",
+        )));
+    }
+    let mut blocking = Vec::with_capacity(blocking_json.len());
+    let mut blocking_seen = std::collections::BTreeSet::new();
+    for entry in blocking_json {
+        let entry = entry
+            .as_str()
+            .ok_or_else(|| DomainResult::invalid(diagnostic::input_invalid("blocking-shape")))?;
+        pin_text(entry).map_err(DomainResult::invalid)?;
+        if !blocking_seen.insert(entry.to_owned()) {
+            return Err(DomainResult::invalid(diagnostic::input_invalid(
+                "blocking-unique",
+            )));
+        }
+        blocking.push(entry.to_owned());
+    }
+
+    Ok(DecodedTarget {
+        target: target.to_owned(),
+        backend_state,
+        backend_identity,
+        backend_digest,
+        execution,
+        capabilities,
+        assertions,
+        blocking,
+    })
+}
+
+/// Admit one evidence report under the selected profile, bound to the
+/// exact composition document and the pinned compilation, or return
+/// the typed rejection result. The receipt keeps every per-target row;
+/// a strict refusal lists its blockers and still carries the rows.
+pub fn admit(
+    report_bytes: &[u8],
+    composition_bytes: &[u8],
+    project: &CompiledProject,
+    profile: AdmissionProfile,
+) -> Result<AdmissionReceipt, DomainResult> {
+    if report_bytes.len() > version::MAX_DOC_BYTES
+        || composition_bytes.len() > version::MAX_DOC_BYTES
+    {
+        return Err(DomainResult::UnsupportedOperation {
+            diagnostics: singleton_set_evidence(),
+        });
+    }
+    let text = std::str::from_utf8(report_bytes)
+        .map_err(|_| DomainResult::invalid(io_failure("invalid-encoding")))?;
+    let report = decode(text)?;
+    // Provenance: the report pins the exact composition bytes through
+    // the documented domain-prefixed digest, and the composition must
+    // itself join the pinned compilation before any admission join.
+    let composition_text = std::str::from_utf8(composition_bytes)
+        .map_err(|_| DomainResult::invalid(io_failure("invalid-encoding")))?;
+    if report.composition_digest != super::canonical::document_digest(composition_text) {
+        return Err(DomainResult::invalid(diagnostic::input_invalid(
+            "composition-pin-mismatch",
+        )));
+    }
+    let composition: Composition =
+        super::wire::parse(composition_bytes).map_err(DomainResult::invalid)?;
+    composition
+        .validate(project)
+        .map_err(DomainResult::invalid)?;
+
+    // The required scenario inventory comes from the pinned
+    // compilation, never from the report.
+    let mut required_scenarios = std::collections::BTreeSet::new();
+    for definition in &project.definitions {
+        if let Definition::Scenario(scenario) = definition {
+            required_scenarios.insert(scenario.id.as_str().to_owned());
+        }
+    }
+    let mut scenario_status: std::collections::BTreeMap<&str, &'static str> =
+        std::collections::BTreeMap::new();
+    for scenario in &report.scenarios {
+        scenario_status.insert(scenario.scenario.as_str(), scenario.status);
+    }
+
+    let mut blockers: Vec<String> = Vec::new();
+    let mut receipt_targets = Vec::with_capacity(report.targets.len());
+    for target in &report.targets {
+        let mut target_blockers: Vec<String> = Vec::new();
+        // Required capability coverage: every composition requirement
+        // must be carried by every target at its declared minimum. The
+        // inventory is the composition's, so deleting a row or
+        // clearing a flag cannot remove a required guarantee, and
+        // contradictory duplicate rows cannot dilute it.
+        for requirement in composition.capability_requirements() {
+            let rows: Vec<&DecodedCapability> = target
+                .capabilities
+                .iter()
+                .filter(|row| row.capability == requirement.capability())
+                .collect();
+            if rows.is_empty() {
+                target_blockers.push(format!(
+                    "{}:capability-missing:{}",
+                    target.target,
+                    requirement.capability()
+                ));
+                continue;
+            }
+            for row in rows {
+                let satisfied = match requirement.minimum() {
+                    "full" => row.support == "supported",
+                    _ => matches!(row.support, "supported" | "partial"),
+                };
+                if !satisfied {
+                    target_blockers.push(format!(
+                        "{}:{}:{}",
+                        target.target,
+                        requirement.capability(),
+                        row.support
+                    ));
                 }
             }
-            let capability = capability_object
-                .get("capability")
-                .and_then(Json::as_str)
-                .ok_or_else(|| DomainResult::invalid(diagnostic::input_invalid("capability-id")))?
-                .to_owned();
-            let support = capability_object
-                .get("support")
-                .and_then(Json::as_str)
-                .ok_or_else(|| DomainResult::invalid(diagnostic::input_invalid("support")))?
-                .to_owned();
-            if !SUPPORT.contains(&support.as_str()) {
-                return Err(DomainResult::invalid(diagnostic::input_invalid(
-                    "support-vocabulary",
-                )));
-            }
-            let required = capability_object.get("blocking") == Some(&Json::Bool(true));
-            if support == "supported" {
-                supported += 1;
-            } else if required {
-                target_blockers.push(format!("{target}:{capability}:{support}"));
+        }
+        // Explicit declared blockers stay blockers, verbatim (they are
+        // already target-qualified by the report author).
+        for entry in &target.blocking {
+            target_blockers.push(entry.clone());
+        }
+        // A row the report itself declares blocking stays a blocker
+        // when it is not satisfied — for capabilities beyond the
+        // composition's required inventory, the report's own blocking
+        // declaration is the honest lower bound.
+        for row in &target.capabilities {
+            if row.blocking && row.support != "supported" {
+                let required = composition
+                    .capability_requirements()
+                    .iter()
+                    .any(|requirement| requirement.capability() == row.capability);
+                if !required {
+                    target_blockers.push(format!(
+                        "{}:{}:{}",
+                        target.target, row.capability, row.support
+                    ));
+                }
             }
         }
-        let assertions_json = target_object
-            .get("assertions")
-            .and_then(Json::as_array)
-            .ok_or_else(|| DomainResult::invalid(diagnostic::input_invalid("assertions-shape")))?;
-        if assertions_json.len() > version::MAX_ASSERTIONS_PER_SCENARIO * 64 {
-            return Err(DomainResult::invalid(diagnostic::input_invalid(
-                "assertions-bound",
-            )));
+        // Backend binding: a claimed execution requires a bound
+        // backend with identity and digest; an absent backend can
+        // never be executed.
+        if target.execution == "executed"
+            && (target.backend_state != "bound"
+                || target.backend_identity.is_none()
+                || target.backend_digest.is_none())
+        {
+            target_blockers.push(format!("{}:backend:unbound", target.target));
         }
         let mut passed = 0usize;
-        for assertion_json in assertions_json {
-            let assertion = assertion_json.as_object().ok_or_else(|| {
-                DomainResult::invalid(diagnostic::input_invalid("assertions-shape"))
-            })?;
-            let scenario = assertion
-                .get("scenario")
-                .and_then(Json::as_str)
-                .ok_or_else(|| DomainResult::invalid(diagnostic::input_invalid("scenario-id")))?;
-            let status = assertion
-                .get("status")
-                .and_then(Json::as_str)
-                .ok_or_else(|| {
-                    DomainResult::invalid(diagnostic::input_invalid("assertion-status"))
-                })?;
-            if !ASSERTION_STATUS.contains(&status) {
-                return Err(DomainResult::invalid(diagnostic::input_invalid(
-                    "assertion-status-vocabulary",
-                )));
-            }
-            if status == "pass" {
+        for (scenario, status) in &target.assertions {
+            if *status == "pass" {
                 passed += 1;
-            } else if execution == "executed" {
+                if target.execution != "executed" {
+                    // A target that does not claim execution cannot
+                    // carry passing rows.
+                    target_blockers.push(format!("{}:{scenario}:{status}", target.target));
+                }
+            } else if target.execution == "executed" {
                 // A target that claims execution must not carry
                 // unexecuted rows: the claim itself is the blocker.
-                target_blockers.push(format!("{target}:{scenario}:{status}"));
+                target_blockers.push(format!("{}:{scenario}:{status}", target.target));
             }
-        }
-        if execution != "executed" {
-            target_blockers.push(format!("{target}:execution:{execution}"));
         }
         let verdict = if target_blockers.is_empty() {
             "pass"
@@ -323,24 +859,64 @@ pub fn admit(bytes: &[u8], profile: AdmissionProfile) -> Result<AdmissionReceipt
         };
         blockers.extend(target_blockers.iter().cloned());
         receipt_targets.push(TargetVerdict {
-            target: target.to_owned(),
-            execution: execution.clone(),
+            target: target.target.clone(),
+            execution: target.execution.to_owned(),
             verdict,
-            supported,
-            capabilities: capabilities_json.len(),
+            supported: target
+                .capabilities
+                .iter()
+                .filter(|row| row.support == "supported")
+                .count(),
+            capabilities: target.capabilities.len(),
             passed,
-            assertions: assertions_json.len(),
+            assertions: target.assertions.len(),
         });
     }
     receipt_targets.sort_by(|left, right| left.target.cmp(&right.target));
 
-    if scenarios.is_empty() || scenarios.len() > version::MAX_SCENARIOS {
-        return Err(DomainResult::invalid(diagnostic::input_invalid(
-            "scenarios-bound",
-        )));
+    // Scenario coverage: every declared scenario of the pinned
+    // compilation is covered exactly once, never failing, and never
+    // contradicted by a passing per-target assertion.
+    for scenario in &required_scenarios {
+        match scenario_status.get(scenario.as_str()) {
+            None => blockers.push(format!("scenarios:{scenario}:missing")),
+            Some(&"fail") => blockers.push(format!("scenarios:{scenario}:fail")),
+            Some(_) => {}
+        }
     }
-    if !closure_complete && profile == AdmissionProfile::Strict {
+    for scenario in &report.scenarios {
+        if scenario.status != "fail" {
+            continue;
+        }
+        let contradicted = report.targets.iter().any(|target| {
+            target
+                .assertions
+                .iter()
+                .any(|(name, status)| name == &scenario.scenario && *status == "pass")
+        });
+        if contradicted {
+            blockers.push(format!("scenarios:{}:conflict", scenario.scenario));
+        }
+    }
+
+    // Completeness gaps are retained under every profile: an
+    // incomplete closure degrades permissive admission instead of
+    // passing it.
+    if !report.closure_complete {
         blockers.push("consumers:closure:incomplete".to_owned());
+    }
+
+    // The report's own verdict claims cannot contradict the derived
+    // rows: a claimed pass with open blockers (or a claimed refusal
+    // with none) is itself a blocker.
+    let derived_success = blockers.is_empty();
+    let strict_claim_pass = report.strict_claim == "pass";
+    let permissive_claim_pass = report.permissive_claim == "pass";
+    if strict_claim_pass != derived_success {
+        blockers.push("verdict:strict-claim".to_owned());
+    }
+    if permissive_claim_pass != derived_success {
+        blockers.push("verdict:permissive-claim".to_owned());
     }
 
     let has_blockers = !blockers.is_empty();
@@ -355,17 +931,12 @@ pub fn admit(bytes: &[u8], profile: AdmissionProfile) -> Result<AdmissionReceipt
     blockers.sort();
     blockers.dedup();
     Ok(AdmissionReceipt {
-        identity: super::version::EVIDENCE_IDENTITY,
+        identity: version::EVIDENCE_IDENTITY,
         profile: profile.wire_name(),
         verdict,
         targets: receipt_targets,
         blockers,
     })
-}
-
-/// The `unsupported` set for missing admission evidence.
-fn evidence_incomplete_set() -> DiagnosticSet {
-    singleton_set_evidence()
 }
 
 /// Build the registered singleton evidence-incomplete set, or the
@@ -410,49 +981,86 @@ mod tests {
     }
 
     #[test]
-    fn missing_required_members_are_structurally_refused() {
-        // A minimal well-formed-but-incomplete report: the required
-        // member admission reads is present, its siblings are not.
+    fn text_validators_mirror_the_schema_patterns() {
+        assert!(pin_text("publish.approval").is_ok());
+        assert!(pin_text("rendering.safe_url").is_ok());
+        assert!(pin_text("").is_err());
+        assert!(pin_text("with space").is_err());
+        assert!(id_text("worklog.scenario.completion_without_worklog").is_ok());
+        assert!(id_text("taskhub.dto/public-entry").is_ok());
+        assert!(id_text("Uppercase").is_err());
+        assert!(id_text(".dotted").is_err());
+        assert!(digest_text(
+            "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        )
+        .is_ok());
+        assert!(digest_text("sha256:short").is_err());
+        assert!(digest_text(
+            "SHA256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        )
+        .is_err());
+        assert!(note_text("plain sentence").is_ok());
+        assert!(note_text("control\u{0007}bell").is_err());
+    }
+
+    #[test]
+    fn malformed_reports_refuse_at_the_wire_layer() {
+        // A structurally broken report: wrong reportVersion.
         let report = serde_json::json!({
-            "schemaVersion": super::version::EVIDENCE_SCHEMA_VERSION,
-            "identity": super::version::EVIDENCE_IDENTITY,
+            "schemaVersion": version::EVIDENCE_SCHEMA_VERSION,
+            "identity": version::EVIDENCE_IDENTITY,
+            "reportVersion": "9.9.9",
+            "compositionRef": {"identity": version::IDENTITY, "digest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"},
+            "toolchain": {"harness": "h", "node": "n", "ajv": "a"},
+            "profiles": ["strict"],
             "targets": [],
+            "scenarios": [],
+            "consumers": [],
+            "completeness": {"consumerClosure": "complete", "coverage": "full", "unknownExternalConsumers": true},
+            "verdict": {"strict": "unsupported", "permissive": "degraded", "degraded": true},
         });
         let bytes = serde_json::to_vec(&report).expect("report serializes");
-        let set = admit(&bytes, AdmissionProfile::Strict).unwrap_err();
+        let set = std::str::from_utf8(&bytes)
+            .map_err(DomainResult::invalid)
+            .and_then(decode)
+            .unwrap_err();
         assert_eq!(set.status(), Status::Invalid);
         let rendered = serde_json::to_string(set.diagnostics().first().expect("one diagnostic"))
             .expect("diagnostic serializes");
         let value: serde_json::Value = serde_json::from_str(&rendered).expect("diagnostic JSON");
-        assert_eq!(value["data"]["detail"], "missing-member");
+        assert_eq!(value["data"]["detail"], "report-version");
     }
 
     #[test]
-    fn missing_required_target_members_are_structurally_refused() {
+    fn unknown_nested_members_are_structurally_refused() {
         let report = serde_json::json!({
-            "schemaVersion": super::version::EVIDENCE_SCHEMA_VERSION,
-            "identity": super::version::EVIDENCE_IDENTITY,
-            "reportVersion": "0.8.0",
-            "compositionRef": {"identity": "i", "digest": "d"},
-            "toolchain": {},
+            "schemaVersion": version::EVIDENCE_SCHEMA_VERSION,
+            "identity": version::EVIDENCE_IDENTITY,
+            "reportVersion": version::VERSION,
+            "compositionRef": {"identity": version::IDENTITY, "digest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"},
+            "toolchain": {"harness": "h", "node": "n", "ajv": "a"},
             "profiles": ["strict"],
-            "scenarios": [{"scenario": "s", "status": "not_executed", "targets": ["php"]}],
-            "consumers": [],
-            "completeness": {"consumerClosure": "complete"},
-            "verdict": {},
             "targets": [{
                 "target": "php",
+                "backend": {"state": "absent", "identity": null, "digest": null},
                 "execution": "not_executed",
                 "capabilities": [],
-                "assertions": [],
+                "assertions": [{"scenario": "worklog.scenario.a", "status": "not_executed", "rogue": true}],
                 "blocking": []
             }],
+            "scenarios": [{"scenario": "worklog.scenario.a", "status": "not_executed", "targets": ["php"]}],
+            "consumers": [],
+            "completeness": {"consumerClosure": "complete", "coverage": "full", "unknownExternalConsumers": true},
+            "verdict": {"strict": "unsupported", "permissive": "degraded", "degraded": true},
         });
         let bytes = serde_json::to_vec(&report).expect("report serializes");
-        let set = admit(&bytes, AdmissionProfile::Strict).unwrap_err();
+        let set = std::str::from_utf8(&bytes)
+            .map_err(DomainResult::invalid)
+            .and_then(decode)
+            .unwrap_err();
         let rendered = serde_json::to_string(set.diagnostics().first().expect("one diagnostic"))
             .expect("diagnostic serializes");
         let value: serde_json::Value = serde_json::from_str(&rendered).expect("diagnostic JSON");
-        assert_eq!(value["data"]["detail"], "missing-member");
+        assert_eq!(value["data"]["detail"], "unknown-field");
     }
 }

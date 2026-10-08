@@ -10,6 +10,7 @@ use lekalo_core::worklog_changelog::{self, Composition};
 
 const PILOT_JSON: &str = "tests/fixtures/pilot/worklog-changelog/attachments/pilot.json";
 const MODEL_PROJECT: &str = "tests/fixtures/pilot/worklog-changelog/model";
+const EVIDENCE_JSON: &str = "tests/fixtures/pilot/worklog-changelog/evidence/evidence.json";
 
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -390,23 +391,169 @@ fn duplicate_json_keys_are_rejected_before_any_semantics() {
     assert_eq!(detail_of(&set), "duplicate-key");
 }
 
+fn evidence_admission_target(
+    mutation: impl FnOnce(&mut serde_json::Value),
+) -> Result<lekalo_core::worklog_changelog::AdmissionReceipt, lekalo_core::result::DomainResult> {
+    with_workspace_cwd(|| {
+        let compilation = compilation();
+        let composition_bytes = composition_bytes();
+        let mut evidence: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(workspace_root().join(EVIDENCE_JSON)).expect("evidence fixture present"),
+        )
+        .expect("evidence parses");
+        mutation(&mut evidence);
+        let report_bytes = serde_json::to_vec(&evidence).expect("report serializes");
+        lekalo_core::worklog_changelog::admit(
+            &report_bytes,
+            &composition_bytes,
+            &compilation.project,
+            lekalo_core::worklog_changelog::AdmissionProfile::Strict,
+        )
+    })
+}
+
 #[test]
 fn evidence_admission_is_honest_for_both_profiles() {
     let bytes = std::fs::read(
         workspace_root().join("tests/fixtures/pilot/worklog-changelog/evidence/evidence.json"),
     )
     .expect("evidence fixture present");
-    // Strict: the committed report honestly refuses (unsupported) with
-    // blockers listed and the per-target rows retained.
-    let strict = worklog_changelog::admit(&bytes, worklog_changelog::AdmissionProfile::Strict)
+    with_workspace_cwd(|| {
+        let compilation = compilation();
+        let composition_bytes = composition_bytes();
+        // Strict: the committed report honestly refuses (unsupported) with
+        // blockers listed and the per-target rows retained.
+        let strict = lekalo_core::worklog_changelog::admit(
+            &bytes,
+            &composition_bytes,
+            &compilation.project,
+            lekalo_core::worklog_changelog::AdmissionProfile::Strict,
+        )
         .expect("strict admission produces a receipt");
-    assert_eq!(strict.verdict, "unsupported");
-    assert!(!strict.blockers.is_empty());
-    assert_eq!(strict.targets.len(), 2);
-    // Permissive: degraded, every row still visible.
-    let permissive =
-        worklog_changelog::admit(&bytes, worklog_changelog::AdmissionProfile::Permissive)
-            .expect("permissive admission produces a receipt");
-    assert_eq!(permissive.verdict, "degraded");
-    assert_eq!(permissive.targets.len(), 2);
+        assert_eq!(strict.verdict, "unsupported");
+        assert!(!strict.blockers.is_empty());
+        assert_eq!(strict.targets.len(), 2);
+        // Permissive: degraded, every row still visible.
+        let permissive = lekalo_core::worklog_changelog::admit(
+            &bytes,
+            &composition_bytes,
+            &compilation.project,
+            lekalo_core::worklog_changelog::AdmissionProfile::Permissive,
+        )
+        .expect("permissive admission produces a receipt");
+        assert_eq!(permissive.verdict, "degraded");
+        assert_eq!(permissive.targets.len(), 2);
+    });
+}
+
+/// C2: a report author cannot remove a required guarantee by erasing
+/// rows or clearing flags — the required inventory comes from the
+/// composition and the pinned compilation, not from the report.
+#[test]
+fn forged_or_erased_evidence_cannot_pass_strict_admission() {
+    // Erase every capability and assertion row but claim execution:
+    // the required inventory is re-derived from the composition.
+    let receipt = evidence_admission_target(|report| {
+        for target in report["targets"].as_array_mut().unwrap() {
+            if target["target"] == "php" {
+                target["execution"] = serde_json::json!("executed");
+                target["capabilities"] = serde_json::json!([]);
+                target["assertions"] = serde_json::json!([]);
+                target["blocking"] = serde_json::json!([]);
+            }
+        }
+    })
+    .expect("receipt");
+    assert_eq!(receipt.verdict, "unsupported");
+    assert!(receipt
+        .blockers
+        .iter()
+        .any(|blocker| blocker.starts_with("php:capability-missing:")));
+
+    // An explicit target blocker list stays a blocker even when every
+    // row claims success.
+    let receipt = evidence_admission_target(|report| {
+        for target in report["targets"].as_array_mut().unwrap() {
+            if target["target"] == "php" {
+                target["blocking"] = serde_json::json!(["publish.approval"]);
+            }
+        }
+    })
+    .expect("receipt");
+    assert_eq!(receipt.verdict, "unsupported");
+    assert!(receipt.blockers.iter().any(|b| b == "publish.approval"));
+
+    // A failed aggregate scenario stays a failure even when a target
+    // assertion claims pass; the contradiction itself blocks.
+    let receipt = evidence_admission_target(|report| {
+        report["scenarios"][0]["status"] = serde_json::json!("fail");
+    })
+    .expect("receipt");
+    assert_eq!(receipt.verdict, "unsupported");
+    assert!(receipt
+        .blockers
+        .iter()
+        .any(|b| b.contains("scenario") && b.ends_with(":fail")));
+
+    // An executed claim on an absent backend is refused.
+    let receipt = evidence_admission_target(|report| {
+        for target in report["targets"].as_array_mut().unwrap() {
+            if target["target"] == "php" {
+                target["execution"] = serde_json::json!("executed");
+                target["backend"] =
+                    serde_json::json!({"state": "absent", "identity": null, "digest": null});
+            }
+        }
+    })
+    .expect("receipt");
+    assert_eq!(receipt.verdict, "unsupported");
+    assert!(receipt.blockers.iter().any(|b| b == "php:backend:unbound"));
+
+    // An incomplete consumer closure degrades permissive admission
+    // instead of passing it.
+    let receipt = evidence_admission_target(|report| {
+        report["completeness"]["consumerClosure"] = serde_json::json!("incomplete");
+        report["verdict"]["strict"] = serde_json::json!("unsupported");
+        report["verdict"]["permissive"] = serde_json::json!("pass");
+    })
+    .expect("receipt");
+    assert!(receipt
+        .blockers
+        .iter()
+        .any(|b| b == "consumers:closure:incomplete"));
+    assert!(receipt
+        .blockers
+        .iter()
+        .any(|b| b == "verdict:permissive-claim"));
+
+    // A report pinning different composition bytes is refused outright.
+    let result = evidence_admission_target(|report| {
+        report["compositionRef"]["digest"] = serde_json::json!(
+            "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        );
+    });
+    assert!(result.is_err());
+
+    // Structurally invalid reports the closed schema rejects are
+    // refused by admission too (C6 schema parity).
+    for mutation in [
+        |report: &mut serde_json::Value| {
+            report["reportVersion"] = serde_json::json!("9.9.9");
+        },
+        |report: &mut serde_json::Value| {
+            report["compositionRef"] = serde_json::json!(null);
+        },
+        |report: &mut serde_json::Value| {
+            report["toolchain"] = serde_json::json!({"rogue": true});
+        },
+        |report: &mut serde_json::Value| {
+            report["verdict"] = serde_json::json!(false);
+        },
+        |report: &mut serde_json::Value| {
+            report["targets"][0]["assertions"][0]["rogue"] = serde_json::json!(true);
+        },
+    ] {
+        let result = evidence_admission_target(mutation);
+        assert!(result.is_err(), "mutation must refuse");
+    }
 }

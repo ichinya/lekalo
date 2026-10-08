@@ -249,6 +249,8 @@ if (evidence.compositionRef.digest !== compositionDigest) {
 const tempRoot = mkdtempSync(join(tmpdir(), "lekalo-pilot-"));
 const evidencePath = join(tempRoot, "evidence.json");
 writeFileSync(evidencePath, JSON.stringify(evidence));
+const compositionPath = join(tempRoot, "composition.json");
+writeFileSync(compositionPath, compositionBytes);
 let admissionExit;
 let admission;
 try {
@@ -258,6 +260,7 @@ try {
     "pilot",
     "admit",
     evidencePath,
+    compositionPath,
     "--profile",
     profile,
     "--project",

@@ -6439,12 +6439,15 @@ enum PilotCommands {
         #[arg(long, value_name = "DIR")]
         project: Option<String>,
     },
-    /// Admit one evidence report under the selected profile: strict
-    /// refuses any required unsupported or unknown row (exit 4) while
-    /// keeping the report; permissive emits the degraded verdict.
+    /// Admit one evidence report under the selected profile, bound to
+    /// the exact composition document it pins: strict refuses any
+    /// required unsupported or unknown row (exit 4) while keeping the
+    /// report; permissive emits the degraded verdict.
     Admit {
         /// Path to the evidence report JSON.
         path: String,
+        /// Path to the composition document the report pins.
+        composition: String,
         /// The closed admission profile.
         #[arg(long, value_enum, default_value = "strict")]
         profile: PilotProfileArg,
@@ -6478,13 +6481,14 @@ impl PilotProfileArg {
 /// compile failures pass through unchanged; this binary only selects,
 /// renders, and maps exits.
 fn run_pilot(command: PilotCommands, no_cache: bool) -> DomainResult {
-    let (path, project, step) = match command {
-        PilotCommands::Validate { path, project } => (path, project, None),
+    let (path, composition_path, project, step) = match command {
+        PilotCommands::Validate { path, project } => (path, None, project, None),
         PilotCommands::Admit {
             path,
+            composition,
             profile,
             project,
-        } => (path, project, Some(profile.core())),
+        } => (path, Some(composition), project, Some(profile.core())),
     };
     let bytes = match std::fs::read(&path) {
         Ok(bytes) => bytes,
@@ -6527,30 +6531,59 @@ fn run_pilot(command: PilotCommands, no_cache: bool) -> DomainResult {
                 ),
             )
         }
-        Some(profile) => match lekalo_core::worklog_changelog::admit(&bytes, profile) {
-            Ok(receipt) => {
-                let verdict = receipt.verdict;
-                let json = serde_json::to_string_pretty(&serde_json::json!({ "pilot": receipt }))
-                    .expect("pilot receipt serializes");
-                let human = format!("pilot evidence {}: {}", profile.wire_name(), verdict);
-                if verdict == "unsupported" {
-                    // The strict refusal keeps every row visible but is
-                    // never a success: status unsupported, exit 4 (the
-                    // documented convention; the receipt rides the
-                    // envelope like a denied one).
-                    DomainResult::unsupported_json(
-                        json,
-                        human,
-                        lekalo_core::worklog_changelog::diagnostic::evidence_incomplete(
-                            "strict-refused",
-                        ),
-                    )
-                } else {
-                    DomainResult::receipt(json, human)
+        Some(profile) => {
+            // Admission is bound: the report names its composition by
+            // exact digest, so the shell reads both documents and the
+            // core performs every join. A missing composition is the
+            // same IO failure class as a missing report.
+            let composition_bytes = match composition_path.as_deref().map(std::fs::read) {
+                Some(Ok(bytes)) => bytes,
+                Some(Err(error)) => {
+                    let detail = match error.kind() {
+                        io::ErrorKind::NotFound => "file-missing",
+                        _ => "file-unreadable",
+                    };
+                    return DomainResult::invalid(lekalo_core::worklog_changelog::io_failure(
+                        detail,
+                    ));
                 }
+                None => {
+                    return DomainResult::invalid(lekalo_core::worklog_changelog::io_failure(
+                        "file-missing",
+                    ))
+                }
+            };
+            match lekalo_core::worklog_changelog::admit(
+                &bytes,
+                &composition_bytes,
+                &compilation.project,
+                profile,
+            ) {
+                Ok(receipt) => {
+                    let verdict = receipt.verdict;
+                    let json =
+                        serde_json::to_string_pretty(&serde_json::json!({ "pilot": receipt }))
+                            .expect("pilot receipt serializes");
+                    let human = format!("pilot evidence {}: {}", profile.wire_name(), verdict);
+                    if verdict == "unsupported" {
+                        // The strict refusal keeps every row visible but is
+                        // never a success: status unsupported, exit 4 (the
+                        // documented convention; the receipt rides the
+                        // envelope like a denied one).
+                        DomainResult::unsupported_json(
+                            json,
+                            human,
+                            lekalo_core::worklog_changelog::diagnostic::evidence_incomplete(
+                                "strict-refused",
+                            ),
+                        )
+                    } else {
+                        DomainResult::receipt(json, human)
+                    }
+                }
+                Err(result) => result,
             }
-            Err(result) => result,
-        },
+        }
     }
 }
 
