@@ -44,6 +44,14 @@ pub struct Assessment<'a> {
     /// The qualified, producer-validated implementation projection, or
     /// `None` when no complete implementation family was joined.
     pub implementation: Option<&'a crate::implementation::PortabilityReport>,
+    /// The evidence families whose declared-complete artifact the caller
+    /// actually read, hash-verified, and decoded: declared completeness
+    /// alone never proves an inventory exists.
+    pub verified_families: BTreeSet<wire::EvidenceFamily>,
+    /// The (scenario, destination) joins whose claimed receipt the caller
+    /// read, digest-verified, and scope-checked: an unqualified receipt
+    /// never upgrades a join to executed or failed.
+    pub receipts_qualified: BTreeSet<(String, String)>,
     pub targets_input: TargetsInput,
     pub lock_digest: Option<String>,
     /// The exact manifest digest pin, supplied by the caller.
@@ -82,9 +90,11 @@ pub mod reasons {
     pub const CAPABILITY_ABSENT: &str = "capability-absent";
     pub const CAPABILITY_EXPLICIT_UNSUPPORTED: &str = "capability-explicit-unsupported";
     pub const IMPLICIT_HOOK_UNSUPPORTED: &str = "implicit-hook-unsupported";
+    pub const MAPPING_UNQUALIFIED: &str = "mapping-unqualified";
     pub const NO_OPERATIONAL_OBLIGATION: &str = "no-operational-obligation";
     pub const DIMENSION_NOT_ASSIGNED: &str = "dimension-not-assigned";
     pub const DESTINATION_EVIDENCE_GAP: &str = "destination-evidence-gap";
+    pub const RECEIPT_UNQUALIFIED: &str = "receipt-unqualified";
 }
 
 /// The fixed report-reason vocabulary of the registered portability
@@ -130,7 +140,9 @@ impl Sink {
     }
 }
 
-/// The measured work bounds of one assessment run.
+/// The measured work bounds of one assessment run. Counters are derived
+/// from the rows actually emitted: every emitted obligation charges the
+/// advertised budget, and an exceeded budget truncates explicitly.
 struct Bounds {
     limits: Limits,
     obligation_rows: u64,
@@ -139,16 +151,19 @@ struct Bounds {
 }
 
 impl Bounds {
-    fn charge_row(&mut self) -> bool {
+    /// Whether another emitted row fits the advertised budget.
+    fn can_emit(&self) -> bool {
+        !self.exhausted && self.obligation_rows < self.limits.max_obligation_rows
+    }
+    /// Charge one emitted row; an exceeded budget truncates explicitly.
+    fn note_emitted(&mut self, row: &ObligationRow) {
         self.obligation_rows += 1;
+        if row.classification == Classification::NonApplicable {
+            self.non_applicable_rows += 1;
+        }
         if self.obligation_rows > self.limits.max_obligation_rows {
             self.exhausted = true;
-            return false;
         }
-        true
-    }
-    fn charge_non_applicable(&mut self) {
-        self.non_applicable_rows += 1;
     }
 }
 
@@ -191,6 +206,7 @@ pub fn assess(input: &Assessment) -> Result<Report, DiagnosticSet> {
 
     let evidence = input.evidence;
     let destinations = &input.destinations;
+    report_unqualified_receipts(input, evidence, &mut sink);
 
     // Per-subject, per-destination, per-dimension obligation rows.
     let mut subject_rows: Vec<SubjectRow> = Vec::new();
@@ -200,13 +216,19 @@ pub fn assess(input: &Assessment) -> Result<Report, DiagnosticSet> {
         for destination in destinations {
             for dimension in Dimension::ALL {
                 if !dimensions.contains(&dimension) {
-                    if bounds.charge_row() {
-                        bounds.charge_non_applicable();
-                        rows.push(non_applicable_row(&destination.target_id, dimension));
+                    if bounds.can_emit() {
+                        let row = non_applicable_row(&destination.target_id, dimension);
+                        bounds.note_emitted(&row);
+                        rows.push(row);
+                    } else {
+                        // Remaining planned work exceeds the advertised
+                        // budget: an explicit truncation, never silence.
+                        bounds.exhausted = true;
                     }
                     continue;
                 }
-                if !bounds.charge_row() {
+                if !bounds.can_emit() {
+                    bounds.exhausted = true;
                     continue;
                 }
                 for row in classify(
@@ -217,6 +239,11 @@ pub fn assess(input: &Assessment) -> Result<Report, DiagnosticSet> {
                     &destination.target_id,
                     dimension,
                 ) {
+                    if !bounds.can_emit() {
+                        bounds.exhausted = true;
+                        break;
+                    }
+                    bounds.note_emitted(&row);
                     rows.push(row);
                 }
             }
@@ -406,16 +433,17 @@ fn non_applicable_row(destination: &str, dimension: Dimension) -> ObligationRow 
 /// The orthogonal verification state of one subject/destination join:
 /// the recorded receipts of the scenarios that cover the subject.
 fn verification_for(
-    subjects: &Subjects,
+    input: &Assessment,
     evidence: Option<&EvidenceDocument>,
     subject: &super::requirements::Subject,
     destination: &str,
 ) -> Verification {
     if subject.kind == "scenario" {
-        return receipt_state(evidence, &subject.id, destination);
+        return receipt_state(input, evidence, &subject.id, destination);
     }
     // The covering scenarios of this subject carry the recorded receipts.
-    let covering = subjects
+    let covering = input
+        .subjects
         .covered_by
         .iter()
         .filter(|(_, covered)| covered.iter().any(|c| c == &subject.id))
@@ -424,7 +452,7 @@ fn verification_for(
     let mut has_fail = false;
     let mut has_pass = false;
     for scenario in covering {
-        match receipt_state(evidence, scenario, destination) {
+        match receipt_state(input, evidence, scenario, destination) {
             Verification::RecordedFail => has_fail = true,
             Verification::RecordedPass => has_pass = true,
             _ => {}
@@ -440,6 +468,7 @@ fn verification_for(
 }
 
 fn receipt_state(
+    input: &Assessment,
     evidence: Option<&EvidenceDocument>,
     scenario: &str,
     destination: &str,
@@ -447,17 +476,49 @@ fn receipt_state(
     let Some(evidence) = evidence else {
         return Verification::Untested;
     };
+    let qualified = input
+        .receipts_qualified
+        .contains(&(scenario.to_owned(), destination.to_owned()));
     match evidence
         .scenarios
         .iter()
         .find(|s| s.scenario == scenario && s.target_id.as_deref() == Some(destination))
     {
         Some(record) => match record.state {
-            wire::ScenarioReceipt::RecordedPass => Verification::RecordedPass,
-            wire::ScenarioReceipt::RecordedFail => Verification::RecordedFail,
-            wire::ScenarioReceipt::Untested => Verification::Untested,
+            wire::ScenarioReceipt::RecordedPass if qualified => Verification::RecordedPass,
+            wire::ScenarioReceipt::RecordedFail if qualified => Verification::RecordedFail,
+            // A claimed result without qualified receipt custody stays
+            // untested: an authored enum is never execution evidence.
+            _ => Verification::Untested,
         },
         None => Verification::Untested,
+    }
+}
+
+/// Surface every claimed-but-unqualified receipt as an explicit evidence
+/// gap, so a fabricated manifest is visible instead of silently downgraded.
+fn report_unqualified_receipts(
+    input: &Assessment,
+    evidence: Option<&EvidenceDocument>,
+    sink: &mut Sink,
+) {
+    let Some(evidence) = evidence else {
+        return;
+    };
+    for record in &evidence.scenarios {
+        let qualified = record.target_id.as_ref().is_some_and(|target| {
+            input
+                .receipts_qualified
+                .contains(&(record.scenario.clone(), target.clone()))
+        });
+        if record.state != wire::ScenarioReceipt::Untested && !qualified {
+            sink.push(
+                codes::EVIDENCE_INCOMPLETE,
+                Some(record.scenario.clone()),
+                None,
+                reasons::RECEIPT_UNQUALIFIED,
+            );
+        }
     }
 }
 
@@ -474,14 +535,14 @@ fn classify(
     let mut rows = match dimension {
         Dimension::Structural => vec![structural(input, subject, destination)],
         Dimension::Behavioral => vec![behavioral(input, evidence, sink, subject, destination)],
-        Dimension::Storage => vec![storage(evidence, sink, subject, destination)],
+        Dimension::Storage => storage(input, evidence, sink, subject, destination),
         Dimension::Operational => operational(input, evidence, sink, subject, destination),
     };
     for row in rows.iter_mut() {
         row.verification = if row.classification == Classification::NonApplicable {
             Verification::NotApplicable
         } else {
-            verification_for(&input.subjects, evidence, subject, destination)
+            verification_for(input, evidence, subject, destination)
         };
         row.witnesses = subject.witnesses.clone();
     }
@@ -577,15 +638,19 @@ fn behavioral(
         evidence_refs,
         witnesses: vec![],
     };
-    // The implementation family must be declared complete for a
-    // definitive absence; otherwise the row stays unknown.
+    // The implementation family must be declared complete and its
+    // declared-complete artifact actually verified (read, hash-checked,
+    // decoded) for a definitive absence; otherwise the row stays unknown.
     let family = evidence.and_then(|e| {
         e.families
             .iter()
             .find(|f| f.family == wire::EvidenceFamily::Implementation)
     });
-    let inventory_qualified =
-        matches!(family, Some(f) if f.complete) && input.implementation.is_some();
+    let inventory_qualified = matches!(family, Some(f) if f.complete)
+        && input.implementation.is_some()
+        && input
+            .verified_families
+            .contains(&wire::EvidenceFamily::Implementation);
     if !inventory_qualified {
         let reason = if family.is_some() {
             reasons::IMPLEMENTATION_INVENTORY_INCOMPLETE
@@ -727,6 +792,44 @@ fn hook_row(
     }
 }
 
+/// The reviewed obligation requirement of a behavioral hook row. A
+/// semantic mapping credits the hook only when it names exactly this
+/// requirement; a mapping for any other requirement never describes the
+/// obligation and cannot be stretched over it.
+pub const HOOK_REQUIREMENT: &str = "behavior.hook";
+
+/// Whether one mapping record is an admissible credit for the reviewed
+/// obligation: it must bridge through a reviewed recipe semantic mapping
+/// (exact requirement and capability), pin that capability's exact
+/// reviewed definition version, and declare only conditions the reviewed
+/// definition anticipates. Anything else is unqualified evidence, never
+/// a silent credit.
+fn admissible_mapping(input: &Assessment, record: &wire::MappingRecord) -> bool {
+    let Some(bridge) = input
+        .recipe
+        .document
+        .semantic_mappings
+        .iter()
+        .find(|m| m.requirement == record.requirement && m.capability == record.capability)
+    else {
+        return false;
+    };
+    let exact_definition_pin = record
+        .definition_pins
+        .iter()
+        .any(|pin| pin.id == record.capability && pin.version == bridge.definition_version);
+    if !exact_definition_pin {
+        return false;
+    }
+    // The record's declared conditions must stay inside the reviewed
+    // precondition vocabulary of the bridge; an invented condition is an
+    // unreviewed limitation the assessment cannot admit.
+    record
+        .conditions
+        .iter()
+        .all(|condition| bridge.preconditions.iter().any(|p| p == condition))
+}
+
 fn mapping_outcome(
     input: &Assessment,
     evidence: Option<&EvidenceDocument>,
@@ -735,17 +838,60 @@ fn mapping_outcome(
     destination: &str,
     binding: Binding,
 ) -> HookOutcome {
-    // Destination scoping: a mapping credits exactly the destination it
-    // named. A mapping authored for another target is invisible here, so
-    // a php-scoped recipe can never green-light a go row.
+    // Obligation matching: a mapping credits exactly the (subject,
+    // destination, requirement) obligation it describes. A record for
+    // another subject, another destination, or another requirement is
+    // invisible here.
     let mappings: Vec<&wire::MappingRecord> = evidence
         .map(|e| {
             e.mappings
                 .iter()
-                .filter(|m| m.subject.as_deref() == Some(symbol) && m.target_id == destination)
+                .filter(|m| {
+                    m.subject.as_deref() == Some(symbol)
+                        && m.target_id == destination
+                        && m.requirement == HOOK_REQUIREMENT
+                })
                 .collect()
         })
         .unwrap_or_default();
+    if mappings.is_empty() {
+        sink.push(
+            codes::EVIDENCE_INCOMPLETE,
+            Some(symbol.to_owned()),
+            Some(Dimension::Behavioral),
+            reasons::HOOK_FOREIGN_UNMAPPED,
+        );
+        return HookOutcome {
+            classification: Classification::Unknown,
+            binding: Some(binding),
+            blocking: true,
+            reason: reasons::HOOK_FOREIGN_UNMAPPED,
+            evidence_refs: vec![],
+        };
+    }
+    // Admission: conflicting or unqualified records poison the credit.
+    // A manifest that contradicts itself (any full-vs-partial split,
+    // mismatched definition pins, invented conditions) never yields a
+    // supported row; the conservative reconciliation is an explicit
+    // unknown, and a qualified partial always dominates a full claim.
+    if mappings
+        .iter()
+        .any(|record| !admissible_mapping(input, record))
+    {
+        sink.push(
+            codes::EVIDENCE_INCOMPLETE,
+            Some(symbol.to_owned()),
+            Some(Dimension::Behavioral),
+            reasons::MAPPING_UNQUALIFIED,
+        );
+        return HookOutcome {
+            classification: Classification::Unknown,
+            binding: Some(binding),
+            blocking: true,
+            reason: reasons::MAPPING_UNQUALIFIED,
+            evidence_refs: mappings.iter().map(|m| m.id.clone()).collect(),
+        };
+    }
     // Capability verification: the mapped semantic capability must be
     // declared by the destination profile's resolved capability set at
     // full support before the mapping may credit the row.
@@ -759,30 +905,25 @@ fn mapping_outcome(
             .and_then(|profile| profile.capabilities.iter().find(|c| c.id == capability))
             .map(|c| c.support.as_str())
     };
-    let mappings: Vec<(&wire::MappingRecord, Option<&str>)> = mappings
-        .into_iter()
-        .map(|m| {
-            let support = capability_state(&m.capability);
-            (m, support)
-        })
-        .collect();
-    let full = mappings
-        .iter()
-        .any(|(m, support)| m.coverage == wire::MappingCoverage::Full && *support == Some("full"));
-    let partial = mappings.iter().any(|(m, support)| match support {
-        // A declared-but-weaker or undeclared capability keeps a full
-        // mapping out of the supported state; it degrades to partial
-        // with the destination's profile as the witness surface.
-        Some("full") => m.coverage == wire::MappingCoverage::Partial,
-        _ => true,
+    let full = mappings.iter().any(|m| {
+        m.coverage == wire::MappingCoverage::Full && capability_state(&m.capability) == Some("full")
     });
-    let refs: Vec<String> = mappings.iter().map(|(m, _)| m.id.clone()).collect();
+    // A declared-but-weaker or undeclared capability keeps a full
+    // mapping out of the supported state; any qualified partial claim
+    // degrades the obligation regardless of sibling full claims.
+    let partial = mappings
+        .iter()
+        .any(|m| match capability_state(&m.capability) {
+            Some("full") => m.coverage == wire::MappingCoverage::Partial,
+            _ => true,
+        });
+    let refs: Vec<String> = mappings.iter().map(|m| m.id.clone()).collect();
     let partial_reason = if binding == Binding::Foreign {
         reasons::HOOK_FOREIGN_PARTIAL
     } else {
         reasons::HOOK_EXTERNAL_PARTIAL
     };
-    if full {
+    if full && !partial {
         HookOutcome {
             classification: Classification::SupportedWithMapping,
             binding: Some(binding),
@@ -794,7 +935,7 @@ fn mapping_outcome(
             },
             evidence_refs: refs,
         }
-    } else if partial {
+    } else {
         sink.push(
             codes::MAPPING_PARTIAL,
             Some(symbol.to_owned()),
@@ -808,34 +949,22 @@ fn mapping_outcome(
             reason: partial_reason,
             evidence_refs: refs,
         }
-    } else {
-        sink.push(
-            codes::EVIDENCE_INCOMPLETE,
-            Some(symbol.to_owned()),
-            Some(Dimension::Behavioral),
-            reasons::HOOK_FOREIGN_UNMAPPED,
-        );
-        HookOutcome {
-            classification: Classification::Unknown,
-            binding: Some(binding),
-            blocking: true,
-            reason: reasons::HOOK_FOREIGN_UNMAPPED,
-            evidence_refs: refs,
-        }
     }
 }
 
 fn storage(
+    input: &Assessment,
     evidence: Option<&EvidenceDocument>,
     sink: &mut Sink,
     subject: &super::requirements::Subject,
     destination: &str,
-) -> ObligationRow {
+) -> Vec<ObligationRow> {
     let base = |classification,
                 blocking,
                 reason: &'static str,
                 required: Option<Policy>,
-                offered: Option<Policy>| ObligationRow {
+                offered: Option<Policy>,
+                refs: Vec<String>| ObligationRow {
         destination: destination.to_owned(),
         dimension: Dimension::Storage,
         classification,
@@ -845,14 +974,9 @@ fn storage(
         reason: reason.to_owned(),
         required,
         offered,
-        evidence_refs: vec![],
+        evidence_refs: refs,
         witnesses: vec![],
     };
-    let family = evidence.and_then(|e| {
-        e.families
-            .iter()
-            .find(|f| f.family == wire::EvidenceFamily::Storage)
-    });
     let Some(evidence) = evidence else {
         sink.push(
             codes::EVIDENCE_INCOMPLETE,
@@ -860,28 +984,42 @@ fn storage(
             Some(Dimension::Storage),
             reasons::STORAGE_INVENTORY_ABSENT,
         );
-        return base(
+        return vec![base(
             Classification::Unknown,
             true,
             reasons::STORAGE_INVENTORY_ABSENT,
             None,
             None,
-        );
+            vec![],
+        )];
     };
+    let family = evidence
+        .families
+        .iter()
+        .find(|f| f.family == wire::EvidenceFamily::Storage);
     let required: Vec<&wire::StorageRequirement> = evidence
         .storage_required
         .iter()
         .filter(|r| r.subject == subject.typed_id)
         .collect();
     if required.is_empty() {
-        if matches!(family, Some(f) if f.complete) {
-            return base(
+        // A definitive absence needs the storage inventory declared
+        // complete AND its artifact actually verified: a declared
+        // completeness without readable, digest-bound custody is an
+        // evidence gap, never a portable row.
+        if matches!(family, Some(f) if f.complete)
+            && input
+                .verified_families
+                .contains(&wire::EvidenceFamily::Storage)
+        {
+            return vec![base(
                 Classification::Portable,
                 false,
                 reasons::NO_RESTRICTED_POLICY,
                 None,
                 None,
-            );
+                vec![],
+            )];
         }
         let reason = if family.is_some() {
             reasons::STORAGE_INVENTORY_INCOMPLETE
@@ -894,19 +1032,25 @@ fn storage(
             Some(Dimension::Storage),
             reason,
         );
-        return base(Classification::Unknown, true, reason, None, None);
+        return vec![base(
+            Classification::Unknown,
+            true,
+            reason,
+            None,
+            None,
+            vec![],
+        )];
     }
-    let mut worst = Classification::Portable;
-    let mut worst_reason = reasons::POLICY_COVERED;
-    let mut blocking = false;
-    let mut required_policy = None;
-    let mut offered_policy = None;
+    // One row per policy obligation: every requirement keeps its own
+    // exact required/offered pair, its own classification, and its own
+    // reason, so no later iteration can overwrite an earlier loss.
+    let mut rows = Vec::new();
     for requirement in &required {
         let offered = evidence
             .storage_offered
             .iter()
             .find(|o| o.target_id == destination && o.policy.kind == requirement.policy.kind);
-        required_policy = Some(requirement.policy.clone());
+        let refs = vec![storage_requirement_id(&requirement.policy.kind)];
         let Some(offered) = offered else {
             sink.push(
                 codes::EVIDENCE_INCOMPLETE,
@@ -914,15 +1058,16 @@ fn storage(
                 Some(Dimension::Storage),
                 reasons::STORAGE_POLICY_UNKNOWN,
             );
-            if Classification::Unknown.rank() < worst.rank() {
-                worst = Classification::Unknown;
-                worst_reason = reasons::STORAGE_POLICY_UNKNOWN;
-                blocking = true;
-                offered_policy = None;
-            }
+            rows.push(base(
+                Classification::Unknown,
+                true,
+                reasons::STORAGE_POLICY_UNKNOWN,
+                Some(requirement.policy.clone()),
+                None,
+                refs,
+            ));
             continue;
         };
-        offered_policy = Some(offered.policy.clone());
         if offered.policy.value == "unsupported" {
             sink.push(
                 codes::CAPABILITY_UNSUPPORTED,
@@ -930,11 +1075,14 @@ fn storage(
                 Some(Dimension::Storage),
                 reasons::CAPABILITY_EXPLICIT_UNSUPPORTED,
             );
-            if Classification::Unsupported.rank() < worst.rank() {
-                worst = Classification::Unsupported;
-                worst_reason = reasons::CAPABILITY_EXPLICIT_UNSUPPORTED;
-                blocking = true;
-            }
+            rows.push(base(
+                Classification::Unsupported,
+                true,
+                reasons::CAPABILITY_EXPLICIT_UNSUPPORTED,
+                Some(requirement.policy.clone()),
+                Some(offered.policy.clone()),
+                refs,
+            ));
         } else if !policies_equal(&requirement.policy, &offered.policy) {
             sink.push(
                 codes::BEHAVIOR_LOSS,
@@ -942,23 +1090,37 @@ fn storage(
                 Some(Dimension::Storage),
                 reasons::STORAGE_POLICY_LOSS,
             );
-            if Classification::Partial.rank() < worst.rank() {
-                worst = Classification::Partial;
-                worst_reason = reasons::STORAGE_POLICY_LOSS;
-                blocking = true;
-            }
-        } else if Classification::Portable.rank() < worst.rank() {
-            worst = Classification::Portable;
-            worst_reason = reasons::POLICY_COVERED;
+            rows.push(base(
+                Classification::Partial,
+                true,
+                reasons::STORAGE_POLICY_LOSS,
+                Some(requirement.policy.clone()),
+                Some(offered.policy.clone()),
+                refs,
+            ));
+        } else {
+            rows.push(base(
+                Classification::Portable,
+                false,
+                reasons::POLICY_COVERED,
+                Some(requirement.policy.clone()),
+                Some(offered.policy.clone()),
+                refs,
+            ));
         }
     }
-    base(
-        worst,
-        blocking,
-        worst_reason,
-        required_policy,
-        offered_policy,
-    )
+    rows
+}
+
+/// The reviewed semantic requirement identity of one storage policy
+/// kind, as far as the recipe bridges it; other kinds keep a stable
+/// derived identity.
+fn storage_requirement_id(kind: &str) -> String {
+    match kind {
+        "decimal" => "storage.decimal-policy".to_owned(),
+        "isolation" => "storage.transactions".to_owned(),
+        other => format!("storage.{other}"),
+    }
 }
 
 fn policies_equal(required: &Policy, offered: &Policy) -> bool {
@@ -999,27 +1161,31 @@ fn operational(
         row.evidence_refs = evidence_refs;
         row
     };
-    // Observed implicit hooks keep their inferred status and proof gap:
-    // they stay qualified observations, never canonical Model members.
+    // Every declared obligation is evaluated, and the observed implicit
+    // hook never short-circuits its siblings: a blocking row does not
+    // justify hiding other required work.
+    let mut rows = Vec::new();
+    let mut hook_blocker = false;
     if let Some(evidence) = evidence {
         if evidence.hooks.iter().any(|h| {
             h.subject == subject.typed_id
                 && h.target_id == destination
                 && h.state == wire::HookObservationState::ObservedUnsupported
         }) {
+            hook_blocker = true;
             sink.push(
                 codes::BEHAVIOR_LOSS,
                 Some(subject.typed_id.clone()),
                 Some(Dimension::Operational),
                 reasons::IMPLICIT_HOOK_UNSUPPORTED,
             );
-            return vec![finish(
+            rows.push(finish(
                 base(true, reasons::IMPLICIT_HOOK_UNSUPPORTED),
                 Classification::Partial,
                 true,
                 reasons::IMPLICIT_HOOK_UNSUPPORTED,
-                vec![],
-            )];
+                vec![HOOK_REQUIREMENT.to_owned()],
+            ));
         }
     }
     // Publication obligations join the declared profile capabilities.
@@ -1033,41 +1199,24 @@ fn operational(
         })
         .unwrap_or_default();
     if !has_publication && requirements.is_empty() {
-        return vec![finish(
-            base(false, reasons::NO_OPERATIONAL_OBLIGATION),
-            Classification::NonApplicable,
-            false,
-            reasons::NO_OPERATIONAL_OBLIGATION,
-            vec![],
-        )];
+        if !hook_blocker {
+            rows.push(finish(
+                base(false, reasons::NO_OPERATIONAL_OBLIGATION),
+                Classification::NonApplicable,
+                false,
+                reasons::NO_OPERATIONAL_OBLIGATION,
+                vec![],
+            ));
+        }
+        return rows;
     }
-    let profile = input
-        .destinations
-        .iter()
-        .find(|d| d.target_id == destination)
-        .and_then(|d| d.profile.as_ref());
-    let Some(profile) = profile else {
-        sink.push(
-            codes::EVIDENCE_INCOMPLETE,
-            Some(subject.typed_id.clone()),
-            Some(Dimension::Operational),
-            reasons::CAPABILITY_ABSENT,
-        );
-        return vec![finish(
-            base(true, reasons::CAPABILITY_ABSENT),
-            Classification::Unknown,
-            true,
-            reasons::CAPABILITY_ABSENT,
-            vec![],
-        )];
-    };
-    // Every declared publication obligation and every qualified
-    // requirement becomes its own evaluated obligation row: silently
-    // dropping sibling requirements would hide an evidence gap behind
-    // a single satisfied one.
-    let mut obligations: Vec<Option<String>> = Vec::new();
+    // Every obligation keeps its own requirement identity: the emitted
+    // row names exactly the obligation it evaluates. A requirement with
+    // no reviewed bridge keeps its raw requirement identity and stays an
+    // explicit unknown; it is never silently dropped or anonymized.
+    let mut obligations: Vec<String> = Vec::new();
     if has_publication {
-        obligations.push(Some("events.publication".to_owned()));
+        obligations.push("events.publication".to_owned());
     }
     let recipe = input.recipe;
     for requirement in &requirements {
@@ -1077,33 +1226,36 @@ fn operational(
             .iter()
             .find(|m| m.requirement == requirement.requirement)
             .map(|m| m.capability.clone());
-        obligations.push(mapped);
+        obligations.push(mapped.unwrap_or_else(|| requirement.requirement.clone()));
     }
-    let mut rows = Vec::new();
-    for required in obligations {
-        let Some(required_capability) = required else {
-            // An unmapped requirement stays an explicit unknown; it is
-            // never silently dropped.
-            sink.push(
-                codes::EVIDENCE_INCOMPLETE,
-                Some(subject.typed_id.clone()),
-                Some(Dimension::Operational),
-                reasons::CAPABILITY_ABSENT,
-            );
+    let profile = input
+        .destinations
+        .iter()
+        .find(|d| d.target_id == destination)
+        .and_then(|d| d.profile.as_ref());
+    let Some(profile) = profile else {
+        // Without a profile every obligation is an explicit unknown,
+        // each keeping its own identity.
+        sink.push(
+            codes::EVIDENCE_INCOMPLETE,
+            Some(subject.typed_id.clone()),
+            Some(Dimension::Operational),
+            reasons::CAPABILITY_ABSENT,
+        );
+        for obligation in &obligations {
             rows.push(finish(
                 base(true, reasons::CAPABILITY_ABSENT),
                 Classification::Unknown,
                 true,
                 reasons::CAPABILITY_ABSENT,
-                vec![],
+                vec![obligation.clone()],
             ));
-            continue;
-        };
-        let Some(capability) = profile
-            .capabilities
-            .iter()
-            .find(|c| c.id == required_capability)
-        else {
+        }
+        return rows;
+    };
+    for obligation in &obligations {
+        let capability = profile.capabilities.iter().find(|c| &c.id == obligation);
+        let Some(capability) = capability else {
             // An unsatisfied declaration is not proof that the native
             // runtime cannot implement the capability.
             sink.push(
@@ -1117,7 +1269,7 @@ fn operational(
                 Classification::Unknown,
                 true,
                 reasons::CAPABILITY_ABSENT,
-                vec![required_capability],
+                vec![obligation.clone()],
             ));
             continue;
         };
@@ -1127,7 +1279,7 @@ fn operational(
                 Classification::Portable,
                 false,
                 reasons::CAPABILITY_DECLARED,
-                vec![required_capability],
+                vec![obligation.clone()],
             ),
             "partial" => {
                 sink.push(
@@ -1141,7 +1293,7 @@ fn operational(
                     Classification::Partial,
                     true,
                     reasons::CAPABILITY_PARTIAL,
-                    vec![required_capability],
+                    vec![obligation.clone()],
                 )
             }
             _ => {
@@ -1156,7 +1308,7 @@ fn operational(
                     Classification::Unknown,
                     true,
                     reasons::CAPABILITY_ABSENT,
-                    vec![required_capability],
+                    vec![obligation.clone()],
                 )
             }
         });

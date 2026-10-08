@@ -80,21 +80,45 @@ fn valid_target_token(token: &str) -> bool {
 /// defaults must reference configured ids exactly once, and every
 /// artifact reference must stay inside the safe project-relative grammar.
 pub fn parse_targets(bytes: &[u8]) -> Result<TargetsDocument, DiagnosticSet> {
-    let document: TargetsDocument = wire::decode(bytes)?;
+    let value = wire::decode_dup_safe(bytes)?;
+    // Mirror the contract's required-but-nullable binding members.
+    for binding in value
+        .get("targets")
+        .and_then(|t| t.as_array())
+        .into_iter()
+        .flatten()
+    {
+        wire::require_members(binding, &["adapterEvidenceRef", "storageProfileRefs"])?;
+    }
+    let document: TargetsDocument =
+        serde_json::from_value(value).map_err(|_| diagnostic::invalid("closed-shape"))?;
     if document.schema_version != version::TARGETS_SCHEMA_VERSION
         || document.identity != version::TARGETS_IDENTITY
     {
         return Err(diagnostic::unsupported_version("targets-version"));
     }
     // Mirror the contract's `minItems` exactly: an explicitly empty
-    // default-destination list is a decode refusal, never a silent
-    // reinterpretation.
+    // target list or an explicitly empty default-destination list is a
+    // decode refusal, never a silent reinterpretation.
+    if document.targets.is_empty() {
+        return Err(diagnostic::invalid("target-binding"));
+    }
     if document
         .default_destinations
         .as_ref()
         .is_some_and(|list| list.is_empty())
     {
         return Err(diagnostic::invalid("default-destination"));
+    }
+    // Mirror the contract's `uniqueItems` exactly: duplicated defaults
+    // are refused, never silently deduplicated.
+    if let Some(list) = &document.default_destinations {
+        let mut unique = std::collections::BTreeSet::new();
+        for destination in list {
+            if !unique.insert(destination.as_str()) {
+                return Err(diagnostic::invalid("default-destination"));
+            }
+        }
     }
     let mut ids = std::collections::BTreeSet::new();
     for binding in &document.targets {
@@ -143,7 +167,47 @@ pub fn parse_evidence(
     compilation: &Compilation,
     recipe: &Recipe,
 ) -> Result<EvidenceDocument, DiagnosticSet> {
-    let value = wire::decode_dup_safe(bytes).map_err(|_| diagnostic::invalid("json-shape"))?;
+    let value = wire::decode_dup_safe(bytes)?;
+    // Mirror the schemas' required-but-nullable members exactly: key
+    // presence is mandatory even where the value may be `null`.
+    if let Some(recorded_context) = value.get("recordedContext") {
+        wire::require_members(recorded_context, &["revision", "note"])?;
+    }
+    for family in value
+        .get("families")
+        .and_then(|f| f.as_array())
+        .into_iter()
+        .flatten()
+    {
+        wire::require_members(family, &["artifactRef", "digest"])?;
+    }
+    for adapter in value
+        .get("adapters")
+        .and_then(|a| a.as_array())
+        .into_iter()
+        .flatten()
+    {
+        wire::require_members(
+            adapter,
+            &["identity", "version", "protocol", "capabilityDigest"],
+        )?;
+    }
+    for mapping in value
+        .get("mappings")
+        .and_then(|m| m.as_array())
+        .into_iter()
+        .flatten()
+    {
+        wire::require_members(mapping, &["subject"])?;
+    }
+    for scenario in value
+        .get("scenarios")
+        .and_then(|s| s.as_array())
+        .into_iter()
+        .flatten()
+    {
+        wire::require_members(scenario, &["targetId", "receiptRef", "receiptDigest"])?;
+    }
     let document: EvidenceDocument =
         serde_json::from_value(value).map_err(|_| diagnostic::invalid("closed-shape"))?;
     if document.schema_version != version::EVIDENCE_SCHEMA_VERSION
@@ -185,6 +249,13 @@ pub fn parse_evidence(
                 return Err(diagnostic::invalid("artifact-ref"));
             }
         }
+        // The digest pin of an admitted artifact is always a syntactically
+        // exact sha256 digest: a fabricated spelling never decodes.
+        if let Some(digest) = &family.digest {
+            if !wire::is_digest(digest) {
+                return Err(diagnostic::invalid("family-pin"));
+            }
+        }
         if family.complete && (family.artifact_ref.is_none() || family.digest.is_none()) {
             return Err(diagnostic::invalid("family-pin"));
         }
@@ -197,8 +268,14 @@ pub fn parse_evidence(
         if !adapters.insert(adapter.target_id.as_str()) {
             return Err(diagnostic::invalid("duplicate-adapter"));
         }
+        // A recorded snapshot is exact provenance: identity, version,
+        // protocol, and the digest-pinned capability must all be present.
+        // A nullable member under a recorded state is an unqualified
+        // snapshot, not an admitted one.
         if adapter.state == wire::AdapterState::Recorded
             && (adapter.identity.is_none()
+                || adapter.version.is_none()
+                || adapter.protocol.is_none()
                 || adapter.capability_digest.is_none()
                 || !wire::is_digest(adapter.capability_digest.as_deref().unwrap_or_default()))
         {
@@ -215,6 +292,43 @@ pub fn parse_evidence(
         }
         if mapping.coverage == wire::MappingCoverage::Full && mapping.definition_pins.is_empty() {
             return Err(diagnostic::invalid("mapping-pin"));
+        }
+    }
+    // Receipt custody is one identity per (scenario, destination): two
+    // records for the same join with different results or digests are a
+    // contradiction the assessment must never silently reconcile.
+    let mut receipts = std::collections::BTreeSet::new();
+    for record in &document.scenarios {
+        if !receipts.insert((record.scenario.as_str(), record.target_id.as_deref())) {
+            return Err(diagnostic::invalid("duplicate-receipt"));
+        }
+        // A claimed result is admitted only together with a target-
+        // qualified, digest-bound receipt; an untested record never
+        // carries receipt custody.
+        match record.state {
+            wire::ScenarioReceipt::Untested => {
+                if record.receipt_ref.is_some() || record.receipt_digest.is_some() {
+                    return Err(diagnostic::invalid("receipt-ref"));
+                }
+            }
+            wire::ScenarioReceipt::RecordedPass | wire::ScenarioReceipt::RecordedFail => {
+                let qualified = record.target_id.is_some()
+                    && record.receipt_ref.is_some()
+                    && record
+                        .receipt_digest
+                        .as_deref()
+                        .is_some_and(wire::is_digest);
+                if !qualified {
+                    return Err(diagnostic::invalid("receipt-ref"));
+                }
+                if crate::project_fs::path_violation(
+                    record.receipt_ref.as_deref().unwrap_or_default(),
+                )
+                .is_some()
+                {
+                    return Err(diagnostic::invalid("artifact-ref"));
+                }
+            }
         }
     }
     Ok(document)

@@ -17,10 +17,11 @@ use std::collections::{BTreeMap, BTreeSet};
 /// The affected scenario and gate joins of one report.
 pub(super) type AffectedJoins = (Vec<AffectedScenario>, Vec<AffectedGate>);
 
-/// Join the affected scenarios and gates: direct scenario coverage over
-/// the selected subjects, with every covered subject joined (never only
-/// the first), receipts scoped to the assessed destinations, and
-/// declared/planned/executed/failed states kept separate.
+/// Join the affected scenarios and gates: direct scenario coverage plus
+/// the bounded reverse dependency/effect witnesses over the selected
+/// subjects, with every covered subject joined (never only the first),
+/// receipts scoped to the assessed destinations, qualified receipts
+/// only, and the conservative aggregate failed > executed > declared.
 pub(super) fn affected_joins(
     input: &Assessment,
     evidence: Option<&EvidenceDocument>,
@@ -29,6 +30,17 @@ pub(super) fn affected_joins(
 ) -> AffectedJoins {
     let _ = subjects;
     let selected_ids: BTreeSet<&str> = selected.iter().map(|s| s.id.as_str()).collect();
+    // The typed dependency/effect witnesses of the selected subjects:
+    // a scenario covering a (reverse) dependent is an affected witness
+    // of the selection, joined within the bounded extraction closure.
+    let mut witness_ids: BTreeSet<&str> = selected_ids.clone();
+    for subject in selected {
+        for witness in subject.witnesses.iter().chain(subject.dependents.iter()) {
+            if let Some((_, semantic)) = witness.split_once(':') {
+                witness_ids.insert(semantic);
+            }
+        }
+    }
     let assessed_destinations: BTreeSet<&str> = input
         .destinations
         .iter()
@@ -36,14 +48,17 @@ pub(super) fn affected_joins(
         .collect();
     let mut scenarios: BTreeMap<String, (JoinState, BTreeSet<String>)> = BTreeMap::new();
     for (scenario, covered) in &input.subjects.covered_by {
-        // Every selected subject the scenario covers joins, in stable
+        // Every selected subject the scenario reaches joins, in stable
         // (sorted) order; a first-match drop would misstate the surface.
         let reached: BTreeSet<&str> = covered
             .iter()
             .filter(|c| selected_ids.contains(c.as_str()))
             .map(|c| c.as_str())
             .collect();
-        if reached.is_empty() {
+        let witnessed = covered
+            .iter()
+            .any(|c| witness_ids.contains(c.as_str()) && !selected_ids.contains(c.as_str()));
+        if reached.is_empty() && !witnessed {
             continue;
         }
         let entry = scenarios
@@ -58,18 +73,31 @@ pub(super) fn affected_joins(
             let Some(entry) = scenarios.get_mut(&record.scenario) else {
                 continue;
             };
-            // A receipt recorded against another destination does not
-            // prove this assessment's join; only matching (or
-            // destination-unscoped) receipts set the state.
-            if let Some(target) = &record.target_id {
-                if !assessed_destinations.contains(target.as_str()) {
-                    continue;
-                }
+            // A receipt joins only when it is target-qualified against
+            // this assessment's destinations AND its custody was
+            // verified: a claimed result without qualified receipt
+            // custody never upgrades the join.
+            let Some(target) = &record.target_id else {
+                continue;
+            };
+            if !assessed_destinations.contains(target.as_str()) {
+                continue;
             }
+            if !input
+                .receipts_qualified
+                .contains(&(record.scenario.clone(), target.clone()))
+            {
+                continue;
+            }
+            // Conservative aggregate: a recorded failure dominates, an
+            // execution never erases an earlier failure, and an untested
+            // record never resets a recorded state.
             entry.0 = match record.state {
-                wire::ScenarioReceipt::RecordedPass => JoinState::Executed,
                 wire::ScenarioReceipt::RecordedFail => JoinState::Failed,
-                wire::ScenarioReceipt::Untested => JoinState::Declared,
+                wire::ScenarioReceipt::RecordedPass if entry.0 != JoinState::Failed => {
+                    JoinState::Executed
+                }
+                _ => entry.0,
             };
         }
     }
@@ -135,12 +163,14 @@ pub(super) fn migration_surface(
             Some(s) => *s,
             None => continue,
         };
+        let scenarios = covering_scenarios(input, subject);
+        // Gates join through the subject's covering scenarios: the gate
+        // index is keyed by scenario id, never by subject id.
+        let gate_refs = covering_gates(&gates_by_scenario, &scenarios);
         for row in &subject_row.rows {
             if row.blocking {
                 unresolved += 1;
             }
-            let gate_refs = covering_gates(&gates_by_scenario, &subject_ids_of(subject));
-            let scenarios = covering_scenarios(input, subject);
             match row.classification {
                 Classification::Unsupported => {
                     if row.dimension == Dimension::Behavioral {
@@ -224,7 +254,18 @@ pub(super) fn migration_surface(
         }
     }
     rows.sort_by(|left, right| left.id.cmp(&right.id));
-    rows.dedup_by(|left, right| left.id == right.id);
+    // Only genuinely identical rows merge; distinct obligations always
+    // keep distinct stable ids, and any residual base-id collision gets
+    // an explicit occurrence suffix instead of silently dropping work.
+    rows.dedup_by(|left, right| left == right);
+    let mut occurrences: BTreeMap<String, u64> = BTreeMap::new();
+    for row in rows.iter_mut() {
+        let count = occurrences.entry(row.id.clone()).or_insert(0);
+        *count += 1;
+        if *count > 1 {
+            row.id = format!("{}.{}", row.id, count);
+        }
+    }
     MigrationSurface {
         missing_implementations: missing,
         mapped_symbols: mapped.len() as u64,
@@ -237,16 +278,21 @@ pub(super) fn migration_surface(
     }
 }
 
-fn subject_ids_of(subject: &Subject) -> Vec<String> {
-    vec![subject.id.clone()]
-}
-
 fn covering_scenarios(input: &Assessment, subject: &Subject) -> Vec<String> {
+    // Direct coverage plus the bounded typed dependency/effect
+    // witnesses: a scenario covering a (reverse) dependent of the
+    // subject is an affected witness of the subject.
+    let mut joined: BTreeSet<&str> = std::iter::once(subject.id.as_str()).collect();
+    for witness in subject.witnesses.iter().chain(subject.dependents.iter()) {
+        if let Some((_, semantic)) = witness.split_once(':') {
+            joined.insert(semantic);
+        }
+    }
     let mut found: Vec<String> = input
         .subjects
         .covered_by
         .iter()
-        .filter(|(_, covered)| covered.iter().any(|c| c == &subject.id))
+        .filter(|(_, covered)| covered.iter().any(|c| joined.contains(c.as_str())))
         .map(|(scenario, _)| scenario.clone())
         .collect();
     found.sort();
@@ -304,14 +350,25 @@ fn planning_row(
     scenarios: Vec<String>,
     evidence_needed: Vec<String>,
 ) -> PlanningRow {
-    let destination_part = row.destination.replace('-', "");
+    // The destination stays verbatim in the id: an encoding that drops
+    // characters collides distinct targets (go-service vs goservice)
+    // and silently merges their obligations.
+    let destination_part = row.destination.as_str();
+    // The obligation identity joins the id when the row carries one,
+    // keeping per-policy and per-requirement rows injective.
+    let requirement_part = row
+        .evidence_refs
+        .first()
+        .map(|requirement| format!(".{}", requirement.replace(':', ".")))
+        .unwrap_or_default();
     PlanningRow {
         id: format!(
-            "plan.{}.{}.{}.{}",
+            "plan.{}.{}.{}.{}{}",
             action.as_str(),
             destination_part,
             row.dimension.as_str(),
-            subject_row.subject.replace(':', ".")
+            subject_row.subject.replace(':', "."),
+            requirement_part
         ),
         subject: subject_row.subject.clone(),
         member: subject_row.member.clone(),

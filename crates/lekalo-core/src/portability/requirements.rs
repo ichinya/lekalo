@@ -34,6 +34,10 @@ pub struct Subject {
     pub covers: Vec<String>,
     /// The bounded dependency-closure witnesses (typed ids).
     pub witnesses: Vec<String>,
+    /// The bounded reverse-dependency witnesses: the typed ids of the
+    /// symbols that (transitively) depend on this subject. A scenario
+    /// covering a dependent is an affected witness of this subject.
+    pub dependents: Vec<String>,
 }
 
 /// The extracted subject set with its bounded-traversal state.
@@ -173,6 +177,7 @@ pub fn extract(project: &CompiledProject, recipe: &Recipe) -> Subjects {
             emits,
             covers,
             witnesses: Vec::new(),
+            dependents: Vec::new(),
         });
     }
     // The triggers of every effect: the commands whose declared effects
@@ -255,9 +260,55 @@ pub fn extract(project: &CompiledProject, recipe: &Recipe) -> Subjects {
             found.into_iter().collect()
         })
         .collect();
+    // The bounded reverse closure: which symbols (transitively) depend
+    // on this subject. Scenario coverage of a dependent is an affected
+    // witness of the subject, joined within the same recipe bounds.
+    let mut reverse_adjacency: Vec<Vec<usize>> = vec![Vec::new(); rows.len()];
+    for (root, deps) in adjacency.iter().enumerate() {
+        for dep in deps {
+            reverse_adjacency[*dep].push(root);
+        }
+    }
+    let dependents_per_subject: Vec<Vec<String>> = (0..rows.len())
+        .map(|root| {
+            let mut seen = vec![false; rows.len()];
+            let mut queue = std::collections::VecDeque::new();
+            for dependent in &reverse_adjacency[root] {
+                queue.push_back((*dependent, 1u64));
+            }
+            let mut found = BTreeSet::new();
+            while let Some((node, depth)) = queue.pop_front() {
+                budget.charge(1);
+                budget.edge_visits += 1;
+                if budget.edge_visits > budget.edges || depth > budget.depth {
+                    budget.exhausted = true;
+                    break;
+                }
+                if seen[node] {
+                    continue;
+                }
+                seen[node] = true;
+                found.insert(rows[node].typed_id.clone());
+                for dependent in &reverse_adjacency[node] {
+                    if !seen[*dependent] {
+                        queue.push_back((*dependent, depth + 1));
+                    }
+                }
+            }
+            if budget.exhausted {
+                found.clear();
+            }
+            found.into_iter().collect()
+        })
+        .collect();
     let truncated = budget.exhausted;
-    for (row, witnesses) in rows.iter_mut().zip(witnesses_per_subject) {
+    for ((row, witnesses), dependents) in rows
+        .iter_mut()
+        .zip(witnesses_per_subject)
+        .zip(dependents_per_subject)
+    {
         row.witnesses = witnesses;
+        row.dependents = dependents;
     }
     let mut covered_by: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for row in &rows {

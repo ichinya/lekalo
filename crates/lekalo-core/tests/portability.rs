@@ -136,6 +136,7 @@ fn fixture_assessment() -> (lekalo_core::ir::Compilation, wire::Report) {
                 version: adapter.version.clone(),
                 protocol: adapter.protocol.clone(),
                 capability_digest: adapter.capability_digest.clone(),
+                evidence_digest: None,
             }),
         );
     }
@@ -155,6 +156,46 @@ fn fixture_assessment() -> (lekalo_core::ir::Compilation, wire::Report) {
         &storage,
     )
     .expect("targets resolve");
+    // The caller-side verification, exactly like the CLI: the declared
+    // complete family artifact is read and digest-checked, and each
+    // claimed receipt is read, digest-checked, and scope-checked.
+    let mut verified_families = std::collections::BTreeSet::new();
+    for family in &evidence.families {
+        if !family.complete {
+            continue;
+        }
+        let (Some(artifact_ref), Some(digest)) = (&family.artifact_ref, &family.digest) else {
+            continue;
+        };
+        let bytes = read(&format!("{FIXTURE}/{artifact_ref}"));
+        assert_eq!(
+            digest,
+            &format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes)),
+            "the family artifact digest must pin the exact bytes"
+        );
+        verified_families.insert(family.family);
+    }
+    let mut receipts_qualified = std::collections::BTreeSet::new();
+    for record in &evidence.scenarios {
+        let (Some(receipt_ref), Some(receipt_digest)) =
+            (&record.receipt_ref, &record.receipt_digest)
+        else {
+            continue;
+        };
+        let Some(target) = &record.target_id else {
+            continue;
+        };
+        let bytes = read(&format!("{FIXTURE}/{receipt_ref}"));
+        assert_eq!(
+            receipt_digest,
+            &format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes)),
+            "the receipt digest must pin the exact bytes"
+        );
+        let receipt: serde_json::Value = serde_json::from_slice(&bytes).expect("receipt JSON");
+        assert_eq!(receipt["scenario"], record.scenario.as_str());
+        assert_eq!(receipt["targetId"], target.as_str());
+        receipts_qualified.insert((record.scenario.clone(), target.clone()));
+    }
     let assessment = Assessment {
         compilation: &compilation,
         recipe: &recipe,
@@ -164,6 +205,8 @@ fn fixture_assessment() -> (lekalo_core::ir::Compilation, wire::Report) {
         destinations: resolved_targets.destinations.clone(),
         evidence: Some(&evidence),
         implementation: Some(&report),
+        verified_families,
+        receipts_qualified,
         targets_input: wire::TargetsInput {
             state: wire::PinState::Pinned,
             path: Some("config/portability-targets.json".to_owned()),
@@ -571,6 +614,8 @@ mod request_rules {
             destinations: resolved.destinations.clone(),
             evidence: None,
             implementation: None,
+            verified_families: std::collections::BTreeSet::new(),
+            receipts_qualified: std::collections::BTreeSet::new(),
             targets_input: wire::TargetsInput {
                 state: wire::PinState::Pinned,
                 path: None,
@@ -650,7 +695,7 @@ mod request_rules {
     }
 
     #[test]
-    fn derived_selection_from_the_sole_target_is_invalid_without_destinations() {
+    fn derived_selection_from_the_sole_target_resolves_with_the_evidence_gap() {
         let _guard = CWD_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let compilation = compilation();
         let recipe = embedded_recipe().unwrap();
@@ -661,10 +706,12 @@ mod request_rules {
         };
         let mut subjects = extract(&compilation.project, &recipe);
         subjects.declared_targets = vec!["node-typescript".to_owned()];
-        // The sole declared target names the source (derived), but there
-        // is no destination left: a zero-destination assessment is the
-        // vacuous green report, so the selection refuses instead.
-        let error = lekalo_core::portability::resolve_targets(
+        // The sole declared target names the source (derived); with no
+        // destination left the resolution is not refused: the assessment
+        // emits the structural inventory plus the explicit
+        // destination-evidence gap, and the strict gate denies the empty
+        // join instead of ever producing a vacuous green report.
+        let resolved = lekalo_core::portability::resolve_targets(
             &request,
             None,
             &subjects,
@@ -672,11 +719,40 @@ mod request_rules {
             &BTreeMap::new(),
             &BTreeMap::new(),
         )
-        .unwrap_err();
-        assert!(error
-            .as_slice()
+        .expect("the zero-destination selection resolves");
+        assert_eq!(resolved.source.target_id, "node-typescript");
+        assert_eq!(resolved.source.state, wire::PinState::Derived);
+        assert!(resolved.destinations.is_empty());
+        let assessment = Assessment {
+            compilation: &compilation,
+            recipe: &recipe,
+            subjects: subjects.clone(),
+            request: &request,
+            source: resolved.source.clone(),
+            destinations: resolved.destinations.clone(),
+            evidence: None,
+            implementation: None,
+            verified_families: std::collections::BTreeSet::new(),
+            receipts_qualified: std::collections::BTreeSet::new(),
+            targets_input: wire::TargetsInput {
+                state: wire::PinState::Derived,
+                path: None,
+                digest: None,
+            },
+            lock_digest: None,
+            evidence_digest: None,
+        };
+        let report = assess(&assessment).expect("the inventory assessment succeeds");
+        // The structural inventory stays explicit; the destination gap
+        // is a named diagnostic, and the strict gate denies.
+        assert_eq!(report.subjects.len(), subjects.rows.len());
+        assert!(report.coverage.eligible_subjects > 0);
+        assert!(report
+            .diagnostics
             .iter()
-            .any(|d| d.id() == "portability.input-invalid"));
+            .any(|d| d.code == "portability.evidence-incomplete"
+                && d.detail == "destination-evidence-gap"));
+        assert!(lekalo_core::portability::planning::denial(&report));
     }
 }
 
@@ -726,6 +802,8 @@ mod evidence_gaps {
             destinations: resolved_targets.destinations.clone(),
             evidence: None,
             implementation: None,
+            verified_families: std::collections::BTreeSet::new(),
+            receipts_qualified: std::collections::BTreeSet::new(),
             targets_input: wire::TargetsInput {
                 state: wire::PinState::Pinned,
                 path: Some("config/portability-targets.json".to_owned()),
@@ -827,6 +905,10 @@ mod evidence_gaps {
             destinations: resolved_targets.destinations.clone(),
             evidence: Some(&evidence),
             implementation: Some(&implementation),
+            verified_families: std::collections::BTreeSet::from_iter([
+                wire::EvidenceFamily::Implementation,
+            ]),
+            receipts_qualified: std::collections::BTreeSet::new(),
             targets_input: wire::TargetsInput {
                 state: wire::PinState::Pinned,
                 path: None,

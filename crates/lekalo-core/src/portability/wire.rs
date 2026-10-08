@@ -10,6 +10,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+use super::diagnostic;
 use super::version;
 use crate::diagnostics::DiagnosticSet;
 
@@ -356,6 +357,11 @@ pub struct AdapterSnapshot {
     pub version: Option<String>,
     pub protocol: Option<String>,
     pub capability_digest: Option<String>,
+    /// The exact digest of the adapter evidence artifact read through
+    /// the confined project filesystem, when the target binding named
+    /// one; `None` keeps the provenance explicitly unbound.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence_digest: Option<String>,
 }
 
 /// One assessed destination target with its exact pins.
@@ -404,6 +410,26 @@ pub struct EvidenceInput {
 pub enum EvidencePresence {
     Supplied,
     Absent,
+}
+
+/// Refuse a required-but-nullable member that was omitted entirely: the
+/// closed schemas require key presence even where the value may be
+/// `null`, and serde's implicit `Option` default would silently accept
+/// the absent key and diverge from the contract.
+pub(crate) fn require_members(
+    value: &serde_json::Value,
+    members: &[&str],
+) -> Result<(), DiagnosticSet> {
+    let Some(object) = value.as_object() else {
+        // A missing or non-object container is a typed decode refusal.
+        return Ok(());
+    };
+    for member in members {
+        if !object.contains_key(*member) {
+            return Err(diagnostic::invalid("closed-shape"));
+        }
+    }
+    Ok(())
 }
 
 /// The lock-custody input pin.
@@ -793,6 +819,9 @@ pub struct ScenarioRecord {
     pub target_id: Option<String>,
     pub state: ScenarioReceipt,
     pub receipt_ref: Option<String>,
+    /// The exact digest of the referenced receipt artifact; a claimed
+    /// execution result is digest-bound custody, never an authored enum.
+    pub receipt_digest: Option<String>,
 }
 
 /// The closed scenario-receipt vocabulary.
@@ -925,7 +954,15 @@ pub fn decode_dup_safe(bytes: &[u8]) -> Result<serde_json::Value, DiagnosticSet>
     }
     let mut de = serde_json::Deserializer::from_slice(bytes);
     let value = Unique::deserialize(&mut de)
-        .map_err(|_| super::diagnostic::invalid("json-shape"))?
+        .map_err(|error| {
+            // The duplicate-key refusal keeps its named token: a silently
+            // collapsed duplicate would be a contract lie of its own.
+            if error.to_string().contains("duplicate-key") {
+                super::diagnostic::invalid("duplicate-key")
+            } else {
+                super::diagnostic::invalid("json-shape")
+            }
+        })?
         .0;
     de.end()
         .map_err(|_| super::diagnostic::invalid("json-trailing"))?;

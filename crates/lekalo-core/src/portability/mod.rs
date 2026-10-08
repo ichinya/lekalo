@@ -130,7 +130,15 @@ pub fn resolve_targets(
             if let Some(source) = from_config {
                 source.to_owned()
             } else if declared.len() == 1 {
-                declared[0].clone()
+                // The sole declared Model target derives the source only
+                // when it belongs to the assessment universe, exactly like
+                // every other selection path; an unconfigured target is
+                // refused instead of reporting fabricated provenance.
+                let candidate = &declared[0];
+                if document.is_some() && !universe.contains(&candidate.as_str()) {
+                    return Err(diagnostic_module::invalid("target-unknown"));
+                }
+                candidate.clone()
             } else if declared.is_empty() {
                 return Err(diagnostic_module::invalid("source-missing"));
             } else {
@@ -163,17 +171,31 @@ pub fn resolve_targets(
     };
     destinations.sort();
     destinations.dedup();
-    if destinations.is_empty() {
-        // An assessment with zero destinations is the vacuous green
-        // report; the selection refuses instead of emitting one.
-        return Err(diagnostic_module::invalid("destination-empty"));
+    // A self-assessment is refused: `--to <source>` is a trivially
+    // all-portable report, never an assessment.
+    if destinations
+        .iter()
+        .any(|destination| destination == &source_id)
+    {
+        return Err(diagnostic_module::invalid("destination-source"));
     }
-    let pin_state = |target: &str| {
-        let _ = target;
-        if document.is_some() {
-            PinState::Pinned
-        } else {
-            PinState::Derived
+    // A zero-destination resolution is not refused here: the assessment
+    // emits the structural inventory plus the explicit
+    // destination-evidence gap instead of a fabricated supported
+    // destination, and the strict gate denies the empty join.
+    // The honest pin provenance: `pinned` only with a verified exact pin
+    // behind it; a configured-but-unverified or unconfigured target never
+    // claims pins it does not have.
+    let pin_state = |target: &str| match pins.get(target) {
+        Some(Some(_)) => PinState::Pinned,
+        Some(None) => PinState::Unknown,
+        None => {
+            let _ = target;
+            if document.is_some() {
+                PinState::Unknown
+            } else {
+                PinState::Derived
+            }
         }
     };
     let target_input = |target: &str| TargetInput {
