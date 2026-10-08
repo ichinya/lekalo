@@ -2897,7 +2897,7 @@
       "id": "contract:contracts/portability-evidence.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/portability-evidence.schema.v0.8.0.json",
-      "sourceDigest": "sha256:761e72924ce57bf2df7ca57816e34361f6acc2f34f9648d1e602e1abce5cd302",
+      "sourceDigest": "sha256:146705efa7b8aae7e9f9cf0ec03c737a2a4fde9380775bce24aad9cd9455ab33",
       "owner": "docs/portability.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2915,7 +2915,7 @@
       "id": "contract:contracts/portability-recipe.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/portability-recipe.v0.8.0.json",
-      "sourceDigest": "sha256:16f195b6aa1c068fc932a1a7047334855292bfdf0eba5ef65339b379ca30a0bb",
+      "sourceDigest": "sha256:16cad8eb327daa241290f8b82adc9eb78e9b5fd71785c2d651025f23b0b81de0",
       "owner": "docs/portability.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2924,7 +2924,7 @@
       "id": "contract:contracts/portability-report.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/portability-report.schema.v0.8.0.json",
-      "sourceDigest": "sha256:fbafae796d28e05b89b74fcc54ab7e8595795fbaa263f72e97c127cf1588ed21",
+      "sourceDigest": "sha256:16ab49cf66fd9825122a480856756a2f898243469f7a8de5cbd746a511168e91",
       "owner": "docs/portability.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2933,7 +2933,7 @@
       "id": "contract:contracts/portability-targets.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/portability-targets.schema.v0.8.0.json",
-      "sourceDigest": "sha256:e43aadfe9445ca4fccfcf431b1547a1103d903ba457d0abfa36566162440eef0",
+      "sourceDigest": "sha256:9d69a87509a471327b0e2b8ce54c56b81a142da219717e4ac087cdaf88196917",
       "owner": "docs/portability.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
