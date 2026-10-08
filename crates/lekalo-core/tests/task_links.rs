@@ -409,8 +409,9 @@ fn scenario_partial_delivery_keeps_receipts_and_partial_status() {
     assert_eq!(intent.idempotency_key, "k-b");
 }
 
-/// AC: stale/conflicting update — bounded retry dead-letters, the
-/// conflicted intent is explicit, and delivery is not masked complete.
+/// AC: stale/conflicting update — a provider conflict is a known terminal
+/// outcome (never retried), while retry-eligible failures exhaust into
+/// dead_letter at the bound; delivery is not masked complete either way.
 #[test]
 fn scenario_stale_conflict_and_bounded_retry_dead_letter() {
     let mut intents = BTreeMap::new();
@@ -424,36 +425,19 @@ fn scenario_stale_conflict_and_bounded_retry_dead_letter() {
         0,
     )
     .unwrap();
-    let mut attempts = 0;
-    loop {
+    // A provider conflict stops the intent outright: a known terminal
+    // outcome, never a retry and never an unknown.
+    {
         let intent = intents
             .values_mut()
             .find(|i| i.idempotency_key == "k-dead")
             .unwrap();
-        match intent.state {
-            OutboxState::Pending | OutboxState::RetryWait => {
-                assert_eq!(
-                    decision::claim(intent, attempts + 1, attempts * 1000, 1),
-                    DispatchStep::Claimed
-                );
-                assert_eq!(
-                    decision::dispatch(
-                        intent,
-                        &DispatchEvent::ProviderConflict,
-                        attempts + 1,
-                        attempts * 1000,
-                        3,
-                        100
-                    ),
-                    DispatchStep::Conflicted
-                );
-                break;
-            }
-            _ => break,
-        }
+        assert_eq!(decision::claim(intent, 1, 0, 1), DispatchStep::Claimed);
+        assert_eq!(
+            decision::dispatch(intent, &DispatchEvent::ProviderConflict, 1, 0, 3, 100),
+            DispatchStep::Conflicted
+        );
     }
-    attempts += 1;
-    assert_eq!(attempts, 1);
     let summary = decision::delivery_summary(&intents);
     assert_eq!(
         summary.resolved_terminal, 1,
@@ -464,6 +448,57 @@ fn scenario_stale_conflict_and_bounded_retry_dead_letter() {
         summary.is_complete(),
         "a known conflict resolves the fan-out"
     );
+
+    // Retry-eligible failures exhaust into dead_letter at the bound.
+    let mut intents = BTreeMap::new();
+    decision::plan_intent(
+        &mut intents,
+        &link_row,
+        decision::DecisionOutcome::Allowed,
+        "x",
+        "k-dead-retry".into(),
+        0,
+    )
+    .unwrap();
+    let mut attempts = 0;
+    loop {
+        let intent = intents
+            .values_mut()
+            .find(|i| i.idempotency_key == "k-dead-retry")
+            .unwrap();
+        match intent.state {
+            OutboxState::Pending | OutboxState::RetryWait => {
+                attempts += 1;
+                assert_eq!(
+                    decision::claim(intent, attempts, (attempts - 1) * 1000, 1),
+                    DispatchStep::Claimed
+                );
+                let step = decision::dispatch(
+                    intent,
+                    &DispatchEvent::ProviderFailed,
+                    attempts,
+                    (attempts - 1) * 1000,
+                    3,
+                    100,
+                );
+                if attempts < 3 {
+                    assert_eq!(step, DispatchStep::RetryScheduled);
+                } else {
+                    assert_eq!(step, DispatchStep::DeadLettered);
+                }
+            }
+            _ => break,
+        }
+    }
+    assert_eq!(attempts, 3, "bounded retries exhaust at maxAttempts");
+    let intent = intents
+        .values()
+        .find(|i| i.idempotency_key == "k-dead-retry")
+        .unwrap();
+    assert_eq!(intent.state, OutboxState::DeadLetter);
+    assert_eq!(intent.idempotency_key, "k-dead-retry");
+    let summary = decision::delivery_summary(&intents);
+    assert_eq!(summary.resolved_terminal, 1, "dead_letter is resolved");
 }
 
 /// Partial capability admits only a covered requested mask: a partial
