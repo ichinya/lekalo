@@ -649,11 +649,373 @@ func admitResult(value Value) *Refusal {
 		return refuse(stageDecode, "explicit-null")
 	}
 	if Has(value, "lint_evidence") {
-		// The deep LintEvidence subtree stays host-owned; the SDK carries
-		// it as a closed object and never builds one.
-		if _, ok := value.(map[string]any)["lint_evidence"].(map[string]any); !ok {
+		// The closed LintEvidence subtree is validated before emission
+		// (issue #106 review r2 #3): a shallow object check admitted `{}`
+		// as `status:"ok"`; the full pinned schema subtree must hold.
+		if refusal := admitLintEvidence(value.(map[string]any)["lint_evidence"]); refusal != nil {
+			return refusal
+		}
+	}
+	return nil
+}
+
+// The bounded LintEvidence string grammar: 1..=256 chars, first
+// alphanumeric, then `[A-Za-z0-9_./:#@\\-]`.
+func lintBounded256(value Value) bool {
+	text, ok := value.(string)
+	if !ok || text == "" || len(text) > 256 {
+		return false
+	}
+	for index, char := range text {
+		ok := char >= 'a' && char <= 'z' || char >= 'A' && char <= 'Z' || char >= '0' && char <= '9'
+		if index > 0 {
+			ok = ok || char == '_' || char == '.' || char == '/' || char == ':' || char == '#' || char == '@' || char == '\\' || char == '-'
+		}
+		if !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func lintStringArray(value Value, max int, unique bool) bool {
+	items, ok := value.([]any)
+	if !ok || len(items) > max {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, item := range items {
+		if !lintBounded256(item) {
+			return false
+		}
+		if unique {
+			key := item.(string)
+			if seen[key] {
+				return false
+			}
+			seen[key] = true
+		}
+	}
+	return true
+}
+
+func lintStateString(value Value) bool {
+	if !isClosedObject(value, []string{"state", "value"}) {
+		return false
+	}
+	switch GetString(value, "state") {
+	case "known":
+		return lintBounded256(value.(map[string]any)["value"])
+	case "unknown", "withheld", "unsupported":
+		return !Has(value, "value")
+	}
+	return false
+}
+
+func lintStateBool(value Value) bool {
+	if !isClosedObject(value, []string{"state", "value"}) {
+		return false
+	}
+	switch GetString(value, "state") {
+	case "known":
+		_, ok := value.(map[string]any)["value"].(bool)
+		return ok
+	case "unknown", "withheld", "unsupported":
+		return !Has(value, "value")
+	}
+	return false
+}
+
+func lintStateU64(value Value) bool {
+	if !isClosedObject(value, []string{"state", "value"}) {
+		return false
+	}
+	switch GetString(value, "state") {
+	case "known":
+		number, ok := GetNumber(value, "value")
+		return ok && number >= 0 && number <= 10_000_000
+	case "unknown", "withheld", "unsupported":
+		return !Has(value, "value")
+	}
+	return false
+}
+
+func lintSha256(value Value) bool {
+	text, ok := value.(string)
+	return ok && text != "" && len(text) <= 71 && IsSha256Digest(text)
+}
+
+func lintPins(value Value) bool {
+	allowed := []string{"capabilities", "ir", "model", "observed", "profile", "revision"}
+	if !isClosedObject(value, allowed) {
+		return false
+	}
+	for _, pin := range allowed {
+		if !lintStateString(value.(map[string]any)[pin]) {
+			return false
+		}
+	}
+	return true
+}
+
+func lintProducer(value Value) bool {
+	allowed := []string{"artifactDigest", "compiler", "framework", "id", "recipe", "tool", "version"}
+	if !isClosedObject(value, allowed) {
+		return false
+	}
+	for _, member := range []string{"id", "version", "tool", "recipe"} {
+		if !lintBounded256(value.(map[string]any)[member]) {
+			return false
+		}
+	}
+	return lintSha256(value.(map[string]any)["artifactDigest"]) &&
+		lintStateString(value.(map[string]any)["compiler"]) &&
+		lintStateString(value.(map[string]any)["framework"])
+}
+
+func lintSource(value Value) bool {
+	allowed := []string{"bytes", "fingerprint", "id", "path"}
+	if !isClosedObject(value, allowed) {
+		return false
+	}
+	path := GetString(value, "path")
+	return lintBounded256(value.(map[string]any)["id"]) &&
+		path != "" && len(path) <= 512 && IsLogicalPath(path) &&
+		lintSha256(value.(map[string]any)["fingerprint"]) &&
+		func() bool {
+			number, ok := GetNumber(value, "bytes")
+			return ok && number >= 0 && number <= generatedBounds.MaxRequestBytes
+		}()
+}
+
+func lintSpan(value Value) bool {
+	allowed := []string{"column", "end", "endColumn", "endLine", "id", "line", "source", "start"}
+	if !isClosedObject(value, allowed) {
+		return false
+	}
+	bounded := func(member string, min int64) bool {
+		number, ok := GetNumber(value, member)
+		return ok && number >= min && number <= generatedBounds.MaxRequestBytes
+	}
+	return lintBounded256(value.(map[string]any)["id"]) &&
+		lintBounded256(value.(map[string]any)["source"]) &&
+		bounded("start", 0) && bounded("end", 0) &&
+		bounded("line", 1) && bounded("column", 1) &&
+		bounded("endLine", 1) && bounded("endColumn", 1)
+}
+
+func lintCoverage(value Value) bool {
+	allowed := []string{"eligible", "examined", "limitations", "rule", "scope", "state", "target"}
+	if !isClosedObject(value, allowed) {
+		return false
+	}
+	state := GetString(value, "state")
+	switch state {
+	case "complete", "partial", "unknown", "unsupported", "withheld", "disabled":
+	default:
+		return false
+	}
+	for _, member := range []string{"rule", "target", "scope"} {
+		if !lintBounded256(value.(map[string]any)[member]) {
+			return false
+		}
+	}
+	return lintStateU64(value.(map[string]any)["eligible"]) &&
+		lintStateU64(value.(map[string]any)["examined"]) &&
+		lintStringArray(value.(map[string]any)["limitations"], 10_000, true)
+}
+
+func lintRoute(value Value) bool {
+	if !isClosedObject(value, []string{"confidence", "currency", "identity", "origin"}) {
+		return false
+	}
+	switch GetString(value, "confidence") {
+	case "unknown", "low", "medium", "high", "exact":
+	default:
+		return false
+	}
+	switch GetString(value, "currency") {
+	case "current", "stale", "unknown":
+	default:
+		return false
+	}
+	switch GetString(value, "origin") {
+	case "explicit", "extracted", "inferred":
+	default:
+		return false
+	}
+	return lintBounded256(value.(map[string]any)["identity"])
+}
+
+func lintStep(value Value) bool {
+	if !isClosedObject(value, []string{"confidence", "guards", "identity", "locations", "role"}) {
+		return false
+	}
+	switch GetString(value, "role") {
+	case "binding", "trigger", "registration", "callback", "effect":
+	default:
+		return false
+	}
+	switch GetString(value, "confidence") {
+	case "unknown", "low", "medium", "high", "exact":
+	default:
+		return false
+	}
+	return lintBounded256(value.(map[string]any)["identity"]) &&
+		lintStringArray(value.(map[string]any)["locations"], 32, true) &&
+		lintStringArray(value.(map[string]any)["guards"], 32, true)
+}
+
+func lintRecord(value Value) bool {
+	allowed := []string{
+		"activation", "binding", "candidates", "claim", "confidence", "configuration",
+		"currency", "field", "guards", "id", "key", "kind", "locations", "mechanism",
+		"nativeId", "operation", "origin", "ownership", "resource", "semanticSymbol",
+		"subject", "trace", "value",
+	}
+	if !isClosedObject(value, allowed) {
+		return false
+	}
+	switch GetString(value, "kind") {
+	case "binding-candidates", "dispatch", "convention", "effect", "path", "reflection", "string-reference", "default", "native-edge", "field-write":
+	default:
+		return false
+	}
+	switch GetString(value, "mechanism") {
+	case "direct", "observer", "hook", "magic":
+	default:
+		return false
+	}
+	switch GetString(value, "confidence") {
+	case "unknown", "low", "medium", "high", "exact":
+	default:
+		return false
+	}
+	switch GetString(value, "currency") {
+	case "current", "stale", "unknown":
+	default:
+		return false
+	}
+	switch GetString(value, "origin") {
+	case "explicit", "extracted", "inferred":
+	default:
+		return false
+	}
+	switch GetString(value, "claim") {
+	case "structural", "possible-behavior", "verified-behavior":
+	default:
+		return false
+	}
+	for _, member := range []string{"id", "subject", "nativeId"} {
+		if !lintBounded256(value.(map[string]any)[member]) {
+			return false
+		}
+	}
+	for _, member := range []string{"semanticSymbol", "operation", "resource", "field", "value", "key"} {
+		if !lintStateString(value.(map[string]any)[member]) {
+			return false
+		}
+	}
+	for _, member := range []string{"binding", "configuration", "ownership", "trace"} {
+		if !lintStateBool(value.(map[string]any)[member]) {
+			return false
+		}
+	}
+	candidates, ok := value.(map[string]any)["candidates"].([]any)
+	if !ok || len(candidates) > 32 {
+		return false
+	}
+	for _, item := range candidates {
+		if !lintRoute(item) {
+			return false
+		}
+	}
+	activation, ok := value.(map[string]any)["activation"].([]any)
+	if !ok || len(activation) > 32 {
+		return false
+	}
+	for _, item := range activation {
+		if !lintStep(item) {
+			return false
+		}
+	}
+	return lintStringArray(value.(map[string]any)["locations"], 32, true) &&
+		lintStringArray(value.(map[string]any)["guards"], 32, true)
+}
+
+// admitLintEvidence validates the closed `LintEvidence` subtree of a lint
+// result (issue #106 review r2 #3): all twelve members required, const
+// identity/version, closed nested objects — shallow or malformed evidence
+// is refused instead of being emitted as success.
+func admitLintEvidence(value Value) *Refusal {
+	allowed := []string{
+		"coverage", "identity", "inputManifestDigest", "limitations", "locations",
+		"pins", "producer", "records", "schemaVersion", "scope", "sources", "target",
+	}
+	object, ok := value.(map[string]any)
+	if !ok || !isClosedObject(value, allowed) {
+		return refuse(stageDecode, "shape")
+	}
+	for _, member := range allowed {
+		if !Has(value, member) {
 			return refuse(stageDecode, "shape")
 		}
+	}
+	if GetString(value, "schemaVersion") != "lekalo/ai-lint-evidence/v0.6.4" ||
+		GetString(value, "identity") != "dev.lekalo.ai-lint-evidence@0.6.4" {
+		return refuse(stageDecode, "shape")
+	}
+	if !lintBounded256(object["target"]) ||
+		!lintStringArray(object["scope"], 10_000, true) ||
+		!lintProducer(object["producer"]) ||
+		!lintPins(object["pins"]) ||
+		!lintSha256(object["inputManifestDigest"]) {
+		return refuse(stageDecode, "bounds")
+	}
+	sources, ok := object["sources"].([]any)
+	if !ok || len(sources) > 10_000 {
+		return refuse(stageDecode, "bounds")
+	}
+	for _, source := range sources {
+		if !lintSource(source) {
+			return refuse(stageDecode, "bounds")
+		}
+	}
+	spans, ok := object["locations"].([]any)
+	if !ok || len(spans) > 32 {
+		return refuse(stageDecode, "bounds")
+	}
+	spanKeys := map[string]bool{}
+	for _, span := range spans {
+		if !lintSpan(span) {
+			return refuse(stageDecode, "bounds")
+		}
+		key := Canonical(span)
+		if spanKeys[key] {
+			return refuse(stageDecode, "bounds")
+		}
+		spanKeys[key] = true
+	}
+	coverages, ok := object["coverage"].([]any)
+	if !ok || len(coverages) > 10_000 {
+		return refuse(stageDecode, "bounds")
+	}
+	for _, coverage := range coverages {
+		if !lintCoverage(coverage) {
+			return refuse(stageDecode, "bounds")
+		}
+	}
+	records, ok := object["records"].([]any)
+	if !ok || len(records) > 10_000 {
+		return refuse(stageDecode, "bounds")
+	}
+	for _, record := range records {
+		if !lintRecord(record) {
+			return refuse(stageDecode, "bounds")
+		}
+	}
+	if !lintStringArray(object["limitations"], 10_000, true) {
+		return refuse(stageDecode, "bounds")
 	}
 	return nil
 }

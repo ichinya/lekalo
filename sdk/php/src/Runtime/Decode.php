@@ -616,11 +616,326 @@ final class Decode {
             return self::refuse('decode', 'explicit-null');
         }
         if (isset($value['lint_evidence'])) {
-            // The deep LintEvidence subtree stays host-owned; the SDK
-            // carries it as a closed object and never builds one.
-            if (!is_array($value['lint_evidence']) || array_is_list($value['lint_evidence'])) {
+            // The closed LintEvidence subtree is validated before emission
+            // (issue #106 review r2 #3): a shallow object check admitted
+            // `{}` as `status:"ok"`; the full pinned schema subtree must
+            // hold instead.
+            $refusal = self::admitLintEvidence($value['lint_evidence']);
+            if ($refusal !== null) {
+                return $refusal;
+            }
+        }
+        return null;
+    }
+
+    /** The bounded LintEvidence string grammar (first char alnum, 1..=256). */
+    private static function lintBounded256(mixed $value): bool {
+        if (!is_string($value) || $value === '' || strlen($value) > 256) {
+            return false;
+        }
+        foreach (mb_str_split($value) as $index => $char) {
+            $alnum = self::isAsciiAlnum($char);
+            $extra = $char === '_' || $char === '.' || $char === '/' || $char === ':' || $char === '#' || $char === '@' || $char === '\\' || $char === '-';
+            if (!($index === 0 ? $alnum : ($alnum || $extra))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static function isAsciiAlnum(string $char): bool {
+        return ($char >= 'a' && $char <= 'z') || ($char >= 'A' && $char <= 'Z') || ($char >= '0' && $char <= '9');
+    }
+
+    private static function lintStringArray(mixed $value, int $max, bool $unique): bool {
+        if (!is_array($value) || !array_is_list($value) || count($value) > $max) {
+            return false;
+        }
+        $seen = [];
+        foreach ($value as $item) {
+            if (!self::lintBounded256($item)) {
+                return false;
+            }
+            if ($unique) {
+                if (isset($seen[$item])) {
+                    return false;
+                }
+                $seen[$item] = true;
+            }
+        }
+        return true;
+    }
+
+    private static function lintStateString(mixed $value): bool {
+        if (!self::isClosedObject($value, ['state', 'value'])) {
+            return false;
+        }
+        $state = $value['state'];
+        if ($state === 'known') {
+            return self::lintBounded256($value['value'] ?? null);
+        }
+        if ($state === 'unknown' || $state === 'withheld' || $state === 'unsupported') {
+            return !array_key_exists('value', $value);
+        }
+        return false;
+    }
+
+    private static function lintStateBool(mixed $value): bool {
+        if (!self::isClosedObject($value, ['state', 'value'])) {
+            return false;
+        }
+        $state = $value['state'];
+        if ($state === 'known') {
+            return is_bool($value['value'] ?? null);
+        }
+        if ($state === 'unknown' || $state === 'withheld' || $state === 'unsupported') {
+            return !array_key_exists('value', $value);
+        }
+        return false;
+    }
+
+    private static function lintStateU64(mixed $value): bool {
+        if (!self::isClosedObject($value, ['state', 'value'])) {
+            return false;
+        }
+        $state = $value['state'];
+        if ($state === 'known') {
+            return self::numberInRange($value['value'] ?? null, 0, 10_000_000);
+        }
+        if ($state === 'unknown' || $state === 'withheld' || $state === 'unsupported') {
+            return !array_key_exists('value', $value);
+        }
+        return false;
+    }
+
+    private static function lintSha256(mixed $value): bool {
+        return is_string($value) && $value !== '' && strlen($value) <= 71 && Ids::isSha256Digest($value);
+    }
+
+    private static function lintPins(mixed $value): bool {
+        $allowed = ['capabilities', 'ir', 'model', 'observed', 'profile', 'revision'];
+        if (!self::isClosedObject($value, $allowed)) {
+            return false;
+        }
+        foreach ($allowed as $pin) {
+            if (!self::lintStateString($value[$pin])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static function lintProducer(mixed $value): bool {
+        $allowed = ['artifactDigest', 'compiler', 'framework', 'id', 'recipe', 'tool', 'version'];
+        if (!self::isClosedObject($value, $allowed)) {
+            return false;
+        }
+        foreach (['id', 'version', 'tool', 'recipe'] as $member) {
+            if (!self::lintBounded256($value[$member])) {
+                return false;
+            }
+        }
+        return self::lintSha256($value['artifactDigest'])
+            && self::lintStateString($value['compiler'])
+            && self::lintStateString($value['framework']);
+    }
+
+    private static function lintSource(mixed $value): bool {
+        if (!self::isClosedObject($value, ['bytes', 'fingerprint', 'id', 'path'])) {
+            return false;
+        }
+        $path = $value['path'] ?? null;
+        return self::lintBounded256($value['id'])
+            && is_string($path) && $path !== '' && strlen($path) <= 512 && Paths::isLogicalPath($path)
+            && self::lintSha256($value['fingerprint'])
+            && self::numberInRange($value['bytes'] ?? null, 0, Protocol::BOUNDS['MAX_REQUEST_BYTES']);
+    }
+
+    private static function lintSpan(mixed $value): bool {
+        if (!self::isClosedObject($value, ['column', 'end', 'endColumn', 'endLine', 'id', 'line', 'source', 'start'])) {
+            return false;
+        }
+        $bounded = static function (mixed $member, int $min) use ($value): bool {
+            return self::numberInRange($member, $min, Protocol::BOUNDS['MAX_REQUEST_BYTES']);
+        };
+        return self::lintBounded256($value['id'])
+            && self::lintBounded256($value['source'])
+            && $bounded($value['start'], 0)
+            && $bounded($value['end'], 0)
+            && $bounded($value['line'], 1)
+            && $bounded($value['column'], 1)
+            && $bounded($value['endLine'], 1)
+            && $bounded($value['endColumn'], 1);
+    }
+
+    private static function lintCoverage(mixed $value): bool {
+        if (!self::isClosedObject($value, ['eligible', 'examined', 'limitations', 'rule', 'scope', 'state', 'target'])) {
+            return false;
+        }
+        if (!in_array($value['state'], ['complete', 'partial', 'unknown', 'unsupported', 'withheld', 'disabled'], true)) {
+            return false;
+        }
+        foreach (['rule', 'target', 'scope'] as $member) {
+            if (!self::lintBounded256($value[$member])) {
+                return false;
+            }
+        }
+        return self::lintStateU64($value['eligible'])
+            && self::lintStateU64($value['examined'])
+            && self::lintStringArray($value['limitations'], 10_000, true);
+    }
+
+    private static function lintRoute(mixed $value): bool {
+        if (!self::isClosedObject($value, ['confidence', 'currency', 'identity', 'origin'])) {
+            return false;
+        }
+        if (!in_array($value['confidence'], ['unknown', 'low', 'medium', 'high', 'exact'], true)
+            || !in_array($value['currency'], ['current', 'stale', 'unknown'], true)
+            || !in_array($value['origin'], ['explicit', 'extracted', 'inferred'], true)) {
+            return false;
+        }
+        return self::lintBounded256($value['identity']);
+    }
+
+    private static function lintStep(mixed $value): bool {
+        if (!self::isClosedObject($value, ['confidence', 'guards', 'identity', 'locations', 'role'])) {
+            return false;
+        }
+        if (!in_array($value['role'], ['binding', 'trigger', 'registration', 'callback', 'effect'], true)
+            || !in_array($value['confidence'], ['unknown', 'low', 'medium', 'high', 'exact'], true)) {
+            return false;
+        }
+        return self::lintBounded256($value['identity'])
+            && self::lintStringArray($value['locations'], 32, true)
+            && self::lintStringArray($value['guards'], 32, true);
+    }
+
+    private static function lintRecord(mixed $value): bool {
+        $allowed = [
+            'activation', 'binding', 'candidates', 'claim', 'confidence', 'configuration',
+            'currency', 'field', 'guards', 'id', 'key', 'kind', 'locations', 'mechanism',
+            'nativeId', 'operation', 'origin', 'ownership', 'resource', 'semanticSymbol',
+            'subject', 'trace', 'value',
+        ];
+        if (!self::isClosedObject($value, $allowed)) {
+            return false;
+        }
+        if (!isset($value['kind']) || !isset($value['mechanism']) || !isset($value['confidence']) || !isset($value['currency']) || !isset($value['origin']) || !isset($value['claim'])) {
+            return false;
+        }
+        if (!in_array($value['kind'], ['binding-candidates', 'dispatch', 'convention', 'effect', 'path', 'reflection', 'string-reference', 'default', 'native-edge', 'field-write'], true)
+            || !in_array($value['mechanism'], ['direct', 'observer', 'hook', 'magic'], true)
+            || !in_array($value['confidence'], ['unknown', 'low', 'medium', 'high', 'exact'], true)
+            || !in_array($value['currency'], ['current', 'stale', 'unknown'], true)
+            || !in_array($value['origin'], ['explicit', 'extracted', 'inferred'], true)
+            || !in_array($value['claim'], ['structural', 'possible-behavior', 'verified-behavior'], true)) {
+            return false;
+        }
+        foreach (['id', 'subject', 'nativeId'] as $member) {
+            if (!self::lintBounded256($value[$member])) {
+                return false;
+            }
+        }
+        foreach (['semanticSymbol', 'operation', 'resource', 'field', 'value', 'key'] as $member) {
+            if (!self::lintStateString($value[$member])) {
+                return false;
+            }
+        }
+        foreach (['binding', 'configuration', 'ownership', 'trace'] as $member) {
+            if (!self::lintStateBool($value[$member])) {
+                return false;
+            }
+        }
+        if (!is_array($value['candidates']) || !array_is_list($value['candidates']) || count($value['candidates']) > 32) {
+            return false;
+        }
+        foreach ($value['candidates'] as $candidate) {
+            if (!self::lintRoute($candidate)) {
+                return false;
+            }
+        }
+        if (!is_array($value['activation']) || !array_is_list($value['activation']) || count($value['activation']) > 32) {
+            return false;
+        }
+        foreach ($value['activation'] as $step) {
+            if (!self::lintStep($step)) {
+                return false;
+            }
+        }
+        return self::lintStringArray($value['locations'], 32, true)
+            && self::lintStringArray($value['guards'], 32, true);
+    }
+
+    /**
+     * The closed `LintEvidence` subtree of a lint result (issue #106
+     * review r2 #3): all twelve members required, const identity/version,
+     * closed nested objects — shallow or malformed evidence is refused
+     * instead of being emitted as success.
+     */
+    private static function admitLintEvidence(mixed $value): ?array {
+        $allowed = [
+            'coverage', 'identity', 'inputManifestDigest', 'limitations', 'locations',
+            'pins', 'producer', 'records', 'schemaVersion', 'scope', 'sources', 'target',
+        ];
+        if (!self::isClosedObject($value, $allowed)) {
+            return self::refuse('decode', 'shape');
+        }
+        foreach ($allowed as $member) {
+            if (!array_key_exists($member, $value)) {
                 return self::refuse('decode', 'shape');
             }
+        }
+        if ($value['schemaVersion'] !== 'lekalo/ai-lint-evidence/v0.6.4'
+            || $value['identity'] !== 'dev.lekalo.ai-lint-evidence@0.6.4') {
+            return self::refuse('decode', 'shape');
+        }
+        if (!self::lintBounded256($value['target'])
+            || !self::lintStringArray($value['scope'], 10_000, true)
+            || !self::lintProducer($value['producer'])
+            || !self::lintPins($value['pins'])
+            || !self::lintSha256($value['inputManifestDigest'])) {
+            return self::refuse('decode', 'bounds');
+        }
+        if (!is_array($value['sources']) || !array_is_list($value['sources']) || count($value['sources']) > 10_000) {
+            return self::refuse('decode', 'bounds');
+        }
+        foreach ($value['sources'] as $source) {
+            if (!self::lintSource($source)) {
+                return self::refuse('decode', 'bounds');
+            }
+        }
+        if (!is_array($value['locations']) || !array_is_list($value['locations']) || count($value['locations']) > 32) {
+            return self::refuse('decode', 'bounds');
+        }
+        $spanKeys = [];
+        foreach ($value['locations'] as $span) {
+            if (!self::lintSpan($span)) {
+                return self::refuse('decode', 'bounds');
+            }
+            $key = json_encode($span);
+            if (isset($spanKeys[$key])) {
+                return self::refuse('decode', 'bounds');
+            }
+            $spanKeys[$key] = true;
+        }
+        if (!is_array($value['coverage']) || !array_is_list($value['coverage']) || count($value['coverage']) > 10_000) {
+            return self::refuse('decode', 'bounds');
+        }
+        foreach ($value['coverage'] as $coverage) {
+            if (!self::lintCoverage($coverage)) {
+                return self::refuse('decode', 'bounds');
+            }
+        }
+        if (!is_array($value['records']) || !array_is_list($value['records']) || count($value['records']) > 10_000) {
+            return self::refuse('decode', 'bounds');
+        }
+        foreach ($value['records'] as $record) {
+            if (!self::lintRecord($record)) {
+                return self::refuse('decode', 'bounds');
+            }
+        }
+        if (!self::lintStringArray($value['limitations'], 10_000, true)) {
+            return self::refuse('decode', 'bounds');
         }
         return null;
     }

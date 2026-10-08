@@ -6,7 +6,7 @@
 
 use crate::generated::protocol;
 use crate::ids::{is_plan_id, is_request_id, is_sha256_digest};
-use crate::json::{read_single_object, ParseReason, Value};
+use crate::json::{canonical, read_single_object, ParseReason, Value};
 use crate::paths::{is_capability_id, is_contract_version, is_logical_path, is_token};
 
 /// A decode/validate refusal: one closed safe reason token.
@@ -829,11 +829,402 @@ fn admit_result(value: &Value) -> Result<(), Refusal> {
         return Err(Refusal::new("decode", "explicit-null"));
     }
     if let Some(lint) = value.get("lint_evidence") {
-        // The deep LintEvidence subtree is the host's admission duty; the
-        // SDK carries it as a closed object and never builds one.
-        if !lint.is_object() {
-            return Err(Refusal::new("decode", "shape"));
+        // The closed LintEvidence subtree is validated before emission
+        // (issue #106 review r2 #3): a shallow object check admitted `{}`
+        // as `status:"ok"`; the full pinned schema subtree must hold.
+        admit_lint_evidence(lint)?;
+    }
+    Ok(())
+}
+
+/// The bounded string grammar shared by the LintEvidence subtree:
+/// 1..=256 chars of `[A-Za-z0-9]` then `[_./:#@\\-]` and alphanumerics.
+fn lint_bounded_256(value: &Value) -> bool {
+    value.as_str().is_some_and(|text| {
+        let mut chars = text.chars();
+        match chars.next() {
+            Some(first) if first.is_ascii_alphanumeric() => {}
+            _ => return false,
         }
+        text.len() <= 256
+            && chars.all(|c| {
+                c.is_ascii_alphanumeric()
+                    || matches!(c, '_' | '.' | '/' | ':' | '#' | '@' | '\\' | '-')
+            })
+    })
+}
+
+fn lint_string_array(value: &Value, max: usize, unique: bool) -> bool {
+    let Some(items) = value.as_array() else {
+        return false;
+    };
+    items.len() <= max
+        && items.iter().all(lint_bounded_256)
+        && (!unique || {
+            let set: std::collections::BTreeSet<&str> =
+                items.iter().filter_map(Value::as_str).collect();
+            set.len() == items.len()
+        })
+}
+
+fn lint_state_string(value: &Value) -> bool {
+    if !is_closed_object(value, &["state", "value"]) {
+        return false;
+    }
+    match value.get("state").and_then(Value::as_str) {
+        Some("known") => lint_bounded_256(value.get("value").unwrap_or(&Value::Null)),
+        Some("unknown" | "withheld" | "unsupported") => value.get("value").is_none(),
+        _ => false,
+    }
+}
+
+fn lint_state_bool(value: &Value) -> bool {
+    if !is_closed_object(value, &["state", "value"]) {
+        return false;
+    }
+    match value.get("state").and_then(Value::as_str) {
+        Some("known") => value.get("value").and_then(Value::as_bool).is_some(),
+        Some("unknown" | "withheld" | "unsupported") => value.get("value").is_none(),
+        _ => false,
+    }
+}
+
+fn lint_state_u64(value: &Value) -> bool {
+    if !is_closed_object(value, &["state", "value"]) {
+        return false;
+    }
+    match value.get("state").and_then(Value::as_str) {
+        Some("known") => value
+            .get("value")
+            .and_then(Value::as_u64)
+            .is_some_and(|n| n <= 10_000_000),
+        Some("unknown" | "withheld" | "unsupported") => value.get("value").is_none(),
+        _ => false,
+    }
+}
+
+fn lint_sha256(value: &Value) -> bool {
+    value
+        .as_str()
+        .is_some_and(|text| text.len() <= 71 && is_sha256_digest(text))
+}
+
+fn lint_pins(value: &Value) -> bool {
+    let allowed = [
+        "capabilities",
+        "ir",
+        "model",
+        "observed",
+        "profile",
+        "revision",
+    ];
+    is_closed_object(value, &allowed)
+        && allowed
+            .iter()
+            .all(|pin| lint_state_string(value.get(pin).unwrap_or(&Value::Null)))
+}
+
+fn lint_producer(value: &Value) -> bool {
+    let allowed = [
+        "artifactDigest",
+        "compiler",
+        "framework",
+        "id",
+        "recipe",
+        "tool",
+        "version",
+    ];
+    is_closed_object(value, &allowed)
+        && ["id", "version", "tool", "recipe"]
+            .iter()
+            .all(|member| lint_bounded_256(value.get(member).unwrap_or(&Value::Null)))
+        && lint_sha256(value.get("artifactDigest").unwrap_or(&Value::Null))
+        && lint_state_string(value.get("compiler").unwrap_or(&Value::Null))
+        && lint_state_string(value.get("framework").unwrap_or(&Value::Null))
+}
+
+fn lint_source(value: &Value) -> bool {
+    let allowed = ["bytes", "fingerprint", "id", "path"];
+    is_closed_object(value, &allowed)
+        && lint_bounded_256(value.get("id").unwrap_or(&Value::Null))
+        && value
+            .get("path")
+            .and_then(Value::as_str)
+            .is_some_and(|path| path.len() <= 512 && is_logical_path(path))
+        && lint_sha256(value.get("fingerprint").unwrap_or(&Value::Null))
+        && value
+            .get("bytes")
+            .and_then(Value::as_u64)
+            .is_some_and(|n| n <= protocol::bounds::MAX_REQUEST_BYTES)
+}
+
+fn lint_span(value: &Value) -> bool {
+    let allowed = [
+        "column",
+        "end",
+        "endColumn",
+        "endLine",
+        "id",
+        "line",
+        "source",
+        "start",
+    ];
+    if !is_closed_object(value, &allowed) {
+        return false;
+    }
+    let bounded = |member: &str, min: u64| {
+        value
+            .get(member)
+            .and_then(Value::as_u64)
+            .is_some_and(|n| n >= min && n <= protocol::bounds::MAX_REQUEST_BYTES)
+    };
+    lint_bounded_256(value.get("id").unwrap_or(&Value::Null))
+        && lint_bounded_256(value.get("source").unwrap_or(&Value::Null))
+        && bounded("start", 0)
+        && bounded("end", 0)
+        && bounded("line", 1)
+        && bounded("column", 1)
+        && bounded("endLine", 1)
+        && bounded("endColumn", 1)
+}
+
+fn lint_coverage(value: &Value) -> bool {
+    let allowed = [
+        "eligible",
+        "examined",
+        "limitations",
+        "rule",
+        "scope",
+        "state",
+        "target",
+    ];
+    is_closed_object(value, &allowed)
+        && ["rule", "target", "scope"]
+            .iter()
+            .all(|member| lint_bounded_256(value.get(member).unwrap_or(&Value::Null)))
+        && matches!(
+            value.get("state").and_then(Value::as_str),
+            Some("complete" | "partial" | "unknown" | "unsupported" | "withheld" | "disabled")
+        )
+        && lint_state_u64(value.get("eligible").unwrap_or(&Value::Null))
+        && lint_state_u64(value.get("examined").unwrap_or(&Value::Null))
+        && lint_string_array(
+            value.get("limitations").unwrap_or(&Value::Null),
+            10_000,
+            true,
+        )
+}
+
+fn lint_route(value: &Value) -> bool {
+    let allowed = ["confidence", "currency", "identity", "origin"];
+    is_closed_object(value, &allowed)
+        && lint_bounded_256(value.get("identity").unwrap_or(&Value::Null))
+        && matches!(
+            value.get("confidence").and_then(Value::as_str),
+            Some("unknown" | "low" | "medium" | "high" | "exact")
+        )
+        && matches!(
+            value.get("currency").and_then(Value::as_str),
+            Some("current" | "stale" | "unknown")
+        )
+        && matches!(
+            value.get("origin").and_then(Value::as_str),
+            Some("explicit" | "extracted" | "inferred")
+        )
+}
+
+fn lint_step(value: &Value) -> bool {
+    let allowed = ["confidence", "guards", "identity", "locations", "role"];
+    is_closed_object(value, &allowed)
+        && matches!(
+            value.get("role").and_then(Value::as_str),
+            Some("binding" | "trigger" | "registration" | "callback" | "effect")
+        )
+        && lint_bounded_256(value.get("identity").unwrap_or(&Value::Null))
+        && lint_string_array(value.get("locations").unwrap_or(&Value::Null), 32, true)
+        && lint_string_array(value.get("guards").unwrap_or(&Value::Null), 32, true)
+        && matches!(
+            value.get("confidence").and_then(Value::as_str),
+            Some("unknown" | "low" | "medium" | "high" | "exact")
+        )
+}
+
+fn lint_record(value: &Value) -> bool {
+    let allowed = [
+        "activation",
+        "binding",
+        "candidates",
+        "claim",
+        "confidence",
+        "configuration",
+        "currency",
+        "field",
+        "guards",
+        "id",
+        "key",
+        "kind",
+        "locations",
+        "mechanism",
+        "nativeId",
+        "operation",
+        "origin",
+        "ownership",
+        "resource",
+        "semanticSymbol",
+        "subject",
+        "trace",
+        "value",
+    ];
+    if !is_closed_object(value, &allowed) {
+        return false;
+    }
+    let enums_ok = matches!(
+        value.get("kind").and_then(Value::as_str),
+        Some(
+            "binding-candidates"
+                | "dispatch"
+                | "convention"
+                | "effect"
+                | "path"
+                | "reflection"
+                | "string-reference"
+                | "default"
+                | "native-edge"
+                | "field-write"
+        )
+    ) && matches!(
+        value.get("mechanism").and_then(Value::as_str),
+        Some("direct" | "observer" | "hook" | "magic")
+    ) && matches!(
+        value.get("confidence").and_then(Value::as_str),
+        Some("unknown" | "low" | "medium" | "high" | "exact")
+    ) && matches!(
+        value.get("currency").and_then(Value::as_str),
+        Some("current" | "stale" | "unknown")
+    ) && matches!(
+        value.get("origin").and_then(Value::as_str),
+        Some("explicit" | "extracted" | "inferred")
+    ) && matches!(
+        value.get("claim").and_then(Value::as_str),
+        Some("structural" | "possible-behavior" | "verified-behavior")
+    );
+    let strings_ok = ["id", "subject", "nativeId"]
+        .iter()
+        .all(|member| lint_bounded_256(value.get(member).unwrap_or(&Value::Null)));
+    let states_ok = [
+        "semanticSymbol",
+        "operation",
+        "resource",
+        "field",
+        "value",
+        "key",
+    ]
+    .iter()
+    .all(|member| lint_state_string(value.get(member).unwrap_or(&Value::Null)));
+    let bools_ok = ["binding", "configuration", "ownership", "trace"]
+        .iter()
+        .all(|member| lint_state_bool(value.get(member).unwrap_or(&Value::Null)));
+    let candidates_ok = value
+        .get("candidates")
+        .and_then(Value::as_array)
+        .is_some_and(|items| items.len() <= 32 && items.iter().all(lint_route));
+    let activation_ok = value
+        .get("activation")
+        .and_then(Value::as_array)
+        .is_some_and(|items| items.len() <= 32 && items.iter().all(lint_step));
+    let locations_ok = lint_string_array(value.get("locations").unwrap_or(&Value::Null), 32, true);
+    let guards_ok = lint_string_array(value.get("guards").unwrap_or(&Value::Null), 32, true);
+    enums_ok
+        && strings_ok
+        && states_ok
+        && bools_ok
+        && candidates_ok
+        && activation_ok
+        && locations_ok
+        && guards_ok
+}
+
+/// The closed `LintEvidence` subtree of a lint result (issue #106 review
+/// r2 #3): all twelve members required, const identity/version, closed
+/// nested objects — the SDK refuses shallow or malformed evidence instead
+/// of emitting it as success.
+fn admit_lint_evidence(value: &Value) -> Result<(), Refusal> {
+    let refuse = |reason: &str| Err(Refusal::new("decode", reason));
+    let allowed = [
+        "coverage",
+        "identity",
+        "inputManifestDigest",
+        "limitations",
+        "locations",
+        "pins",
+        "producer",
+        "records",
+        "schemaVersion",
+        "scope",
+        "sources",
+        "target",
+    ];
+    if !is_closed_object(value, &allowed) {
+        return refuse("shape");
+    }
+    for member in allowed {
+        if value.get(member).is_none() {
+            return refuse("shape");
+        }
+    }
+    if value.get("schemaVersion").and_then(Value::as_str) != Some("lekalo/ai-lint-evidence/v0.6.4")
+        || value.get("identity").and_then(Value::as_str)
+            != Some("dev.lekalo.ai-lint-evidence@0.6.4")
+    {
+        return refuse("shape");
+    }
+    if !lint_bounded_256(value.get("target").unwrap_or(&Value::Null))
+        || !lint_string_array(value.get("scope").unwrap_or(&Value::Null), 10_000, true)
+        || !lint_producer(value.get("producer").unwrap_or(&Value::Null))
+        || !lint_pins(value.get("pins").unwrap_or(&Value::Null))
+        || !lint_sha256(value.get("inputManifestDigest").unwrap_or(&Value::Null))
+    {
+        return refuse("bounds");
+    }
+    let sources = value.get("sources").and_then(Value::as_array);
+    let Some(sources) = sources else {
+        return refuse("bounds");
+    };
+    if sources.len() > 10_000 || !sources.iter().all(lint_source) {
+        return refuse("bounds");
+    }
+    let spans = value.get("locations").and_then(Value::as_array);
+    let Some(spans) = spans else {
+        return refuse("bounds");
+    };
+    if spans.len() > 32 || !spans.iter().all(lint_span) {
+        return refuse("bounds");
+    }
+    // uniqueItems on the span array
+    let span_keys: std::collections::BTreeSet<String> = spans.iter().map(canonical).collect();
+    if span_keys.len() != spans.len() {
+        return refuse("bounds");
+    }
+    let coverages = value.get("coverage").and_then(Value::as_array);
+    let Some(coverages) = coverages else {
+        return refuse("bounds");
+    };
+    if coverages.len() > 10_000 || !coverages.iter().all(lint_coverage) {
+        return refuse("bounds");
+    }
+    let records = value.get("records").and_then(Value::as_array);
+    let Some(records) = records else {
+        return refuse("bounds");
+    };
+    if records.len() > 10_000 || !records.iter().all(lint_record) {
+        return refuse("bounds");
+    }
+    if !lint_string_array(
+        value.get("limitations").unwrap_or(&Value::Null),
+        10_000,
+        true,
+    ) {
+        return refuse("bounds");
     }
     Ok(())
 }
@@ -1304,7 +1695,9 @@ pub fn validate_request(value: &Value) -> Result<(), Refusal> {
             // Required known digests (issue #106 review r2 #2): the
             // production wire decoder refuses unknown and malformed
             // spellings of the model/ir pins; mirror it exactly.
-            if !is_sha256_digest(&pin_known(pins.get(pin).unwrap_or(&Value::Null)).unwrap_or_default()) {
+            if !is_sha256_digest(
+                &pin_known(pins.get(pin).unwrap_or(&Value::Null)).unwrap_or_default(),
+            ) {
                 return invalid("lint-pin");
             }
         }
