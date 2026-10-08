@@ -143,6 +143,8 @@ fn render_implementation(
     module: &str,
     target: &str,
     requirement: &Requirement,
+    extensions: &[ExtensionCheck],
+    generated_root: &str,
 ) -> Result<Vec<u8>, DomainResult> {
     let name =
         requirement_name(module, &requirement.id).ok_or_else(|| invalid("requirement-name"))?;
@@ -173,18 +175,43 @@ fn render_implementation(
             kind = field_type(requirement, |sample| &sample.output, &projection.to)
         ));
     }
+    // The declared invocation of every resolved custom/foreign binding
+    // renders inside the generated implementation (finding 6): the
+    // maintained hook is a live part of the generated handler, not a
+    // test-only decoration.
+    let mut hooks = String::new();
+    let mut imports = String::new();
+    for extension in extensions {
+        if !extension.validated {
+            continue;
+        }
+        let Some((binding_file, binding_symbol)) =
+            super::bindings::binding_parts(&extension.binding, &extension.symbol)
+        else {
+            return Err(invalid("binding"));
+        };
+        let Some(relative) = relative_binding_path(generated_root, &binding_file) else {
+            return Err(invalid("binding"));
+        };
+        imports.push_str(&format!(
+            "import {{ {binding_symbol} }} from \"{relative}\";\n",
+        ));
+        hooks.push_str(&format!("  {binding_symbol}(structuredClone(input));\n",));
+    }
     let document = format!(
-        "{header}\n\
+        "{header}\n{imports}\
          export interface {types}Input {{\n{input_fields}}}\n\
          \n\
          export interface {types}Output {{\n{output_fields}}}\n\
          \n\
-         export function {function}(input: {types}Input): {types}Output {{\n  return {{\n    {returns},\n  }};\n}}\n",
+         export function {function}(input: {types}Input): {types}Output {{\n{hooks}  return {{\n    {returns},\n  }};\n}}\n",
         header = header_comment(recipe, module, target, requirement),
+        imports = imports,
         types = types,
         input_fields = input_fields,
         output_fields = output_fields,
         function = function,
+        hooks = hooks,
         returns = returns.join(",\n    "),
     );
     Ok(document.into_bytes())
@@ -322,6 +349,8 @@ pub fn render_inventory(
                 &coverage.module,
                 &coverage.target,
                 requirement,
+                &coverage.extensions,
+                generated_root,
             )?,
         )?;
         push(

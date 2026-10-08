@@ -6,17 +6,17 @@
   "implementationDigest": "sha256:8b2d5231b2a510dc23a014a626e33bc8df173ceac8dc13ff7587c8d16c924fe9",
   "referenceDigest": {
     "state": "known",
-    "value": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+    "value": "sha256:c32015c005551cb9458a559797066736a0a8776c3b065ac9290d098b65ae5c4e"
   },
   "scenarios": [
     {
       "scenario": "planner.complete_task",
-      "digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+      "digest": "sha256:c32015c005551cb9458a559797066736a0a8776c3b065ac9290d098b65ae5c4e",
       "verdict": "match"
     },
     {
       "scenario": "planner.focus_task",
-      "digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+      "digest": "sha256:6f44c28f8de45b534b2a3d55d0ced272a12b97c7bd2a7b24812c81133e64c247",
       "verdict": "match"
     }
   ],

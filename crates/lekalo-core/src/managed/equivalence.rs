@@ -2,11 +2,14 @@
 //!
 //! The evidence document is producer-owned and independently checked here
 //! against the exact committed generation: the implementation pin must be
-//! the digest of the recorded implementation inventory, the scenario
-//! corpus must cover every rendered requirement of the committed record,
-//! and any qualified mismatch is a failed gate. Unsupported or missing
-//! coverage is an incomplete gate, and only a fully supported matching
-//! corpus passes. Timing metrics and raw sources are never part of it.
+//! the digest of the recorded implementation inventory, every scenario
+//! pin must be the digest of the independently produced outcome bytes the
+//! producer retains in custody (verified against custody objects, never
+//! caller labels), the scenario corpus must cover every rendered
+//! requirement of the committed record, and any qualified mismatch is a
+//! failed gate. Unsupported or missing coverage is an incomplete gate,
+//! and only a fully supported matching corpus passes. Timing metrics and
+//! raw sources are never part of it.
 
 use super::diagnostic;
 use super::wire::{ArtifactRole, Equivalence, EquivalenceVerdict, ScenarioOutcome};
@@ -85,7 +88,13 @@ pub fn adjudicate_for(root: &std::path::Path, bytes: &[u8]) -> DomainResult {
         None => return invalid("custody"),
     }
     // The required scenario corpus: every rendered requirement of the
-    // committed record for the subject must appear as a scenario.
+    // committed record for the subject must appear as a scenario, and
+    // every scenario's pinned digest must be the digest of the
+    // independently produced outcome bytes retained in managed custody
+    // (finding 5): the producer writes each native/reference run's
+    // normalized outcome into the custody object store under its digest,
+    // so a caller cannot forge verdict labels — the pinned bytes are
+    // re-read and re-hashed here.
     let mut required: Vec<String> = record
         .outputs
         .iter()
@@ -104,12 +113,26 @@ pub fn adjudicate_for(root: &std::path::Path, bytes: &[u8]) -> DomainResult {
             .and_then(|file| file.strip_suffix(".ts"))
             .unwrap_or(path);
         let scenario = format!("{}.{}", evidence.module, name.replace('-', "_"));
-        if !evidence
+        let Some(row) = evidence
             .scenarios
             .iter()
-            .any(|row| row.scenario == scenario)
-        {
+            .find(|row| row.scenario == scenario)
+        else {
             return diagnostic::failure(EQUIVALENCE_INCOMPLETE, &detail("corpus"));
+        };
+        // Every scenario pin must resolve to real retained outcome bytes:
+        // the digest is verified against the custody object, so a
+        // zero-hash or foreign digest is missing evidence, not a pass.
+        if super::history::object(root, &row.digest).is_err() {
+            return diagnostic::failure(EQUIVALENCE_INCOMPLETE, &detail("evidence"));
+        }
+    }
+    // The reference bytes are independently produced evidence too: the
+    // pinned reference digest must resolve to retained custody bytes
+    // produced by the reference lane, never a caller-chosen label.
+    if let Some(reference) = evidence.reference_digest.value() {
+        if super::history::object(root, reference).is_err() {
+            return diagnostic::failure(EQUIVALENCE_INCOMPLETE, &detail("reference"));
         }
     }
     adjudicate_checked(evidence)
