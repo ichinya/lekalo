@@ -1284,6 +1284,7 @@ Status: **Implemented** command handlers for product 0.8.0. Handler existence do
 | `lekalo task-links inspect` | `lekalo task-links inspect [OPTIONS] --attachment <PATH> <SYMBOL>` | [reference](task-external-links.md) |
 | `lekalo task-links portability` | `lekalo task-links portability [OPTIONS] --from-profile <PATH> --to-profile <PATH> <PATH>` | [reference](task-external-links.md) |
 | `lekalo task-links validate` | `lekalo task-links validate [OPTIONS] <PATH>` | [reference](task-external-links.md) |
+| `lekalo task-links impact` | `lekalo task-links impact [OPTIONS] --attachment <PATH> <CONTRACT>` | [reference](task-external-links.md) |
 | `lekalo trace` | `lekalo trace [OPTIONS] <COMMAND>` | [reference](trace-manifest.md) |
 | `lekalo trace assess` | `lekalo trace assess [OPTIONS] --evidence <PATH> <PATH>` | [reference](trace-manifest.md) |
 | `lekalo trace collect` | `lekalo trace collect [OPTIONS]` | [reference](trace-manifest.md) |

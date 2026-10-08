@@ -359,6 +359,20 @@ jobs:
           node scripts/test-task-links-impact-portability.mjs
           node scripts/test-task-links-native.mjs
           node scripts/test-task-links-public-evidence.mjs
+      - name: Run the provisioned task-links native gate (issue #52)
+        # The qualified-environment leg: the native_leg battery executes
+        # for real over a transactional DB (DB-level identity race,
+        # durable restarts) and writes the qualification receipt the
+        # CLI's native-evidence admission requires. CI provisioning
+        # makes the durable/race acceptance fail-closed instead of
+        # staying a pending-provisioning gap.
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          LEKALO_TASKLINKS_NATIVE=1 \
+            LEKALO_TASKLINKS_NATIVE_DB="$RUNNER_TEMP/tasklinks-native/provisioned.sqlite" \
+            node scripts/test-task-links-native.mjs
+          test -f "$RUNNER_TEMP/tasklinks-native/provisioned.sqlite.qualified.json"
       - name: Run the privacy evaluator parity gate (issue #119)
         run: node scripts/test-privacy-evaluator-parity.mjs
       - name: Run the privacy runtime CLI gate (issue #119)

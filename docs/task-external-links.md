@@ -12,6 +12,20 @@ or stores reports.
   `lekalo/task-links-integration/v0.8.0`), with the derived
   `task-links-report`, `task-links-evidence`, and
   `task-links-portability` documents at the same version.
+- Model/IR ownership (AC1): the typed `Task -> links 0..N` relation,
+  the aggregate-child relation, and the exact external-identity
+  constraint are declared IN the Model and carried in the canonical IR
+  (`contracts/model.schema.v0.8.0.json` + `contracts/ir.schema.v0.8.0.json`,
+  `dev.lekalo.ir@0.8.0`). The attachment mirrors the Model; validation
+  joins every attachment relation/constraint to the compiled Model and
+  refuses any drift - including coherent cardinality mutations - with
+  `relation-diverges-from-model`/`constraint-diverges-from-model`.
+  Model 0.2.16 sources keep `dev.lekalo.ir@0.2.16` with byte-identical
+  canonical output; no alias under 0.2.16 exists.
+- Reverse impact: `lekalo task-links impact CONTRACT` derives the
+  consumer set (capabilities, bindings, action policies, commands,
+  effects, verification scenarios) from the attachment and the
+  compilation - never a prewritten list.
 - Diagnostics: `LEK-TASKLINK-001`..`008` live in the additive
   diagnostic-registry union successor
   (`dev.lekalo.diagnostic-registry@0.8.0`); predecessor producers keep
@@ -46,8 +60,14 @@ an authoritative view. With `--evidence`, an admitted receipt joins
 the view (origin, pins, step count); missing evidence stays explicitly
 unavailable, and stale or wrong pins fail closed with
 `tasklink.evidence-invalid`. A `native` origin claim is admitted only
-under the qualified-environment flag (`LEKALO_TASKLINKS_NATIVE=1`) and
-always requires the wall-clock-native clock policy.
+when the environment actually stands behind it: the provisioning flag
+(`LEKALO_TASKLINKS_NATIVE=1`) plus the executed native battery's
+qualification receipt beside the provisioned DB (every required leg,
+the exact identity, the named database). A flag without an executed
+battery refuses with `tasklink.evidence-invalid`. The contribution
+switches are consumed: a disabled `inspect`/`impact`/`scenarios`
+contribution refuses the inspect/portability/evidence surfaces with
+`contribution-disabled`, and the view renders the full switch row.
 
 Every digest pin on the attachment is recomputed, never trusted: the
 Model/IR pin against the canonical IR of the live compilation, the
@@ -93,6 +113,11 @@ identity tuple is `(workspace_id, installation_id, provider_id,
 object_type, external_id)`, compared as exact text; detach retains
 history and the external object; the network call is declared outside
 every local transaction; acceptance before acknowledgement surfaces
-as the explicit `accepted_pending_ack` state and recovery inside that
-window reports unknown delivery for reconciliation instead of a
-guessed success.
+as the explicit `accepted_pending_ack` state, recovery inside that
+window lands in the persistent non-dispatchable `unknown_delivery`
+state (only the explicit reconciliation command resolves it), lease
+expiry fences every dispatch path, stale link generations cancel
+their intents at claim and dispatch, the durable retry budget is
+enforced at claim (crash loops cannot bypass it), inbound events are
+fenced by the link's full identity/lifecycle/sync mode, and the
+closed wire carries the canonical nine-state machine.
