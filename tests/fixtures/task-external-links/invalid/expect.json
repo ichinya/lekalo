@@ -197,6 +197,55 @@
       "trigger": "invalid/ev-fields-65.json",
       "command": "inspect",
       "detailTag": "evidence-step-token"
+    },
+    {
+      "rule": "tasklink.decision-incomplete",
+      "code": "LEK-TASKLINK-002",
+      "trigger": "invalid/policy-self-cycle.json",
+      "command": "validate",
+      "detailTag": "policy-ref-cycle"
+    },
+    {
+      "rule": "tasklink.decision-incomplete",
+      "code": "LEK-TASKLINK-002",
+      "trigger": "invalid/policy-mutual-cycle.json",
+      "command": "validate",
+      "detailTag": "policy-ref-cycle"
+    },
+    {
+      "rule": "tasklink.decision-incomplete",
+      "code": "LEK-TASKLINK-002",
+      "trigger": "invalid/ghost-policy-entity.json",
+      "command": "validate",
+      "detailTag": "policy-entity-unresolved"
+    },
+    {
+      "rule": "tasklink.decision-incomplete",
+      "code": "LEK-TASKLINK-002",
+      "trigger": "invalid/ghost-policy-fields.json",
+      "command": "validate",
+      "detailTag": "policy-field-missing"
+    },
+    {
+      "rule": "tasklink.decision-incomplete",
+      "code": "LEK-TASKLINK-002",
+      "trigger": "invalid/ghost-action.json",
+      "command": "validate",
+      "detailTag": "action-unresolved"
+    },
+    {
+      "rule": "tasklink.decision-incomplete",
+      "code": "LEK-TASKLINK-002",
+      "trigger": "invalid/ghost-operation.json",
+      "command": "validate",
+      "detailTag": "binding-action-unresolved"
+    },
+    {
+      "rule": "tasklink.relation-identity-invalid",
+      "code": "LEK-TASKLINK-001",
+      "trigger": "invalid/ghost-schema-ref.json",
+      "command": "validate",
+      "detailTag": "contract-schema-ref-unresolved"
     }
   ]
 }

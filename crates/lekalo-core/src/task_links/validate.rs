@@ -172,13 +172,11 @@ pub fn validate(
     }
     let mut findings: Vec<Finding> = Vec::new();
     let entities = ir_entities(compilation);
-    let model_policies = ir_policy_ids(compilation);
     check_entities(attachment, &entities, &mut findings);
     check_relations(attachment, &entities, &mut findings);
     check_unique_constraints(attachment, &entities, &mut findings);
-    check_decisions(attachment, &model_policies, &mut findings);
-    let effects = ir_effects(compilation);
-    check_bindings(attachment, &effects, &mut findings);
+    check_decisions(attachment, compilation, &entities, &mut findings);
+    check_bindings(attachment, compilation, &mut findings);
     check_delivery(attachment, &mut findings);
     findings.sort();
     findings.dedup();
@@ -503,12 +501,24 @@ fn check_unique_constraints(
 
 fn check_decisions(
     attachment: &Attachment,
-    model_policies: &BTreeSet<String>,
+    compilation: &Compilation,
+    entities: &EntityTable,
     findings: &mut Vec<Finding>,
 ) {
     // Field policies reference owning Model policies; action policies
     // may reference field policies (composition) or owning Model
-    // policies. Any referenced id must be declared in the attachment.
+    // policies. Any referenced id must be declared in the attachment,
+    // and the composition graph must be acyclic.
+    let model_policies = ir_policy_ids(compilation);
+    let declared_commands: BTreeSet<&str> = compilation
+        .project
+        .definitions
+        .iter()
+        .filter_map(|definition| match definition {
+            Definition::Command(_) | Definition::Query(_) => Some(definition.id().as_str()),
+            _ => None,
+        })
+        .collect();
     let policy_ids: BTreeSet<&str> = attachment
         .field_policies()
         .iter()
@@ -535,6 +545,33 @@ fn check_decisions(
                 "policy-ref-unresolved",
             );
         }
+        // The bound entity and every bound field must exist in the
+        // compiled Model: a policy graph that asserts authority over a
+        // ghost entity or ghost fields is incomplete.
+        let bound_fields = match entities.get(&policy.entity) {
+            Some((fields, _)) => Some(fields),
+            None => {
+                finding(
+                    findings,
+                    diagnostic::DECISION_INCOMPLETE,
+                    policy.policy_id.clone(),
+                    "policy-entity-unresolved",
+                );
+                None
+            }
+        };
+        if let Some(fields) = bound_fields {
+            for field in &policy.fields {
+                if !fields.contains(field) {
+                    finding(
+                        findings,
+                        diagnostic::DECISION_INCOMPLETE,
+                        policy.policy_id.clone(),
+                        "policy-field-missing",
+                    );
+                }
+            }
+        }
         if policy.direction == "inbound"
             && policy.decision == "allow"
             && policy
@@ -559,10 +596,10 @@ fn check_decisions(
                 "policy-ref-unresolved",
             );
         }
-        if policy.action.starts_with("tasklinks.")
-            && !DOMAIN_COMMANDS.contains(&policy.action.as_str())
-            && !DOMAIN_QUERIES.contains(&policy.action.as_str())
-        {
+        // The bound action must be a declared command or query of the
+        // compilation, whatever its prefix: caller-named actions
+        // resolve exactly like the built-in ones.
+        if !declared_commands.contains(policy.action.as_str()) {
             finding(
                 findings,
                 diagnostic::DECISION_INCOMPLETE,
@@ -571,13 +608,77 @@ fn check_decisions(
             );
         }
     }
+    // The in-attachment policy composition graph must be acyclic: a
+    // self-cycle or a mutual cycle composes authority from itself.
+    let mut edges: BTreeMap<&str, &str> = BTreeMap::new();
+    for policy in attachment.field_policies() {
+        if policy_ids.contains(policy.policy_ref.as_str()) {
+            edges.insert(policy.policy_id.as_str(), policy.policy_ref.as_str());
+        }
+    }
+    for policy in attachment.action_policies() {
+        if policy_ids.contains(policy.policy_ref.as_str()) {
+            edges.insert(policy.policy_id.as_str(), policy.policy_ref.as_str());
+        }
+    }
+    // Iterative depth-first search with the classic three-color mark.
+    const WHITE: u8 = 0;
+    const GRAY: u8 = 1;
+    const BLACK: u8 = 2;
+    let mut color: BTreeMap<&str, u8> = policy_ids.iter().map(|id| (*id, WHITE)).collect();
+    for root in policy_ids.iter().copied() {
+        if color.get(root).copied().unwrap_or(BLACK) != WHITE {
+            continue;
+        }
+        let mut stack: Vec<(&str, bool)> = vec![(root, false)];
+        while let Some((node, leaving)) = stack.pop() {
+            if leaving {
+                color.insert(node, BLACK);
+                continue;
+            }
+            match color.get(node).copied().unwrap_or(BLACK) {
+                GRAY => continue,
+                BLACK => continue,
+                _ => color.insert(node, GRAY),
+            };
+            stack.push((node, true));
+            if let Some(next) = edges.get(node) {
+                match color.get(next).copied().unwrap_or(BLACK) {
+                    GRAY => {
+                        finding(
+                            findings,
+                            diagnostic::DECISION_INCOMPLETE,
+                            (*node).to_owned(),
+                            "policy-ref-cycle",
+                        );
+                    }
+                    WHITE => stack.push((next, false)),
+                    _ => {}
+                }
+            }
+        }
+    }
+    check_bindings(attachment, compilation, findings);
+    let _ = entities;
 }
 
-fn check_bindings(
-    attachment: &Attachment,
-    ir_effects: &BTreeMap<String, (String, String)>,
-    findings: &mut Vec<Finding>,
-) {
+fn check_bindings(attachment: &Attachment, compilation: &Compilation, findings: &mut Vec<Finding>) {
+    let effects = ir_effects(compilation);
+    let declared_commands: BTreeSet<&str> = compilation
+        .project
+        .definitions
+        .iter()
+        .filter_map(|definition| match definition {
+            Definition::Command(_) | Definition::Query(_) => Some(definition.id().as_str()),
+            _ => None,
+        })
+        .collect();
+    let declared_symbols: BTreeSet<&str> = compilation
+        .project
+        .definitions
+        .iter()
+        .map(|definition| definition.id().as_str())
+        .collect();
     let capabilities: BTreeSet<&str> = attachment
         .capability_requirements()
         .iter()
@@ -598,6 +699,25 @@ fn check_bindings(
             );
         }
     }
+    // Provider contract wire schemas are typed resolved dependency
+    // nodes: every request/response/error ref must name a declared
+    // definition of the compilation, never a free symbol.
+    for contract in attachment.provider_contracts() {
+        for schema_ref in [
+            &contract.request_schema_ref,
+            &contract.response_schema_ref,
+            &contract.error_schema_ref,
+        ] {
+            if !declared_symbols.contains(schema_ref.as_str()) {
+                finding(
+                    findings,
+                    diagnostic::INPUT_INVALID,
+                    contract.contract_id.clone(),
+                    "contract-schema-ref-unresolved",
+                );
+            }
+        }
+    }
     let policies: BTreeSet<&str> = attachment
         .action_policies()
         .iter()
@@ -608,7 +728,7 @@ fn check_bindings(
         // effect must be a declared update on the conflict entity (a
         // valid, immutable transition), not an unrelated write.
         if binding.action == "tasklinks.resolve_conflict" {
-            let audited = ir_effects.get(binding.effect_ref.as_str());
+            let audited = effects.get(binding.effect_ref.as_str());
             let valid = matches!(
                 audited,
                 Some((entity, operation)) if entity == "tasklinks.conflict" && operation == "update"
@@ -621,6 +741,19 @@ fn check_bindings(
                     "resolution-transition-invalid",
                 );
             }
+        }
+        // The bound operation and action must both be declared
+        // commands of the compilation: an operation binding that binds
+        // a ghost operation asserts delivery of nothing.
+        if !declared_commands.contains(binding.operation.as_str())
+            || !declared_commands.contains(binding.action.as_str())
+        {
+            finding(
+                findings,
+                diagnostic::DECISION_INCOMPLETE,
+                binding.operation.clone(),
+                "binding-action-unresolved",
+            );
         }
         if !capabilities.contains(binding.capability_ref.as_str()) {
             finding(
@@ -638,7 +771,7 @@ fn check_bindings(
                 "binding-policy-unresolved",
             );
         }
-        if !ir_effects.contains_key(binding.effect_ref.as_str()) {
+        if !effects.contains_key(binding.effect_ref.as_str()) {
             finding(
                 findings,
                 diagnostic::FANOUT_NOT_ADMITTED,

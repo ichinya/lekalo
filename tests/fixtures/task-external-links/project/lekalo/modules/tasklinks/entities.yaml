@@ -77,6 +77,54 @@ definitions:
         description: "Cancelled after revocation or detach"
       - value: dead_letter
         description: "Bounded attempts exhausted"
+  - id: tasklinks.primary_request
+    kind: value-object
+    version: 1
+    description: "The request wire schema of the secondary provider contract"
+    fields:
+      - name: payload
+        type: "tasklinks.external_id"
+        required: true
+  - id: tasklinks.primary_response
+    kind: value-object
+    version: 1
+    description: "The response wire schema of the secondary provider contract"
+    fields:
+      - name: payload
+        type: "tasklinks.external_id"
+        required: true
+  - id: tasklinks.primary_error
+    kind: value-object
+    version: 1
+    description: "The error wire schema of the secondary provider contract"
+    fields:
+      - name: payload
+        type: "tasklinks.external_id"
+        required: true
+  - id: tasklinks.secondary_request
+    kind: value-object
+    version: 1
+    description: "The request wire schema of the secondary provider contract"
+    fields:
+      - name: payload
+        type: "tasklinks.external_id"
+        required: true
+  - id: tasklinks.secondary_response
+    kind: value-object
+    version: 1
+    description: "The response wire schema of the secondary provider contract"
+    fields:
+      - name: payload
+        type: "tasklinks.external_id"
+        required: true
+  - id: tasklinks.secondary_error
+    kind: value-object
+    version: 1
+    description: "The error wire schema of the secondary provider contract"
+    fields:
+      - name: payload
+        type: "tasklinks.external_id"
+        required: true
   - id: tasklinks.task_external_link
     kind: entity
     version: 1

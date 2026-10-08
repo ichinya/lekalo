@@ -1,15 +1,15 @@
 {
   "schemaVersion": "lekalo/task-links-integration/v0.8.0",
   "identity": "dev.lekalo.task-links-integration@0.8.0",
-  "attachmentRevision": "sha256:3f87aa7d2e5b21c18aff9864857248d32d20d4f45b1ffd8ed6e0fb0217fe308e",
+  "attachmentRevision": "sha256:976a979b34c5048a24d3a700dfd8b9b1883b607b101734896ec43ae8bee9e4ea",
   "projectId": "tasklinks",
   "modelRef": {
     "schemaVersion": "0.2.16",
-    "irDigest": "sha256:00f12b1b307329741fa5b362e57e6ab2a0f6ad5895844347a6ea579a3a24f824"
+    "irDigest": "sha256:2527fc3742315806ea5d6260d3b2a5dda34ed7c5eda92f8a7ee8076bc4e07178"
   },
   "irRef": {
     "identity": "dev.lekalo.ir@0.2.16",
-    "digest": "sha256:00f12b1b307329741fa5b362e57e6ab2a0f6ad5895844347a6ea579a3a24f824"
+    "digest": "sha256:2527fc3742315806ea5d6260d3b2a5dda34ed7c5eda92f8a7ee8076bc4e07178"
   },
   "ownerContractPins": [
     {
@@ -112,9 +112,9 @@
       "objectType": "issue",
       "upstreamPin": "github-rest/2022-11-28",
       "revision": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "requestSchemaRef": "tasklinks.provider.primary_request",
-      "responseSchemaRef": "tasklinks.provider.primary_response",
-      "errorSchemaRef": "tasklinks.provider.primary_error",
+      "requestSchemaRef": "tasklinks.primary_request",
+      "responseSchemaRef": "tasklinks.primary_response",
+      "errorSchemaRef": "tasklinks.primary_error",
       "revisionOrdering": "comparable-total",
       "remoteDedup": "receipt-reconciliation",
       "description": "Public provider snapshot metadata; verified upstream pin, synthetic fixtures only"
@@ -125,9 +125,9 @@
       "objectType": "issue",
       "upstreamPin": "mock-secondary/1",
       "revision": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "requestSchemaRef": "tasklinks.provider.secondary_request",
-      "responseSchemaRef": "tasklinks.provider.secondary_response",
-      "errorSchemaRef": "tasklinks.provider.secondary_error",
+      "requestSchemaRef": "tasklinks.secondary_request",
+      "responseSchemaRef": "tasklinks.secondary_response",
+      "errorSchemaRef": "tasklinks.secondary_error",
       "revisionOrdering": "incomparable-declared",
       "remoteDedup": "idempotency-key",
       "description": "Fully synthetic secondary mock provider"

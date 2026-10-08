@@ -22,6 +22,7 @@
 
 import { readFileSync, writeFileSync, readdirSync, statSync } from "node:fs";
 import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -88,6 +89,45 @@ const revisionOf = (document) => {
 
 const base = JSON.parse(readFileSync(join(fixtureRoot, baseRel), "utf8"));
 base.deliveryRules.outboxStates = [...OUTBOX_STATES];
+
+// The live canonical IR digest of the pilot fixture project, rendered
+// by the built CLI and hashed over the same canonical bytes the core
+// verifier computes. A missing binary is a hard error: the pins must
+// never be regenerated from a stale compilation.
+const projectRel = "tests/fixtures/task-external-links/project";
+const binaryCandidates = [
+  join(root, "target/debug/lekalo"),
+  join(root, "target/debug/lekalo.exe"),
+];
+const binary = binaryCandidates.find((candidate) => {
+  try {
+    return statSync(candidate).isFile();
+  } catch {
+    return false;
+  }
+});
+if (!binary) {
+  process.stderr.write(
+    "gen-task-links-fixtures: build first (cargo build --workspace --locked); the IR pins must be regenerated from the live compilation\n",
+  );
+  process.exit(1);
+}
+const irRun = spawnSync(binary, ["--no-cache", "--json", "load", "--project", projectRel, "--ir"], {
+  cwd: root,
+  encoding: "utf8",
+  timeout: 120000,
+});
+if (irRun.error || irRun.status !== 0) {
+  process.stderr.write(
+    `gen-task-links-fixtures: the pilot project does not compile: ${String(irRun.error ?? irRun.stderr).slice(0, 400)}\n`,
+  );
+  process.exit(1);
+}
+const irObject = JSON.parse(irRun.stdout).ir;
+const irDigest = sha(canonicalBytes(irObject));
+base.irRef.digest = irDigest;
+base.modelRef.irDigest = irDigest;
+
 const baseRevision = revisionOf(base);
 
 // The changed side of the impact pair: exactly the upstream pin moves.
@@ -128,6 +168,41 @@ const walk = (current) => {
     ) {
       if (document.deliveryRules) {
         document.deliveryRules.outboxStates = [...OUTBOX_STATES];
+      }
+      // The stale-IR-digest trigger keeps its committed stale pin: the
+      // divergent digest IS its targeted refusal. Every other
+      // attachment joins the live compilation's digest so its targeted
+      // rule is never masked by a stale pin.
+      const staleIrTrigger = relativePath
+        .replaceAll("\\", "/")
+        .endsWith("invalid/pin-ir-digest-stale.json");
+      if (!staleIrTrigger) {
+        if (document.irRef && document.irRef.digest !== irDigest) {
+          document.irRef.digest = irDigest;
+          touched = true;
+        }
+        if (document.modelRef && document.modelRef.irDigest !== irDigest) {
+          document.modelRef.irDigest = irDigest;
+          touched = true;
+        }
+      }
+      // The provider wire-schema refs are declared definitions now;
+      // fixtures derived before the rename still carry the old
+      // free-symbol spelling. Migrate the refs so a trigger reaches
+      // its targeted rule instead of the schema-ref join.
+      const rename = (reference) => {
+        if (typeof reference !== "string") return reference;
+        const match = reference.match(/^tasklinks\.provider\.(primary|secondary)_(request|response|error)$/);
+        return match ? `tasklinks.${match[1]}_${match[2]}` : reference;
+      };
+      for (const contract of document.providerContracts ?? []) {
+        for (const member of ["requestSchemaRef", "responseSchemaRef", "errorSchemaRef"]) {
+          const renamed = rename(contract[member]);
+          if (renamed !== contract[member]) {
+            contract[member] = renamed;
+            touched = true;
+          }
+        }
       }
       const revision = revisionOf(document);
       if (revision && document.attachmentRevision !== revision) {
@@ -180,5 +255,5 @@ walk(fixtureRoot);
 }
 
 process.stdout.write(
-  `${JSON.stringify({ ok: true, regenerated: written.length, baseRevision, changedRevision, files: written }, null, 1)}\n`,
+  `${JSON.stringify({ ok: true, regenerated: written.length, irDigest, baseRevision, changedRevision, files: written }, null, 1)}\n`,
 );

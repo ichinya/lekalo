@@ -691,4 +691,53 @@ mod tests {
     fn failure_constructors_are_not_reachable() {
         assert_eq!(PROFILES.len(), 2);
     }
+
+    fn decision(outcome: &str, capability: Option<&str>, authorization: Option<&str>) -> bool {
+        is_decision_consistent(&EvidenceDecisionRef {
+            outcome: outcome.to_owned(),
+            action: None,
+            capability_outcome: capability.map(str::to_owned),
+            authorization_outcome: authorization.map(str::to_owned),
+            fields: vec![],
+            policy_revision: None,
+            capability_revision: None,
+        })
+    }
+
+    #[test]
+    fn decision_consistency_mirrors_the_engine_decision_function() {
+        assert!(decision("allowed", Some("supported"), Some("allowed")));
+        assert!(decision("allowed", Some("partial"), Some("allowed")));
+        // A fabricated receipt: allowed with an unsupported capability
+        // or a denied authorization contradicts the engine.
+        assert!(!decision("allowed", Some("unsupported"), Some("allowed")));
+        assert!(!decision("allowed", Some("supported"), Some("denied")));
+        assert!(decision("denied", Some("supported"), Some("denied")));
+        assert!(!decision("denied", Some("supported"), Some("allowed")));
+        assert!(decision(
+            "unsupported",
+            Some("unsupported"),
+            Some("allowed")
+        ));
+        assert!(!decision("unsupported", Some("supported"), Some("allowed")));
+        assert!(decision("indeterminate", Some("unknown"), Some("allowed")));
+        assert!(!decision(
+            "indeterminate",
+            Some("supported"),
+            Some("allowed")
+        ));
+    }
+
+    #[test]
+    fn evidence_symbols_reject_everything_unqualified() {
+        assert!(is_evidence_symbol("tasklinks.evidence.two_providers"));
+        assert!(!is_evidence_symbol("SYNTHETIC-PRIVATE-MARKER"));
+        assert!(!is_evidence_symbol("no-dashes-allowed"));
+        assert!(!is_evidence_symbol(""));
+        assert!(!is_evidence_symbol("a.b.c.d.e"));
+        let long = format!("a.{}", "b".repeat(200));
+        assert!(!is_evidence_symbol(&long), "over the 191-byte bound");
+        assert!(!is_evidence_digest("sha256:zz"));
+        assert!(is_evidence_digest(&format!("sha256:{}", "a".repeat(64))));
+    }
 }

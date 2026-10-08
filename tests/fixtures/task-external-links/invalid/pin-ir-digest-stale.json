@@ -1,7 +1,7 @@
 {
   "schemaVersion": "lekalo/task-links-integration/v0.8.0",
   "identity": "dev.lekalo.task-links-integration@0.8.0",
-  "attachmentRevision": "sha256:1e677ca593a27ed58b65fac6252827881fc72213b46ae9fff4c42af7b81c57fe",
+  "attachmentRevision": "sha256:07d8a892c1232fc19b7ee5f0536539079db475933334b055b3f8570c8e06f777",
   "projectId": "tasklinks",
   "modelRef": {
     "schemaVersion": "0.2.16",
@@ -112,9 +112,9 @@
       "objectType": "issue",
       "upstreamPin": "github-rest/2022-11-28",
       "revision": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "requestSchemaRef": "tasklinks.provider.primary_request",
-      "responseSchemaRef": "tasklinks.provider.primary_response",
-      "errorSchemaRef": "tasklinks.provider.primary_error",
+      "requestSchemaRef": "tasklinks.primary_request",
+      "responseSchemaRef": "tasklinks.primary_response",
+      "errorSchemaRef": "tasklinks.primary_error",
       "revisionOrdering": "comparable-total",
       "remoteDedup": "receipt-reconciliation",
       "description": "Public provider snapshot metadata; verified upstream pin, synthetic fixtures only"
@@ -125,9 +125,9 @@
       "objectType": "issue",
       "upstreamPin": "mock-secondary/1",
       "revision": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "requestSchemaRef": "tasklinks.provider.secondary_request",
-      "responseSchemaRef": "tasklinks.provider.secondary_response",
-      "errorSchemaRef": "tasklinks.provider.secondary_error",
+      "requestSchemaRef": "tasklinks.secondary_request",
+      "responseSchemaRef": "tasklinks.secondary_response",
+      "errorSchemaRef": "tasklinks.secondary_error",
       "revisionOrdering": "incomparable-declared",
       "remoteDedup": "idempotency-key",
       "description": "Fully synthetic secondary mock provider"
