@@ -29,6 +29,12 @@ pub enum WireError {
 }
 
 impl WireError {
+    /// Whether this is the version-discriminator refusal (the exit-5
+    /// class through every consumer).
+    pub fn is_version(&self) -> bool {
+        matches!(self, Self::Version(_))
+    }
+
     /// The refusing result: version errors keep their exit-5 class.
     pub fn domain_result(&self) -> crate::result::DomainResult {
         match self {

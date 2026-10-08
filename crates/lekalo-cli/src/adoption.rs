@@ -313,10 +313,22 @@ pub fn run(command: AdoptionCommands) -> DomainResult {
                     };
                     match lekalo_core::adoption::wire::refactor_plan_of_bytes(&bytes) {
                         Ok(document) => document.plan,
-                        Err(_) => {
+                        // The wire error keeps its own class: a
+                        // wrong-version plan stays the exit-5
+                        // unsupported-version refusal (X9), never an
+                        // invalid-input downgrade.
+                        Err(first) => {
                             match lekalo_core::adoption::wire::confirmation_plan_of_bytes(&bytes) {
                                 Ok(document) => document.plan,
-                                Err(error) => return DomainResult::invalid(error.set()),
+                                Err(error) => {
+                                    return match (first, error) {
+                                        (_, second) if second.is_version() => {
+                                            second.domain_result()
+                                        }
+                                        (first, _) if first.is_version() => first.domain_result(),
+                                        (_, error) => error.domain_result(),
+                                    }
+                                }
                             }
                         }
                     }
@@ -547,7 +559,9 @@ fn run_verify(
     };
     let plan = match lekalo_core::adoption::wire::refactor_plan_of_bytes(&plan_bytes) {
         Ok(plan) => plan,
-        Err(error) => return DomainResult::invalid(error.set()),
+        // A wrong-version plan keeps its exit-5 class through every
+        // consumer (X9).
+        Err(error) => return error.domain_result(),
     };
     let patch = match (&plan.patch, candidate) {
         (Some(_), Some(path)) => match read_input("candidate", path) {
@@ -555,7 +569,7 @@ fn run_verify(
                 let patch = lekalo_core::adoption::wire::patch_of_bytes(&bytes);
                 match patch {
                     Ok(patch) => Some(patch),
-                    Err(error) => return DomainResult::invalid(error.set()),
+                    Err(error) => return error.domain_result(),
                 }
             }
             Err(result) => return result,
@@ -629,7 +643,9 @@ fn run_apply(
     };
     let plan = match lekalo_core::adoption::wire::refactor_plan_of_bytes(&plan_bytes) {
         Ok(plan) => plan,
-        Err(error) => return DomainResult::invalid(error.set()),
+        // A wrong-version plan keeps its exit-5 class through every
+        // consumer (X9).
+        Err(error) => return error.domain_result(),
     };
     let patch_bytes = match (&plan.patch, candidate) {
         (Some(_), Some(path)) => match read_input("candidate", path) {
