@@ -846,7 +846,7 @@ fn a_link_spelled_format_home_is_denied_on_sight() {
         // r2 10): the runtime home may not exist in a canonical fixture,
         // and the setup must not panic before the formatter runs.
         fs::create_dir_all(root.join(".lekalo/cache")).expect("link parent");
-        std::os::unix::fs::symlink(real_home, root.join(".lekalo/cache/format"))
+        std::os::unix::fs::symlink(&real_home, root.join(".lekalo/cache/format"))
             .expect("symlinked home");
         let result = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
         assert_ne!(

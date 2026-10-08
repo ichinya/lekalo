@@ -343,6 +343,7 @@ jobs:
           node scripts/test-format-cli.mjs
           node scripts/test-format-atomic.mjs
           node scripts/test-format-portability.mjs
+          node scripts/check-unix-compile.mjs
           cargo test --locked -p lekalo-core --test format
           cargo test --locked -p lekalo-cli --test format
       - name: Run the public metrics contract and live CLI gates (issue #102)
