@@ -3,12 +3,12 @@
 // executed through the Rust battery (lease fencing, bounded retry,
 // dead-letter, cancel-on-revoke, crash recovery) and independently
 // re-asserted here: the declared outbox vocabulary is the closed
-// seven-state machine, retries keep their idempotency keys, recipient
+// nine-state machine, retries keep their idempotency keys, recipient
 // accounting stays partial while anything is unresolved, and the
 // network call is declared outside every local transaction.
 
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -17,6 +17,10 @@ const gate = "task-links-outbox";
 const failures = [];
 const fail = (reason, detail) => failures.push({ reason, detail });
 const read = (relative) => JSON.parse(readFileSync(join(root, relative), "utf8"));
+const resolvedBinary = [
+  join(root, "target/debug/lekalo"),
+  join(root, "target/debug/lekalo.exe"),
+].find((candidate) => existsSync(candidate));
 
 // 1. The attachment's delivery rules carry the closed nine-state machine
 //    and the hard boundaries.
@@ -81,6 +85,50 @@ if (rust.error) {
     if (!rust.stdout.includes(`test ${name} ... ok`)) {
       fail("engine-leg-missing", name);
     }
+  }
+}
+
+// 2b. The declared effect graph carries the atomic intent group: the
+//     canonical local write and the durable outbox commit are declared
+//     edges of the SAME command, and the dispatch/ack commands carry
+//     the durable outbox write (external writes and partial failure
+//     are declared in the extended-effects family, validated against
+//     the same compilation by the core battery).
+{
+  const intentGroup = (operation, kinds) => {
+    const run = spawnSync(
+      resolvedBinary,
+      ["--no-cache", "--json", "effects", "show", operation, "--project", "tests/fixtures/task-external-links/project"],
+      { cwd: root, encoding: "utf8", timeout: 120000 },
+    );
+    if (run.error || run.status !== 0) {
+      fail("effects-show", operation + ": " + String(run.error ?? run.stderr).slice(0, 200));
+      return;
+    }
+    const envelope = JSON.parse(run.stdout);
+    const edges = envelope.effects.edges.map((edge) => edge.kind + ":" + edge.resource.id);
+    for (const expected of kinds) {
+      if (!edges.includes(expected)) {
+        fail("intent-group-edge", operation + " missing " + expected + " in " + JSON.stringify(edges));
+      }
+    }
+    if (envelope.effects.complete !== true) {
+      fail("intent-group-complete", operation);
+    }
+  };
+  intentGroup("tasklinks.request_action", ["create:tasklinks.outbox_item", "update:planner.task"]);
+  intentGroup("tasklinks.dispatch_outbox", ["create:tasklinks.outbox_item"]);
+  intentGroup("tasklinks.ack_delivery", ["create:tasklinks.outbox_item"]);
+  // The extended-effects declaration joins the same compilation: the
+  // external write, the outbox worker job, the durable receipt event,
+  // and the partial-failure case are declared and admitted.
+  const rust = spawnSync(
+    "cargo",
+    ["test", "--locked", "-p", "lekalo-core", "--test", "task_links", "extended_effects_declare"],
+    { cwd: root, encoding: "utf8", timeout: 600000 },
+  );
+  if (rust.error || rust.status !== 0) {
+    fail("extended-effects", String(rust.error ?? rust.stdout + rust.stderr).slice(0, 300));
   }
 }
 

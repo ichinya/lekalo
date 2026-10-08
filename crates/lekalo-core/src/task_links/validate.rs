@@ -821,6 +821,38 @@ fn check_bindings(attachment: &Attachment, compilation: &Compilation, findings: 
                 "binding-action-unresolved",
             );
         }
+        // The atomic intent group is declared, not implied: the
+        // canonical local write and the durable outbox commit are
+        // effects of the SAME command (one atomic local unit), and the
+        // dispatch/ack commands carry the durable outbox write.
+        if binding.action == "tasklinks.request_action"
+            || binding.action == "tasklinks.dispatch_outbox"
+            || binding.action == "tasklinks.ack_delivery"
+        {
+            if let Some(command) = commands.get(binding.action.as_str()) {
+                let writes_outbox = command.effects.iter().any(|effect_id| {
+                    matches!(
+                        effects.get(effect_id.as_str()),
+                        Some(("tasklinks.outbox_item", "create"))
+                    )
+                });
+                let local_write = binding.action != "tasklinks.request_action"
+                    || command.effects.iter().any(|effect_id| {
+                        matches!(
+                            effects.get(effect_id.as_str()),
+                            Some(("planner.task", "update"))
+                        )
+                    });
+                if !writes_outbox || !local_write {
+                    finding(
+                        findings,
+                        diagnostic::DELIVERY_CONTRACT_INVALID,
+                        binding.operation.clone(),
+                        "intent-group-incomplete",
+                    );
+                }
+            }
+        }
         if !capabilities.contains(binding.capability_ref.as_str()) {
             finding(
                 findings,

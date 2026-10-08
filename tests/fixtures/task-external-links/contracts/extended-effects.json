@@ -1,0 +1,204 @@
+{
+  "schemaVersion": "lekalo/extended-effects/v0.2.16",
+  "identity": "dev.lekalo.extended-effects@0.2.16",
+  "projectId": "tasklinks",
+  "modelRef": {
+    "digest": "sha256:aa10000000000000000000000000000000000000000000000000000000000000",
+    "modelVersion": "0.2.16"
+  },
+  "irRef": {
+    "digest": "sha256:bb10000000000000000000000000000000000000000000000000000000000000",
+    "identity": "dev.lekalo.ir@0.2.16"
+  },
+  "effectGraphRef": {
+    "digest": "sha256:cc10000000000000000000000000000000000000000000000000000000000000",
+    "identity": "dev.lekalo.effects@0.2.16"
+  },
+  "capabilityRequirements": [
+    {
+      "capability": "call.compensation",
+      "minimum": "full",
+      "reason": "The provider write is reconciled by receipt; a lost acknowledgement is compensated by explicit reconciliation, never a silent re-send.",
+      "requirementId": "tasklinks.req/compensation"
+    },
+    {
+      "capability": "queue.dead_letter",
+      "minimum": "full",
+      "reason": "Exhausted outbox intents park in dead_letter for explicit operator review.",
+      "requirementId": "tasklinks.req/dead-letter"
+    },
+    {
+      "capability": "dedup.durable_key",
+      "minimum": "full",
+      "reason": "Retries keep their durable idempotency key; the provider never receives a duplicate write.",
+      "requirementId": "tasklinks.req/durable-dedup"
+    },
+    {
+      "capability": "delivery.durable",
+      "minimum": "full",
+      "reason": "Delivery outcomes are recorded durably on the outbox item, including the acceptance-before-ack window.",
+      "requirementId": "tasklinks.req/durable-delivery"
+    },
+    {
+      "capability": "ordering.per_key",
+      "minimum": "full",
+      "reason": "Delivery receipts record per intent key, never reordered across intents.",
+      "requirementId": "tasklinks.req/per-key-ordering"
+    }
+  ],
+  "calls": [
+    {
+      "capabilityRequirementRefs": [
+        "tasklinks.req/compensation"
+      ],
+      "classification": "write",
+      "compensationRef": "operation:tasklinks.ack_delivery",
+      "contractRef": "tasklinks.call/provider-write",
+      "contractVersion": "0.2.16",
+      "contributions": {
+        "context": false,
+        "graph": false,
+        "impact": true,
+        "scenarios": true
+      },
+      "effectRef": "operation:tasklinks.dispatch_outbox|external-call|tasklinks.provider/github-issues|effect:tasklinks.dispatch_outbox|0",
+      "errorRefs": [
+        "errors.tasklinks-provider/rejected",
+        "errors.tasklinks-provider/timeout"
+      ],
+      "portability": "portable",
+      "providerContract": "tasklinks.provider-contract/write@0.8.0",
+      "requestDigest": "sha256:ff11000000000000000000000000000000000000000000000000000000000000",
+      "responseDigest": "sha256:aa22000000000000000000000000000000000000000000000000000000000000",
+      "retry": {
+        "maxAttempts": 5,
+        "safety": "conditional_idempotent"
+      },
+      "sensitivity": "standard",
+      "timeoutMillis": 5000
+    }
+  ],
+  "jobs": [
+    {
+      "capabilityRequirementRefs": [
+        "tasklinks.req/dead-letter",
+        "tasklinks.req/durable-dedup"
+      ],
+      "contractRef": "tasklinks.job/outbox-worker",
+      "contractVersion": "0.2.16",
+      "contributions": {
+        "context": false,
+        "graph": false,
+        "impact": true,
+        "scenarios": true
+      },
+      "deadLetter": "park",
+      "effectRef": "operation:tasklinks.dispatch_outbox|enqueue-job|tasklinks.queue/outbox|effect:tasklinks.dispatch_outbox|0",
+      "idempotency": {
+        "keyField": "intent_id",
+        "mode": "key"
+      },
+      "payloadDigest": "sha256:ee11000000000000000000000000000000000000000000000000000000000000",
+      "portability": "portable",
+      "queueClass": "tasklinks.queue/outbox",
+      "retry": {
+        "backoff": "exponential",
+        "capMillis": 60000,
+        "maxAttempts": 5
+      },
+      "sensitivity": "standard",
+      "timeoutMillis": 30000
+    }
+  ],
+  "events": [
+    {
+      "capabilityRequirementRefs": [
+        "tasklinks.req/durable-dedup",
+        "tasklinks.req/durable-delivery",
+        "tasklinks.req/per-key-ordering"
+      ],
+      "causationId": "intent_id",
+      "contractRef": "tasklinks.event/delivery-recorded",
+      "contractVersion": "0.2.16",
+      "contributions": {
+        "context": false,
+        "graph": false,
+        "impact": true,
+        "scenarios": true
+      },
+      "correlationId": "intent_id",
+      "deduplication": {
+        "keyField": "intent_id",
+        "mode": "durable_key"
+      },
+      "delivery": "durable",
+      "effectRef": "operation:tasklinks.dispatch_outbox|emit-event|tasklinks.delivery_recorded|effect:tasklinks.dispatch_outbox|0",
+      "eventVersion": "0.2.16",
+      "ordering": "per_key",
+      "portability": "portable",
+      "schemaDigest": "sha256:dd11000000000000000000000000000000000000000000000000000000000000",
+      "sensitivity": "standard"
+    }
+  ],
+  "cacheContracts": [],
+  "publications": [],
+  "partialFailureCases": [
+    {
+      "capabilityRequirementRefs": [
+        "tasklinks.req/compensation"
+      ],
+      "caseId": "tasklinks.case/partial-delivery",
+      "expectedOutcomes": [
+        {
+          "contractRef": "tasklinks.call/provider-write",
+          "outcome": "recovery_required"
+        },
+        {
+          "contractRef": "tasklinks.event/delivery-recorded",
+          "outcome": "success"
+        }
+      ],
+      "scenarioRef": {
+        "irDigest": "sha256:dd22000000000000000000000000000000000000000000000000000000000000",
+        "scenarioId": "tasklinks.scenario.partial_delivery",
+        "scenarioVersion": "0.2.16"
+      },
+      "schedule": [
+        {
+          "joins": [
+            "n_event"
+          ],
+          "kind": "invoke",
+          "nodeId": "n_call",
+          "stepId": "s_call"
+        },
+        {
+          "joins": [
+            "n_call",
+            "n_event"
+          ],
+          "kind": "barrier",
+          "nodeId": "n_eval"
+        },
+        {
+          "joins": [],
+          "kind": "invoke",
+          "nodeId": "n_event",
+          "stepId": "s_event"
+        }
+      ],
+      "steps": [
+        {
+          "contractRef": "tasklinks.call/provider-write",
+          "fault": "infrastructure",
+          "stepId": "s_call"
+        },
+        {
+          "contractRef": "tasklinks.event/delivery-recorded",
+          "fault": "none",
+          "stepId": "s_event"
+        }
+      ]
+    }
+  ]
+}

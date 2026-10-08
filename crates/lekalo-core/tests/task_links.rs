@@ -1537,3 +1537,87 @@ fn scenario_stale_resolution_refuses_and_fresh_resolution_audits() {
     );
     assert_eq!(audit_log.len(), 1, "the audit log never duplicates");
 }
+
+/// The external write, the outbox worker job, the durable delivery
+/// receipt event, and the two-recipient partial-failure case are
+/// declared in the extended-effects family and validated against the
+/// SAME compilation: the attachment semantic-self-checks, binds the
+/// live effect-graph digest, and anchors every effect on the
+/// dispatch_outbox operation. The declared provider write carries the
+/// reconciliation compensation and the idempotent retry; the declared
+/// failure case is keyed to the real partial-delivery scenario.
+#[test]
+fn extended_effects_declare_the_external_write_and_partial_failure() {
+    use lekalo_core::effects::{build, EffectGraph};
+    use lekalo_core::extended_effects::ExtendedEffectsAttachment;
+    use lekalo_core::ir::compile;
+    use lekalo_core::loader::{normalize_model, LoadSelection};
+    use std::path::Path;
+    use std::sync::Mutex;
+
+    static CWD_LOCK: Mutex<()> = Mutex::new(());
+    const FIXTURE: &str = "tests/fixtures/task-external-links/project";
+    const ATTACHMENT: &str = "tests/fixtures/task-external-links/contracts/extended-effects.json";
+
+    let _guard = CWD_LOCK.lock().expect("cwd lock");
+    let original = std::env::current_dir().expect("current dir");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("workspace root")
+        .to_path_buf();
+    std::env::set_current_dir(&root).expect("enter workspace root");
+    let result = (|| -> Result<(), String> {
+        let model = normalize_model(&LoadSelection {
+            project: Some(FIXTURE.to_owned()),
+        })
+        .map_err(|e| format!("load: {e:?}"))?;
+        let compilation = compile(&model).map_err(|e| format!("compile: {e:?}"))?;
+        let graph: EffectGraph =
+            build(&compilation.project).map_err(|e| format!("graph: {e:?}"))?;
+        let bytes = std::fs::read(ATTACHMENT).map_err(|e| format!("read: {e}"))?;
+        let mut wire: serde_json::Value =
+            serde_json::from_slice(&bytes).map_err(|e| format!("json: {e}"))?;
+        // Bind the live graph digest: the declaration joins THIS
+        // compilation, never a stale one.
+        wire["effectGraphRef"]["digest"] = serde_json::Value::String(graph.ir_digest().to_owned());
+        wire["irRef"]["digest"] = serde_json::Value::String(format!(
+            "sha256:{}",
+            lekalo_core::digest::sha256_hex(compilation.project.to_canonical_json().as_bytes())
+        ));
+        let attachment = ExtendedEffectsAttachment::from_value(&wire).map_err(|e| {
+            format!(
+                "extended-effects admission: {:?}",
+                serde_json::to_string(&e).unwrap_or_default()
+            )
+        })?;
+        assert_eq!(
+            attachment.calls().len(),
+            1,
+            "the provider write is declared"
+        );
+        assert_eq!(attachment.jobs().len(), 1, "the outbox worker is declared");
+        assert_eq!(
+            attachment.events().len(),
+            1,
+            "the durable delivery receipt is declared"
+        );
+        assert_eq!(
+            attachment.cases().len(),
+            1,
+            "the partial-failure case is declared"
+        );
+        attachment
+            .validate_against_graph(&graph)
+            .map_err(|e| format!("graph join: {:?}", e.reason_ids()))?;
+        // The declared failure case is keyed to the real scenario.
+        let case = &attachment.cases()[0];
+        assert!(
+            format!("{case:?}").contains("tasklinks.scenario.partial_delivery"),
+            "the case is keyed to the partial-delivery scenario"
+        );
+        Ok(())
+    })();
+    std::env::set_current_dir(original).expect("restore cwd");
+    result.expect("extended-effects declaration validates against the compilation");
+}
