@@ -9,7 +9,7 @@
   "recipeRef": {
     "id": "dev.lekalo.portability-recipe",
     "version": "0.8.0",
-    "digest": "sha256:16f195b6aa1c068fc932a1a7047334855292bfdf0eba5ef65339b379ca30a0bb"
+    "digest": "sha256:16cad8eb327daa241290f8b82adc9eb78e9b5fd71785c2d651025f23b0b81de0"
   },
   "recordedContext": {
     "state": "recorded",
@@ -143,13 +143,15 @@
       "scenario": "planner.focus_flow",
       "targetId": "php-laravel",
       "state": "recorded-pass",
-      "receiptRef": null
+      "receiptRef": "reports/receipts/focus-flow.json",
+      "receiptDigest": "sha256:f59cb90df2b962ce41d8def1929eb699d74cba042b7c9053c656f873ae12f37a"
     },
     {
       "scenario": "planner.schedule_flow",
       "targetId": "php-laravel",
       "state": "untested",
-      "receiptRef": null
+      "receiptRef": null,
+      "receiptDigest": null
     }
   ],
   "gates": [

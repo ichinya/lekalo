@@ -281,19 +281,19 @@
   ],
   "requiredImplementations": [
     {
-      "id": "plan.implement-hook.goservice.behavioral.command.planner.schedule_calculate",
+      "id": "plan.implement-hook.go-service.behavioral.command.planner.schedule_calculate",
       "subject": "command:planner.schedule_calculate",
       "destination": "go-service"
     },
     {
-      "id": "plan.implement-hook.goservice.behavioral.effect.planner.schedule_write",
+      "id": "plan.implement-hook.go-service.behavioral.effect.planner.schedule_write",
       "subject": "effect:planner.schedule_write",
       "destination": "go-service"
     }
   ],
   "storageReviews": [
     {
-      "id": "plan.review-storage-policy.phplaravel.storage.scalar.planner.weight",
+      "id": "plan.review-storage-policy.php-laravel.storage.scalar.planner.weight.storage.decimal-policy",
       "subject": "scalar:planner.weight",
       "destination": "php-laravel",
       "required": {
@@ -306,12 +306,12 @@
   ],
   "verificationTasks": [
     {
-      "id": "plan.verify-scenario.goservice.behavioral.query.planner.count_focused",
+      "id": "plan.verify-scenario.go-service.behavioral.query.planner.count_focused.map.reading-go",
       "subject": "query:planner.count_focused",
       "destination": "go-service"
     },
     {
-      "id": "plan.verify-scenario.phplaravel.behavioral.effect.planner.create_task",
+      "id": "plan.verify-scenario.php-laravel.behavioral.effect.planner.create_task",
       "subject": "effect:planner.create_task",
       "destination": "php-laravel"
     }

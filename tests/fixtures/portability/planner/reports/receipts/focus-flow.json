@@ -1,0 +1,6 @@
+{
+  "scenario": "planner.focus_flow",
+  "targetId": "php-laravel",
+  "state": "pass",
+  "recordedContext": "synthetic authored receipt; no native runtime executed"
+}

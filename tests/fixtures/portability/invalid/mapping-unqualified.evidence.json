@@ -1,0 +1,174 @@
+{
+  "schemaVersion": "lekalo/portability-evidence/v0.8.0",
+  "identity": "dev.lekalo.portability-evidence@0.8.0",
+  "projectRef": {
+    "projectId": "planner",
+    "modelVersion": "0.2.16",
+    "irDigest": "sha256:f9a4b5d6649787482014dffcdac03de55e231950af28cd853e6deaa6f1a29578"
+  },
+  "recipeRef": {
+    "id": "dev.lekalo.portability-recipe",
+    "version": "0.8.0",
+    "digest": "sha256:16cad8eb327daa241290f8b82adc9eb78e9b5fd71785c2d651025f23b0b81de0"
+  },
+  "recordedContext": {
+    "state": "recorded",
+    "revision": null,
+    "note": "synthetic authored receipts; no native runtime executed"
+  },
+  "families": [
+    {
+      "family": "implementation",
+      "complete": true,
+      "artifactRef": "reports/implementation.json",
+      "digest": "sha256:3f45d6aabe5337f9a5abfee292c6a885d41a5e7625575221c8f3b500ba06b69a"
+    },
+    {
+      "family": "storage",
+      "complete": false,
+      "artifactRef": null,
+      "digest": null
+    },
+    {
+      "family": "scenario",
+      "complete": false,
+      "artifactRef": null,
+      "digest": null
+    }
+  ],
+  "adapters": [
+    {
+      "targetId": "node-typescript",
+      "state": "absent",
+      "identity": null,
+      "version": null,
+      "protocol": null,
+      "capabilityDigest": null
+    },
+    {
+      "targetId": "php-laravel",
+      "state": "absent",
+      "identity": null,
+      "version": null,
+      "protocol": null,
+      "capabilityDigest": null
+    },
+    {
+      "targetId": "go-service",
+      "state": "absent",
+      "identity": null,
+      "version": null,
+      "protocol": null,
+      "capabilityDigest": null
+    }
+  ],
+  "mappings": [
+    {
+      "id": "map.schedule-php",
+      "requirement": "unrelated.requirement",
+      "capability": "analysis.lint",
+      "targetId": "php-laravel",
+      "subject": "planner.schedule_calculate",
+      "coverage": "full",
+      "conditions": [
+        "impossible-condition"
+      ],
+      "definitionPins": [
+        {
+          "id": "nonexistent.capability",
+          "version": "99.0.0"
+        }
+      ]
+    },
+    {
+      "id": "map.reading-go",
+      "requirement": "behavior.hook",
+      "capability": "storage.returning",
+      "targetId": "go-service",
+      "subject": "planner.count_focused",
+      "coverage": "full",
+      "conditions": [
+        "go-122"
+      ],
+      "definitionPins": [
+        {
+          "id": "storage.returning",
+          "version": "0.2.16"
+        }
+      ]
+    }
+  ],
+  "storageRequired": [
+    {
+      "subject": "scalar:planner.weight",
+      "policy": {
+        "kind": "decimal",
+        "value": "exact",
+        "precision": 18,
+        "scale": 6
+      }
+    },
+    {
+      "subject": "entity:planner.task",
+      "policy": {
+        "kind": "isolation",
+        "value": "repeatable-read"
+      }
+    }
+  ],
+  "storageOffered": [
+    {
+      "targetId": "php-laravel",
+      "policy": {
+        "kind": "decimal",
+        "value": "exact",
+        "precision": 10,
+        "scale": 2
+      }
+    },
+    {
+      "targetId": "go-service",
+      "policy": {
+        "kind": "decimal",
+        "value": "exact",
+        "precision": 18,
+        "scale": 6
+      }
+    }
+  ],
+  "operationalRequirements": [],
+  "scenarios": [
+    {
+      "scenario": "planner.focus_flow",
+      "targetId": "php-laravel",
+      "state": "recorded-pass",
+      "receiptRef": "reports/receipts/focus-flow.json",
+      "receiptDigest": "sha256:f59cb90df2b962ce41d8def1929eb699d74cba042b7c9053c656f873ae12f37a"
+    },
+    {
+      "scenario": "planner.schedule_flow",
+      "targetId": "php-laravel",
+      "state": "untested",
+      "receiptRef": null,
+      "receiptDigest": null
+    }
+  ],
+  "gates": [
+    {
+      "gate": "planner.native-scenario-gate",
+      "scenarios": [
+        "planner.focus_flow",
+        "planner.schedule_flow"
+      ],
+      "state": "declared"
+    }
+  ],
+  "hooks": [
+    {
+      "subject": "command:planner.focus_task",
+      "hook": "implicit-observer",
+      "state": "observed-unsupported",
+      "targetId": "go-service"
+    }
+  ]
+}

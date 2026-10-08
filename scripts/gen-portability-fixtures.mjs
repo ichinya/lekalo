@@ -98,7 +98,23 @@ const implementationDigest = `sha256:${sha256(
   read(`tests/fixtures/portability/planner/${implementationArtifact}`),
 )}`;
 
+// The recorded scenario receipt: a claimed result carries digest-bound
+// receipt custody, never an authored enum alone.
+const focusReceiptArtifact = "reports/receipts/focus-flow.json";
+const focusReceiptDigest = `sha256:${sha256(
+  read(`tests/fixtures/portability/planner/${focusReceiptArtifact}`),
+)}`;
+
 const recipeDigest = `sha256:${sha256(read("contracts/portability-recipe.v0.8.0.json"))}`;
+
+// The receipt artifact body: it names exactly the scenario and target
+// it qualifies; the manifest pins its bytes with the computed digest.
+const focusReceipt = {
+  scenario: "planner.focus_flow",
+  targetId: "php-laravel",
+  state: "pass",
+  recordedContext: "synthetic authored receipt; no native runtime executed",
+};
 
 // The Model/IR pins require the production compiler; they are template
 // constants re-derived live by the contract gate.
@@ -189,13 +205,15 @@ const evidence = {
       scenario: "planner.focus_flow",
       targetId: "php-laravel",
       state: "recorded-pass",
-      receiptRef: null,
+      receiptRef: focusReceiptArtifact,
+      receiptDigest: focusReceiptDigest,
     },
     {
       scenario: "planner.schedule_flow",
       targetId: "php-laravel",
       state: "untested",
       receiptRef: null,
+      receiptDigest: null,
     },
   ],
   gates: [
@@ -224,6 +242,10 @@ const documents = new Map([
     "planner/reports/portability-evidence.json",
     `${JSON.stringify(evidence, null, 2)}\n`,
   ],
+  [
+    "planner/reports/receipts/focus-flow.json",
+    `${JSON.stringify(focusReceipt, null, 2)}\n`,
+  ],
 ]);
 
 // The invalid controls: authored refusals with their expected reason.
@@ -240,6 +262,17 @@ const invalidControls = [
   ["invalid/stale-profile-pin.targets.json", "profile-pin"],
   ["invalid/unknown-member.evidence.json", "closed-shape"],
   ["invalid/cross-target-mapping.evidence.json", "cross-target-mapping"],
+  ["invalid/mapping-unqualified.evidence.json", "mapping-unqualified"],
+  ["invalid/mapping-conflict.evidence.json", "mapping-conflict"],
+  ["invalid/forged-storage.evidence.json", "forged-storage"],
+  ["invalid/bad-family-digest.evidence.json", "family-digest"],
+  ["invalid/forged-receipt.evidence.json", "receipt-unqualified"],
+  ["invalid/receipt-conflict.evidence.json", "duplicate-receipt"],
+  ["invalid/adapter-missing-version.evidence.json", "adapter-snapshot"],
+  ["invalid/omitted-nullable.evidence.json", "closed-shape"],
+  ["invalid/path-traversal.evidence.json", "artifact-ref"],
+  ["invalid/duplicate-defaults.targets.json", "default-destination"],
+  ["invalid/empty-targets.targets.json", "target-binding"],
 ];
 
 // ---------------------------------------------------------------------------
