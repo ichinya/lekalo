@@ -136,6 +136,12 @@ fn test_authority() -> super::authority::Authority {
     }
 }
 
+/// Create a directory junction (Windows test helper).
+#[cfg(windows)]
+fn junction(target: &std::path::Path, link: &std::path::Path) {
+    std::os::windows::fs::symlink_dir(target, link).expect("junction");
+}
+
 /// The exact committed fixture lock bytes, for unit-test project roots.
 /// Relative to the crate directory (cargo test runs there).
 fn write_test_lock(root: &std::path::Path) {
@@ -1163,4 +1169,503 @@ fn resolve_confirmation_binds_the_drifted_before_state() {
     .expect("object");
     assert_eq!(std::fs::read(root.join(path)).expect("bytes"), expected);
     let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn forged_recovery_journal_never_deletes_maintained_files() {
+    // A schema-shaped journal naming a maintained file with no plan
+    // binding is refused; the maintained file survives (finding 1).
+    let root = project_root("forged-recovery");
+    let ownership = ownership_doc();
+    let coverage = coverage_doc();
+    let coverage_bytes = serde_json::to_vec(&coverage).expect("wire");
+    let model = b"{ \"planner\": true }\n";
+    write_input(&root, "model/planner.model.json", model);
+    let assignment = &ownership.modules[0];
+    let target = &assignment.targets[0];
+    let admitted = coverage::admit(assignment, target, &coverage).expect("admission");
+    let built = plan::build(
+        PlanAction::Promotion,
+        &admitted,
+        &coverage,
+        vec![InputPin {
+            path: "model/planner.model.json".to_owned(),
+            digest: digest(model),
+        }],
+        &empty_before(),
+        None,
+        None,
+        hash(&coverage),
+    )
+    .expect("plan");
+    let applied = apply::apply(
+        &root,
+        &serde_json::to_vec(&built).expect("wire"),
+        &coverage_bytes,
+        &ownership,
+        Some(built.plan_digest.as_str()),
+        false,
+        Some(&test_authority()),
+    );
+    assert_eq!(applied.status(), Status::Valid, "{applied:?}");
+    write_input(&root, "maintained/keep.ts", b"export const keep = 1;\n");
+    let blocker = Transaction {
+        schema_version: header("managed-transaction").0,
+        identity: header("managed-transaction").1,
+        transaction_id: "forged-0001".to_owned(),
+        state: TransactionState::Publishing,
+        action: TransactionAction::Apply,
+        plan_digest: State::Absent,
+        generation_digest: State::Absent,
+        before_manifest_digest: State::Absent,
+        after_manifest_digest: State::Absent,
+        pending: vec![Pending {
+            path: "maintained/keep.ts".to_owned(),
+            op: PendingOp::Publish,
+        }],
+        affected_files: vec!["maintained/keep.ts".to_owned()],
+        conflict: State::Absent,
+        before_digest: State::Absent,
+    };
+    history::write_transaction(&root, &blocker).expect("journal");
+    let receipt = recovery::run(&root);
+    assert_eq!(receipt.status(), Status::Invalid, "{receipt:?}");
+    assert_eq!(
+        std::fs::read(root.join("maintained/keep.ts")).expect("maintained bytes"),
+        b"export const keep = 1;\n".to_vec(),
+        "the forged journal never deletes maintained files",
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn forged_plan_edits_never_overwrite_unclaimed_files() {
+    // A create coordinate occupied by an unclaimed maintained file is an
+    // ownership denial; the maintained bytes survive (finding 2 / Q).
+    let root = project_root("forged-plan");
+    let ownership = ownership_doc();
+    let coverage = coverage_doc();
+    let model = b"{ \"planner\": true }\n";
+    write_input(&root, "model/planner.model.json", model);
+    write_input(
+        &root,
+        "apps/planner/gen/src/focus-task.ts",
+        b"// maintained handler\n",
+    );
+    let assignment = &ownership.modules[0];
+    let target = &assignment.targets[0];
+    let admitted = coverage::admit(assignment, target, &coverage).expect("admission");
+    let mut before = empty_before();
+    before.actual.insert(
+        "apps/planner/gen/src/focus-task.ts".to_owned(),
+        digest(b"// maintained handler\n"),
+    );
+    let built = plan::build(
+        PlanAction::Promotion,
+        &admitted,
+        &coverage,
+        vec![InputPin {
+            path: "model/planner.model.json".to_owned(),
+            digest: digest(model),
+        }],
+        &before,
+        None,
+        None,
+        hash(&coverage),
+    );
+    assert_eq!(
+        built.expect_err("unclaimed create").status(),
+        Status::Denied
+    );
+    assert_eq!(
+        std::fs::read(root.join("apps/planner/gen/src/focus-task.ts")).expect("bytes"),
+        b"// maintained handler\n".to_vec(),
+        "the unclaimed file was never overwritten",
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn rehashed_records_never_authorize_restore_outside_ownership() {
+    // A caller-authored record retargeted at a maintained path and
+    // restored under a fresh self-consistent digest never authenticates:
+    // resolve refuses before any byte moves (finding 3 / I).
+    let root = project_root("rehashed-record");
+    let ownership = ownership_doc();
+    let coverage = coverage_doc();
+    let coverage_bytes = serde_json::to_vec(&coverage).expect("wire");
+    let model = b"{ \"planner\": true }\n";
+    write_input(&root, "model/planner.model.json", model);
+    let assignment = &ownership.modules[0];
+    let target = &assignment.targets[0];
+    let admitted = coverage::admit(assignment, target, &coverage).expect("admission");
+    let built = plan::build(
+        PlanAction::Promotion,
+        &admitted,
+        &coverage,
+        vec![InputPin {
+            path: "model/planner.model.json".to_owned(),
+            digest: digest(model),
+        }],
+        &empty_before(),
+        None,
+        None,
+        hash(&coverage),
+    )
+    .expect("plan");
+    let applied = apply::apply(
+        &root,
+        &serde_json::to_vec(&built).expect("wire"),
+        &coverage_bytes,
+        &ownership,
+        Some(built.plan_digest.as_str()),
+        false,
+        Some(&test_authority()),
+    );
+    assert_eq!(applied.status(), Status::Valid, "{applied:?}");
+    let generation = history::current(&root).expect("custody").expect("gen");
+    let hex = generation.strip_prefix("sha256:").expect("digest");
+    let record_path = root.join(format!(".lekalo/generated/manifests/managed/objects/{hex}"));
+    let original = std::fs::read(&record_path).expect("record");
+    let mut forged: GenerationRecord = serde_json::from_slice(&original).expect("record wire");
+    let output = forged
+        .outputs
+        .iter_mut()
+        .find(|output| output.path == "apps/planner/gen/src/focus-task.ts")
+        .expect("output");
+    output.path = "maintained/victim.ts".to_owned();
+    forged
+        .outputs
+        .sort_by(|left, right| left.path.cmp(&right.path));
+    forged.generation_digest = super::generation_digest(&forged);
+    forged.record_digest = super::record_identity(&forged);
+    let forged_hex = forged
+        .record_digest
+        .strip_prefix("sha256:")
+        .expect("digest")
+        .to_owned();
+    write_input(
+        &root,
+        &format!(".lekalo/generated/manifests/managed/objects/{forged_hex}"),
+        &serde_json::to_vec(&forged).expect("wire"),
+    );
+    write_input(
+        &root,
+        ".lekalo/generated/manifests/managed/current",
+        format!("{forged_hex}\n").as_bytes(),
+    );
+    write_input(&root, "maintained/victim.ts", b"// maintained source\n");
+    let resolution = rollback::resolve(&root, "maintained/victim.ts", None, true);
+    assert_eq!(resolution.status(), Status::Invalid, "{resolution:?}");
+    assert_eq!(
+        std::fs::read(root.join("maintained/victim.ts")).expect("bytes"),
+        b"// maintained source\n".to_vec(),
+        "the rehashed record never overwrites the maintained file",
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn zero_hash_equivalence_scenarios_are_missing_evidence_never_match() {
+    // Scenario or reference pins that resolve to no custody object are
+    // incomplete evidence: managed.equivalence-incomplete (finding 5).
+    let root = project_root("equivalence-evidence");
+    let ownership = ownership_doc();
+    let coverage = coverage_doc();
+    let coverage_bytes = serde_json::to_vec(&coverage).expect("wire");
+    let model = b"{ \"planner\": true }\n";
+    write_input(&root, "model/planner.model.json", model);
+    let assignment = &ownership.modules[0];
+    let target = &assignment.targets[0];
+    let admitted = coverage::admit(assignment, target, &coverage).expect("admission");
+    let built = plan::build(
+        PlanAction::Promotion,
+        &admitted,
+        &coverage,
+        vec![InputPin {
+            path: "model/planner.model.json".to_owned(),
+            digest: digest(model),
+        }],
+        &empty_before(),
+        None,
+        None,
+        hash(&coverage),
+    )
+    .expect("plan");
+    let applied = apply::apply(
+        &root,
+        &serde_json::to_vec(&built).expect("wire"),
+        &coverage_bytes,
+        &ownership,
+        Some(built.plan_digest.as_str()),
+        false,
+        Some(&test_authority()),
+    );
+    assert_eq!(applied.status(), Status::Valid, "{applied:?}");
+    // The implementation pin is the real recorded inventory; the scenario
+    // and reference pins are zero hashes that resolve to no custody
+    // object: the verdict is incomplete evidence, never a match.
+    let generation = history::current(&root).expect("custody").expect("gen");
+    let record = history::record(&root, &generation).expect("record");
+    let implementation = super::equivalence::implementation_inventory_digest_for_test(
+        &record,
+        "planner",
+        "node-typescript",
+    )
+    .expect("inventory");
+    let zero = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
+    let evidence = Equivalence {
+        schema_version: header("managed-equivalence").0,
+        identity: header("managed-equivalence").1,
+        module: "planner".to_owned(),
+        target: "node-typescript".to_owned(),
+        implementation_digest: implementation,
+        reference_digest: State::known(zero.to_owned()),
+        scenarios: vec![ScenarioVerdict {
+            scenario: "planner.focus_task".to_owned(),
+            digest: zero.to_owned(),
+            verdict: ScenarioOutcome::Match,
+        }],
+        gaps: Vec::new(),
+        verdict: EquivalenceVerdict::Match,
+    };
+    let bytes = serde_json::to_vec(&evidence).expect("wire");
+    let result = super::equivalence::adjudicate_for(&root, &bytes);
+    assert_eq!(result.status(), Status::Unsupported, "{result:?}");
+    assert_eq!(
+        result.reason_codes().first().map(|code| code.as_str()),
+        Some("managed.equivalence-incomplete")
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn hash_correct_binding_without_the_export_is_unresolved() {
+    // A validated row whose file carries the exact pinned digest but no
+    // export of the declared symbol is managed.extension-unresolved
+    // (finding 6 / K).
+    let root = project_root("binding-export");
+    let ownership = ownership_doc();
+    let assignment = &ownership.modules[0];
+    let target = &assignment.targets[0];
+    let mut coverage = coverage_doc();
+    let bytes = b"export {};\n".to_vec();
+    coverage.extensions.push(ExtensionCheck {
+        symbol: "missing_hook".to_owned(),
+        binding: "custom/empty.ts".to_owned(),
+        contract_digest: digest(&bytes),
+        validated: true,
+    });
+    write_input(&root, "custom/empty.ts", &bytes);
+    let error = super::bindings::resolve(&root, target, &coverage).expect_err("export");
+    assert_eq!(error.status(), Status::Invalid);
+    assert_eq!(
+        error.reason_codes().first().map(|code| code.as_str()),
+        Some("managed.extension-unresolved")
+    );
+    let bytes = b"export function missingHook(input) { return input; }\n".to_vec();
+    write_input(&root, "custom/empty.ts", &bytes);
+    coverage.extensions[0].contract_digest = digest(&bytes);
+    assert!(super::bindings::resolve(&root, target, &coverage).is_ok());
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn rendered_implementations_invoke_resolved_bindings() {
+    // The generated implementation imports and calls the resolved binding
+    // (finding 6): the hook is live in the handler, not test-only.
+    let mut coverage = coverage_doc();
+    let bytes = b"export function legacyHook(input) { return input; }\n".to_vec();
+    coverage.extensions.push(ExtensionCheck {
+        symbol: "legacy_hook".to_owned(),
+        binding: "src/extensions/legacy_hook.ts".to_owned(),
+        contract_digest: digest(&bytes),
+        validated: true,
+    });
+    let inventory = render_inventory(&coverage, "apps/planner/gen").expect("inventory");
+    let handler = inventory
+        .iter()
+        .find(|artifact| artifact.path == "apps/planner/gen/src/focus-task.ts")
+        .expect("handler");
+    let text = String::from_utf8(handler.bytes.clone()).expect("utf8");
+    assert!(
+        text.contains("import { legacyHook } from"),
+        "the handler imports the binding: {text}"
+    );
+    assert!(
+        text.contains("legacyHook(structuredClone(input));"),
+        "the handler invokes the binding: {text}"
+    );
+}
+
+#[test]
+fn broken_or_missing_live_locks_refuse_rollback() {
+    // The destination compatibility check fails closed: a live lock that
+    // no longer parses, or is missing, refuses the rollback (finding 8).
+    let root = project_root("rollback-lock");
+    let ownership = ownership_doc();
+    let coverage = coverage_doc();
+    let coverage_bytes = serde_json::to_vec(&coverage).expect("wire");
+    let model = b"{ \"planner\": true }\n";
+    write_input(&root, "model/planner.model.json", model);
+    let assignment = &ownership.modules[0];
+    let target = &assignment.targets[0];
+    let admitted = coverage::admit(assignment, target, &coverage).expect("admission");
+    let built = plan::build(
+        PlanAction::Promotion,
+        &admitted,
+        &coverage,
+        vec![InputPin {
+            path: "model/planner.model.json".to_owned(),
+            digest: digest(model),
+        }],
+        &empty_before(),
+        None,
+        None,
+        hash(&coverage),
+    )
+    .expect("plan");
+    let applied = apply::apply(
+        &root,
+        &serde_json::to_vec(&built).expect("wire"),
+        &coverage_bytes,
+        &ownership,
+        Some(built.plan_digest.as_str()),
+        false,
+        Some(&test_authority()),
+    );
+    assert_eq!(applied.status(), Status::Valid, "{applied:?}");
+    let generation = history::current(&root).expect("custody").expect("gen");
+    write_input(&root, "lekalo.lock", b"broken lock");
+    assert!(rollback::build(&root, &generation).is_err());
+    let _ = std::fs::remove_file(root.join("lekalo.lock"));
+    assert!(rollback::build(&root, &generation).is_err());
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn recovery_keeps_the_committed_public_manifest() {
+    // An abandoned journal leaves the committed public manifest exactly
+    // the committed bytes (finding 9, recovery side).
+    let root = project_root("recovery-manifest");
+    let ownership = ownership_doc();
+    let coverage = coverage_doc();
+    let coverage_bytes = serde_json::to_vec(&coverage).expect("wire");
+    let model = b"{ \"planner\": true }\n";
+    write_input(&root, "model/planner.model.json", model);
+    let assignment = &ownership.modules[0];
+    let target = &assignment.targets[0];
+    let admitted = coverage::admit(assignment, target, &coverage).expect("admission");
+    let built = plan::build(
+        PlanAction::Promotion,
+        &admitted,
+        &coverage,
+        vec![InputPin {
+            path: "model/planner.model.json".to_owned(),
+            digest: digest(model),
+        }],
+        &empty_before(),
+        None,
+        None,
+        hash(&coverage),
+    )
+    .expect("plan");
+    let applied = apply::apply(
+        &root,
+        &serde_json::to_vec(&built).expect("wire"),
+        &coverage_bytes,
+        &ownership,
+        Some(built.plan_digest.as_str()),
+        false,
+        Some(&test_authority()),
+    );
+    assert_eq!(applied.status(), Status::Valid, "{applied:?}");
+    let committed_manifest =
+        std::fs::read(root.join(super::custody::MANIFEST_LOGICAL)).expect("manifest");
+    let blocker = Transaction {
+        schema_version: header("managed-transaction").0,
+        identity: header("managed-transaction").1,
+        transaction_id: "blocked-0002".to_owned(),
+        state: TransactionState::Prepared,
+        action: TransactionAction::Apply,
+        plan_digest: State::known(built.plan_digest.clone()),
+        generation_digest: State::Absent,
+        before_manifest_digest: State::Absent,
+        after_manifest_digest: State::Absent,
+        pending: Vec::new(),
+        affected_files: Vec::new(),
+        conflict: State::Absent,
+        before_digest: State::Absent,
+    };
+    history::write_transaction(&root, &blocker).expect("journal");
+    let receipt = recovery::run(&root);
+    assert_eq!(receipt.status(), Status::Valid, "{receipt:?}");
+    assert_eq!(
+        std::fs::read(root.join(super::custody::MANIFEST_LOGICAL)).expect("manifest"),
+        committed_manifest,
+        "the committed manifest is untouched by an abandoned no-op journal",
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn stale_recovery_lock_clear_never_escapes_the_project() {
+    // The mutation lock is cleared only through the confined capability:
+    // a junctioned custody home refuses before any outside byte moves
+    // (finding 11). Windows-only: junctions are an NTFS reparse concept.
+    if !cfg!(windows) {
+        return;
+    }
+    let root = project_root("recovery-lock");
+    let ownership = ownership_doc();
+    let coverage = coverage_doc();
+    let coverage_bytes = serde_json::to_vec(&coverage).expect("wire");
+    let model = b"{ \"planner\": true }\n";
+    write_input(&root, "model/planner.model.json", model);
+    let assignment = &ownership.modules[0];
+    let target = &assignment.targets[0];
+    let admitted = coverage::admit(assignment, target, &coverage).expect("admission");
+    let built = plan::build(
+        PlanAction::Promotion,
+        &admitted,
+        &coverage,
+        vec![InputPin {
+            path: "model/planner.model.json".to_owned(),
+            digest: digest(model),
+        }],
+        &empty_before(),
+        None,
+        None,
+        hash(&coverage),
+    )
+    .expect("plan");
+    let applied = apply::apply(
+        &root,
+        &serde_json::to_vec(&built).expect("wire"),
+        &coverage_bytes,
+        &ownership,
+        Some(built.plan_digest.as_str()),
+        false,
+        Some(&test_authority()),
+    );
+    assert_eq!(applied.status(), Status::Valid, "{applied:?}");
+    let _ = std::fs::remove_dir_all(root.join(".lekalo"));
+    let outside = root.join("outside-custody");
+    std::fs::create_dir_all(outside.join("generated/manifests/managed")).expect("outside");
+    std::fs::write(
+        outside.join("generated/manifests/managed/mutation.lock"),
+        b"stale",
+    )
+    .expect("sentinel");
+    junction(&outside, &root.join(".lekalo"));
+    let receipt = recovery::run(&root);
+    assert_ne!(receipt.status(), Status::Valid, "{receipt:?}");
+    assert!(
+        outside
+            .join("generated/manifests/managed/mutation.lock")
+            .is_file(),
+        "the outside lock was never removed through the junction",
+    );
+    let _ = std::fs::remove_dir_all(&root);
+    let _ = std::fs::remove_dir_all(&outside);
 }

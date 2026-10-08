@@ -34,6 +34,16 @@ fn invalid(reason: &str) -> DomainResult {
 /// The digest over one module's recorded implementation inventory: the
 /// ordered concatenation of every implementation/test output digest of
 /// the current generation for the evidence subject.
+/// Test-visible re-export of the inventory digest computation.
+#[cfg(test)]
+pub(crate) fn implementation_inventory_digest_for_test(
+    record: &super::wire::GenerationRecord,
+    module: &str,
+    target: &str,
+) -> Option<String> {
+    implementation_inventory_digest(record, module, target)
+}
+
 fn implementation_inventory_digest(
     record: &super::wire::GenerationRecord,
     module: &str,
