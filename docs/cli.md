@@ -1243,7 +1243,7 @@ Status: **Implemented** command handlers for product 0.8.0. Handler existence do
 | `lekalo openapi inspect` | `lekalo openapi inspect [OPTIONS] --endpoint <SYMBOL> <PATH>` | [reference](openapi.md) |
 | `lekalo openapi render` | `lekalo openapi render [OPTIONS] <PATH>` | [reference](openapi.md) |
 | `lekalo pilot` | `lekalo pilot [OPTIONS] <COMMAND>` | [reference](m8/issue-51-implementation.md) |
-| `lekalo pilot admit` | `lekalo pilot admit [OPTIONS] <PATH>` | [reference](m8/issue-51-implementation.md) |
+| `lekalo pilot admit` | `lekalo pilot admit [OPTIONS] <PATH> <COMPOSITION>` | [reference](m8/issue-51-implementation.md) |
 | `lekalo pilot validate` | `lekalo pilot validate [OPTIONS] <PATH>` | [reference](m8/issue-51-implementation.md) |
 | `lekalo privacy` | `lekalo privacy [OPTIONS] <COMMAND>` | [reference](privacy-runtime.md) |
 | `lekalo privacy evaluate` | `lekalo privacy evaluate [OPTIONS] --decision <FILE>` | [reference](privacy-runtime.md) |

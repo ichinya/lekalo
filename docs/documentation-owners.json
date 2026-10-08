@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "productVersion": "0.8.0",
-  "cliSourceDigest": "sha256:2e7a4c36823e61cecc1a4b2688b33f58c95d582615e9f122fcc027606ef7c00a",
+  "cliSourceDigest": "sha256:77af5cca3f27ccd8ee446c272ea9fffab9f0f04be08493f0a35e19b69b28b15e",
   "p0Pages": [
     {
       "page": "README.md",
@@ -1338,7 +1338,7 @@
       "kind": "command",
       "command": "pilot",
       "usage": "lekalo pilot [OPTIONS] <COMMAND>",
-      "helpDigest": "sha256:b3b285c32621b6159b99916ec0e80cab661d03a67f716d732bb5407c7e1173c1",
+      "helpDigest": "sha256:1a939abde287339d8416986c6abd5830b90e2bf6c232d713a44d1cf611661fbb",
       "summary": "Validate the issue #51 worklog-changelog pilot composition against its pinned project: the pure composition contract",
       "leaf": false,
       "owner": "docs/m8/issue-51-implementation.md",
@@ -1348,9 +1348,9 @@
       "id": "cli:pilot admit",
       "kind": "command",
       "command": "pilot admit",
-      "usage": "lekalo pilot admit [OPTIONS] <PATH>",
-      "helpDigest": "sha256:7e0f902215317037fb248e2550523db5d9c3bfe626a57e23d33b80b1b6972777",
-      "summary": "Admit one evidence report under the selected profile: strict refuses any required unsupported or unknown row (exit 4) while keeping the report; permissive emits the degraded verdict",
+      "usage": "lekalo pilot admit [OPTIONS] <PATH> <COMPOSITION>",
+      "helpDigest": "sha256:f00860fd1c7f30ba688fdcc1b9cc5a08fabaecc74dab194032e1ef946b1baa2f",
+      "summary": "Admit one evidence report under the selected profile, bound to the exact composition document it pins: strict refuses any required unsupported or unknown row (exit 4) while keeping the report; permissive emits the degraded verdict",
       "leaf": true,
       "owner": "docs/m8/issue-51-implementation.md",
       "status": "implemented"
