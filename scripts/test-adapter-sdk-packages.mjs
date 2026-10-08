@@ -59,8 +59,8 @@ const check = (condition, reason, detail) => {
   if (!condition) failures.push({ reason, detail });
 };
 
-const run = (program, args_, cwd) =>
-  spawnSync(program, args_, { cwd, encoding: "utf8", timeout: 600_000, shell: process.platform === "win32" && program !== process.execPath });
+const run = (program, args_, cwd, options) =>
+  spawnSync(program, args_, { cwd, encoding: "utf8", timeout: 600_000, shell: process.platform === "win32" && program !== process.execPath, ...options });
 
 const scratch = join(tmpdir(), `lekalo-adapter-sdk-packages-${process.pid}`);
 rmSync(scratch, { recursive: true, force: true });
@@ -267,6 +267,34 @@ try {
           check(lint.status === 0, "php-class-lint", `${file}: ${(lint.stderr ?? "").slice(-160)}`);
         }
       }
+      // The four EMITTED bundles are release artifacts too (issue #106
+      // review r2 #16): each must parse and one bounded describe exchange
+      // through the reference bundle must emit a valid ok response — a
+      // bundler regression otherwise ships silently.
+      for (const template of ["generate", "reference", "scan", "verify"]) {
+        const bundle = join(ROOT, "sdk/templates/php", template, "adapter.php");
+        check(existsSync(bundle), "php-bundle-present", template);
+        if (!existsSync(bundle)) continue;
+        const lint = run("php", ["-l", bundle], ROOT);
+        check(lint.status === 0, "php-bundle-lint", `${template}: ${(lint.stderr ?? "").slice(-160)}`);
+      }
+      const describe = run("php", [join(ROOT, "sdk/templates/php/reference/adapter.php")], ROOT, {
+        input: JSON.stringify({
+          operation: "describe",
+          project_root: ".",
+          protocol: "lekalo.target/v1",
+          protocol_version: "0.3.2",
+          request_id: `req-${"0".repeat(64)}`,
+        }),
+      });
+      let smokeOk = false;
+      try {
+        const response = JSON.parse(describe.stdout ?? "");
+        smokeOk = response.status === "ok" && response.operation === "describe" && response.request_id === `req-${"0".repeat(64)}`;
+      } catch {
+        smokeOk = false;
+      }
+      check(smokeOk, "php-bundle-smoke", `status=${describe.status}: ${(describe.stdout ?? "").slice(0, 80)} ${(describe.stderr ?? "").slice(-160)}`);
     }
   }
 
