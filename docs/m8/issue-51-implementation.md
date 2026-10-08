@@ -176,8 +176,8 @@ all pass unchanged.
 | Partial failures не откатывают successful local completion без declared transaction. | The transaction-concurrency attachment declares separate commit boundaries (completion, worklog, outbox, delivery, publication) and non-atomic external boundaries with `recovery_required`; the provider/publication/worklog partial-failure scenarios assert the committed completion intact; `declared_atomic_rollback` is the contrasting declared-group rollback vector, committed as a scenario document. |
 | Snapshot semantics переносимы между targets. | The snapshot declaration pins append-only revision/digest/schema-version fields of the declared entity; the `source_edit_after_publish` and `republish_revision` scenario documents; per-target capability rows keep revisioned-snapshot support visible per backend. |
 | Scenarios проверяют privacy/security/idempotency. | `public_projection` (allowlist-only DTO), `unsafe_content` (shared rendering/safe-URL policy), `repeated_correlation_key` (replay + payload-drift conflict), cross-tenant exclusion; the validator enforces the excluded-field closure over every private entity; replay scopes are payload-bound and collision-free (WC-005/WC-006). |
-| Impact показывает все consumers changelog schema. | `test-worklog-changelog-impact.mjs` proves the complete depth-256 reverse closure (5 graph consumers, 3 transitive impact subjects, `omitted: 0`) against the seven-witness oracle including the public schema and composition allowlist, compared as exact set equality both directions; unknown external consumers stay explicitly possible. |
-| PHP/Go portability report не скрывает unsupported publication semantics. | The evidence report carries php rows `unknown` (no runtime evidence) and go rows `unsupported` (backend absent), all `blocking: true`; strict admission refuses with the blocker list retained; the negative gate (`--expect-denied`) asserts the denial in CI. |
+| Impact показывает все consumers changelog schema. | `test-worklog-changelog-impact.mjs` validates every oracle witness family: the five graph consumers and three transitive subjects as exact set equality both directions, the public schema projected against the composition allowlist (both wire directions, required coverage, no unserved private field), and the composition through the production custody join; the additive and breaking mutation probes execute on isolated copies and must reproduce exactly the declared deltas; unknown external consumers stay explicitly possible. |
+| PHP/Go portability report не скрывает unsupported publication semantics. | The native PHP runtime lane (`php/run.php`) executes all seventeen scenario assertions in-process and the harness binds the live results before admission: php rows are `executed`/`supported` with the honest `call.idempotent_write` partial row, go rows stay `unsupported` (backend absent); strict admission re-derives every row from the composition and the compilation, so a report author cannot erase a guarantee, and the go strict `--expect-denied` leg certifies the aggregate refusal in CI. |
 | Public artifacts не раскрывают название consumer application. | `test-worklog-changelog-neutrality.mjs` scans the complete inventory for framework vocabulary, identity leakage (project-id closure, package identities, branded compounds), host paths, wall clocks, credentials, and non-synthetic URLs; any inventory file without a scannable text extension fails the gate (`unscannable-inventory`), so an opaque blob can never evade the scan; the fixtures use only the synthetic `taskhub`/`worklog`/`changelog` vocabulary. |
 
 ## Verification record
@@ -186,20 +186,46 @@ all pass unchanged.
 - `cargo clippy -p lekalo-core -p lekalo-cli -- -D warnings`
 - `cargo test --workspace --locked` (42 targets, 0 failures)
 - `NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-worklog-changelog-contracts.mjs`
-- `NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-worklog-changelog-pilot.mjs --target php --profile strict --case all --expect-denied`
+- `NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-worklog-changelog-pilot.mjs --target php --profile strict --case all` (the native PHP lane executes all seventeen scenario assertions; a missing interpreter or any failure fails the gate)
 - `NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-worklog-changelog-pilot.mjs --target go --profile strict --case all --expect-denied`
 - `NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-worklog-changelog-pilot.mjs --target go --profile permissive --case all`
 - `node scripts/test-worklog-changelog-impact.mjs`
 - `node scripts/test-worklog-changelog-neutrality.mjs`
 - `node scripts/check-contract-versions.mjs --base HEAD^`
 
+## Review round 2 resolutions
+
+The devin and codex round-2 reviews drove this follow-up work: the two
+embedded Model/IR pins that the r1 digest shift had gone stale carry the
+recomputed digests; the contracts gate gained the fixture-parity leg
+that runs the documented review commands against the committed fixture
+and fails closed on a present-but-broken CLI; evidence admission is a
+bound join (the report pins the exact composition bytes, and every
+required row, scenario, backend binding, blocking entry, closure claim,
+and verdict claim is re-derived from the composition and the pinned
+compilation) over a complete closed wire decode; `pilot validate`
+loads and hashes every consumed document and runs its production
+validator, refusing duplicate family pins; read-only eligibility is
+derived from the compiled operation and every claimed read resolves 1:1;
+replay and correlation keys resolve against operation inputs; the
+capability guarantees are bound to their exact operation scope and
+minimum; the impact gate validates every witness family and executes
+both mutation probes on isolated copies; and the native PHP runtime
+lane above supplies the required native acceptance. Latent fixture
+defects the new joins exposed (error-registry retry consistency and
+canonical order, extended-effects effect-ref shapes and case integrity,
+invariant-transition subject spaces and transition error outcomes,
+transaction capability coverage) were repaired through the sanctioned
+generators with every pin recomputed.
+
 ## Boundary
 
 Real provider integration, live publication, private requirement
-sources, and native PHP/Go runtime acceptance remain out of scope by
+sources, and native Go runtime acceptance remain out of scope by
 design; the reports keep those gaps visible instead of filling them.
-Native runtime legs run in separate toolchain-pinned jobs when a backend
-supplies bound evidence.
+The PHP lane runs in the pilot job on the pinned 8.3 interpreter; a
+real Go backend still supplies its bound evidence in a separate
+toolchain-pinned job.
 
 Deferred by review (recorded, not silently dropped): the seven
 `LEK-WC-001`–`LEK-WC-007` rules are not registered in the suite
