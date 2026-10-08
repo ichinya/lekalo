@@ -12,8 +12,18 @@ fn corpus_path() -> String {
             return path.to_owned();
         }
     }
+    // Forward slashes on every OS (issue #106 review r2 #15): the old
+    // default embedded literal `\` separators, which are filename
+    // characters on POSIX — the default corpus never resolved there and
+    // the runner reported total:0. Fail loudly when the directory is
+    // absent instead of reporting zero vectors.
     let manifest = env!("CARGO_MANIFEST_DIR");
-    format!("{manifest}\\..\\..\\tests\\fixtures\\adapter-sdk")
+    let corpus = format!("{manifest}/../../tests/fixtures/adapter-sdk");
+    if !std::path::Path::new(&corpus).is_dir() {
+        eprintln!("vectors: corpus directory not found: {corpus}");
+        std::process::exit(2);
+    }
+    corpus
 }
 
 struct Verdict {
