@@ -200,7 +200,7 @@ pub fn derive(selection: &LoadSelection, module: &str) -> Result<Authority, Doma
                     returns: query
                         .returns
                         .as_ref()
-                        .map(|returned| type_spelling(returned)),
+                        .map(|returned: &TypeRef| type_spelling(returned)),
                     return_fields: query
                         .returns
                         .as_ref()
@@ -422,7 +422,7 @@ pub fn semantics_match(
 ) -> Result<(), DomainResult> {
     for obligation in &authority.semantics {
         let Some(name) =
-            super::canonical::requirement_name(&authority_module(coverage), &obligation.id)
+            super::canonical::requirement_name(coverage.module.as_str(), obligation.id.as_str())
         else {
             continue;
         };
@@ -492,32 +492,25 @@ pub fn semantics_match(
                 }
             }
         }
-        // Query returns: the sample's output arity must match the
-        // declared return surface (the projected `to` names).
         // Query semantics (finding 4): the Model's `returns` type is the
         // authority for the generated output shape. A returned entity
         // binds the sample's output keys to its exact declared fields —
         // caller evidence cannot rename the output surface (the same
         // Model + lock always render the same names).
-        if obligation.kind == DefinitionKind::Query {
-            if let Some(returns) = &obligation.returns {
-                if !obligation.return_fields.is_empty() {
-                    let fields = obligation.return_fields.clone();
-                    if let Some(sample) = requirement.sample.value() {
-                        let mut declared = fields.clone();
-                        declared.sort();
-                        let mut witnessed: Vec<String> = sample.output.keys().cloned().collect();
-                        witnessed.sort();
-                        if declared != witnessed {
-                            return Err(super::diagnostic::failure(
-                                super::CAPABILITY_GAP,
-                                &[
-                                    ("requirement", obligation.id.as_str()),
-                                    ("reason", "returns-not-model"),
-                                ],
-                            ));
-                        }
-                    }
+        if obligation.kind == DefinitionKind::Query && !obligation.return_fields.is_empty() {
+            if let Some(sample) = requirement.sample.value() {
+                let mut declared = obligation.return_fields.clone();
+                declared.sort();
+                let mut witnessed: Vec<String> = sample.output.keys().cloned().collect();
+                witnessed.sort();
+                if declared != witnessed {
+                    return Err(super::diagnostic::failure(
+                        super::CAPABILITY_GAP,
+                        &[
+                            ("requirement", obligation.id.as_str()),
+                            ("reason", "returns-not-model"),
+                        ],
+                    ));
                 }
             }
         }
@@ -540,9 +533,4 @@ fn scalar_matches(value: &super::wire::Scalar, spelling: &str) -> bool {
         "boolean" => matches!(value, super::wire::Scalar::Flag(_)),
         _ => true,
     }
-}
-
-/// The coverage's own module (the subject the requirements belong to).
-fn authority_module(coverage: &super::wire::Coverage) -> &str {
-    &coverage.module
 }
