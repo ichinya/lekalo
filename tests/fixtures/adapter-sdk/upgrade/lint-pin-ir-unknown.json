@@ -1,10 +1,20 @@
 {
   "accept": false,
   "name": "lint-pin-ir-unknown",
+  "lintPins": {
+    "ir": {
+      "state": "unknown"
+    }
+  },
   "operation": "lint",
   "protocolVersion": "0.6.4",
   "reason": "lint-pin",
   "request": {
+    "operation": "lint",
+    "project_root": ".",
+    "protocol": "lekalo.target/v1",
+    "protocol_version": "0.6.4",
+    "request_id": "req-cb670f40651faec972c4ca26b29dd925c88c434309c7c0869d0635a50004baa7",
     "lint_request": {
       "bindings": [
         {
@@ -51,11 +61,6 @@
         "src"
       ]
     },
-    "operation": "lint",
-    "project_root": ".",
-    "protocol": "lekalo.target/v1",
-    "protocol_version": "0.6.4",
-    "request_id": "req-ad1e3e67e725760d78d3703fc07476f777266f64685375826edb80311429c3f3",
     "target": "sdk-reference"
   }
 }

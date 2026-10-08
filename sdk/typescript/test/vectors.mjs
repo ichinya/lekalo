@@ -209,7 +209,7 @@ const summary = {
   language: "typescript",
   total: results.length,
   failed: failed.length,
-  executedFamilies: ["canonical", "codec", "semantic", "upgrade"],
+  executedFamilies: ["canonical", "codec", "security", "semantic", "upgrade"],
   executedVectors,
   canonicalOutputs,
 };

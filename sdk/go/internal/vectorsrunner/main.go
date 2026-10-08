@@ -77,7 +77,7 @@ func main() {
 			corpus = strings.TrimPrefix(arg, "--corpus=")
 		}
 	}
-	state = verdict{Language: "go", ExecutedFamilies: []string{"canonical", "codec", "semantic", "upgrade"}, ExecutedVectors: map[string]int{}, CanonicalOutputs: map[string]string{}}
+	state = verdict{Language: "go", ExecutedFamilies: []string{"canonical", "codec", "security", "semantic", "upgrade"}, ExecutedVectors: map[string]int{}, CanonicalOutputs: map[string]string{}}
 
 	// valid/
 	for _, name := range listCorpus(corpus, "valid") {

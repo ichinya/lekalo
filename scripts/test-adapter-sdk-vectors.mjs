@@ -131,6 +131,7 @@ const corpusRoot = join(ROOT, "tests/fixtures/adapter-sdk");
 const FAMILY_DIRECTORIES = {
   canonical: ["canonical"],
   codec: ["valid", "invalid"],
+  security: ["security"],
   semantic: ["semantic"],
   upgrade: ["upgrade"],
 };

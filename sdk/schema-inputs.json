@@ -95,6 +95,7 @@
   "testVectorFamilies": [
     "canonical",
     "codec",
+    "security",
     "semantic",
     "upgrade"
   ],

@@ -503,7 +503,7 @@ fn main() {
     };
     let status = if failed.is_empty() { "true" } else { "false" };
     let mut out = format!(
-        "{{\"ok\":{status},\"language\":\"rust\",\"total\":{},\"failed\":{},\"executedFamilies\":[\"canonical\",\"codec\",\"semantic\",\"upgrade\"],\"executedVectors\":{{\"valid\":{},\"invalid\":{},\"semantic\":{},\"upgrade\":{},\"canonical\":{},\"security\":{}}},\"canonicalOutputs\":{{{}}}",
+        "{{\"ok\":{status},\"language\":\"rust\",\"total\":{},\"failed\":{},\"executedFamilies\":[\"canonical\",\"codec\",\"security\",\"semantic\",\"upgrade\"],\"executedVectors\":{{\"valid\":{},\"invalid\":{},\"semantic\":{},\"upgrade\":{},\"canonical\":{},\"security\":{}}},\"canonicalOutputs\":{{{}}}",
         verdict.results.len(),
         failed.len(),
         count_by_prefix("valid/"),

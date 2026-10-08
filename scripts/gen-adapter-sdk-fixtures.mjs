@@ -872,7 +872,31 @@ const upgradeRows = [
   { accept: false, name: "foreign-token", operation: "describe", protocolVersion: "0.6.4", reason: "token", token: "lekalo.target/v0" },
   { accept: false, name: "plan-native-requires-pairing", operation: "plan-native", protocolVersion: "0.3.2", reason: "native-request" },
   { accept: false, name: "unknown-operation", operation: "transpile", protocolVersion: "0.6.4", reason: "operation" },
+  // Near-neighbor pin mutations (issue #106 review r2 #2): the model/ir
+  // lint pins are REQUIRED known SHA-256 digests in production
+  // admission; unknown and malformed spellings refuse with lint-pin.
+  // These rows live only in the vectors gate (the generated
+  // compatibility matrix pins the closed version/operation surface, not
+  // the pin mutations), which keeps the matrix row count contract
+  // stable while the corpus binds SDK admission to production.
+  { accept: false, name: "lint-pin-model-unknown", lintPins: { model: { state: "unknown" } }, operation: "lint", protocolVersion: "0.6.4", reason: "lint-pin" },
+  { accept: false, name: "lint-pin-model-bad-digest", lintPins: { model: { state: "known", value: "not-a-digest" } }, operation: "lint", protocolVersion: "0.6.4", reason: "lint-pin" },
+  { accept: false, name: "lint-pin-ir-unknown", lintPins: { ir: { state: "unknown" } }, operation: "lint", protocolVersion: "0.6.4", reason: "lint-pin" },
+  { accept: false, name: "lint-pin-ir-bad-digest", lintPins: { ir: { state: "known", value: "sha256:zzz" } }, operation: "lint", protocolVersion: "0.6.4", reason: "lint-pin" },
+  { accept: false, name: "lint-pin-observed-bad-digest", lintPins: { observed: { state: "known", value: "not-a-digest" } }, operation: "lint", protocolVersion: "0.6.4", reason: "lint-pin" },
+  // Tighter output budgets (issue #106 review r2 #4/#5/#17): both the
+  // integer and integral-float spellings of limits.max_output_bytes are
+  // admitted requests; the emitted-envelope ceiling they declare is
+  // serve-loop behavior proven in the four-language serve lanes.
+  { accept: true, limits: { max_output_bytes: 1, timeout_ms: 600000 }, name: "output-budget-int-1", operation: "describe", protocolVersion: "0.3.2" },
+  { accept: true, limits: { max_output_bytes: 1.0, timeout_ms: 600000 }, name: "output-budget-float-1", operation: "describe", protocolVersion: "0.3.2" },
 ];
+/** Apply the row's pin mutations over the base lint request. */
+function applyLintPins(base, pins) {
+  const merged = JSON.parse(JSON.stringify(base));
+  merged.pins = { ...merged.pins, ...pins };
+  return merged;
+}
 for (const row of upgradeRows) {
   const envelope = {
     operation: row.operation,
@@ -880,9 +904,12 @@ for (const row of upgradeRows) {
     protocol: row.token ?? "lekalo.target/v1",
     protocol_version: row.protocolVersion,
     request_id: R(`upgrade-${row.name}`),
+    ...(row.limits ? { limits: row.limits } : {}),
   };
   if (row.operation === "lint") {
-    envelope.lint_request = lintRequest.lint_request;
+    envelope.lint_request = row.lintPins
+      ? applyLintPins(lintRequest.lint_request, row.lintPins)
+      : lintRequest.lint_request;
     envelope.target = "sdk-reference";
     // The row pins the exact version under test: the lint seam only
     // negotiates on 0.6.4, so a 0.3.2 lint row must keep its version.

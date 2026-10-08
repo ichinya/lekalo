@@ -247,10 +247,24 @@ if (duplicateKeys('{"a":{"b":1},"c":{"b":2}}').length !== 0) fail("duplicate-con
 // The TypeScript module embeds the canonical matrix JSON and is checked
 // row-by-row; the other languages' generated modules are checked by row
 // count and per-row token presence (their runtime accept/refuse behavior
-// is proven by the vectors gate's upgrade family).
+// is proven by the vectors gate's upgrade family). The pin-mutation and
+// output-budget rows bind the vectors gate's ADMISSION comparison (the
+// oracle + the four runners); the generated matrix pins the closed
+// version/operation surface, so those near-neighbor rows stay
+// vectors-gate-scoped and are excluded from this count contract.
+const MATRIX_SCOPED = new Set([
+  "lint-pin-model-unknown",
+  "lint-pin-model-bad-digest",
+  "lint-pin-ir-unknown",
+  "lint-pin-ir-bad-digest",
+  "lint-pin-observed-bad-digest",
+  "output-budget-int-1",
+  "output-budget-float-1",
+]);
 const corpusRows = [];
 for (const name of require_("node:fs").readdirSync(join(ROOT, "tests/fixtures/adapter-sdk/upgrade")).sort()) {
   if (!name.endsWith(".json")) continue;
+  if (MATRIX_SCOPED.has(name.replace(/\.json$/, ""))) continue;
   const row = JSON.parse(read(`tests/fixtures/adapter-sdk/upgrade/${name}`));
   corpusRows.push({
     accepted: row.accept === true,

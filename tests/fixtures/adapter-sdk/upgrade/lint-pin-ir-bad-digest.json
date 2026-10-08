@@ -1,10 +1,21 @@
 {
   "accept": false,
   "name": "lint-pin-ir-bad-digest",
+  "lintPins": {
+    "ir": {
+      "state": "known",
+      "value": "sha256:zzz"
+    }
+  },
   "operation": "lint",
   "protocolVersion": "0.6.4",
   "reason": "lint-pin",
   "request": {
+    "operation": "lint",
+    "project_root": ".",
+    "protocol": "lekalo.target/v1",
+    "protocol_version": "0.6.4",
+    "request_id": "req-ab32054d257043aef2795d90206a734bc7f3a594391f753c4589941b92db23f4",
     "lint_request": {
       "bindings": [
         {
@@ -52,11 +63,6 @@
         "src"
       ]
     },
-    "operation": "lint",
-    "project_root": ".",
-    "protocol": "lekalo.target/v1",
-    "protocol_version": "0.6.4",
-    "request_id": "req-ad1e3e67e725760d78d3703fc07476f777266f64685375826edb80311429c3f3",
     "target": "sdk-reference"
   }
 }
