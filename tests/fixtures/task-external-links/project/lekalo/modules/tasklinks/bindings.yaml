@@ -6,3 +6,9 @@ definitions:
     description: "Bind the tasklinks pilot to the node-typescript target for the portability comparison"
     portability: target-specific
     target: node-typescript
+  - id: tasklinks.binding_port
+    kind: target-binding
+    version: 1
+    description: "Bind the maintained Laravel port target for the portability comparison"
+    portability: target-specific
+    target: php-laravel-maintained

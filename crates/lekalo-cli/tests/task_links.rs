@@ -380,9 +380,28 @@ fn portability_separates_sections_and_strict_refuses_unknown_required() {
     assert_eq!(report["toProfile"]["profileId"], "node-typescript");
     let core = report["coreSemantics"].as_array().expect("core rows");
     assert_eq!(core.len(), 6);
-    assert!(core
-        .iter()
-        .all(|row| row["provided"] == "supported" && row["requirement"] == "required"));
+    // Evidence is bound to facts: the mock run witnessed the
+    // two_providers scenario (covering request_action), so exactly the
+    // policy and idempotent-intent facts are evidenced; the identity,
+    // detach, and conflict facts stay honestly unknown. No core row is
+    // constant and none claims more than its scenario witnessed.
+    let provided = |fact: &str| -> String {
+        core.iter()
+            .find(|row| row["fact"] == fact)
+            .map(|row| row["provided"].as_str().expect("provided").to_owned())
+            .expect("fact row")
+    };
+    for fact in ["actor-and-field-policy", "idempotent-intent"] {
+        assert_eq!(provided(fact), "supported", "{fact}");
+    }
+    for fact in [
+        "external-identity-exact-tuple",
+        "task-links-0-n",
+        "detach-preserves-history",
+        "version-conflict-detection",
+    ] {
+        assert_eq!(provided(fact), "unknown", "{fact}");
+    }
     let provider_rows = report["providerAdapters"]
         .as_array()
         .expect("provider rows");
@@ -392,7 +411,7 @@ fn portability_separates_sections_and_strict_refuses_unknown_required() {
         .expect("target rows")
         .iter()
         .any(|row| row["fact"] == "durable-outbox" && row["provided"] == "unknown"));
-    assert_eq!(report["evidenceCoverage"]["unknownRequired"], 3);
+    assert_eq!(report["evidenceCoverage"]["unknownRequired"], 8);
     // Permissive keeps the envelope valid while naming every gap.
     let gap_rules: Vec<&str> = document["reasonCodes"]
         .as_array()

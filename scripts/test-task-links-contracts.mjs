@@ -521,6 +521,49 @@ if (!schemaOnly) {
         }
       }
     }
+    // Contribution switches are consumed: a disabled inspect
+    // contribution refuses inspect; a disabled impact contribution
+    // refuses portability; both refusals carry the registered rule.
+    {
+      const inspectOff = runCli([
+        "--json",
+        "task-links",
+        "inspect",
+        "tasklinks.task_external_link",
+        "--project",
+        project,
+        "--attachment",
+        "tests/fixtures/task-external-links/invalid/contrib-inspect-off.json",
+      ]);
+      if (inspectOff.code !== 1) fail("contribution-inspect-exit", String(inspectOff.code));
+      else {
+        const envelope = JSON.parse(inspectOff.stderr);
+        if (envelope.diagnostics[0].data.detail !== "contribution-disabled") {
+          fail("contribution-inspect-detail", JSON.stringify(envelope.diagnostics[0].data));
+        }
+      }
+      const impactOff = runCli([
+        "--json",
+        "task-links",
+        "portability",
+        "tests/fixtures/task-external-links/invalid/contrib-impact-off.json",
+        "--project",
+        project,
+        "--from-profile",
+        profileLaravel,
+        "--to-profile",
+        profileNode,
+        "--profile",
+        "permissive",
+      ]);
+      if (impactOff.code !== 1) fail("contribution-impact-exit", String(impactOff.code));
+      else {
+        const envelope = JSON.parse(impactOff.stderr);
+        if (envelope.diagnostics[0].data.detail !== "contribution-disabled") {
+          fail("contribution-impact-detail", JSON.stringify(envelope.diagnostics[0].data));
+        }
+      }
+    }
     // Portability output satisfies its schema end to end.
     {
       const run = runCli([

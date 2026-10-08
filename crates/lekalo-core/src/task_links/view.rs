@@ -35,8 +35,27 @@ pub struct View {
     pub entities: Vec<EntityRow>,
     /// The delivery-rule summary.
     pub delivery: DeliveryRow,
+    /// The declared contribution switches: the surfaces this
+    /// integration feeds downstream, rendered so a disabled surface is
+    /// visible and the CLI's own contribution gates stay auditable.
+    pub contributions: ContributionsRow,
     /// The admitted evidence, when joined.
     pub evidence: Option<EvidenceSummary>,
+}
+
+/// One rendered contribution-switch row.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ContributionsRow {
+    /// Graph export contribution.
+    pub graph: bool,
+    /// Reverse-impact contribution.
+    pub impact: bool,
+    /// Inspect-surface contribution.
+    pub inspect: bool,
+    /// Scenario-evidence contribution.
+    pub scenarios: bool,
+    /// Effect-trace contribution.
+    pub effect_trace: bool,
 }
 
 /// One relation row.
@@ -303,6 +322,14 @@ pub fn view(attachment: &Attachment, evidence: Option<EvidenceSummary>) -> View 
         external_delete_implicit: rules.external_delete_implicit,
         uncertainty_policy: rules.uncertainty_policy.clone(),
     };
+    let contributions = attachment.contributions();
+    let contributions = ContributionsRow {
+        graph: contributions.graph,
+        impact: contributions.impact,
+        inspect: contributions.inspect,
+        scenarios: contributions.scenarios,
+        effect_trace: contributions.effect_trace,
+    };
     View {
         identity: super::version::IDENTITY,
         attachment_revision: attachment.attachment_revision().as_str().to_owned(),
@@ -315,6 +342,7 @@ pub fn view(attachment: &Attachment, evidence: Option<EvidenceSummary>) -> View 
         bindings,
         entities,
         delivery,
+        contributions,
         evidence,
     }
 }

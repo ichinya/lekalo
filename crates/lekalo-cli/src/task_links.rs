@@ -67,6 +67,21 @@ pub enum Command {
         #[arg(long, value_name = "PATH")]
         evidence: Vec<String>,
     },
+    /// Derive the reverse impact of one provider contract: every
+    /// capability, binding, policy, command, effect, and verification
+    /// scenario that consumes it, derived from the attachment and the
+    /// live compilation — never a prewritten list.
+    Impact {
+        /// The provider contract id.
+        #[arg(value_name = "CONTRACT")]
+        contract: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+        /// The closed integration attachment path.
+        #[arg(long, value_name = "PATH")]
+        attachment: String,
+    },
 }
 
 fn invalid(detail: &'static str) -> DomainResult {
@@ -171,7 +186,47 @@ fn check_profile(profile: &str) -> Result<(), DomainResult> {
     Ok(())
 }
 
-fn profile_ref(path: &str) -> Result<tl::portability::ProfileRef, DomainResult> {
+/// The declared target names of the compilation: the profile ids a
+/// portability run may resolve at all.
+fn declared_targets(compilation: &lekalo_core::ir::Compilation) -> Vec<String> {
+    compilation
+        .project
+        .definitions
+        .iter()
+        .filter_map(|definition| match definition {
+            lekalo_core::ir::Definition::TargetBinding(binding) => {
+                Some(binding.target.as_str().to_owned())
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// The scenario coverage table of the compilation: scenario id -> the
+/// symbols it covers. Evidence binds to facts through this table.
+fn scenario_covers(
+    compilation: &lekalo_core::ir::Compilation,
+) -> std::collections::BTreeMap<String, std::collections::BTreeSet<String>> {
+    let mut covers = std::collections::BTreeMap::new();
+    for definition in &compilation.project.definitions {
+        if let lekalo_core::ir::Definition::Scenario(scenario) = definition {
+            covers.insert(
+                scenario.id.as_str().to_owned(),
+                scenario
+                    .covers
+                    .iter()
+                    .map(|symbol| symbol.as_str().to_owned())
+                    .collect(),
+            );
+        }
+    }
+    covers
+}
+
+fn profile_ref(
+    path: &str,
+    compilation: &lekalo_core::ir::Compilation,
+) -> Result<tl::portability::ProfileRef, DomainResult> {
     let bytes = read_bounded(path)?;
     let digest = format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes));
     // The profile document is a closed single-member object: unknown
@@ -188,6 +243,12 @@ fn profile_ref(path: &str) -> Result<tl::portability::ProfileRef, DomainResult> 
         .ok_or_else(|| invalid("profile-shape"))?;
     if profile_id.is_empty() || profile_id.len() > 256 {
         return Err(invalid("profile-shape"));
+    }
+    // A profile is only resolved when the compilation actually binds
+    // the named target: an imaginary target can never carry guarantee
+    // rows.
+    if !declared_targets(compilation).contains(&profile_id.to_owned()) {
+        return Err(invalid("profile-unresolved"));
     }
     Ok(tl::portability::ProfileRef {
         profile_id: profile_id.to_owned(),
@@ -245,6 +306,12 @@ fn execute(command: Command) -> Result<DomainResult, DomainResult> {
             if attachment.project_id() != project_id {
                 return Err(invalid("project-mismatch"));
             }
+            // The contribution switches are read, not decorative: with
+            // the inspect contribution disabled, the attachment
+            // declares no inspect surface and the command refuses.
+            if !attachment.contributions().inspect {
+                return Err(invalid("contribution-disabled"));
+            }
             // Inspect joins the semantic validation: a malformed
             // attachment never renders as an authoritative view.
             let validation = tl::validate(&attachment, &compilation, "strict")
@@ -287,8 +354,14 @@ fn execute(command: Command) -> Result<DomainResult, DomainResult> {
             if attachment.project_id() != project_id {
                 return Err(invalid("project-mismatch"));
             }
-            let from = profile_ref(&from_profile)?;
-            let to = profile_ref(&to_profile)?;
+            // The impact contribution feeds the portability/impact
+            // surface: with it disabled, the attachment declares no
+            // projection and the command refuses.
+            if !attachment.contributions().impact {
+                return Err(invalid("contribution-disabled"));
+            }
+            let from = profile_ref(&from_profile, &compilation)?;
+            let to = profile_ref(&to_profile, &compilation)?;
             // Portability never bypasses semantic validation: the shared
             // admission runs first and an invalid attachment is a
             // refusal, not a report with gaps.
@@ -297,10 +370,10 @@ fn execute(command: Command) -> Result<DomainResult, DomainResult> {
             if tl::invalidates(&validation) {
                 return Ok(tl::render_invalid(&validation, &validation.findings));
             }
-            // Admitted evidence joins the report; every --evidence path
-            // goes through the same admission as inspect.
-            let mut mock_evidence = Vec::new();
-            let mut native_evidence = Vec::new();
+            // Admitted evidence joins the report bound to the facts it
+            // witnessed; every --evidence path goes through the same
+            // admission as inspect.
+            let mut admitted = Vec::new();
             for evidence_path in &evidence {
                 let summary = tl::admit_evidence(
                     &read_bounded(evidence_path)?,
@@ -309,19 +382,19 @@ fn execute(command: Command) -> Result<DomainResult, DomainResult> {
                     native_qualified(),
                 )
                 .map_err(|f| tl::into_result(&f))?;
-                if summary.origin == "native" {
-                    native_evidence.push(summary.evidence_id);
-                } else {
-                    mock_evidence.push(summary.evidence_id);
-                }
+                admitted.push(tl::portability::AdmittedEvidence {
+                    evidence_id: summary.evidence_id,
+                    origin: summary.origin,
+                    scenario_id: summary.scenario_id,
+                });
             }
             let report = tl::portability::report(
                 &attachment,
                 from,
                 to,
                 &profile,
-                mock_evidence,
-                native_evidence,
+                &admitted,
+                &scenario_covers(&compilation),
             );
             let gaps = tl::portability::findings(&report);
             if profile == "strict" && !gaps.is_empty() {
@@ -331,6 +404,87 @@ fn execute(command: Command) -> Result<DomainResult, DomainResult> {
             } else {
                 Ok(tl::render(&report))
             }
+        }
+        Command::Impact {
+            contract,
+            project,
+            attachment: attachment_path,
+        } => {
+            let (compilation, project_id) = compilation(&project)?;
+            let attachment = verified_attachment(&attachment_path, &compilation)?;
+            if attachment.project_id() != project_id {
+                return Err(invalid("project-mismatch"));
+            }
+            let Some(provider_contract) = attachment.provider_contract(&contract) else {
+                return Err(invalid("contract-unresolved"));
+            };
+            // The reverse impact is derived, never prewritten: walk the
+            // attachment's own joins (capabilities -> bindings ->
+            // action policies -> commands -> effects) and the
+            // compilation's declared scenarios covering those commands.
+            let capabilities: Vec<&str> = attachment
+                .capability_requirements()
+                .iter()
+                .filter(|capability| capability.contract_id == provider_contract.contract_id)
+                .map(|capability| capability.capability_id.as_str())
+                .collect();
+            let mut consumers: Vec<(&'static str, String)> = Vec::new();
+            consumers.push(("provider-contract", contract.clone()));
+            for capability in attachment.capability_requirements() {
+                if capabilities.contains(&capability.capability_id.as_str()) {
+                    consumers.push((
+                        "capability",
+                        format!(
+                            "{}@{}",
+                            capability.capability_id, provider_contract.contract_id
+                        ),
+                    ));
+                }
+            }
+            for binding in attachment.operation_bindings() {
+                if capabilities.contains(&binding.capability_ref.as_str()) {
+                    consumers.push(("binding", binding.operation.clone()));
+                    if let Some(policy) = attachment
+                        .action_policies()
+                        .iter()
+                        .find(|policy| policy.policy_id == binding.action_policy_ref)
+                    {
+                        consumers.push(("action-policy", policy.policy_id.clone()));
+                        consumers.push(("command", policy.action.clone()));
+                    }
+                    consumers.push(("effect", binding.effect_ref.clone()));
+                }
+            }
+            // Verification scenarios: every declared scenario that
+            // covers a consuming command witnesses this contract.
+            let commands: std::collections::BTreeSet<String> = consumers
+                .iter()
+                .filter(|(role, _)| *role == "command")
+                .map(|(_, symbol)| symbol.clone())
+                .collect();
+            for definition in &compilation.project.definitions {
+                if let lekalo_core::ir::Definition::Scenario(scenario) = definition {
+                    if scenario
+                        .covers
+                        .iter()
+                        .any(|symbol| commands.contains(symbol.as_str()))
+                    {
+                        consumers.push(("scenario", scenario.id.as_str().to_owned()));
+                    }
+                }
+            }
+            consumers
+                .sort_by(|left, right| (left.0, left.1.as_str()).cmp(&(right.0, right.1.as_str())));
+            consumers.dedup();
+            let payload = serde_json::json!({
+                "contract": provider_contract.contract_id,
+                "upstreamPin": provider_contract.upstream_pin,
+                "consumers": consumers
+                    .into_iter()
+                    .map(|(role, symbol)| serde_json::json!({"role": role, "symbol": symbol}))
+                    .collect::<Vec<_>>(),
+            });
+            Ok(tl::render(&payload))
         }
     }
 }

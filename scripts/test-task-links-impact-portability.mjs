@@ -151,7 +151,69 @@ if (!binary) {
       fail("changed-validate-exit", changedValidate.stderr.slice(0, 300));
     }
 
-    // 4. Model-surface consumer witnesses via the ordinary inspect
+    // 4b. The reverse impact of the changed provider contract is
+    //     DERIVED from the attachment and the compilation (never a
+    //     prewritten list): the same consumer set derives on both
+    //     sides of a pin-only change (core preserved), the set names
+    //     the operation/policy/command/effect/scenario witnesses, and
+    //     an unknown contract refuses.
+    const derivedImpact = (attachmentArg) => {
+      const impact = run([
+        "--json",
+        "task-links",
+        "impact",
+        pair.changed.contractId,
+        "--project",
+        project,
+        "--attachment",
+        attachmentArg,
+      ]);
+      if (impact.status !== 0) {
+        fail("impact-derive-exit", String(impact.status) + impact.stderr.slice(0, 200));
+        return null;
+      }
+      return JSON.parse(impact.stdout).taskLinks;
+    };
+    {
+      const baseImpact = derivedImpact(attachmentPath);
+      const changedImpact = derivedImpact(changedPath);
+      if (baseImpact && changedImpact) {
+        if (JSON.stringify(baseImpact.consumers) !== JSON.stringify(changedImpact.consumers)) {
+          fail("impact-derivation-moved", "a pin-only change must derive an identical consumer set");
+        }
+        const symbols = changedImpact.consumers.map((consumer) => consumer.symbol);
+        for (const expected of [
+          "tasklinks.request_action",
+          "tasklinks.policy.ap.request_action",
+          "tasklinks.effect.write_outbox",
+          "tasklinks.scenario.two_providers",
+        ]) {
+          if (!symbols.includes(expected)) {
+            fail("impact-witness-missing", expected + " not derived from " + JSON.stringify(symbols));
+          }
+        }
+        const roles = new Set(changedImpact.consumers.map((consumer) => consumer.role));
+        for (const role of ["binding", "action-policy", "command", "effect", "scenario"]) {
+          if (!roles.has(role)) fail("impact-role-missing", role);
+        }
+        if (changedImpact.upstreamPin !== pair.changed.upstreamPin) {
+          fail("impact-pin", changedImpact.upstreamPin);
+        }
+      }
+      const ghost = run([
+        "--json",
+        "task-links",
+        "impact",
+        "tasklinks.provider_contract.ghost",
+        "--project",
+        project,
+        "--attachment",
+        attachmentPath,
+      ]);
+      if (ghost.status !== 1) fail("impact-ghost-exit", String(ghost.status));
+    }
+
+    // 5. Model-surface consumer witnesses via the ordinary inspect
     //    command; attachment-level consumers were already joined by the
     //    validate/portability legs above.
     for (const consumer of [...pair.consumers, ...pair.attachmentLevelConsumers].filter(

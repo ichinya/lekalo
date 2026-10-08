@@ -390,6 +390,12 @@ pub fn admit_evidence(
     if !matches!(evidence.origin.as_str(), "mock" | "reference" | "native") {
         return Err(evidence_invalid("evidence-origin", None));
     }
+    // The contribution switches are read, not decorative: evidence
+    // witnesses scenario runs, so with the scenarios contribution
+    // disabled the attachment declares no evidence surface at all.
+    if !attachment.contributions().scenarios {
+        return Err(evidence_invalid("contribution-disabled", None));
+    }
     if !matches!(
         evidence.clock.policy.as_str(),
         "injected" | "wall-clock-native"
