@@ -608,13 +608,6 @@ fn staged_apply(
             }
         }
     }
-    // Pointer commit completes the generation.
-    history::write_current(root, &generation)?;
-    transaction.state = TransactionState::Committed;
-    match history::write_transaction(root, &transaction) {
-        Ok(()) => {}
-        Err(error) => return Err(error),
-    }
     // Custody publication: the governed ownership manifest of the exact
     // committed bytes (finding E), bound to the derived generation
     // authority. The project authority is mandatory here. Publication is
@@ -623,8 +616,16 @@ fn staged_apply(
     // evidence (finding 10).
     match authority {
         Some(authority) => {
-            if super::custody::publish(root, plan, coverage, generated_root, authority, inventory)
-                .is_err()
+            if super::custody::publish(
+                root,
+                plan,
+                coverage,
+                generated_root,
+                authority,
+                inventory,
+                &record,
+            )
+            .is_err()
             {
                 transaction.conflict = State::known(super::wire::Conflict {
                     path: super::custody::MANIFEST_LOGICAL.to_owned(),
@@ -637,5 +638,27 @@ fn staged_apply(
         }
         None => return Err(invalid("generation-identity")),
     }
+    // Retain the exact published manifest of this generation (finding 9):
+    // the rollback path restores the destination's own governed manifest
+    // from this snapshot, so the public ownership statement always
+    // describes the restored bytes.
+    let manifest_bytes = match std::fs::read(root.join(super::custody::MANIFEST_LOGICAL)) {
+        Ok(bytes) => bytes,
+        Err(_) => return Err(invalid("manifest-retain")),
+    };
+    if let Err(error) = super::custody::retain_manifest(root, &generation, &manifest_bytes) {
+        transaction.conflict = State::known(super::wire::Conflict {
+            path: super::custody::MANIFEST_LOGICAL.to_owned(),
+            reason: "manifest-retain".to_owned(),
+        });
+        let _ = history::write_transaction(root, &transaction);
+        return Err(error);
+    }
+    // Pointer commit completes the generation: the application bytes,
+    // the governed manifest, and its retained snapshot are all
+    // consistent, so recovery treats the transaction as complete.
+    history::write_current(root, &generation)?;
+    transaction.state = TransactionState::Committed;
+    history::write_transaction(root, &transaction)?;
     Ok(generation)
 }

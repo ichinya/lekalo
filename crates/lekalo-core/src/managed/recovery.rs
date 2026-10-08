@@ -55,6 +55,15 @@ fn invalid(reason: &str) -> DomainResult {
     diagnostic::failure(INPUT_INVALID, &detail(reason))
 }
 
+/// Rewrite the governed public manifest atomically (the retained exact
+/// bytes), mirroring [`super::custody`]'s publication discipline.
+fn write_manifest(root: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    let physical = root.join(super::custody::MANIFEST_LOGICAL);
+    let stage = physical.with_extension("json.tmp");
+    std::fs::write(&stage, bytes)?;
+    std::fs::rename(&stage, &physical)
+}
+
 /// Whether every pending move of `transaction` is already exactly the
 /// recorded state of `record` on disk.
 fn matches_record(
@@ -271,6 +280,20 @@ pub fn run(root: &std::path::Path) -> DomainResult {
         Ok(None) => None,
         Err(error) => return error,
     };
+    // The committed public ownership manifest is part of the recoverable
+    // state (finding 9): every undo that restores committed application
+    // bytes also restores the exact published manifest of the committed
+    // generation from the retained public evidence.
+    let manifest_before = match std::fs::read(root.join(super::custody::MANIFEST_LOGICAL)) {
+        Ok(bytes) => Some(bytes),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(_) => return invalid("recovery-manifest"),
+    };
+    if let Some(bytes) = &manifest_before {
+        if crate::artifacts::ArtifactManifest::parse_canonical(bytes).is_err() {
+            return invalid("recovery-manifest");
+        }
+    }
     let mut reconciled = Vec::new();
     for transaction in &unresolved {
         let action = match transaction.action {
@@ -307,6 +330,21 @@ pub fn run(root: &std::path::Path) -> DomainResult {
         } else {
             if converge_to_committed(root, transaction, committed.as_ref()).is_err() {
                 return invalid("recovery-undo");
+            }
+            // Restore the exact committed public manifest with the
+            // application bytes it describes (finding 9).
+            match &manifest_before {
+                Some(bytes) => {
+                    if write_manifest(root, bytes).is_err() {
+                        return invalid("recovery-manifest");
+                    }
+                }
+                None => {
+                    let physical = root.join(super::custody::MANIFEST_LOGICAL);
+                    if physical.exists() && std::fs::remove_file(&physical).is_err() {
+                        return invalid("recovery-manifest");
+                    }
+                }
             }
             if close(root, transaction, TransactionState::Abandoned).is_err() {
                 return invalid("recovery-journal");

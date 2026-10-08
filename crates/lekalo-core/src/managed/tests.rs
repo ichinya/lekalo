@@ -111,6 +111,7 @@ fn project_root(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!("lekalo-managed-test-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).expect("temp project");
+    write_test_lock(&root);
     root
 }
 
@@ -121,7 +122,10 @@ fn test_authority() -> super::authority::Authority {
     super::authority::Authority {
         model_digest: PIN_A.to_owned(),
         ir_digest: PIN_B.to_owned(),
-        lock_digest: "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+        // The canonical digest of the committed fixture lock (its exact
+        // payload bytes): unit tests that write a project lock carry the
+        // same bytes, so the destination-lock compatibility check holds.
+        lock_digest: "sha256:d61d05e2c8b2436e2eb1bebe52afcd0808cc882c85f694259ba1cc988e1a04fa"
             .to_owned(),
         lock_protocol: Some(PROTOCOL.to_owned()),
         model_version: "0.2.16".to_owned(),
@@ -130,6 +134,21 @@ fn test_authority() -> super::authority::Authority {
         semantics: Vec::new(),
         adapter: None,
     }
+}
+
+/// The exact committed fixture lock bytes, for unit-test project roots.
+/// Relative to the crate directory (cargo test runs there).
+fn write_test_lock(root: &std::path::Path) {
+    let bytes = match std::fs::read("tests/fixtures/managed/planner/lekalo.lock") {
+        Ok(bytes) => bytes,
+        // The cwd may be the workspace root; try both spellings.
+        Err(_) => std::fs::read("../../tests/fixtures/managed/planner/lekalo.lock")
+            .or_else(|_| {
+                std::fs::read("C:/Users/User/orca/workspaces/lekalo/m8-issue-41/tests/fixtures/managed/planner/lekalo.lock")
+            })
+            .expect("fixture lock"),
+    };
+    write_input(root, "lekalo.lock", &bytes);
 }
 
 #[test]

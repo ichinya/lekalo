@@ -17,11 +17,12 @@ use super::wire::{ArtifactRole, Coverage, GenerationPlan};
 use super::{detail, DomainResult, INPUT_INVALID};
 use crate::artifacts::check::inputs_revision;
 use crate::artifacts::types::{
-    ArtifactEntry, ArtifactKey, ArtifactKind, ArtifactManifest, ArtifactPath, Lifecycle,
-    LockRevision, ProjectRef, SemanticOwnerId, SourceMapBinding, SourceRange, MANIFEST_DIR,
-    MANIFEST_NAME,
+    AdapterRef, ArtifactEntry, ArtifactKey, ArtifactKind, ArtifactManifest, ArtifactPath,
+    Lifecycle, LockRevision, ProjectRef, SemanticOwnerId, SourceMapBinding, SourceRange,
+    MANIFEST_DIR, MANIFEST_NAME,
 };
 use crate::digest::sha256_hex;
+use crate::lockfile::types::{ArtifactPin, Platform};
 use crate::lockfile::{ComponentId, ComponentRef, ContractPin, SemVer, Sha256Digest};
 use std::path::Path;
 
@@ -33,6 +34,46 @@ fn invalid(reason: &str) -> DomainResult {
 /// manifest (the one established artifact-owner path, never a parallel
 /// manifest).
 pub const MANIFEST_LOGICAL: &str = ".lekalo/generated/manifests/ownership.json";
+
+/// Retain one generation's exact published manifest bytes under the
+/// custody home (`managed/manifests/<generation hex>`), so rollback can
+/// restore the destination's own governed manifest (finding 9). Idempotent.
+pub fn retain_manifest(root: &Path, generation: &str, bytes: &[u8]) -> Result<(), DomainResult> {
+    let hex = generation.strip_prefix("sha256:").unwrap_or(generation);
+    if hex.len() != 64
+        || !hex
+            .bytes()
+            .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+    {
+        return Err(invalid("generation-digest"));
+    }
+    let logical = super::history::custody_logical(&format!("manifests/{hex}"));
+    if matches!(super::fs::read_file(root, &logical), Ok(Some(_))) {
+        return Ok(());
+    }
+    super::fs::write_file(root, &logical, bytes).map_err(|_| invalid("manifest-retain"))
+}
+
+/// Read one generation's retained manifest snapshot, fully verified as a
+/// closed manifest document.
+pub fn retained_manifest(root: &Path, generation: &str) -> Result<Vec<u8>, DomainResult> {
+    let hex = generation.strip_prefix("sha256:").unwrap_or(generation);
+    if hex.len() != 64
+        || !hex
+            .bytes()
+            .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+    {
+        return Err(invalid("generation-digest"));
+    }
+    let logical = super::history::custody_logical(&format!("manifests/{hex}"));
+    match super::fs::read_file(root, &logical) {
+        Ok(Some(bytes)) => ArtifactManifest::parse_canonical(&bytes)
+            .map(|_| bytes)
+            .map_err(|_| invalid("manifest-read")),
+        Ok(None) => Err(invalid("manifest-retained")),
+        Err(_) => Err(invalid("manifest-read")),
+    }
+}
 
 /// The closed artifact kind of one managed output role.
 fn artifact_kind(role: ArtifactRole, path: &str) -> ArtifactKind {
@@ -69,6 +110,7 @@ pub fn publish(
     generated_root: &str,
     authority: &super::authority::Authority,
     inventory: &[Rendered],
+    record: &super::wire::GenerationRecord,
 ) -> Result<(), DomainResult> {
     // Preflight (finding 10): an unwritable manifest destination refuses
     // before any staged byte is spent, and the caller journal covers the
@@ -136,6 +178,30 @@ pub fn publish(
             carried_maps.extend(previous.source_maps().iter().cloned());
         }
     }
+    // The locked adapter identity rides every entry (finding 4): the
+    // governed manifest binds each artifact to the exact locked adapter
+    // package and its launched-entry artifact pin, so `generate --check`
+    // verifies the binding instead of reporting an unbound artifact.
+    let adapter_ref = authority.adapter.as_ref().and_then(|adapter| {
+        let id = crate::lockfile::ComponentId::parse(&adapter.id).ok()?;
+        let version = crate::lockfile::SemVer::parse(&adapter.version).ok()?;
+        let package = Sha256Digest::parse(adapter.digest.as_str()).ok()?;
+        let entry = Sha256Digest::parse(adapter.entry_digest.as_str()).ok()?;
+        let protocol = crate::lockfile::SemVer::parse(
+            authority
+                .lock_protocol
+                .as_deref()
+                .unwrap_or(super::PROTOCOL),
+        )
+        .ok()?;
+        AdapterRef::new(
+            id,
+            version,
+            package,
+            vec![ArtifactPin::new(Platform::parse("any").ok()?, entry)],
+            Some(protocol),
+        )
+    });
     let mut entries = Vec::new();
     let mut source_maps = Vec::new();
     for output in &plan.outputs {
@@ -155,7 +221,7 @@ pub fn publish(
         entries.push(ArtifactEntry::new(
             key.clone(),
             Lifecycle::Generated,
-            None,
+            adapter_ref.clone(),
             Some(generator.clone()),
             Sha256Digest::parse(after).map_err(|_| invalid("output-digest"))?,
             vec![semantic_owner.clone()],
@@ -194,11 +260,11 @@ pub fn publish(
         !scoped.contains(binding.key().path().as_str())
             && !deleted.contains(binding.key().path().as_str())
     }));
-    // Bijection with the committed record (finding 7): every manifest
-    // entry must name a path the committed custody record carries, and
-    // every recorded output must carry exactly one manifest entry, so no
-    // unaffected artifact is lost and none is invented.
-    verify_bijection(root, &entries, plan)?;
+    // Bijection with the committed record (finding 7): the manifest must
+    // be exactly the custody statement of the generation this transaction
+    // commits — the caller passes the assembled record. Verified before
+    // any byte is written.
+    verify_bijection(record, &entries)?;
     entries.sort_by(|left, right| {
         (
             left.key().semantic_owner().as_str().to_owned(),
@@ -304,40 +370,31 @@ fn read_manifest(root: &Path) -> Result<Option<ArtifactManifest>, DomainResult> 
 /// exactly one manifest entry at the same path, and every entry names a
 /// recorded output. Unaffected modules survive; nothing is dropped or
 /// invented.
+/// The committed custody record being written must biject with the
+/// published manifest (finding 7): every recorded output of the new
+/// generation carries exactly one manifest entry at the same path, and
+/// every entry names a recorded output. Unaffected modules survive;
+/// nothing is dropped or invented. The caller passes the exact outputs
+/// of the record this transaction is committing (plan outputs that
+/// survive deletion plus every preserved output).
 fn verify_bijection(
-    root: &Path,
+    record: &super::wire::GenerationRecord,
     entries: &[ArtifactEntry],
-    _plan: &GenerationPlan,
 ) -> Result<(), DomainResult> {
-    let Some(current) = super::history::current(root).ok().flatten() else {
-        return Ok(());
-    };
-    let record = super::history::record(root, &current)?;
-    let recorded: std::collections::BTreeSet<&str> =
-        record.outputs.iter().map(|o| o.path.as_str()).collect();
-    let published: std::collections::BTreeSet<&str> = entries
+    let recorded: std::collections::BTreeMap<&str, &str> = record
+        .outputs
         .iter()
-        .map(|entry| entry.key().path().as_str())
+        .map(|output| (output.path.as_str(), output.digest.as_str()))
+        .collect();
+    let published: std::collections::BTreeMap<&str, &str> = entries
+        .iter()
+        .map(|entry| (entry.key().path().as_str(), entry.content().as_str()))
         .collect();
     if recorded != published {
         return Err(super::diagnostic::failure(
             super::ARTIFACT_COVERAGE_INCOMPLETE,
             &detail("manifest-bijection"),
         ));
-    }
-    // Every entry's content digest must be the exact recorded bytes.
-    for entry in entries {
-        let output = record
-            .outputs
-            .iter()
-            .find(|output| output.path == entry.key().path().as_str())
-            .expect("bijection holds");
-        if entry.content().as_str() != output.digest {
-            return Err(super::diagnostic::failure(
-                super::ARTIFACT_COVERAGE_INCOMPLETE,
-                &detail("manifest-bijection"),
-            ));
-        }
     }
     Ok(())
 }

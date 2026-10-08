@@ -39,6 +39,22 @@ fn invalid(reason: &str) -> DomainResult {
     diagnostic::failure(INPUT_INVALID, &detail(reason))
 }
 
+/// The live project's canonical lock revision, derived through the
+/// accepted pipeline (read-only). `None` when the project's lock is
+/// missing or unreadable — the caller's compatibility check fails
+/// closed on any divergence.
+fn live_lock_digest(root: &std::path::Path) -> Option<String> {
+    let lock = crate::lockfile::plan::LockService::read_state_at(root).ok()?;
+    match lock {
+        crate::lockfile::LockState::Present(lock) => Some(
+            crate::lockfile::canonical::lock_digest(&lock)
+                .as_str()
+                .to_owned(),
+        ),
+        crate::lockfile::LockState::Absent => None,
+    }
+}
+
 fn refused(reason: &str) -> DomainResult {
     diagnostic::failure(ROLLBACK_REFUSED, &detail(reason))
 }
@@ -62,7 +78,7 @@ pub fn build(root: &std::path::Path, destination: &str) -> Result<RollbackPlan, 
     }
     // Both records pass the content-bound custody verification: a tampered
     // generation record is refused before any restore authority exists.
-    let (destination_record, manifest_digest) = history::record_with_custody(root, destination)?;
+    let (destination_record, _) = history::record_with_custody(root, destination)?;
     let (current_record, _) = history::record_with_custody(root, &current)?;
     let mut restore = Vec::new();
     for output in &destination_record.outputs {
@@ -102,7 +118,8 @@ pub fn build(root: &std::path::Path, destination: &str) -> Result<RollbackPlan, 
         destination_generation_digest: destination.to_owned(),
         restore,
         delete,
-        manifest_digest,
+        manifest_digest: super::custody::retained_manifest(root, destination)
+            .map(|bytes| super::digest(&bytes))?,
         plan_digest: String::new(),
     };
     plan.plan_digest = plan_digest(&plan);
@@ -207,6 +224,29 @@ pub fn apply(
     };
     if current_record.ownership_digest != destination_record.ownership_digest {
         return refused("ownership");
+    }
+    // Canonical Model/IR/lock compatibility (finding 8): the destination
+    // record pins the exact lock revision its generation was admitted
+    // under. The live project must still carry that exact lock revision —
+    // a moved canonical query or a replaced/broken lock file makes the
+    // destination incompatible until the caller restores the retained
+    // inputs. The lock pin rides the authenticated record identity, so
+    // the destination pin is custody evidence, not a caller claim.
+    if let (Some(destination_lock), Some(current_lock)) = (
+        destination_record.lock_pin.value(),
+        current_record.lock_pin.value(),
+    ) {
+        // The destination's pinned lock must be exactly the live project
+        // lock: a moved canonical query or a replaced/broken lock file
+        // makes the destination incompatible until the caller restores
+        // the retained inputs (finding 8).
+        let live = live_lock_digest(root);
+        if live.as_deref() != Some(destination_lock.as_str()) {
+            return diagnostic::failure(PLAN_STALE, &detail("destination-lock"));
+        }
+        let _ = current_lock;
+    } else if destination_record.lock_pin.value().is_some() {
+        return refused("lock");
     }
     // Destination input closure: every pinned input of the destination
     // generation must still exist with its exact recorded bytes — the
@@ -377,6 +417,22 @@ fn staged(
         }
     }
     history::write_current(root, &plan.destination_generation_digest)?;
+    // The retained governed manifest of the destination generation joins
+    // the restoration (finding 9): the public ownership statement must
+    // describe the restored bytes, not the superseded generation. The
+    // exact bytes come from the destination's retained snapshot, already
+    // digest-verified when the plan was built.
+    let retained = super::custody::retained_manifest(root, &plan.destination_generation_digest)?;
+    let physical = root.join(super::custody::MANIFEST_LOGICAL);
+    let stage = physical.with_extension("json.tmp");
+    if std::fs::write(&stage, &retained).is_err() || std::fs::rename(&stage, &physical).is_err() {
+        transaction.conflict = State::known(super::wire::Conflict {
+            path: super::custody::MANIFEST_LOGICAL.to_owned(),
+            reason: "manifest-restore".to_owned(),
+        });
+        let _ = history::write_transaction(root, &transaction);
+        return Err(invalid("restore-manifest"));
+    }
     transaction.state = TransactionState::Committed;
     match history::write_transaction(root, &transaction) {
         Ok(()) => Ok(()),
