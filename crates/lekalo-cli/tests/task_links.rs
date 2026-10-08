@@ -77,7 +77,7 @@ fn valid_attachment_validates_strict_with_exact_counts() {
     assert_eq!(report["profile"], "strict");
     assert_eq!(report["status"], "valid");
     assert_eq!(report["projectId"], "tasklinks");
-    assert_eq!(report["modelRef"]["schemaVersion"], "0.2.16");
+    assert_eq!(report["modelRef"]["schemaVersion"], "0.8.0");
     assert_eq!(report["checks"]["relationsChecked"], 2);
     assert_eq!(report["checks"]["uniqueConstraintsChecked"], 1);
     assert_eq!(report["checks"]["providerContractsChecked"], 2);

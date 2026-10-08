@@ -147,7 +147,7 @@
       "type": "object",
       "properties": {
         "identity": {
-          "const": "dev.lekalo.ir@0.2.16"
+          "const": "dev.lekalo.ir@0.8.0"
         },
         "digest": {
           "$ref": "#/$defs/digest"
@@ -163,7 +163,7 @@
       "type": "object",
       "properties": {
         "schemaVersion": {
-          "const": "0.2.16"
+          "const": "0.8.0"
         },
         "irDigest": {
           "$ref": "#/$defs/digest"

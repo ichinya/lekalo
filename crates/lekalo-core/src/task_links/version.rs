@@ -21,6 +21,12 @@ pub const IDENTITY: &str = "dev.lekalo.task-links-integration@0.8.0";
 /// The exact wire discriminator of the task-links attachment.
 pub const SCHEMA_VERSION: &str = "lekalo/task-links-integration/v0.8.0";
 
+/// The exact Model/IR pin the family binds: the Model/IR successor
+/// that owns the typed relations and secondary uniqueness (no alias
+/// under the 0.2.16 Model exists).
+pub const MODEL_VERSION: &str = "0.8.0";
+pub const SUCCESSOR_IR_IDENTITY: &str = "dev.lekalo.ir@0.8.0";
+
 /// The exact wire discriminator of the task-links report.
 pub const REPORT_SCHEMA_VERSION: &str = "lekalo/task-links-report/v0.8.0";
 

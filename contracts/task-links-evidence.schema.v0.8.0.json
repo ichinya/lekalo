@@ -32,7 +32,7 @@
       "type": "object",
       "properties": {
         "schemaVersion": {
-          "const": "0.2.16"
+          "const": "0.8.0"
         },
         "irDigest": {
           "type": "string",

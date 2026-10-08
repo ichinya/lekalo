@@ -1,4 +1,4 @@
-schema_version: "0.2.16"
+schema_version: "0.8.0"
 definitions:
   - id: tasklinks.list_links
     kind: query

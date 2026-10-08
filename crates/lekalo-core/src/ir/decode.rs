@@ -23,12 +23,13 @@ use super::grammar::{
     is_target_name,
 };
 use super::{
-    CommandDef, Common, Compilation, CompiledProject, Decision, Definition, EffectDef,
-    EffectOperation, EndpointDef, EndpointPath, EntityDef, EnumDef, EnumValue, EnumValueName,
-    EventDef, Field, FieldName, HttpMethod, IdRegistry, Module, ModuleId, PolicyDef, Portability,
-    Project, ProjectId, QueryDef, RenameHistoryEntry, RequirementId, ScalarBase, ScalarDef,
-    ScenarioDef, SourceMap, SymbolId, TargetBindingDef, TargetName, Text, Tombstone, TypeRef,
-    ValueObjectDef, Visibility, MAX_TYPE_LEVELS,
+    CommandDef, Common, Compilation, CompiledProject, ConstraintComparison, Decision, Definition,
+    DeletePolicy, DetachPolicy, EffectDef, EffectOperation, EndpointDef, EndpointPath, EntityDef,
+    EnumDef, EnumValue, EnumValueName, EventDef, Field, FieldName, HttpMethod, IdRegistry, Module,
+    ModuleId, PolicyDef, Portability, Project, ProjectId, QueryDef, RelationDef, RelationOwnership,
+    RenameHistoryEntry, RequirementId, ScalarBase, ScalarDef, ScenarioDef, SourceMap, SymbolId,
+    TargetBindingDef, TargetName, Text, Tombstone, TypeRef, UniqueConstraintDef, ValueObjectDef,
+    Visibility, MAX_TYPE_LEVELS,
 };
 use crate::loader::error::{Diagnostic, Span};
 use crate::loader::frontends::{MapEntry, Node, Scalar, Value};
@@ -296,6 +297,32 @@ impl Context {
     }
 
     /// Decode a positive integer value.
+    /// One non-negative cardinality value (0 allowed: relations may
+    /// declare optional or unbounded targets).
+    fn cardinality_integer(&mut self, node: &Node, detail: &'static str) -> Option<u64> {
+        match &node.value {
+            Value::Scalar(Scalar::Int(value)) if *value >= 0 => match u64::try_from(*value) {
+                Ok(value) => Some(value),
+                Err(_) => {
+                    self.push(
+                        VALUE_INVALID,
+                        node.span,
+                        serde_json::json!({ "detail": detail }),
+                    );
+                    None
+                }
+            },
+            _ => {
+                self.push(
+                    VALUE_INVALID,
+                    node.span,
+                    serde_json::json!({ "detail": detail }),
+                );
+                None
+            }
+        }
+    }
+
     fn positive_integer(&mut self, node: &Node, detail: &'static str) -> Option<u64> {
         match &node.value {
             Value::Scalar(Scalar::Int(value)) if *value >= 1 => match u64::try_from(*value) {
@@ -999,6 +1026,369 @@ fn decode_fields(node: &Node, pointer: &str, cx: &mut Context) -> Option<Vec<Fie
     }
 }
 
+/// The relation-id grammar: two to four dot-separated `segment` parts
+/// (relation ids are members, not symbol definitions, so they may
+/// carry one more segment than definition ids).
+fn is_relation_id(text: &str) -> bool {
+    let parts: Vec<&str> = text.split('.').collect();
+    (2..=4).contains(&parts.len()) && parts.iter().all(|part| is_segment(part))
+}
+
+/// One decoded relation/constraint member entry cloned out of the
+/// parsed tree, so borrow conflicts cannot reach the caller.
+struct MemberEntry {
+    value: Node,
+}
+
+impl MemberEntry {
+    fn node(&self) -> &Node {
+        &self.value
+    }
+}
+
+fn relation_members<'a>(
+    node: &'a Node,
+    keys: &[&str],
+    cx: &mut Context,
+) -> Option<std::collections::BTreeMap<&'a str, MemberEntry>> {
+    let entries = match &node.value {
+        Value::Map(items) => items,
+        _ => {
+            cx.push(
+                VALUE_INVALID,
+                node.span,
+                serde_json::json!({ "detail": "not-a-mapping" }),
+            );
+            return None;
+        }
+    };
+    let mut seen: std::collections::BTreeMap<&str, MemberEntry> = std::collections::BTreeMap::new();
+    for entry in entries {
+        if !keys.contains(&entry.key.as_str()) {
+            cx.push(
+                UNKNOWN_FIELD,
+                entry.key_span,
+                serde_json::json!({ "field": bounded_field_echo(&entry.key) }),
+            );
+            continue;
+        }
+        if seen
+            .insert(
+                entry.key.as_str(),
+                MemberEntry {
+                    value: entry.value.clone(),
+                },
+            )
+            .is_some()
+        {
+            cx.push(
+                DUPLICATE_MEMBER,
+                entry.key_span,
+                serde_json::json!({ "field": bounded_field_echo(&entry.key) }),
+            );
+            return None;
+        }
+    }
+    Some(seen)
+}
+
+/// Decode one typed relation declaration (Model 0.8.0 successor).
+fn decode_relation(node: &Node, pointer: &str, cx: &mut Context) -> Option<RelationDef> {
+    cx.record(pointer, node.span, None);
+    let keys = [
+        "id",
+        "target",
+        "localFields",
+        "targetFields",
+        "min",
+        "max",
+        "ownership",
+        "onDetach",
+        "onDelete",
+        "description",
+    ];
+    let members = relation_members(node, &keys, cx)?;
+    let member = |key: &str| members.get(key);
+    let id_node = member("id")?.node();
+    let id_text = cx.string(id_node, "relation-id")?;
+    if !is_relation_id(&id_text) {
+        cx.push(
+            VALUE_INVALID,
+            id_node.span,
+            serde_json::json!({
+                "detail": "relation-id-syntax",
+                "value": bounded_field_echo(&id_text),
+            }),
+        );
+        return None;
+    }
+    let target = decode_reference(member("target")?.node(), &format!("{pointer}/target"), cx)?;
+    let local_node = member("localFields")?.node();
+    let local_fields = field_array(local_node, &format!("{pointer}/localFields"), cx)?;
+    let target_fields_node = member("targetFields")?.node();
+    let target_fields = field_array(target_fields_node, &format!("{pointer}/targetFields"), cx)?;
+    if local_fields.len() != target_fields.len() {
+        cx.push(
+            VALUE_INVALID,
+            target_fields_node.span,
+            serde_json::json!({ "detail": "relation-arity" }),
+        );
+        return None;
+    }
+    let min = cx.cardinality_integer(member("min")?.node(), "relation-min")?;
+    let max = match member("max") {
+        None => {
+            cx.push(
+                MISSING_FIELD,
+                Span::EMPTY_EOF,
+                serde_json::json!({ "field": "max" }),
+            );
+            return None;
+        }
+        Some(entry) => match &entry.value.value {
+            Value::Scalar(Scalar::Null) => None,
+            _ => Some(cx.cardinality_integer(entry.node(), "relation-max")?),
+        },
+    };
+    if let Some(max) = max {
+        if max < min {
+            cx.push(
+                VALUE_INVALID,
+                member("max")?.node().span,
+                serde_json::json!({ "detail": "relation-cardinality" }),
+            );
+            return None;
+        }
+    }
+    let ownership = cx.literal(
+        member("ownership")?.node(),
+        "ownership-unknown",
+        [
+            ("local", RelationOwnership::Local),
+            ("external", RelationOwnership::External),
+            ("shared", RelationOwnership::Shared),
+        ],
+    )?;
+    let on_detach = cx.literal(
+        member("onDetach")?.node(),
+        "on-detach-unknown",
+        [
+            ("retain-history", DetachPolicy::RetainHistory),
+            ("forbid", DetachPolicy::Forbid),
+        ],
+    )?;
+    let on_delete = cx.literal(
+        member("onDelete")?.node(),
+        "on-delete-unknown",
+        [
+            ("restrict", DeletePolicy::Restrict),
+            ("detach", DeletePolicy::Detach),
+        ],
+    )?;
+    let description = match member("description") {
+        None => None,
+        Some(entry) => Some(cx.text(entry.node(), "relation-description")?),
+    };
+    Some(RelationDef {
+        id: SymbolId(id_text),
+        target,
+        local_fields,
+        target_fields,
+        min,
+        max,
+        ownership,
+        on_detach,
+        on_delete,
+        description,
+    })
+}
+
+fn field_array(node: &Node, pointer: &str, cx: &mut Context) -> Option<Vec<FieldName>> {
+    let names = cx.string_array(
+        node,
+        pointer,
+        "field-array",
+        |_context, text| is_field_name(text),
+        true,
+        "fields",
+    )?;
+    if names.is_empty() {
+        cx.push(
+            VALUE_INVALID,
+            node.span,
+            serde_json::json!({ "detail": "relation-fields-empty" }),
+        );
+        return None;
+    }
+    Some(names.into_iter().map(FieldName).collect())
+}
+
+/// Decode the typed relation list of one entity (sorted by id, no
+/// duplicates).
+fn decode_relations(node: &Node, pointer: &str, cx: &mut Context) -> Option<Vec<RelationDef>> {
+    let items = match &node.value {
+        Value::Seq(items) => items,
+        _ => {
+            cx.push(
+                VALUE_INVALID,
+                node.span,
+                serde_json::json!({ "detail": "not-a-sequence" }),
+            );
+            return None;
+        }
+    };
+    if items.len() > 64 {
+        cx.push(
+            VALUE_INVALID,
+            node.span,
+            serde_json::json!({ "detail": "relations-count" }),
+        );
+        return None;
+    }
+    let mut parsed = Vec::with_capacity(items.len());
+    for item in items {
+        parsed.push(decode_relation(item, pointer, cx)?);
+    }
+    parsed.sort_by(|left, right| left.id.cmp(&right.id));
+    if parsed.windows(2).any(|window| window[0].id == window[1].id) {
+        cx.push(
+            VALUE_INVALID,
+            node.span,
+            serde_json::json!({ "detail": "duplicate-relation-id" }),
+        );
+        return None;
+    }
+    Some(parsed)
+}
+
+/// Decode one typed secondary-uniqueness declaration (Model 0.8.0
+/// successor).
+fn decode_unique_constraint(
+    node: &Node,
+    pointer: &str,
+    cx: &mut Context,
+) -> Option<UniqueConstraintDef> {
+    cx.record(pointer, node.span, None);
+    let keys = [
+        "id",
+        "fields",
+        "comparison",
+        "normalizationRef",
+        "scope",
+        "description",
+    ];
+    let members = relation_members(node, &keys, cx)?;
+    let member = |key: &str| members.get(key);
+    let id_node = member("id")?.node();
+    let id_text = cx.string(id_node, "constraint-id")?;
+    if !is_relation_id(&id_text) {
+        cx.push(
+            VALUE_INVALID,
+            id_node.span,
+            serde_json::json!({
+                "detail": "constraint-id-syntax",
+                "value": bounded_field_echo(&id_text),
+            }),
+        );
+        return None;
+    }
+    let fields = field_array(member("fields")?.node(), &format!("{pointer}/fields"), cx)?;
+    let comparison = cx.literal(
+        member("comparison")?.node(),
+        "comparison-unknown",
+        [
+            ("exact-text", ConstraintComparison::ExactText),
+            (
+                "declared-normalization",
+                ConstraintComparison::DeclaredNormalization,
+            ),
+        ],
+    )?;
+    let normalization_ref = match member("normalizationRef") {
+        None => None,
+        Some(entry) => match &entry.value.value {
+            Value::Scalar(Scalar::Null) => None,
+            _ => Some(decode_reference(
+                entry.node(),
+                &format!("{pointer}/normalizationRef"),
+                cx,
+            )?),
+        },
+    };
+    if (comparison == ConstraintComparison::DeclaredNormalization) != normalization_ref.is_some() {
+        cx.push(
+            VALUE_INVALID,
+            member("comparison")?.node().span,
+            serde_json::json!({ "detail": "constraint-normalization" }),
+        );
+        return None;
+    }
+    let scope_node = member("scope")?.node();
+    let scope_text = cx.string(scope_node, "constraint-scope")?;
+    if scope_text.is_empty() || scope_text.len() > 128 {
+        cx.push(
+            VALUE_INVALID,
+            scope_node.span,
+            serde_json::json!({ "detail": "constraint-scope-bound" }),
+        );
+        return None;
+    }
+    let description = match member("description") {
+        None => None,
+        Some(entry) => Some(cx.text(entry.node(), "constraint-description")?),
+    };
+    Some(UniqueConstraintDef {
+        id: SymbolId(id_text),
+        fields,
+        comparison,
+        normalization_ref,
+        scope: Text(scope_text),
+        description,
+    })
+}
+
+/// Decode the typed secondary-uniqueness list of one entity (sorted by
+/// id, no duplicates).
+fn decode_unique_constraints(
+    node: &Node,
+    pointer: &str,
+    cx: &mut Context,
+) -> Option<Vec<UniqueConstraintDef>> {
+    let items = match &node.value {
+        Value::Seq(items) => items,
+        _ => {
+            cx.push(
+                VALUE_INVALID,
+                node.span,
+                serde_json::json!({ "detail": "not-a-sequence" }),
+            );
+            return None;
+        }
+    };
+    if items.len() > 16 {
+        cx.push(
+            VALUE_INVALID,
+            node.span,
+            serde_json::json!({ "detail": "constraints-count" }),
+        );
+        return None;
+    }
+    let mut parsed = Vec::with_capacity(items.len());
+    for item in items {
+        parsed.push(decode_unique_constraint(item, pointer, cx)?);
+    }
+    parsed.sort_by(|left, right| left.id.cmp(&right.id));
+    if parsed.windows(2).any(|window| window[0].id == window[1].id) {
+        cx.push(
+            VALUE_INVALID,
+            node.span,
+            serde_json::json!({ "detail": "duplicate-constraint-id" }),
+        );
+        return None;
+    }
+    Some(parsed)
+}
+
 /// Decode a reference array (`effects`, `reads`, `applies_to`, `emits`,
 /// `covers`) with the given minimum cardinality.
 fn decode_references(
@@ -1137,6 +1527,9 @@ fn decode_symbol(
         "scalar" => &["base"],
         "enum" => &["values"],
         "value-object" => &["fields"],
+        "entity" if cx.version.relations_supported() => {
+            &["fields", "identity", "relations", "uniqueConstraints"]
+        }
         "entity" => &["fields", "identity"],
         "command" => &["input", "effects"],
         "query" => &["reads", "returns"],
@@ -1215,11 +1608,27 @@ fn decode_symbol(
                 );
                 return None;
             }
+            // Typed relations and secondary uniqueness are the Model
+            // 0.8.0 successor's constructs: the key gate above already
+            // refused them under 0.2.16 (no alias), so they decode only
+            // when the source declared the successor.
+            let relations = match cx.find(&found, "relations") {
+                Some(entry) => decode_relations(&entry.value, &child("relations"), cx)?,
+                None => Vec::new(),
+            };
+            let unique_constraints = match cx.find(&found, "uniqueConstraints") {
+                Some(entry) => {
+                    decode_unique_constraints(&entry.value, &child("uniqueConstraints"), cx)?
+                }
+                None => Vec::new(),
+            };
             Some(Definition::Entity(EntityDef {
                 id: SymbolId(id),
                 common,
                 fields,
                 identity: identity.into_iter().map(FieldName).collect(),
+                relations,
+                unique_constraints,
             }))
         }
         "command" => {

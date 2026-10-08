@@ -126,7 +126,9 @@ if (irRun.error || irRun.status !== 0) {
 const irObject = JSON.parse(irRun.stdout).ir;
 const irDigest = sha(canonicalBytes(irObject));
 base.irRef.digest = irDigest;
+base.irRef.identity = "dev.lekalo.ir@0.8.0";
 base.modelRef.irDigest = irDigest;
+base.modelRef.schemaVersion = "0.8.0";
 
 const baseRevision = revisionOf(base);
 
@@ -176,6 +178,14 @@ const walk = (current) => {
       const staleIrTrigger = relativePath
         .replaceAll("\\", "/")
         .endsWith("invalid/pin-ir-digest-stale.json");
+      if (document.irRef && document.irRef.identity !== base.irRef.identity) {
+        document.irRef.identity = base.irRef.identity;
+        touched = true;
+      }
+      if (document.modelRef && document.modelRef.schemaVersion !== base.modelRef.schemaVersion) {
+        document.modelRef.schemaVersion = base.modelRef.schemaVersion;
+        touched = true;
+      }
       if (!staleIrTrigger) {
         if (document.irRef && document.irRef.digest !== irDigest) {
           document.irRef.digest = irDigest;

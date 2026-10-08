@@ -6,8 +6,8 @@
   "scenarioId": "tasklinks.scenario.two_providers",
   "attachmentRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
   "modelRef": {
-    "schemaVersion": "0.2.16",
-    "irDigest": "sha256:8ca79062b17640ae3a109e12592c4d822ba85be417fef3fb81cb29909aa02e3f"
+    "schemaVersion": "0.8.0",
+    "irDigest": "sha256:f41d0a4f1b1d7f56523f41b2b4fce32dd133416b426ef4097bf706a3746cc6dc"
   },
   "clock": {
     "policy": "injected",

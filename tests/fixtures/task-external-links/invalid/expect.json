@@ -246,6 +246,27 @@
       "trigger": "invalid/ghost-schema-ref.json",
       "command": "validate",
       "detailTag": "contract-schema-ref-unresolved"
+    },
+    {
+      "rule": "tasklink.relation-identity-invalid",
+      "code": "LEK-TASKLINK-001",
+      "trigger": "invalid/card-1of1.json",
+      "command": "validate",
+      "detailTag": "relation-diverges-from-model"
+    },
+    {
+      "rule": "tasklink.relation-identity-invalid",
+      "code": "LEK-TASKLINK-001",
+      "trigger": "invalid/card-3of7.json",
+      "command": "validate",
+      "detailTag": "relation-diverges-from-model"
+    },
+    {
+      "rule": "tasklink.relation-identity-invalid",
+      "code": "LEK-TASKLINK-001",
+      "trigger": "invalid/card-min5-null.json",
+      "command": "validate",
+      "detailTag": "relation-diverges-from-model"
     }
   ]
 }

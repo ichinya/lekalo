@@ -1,32 +1,42 @@
 {
   "status": "valid",
-  "registryVersion": "0.6.4",
+  "registryVersion": "0.8.0",
   "families": [
     {
       "family": "model",
-      "current": "0.2.16",
-      "min": "0.2.16",
-      "max": "0.2.16",
+      "current": "0.8.0",
+      "min": "0.8.0",
+      "max": "0.8.0",
       "aliases": [],
       "versions": [
         {
           "version": "0.2.16",
           "state": "supported",
           "classification": "breaking"
+        },
+        {
+          "version": "0.8.0",
+          "state": "supported",
+          "classification": "additive"
         }
       ]
     },
     {
       "family": "ir",
-      "current": "0.2.16",
-      "min": "0.2.16",
-      "max": "0.2.16",
+      "current": "0.8.0",
+      "min": "0.8.0",
+      "max": "0.8.0",
       "aliases": [],
       "versions": [
         {
           "version": "0.2.16",
           "state": "supported",
           "classification": "breaking"
+        },
+        {
+          "version": "0.8.0",
+          "state": "supported",
+          "classification": "additive"
         }
       ]
     },

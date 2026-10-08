@@ -173,8 +173,9 @@ pub fn validate(
     let mut findings: Vec<Finding> = Vec::new();
     let entities = ir_entities(compilation);
     check_entities(attachment, &entities, &mut findings);
-    check_relations(attachment, &entities, &mut findings);
-    check_unique_constraints(attachment, &entities, &mut findings);
+    let (model_relations, model_constraints) = ir_relations(compilation);
+    check_relations(attachment, &entities, &model_relations, &mut findings);
+    check_unique_constraints(attachment, &entities, &model_constraints, &mut findings);
     check_decisions(attachment, compilation, &entities, &mut findings);
     check_bindings(attachment, compilation, &mut findings);
     check_delivery(attachment, &mut findings);
@@ -203,7 +204,7 @@ pub fn validate(
         attachment_revision: attachment.attachment_revision().as_str().to_owned(),
         project_id,
         model_ref: ReportModelRef {
-            schema_version: "0.2.16",
+            schema_version: super::version::MODEL_VERSION,
             ir_digest: attachment.ir_digest().as_str().to_owned(),
         },
         profile: profile.to_owned(),
@@ -335,7 +336,46 @@ fn is_link_entity(entity: &str) -> bool {
     entity == "tasklinks.task_external_link"
 }
 
-fn check_relations(attachment: &Attachment, entities: &EntityTable, findings: &mut Vec<Finding>) {
+/// The typed relation/unique-constraint owners of the compiled Model:
+/// entity id -> (relations by id, unique constraints by id). These are
+/// the authoritative Model/IR facts the attachment must mirror.
+type ModelRelations = BTreeMap<String, BTreeMap<String, crate::ir::RelationDef>>;
+type ModelConstraints = BTreeMap<String, BTreeMap<String, crate::ir::UniqueConstraintDef>>;
+
+fn ir_relations(compilation: &Compilation) -> (ModelRelations, ModelConstraints) {
+    let mut relations: ModelRelations = BTreeMap::new();
+    let mut constraints: ModelConstraints = BTreeMap::new();
+    for definition in &compilation.project.definitions {
+        if let Definition::Entity(entity) = &definition {
+            let entity_relations: BTreeMap<String, crate::ir::RelationDef> = entity
+                .relations
+                .iter()
+                .map(|relation| (relation.id.as_str().to_owned(), relation.clone()))
+                .collect();
+            let entity_constraints: BTreeMap<String, crate::ir::UniqueConstraintDef> = entity
+                .unique_constraints
+                .iter()
+                .map(|constraint| (constraint.id.as_str().to_owned(), constraint.clone()))
+                .collect();
+            relations.insert(entity.id.as_str().to_owned(), entity_relations);
+            constraints.insert(entity.id.as_str().to_owned(), entity_constraints);
+        }
+    }
+    (relations, constraints)
+}
+
+/// Whether any finding already names this subject: the Model-join
+/// fallback stays silent so a specific refusal keeps its detail.
+fn has_finding_for(findings: &[Finding], subject: &str) -> bool {
+    findings.iter().any(|finding| finding.subject == subject)
+}
+
+fn check_relations(
+    attachment: &Attachment,
+    entities: &EntityTable,
+    model_relations: &ModelRelations,
+    findings: &mut Vec<Finding>,
+) {
     // The relation's local entity is the declaring link aggregate; every
     // `localFields` entry must exist on that entity, while `targetFields`
     // are checked against the relation target.
@@ -422,11 +462,61 @@ fn check_relations(attachment: &Attachment, entities: &EntityTable, findings: &m
             "relation-coverage-missing",
         );
     }
+    // The cardinality (including `max`) and every relation member are
+    // pinned authoritatively by the Model/IR: the attachment's typed
+    // relations must exist in the compiled Model of their declaring
+    // entity and agree exactly — target, ordered fields, min, max,
+    // ownership, and detach/delete semantics. An attachment-only
+    // relation, or any drift from the Model, is a refusal; the
+    // attachment mirrors the Model, never the other way around.
+    for relation in attachment.relations() {
+        if has_finding_for(findings, relation.id.as_str()) {
+            continue;
+        }
+        let model_relation = model_relations
+            .values()
+            .flat_map(|table| table.get(relation.id.as_str()))
+            .next();
+        let Some(model_relation) = model_relation else {
+            finding(
+                findings,
+                diagnostic::INPUT_INVALID,
+                relation.id.clone(),
+                "relation-not-in-model",
+            );
+            continue;
+        };
+        let agrees = model_relation.target.as_str() == relation.target
+            && model_relation.min == relation.min
+            && model_relation.max == relation.max
+            && model_relation.ownership.as_str() == relation.ownership
+            && model_relation.on_detach.as_str() == relation.on_detach
+            && model_relation.on_delete.as_str() == relation.on_delete
+            && model_relation
+                .local_fields
+                .iter()
+                .map(|f| f.as_str())
+                .eq(relation.local_fields.iter().map(String::as_str))
+            && model_relation
+                .target_fields
+                .iter()
+                .map(|f| f.as_str())
+                .eq(relation.target_fields.iter().map(String::as_str));
+        if !agrees {
+            finding(
+                findings,
+                diagnostic::INPUT_INVALID,
+                relation.id.clone(),
+                "relation-diverges-from-model",
+            );
+        }
+    }
 }
 
 fn check_unique_constraints(
     attachment: &Attachment,
     entities: &EntityTable,
+    model_constraints: &ModelConstraints,
     findings: &mut Vec<Finding>,
 ) {
     // The external-identity constraint is the pilot's core identity
@@ -494,6 +584,49 @@ fn check_unique_constraints(
                 diagnostic::INPUT_INVALID,
                 constraint.id.clone(),
                 "normalization-unpinned",
+            );
+        }
+    }
+    // The constraint is authoritative in the Model/IR: it must be
+    // declared on its entity in the compiled Model and agree exactly
+    // (ordered fields, comparison, normalization pin, scope). The join
+    // is the fallback net: a mutation that already trips a specific
+    // refusal keeps that detail; an otherwise-coherent mutation that
+    // merely drifts from the Model is caught here.
+    for constraint in attachment.unique_constraints() {
+        if has_finding_for(findings, constraint.id.as_str()) {
+            continue;
+        }
+        let model_constraint = model_constraints
+            .get(constraint.entity.as_str())
+            .and_then(|table| table.get(constraint.id.as_str()));
+        let Some(model_constraint) = model_constraint else {
+            finding(
+                findings,
+                diagnostic::INPUT_INVALID,
+                constraint.id.clone(),
+                "constraint-not-in-model",
+            );
+            continue;
+        };
+        let agrees = model_constraint
+            .fields
+            .iter()
+            .map(|field| field.as_str())
+            .eq(constraint.fields.iter().map(String::as_str))
+            && model_constraint.comparison.as_str() == constraint.comparison
+            && model_constraint.scope.as_str() == constraint.scope
+            && model_constraint
+                .normalization_ref
+                .as_ref()
+                .map(|id| id.as_str())
+                == constraint.normalization_ref.as_deref();
+        if !agrees {
+            finding(
+                findings,
+                diagnostic::INPUT_INVALID,
+                constraint.id.clone(),
+                "constraint-diverges-from-model",
             );
         }
     }

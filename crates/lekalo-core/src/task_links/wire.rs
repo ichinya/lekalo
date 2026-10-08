@@ -443,7 +443,7 @@ pub fn parse(bytes: &[u8]) -> Result<Attachment, diagnostic::Failure> {
             return Err(diagnostic::input_invalid("unknown-field"));
         }
     }
-    if model_ref_value.get("schemaVersion").and_then(Json::as_str) != Some("0.2.16") {
+    if model_ref_value.get("schemaVersion").and_then(Json::as_str) != Some("0.8.0") {
         return Err(diagnostic::input_invalid("model-version"));
     }
     let ir_digest_value = model_ref_value
@@ -451,7 +451,7 @@ pub fn parse(bytes: &[u8]) -> Result<Attachment, diagnostic::Failure> {
         .and_then(Json::as_str)
         .ok_or_else(|| diagnostic::input_invalid("model-ref-shape"))?;
     let model_ref = ModelRef {
-        model_version: "0.2.16".to_owned(),
+        model_version: "0.8.0".to_owned(),
         ir_digest: Digest::parse(ir_digest_value)
             .ok_or_else(|| diagnostic::input_invalid("model-ref-digest"))?,
     };
@@ -464,7 +464,8 @@ pub fn parse(bytes: &[u8]) -> Result<Attachment, diagnostic::Failure> {
             return Err(diagnostic::input_invalid("unknown-field"));
         }
     }
-    if ir_ref.get("identity").and_then(Json::as_str) != Some("dev.lekalo.ir@0.2.16") {
+    if ir_ref.get("identity").and_then(Json::as_str) != Some(super::version::SUCCESSOR_IR_IDENTITY)
+    {
         return Err(diagnostic::input_invalid("ir-identity"));
     }
     let ir_digest = Digest::parse(

@@ -1,4 +1,4 @@
-schema_version: "0.2.16"
+schema_version: "0.8.0"
 definitions:
   - id: tasklinks.link_id
     kind: scalar
@@ -190,6 +190,30 @@ definitions:
         type: "tasklinks.revision?"
     identity:
       - link_id
+    relations:
+      - id: "tasklinks.rel.task_links"
+        target: "planner.task"
+        localFields:
+          - task_id
+        targetFields:
+          - task_id
+        min: 0
+        max: null
+        ownership: local
+        onDetach: retain-history
+        onDelete: restrict
+        description: "One task owns zero or more links; the typed Task -> links 0..N pair with scope task_id; detach preserves history and the external object"
+    uniqueConstraints:
+      - id: "tasklinks.uq_external_identity"
+        fields:
+          - workspace_id
+          - installation_id
+          - provider_id
+          - object_type
+          - external_id
+        comparison: exact-text
+        scope: "workspace-installation-provider-object-external-id"
+        description: "The exact five-part identity tuple; no prefix index or collation may stand in for it"
   - id: tasklinks.conflict
     kind: entity
     version: 1
@@ -253,3 +277,16 @@ definitions:
         required: true
     identity:
       - intent_id
+    relations:
+      - id: "tasklinks.rel.link_outbox"
+        target: "tasklinks.task_external_link"
+        localFields:
+          - link_id
+        targetFields:
+          - link_id
+        min: 0
+        max: null
+        ownership: local
+        onDetach: retain-history
+        onDelete: detach
+        description: "Outbox intents are aggregate children; cancelling never deletes the link"

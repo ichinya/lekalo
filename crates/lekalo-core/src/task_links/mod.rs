@@ -393,7 +393,7 @@ pub fn admit_evidence(
             Some(attachment.project_id()),
         ));
     }
-    if evidence.model_ref.schema_version != "0.2.16"
+    if evidence.model_ref.schema_version != version::MODEL_VERSION
         || evidence.model_ref.ir_digest != attachment.ir_digest().as_str()
     {
         return Err(evidence_invalid(
