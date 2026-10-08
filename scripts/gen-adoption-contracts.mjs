@@ -438,7 +438,15 @@ const schemas = {
       confinement: {
         type: "array",
         maxItems: 8,
-        items: { enum: ["disposable-copy", "bounded-output", "no-network"] },
+        items: {
+          anyOf: [
+            { enum: ["disposable-copy", "bounded-output", "no-network"] },
+            // The bound disposable-copy token: the exact candidate
+            // revision digest one real run covered (mirror of the
+            // closed runtime spelling).
+            { type: "string", pattern: "^disposable-copy:sha256:[0-9a-f]{64}$" },
+          ],
+        },
       },
       baseline: {
         type: ["object", "null"],
@@ -477,8 +485,27 @@ const schemas = {
         ],
       },
       conclusion: { enum: ["preserved", "failed", "unavailable", null] },
+      // The execution-custody envelope of one real run (typed null on
+      // specifications): the closed member mirrors the Rust custody
+      // struct so every emitted execution document validates against
+      // its own schema.
+      custody: {
+        type: ["object", "null"],
+        oneOf: [
+          {
+            type: "object",
+            additionalProperties: false,
+            required: ["run", "measured_ms"],
+            properties: {
+              run: { $ref: "#/$defs/sha256" },
+              measured_ms: { type: "integer", minimum: 1, maximum: 60000000 },
+            },
+          },
+          { type: "null" },
+        ],
+      },
     },
-    ["variant", "verification", "spec", "plan", "tool", "baseline_source", "checks", "confinement"],
+    ["variant", "verification", "spec", "plan", "tool", "baseline_source", "checks", "confinement", "custody"],
     {
       checkOutcomes: {
         type: "array",
@@ -608,11 +635,15 @@ const schemas = {
         items: {
           type: "object",
           additionalProperties: false,
-          required: ["symbol", "mode", "witness"],
+          required: ["symbol", "mode", "witness", "freshness"],
           properties: {
             symbol: { $ref: "#/$defs/semanticId" },
             mode: { $ref: "#/$defs/effectiveMode" },
             witness: { $ref: "#/$defs/token" },
+            // The same typed freshness qualification the status panels
+            // carry: a witness never presents stale evidence as plain
+            // current.
+            freshness: { enum: ["fresh", "unqualified", "stale", "unknown"] },
           },
         },
       },

@@ -36,7 +36,8 @@
         "required": [
           "symbol",
           "mode",
-          "witness"
+          "witness",
+          "freshness"
         ],
         "properties": {
           "symbol": {
@@ -47,6 +48,14 @@
           },
           "witness": {
             "$ref": "#/$defs/token"
+          },
+          "freshness": {
+            "enum": [
+              "fresh",
+              "unqualified",
+              "stale",
+              "unknown"
+            ]
           }
         }
       }

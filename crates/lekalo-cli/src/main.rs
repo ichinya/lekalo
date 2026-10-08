@@ -6421,6 +6421,12 @@ fn trace_query_adoption(path: &str, selector: &str, adoption: &str) -> DomainRes
         Ok(context) => context,
         Err(result) => return result,
     };
+    // The observed index rides along for the freshness re-fingerprint;
+    // unreadable evidence degrades to the typed unknown obligation.
+    let index = lekalo_core::observed::context(&selection)
+        .ok()
+        .and_then(|observed| lekalo_core::observed::index::load_index(&observed).ok())
+        .flatten();
     let project_id = context
         .model
         .project
@@ -6458,8 +6464,17 @@ fn trace_query_adoption(path: &str, selector: &str, adoption: &str) -> DomainRes
             ))
         }
     };
-    let report =
-        lekalo_core::adoption::trace_report(manifest_json, query_json, &coverage, Vec::new());
+    let report = match lekalo_core::adoption::trace_report(
+        &context,
+        index.as_ref(),
+        manifest_json,
+        query_json,
+        &coverage,
+        Vec::new(),
+    ) {
+        Ok(report) => report,
+        Err(result) => return result,
+    };
     DomainResult::receipt(
         serde_json::to_string_pretty(&report).expect("trace report serializes"),
         format!(

@@ -34,5 +34,6 @@
   "confinement": [
     "disposable-copy",
     "bounded-output"
-  ]
+  ],
+  "custody": null
 }

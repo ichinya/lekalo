@@ -300,6 +300,17 @@ fn check_scope(scope: &Scope) -> Result<(), WireError> {
     Ok(())
 }
 
+/// The exact closed identity literal of one document family: the Ajv
+/// schemas' `identity` const, enforced on the Rust side with the same
+/// fail-closed refusals (X8 parity).
+fn check_identity(identity: &str, expected: &str) -> Result<(), WireError> {
+    if identity == expected {
+        Ok(())
+    } else {
+        Err(WireError::Shape)
+    }
+}
+
 /// The closed post-decode vocabulary and bounds every document must
 /// hold; the Ajv schema gate is the second independent implementation.
 trait ClosedValidate {
@@ -329,6 +340,7 @@ impl ClosedValidate for AnalysisDocument {
         "discrepancies",
     ];
     fn validate(&self) -> Result<(), WireError> {
+        check_identity(&self.identity, version::ANALYSIS_IDENTITY)?;
         check_scope(&self.scope)?;
         check_pins(&self.pins)?;
         if self.definitions.len() > version::MAX_DEFINITIONS {
@@ -382,6 +394,7 @@ impl ClosedValidate for ConfirmationPlan {
         "rollback",
     ];
     fn validate(&self) -> Result<(), WireError> {
+        check_identity(&self.identity, version::CONFIRMATION_PLAN_IDENTITY)?;
         check_pins(&self.pins)?;
         check_writes(&self.writes, false)?;
         if self.selections.definitions.is_empty()
@@ -403,11 +416,18 @@ impl ClosedValidate for PatchDocument {
         "files",
     ];
     fn validate(&self) -> Result<(), WireError> {
+        check_identity(&self.identity, version::PATCH_IDENTITY)?;
         check_writes(&self.files, true)?;
         check_member(
             &self.origin.kind,
             &["supplied-reviewed", "adapter-generated"],
         )?;
+        if !version::is_native_id(&self.origin.identity) {
+            return Err(WireError::Shape);
+        }
+        if !version::is_semantic_id(&self.scope.symbol) {
+            return Err(WireError::Shape);
+        }
         if self.files.is_empty() {
             return Err(WireError::Shape);
         }
@@ -434,6 +454,7 @@ impl ClosedValidate for RefactorPlan {
         "rollback",
     ];
     fn validate(&self) -> Result<(), WireError> {
+        check_identity(&self.identity, version::REFACTOR_PLAN_IDENTITY)?;
         check_scope(&self.selection)?;
         check_pins(&self.pins)?;
         for recommendation in &self.recommendations {
@@ -464,12 +485,29 @@ impl ClosedValidate for VerificationDocument {
         "confinement",
     ];
     fn validate(&self) -> Result<(), WireError> {
+        check_identity(&self.identity, version::VERIFICATION_IDENTITY)?;
         check_member(&self.variant, &KINDS_VARIANT)?;
         if self.checks.len() > version::MAX_CHECKS {
             return Err(WireError::Shape);
         }
+        // Every check id is a bounded token, unique within the spec.
+        let mut seen_ids = std::collections::BTreeSet::new();
         for check in &self.checks {
             check_member(&check.kind, &KINDS_CHECK)?;
+            if !version::is_scope_id(&check.id) || !seen_ids.insert(check.id.as_str()) {
+                return Err(WireError::Shape);
+            }
+            if check.expect_exit > 255 {
+                return Err(WireError::Shape);
+            }
+            if check.expect_stdout.len() > 64
+                || check
+                    .expect_stdout
+                    .iter()
+                    .any(|expected| expected.len() > 1024)
+            {
+                return Err(WireError::Shape);
+            }
         }
         for side in [&self.baseline, &self.candidate].into_iter().flatten() {
             if side.checks.len() > version::MAX_CHECKS {
@@ -502,9 +540,18 @@ impl ClosedValidate for VerificationDocument {
         }
         if let Some(tool) = &self.tool {
             tool_digest_or_null(&tool.digest)?;
+            if tool.program.is_empty() || tool.program.len() > 256 {
+                return Err(WireError::Shape);
+            }
+            if tool.args.len() > 64 || tool.args.iter().any(|arg| arg.len() > 256) {
+                return Err(WireError::Shape);
+            }
         }
         if let Some(custody) = &self.custody {
-            if !version::is_sha256(&custody.run) {
+            if !version::is_sha256(&custody.run)
+                || custody.measured_ms == 0
+                || custody.measured_ms > 60_000_000
+            {
                 return Err(WireError::Shape);
             }
         }
@@ -529,6 +576,7 @@ impl ClosedValidate for AdoptionReceipt {
         "analysis",
     ];
     fn validate(&self) -> Result<(), WireError> {
+        check_identity(&self.identity, version::RECEIPT_IDENTITY)?;
         check_member(&self.phase, &KINDS_PHASE)?;
         check_member(&self.outcome, &KINDS_RECEIPT_OUTCOME)?;
         check_writes(&self.writes, true)?;
@@ -550,6 +598,7 @@ impl ClosedValidate for CoverageDocument {
         "gaps",
     ];
     fn validate(&self) -> Result<(), WireError> {
+        check_identity(&self.identity, version::COVERAGE_IDENTITY)?;
         check_scope(&self.scope)?;
         if self.rows.len() > version::MAX_ROWS {
             return Err(WireError::Shape);
@@ -578,7 +627,11 @@ impl ClosedValidate for StatusReport {
         "gaps",
     ];
     fn validate(&self) -> Result<(), WireError> {
+        check_identity(&self.identity, version::STATUS_REPORT_IDENTITY)?;
         for panel in &self.panels {
+            if !version::is_semantic_id(&panel.symbol) {
+                return Err(WireError::Shape);
+            }
             check_member(&panel.mode, &KINDS_EFFECTIVE)?;
             check_member(&panel.state, &KINDS_ROW_STATE)?;
             check_member(
@@ -600,8 +653,16 @@ impl ClosedValidate for ImpactReport {
         "gaps",
     ];
     fn validate(&self) -> Result<(), WireError> {
+        check_identity(&self.identity, version::IMPACT_REPORT_IDENTITY)?;
         for boundary in &self.boundaries {
+            if !version::is_semantic_id(&boundary.symbol) {
+                return Err(WireError::Shape);
+            }
             check_member(&boundary.mode, &KINDS_EFFECTIVE)?;
+            check_member(
+                &boundary.freshness,
+                &["fresh", "unqualified", "stale", "unknown"],
+            )?;
         }
         Ok(())
     }
@@ -619,6 +680,12 @@ impl ClosedValidate for TraceReport {
         "stale",
     ];
     fn validate(&self) -> Result<(), WireError> {
+        check_identity(&self.identity, version::TRACE_REPORT_IDENTITY)?;
+        for digest in &self.verification {
+            if !version::is_sha256(digest) {
+                return Err(WireError::Shape);
+            }
+        }
         Ok(())
     }
 }
@@ -1008,6 +1075,10 @@ pub struct BoundaryWitness {
     pub symbol: String,
     pub mode: String,
     pub witness: String,
+    /// The typed freshness qualification of the underlying coverage
+    /// join, identical to the status panels' axis: a witness never
+    /// presents a stale attachment as plain current (X11).
+    pub freshness: String,
 }
 
 /// The typed opt-in wrapper around one trace manifest and query result.

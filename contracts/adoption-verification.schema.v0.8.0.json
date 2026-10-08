@@ -16,7 +16,8 @@
     "tool",
     "baseline_source",
     "checks",
-    "confinement"
+    "confinement",
+    "custody"
   ],
   "properties": {
     "schema_version": {
@@ -157,10 +158,18 @@
       "type": "array",
       "maxItems": 8,
       "items": {
-        "enum": [
-          "disposable-copy",
-          "bounded-output",
-          "no-network"
+        "anyOf": [
+          {
+            "enum": [
+              "disposable-copy",
+              "bounded-output",
+              "no-network"
+            ]
+          },
+          {
+            "type": "string",
+            "pattern": "^disposable-copy:sha256:[0-9a-f]{64}$"
+          }
         ]
       }
     },
@@ -247,6 +256,35 @@
         "failed",
         "unavailable",
         null
+      ]
+    },
+    "custody": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "run",
+            "measured_ms"
+          ],
+          "properties": {
+            "run": {
+              "$ref": "#/$defs/sha256"
+            },
+            "measured_ms": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 60000000
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
       ]
     }
   },
