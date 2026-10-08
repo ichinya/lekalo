@@ -10,13 +10,18 @@ use std::process::{Command, Output};
 const FIXTURES: &str = "tests/fixtures/task-external-links";
 
 fn lekalo_in(dir: &Path, args: &[&str]) -> Output {
+    lekalo_in_with_env(dir, &[], args)
+}
+
+fn lekalo_in_with_env(dir: &Path, env: &[(&str, &str)], args: &[&str]) -> Output {
     let mut args = args.to_vec();
     args.insert(0, "--no-cache");
-    Command::new(env!("CARGO_BIN_EXE_lekalo"))
-        .args(args)
-        .current_dir(dir)
-        .output()
-        .expect("run the real lekalo binary")
+    let mut command = Command::new(env!("CARGO_BIN_EXE_lekalo"));
+    command.args(args).current_dir(dir);
+    for (key, value) in env {
+        command.env(key, value);
+    }
+    command.output().expect("run the real lekalo binary")
 }
 
 fn stderr_text(output: &Output) -> String {
@@ -858,6 +863,99 @@ fn native_claims_are_qualification_gated() {
         envelope["diagnostics"][0]["data"]["detail"],
         "evidence-native-unqualified"
     );
+}
+
+/// Native qualification is a real admission path, not an env gate: a
+/// provisioned flag WITHOUT the executed battery's receipt is refused
+/// exactly like no flag at all, and a complete receipt (schemaVersion,
+/// identity, database, every required leg) beside the named DB admits
+/// the native claim. The receipt here simulates the battery's
+/// committed artifact; the battery legs write it for real under the
+/// native gate.
+#[test]
+fn native_qualification_requires_the_executed_battery_receipt() {
+    let database = workspace_path("target/native-qualification/provisioned.sqlite");
+    let _ = std::fs::remove_dir_all(database.parent().unwrap());
+    std::fs::create_dir_all(database.parent().unwrap()).expect("provision root");
+    let database_str = database.to_string_lossy().into_owned();
+    let env = [
+        ("LEKALO_TASKLINKS_NATIVE", "1"),
+        ("LEKALO_TASKLINKS_NATIVE_DB", database_str.as_str()),
+    ];
+    let run_inspect = |env: &[(&str, &str)]| {
+        lekalo_in_with_env(
+            &workspace_path("."),
+            env,
+            &[
+                "--json",
+                "task-links",
+                "inspect",
+                "tasklinks.task_external_link",
+                "--project",
+                &project(),
+                "--attachment",
+                &attachment(),
+                "--evidence",
+                &fixture("invalid/evidence-native-unqualified.json"),
+            ],
+        )
+    };
+    // Flag only: refused - the bare env var qualifies nothing.
+    let output = run_inspect(&env);
+    assert_eq!(output.status.code(), Some(1), "env-only forgery refused");
+    let envelope: Value = serde_json::from_str(stderr_text(&output).trim()).expect("envelope");
+    assert_eq!(
+        envelope["diagnostics"][0]["data"]["detail"],
+        "evidence-native-unqualified"
+    );
+    // A complete executed-battery receipt beside the named DB admits.
+    let receipt = serde_json::json!({
+        "schemaVersion": "lekalo/task-links-native-receipt/v0.8.0",
+        "identity": "dev.lekalo.task-links-native-receipt@0.8.0",
+        "database": database_str,
+        "legs": [
+            "accepted_before_ack_survives_restart_as_unknown",
+            "attempt_bound_survives_restart",
+            "synchronized_identity_race_binds_one_task"
+        ]
+    });
+    let receipt_path = database.with_file_name("provisioned.sqlite.qualified.json");
+    std::fs::write(
+        &receipt_path,
+        serde_json::to_vec_pretty(&receipt).expect("receipt"),
+    )
+    .expect("write receipt");
+    let output = run_inspect(&env);
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "the forged native document (injected clock) still refuses, but for the RIGHT reason"
+    );
+    let envelope: Value = serde_json::from_str(stderr_text(&output).trim()).expect("envelope");
+    assert_ne!(
+        envelope["diagnostics"][0]["data"]["detail"], "evidence-native-unqualified",
+        "the qualification itself passed: the refusal is the clock policy, not the admission gate"
+    );
+    // An incomplete receipt (a missing leg) refuses again.
+    let incomplete = serde_json::json!({
+        "schemaVersion": "lekalo/task-links-native-receipt/v0.8.0",
+        "identity": "dev.lekalo.task-links-native-receipt@0.8.0",
+        "database": database_str,
+        "legs": ["attempt_bound_survives_restart"]
+    });
+    std::fs::write(
+        &receipt_path,
+        serde_json::to_vec_pretty(&incomplete).expect("receipt"),
+    )
+    .expect("write receipt");
+    let output = run_inspect(&env);
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value = serde_json::from_str(stderr_text(&output).trim()).expect("envelope");
+    assert_eq!(
+        envelope["diagnostics"][0]["data"]["detail"],
+        "evidence-native-unqualified"
+    );
+    let _ = std::fs::remove_dir_all(database.parent().unwrap());
 }
 
 /// The inspect operand resolves against the view: an unknown symbol is

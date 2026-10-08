@@ -16,6 +16,7 @@
 
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { resolve as resolvePath } from "node:path";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -94,13 +95,19 @@ if (provisioned) {
         "task_links",
         "--",
         "--ignored",
+        "--test-threads=1",
         "native_leg",
       ],
       {
         cwd: root,
         encoding: "utf8",
         timeout: 600000,
-        env: { ...process.env, LEKALO_TASKLINKS_NATIVE_DB: database },
+        env: {
+          ...process.env,
+          // The absolute path keeps the battery, this gate, and the
+          // CLI admission aligned no matter their working directories.
+          LEKALO_TASKLINKS_NATIVE_DB: resolvePath(root, database),
+        },
       },
     );
     if (rust.error || rust.status !== 0) {
@@ -110,10 +117,42 @@ if (provisioned) {
       );
     } else {
       const ran = rust.stdout.match(/test native_leg\S+ \.\.\. ok/g) ?? [];
-      if (ran.length === 0) {
-        fail("native-battery-empty", "no native_leg_* test executed");
+      if (ran.length < 3) {
+        fail("native-battery-empty", "the native_leg_* battery did not fully execute");
       } else {
-        nativeLeg = "durable-restart-executed";
+        // The qualification receipt is the admission artifact: the CLI
+        // admits native-origin evidence only against it. A battery run
+        // that did not execute and pass leaves no (complete) receipt.
+        const receiptPath = resolvePath(root, database) + ".qualified.json";
+        if (!existsSync(receiptPath)) {
+          fail("native-receipt-missing", receiptPath);
+        } else {
+          let receipt;
+          try {
+            receipt = JSON.parse(readFileSync(receiptPath, "utf8"));
+          } catch (error) {
+            fail("native-receipt-shape", String(error).slice(0, 200));
+          }
+          if (receipt) {
+            const requiredLegs = [
+              "accepted_before_ack_survives_restart_as_unknown",
+              "attempt_bound_survives_restart",
+              "synchronized_identity_race_binds_one_task",
+            ];
+            const legs = Array.isArray(receipt.legs) ? receipt.legs : [];
+            for (const required of requiredLegs) {
+              if (!legs.includes(required)) {
+                fail("native-receipt-leg-missing", required);
+              }
+            }
+            if (receipt.identity !== "dev.lekalo.task-links-native-receipt@0.8.0") {
+              fail("native-receipt-identity", String(receipt.identity));
+            }
+            if (failures.length === 0) {
+              nativeLeg = "durable-restart-and-db-race-executed";
+            }
+          }
+        }
       }
     }
   }

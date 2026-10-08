@@ -211,11 +211,57 @@ fn accepted_owner_pins() -> Vec<tl::OwnerPin> {
     pins
 }
 
-/// Whether the environment asserts the qualified-native contract (the
-/// qualified CI job's provisioning flag). Only then may `native`
-/// evidence be admitted; a forged native claim elsewhere fails closed.
+/// The executed native legs the qualification receipt must name before
+/// any native-origin evidence is admitted: the durable ack-window
+/// restart, the durable attempt bound, and the DB-level identity race.
+const NATIVE_QUALIFICATION_LEGS: [&str; 3] = [
+    "accepted_before_ack_survives_restart_as_unknown",
+    "attempt_bound_survives_restart",
+    "synchronized_identity_race_binds_one_task",
+];
+
+/// Whether the environment actually stands behind native-origin
+/// evidence: the provisioning flag alone is never enough. Qualification
+/// requires the executed battery's receipt beside the provisioned DB —
+/// written by the `native_leg_*` battery itself after its assertions
+/// pass — naming the same database and every required leg. A forged
+/// flag without an executed battery is a refusal
+/// (`evidence-native-unqualified`), never a silent pass.
 fn native_qualified() -> bool {
-    std::env::var("LEKALO_TASKLINKS_NATIVE").as_deref() == Ok("1")
+    if std::env::var("LEKALO_TASKLINKS_NATIVE").as_deref() != Ok("1") {
+        return false;
+    }
+    let Ok(database) = std::env::var("LEKALO_TASKLINKS_NATIVE_DB") else {
+        return false;
+    };
+    if database.is_empty() {
+        return false;
+    }
+    let receipt_path = std::path::Path::new(&database).with_file_name(format!(
+        "{}.qualified.json",
+        std::path::Path::new(&database)
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .unwrap_or_default(),
+    ));
+    let Ok(bytes) = std::fs::read(&receipt_path) else {
+        return false;
+    };
+    let Ok(receipt) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+        return false;
+    };
+    if receipt["identity"] != "dev.lekalo.task-links-native-receipt@0.8.0" {
+        return false;
+    }
+    if receipt["database"] != database.as_str() {
+        return false;
+    }
+    let Some(legs) = receipt["legs"].as_array() else {
+        return false;
+    };
+    NATIVE_QUALIFICATION_LEGS
+        .iter()
+        .all(|required| legs.iter().any(|leg| leg.as_str() == Some(*required)))
 }
 
 fn check_profile(profile: &str) -> Result<(), DomainResult> {

@@ -1223,18 +1223,65 @@ mod native_leg {
     use std::path::PathBuf;
 
     use lekalo_core::task_links::decision::{
-        self, DispatchEvent, DispatchStep, Link, LinkState, SyncMode,
+        self, DispatchEvent, DispatchStep, Link, LinkState, OutboxState, SyncMode,
     };
 
-    fn db_path() -> PathBuf {
-        let path = std::env::var_os("LEKALO_TASKLINKS_NATIVE_DB")
+    /// One isolated DB file per leg: parallel test fixtures never
+    /// share (or race) the same file.
+    fn db_path(leg: &str) -> PathBuf {
+        let base = std::env::var_os("LEKALO_TASKLINKS_NATIVE_DB")
             .map(PathBuf::from)
             .filter(|path| !path.as_os_str().is_empty())
             .expect("LEKALO_TASKLINKS_NATIVE_DB names the transactional DB file");
+        let file_name = base
+            .file_name()
+            .map(|name| format!("{}-{leg}.sqlite", name.to_string_lossy()))
+            .expect("db file name");
+        let path = base.with_file_name(file_name);
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
         path
+    }
+
+    /// Record one executed leg in the qualification receipt beside the
+    /// provisioned DB: the receipt is the real admission artifact the
+    /// CLI requires before any native-origin evidence is admitted (a
+    /// bare environment flag never qualifies).
+    fn record_executed_leg(leg: &str) {
+        let base = std::path::PathBuf::from(
+            std::env::var("LEKALO_TASKLINKS_NATIVE_DB").expect("provisioned db"),
+        );
+        let receipt_path = base.with_file_name(format!(
+            "{}.qualified.json",
+            base.file_name()
+                .map(|name| name.to_string_lossy().to_string())
+                .expect("db file name")
+        ));
+        let mut receipt: serde_json::Value = std::fs::read(&receipt_path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .unwrap_or_else(|| {
+                serde_json::json!({
+                    "schemaVersion": "lekalo/task-links-native-receipt/v0.8.0",
+                    "identity": "dev.lekalo.task-links-native-receipt@0.8.0",
+                    "database": base.to_string_lossy(),
+                    "legs": [],
+                })
+            });
+        let legs = receipt["legs"].as_array().cloned().unwrap_or_default();
+        if !legs.iter().any(|entry| entry == leg) {
+            receipt["legs"] = serde_json::Value::Array(
+                legs.into_iter()
+                    .chain(std::iter::once(serde_json::Value::String(leg.to_owned())))
+                    .collect(),
+            );
+        }
+        std::fs::write(
+            &receipt_path,
+            serde_json::to_vec_pretty(&receipt).expect("receipt"),
+        )
+        .expect("write qualification receipt");
     }
 
     fn open(path: &std::path::Path) -> rusqlite::Connection {
@@ -1246,10 +1293,13 @@ mod native_leg {
                  CREATE TABLE IF NOT EXISTS intents (
                      intent_id TEXT PRIMARY KEY,
                      link_id TEXT NOT NULL,
+                     link_generation INTEGER NOT NULL,
                      idempotency_key TEXT NOT NULL,
                      state TEXT NOT NULL,
                      attempts INTEGER NOT NULL,
+                     next_attempt_ms INTEGER NOT NULL,
                      lease_token INTEGER,
+                     lease_expires_ms INTEGER,
                      receipt_digest TEXT
                  );",
             )
@@ -1260,12 +1310,15 @@ mod native_leg {
     fn persist(connection: &rusqlite::Connection, intent: &decision::Intent) {
         let mut statement = connection
             .prepare(
-                "INSERT INTO intents (intent_id, link_id, idempotency_key, state, attempts, lease_token, receipt_digest)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                "INSERT INTO intents (intent_id, link_id, link_generation, idempotency_key, state, attempts, next_attempt_ms, lease_token, lease_expires_ms, receipt_digest)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
                  ON CONFLICT(intent_id) DO UPDATE SET
+                     link_generation = excluded.link_generation,
                      state = excluded.state,
                      attempts = excluded.attempts,
+                     next_attempt_ms = excluded.next_attempt_ms,
                      lease_token = excluded.lease_token,
+                     lease_expires_ms = excluded.lease_expires_ms,
                      receipt_digest = excluded.receipt_digest",
             )
             .expect("prepare upsert");
@@ -1273,10 +1326,13 @@ mod native_leg {
             .execute((
                 intent.intent_id.as_str(),
                 intent.link_id.as_str(),
+                intent.link_generation as i64,
                 intent.idempotency_key.as_str(),
                 intent.state.as_str(),
                 intent.attempts as i64,
+                intent.next_attempt_ms as i64,
                 intent.lease_token.map(|token| token as i64),
+                intent.lease_expires_ms.map(|deadline| deadline as i64),
                 intent.receipt_digest.as_deref(),
             ))
             .expect("upsert intent");
@@ -1311,12 +1367,16 @@ mod native_leg {
 
     /// Crash between the provider accept and the local ack: after a
     /// process restart the durable row names the explicit
-    /// accepted-pending-ack window, not delivered and not silently
-    /// re-sendable without reconciliation.
+    /// accepted-pending-ack window; recovery from the durable row
+    /// lands in the persistent unknown_delivery state, which refuses
+    /// claims until the explicit reconciliation resolves it. The
+    /// full durable state (lease, generation, next attempt) survives
+    /// the restart, and the executed leg is recorded in the
+    /// qualification receipt.
     #[test]
     #[ignore = "qualified native leg: runs under LEKALO_TASKLINKS_NATIVE=1 only"]
     fn native_leg_accepted_before_ack_survives_restart_as_unknown() {
-        let path = db_path();
+        let path = db_path("ack-restart");
         let _ = std::fs::remove_file(&path);
         let mut intents = BTreeMap::new();
         let link_row = native_link("native-link-ack");
@@ -1344,13 +1404,96 @@ mod native_leg {
             );
             persist(&connection, intent);
         } // the connection drops here: simulated process crash
-          // Restart: reopen the file and reconcile from the durable row.
-        let connection = open(&path);
-        let (state, _attempts) = durable_state(&connection, &intent_id);
+          // Restart: reopen the file and reconstruct the intent from the
+          // durable row (full state, not just a counter).
+        let (state, attempts, generation, lease_token) = open(&path)
+            .query_row(
+                "SELECT state, attempts, link_generation, lease_token FROM intents WHERE intent_id = ?1",
+                [&intent_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, Option<i64>>(3)?,
+                    ))
+                },
+            )
+            .expect("durable row");
         assert_eq!(
             state, "accepted_pending_ack",
             "the crash leaves the explicit ack window on disk"
         );
+        assert_eq!(lease_token, Some(41), "the fence survives the restart");
+        assert_eq!(attempts, 1, "the attempt count survives the restart");
+        assert_eq!(generation, 1);
+        // Recovery from the durable record lands in the persistent
+        // unknown_delivery state.
+        let mut intents = BTreeMap::new();
+        let link_row = native_link("native-link-ack");
+        let replayed = decision::plan_intent(
+            &mut intents,
+            &link_row,
+            decision::DecisionOutcome::Allowed,
+            "tasklinks.request_action",
+            "native-key-ack".to_owned(),
+            0,
+        )
+        .expect("replay returns the same intent");
+        assert_eq!(replayed.intent_id, intent_id);
+        {
+            let intent = intents.get_mut(&intent_id).unwrap();
+            // Reconstruct the full durable state from the row.
+            intent.attempts = attempts as u64;
+            intent.lease_token = Some(41);
+            intent.state = OutboxState::AcceptedPendingAck;
+            assert_eq!(
+                decision::recover_lease(intent, 41, 1),
+                DispatchStep::UnknownDelivery,
+                "recovery inside the ack window reports the uncertainty"
+            );
+            assert_eq!(intent.state, decision::OutboxState::UnknownDelivery);
+            // The unknown state is not re-sendable.
+            assert_eq!(
+                decision::claim(
+                    &mut intents.get_mut(&intent_id).unwrap().clone(),
+                    42,
+                    10,
+                    30_000,
+                    1,
+                    5
+                ),
+                DispatchStep::Ignored,
+                "the unknown state must be reconciled first"
+            );
+        }
+        {
+            let connection = open(&path);
+            persist(&connection, intents.get(&intent_id).unwrap());
+        } // crash again: the unknown state is on disk
+        let (state, _) = {
+            let connection = open(&path);
+            durable_state(&connection, &intent_id)
+        };
+        assert_eq!(
+            state, "unknown_delivery",
+            "the durable uncertainty survives the restart"
+        );
+        // Explicit reconciliation resolves it as delivered.
+        {
+            let intent = intents.get_mut(&intent_id).unwrap();
+            assert_eq!(
+                decision::reconcile_unknown_delivery(intent, decision::Reconciliation::Delivered),
+                DispatchStep::Delivered
+            );
+        }
+        {
+            let connection = open(&path);
+            persist(&connection, intents.get(&intent_id).unwrap());
+            let (state, _) = durable_state(&connection, &intent_id);
+            assert_eq!(state, "delivered", "reconciliation completes the row");
+        }
+        record_executed_leg("accepted_before_ack_survives_restart_as_unknown");
     }
 
     /// The attempt bound is durable: after a restart the recorded
@@ -1359,7 +1502,7 @@ mod native_leg {
     #[test]
     #[ignore = "qualified native leg: runs under LEKALO_TASKLINKS_NATIVE=1 only"]
     fn native_leg_attempt_bound_survives_restart() {
-        let path = db_path();
+        let path = db_path("attempt-bound");
         let _ = std::fs::remove_file(&path);
         let mut intents = BTreeMap::new();
         let link_row = native_link("native-link-bound");
@@ -1424,45 +1567,111 @@ mod native_leg {
             "the durable attempt count enforces the bound across restarts"
         );
         persist(&connection, &restored);
+        record_executed_leg("attempt_bound_survives_restart");
         let (state, _) = durable_state(&connection, &intent_id);
         assert_eq!(state, "dead_letter");
     }
 
     /// Synchronized competing reservations over one real transactional
-    /// DB: exactly one wins.
+    /// DB: both workers hold their OWN connection and race INSERTs into
+    /// a table whose unique index carries the exact identity tuple —
+    /// no application mutex, no serialization. The DB unique index is
+    /// the referee: exactly one insert wins, and the engine's typed
+    /// reservation agrees.
     #[test]
     #[ignore = "qualified native leg: runs under LEKALO_TASKLINKS_NATIVE=1 only"]
     fn native_leg_synchronized_identity_race_binds_one_task() {
-        let path = db_path();
+        let path = db_path("identity-race");
         let _ = std::fs::remove_file(&path);
-        let connection = open(&path);
-        let bindings = std::sync::Arc::new(std::sync::Mutex::new(BTreeMap::new()));
+        let creator = open(&path);
+        creator
+            .execute_batch(
+                "CREATE TABLE IF NOT EXISTS link_identity (
+                     workspace_id TEXT NOT NULL,
+                     installation_id TEXT NOT NULL,
+                     provider_id TEXT NOT NULL,
+                     object_type TEXT NOT NULL,
+                     external_id TEXT NOT NULL,
+                     task_id TEXT NOT NULL,
+                     PRIMARY KEY (workspace_id, installation_id, provider_id, object_type, external_id)
+                 );",
+            )
+            .expect("identity table");
+        drop(creator);
         let (tx, rx) = std::sync::mpsc::channel();
         let mut handles = Vec::new();
         for task in ["native-task-a", "native-task-b"] {
             let tx = tx.clone();
-            let bindings = std::sync::Arc::clone(&bindings);
+            let path = path.clone();
             handles.push(std::thread::spawn(move || {
-                let mut guard = bindings.lock().unwrap();
-                let outcome = decision::reserve_identity(
-                    &mut guard,
-                    "ws-native",
-                    "inst-native",
-                    "github-issues",
-                    "issue",
-                    "77",
-                    task,
+                // Each worker holds its own connection for the whole
+                // insert: a genuine DB-level race.
+                let connection = open(&path);
+                let insert = connection.execute(
+                    "INSERT INTO link_identity (
+                         workspace_id, installation_id, provider_id, object_type, external_id, task_id
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    rusqlite::params![
+                        "ws-native",
+                        "inst-native",
+                        "github-issues",
+                        "issue",
+                        "77",
+                        task
+                    ],
                 );
-                tx.send((task, outcome.is_some())).unwrap();
+                let won = match insert {
+                    Ok(updated) => updated == 1,
+                    Err(rusqlite::Error::SqliteFailure(error, _))
+                        if error.code == rusqlite::ErrorCode::ConstraintViolation =>
+                    {
+                        false
+                    }
+                    Err(error) => panic!("identity race failed: {error}"),
+                };
+                // The winner's reservation replays through the engine's
+                // typed tuple: the DB row and the engine agree.
+                if won {
+                    let mut bindings = BTreeMap::new();
+                    let outcome = decision::reserve_identity(
+                        &mut bindings,
+                        "ws-native",
+                        "inst-native",
+                        "github-issues",
+                        "issue",
+                        "77",
+                        task,
+                    );
+                    assert_eq!(outcome, Some(decision::Reservation::Fresh));
+                }
+                tx.send((task.to_owned(), won)).unwrap();
             }));
         }
-        drop(connection);
         drop(tx);
         for handle in handles {
             handle.join().expect("race worker");
         }
-        let winners = rx.into_iter().filter(|(_, won)| *won).count();
-        assert_eq!(winners, 1, "exactly one reservation wins over the DB");
+        let winners: Vec<(String, bool)> = rx.into_iter().collect();
+        assert_eq!(
+            winners.iter().filter(|(_, won)| *won).count(),
+            1,
+            "exactly one reservation wins the DB unique index"
+        );
+        // The durable table carries exactly the one winning row.
+        let connection = open(&path);
+        let rows: i64 = connection
+            .query_row("SELECT COUNT(*) FROM link_identity", [], |row| row.get(0))
+            .expect("count");
+        assert_eq!(rows, 1, "one link, one row");
+        let bound_task: String = connection
+            .query_row("SELECT task_id FROM link_identity", [], |row| row.get(0))
+            .expect("winner");
+        assert_eq!(
+            bound_task,
+            winners.iter().find(|(_, won)| *won).expect("winner").0,
+            "the durable row names the winning task"
+        );
+        record_executed_leg("synchronized_identity_race_binds_one_task");
     }
 }
 
