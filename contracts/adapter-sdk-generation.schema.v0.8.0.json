@@ -105,13 +105,14 @@
             "$ref": "#/$defs/sha256"
           },
           "role": {
-            "description": "The reviewed role of the input: the pinned protocol schemas, the diagnostic registry, the capability definitions, the generator configuration, or an SDK source the generator inlines verbatim into a standalone template bundle.",
+            "description": "The reviewed role of the input: the pinned protocol schemas, the diagnostic registry, the capability definitions, the generator configuration, an SDK source the generator inlines verbatim into a standalone template bundle, or the hand-maintained template glue inlined into that bundle.",
             "enum": [
               "capability-definitions",
               "diagnostic-registry",
               "generator-config",
               "protocol-schema",
-              "bundle-source"
+              "bundle-source",
+              "template-glue"
             ]
           }
         }

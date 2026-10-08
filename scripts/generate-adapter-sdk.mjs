@@ -893,6 +893,15 @@ const BUNDLE_PROVENANCE = {
       "sdk/php/src/Runtime/Paths.php",
       "sdk/php/src/Runtime/Serve.php",
     ],
+    // The hand-maintained template glue is a real input of every bundle
+    // (issue #106 review r2 #13): changing a main.php invalidates the
+    // emitted bundle, so its bytes belong in the recorded provenance.
+    templateGlue: [
+      "sdk/templates/php/generate/main.php",
+      "sdk/templates/php/reference/main.php",
+      "sdk/templates/php/scan/main.php",
+      "sdk/templates/php/verify/main.php",
+    ],
     outputs: [
       "templates/php/generate/adapter.php",
       "templates/php/reference/adapter.php",
@@ -903,6 +912,12 @@ const BUNDLE_PROVENANCE = {
   rust: { outputs: [], inputs: [] },
   typescript: {
     inputs: TS_MODULE_ORDER.map((name) => `sdk/typescript/${name}`),
+    templateGlue: [
+      "sdk/templates/typescript/generate/main.mjs",
+      "sdk/templates/typescript/reference/main.mjs",
+      "sdk/templates/typescript/scan/main.mjs",
+      "sdk/templates/typescript/verify/main.mjs",
+    ],
     outputs: [
       "templates/typescript/generate/adapter.mjs",
       "templates/typescript/reference/adapter.mjs",
@@ -911,6 +926,10 @@ const BUNDLE_PROVENANCE = {
     ],
   },
 };
+/** The generator configuration is a real input of every run (issue #106
+ * review r2 #13): the reviewed options, identities, and coverage
+ * obligations in sdk/schema-inputs.json shape every emitted byte. */
+const GENERATOR_CONFIG_INPUT = "sdk/schema-inputs.json";
 
 const TEMPLATES = {
   go: [{ entry: "main.go", name: "generate" }, { entry: "main.go", name: "reference" }, { entry: "main.go", name: "scan" }, { entry: "main.go", name: "verify" }],
@@ -950,6 +969,14 @@ function renderFor(lang) {
       // Bundle provenance (issue #106): the SDK sources inlined into the
       // standalone template bundles are real inputs of this run.
       ...BUNDLE_PROVENANCE[lang].inputs.map((path) => ({ digest: sha256(read(path)), path, role: "bundle-source" })),
+      // The hand-maintained template glue is a real input too (issue #106
+      // review r2 #13): a main.mjs/main.php change invalidates the
+      // bundle and must invalidate the recorded provenance.
+      ...(BUNDLE_PROVENANCE[lang].templateGlue ?? []).map((path) => ({ digest: sha256(read(path)), path, role: "template-glue" })),
+      // The generator configuration is a real input of every run: the
+      // reviewed options, identities, and coverage obligations shape
+      // every emitted byte.
+      { digest: sha256(read(GENERATOR_CONFIG_INPUT)), path: GENERATOR_CONFIG_INPUT, role: "generator-config" },
     ]
       .map(({ digest, path, role }) => ({ digest, path, role }))
       .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)),
