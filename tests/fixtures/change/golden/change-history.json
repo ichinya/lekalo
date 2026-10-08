@@ -23,7 +23,7 @@
           }
         ],
         "history": {
-          "recordDigest": "sha256:15578250333646047d5aff20a4178ea1d27540e725d70312da65cd67a44134a3",
+          "recordDigest": "sha256:1873fb74a0bf8a89fd58b66b10afb7ac61ac8de34cdff79f6f7573d5586ec01d",
           "sequence": 1
         },
         "identity": "dev.lekalo.change-receipt@0.8.0",

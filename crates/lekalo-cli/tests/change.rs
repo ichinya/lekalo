@@ -461,7 +461,8 @@ fn recovery_blocks_the_project_until_recover_runs() {
         .expect("reasons")
         .iter()
         .any(|value| value == "change.recovery-required"));
-    // Recovery clears the barrier.
+    // Recovery clears the barrier. The rollback receipt is the flat
+    // change-receipt document with state rolled-back (review finding 6).
     let (exit, recovered, _) = sandbox.run(&[
         "change",
         "recover",
@@ -473,6 +474,10 @@ fn recovery_blocks_the_project_until_recover_runs() {
     ]);
     assert_eq!(exit, 0);
     assert_eq!(recovered["status"], "valid");
+    assert_eq!(recovered["state"], "rolled-back");
+    assert_eq!(recovered["transaction"]["state"], "rolled-back");
+    assert_eq!(recovered["schemaVersion"], "lekalo/change-receipt/v0.8.0");
+    assert!(recovered.get("change").is_none(), "no wrapper envelope");
     let (exit, load, _) = sandbox.run(&["load", "--project", &selection, "--json"]);
     assert_eq!(exit, 0);
     assert_eq!(load["status"], "valid");

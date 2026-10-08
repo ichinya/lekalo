@@ -334,6 +334,7 @@ jobs:
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-cli.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-transactions.mjs
       - name: Run the architecture profile contract gate (issue #84)
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
