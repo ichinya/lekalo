@@ -7,10 +7,17 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish.workspace = true
+# The oracle binary is an auxiliary gate tool (issue #106 review r2 #1);
+# `cargo run -p lekalo-cli` must keep resolving to the user CLI.
+default-run = "lekalo"
 
 [[bin]]
 name = "lekalo"
 path = "src/main.rs"
+
+[[bin]]
+name = "adapter-sdk-oracle"
+path = "src/bin/adapter-sdk-oracle.rs"
 
 [dev-dependencies]
 tempfile.workspace = true
