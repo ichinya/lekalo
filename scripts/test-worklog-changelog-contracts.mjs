@@ -39,6 +39,7 @@ if (ajvVersion !== "8.17.1") {
 }
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const project = "tests/fixtures/pilot/worklog-changelog/model";
 const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf8"));
 const readText = (relative) => readFileSync(resolve(root, relative), "utf8");
 const ordered = (v) =>
@@ -305,6 +306,86 @@ if (engine) {
   );
 }
 
+// 8. Fixture self-consistency: the documented commands must accept the
+//    committed fixture exactly as committed. The composition pins
+//    carried the Model/IR digests, but two embedded pins outside the
+//    composition — the authorization attachment's model_ref.ir_digest
+//    and the requirements attachment's modelRef.digest — went stale
+//    when the Model digest shifted, and no gate noticed because the
+//    engine-pin leg above only reads pilot.json and the scenarios.
+//    These legs run the documented review commands (research doc,
+//    "Exact CLI surface") against the committed fixture so every
+//    embedded pin is exercised by a shipped gate.
+if (engine) {
+  const runGate = (args) => {
+    try {
+      execFileSync(binary, args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+      return 0;
+    } catch (error) {
+      return typeof error.status === "number" ? error.status : -1;
+    }
+  };
+  // a. Strict review: the authorization attachment rides the Model
+  //    project, so a stale model_ref.ir_digest denies with
+  //    LEK-AUTH-010 (exit 3) on the committed bytes. --no-cache keeps
+  //    the read-only contract: no cache blob may materialize inside
+  //    the committed fixture (the neutrality gate scans it).
+  const strictExit = runGate(["--json", "--no-cache", "validate", "--strict", "--project", project]);
+  if (strictExit !== 0) {
+    fail("fixture-strict-review-denied", `lekalo validate --strict exited ${strictExit}`);
+  }
+  // b. Requirements custody: the attachment binds the exact canonical
+  //    load-envelope digest; a stale modelRef denies with
+  //    LEK-REQ-004 (exit 3). Trace re-runs the same custody check and
+  //    must stay green in the same gate for the same reason.
+  const requirementsPath = "tests/fixtures/pilot/worklog-changelog/attachments/requirements.json";
+  for (const command of ["validate", "trace"]) {
+    const exit = runGate([
+      "--json",
+      "--no-cache",
+      "requirements",
+      command,
+      requirementsPath,
+      "--project",
+      project,
+      "--no-cache",
+    ]);
+    if (exit !== 0) {
+      fail("fixture-requirements-denied", `lekalo requirements ${command} exited ${exit}`);
+    }
+  }
+  // c. Consumed-attachment parity: the composition's consumed pins are
+  //    canonical digests of the exact attachment bytes. A refreshed
+  //    embedded pin changes those bytes, so pilot.json must be
+  //    re-pinned in the same commit; this closes the drift loop that
+  //    leg (b) alone cannot see (validate/trace pass on the attachment
+  //    while the composition still pins the old bytes).
+  const sha = (bytes) =>
+    "sha256:" + createHash("sha256").update(bytes).digest("hex");
+  const consumedBytes = {
+    authorization:
+      "tests/fixtures/pilot/worklog-changelog/model/lekalo/authorization.yaml",
+    "transaction-concurrency":
+      "tests/fixtures/pilot/worklog-changelog/attachments/transaction-concurrency.json",
+    "extended-effects":
+      "tests/fixtures/pilot/worklog-changelog/attachments/extended-effects.json",
+    "error-contract":
+      "tests/fixtures/pilot/worklog-changelog/attachments/error-registry.json",
+    "invariant-transition":
+      "tests/fixtures/pilot/worklog-changelog/attachments/invariant-transition.json",
+    requirements: requirementsPath,
+  };
+  const consumed = new Map(pilotDoc.consumed.map((ref) => [ref.family, ref]));
+  for (const [family, relative] of Object.entries(consumedBytes)) {
+    const pin = consumed.get(family);
+    if (!pin) fail("consumed-family-missing", family);
+    const actual = sha(readText(relative));
+    if (pin.ref.digest !== actual) {
+      fail("consumed-pin-drift", `${family}: ${pin.ref.digest} != ${actual}`);
+    }
+  }
+}
+
 process.stdout.write(
   `${JSON.stringify({
     ok: true,
@@ -316,5 +397,6 @@ process.stdout.write(
     catalogScenarios: catalogIds.length,
     scenarioDocuments: documentIds.length,
     enginePins: engine ? "verified" : "skipped-binary-unavailable",
+    fixtureParity: engine ? "verified" : "skipped-binary-unavailable",
   })}\n`,
 );
