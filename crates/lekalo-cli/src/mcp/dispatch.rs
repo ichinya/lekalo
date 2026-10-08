@@ -907,6 +907,11 @@ fn build_resource(
             }
         }
     };
+    // The output screening pass runs over the resource data too (F17):
+    // a secret-shaped payload refuses with `mcp.sensitive-output`.
+    if lekalo_core::mcp::screen::screen_envelope(&data).is_err() {
+        return Err(refused_sensitive(scope));
+    }
     let data: serde_json::Value = serde_json::from_str(&data).map_err(|_| {
         let set = lekalo_core::mcp::diagnostic::result_invalid_set("resource-payload");
         execution::refusal_envelope(
@@ -945,6 +950,22 @@ fn refused(scope: &UriScope, subject: &str, reason: &str) -> String {
         "denied",
         "scope-denied",
         "mcp.scope-denied",
+    )
+}
+
+/// The sensitive-output refusal for a resource payload: the registered
+/// `mcp.sensitive-output` denial, never a redacted partial payload.
+fn refused_sensitive(scope: &UriScope) -> String {
+    let set =
+        lekalo_core::mcp::diagnostic::sensitive_output_set("resource", "secret-shaped-output");
+    execution::refusal_envelope(
+        "lekalo_inspect",
+        Some(&scope.project),
+        scope.group.as_deref(),
+        set,
+        "denied",
+        "sensitive-output",
+        "mcp.sensitive-output",
     )
 }
 

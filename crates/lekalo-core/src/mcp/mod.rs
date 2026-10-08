@@ -17,6 +17,7 @@ pub mod diagnostic;
 pub mod policy;
 pub mod resources;
 pub mod schemas;
+pub mod screen;
 pub mod tools;
 pub mod version;
 

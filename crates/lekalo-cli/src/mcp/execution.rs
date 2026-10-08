@@ -19,6 +19,7 @@ use serde_json::value::RawValue;
 
 use lekalo_core::loader::LoadSelection;
 use lekalo_core::mcp::policy::{self, modules_admitted, ScopeDecision};
+use lekalo_core::mcp::screen;
 use lekalo_core::mcp::tools::{Common, ContextMode, GraphMode, ImpactMode, ToolRequest};
 use lekalo_core::mcp::version::VERSION;
 use lekalo_core::DomainResult;
@@ -412,6 +413,34 @@ fn failure_class(domain_status: &str) -> &'static str {
 /// refusal before any read keeps the empty-input snapshot so the envelope
 /// is always closed.
 pub fn execute(catalog: &ServerCatalog, request: &ToolRequest) -> Result<ToolOutput, String> {
+    let output = execute_inner(catalog, request)?;
+    // The single output screening pass (F17): no envelope ships with a
+    // secret-shaped token; the whole output refuses with the registered
+    // `mcp.sensitive-output` denial instead.
+    if screen::screen_envelope(&output.envelope).is_err() {
+        let common: &Common = request.common();
+        let family = family_of(request.tool_name());
+        let scope = Scope {
+            project: &common.project_id,
+            group: common.group_id.as_deref(),
+        };
+        return Ok(refusal(
+            &family,
+            request.tool_name(),
+            &scope,
+            lekalo_core::mcp::diagnostic::sensitive_output_set(
+                "tool-result",
+                "secret-shaped-output",
+            ),
+            "denied",
+            "sensitive-output",
+            "mcp.sensitive-output",
+        ));
+    }
+    Ok(output)
+}
+
+fn execute_inner(catalog: &ServerCatalog, request: &ToolRequest) -> Result<ToolOutput, String> {
     let common: &Common = request.common();
     let family = family_of(request.tool_name());
     let scope = Scope {

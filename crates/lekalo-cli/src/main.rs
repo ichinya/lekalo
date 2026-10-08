@@ -5161,7 +5161,10 @@ fn doctor_traces(paths: &[String]) -> Vec<lekalo_core::doctor::TraceManifestEvid
 /// status seam passes the catalog's git.changedMode grant, so a spawned
 /// `git` is reachable only through the same catalog gate as changed-mode
 /// impact (F9); the ordinary CLI passes `true`.
-fn doctor_git_facts_with(selection: &LoadSelection, allow_git: bool) -> lekalo_core::doctor::GitFacts {
+fn doctor_git_facts_with(
+    selection: &LoadSelection,
+    allow_git: bool,
+) -> lekalo_core::doctor::GitFacts {
     if !allow_git {
         return lekalo_core::doctor::GitFacts {
             state: lekalo_core::doctor::GitState::Unavailable,
@@ -5208,7 +5211,10 @@ fn run_status(project: Option<String>) -> DomainResult {
 /// The shared status assembly over pre-collected Git facts; the no-git
 /// MCP projection hands in the typed unavailable facts without spawning
 /// any process.
-fn run_status_with_git(selection: LoadSelection, git: lekalo_core::doctor::GitFacts) -> DomainResult {
+fn run_status_with_git(
+    selection: LoadSelection,
+    git: lekalo_core::doctor::GitFacts,
+) -> DomainResult {
     let options = lekalo_core::doctor::Options {
         kind: lekalo_core::doctor::model::ReportKind::Status,
         ..lekalo_core::doctor::Options::default()
