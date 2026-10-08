@@ -247,10 +247,17 @@ const resolveBinary = () => {
   return null;
 };
 const binary = resolveBinary();
+// Only a positively absent binary takes the documented skip branch: a
+// present binary that fails, or returns malformed output, is a broken
+// gate dependency and must fail the gate with its real error — never
+// masquerade as the "binary missing" warning (a configured-but-broken
+// CLI must not silently bypass the engine-pin and fixture-parity legs).
 let engine;
-try {
-  if (!binary) throw new Error("binary-missing");
-  const modelEnvelope = JSON.parse(
+if (!binary) {
+  engine = null;
+} else {
+  try {
+    const modelEnvelope = JSON.parse(
     execFileSync(
       binary,
       ["--json", "--no-cache", "load", "--project", "tests/fixtures/pilot/worklog-changelog/model"],
@@ -277,8 +284,9 @@ try {
     modelDigest: sha(Buffer.from(JSON.stringify(modelEnvelope))),
     irDigest: sha(Buffer.from(JSON.stringify(irEnvelope.ir))),
   };
-} catch {
-  engine = null;
+  } catch (error) {
+    fail("engine-unavailable", `${binary}: ${String(error).slice(0, 400)}`);
+  }
 }
 if (engine) {
   if (pilotDoc.modelRef.digest !== engine.modelDigest) {
