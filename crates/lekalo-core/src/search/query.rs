@@ -187,6 +187,12 @@ impl QueryRequest {
                 return Err(emit::cursor_invalid("bounds"));
             }
         }
+        // The closed runtime filter grammar: the same per-flag member
+        // caps and value patterns the published `search-query` schema
+        // declares (maxItems, uniqueItems, minLength/maxLength, and the
+        // closed per-member value patterns) are enforced here so
+        // in-process consumers share the CLI's closed grammar exactly.
+        enforce_filter_grammar(&filters)?;
         for kind in &filters.kinds {
             if CardKind::parse(kind).is_none() {
                 return Err(emit::query_invalid("kind", "unknown-kind"));
@@ -209,6 +215,196 @@ impl QueryRequest {
             filters,
         })
     }
+}
+
+/// The closed runtime filter grammar, mirroring the published
+/// `search-query` schema member-for-member: per-flag item caps,
+/// uniqueness where the schema demands it, and the exact per-member
+/// value bounds/patterns. A violation is `search.query-invalid` with
+/// the offending member named (never its value).
+fn enforce_filter_grammar(filters: &FilterSet) -> Result<(), crate::diagnostics::DiagnosticSet> {
+    // `^[A-Za-z0-9_][A-Za-z0-9_.:-]*$`, 1..=192.
+    let semantic_id = |value: &str| {
+        is_pattern_value(value, 192, |first| {
+            first.is_ascii_alphanumeric() || first == '_'
+        }) && value.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '_' | '.' | ':' | '-')
+        })
+    };
+    // `^[A-Za-z0-9_][A-Za-z0-9_.:/#-]*$`, 1..=192.
+    let selector = |value: &str| {
+        is_pattern_value(value, 192, |first| {
+            first.is_ascii_alphanumeric() || first == '_'
+        }) && value.chars().all(|character| {
+            character.is_ascii_alphanumeric()
+                || matches!(character, '_' | '.' | ':' | '/' | '#' | '-')
+        })
+    };
+    // `^[A-Za-z0-9._-][A-Za-z0-9._/-]*$`, 1..=512.
+    let logical_path = |value: &str| {
+        is_pattern_value(value, 512, |first| {
+            first.is_ascii_alphanumeric() || matches!(first, '.' | '_' | '-')
+        }) && value.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '/' | '-')
+        })
+    };
+    // `^[a-z][a-z0-9-]*$`, 1..=64.
+    let source = |value: &str| {
+        is_pattern_value(value, 64, |first| first.is_ascii_lowercase())
+            && value.chars().all(|character| {
+                character.is_ascii_lowercase() || character.is_ascii_digit() || character == '-'
+            })
+    };
+    // `^[A-Za-z0-9][A-Za-z0-9_.:/#@-]*$`, 1..=256.
+    let native_symbol = |value: &str| {
+        is_pattern_value(value, 256, |first| first.is_ascii_alphanumeric())
+            && value.chars().all(|character| {
+                character.is_ascii_alphanumeric()
+                    || matches!(character, '_' | '.' | ':' | '/' | '#' | '@' | '-')
+            })
+    };
+    // `^[A-Za-z0-9][A-Za-z0-9_.:/#@\\-]*$`, 1..=256.
+    let waiver = |value: &str| {
+        is_pattern_value(value, 256, |first| first.is_ascii_alphanumeric())
+            && value.chars().all(|character| {
+                character.is_ascii_alphanumeric()
+                    || matches!(character, '_' | '.' | ':' | '/' | '#' | '@' | '\\' | '-')
+            })
+    };
+    // `^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$`, 3..=128.
+    let diagnostic = |value: &str| {
+        (3..=128).contains(&value.len())
+            && value.split('.').all(|segment| {
+                let mut chars = segment.chars();
+                match chars.next() {
+                    Some(first) if first.is_ascii_lowercase() => {}
+                    _ => return false,
+                }
+                segment.len() <= 64
+                    && segment.chars().all(|character| {
+                        character.is_ascii_lowercase()
+                            || character.is_ascii_digit()
+                            || character == '-'
+                    })
+                    && segment
+                        .ends_with(|last: char| last.is_ascii_lowercase() || last.is_ascii_digit())
+            })
+            && value.contains('.')
+            && value.split('.').count() >= 2
+    };
+    let bounded = |member: &str,
+                   values: &[String],
+                   cap: usize,
+                   unique: bool,
+                   valid: &dyn Fn(&str) -> bool| {
+        if values.len() > cap {
+            return Err(emit::query_invalid(member, "item-bounds"));
+        }
+        if unique
+            && values.len()
+                != values
+                    .iter()
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .len()
+        {
+            return Err(emit::query_invalid(member, "duplicate-value"));
+        }
+        for value in values {
+            if !valid(value) {
+                return Err(emit::query_invalid(member, "value-grammar"));
+            }
+        }
+        Ok(())
+    };
+    bounded("ids", &filters.ids, 32, false, &semantic_id)?;
+    bounded("kind", &filters.kinds, 32, true, &|value| {
+        CardKind::parse(value).is_some()
+    })?;
+    bounded("module", &filters.modules, 32, false, &semantic_id)?;
+    bounded("reads", &filters.reads, 32, false, &selector)?;
+    bounded("writes", &filters.writes, 32, false, &selector)?;
+    bounded("calls", &filters.calls, 32, false, &semantic_id)?;
+    bounded("requirement", &filters.requirements, 32, false, &selector)?;
+    bounded(
+        "requirement-source",
+        &filters.requirement_sources,
+        8,
+        false,
+        &source,
+    )?;
+    bounded(
+        "binding-path",
+        &filters.binding_paths,
+        32,
+        false,
+        &logical_path,
+    )?;
+    bounded(
+        "native-symbol",
+        &filters.native_symbols,
+        32,
+        false,
+        &native_symbol,
+    )?;
+    bounded("target", &filters.targets, 16, false, &selector)?;
+    bounded("type", &filters.types, 32, false, &semantic_id)?;
+    bounded("input-type", &filters.input_types, 32, false, &semantic_id)?;
+    bounded(
+        "output-type",
+        &filters.output_types,
+        32,
+        false,
+        &semantic_id,
+    )?;
+    bounded("error", &filters.errors, 32, false, &semantic_id)?;
+    bounded("relation", &filters.relations, 32, true, &|value| {
+        matches!(
+            value,
+            "module-import"
+                | "entity-field"
+                | "value-object-field"
+                | "event-payload"
+                | "command-effect"
+                | "effect-entity"
+                | "scenario-covers"
+                | "command-input"
+                | "query-returns"
+                | "query-reads"
+                | "policy-applies-to"
+                | "endpoint-invokes"
+                | "effect-emits"
+                | "derived-from"
+                | "implements"
+                | "binds"
+                | "covers"
+                | "verifies"
+                | "evidences"
+                | "binds-target"
+        )
+    })?;
+    bounded("related-to", &filters.related_to, 32, false, &selector)?;
+    bounded("ownership", &filters.ownerships, 8, true, &|value| {
+        matches!(value, "module" | "project")
+    })?;
+    bounded("portability", &filters.portabilities, 8, true, &|value| {
+        matches!(value, "portable" | "target-specific")
+    })?;
+    bounded("profile", &filters.profiles, 16, false, &selector)?;
+    bounded("diagnostic", &filters.diagnostics, 32, false, &diagnostic)?;
+    bounded("waiver", &filters.waivers, 32, false, &waiver)?;
+    Ok(())
+}
+
+/// The shared shape half of every schema value pattern: nonempty, byte
+/// bounded, and first-character checked (the per-member closures add
+/// the character-class half).
+fn is_pattern_value(value: &str, max_bytes: usize, first: impl Fn(char) -> bool) -> bool {
+    let mut characters = value.chars();
+    match characters.next() {
+        Some(character) if first(character) => {}
+        _ => return false,
+    }
+    value.len() <= max_bytes
 }
 
 /// One result item: the bounded selection card plus its match/explanation.
