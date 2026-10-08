@@ -2013,7 +2013,7 @@
       "id": "contract:contracts/adapter-sdk-compatibility.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/adapter-sdk-compatibility.schema.v0.8.0.json",
-      "sourceDigest": "sha256:f841dd9e0f5db465887af5198935eedd0858580986677df2e5629450b4120af5",
+      "sourceDigest": "sha256:39ba04f421bcb5cb60fe0658cce49b6f818668d9cb47a299bfbdd7c38c3b36b9",
       "owner": "docs/adapter-sdk.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2022,7 +2022,7 @@
       "id": "contract:contracts/adapter-sdk-generation.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/adapter-sdk-generation.schema.v0.8.0.json",
-      "sourceDigest": "sha256:ac5e7378df2447c259b621299154b1f58c36005a3ef3818d16cbca37fbff7d08",
+      "sourceDigest": "sha256:580a619218e880daea75a8da679612d6472aaca6c8af8f66072d026f935afdb4",
       "owner": "docs/adapter-sdk.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
