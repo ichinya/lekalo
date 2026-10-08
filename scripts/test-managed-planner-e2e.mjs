@@ -125,6 +125,7 @@ cpSync(join(project, 'coverage.json'), join(twin, 'coverage.json'));
 cpSync(join(project, 'model'), join(twin, 'model'), { recursive: true });
 cpSync(join(project, 'lekalo'), join(twin, 'lekalo'), { recursive: true });
 cpSync(join(project, 'lekalo.lock'), join(twin, 'lekalo.lock'));
+if (existsSync(join(project, 'adapters'))) cpSync(join(project, 'adapters'), join(twin, 'adapters'), { recursive: true });
 const twinReceipt = spawnSync(bin, [
   '--json', 'managed', 'plan', '--to', 'managed',
   '--ownership', 'ownership.json', '--coverage', 'coverage.json',

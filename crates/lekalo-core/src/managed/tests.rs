@@ -127,6 +127,8 @@ fn test_authority() -> super::authority::Authority {
         model_version: "0.2.16".to_owned(),
         project_id: "demo".to_owned(),
         ledger: Vec::new(),
+        semantics: Vec::new(),
+        adapter: None,
     }
 }
 

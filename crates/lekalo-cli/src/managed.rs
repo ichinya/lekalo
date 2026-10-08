@@ -288,7 +288,7 @@ fn run_check(args: CheckArgs) -> Outcome {
         // obligation before it admits (finding D).
         let authority =
             core::authority::derive(&selection(&args.project.project), &coverage.module)?;
-        core::authority::qualify(&coverage, &authority)?;
+        core::authority::qualify(&root(&args.project.project), &coverage, &authority)?;
         core::authority::ledger_complete(&coverage, &authority)?;
         core::coverage::admit(assignment, target, &coverage)?;
         // Every validated custom/foreign binding resolves to a real pinned
@@ -359,7 +359,7 @@ fn run_plan(args: PlanArgs) -> Outcome {
     // required obligation must be discharged before any plan exists
     // (finding D).
     let authority = core::authority::derive(&selection(&args.project.project), &args.module)?;
-    core::authority::qualify(&coverage, &authority)?;
+    core::authority::qualify(&root(&args.project.project), &coverage, &authority)?;
     core::authority::ledger_complete(&coverage, &authority)?;
     // Every validated custom/foreign binding resolves to a real pinned
     // implementation file before any plan exists (finding K).
@@ -490,7 +490,7 @@ fn run_apply(args: ApplyArgs) -> Outcome {
     let coverage_doc = core::parse_coverage(&coverage)?;
     let authority =
         core::authority::derive(&selection(&args.project.project), &parsed_plan.modules[0])?;
-    core::authority::qualify(&coverage_doc, &authority)?;
+    core::authority::qualify(&root(&args.project.project), &coverage_doc, &authority)?;
     core::authority::ledger_complete(&coverage_doc, &authority)?;
     // Every validated custom/foreign binding re-resolves at apply time.
     if let (Some(_module), Some(target)) = (
@@ -549,11 +549,13 @@ fn run_upgrade_plan(args: UpgradePlanArgs) -> Outcome {
     let authority = core::authority::derive(&selection(&args.project.project), &args.module)?;
     let mut comparable = true;
     let mut changes = Vec::new();
-    if let Err(error) = core::authority::qualify(&base, &authority) {
+    if let Err(error) = core::authority::qualify(&root(&args.project.project), &base, &authority) {
         let _ = error;
         comparable = false;
     }
-    if let Err(error) = core::authority::qualify(&candidate, &authority) {
+    if let Err(error) =
+        core::authority::qualify(&root(&args.project.project), &candidate, &authority)
+    {
         let _ = error;
         comparable = false;
     }

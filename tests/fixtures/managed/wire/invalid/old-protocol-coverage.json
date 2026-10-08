@@ -10,7 +10,7 @@
   },
   "adapter": {
     "entry": "adapters/managed.mjs",
-    "packageDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+    "packageDigest": "sha256:44445a814f38c9eb06c74ca97b5b29afe44d09da2b7aa221c611587f6f5c45f8",
     "protocol": "0.6.4"
   },
   "requirements": [
@@ -84,9 +84,9 @@
   "authority": {
     "state": "known",
     "value": {
-      "model": "sha256:8ae021bc3ef972e8ae54d294f86b9f273aafee483ac28f52ae87ce6b59890090",
-      "ir": "sha256:5c6ca5c54e849c9303ae274fff5ca4f1dfe6d2fcbcd126885cc7e94b56ca8227",
-      "lock": "sha256:e7365c6527820fc4815b36a4c246cb53f515c851426e20f715fbee38ffd85dd0"
+      "model": "sha256:b561d35065f35bbd698ead7cf7e555d6d013ebfc5e8363a6fa1449769925db8f",
+      "ir": "sha256:6cbff5265471303429a667bb8c8c61939601524cc8bc90f8827b45bee9ac1882",
+      "lock": "sha256:d61d05e2c8b2436e2eb1bebe52afcd0808cc882c85f694259ba1cc988e1a04fa"
     }
   }
 }

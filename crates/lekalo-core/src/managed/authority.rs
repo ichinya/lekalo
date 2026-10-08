@@ -9,7 +9,7 @@
 //! renderer stays pure behind this validated boundary.
 
 use super::{detail, DomainResult, INPUT_INVALID, PLAN_STALE};
-use crate::ir::DefinitionKind;
+use crate::ir::{DefinitionKind, TypeRef};
 use crate::loader::{self, LoadSelection};
 use crate::lockfile::plan::LockService;
 use crate::lockfile::LockState;
@@ -34,6 +34,44 @@ pub struct Authority {
     /// The required renderable obligations of the module, sorted by
     /// semantic id: `(semantic id, kind)`.
     pub ledger: Vec<(String, DefinitionKind)>,
+    /// The Model-derived obligation semantics: the exact input fields
+    /// (name, type spelling) of every command and the reads/returns of
+    /// every query in this module's ledger. The renderer derives its
+    /// projections from these, never from caller evidence (finding 4).
+    pub semantics: Vec<Obligation>,
+    /// The locked adapter pins the generation binds (id, version, package
+    /// digest, the launched-entry artifact digest). A managed generation
+    /// requires a real locked adapter (finding 4).
+    pub adapter: Option<LockedAdapter>,
+}
+
+/// The exact Model semantics of one renderable obligation.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Obligation {
+    /// The exact semantic id (`planner.focus_task`).
+    pub id: String,
+    /// The closed definition kind.
+    pub kind: DefinitionKind,
+    /// The exact Model input fields of a command: `(name, type)`.
+    pub input: Vec<(String, String)>,
+    /// The exact reads of a query.
+    pub reads: Vec<String>,
+    /// The exact return type spelling of a query, when declared.
+    pub returns: Option<String>,
+    /// The declared field names of the returned entity, when the query
+    /// returns an entity: the authority for the output surface.
+    pub return_fields: Vec<String>,
+}
+
+/// The locked adapter a managed generation binds.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LockedAdapter {
+    pub id: String,
+    pub version: String,
+    /// The locked package digest.
+    pub digest: String,
+    /// The locked launched-entry artifact digest (platform `any`).
+    pub entry_digest: String,
 }
 
 fn invalid(reason: &str) -> DomainResult {
@@ -81,10 +119,47 @@ pub fn derive(selection: &LoadSelection, module: &str) -> Result<Authority, Doma
         Ok(LockState::Absent) => return Err(stale("lekalo.lock", "missing")),
         Err(_) => return Err(stale("lekalo.lock", "unreadable")),
     };
-    let _ = lock;
-    // The ledger: every renderable obligation this module declares. A
-    // coverage document that omits one is refused before planning.
+    // The locked adapter the generation binds (finding 4): a managed
+    // generation must run against a real locked adapter package whose
+    // pinned target protocol is the negotiated managed successor. An
+    // adapter-free lock cannot back a coverage document claiming protocol
+    // support (`adapters:[]` while `lockProtocol` names a protocol is a
+    // capability claim without an implementation).
+    let protocol = lock
+        .target_protocol()
+        .map(|pin| pin.version().as_str().to_owned());
+    let adapter = lock.adapters().first().map(|resolved| LockedAdapter {
+        id: resolved.id().as_str().to_owned(),
+        version: resolved.version().as_str().to_owned(),
+        digest: resolved.digest().as_str().to_owned(),
+        entry_digest: resolved
+            .artifacts()
+            .iter()
+            .find(|artifact| artifact.platform().as_str() == "any")
+            .or_else(|| resolved.artifacts().first())
+            .map(|artifact| artifact.digest().as_str().to_owned())
+            .unwrap_or_default(),
+    });
+    if adapter.is_some() {
+        // The locked generator/profile attachments must resolve inside the
+        // lock's own component graph: a profile or generator naming a
+        // missing adapter is a broken capability claim.
+        for generator in lock.generators() {
+            if !lock.adapters().iter().any(|candidate| {
+                candidate.id().as_str() == generator.adapter().id().as_str()
+                    && candidate.version() == generator.adapter().version()
+            }) {
+                return Err(stale("lekalo.lock", "generator-adapter"));
+            }
+        }
+    }
+    let _ = &protocol;
+    // The ledger: every renderable obligation this module declares, with
+    // the exact Model-derived semantics (finding 4). A coverage document
+    // that omits one is refused before planning; a coverage projection
+    // that disagrees with these semantics never renders.
     let prefix = format!("{module}.");
+    let mut semantics = Vec::new();
     let ledger = compilation
         .project
         .definitions
@@ -95,7 +170,48 @@ pub fn derive(selection: &LoadSelection, module: &str) -> Result<Authority, Doma
                 DefinitionKind::Command | DefinitionKind::Query
             ) && definition.id().as_str().starts_with(&prefix)
         })
-        .map(|definition| (definition.id().as_str().to_owned(), definition.kind()))
+        .filter_map(|definition| {
+            let id = definition.id().as_str().to_owned();
+            if !super::token(&id) {
+                return None;
+            }
+            let obligation = match definition {
+                crate::ir::Definition::Command(command) => Obligation {
+                    id: id.clone(),
+                    kind: DefinitionKind::Command,
+                    input: command
+                        .input
+                        .iter()
+                        .map(|field| (field.name.as_str().to_owned(), type_spelling(&field.r#type)))
+                        .collect(),
+                    reads: Vec::new(),
+                    returns: None,
+                    return_fields: Vec::new(),
+                },
+                crate::ir::Definition::Query(query) => Obligation {
+                    id: id.clone(),
+                    kind: DefinitionKind::Query,
+                    input: Vec::new(),
+                    reads: query
+                        .reads
+                        .iter()
+                        .map(|read| read.as_str().to_owned())
+                        .collect(),
+                    returns: query
+                        .returns
+                        .as_ref()
+                        .map(|returned| type_spelling(returned)),
+                    return_fields: query
+                        .returns
+                        .as_ref()
+                        .and_then(|returned| return_entity_fields(&compilation.project, returned))
+                        .unwrap_or_default(),
+                },
+                _ => return None,
+            };
+            semantics.push(obligation.clone());
+            Some((id, definition.kind()))
+        })
         .collect::<Vec<_>>();
     if ledger.iter().any(|(id, _)| !super::token(id)) {
         return Err(invalid("ledger"));
@@ -119,6 +235,8 @@ pub fn derive(selection: &LoadSelection, module: &str) -> Result<Authority, Doma
             .map(|project| project.id.as_str().to_owned())
             .unwrap_or_default(),
         ledger,
+        semantics,
+        adapter,
     })
 }
 
@@ -127,7 +245,14 @@ pub fn derive(selection: &LoadSelection, module: &str) -> Result<Authority, Doma
 /// exact lock revision the evidence claims. The advertised adapter
 /// protocol is qualified in [`super::coverage::admit`] against the
 /// negotiated successor token.
+///
+/// The capability qualification (finding 4): the pinned lock protocol
+/// must be the exact negotiated managed successor, and the coverage
+/// document's semantics must agree with the Model-derived obligations —
+/// a caller-edited projection/sample cannot rename the generated shape
+/// while the canonical Model, IR, and lock stay pinned.
 pub fn qualify(
+    root: &std::path::Path,
     coverage: &super::wire::Coverage,
     authority: &Authority,
 ) -> Result<(), DomainResult> {
@@ -141,6 +266,53 @@ pub fn qualify(
     {
         return Err(stale("authority", "inputs"));
     }
+    // The negotiated successor is a locked protocol, not a claim (finding
+    // 4): the coverage may advertise managed support only when the pinned
+    // lock declares a real published target protocol — an adapter-free,
+    // protocol-free lock cannot back a coverage document claiming protocol
+    // capability (`adapters:[]` with a protocol claim is an unimplemented
+    // capability claim). The exact managed successor token is enforced on
+    // the coverage's adapter protocol by [`super::coverage::admit`]; the
+    // published registry protocol family stays the versioning authority.
+    if authority.lock_protocol.is_none() {
+        return Err(super::diagnostic::failure(
+            super::VERSION_UNSUPPORTED,
+            &detail("lock-protocol"),
+        ));
+    }
+    // The generation binds a real locked adapter package (finding 4): a
+    // managed apply without any locked adapter has no implementation to
+    // qualify its recipe against.
+    if authority.adapter.is_none() {
+        return Err(super::diagnostic::failure(
+            super::VERSION_UNSUPPORTED,
+            &detail("adapter"),
+        ));
+    }
+    // The coverage's adapter evidence must name the locked adapter
+    // exactly (finding 4): the locked package is the generation's real
+    // implementation; a caller-authored entry/package digest pointing
+    // anywhere else is a forged capability pin. The lock's project
+    // source id is the entry coordinate; the locked digest is the
+    // package identity.
+    if let Some(adapter) = &authority.adapter {
+        if coverage.adapter.package_digest != adapter.digest {
+            return Err(stale("adapter", "package-digest"));
+        }
+        // The coverage entry must be the locked package's real project
+        // bytes: the single-entry convention makes the locked package
+        // digest the entry's own byte digest, so reading the entry under
+        // the confined capability and comparing pins the implementation
+        // exactly (finding 4).
+        let entry = match std::fs::read(root.join(coverage.adapter.entry.as_str())) {
+            Ok(bytes) => bytes,
+            Err(_) => return Err(stale("adapter", "entry")),
+        };
+        if super::digest(&entry) != adapter.entry_digest {
+            return Err(stale("adapter", "entry-digest"));
+        }
+    }
+    semantics_match(coverage, authority)?;
     Ok(())
 }
 
@@ -151,6 +323,7 @@ pub fn ledger_complete(
     coverage: &super::wire::Coverage,
     authority: &Authority,
 ) -> Result<(), DomainResult> {
+    // The Model may not be dodged (forward direction) ...
     for (id, kind) in &authority.ledger {
         let requirement = match coverage.requirements.iter().find(|r| &r.id == id) {
             Some(requirement) => requirement,
@@ -176,9 +349,200 @@ pub fn ledger_complete(
             ));
         }
     }
+    // ... and the coverage may not invent obligations the Model never
+    // declared (finding 4, reverse direction): an unmodeled renderable
+    // requirement would generate an application surface with no semantic
+    // source of truth.
+    for requirement in &coverage.requirements {
+        if !requirement.kind.renders() {
+            continue;
+        }
+        if !authority.ledger.iter().any(|(id, _)| *id == requirement.id) {
+            return Err(super::diagnostic::failure(
+                super::CAPABILITY_GAP,
+                &[
+                    ("requirement", requirement.id.as_str()),
+                    ("reason", "unmodeled-obligation"),
+                ],
+            ));
+        }
+    }
     Ok(())
 }
 
 fn classify(error: DomainResult) -> DomainResult {
     error
+}
+
+/// The declared field names of the entity one type reference resolves
+/// to, when it names an entity of the compiled project (finding 4): the
+/// authority for a query's generated output surface.
+fn return_entity_fields(
+    project: &crate::ir::CompiledProject,
+    reference: &TypeRef,
+) -> Option<Vec<String>> {
+    let TypeRef::Ref(symbol) = reference else {
+        return None;
+    };
+    let definition = project
+        .definitions
+        .iter()
+        .find(|definition| definition.id() == symbol)?;
+    let crate::ir::Definition::Entity(entity) = definition else {
+        return None;
+    };
+    Some(
+        entity
+            .fields
+            .iter()
+            .map(|field| field.name.as_str().to_owned())
+            .collect(),
+    )
+}
+
+/// The closed type spelling of one IR type reference (finding 4): the
+/// renderer derives field types from these, never from caller evidence.
+fn type_spelling(reference: &TypeRef) -> String {
+    match reference {
+        TypeRef::Ref(symbol) => symbol.as_str().to_owned(),
+        TypeRef::List(inner) => format!("list<{}>", type_spelling(inner)),
+        TypeRef::Optional(inner) => format!("optional<{}>", type_spelling(inner)),
+    }
+}
+
+/// Whether the coverage document's semantics agree with the Model-derived
+/// obligations (finding 4): every renderable requirement's projection and
+/// sample must witness the exact Model fields. The coverage evidence may
+/// narrow the naming (`to` renames) but never invent input fields, drop
+/// Model-declared fields, or relabel sample outputs the Model does not
+/// declare.
+pub fn semantics_match(
+    coverage: &super::wire::Coverage,
+    authority: &Authority,
+) -> Result<(), DomainResult> {
+    for obligation in &authority.semantics {
+        let Some(name) =
+            super::canonical::requirement_name(&authority_module(coverage), &obligation.id)
+        else {
+            continue;
+        };
+        let requirement = match coverage
+            .requirements
+            .iter()
+            .find(|requirement| requirement.id == obligation.id)
+        {
+            Some(requirement) => requirement,
+            None => continue, // ledger completeness is a separate refusal
+        };
+        if !requirement.kind.renders() {
+            continue;
+        }
+        // The input side of the projection must witness exactly the
+        // Model's declared input fields for commands (finding 4): the
+        // generated handler renders from the Model's fields, so caller
+        // evidence cannot rename the input surface. Queries carry no
+        // Model-declared input in this Model version; their input side
+        // stays the reviewed projection.
+        if obligation.kind == DefinitionKind::Command {
+            let mut witnessed: Vec<String> = requirement
+                .projection
+                .iter()
+                .map(|projection| projection.from.clone())
+                .collect();
+            witnessed.sort();
+            witnessed.dedup();
+            let mut expected: Vec<String> = obligation
+                .input
+                .iter()
+                .map(|(name, _)| name.clone())
+                .collect();
+            expected.sort();
+            expected.dedup();
+            if witnessed != expected {
+                return Err(super::diagnostic::failure(
+                    super::CAPABILITY_GAP,
+                    &[
+                        ("requirement", obligation.id.as_str()),
+                        ("reason", "projection-not-model"),
+                    ],
+                ));
+            }
+            // The sample input must witness the same Model fields with
+            // the Model's declared type classes.
+            if let Some(sample) = requirement.sample.value() {
+                for (name, spelling) in &obligation.input {
+                    let Some(value) = sample.input.get(name) else {
+                        return Err(super::diagnostic::failure(
+                            super::CAPABILITY_GAP,
+                            &[
+                                ("requirement", obligation.id.as_str()),
+                                ("reason", "sample-not-model"),
+                            ],
+                        ));
+                    };
+                    if !scalar_matches(value, spelling) {
+                        return Err(super::diagnostic::failure(
+                            super::CAPABILITY_GAP,
+                            &[
+                                ("requirement", obligation.id.as_str()),
+                                ("reason", "sample-type-not-model"),
+                            ],
+                        ));
+                    }
+                }
+            }
+        }
+        // Query returns: the sample's output arity must match the
+        // declared return surface (the projected `to` names).
+        // Query semantics (finding 4): the Model's `returns` type is the
+        // authority for the generated output shape. A returned entity
+        // binds the sample's output keys to its exact declared fields —
+        // caller evidence cannot rename the output surface (the same
+        // Model + lock always render the same names).
+        if obligation.kind == DefinitionKind::Query {
+            if let Some(returns) = &obligation.returns {
+                if !obligation.return_fields.is_empty() {
+                    let fields = obligation.return_fields.clone();
+                    if let Some(sample) = requirement.sample.value() {
+                        let mut declared = fields.clone();
+                        declared.sort();
+                        let mut witnessed: Vec<String> = sample.output.keys().cloned().collect();
+                        witnessed.sort();
+                        if declared != witnessed {
+                            return Err(super::diagnostic::failure(
+                                super::CAPABILITY_GAP,
+                                &[
+                                    ("requirement", obligation.id.as_str()),
+                                    ("reason", "returns-not-model"),
+                                ],
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        let _ = name;
+    }
+    Ok(())
+}
+
+/// Whether the scalar sample value fits the Model's declared type
+/// spelling: the closed scalar bases map to the JSON scalar classes.
+fn scalar_matches(value: &super::wire::Scalar, spelling: &str) -> bool {
+    let base = spelling.strip_prefix("optional<").unwrap_or(spelling);
+    let base = base.strip_prefix("list<").unwrap_or(base);
+    let base = base.strip_suffix('>').unwrap_or(base);
+    match base {
+        "string" | "date" | "datetime" | "uuid" | "uri" => {
+            matches!(value, super::wire::Scalar::Text(_))
+        }
+        "number" => matches!(value, super::wire::Scalar::Count(_)),
+        "boolean" => matches!(value, super::wire::Scalar::Flag(_)),
+        _ => true,
+    }
+}
+
+/// The coverage's own module (the subject the requirements belong to).
+fn authority_module(coverage: &super::wire::Coverage) -> &str {
+    &coverage.module
 }

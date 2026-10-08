@@ -489,13 +489,26 @@ function rewriteModelCommands(project, keepIds) {
   writeFileSync(join(project, 'ownership.json'), JSON.stringify(ownership, null, 2) + '\n');
   const zooCoverage = JSON.parse(read(`${wire}/planner/coverage.json`));
   zooCoverage.module = 'zoo';
-  zooCoverage.requirements = [{ ...zooCoverage.requirements[0], id: 'zoo.feed_animal' }];
+  // The zoo requirement witnesses the zoo Model's exact declared input
+  // (one `animal_id` field): projection and sample are narrowed to it,
+  // because the Model-derived semantics gate (finding 4) refuses caller
+  // projections that invent Model-absent fields.
+  zooCoverage.requirements = [{
+    ...zooCoverage.requirements[0],
+    id: 'zoo.feed_animal',
+    projection: [{ from: 'id', to: 'id' }],
+    sample: {
+      state: 'known',
+      value: { input: { id: 't-1' }, output: { id: 't-1' } },
+    },
+  }];
   // zoo must be a real module of the model for its ledger to exist.
   const projectYaml = readFileSync(join(project, 'lekalo/project.yaml'), 'utf8') + '';
   const moduleDir = join(project, 'lekalo/modules/zoo');
   mkdirSync(moduleDir, { recursive: true });
   writeFileSync(join(moduleDir, 'module.yaml'), 'schema_version: "0.2.16"\ndefinitions:\n  - id: zoo\n    kind: module\n    version: 1\n');
-  writeFileSync(join(moduleDir, 'commands.yaml'), 'schema_version: "0.2.16"\ndefinitions:\n  - id: zoo.feed_animal\n    kind: command\n    version: 1\n');
+  writeFileSync(join(moduleDir, 'entities.yaml'), 'schema_version: "0.2.16"\ndefinitions:\n  - id: zoo.animal_id\n    kind: scalar\n    version: 1\n    base: uuid\n');
+  writeFileSync(join(moduleDir, 'commands.yaml'), 'schema_version: "0.2.16"\ndefinitions:\n  - id: zoo.feed_animal\n    kind: command\n    version: 1\n    input:\n      - name: id\n        type:\n          ref: animal_id\n        required: true\n');
   spawnSync(bin, ['lock'], { cwd: project, encoding: 'utf8' });
   const plannerPins = invoke(project, ['authority', '--module', 'planner'], 'valid').managed;
   const plannerCoverage = JSON.parse(read(`${wire}/planner/coverage.json`));
