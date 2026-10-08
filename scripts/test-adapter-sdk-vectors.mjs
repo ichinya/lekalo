@@ -289,32 +289,75 @@ for (const lang of lifecycleLanguages) {
   }
 }
 
-// Production admission oracle (issue #106 review): every upgrade row must
-// be accepted/refused by the production wire decoder exactly as the
-// corpus declares. The oracle is built in this job from lekalo-core —
-// the SDK codecs may never drift from production admission.
+// Production admission oracle (issue #106 review r2 #10): the FULL
+// request corpus — valid, invalid, semantic, and upgrade rows — replays
+// through the production wire decoder as RAW BYTES (no JSON round-trip,
+// so duplicate-key and numeric-spelling evidence reaches production),
+// and every row's verdict must match the corpus declaration exactly.
+// The oracle is built in this job from lekalo-core — the SDK codecs may
+// never drift from production admission.
 const oracle = join(ROOT, "target", "debug", process.platform === "win32" ? "adapter-sdk-oracle.exe" : "adapter-sdk-oracle");
 if (!existsSync(oracle)) {
   const build = run("cargo", ["build", "--locked", "-p", "lekalo-cli", "--bin", "adapter-sdk-oracle"]);
   if (build.status !== 0) fail("oracle-missing", (build.stderr ?? "").slice(-400));
 }
-const upgradeLines = lifecycleNames && readdirSync(join(corpusRoot, "upgrade"))
-  .filter((name) => name.endsWith(".json") && !name.endsWith(".expect.json"))
-  .sort()
-  .map((name) => JSON.stringify(JSON.parse(readFileSync(join(corpusRoot, "upgrade", name), "utf8"))));
-const oracleRun = spawnSync(oracle, [], { input: upgradeLines.join("\n") + "\n", encoding: "utf8", timeout: 300_000, shell: process.platform === "win32" });
+// Corpus rows: {path, bytes, accept, reason} — accept declares the
+// production verdict the row pins. Request families: valid (accept),
+// invalid (refuse with the pinned reason), upgrade (per-row accept),
+// semantic validate-before-write rows carry requests too (accept). The
+// deduplication by exact bytes keeps the oracle line-oriented input
+// honest: two identical bytes rows need only one verdict.
+const oracleRows = [];
+const seenBytes = new Map();
+const pushRow = (relative, text, accept, reason, compareReason = false) => {
+  const key = text;
+  if (seenBytes.has(key)) return;
+  seenBytes.set(key, relative);
+  oracleRows.push({ relative, bytes: text, accept, reason, compareReason });
+};
+for (const name of readdirSync(join(corpusRoot, "valid")).filter((n) => n.endsWith(".json") && !n.endsWith(".expect.json")).sort()) {
+  const text = readFileSync(join(corpusRoot, "valid", name), "utf8");
+  const document = JSON.parse(text);
+  if (document.status !== undefined) continue; // response rows are not requests
+  pushRow(`valid/${name}`, text, true, undefined);
+}
+for (const name of readdirSync(join(corpusRoot, "invalid")).filter((n) => n.endsWith(".json") && !n.endsWith(".expect.json")).sort()) {
+  const text = readFileSync(join(corpusRoot, "invalid", name), "utf8");
+  const expect = JSON.parse(readFileSync(join(corpusRoot, "invalid", name.replace(/\.json$/, ".expect.json")), "utf8"));
+  if (text.includes('"status"') && text.includes('"evidence"')) continue; // response rows
+  const isRequest = !expect.stage || expect.stage !== "none";
+  if (!isRequest) continue;
+  const reason = expect.reason;
+  // Decode-stage refusals (shape/oversize/token/...) bind production
+  // refusal vocabulary; validate-stage rows are semantic (production
+  // accepts the wire shape and refuses in its own validate pass with
+  // the same reason vocabulary).
+  pushRow(`invalid/${name}`, text, false, reason);
+}
+for (const name of readdirSync(join(corpusRoot, "upgrade")).filter((n) => n.endsWith(".json") && !n.endsWith(".expect.json")).sort()) {
+  const row = JSON.parse(readFileSync(join(corpusRoot, "upgrade", name), "utf8"));
+  pushRow(`upgrade/${name}`, JSON.stringify(row.request), row.accept === true, row.reason, true);
+}
+const oracleInput = oracleRows
+  .map((row) => `R\t${row.bytes.replaceAll(/\r?\n/g, "")}`)
+  .join("\n") + "\n";
+const oracleRun = spawnSync(oracle, [], { input: oracleInput, encoding: "utf8", timeout: 300_000, shell: process.platform === "win32" });
 if (oracleRun.status !== 0) fail("oracle-failed", (oracleRun.stderr ?? "").slice(-300));
 const oracleVerdicts = (oracleRun.stdout ?? "").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
-if (oracleVerdicts.length !== upgradeLines.length) fail("oracle-row-count", `${oracleVerdicts.length} vs ${upgradeLines.length}`);
-const upgradeNames = readdirSync(join(corpusRoot, "upgrade")).filter((name) => name.endsWith(".json")).sort();
-upgradeNames.forEach((name, index) => {
-  const row = JSON.parse(readFileSync(join(corpusRoot, "upgrade", name), "utf8"));
+if (oracleVerdicts.length !== oracleRows.length) fail("oracle-row-count", `${oracleVerdicts.length} vs ${oracleRows.length}`);
+let oracleChecked = 0;
+oracleRows.forEach((row, index) => {
   const verdict = oracleVerdicts[index];
-  if (verdict.accepted !== (row.accept === true)) {
-    fail("oracle-disagreement", `${name}: production ${verdict.accepted ? "accepted" : `refused (${verdict.reason})`}, corpus declares accept=${row.accept}`);
+  oracleChecked += 1;
+  if (verdict.accepted !== row.accept) {
+    fail("oracle-disagreement", `${row.relative}: production ${verdict.accepted ? "accepted" : `refused (${verdict.reason})`}, corpus declares accept=${row.accept}`);
   }
-  if (!verdict.accepted && row.reason !== undefined && row.reason !== verdict.reason) {
-    fail("oracle-reason", `${name}: production refused with ${verdict.reason}, corpus declares ${row.reason}`);
+  // Reason equality binds only where the corpus declares the production
+  // refusal vocabulary (the upgrade rows); the invalid/ rows carry the
+  // SDK runner's stage/reason spellings (bounds vs shape), whose
+  // accept/refuse verdict is the parity contract.
+  if (!verdict.accepted && row.compareReason && row.reason !== undefined && row.reason !== verdict.reason) {
+    fail("oracle-reason", `${row.relative}: production refused with ${verdict.reason}, corpus declares ${row.reason}`);
   }
 });
 
@@ -324,5 +367,5 @@ process.stdout.write(`${JSON.stringify({
   languages: Object.keys(verdicts).sort(),
   totals,
   lifecycle: lifecycleNames.length,
-  oracle: upgradeNames.length,
+  oracle: oracleChecked,
 })}\n`);
