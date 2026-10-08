@@ -855,3 +855,96 @@ fn symlinked_operand_is_refused() {
         let _ = std::fs::remove_file(&copy);
     }
 }
+
+/// Unvalidated evidence strings never reach public output: a marker
+/// planted in evidenceId (or scenarioId) is refused at admission — the
+/// qualified-symbol gate — and neither the id nor any other echo of it
+/// appears in stdout or stderr.
+#[test]
+fn unvalidated_evidence_ids_are_refused_and_never_echoed() {
+    const MARKER: &str = "SYNTHETIC-PRIVATE-MARKER-R2";
+    for member in ["evidenceId", "scenarioId"] {
+        let target = workspace_path("target/task-links-canary-evidence.json");
+        let _ = std::fs::create_dir_all(target.parent().unwrap());
+        let original =
+            std::fs::read_to_string(workspace_path(fixture("evidence/mock-run.json").as_str()))
+                .expect("evidence");
+        let evidence: Value = serde_json::from_str(&original).expect("evidence json");
+        let planted = serde_json::to_string(&{
+            let mut mutated = evidence.clone();
+            mutated[member] = Value::String(MARKER.to_owned());
+            mutated
+        })
+        .expect("render");
+        std::fs::write(&target, planted).expect("write planted copy");
+        let planted_path = target.to_string_lossy().into_owned();
+        let output = lekalo_in(
+            &workspace_path("."),
+            &[
+                "--json",
+                "task-links",
+                "inspect",
+                "tasklinks.task_external_link",
+                "--project",
+                &project(),
+                "--attachment",
+                &attachment(),
+                "--evidence",
+                &planted_path,
+            ],
+        );
+        assert_eq!(output.status.code(), Some(1), "{member} refused");
+        let envelope: Value = serde_json::from_str(stderr_text(&output).trim()).expect("envelope");
+        assert_eq!(envelope["reasonCodes"][0], "tasklink.evidence-invalid");
+        assert_eq!(
+            envelope["diagnostics"][0]["data"]["detail"],
+            "evidence-symbol"
+        );
+        // No channel echoes the unvalidated operand.
+        assert!(!stdout_text(&output).contains(MARKER));
+        assert!(!stderr_text(&output).contains(MARKER));
+        let _ = std::fs::remove_file(&target);
+    }
+}
+
+/// A private marker planted inside an admitted evidence document is
+/// impossible: every echoed field (evidence id, scenario id) is a
+/// validated qualified symbol, so the rendered summary stays
+/// classified even for hostile inputs that pass the pins.
+#[test]
+fn admitted_evidence_summary_carries_only_validated_symbols() {
+    let output = lekalo_in(
+        &workspace_path("."),
+        &[
+            "--json",
+            "task-links",
+            "inspect",
+            "tasklinks.task_external_link",
+            "--project",
+            &project(),
+            "--attachment",
+            &attachment(),
+            "--evidence",
+            &fixture("evidence/mock-run.json"),
+        ],
+    );
+    assert_eq!(output.status.code(), Some(0));
+    let envelope: Value = serde_json::from_str(&stdout_text(&output)).expect("envelope");
+    let summary = &envelope["taskLinks"]["evidence"];
+    assert_eq!(summary["origin"], "mock");
+    assert_eq!(summary["pins_match"], true);
+    let rendered = serde_json::to_string(&summary).expect("summary");
+    // Every rendered id is a qualified symbol: lowercase symbols with
+    // dot separators only — no free text can ride along.
+    for key in ["evidence_id", "scenario_id"] {
+        let id = summary[key].as_str().expect("id").to_owned();
+        assert!(
+            id.bytes().all(|byte| byte.is_ascii_lowercase()
+                || byte.is_ascii_digit()
+                || byte == b'_'
+                || byte == b'.'),
+            "{key} is a constrained symbol, got {id}"
+        );
+    }
+    let _ = rendered;
+}

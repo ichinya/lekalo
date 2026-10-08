@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "lekalo/task-links-evidence/v0.8.0",
+  "identity": "dev.lekalo.task-links-evidence@0.8.0",
+  "evidenceId": "tasklinks.evidence.two_providers",
+  "origin": "mock",
+  "scenarioId": "NOT-A-SYMBOL",
+  "attachmentRevision": "sha256:3f87aa7d2e5b21c18aff9864857248d32d20d4f45b1ffd8ed6e0fb0217fe308e",
+  "modelRef": {
+    "schemaVersion": "0.2.16",
+    "irDigest": "sha256:00f12b1b307329741fa5b362e57e6ab2a0f6ad5895844347a6ea579a3a24f824"
+  },
+  "clock": {
+    "policy": "injected",
+    "startMs": 0
+  },
+  "steps": [
+    {
+      "stepId": "s1",
+      "command": "tasklinks.request_action",
+      "outcome": "applied"
+    },
+    {
+      "stepId": "s2",
+      "command": "tasklinks.dispatch_outbox",
+      "outcome": "applied"
+    },
+    {
+      "stepId": "s3",
+      "command": "tasklinks.ack_delivery",
+      "outcome": "applied"
+    }
+  ]
+}

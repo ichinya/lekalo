@@ -293,18 +293,61 @@ const OBSERVATION_KINDS: [&str; 7] = [
     "coverage",
 ];
 
-/// Parse and admit one evidence document against the attachment.
+/// The engine's real outbox states: the evidence projection mirrors the
+/// delivery engine exactly, so every durable state (including the two
+/// uncertainty states) is representable and nothing else is admitted.
+const OUTBOX_STATES: [&str; 9] = [
+    "pending",
+    "leased",
+    "accepted_pending_ack",
+    "delivered",
+    "retry_wait",
+    "conflicted",
+    "cancelled",
+    "dead_letter",
+    "unknown_delivery",
+];
+
+/// One bounded `token` per the evidence schema: 1..=256 bytes.
+fn is_evidence_token(text: &str) -> bool {
+    !text.is_empty() && text.len() <= 256
+}
+
+/// One qualified symbol per the evidence schema (the same closed shape
+/// the public portability rows use). Everything the summary may echo is
+/// constrained to this grammar first: free text never reaches stdout.
+fn is_evidence_symbol(text: &str) -> bool {
+    text.len() <= 191 && wire::is_qualified_symbol(text)
+}
+
+/// One `sha256:` digest per the evidence schema.
+fn is_evidence_digest(text: &str) -> bool {
+    wire::Digest::parse(text).is_some()
+}
+
+/// Parse and admit one evidence document against the attachment and
+/// the live compilation.
 ///
-/// Admission requires exact identity, matching attachment revision and
-/// IR pin, a bounded step/observation count, closed step enums, and an
-/// origin the environment can actually stand behind: `native` claims
-/// are admitted only when `qualified_native` is asserted by the caller
-/// (the qualified-environment contract), and `native` always implies
-/// the `wall-clock-native` clock policy. A forged native claim without
+/// Admission is schema-faithful in both directions: every closed
+/// schema constraint (symbols, tokens, digests, enums, bounds) is
+/// mirrored exactly, so a schema-valid document is never refused for
+/// shape and a schema-invalid document is never admitted. On top of
+/// the shape, the joined semantics are admitted too: the scenario must
+/// be declared in the compilation, decision references must be
+/// internally consistent (an allowed outcome cannot carry an
+/// unsupported capability or a denied authorization), an allowed
+/// decision may never touch the protected planning fields, step ids
+/// are unique, and coverage observations cannot claim more than the
+/// recorded steps. The origin must be one the environment can actually
+/// stand behind: `native` claims are admitted only when
+/// `qualified_native` is asserted by the caller (the
+/// qualified-environment contract), and `native` always implies the
+/// `wall-clock-native` clock policy. A forged native claim without
 /// qualification is one registered failure, never a silent pass.
 pub fn admit_evidence(
     bytes: &[u8],
     attachment: &Attachment,
+    compilation: &crate::ir::Compilation,
     qualified_native: bool,
 ) -> Result<EvidenceSummary, Failure> {
     if bytes.len() > version::MAX_BYTES {
@@ -323,6 +366,12 @@ pub fn admit_evidence(
     }
     if evidence.identity != version::EVIDENCE_IDENTITY {
         return Err(evidence_invalid("evidence-identity", None));
+    }
+    // Public evidence ids are qualified symbols before anything can
+    // ever echo them: unconstrained strings are refused here, so no
+    // private marker can ride into inspect/portability output.
+    if !is_evidence_symbol(&evidence.evidence_id) || !is_evidence_symbol(&evidence.scenario_id) {
+        return Err(evidence_invalid("evidence-symbol", None));
     }
     if evidence.attachment_revision != attachment.attachment_revision().as_str() {
         return Err(evidence_invalid(
@@ -356,13 +405,31 @@ pub fn admit_evidence(
             return Err(evidence_invalid("evidence-native-clock", None));
         }
     }
+    // The scenario must be declared by the compilation: evidence can
+    // never witness an invented scenario.
+    let declared_scenarios: std::collections::BTreeSet<String> = compilation
+        .project
+        .definitions
+        .iter()
+        .filter_map(|definition| match definition {
+            crate::ir::Definition::Scenario(scenario) => Some(scenario.id.as_str().to_owned()),
+            _ => None,
+        })
+        .collect();
+    if !declared_scenarios.contains(&evidence.scenario_id) {
+        return Err(evidence_invalid("evidence-scenario-unresolved", None));
+    }
     if evidence.steps.is_empty() || evidence.steps.len() > version::MAX_STEPS {
         return Err(evidence_invalid("evidence-steps", None));
     }
     if evidence.observations.len() > version::MAX_OBSERVATIONS {
         return Err(evidence_invalid("evidence-observations", None));
     }
+    let mut seen_steps = std::collections::BTreeSet::new();
     for step in &evidence.steps {
+        if !is_evidence_token(&step.step_id) || !seen_steps.insert(step.step_id.as_str()) {
+            return Err(evidence_invalid("evidence-step-token", None));
+        }
         if !STEP_COMMANDS.contains(&step.command.as_str())
             || !STEP_OUTCOMES.contains(&step.outcome.as_str())
         {
@@ -372,52 +439,118 @@ pub fn admit_evidence(
             if !matches!(
                 attribution.actor.as_str(),
                 "identity.user" | "system.job" | "provider.event"
-            ) {
-                return Err(evidence_invalid("evidence-step-token", None));
-            }
-        }
-        if let Some(intent) = &step.intent {
-            if !matches!(
-                intent.state.as_str(),
-                "pending"
-                    | "leased"
-                    | "delivered"
-                    | "retry_wait"
-                    | "conflicted"
-                    | "cancelled"
-                    | "dead_letter"
-                    | "unknown_delivery"
-            ) {
-                return Err(evidence_invalid("evidence-step-token", None));
-            }
-        }
-        if let Some(decision) = &step.decision {
-            if !matches!(
-                decision.outcome.as_str(),
-                "allowed" | "denied" | "unsupported" | "indeterminate"
-            ) || decision
-                .capability_outcome
-                .as_deref()
-                .is_some_and(|outcome| {
-                    !matches!(outcome, "supported" | "partial" | "unsupported" | "unknown")
-                })
-                || decision
-                    .authorization_outcome
-                    .as_deref()
-                    .is_some_and(|outcome| !matches!(outcome, "allowed" | "denied"))
+            ) || !is_evidence_token(&attribution.workspace_id)
             {
                 return Err(evidence_invalid("evidence-step-token", None));
             }
+            for token in [
+                &attribution.installation_id,
+                &attribution.provider_id,
+                &attribution.object_type,
+                &attribution.external_id,
+                &attribution.event_identity,
+                &attribution.causation_id,
+                &attribution.correlation_id,
+                &attribution.source_revision,
+            ]
+            .into_iter()
+            .flatten()
+            {
+                if !is_evidence_token(token) {
+                    return Err(evidence_invalid("evidence-step-token", None));
+                }
+            }
         }
+        if let Some(intent) = &step.intent {
+            if !OUTBOX_STATES.contains(&intent.state.as_str())
+                || !is_evidence_token(&intent.intent_id)
+                || intent.attempt.is_some_and(|attempt| attempt > 64)
+            {
+                return Err(evidence_invalid("evidence-step-token", None));
+            }
+            for token in [
+                &intent.link_id,
+                &intent.idempotency_key,
+                &intent.lease_token,
+            ]
+            .into_iter()
+            .flatten()
+            {
+                if !is_evidence_token(token) {
+                    return Err(evidence_invalid("evidence-step-token", None));
+                }
+            }
+            if let Some(digest) = &intent.receipt_digest {
+                if !is_evidence_digest(digest) {
+                    return Err(evidence_invalid("evidence-step-token", None));
+                }
+            }
+        }
+        if let Some(decision) = &step.decision {
+            if !is_decision_consistent(decision)
+                || decision
+                    .fields
+                    .iter()
+                    .any(|field| !is_evidence_token(field))
+            {
+                return Err(evidence_invalid("evidence-step-token", None));
+            }
+            if decision.fields.len() > 64 {
+                return Err(evidence_invalid("evidence-step-token", None));
+            }
+            // An allowed decision never touches the protected planning
+            // fields, live or in evidence.
+            if decision.outcome == "allowed"
+                && decision
+                    .fields
+                    .iter()
+                    .any(|field| validate::PROTECTED_PLANNING_FIELDS.contains(&field.as_str()))
+            {
+                return Err(evidence_invalid("evidence-protected-field", None));
+            }
+            for digest in [&decision.policy_revision, &decision.capability_revision]
+                .into_iter()
+                .flatten()
+            {
+                if !is_evidence_digest(digest) {
+                    return Err(evidence_invalid("evidence-step-token", None));
+                }
+            }
+        }
+        // The recorded detail is bounded free text; it is never echoed
+        // into any public surface.
         if let Some(detail) = &step.detail {
-            if detail.is_empty() || detail.len() > 512 {
+            if detail.len() > 512 {
                 return Err(evidence_invalid("evidence-step-token", None));
             }
         }
     }
     for observation in &evidence.observations {
-        if !OBSERVATION_KINDS.contains(&observation.kind.as_str()) {
+        if !OBSERVATION_KINDS.contains(&observation.kind.as_str())
+            || !is_evidence_token(&observation.subject)
+        {
             return Err(evidence_invalid("evidence-observation", None));
+        }
+        if let Some(token) = &observation.value {
+            if !is_evidence_token(token) {
+                return Err(evidence_invalid("evidence-observation", None));
+            }
+        }
+        if observation.count.is_some_and(|count| count > 1_000_000) {
+            return Err(evidence_invalid("evidence-observation", None));
+        }
+        // Coverage cannot claim more than the recorded steps prove.
+        if observation.kind == "coverage"
+            && observation
+                .count
+                .is_some_and(|count| count > evidence.steps.len() as u64)
+        {
+            return Err(evidence_invalid("evidence-coverage", None));
+        }
+        if let Some(digest) = &observation.digest {
+            if !is_evidence_digest(digest) {
+                return Err(evidence_invalid("evidence-observation", None));
+            }
         }
     }
     Ok(EvidenceSummary {
@@ -427,6 +560,48 @@ pub fn admit_evidence(
         steps: evidence.steps.len() as u64,
         pins_match: true,
     })
+}
+
+/// Whether one decision reference is internally consistent: the
+/// composed outcome must follow from the capability and authorization
+/// observations, exactly like the engine's own decision function.
+fn is_decision_consistent(decision: &EvidenceDecisionRef) -> bool {
+    if !matches!(
+        decision.outcome.as_str(),
+        "allowed" | "denied" | "unsupported" | "indeterminate"
+    ) {
+        return false;
+    }
+    if let Some(capability) = &decision.capability_outcome {
+        if !matches!(
+            capability.as_str(),
+            "supported" | "partial" | "unsupported" | "unknown"
+        ) {
+            return false;
+        }
+    }
+    if let Some(authorization) = &decision.authorization_outcome {
+        if !matches!(authorization.as_str(), "allowed" | "denied") {
+            return false;
+        }
+    }
+    match decision.outcome.as_str() {
+        // Allowed requires both observations to permit.
+        "allowed" => {
+            decision.authorization_outcome.as_deref() != Some("denied")
+                && matches!(
+                    decision.capability_outcome.as_deref(),
+                    None | Some("supported") | Some("partial")
+                )
+        }
+        // Denied is a known denial.
+        "denied" => decision.authorization_outcome.as_deref() == Some("denied"),
+        // Unsupported is a capability refusal.
+        "unsupported" => decision.capability_outcome.as_deref() == Some("unsupported"),
+        // Indeterminate means undecidable input (unknown capability).
+        "indeterminate" => decision.capability_outcome.as_deref() == Some("unknown"),
+        _ => false,
+    }
 }
 
 fn evidence_invalid(detail: &'static str, subject: Option<&str>) -> Failure {

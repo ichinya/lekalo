@@ -254,8 +254,13 @@ fn execute(command: Command) -> Result<DomainResult, DomainResult> {
             }
             let admitted = match &evidence {
                 Some(path) => Some(
-                    tl::admit_evidence(&read_bounded(path)?, &attachment, native_qualified())
-                        .map_err(|f| tl::into_result(&f))?,
+                    tl::admit_evidence(
+                        &read_bounded(path)?,
+                        &attachment,
+                        &compilation,
+                        native_qualified(),
+                    )
+                    .map_err(|f| tl::into_result(&f))?,
                 ),
                 None => None,
             };
@@ -300,6 +305,7 @@ fn execute(command: Command) -> Result<DomainResult, DomainResult> {
                 let summary = tl::admit_evidence(
                     &read_bounded(evidence_path)?,
                     &attachment,
+                    &compilation,
                     native_qualified(),
                 )
                 .map_err(|f| tl::into_result(&f))?;

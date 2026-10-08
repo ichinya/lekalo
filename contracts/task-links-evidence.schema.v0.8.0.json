@@ -219,12 +219,15 @@
           "enum": [
             "pending",
             "leased",
+            "accepted_pending_ack",
             "delivered",
             "retry_wait",
             "conflicted",
             "cancelled",
-            "dead_letter"
-          ]
+            "dead_letter",
+            "unknown_delivery"
+          ],
+          "description": "The outbox state at the step; the closed nine-state engine vocabulary including the uncertainty states."
         },
         "attempt": {
           "type": "integer",

@@ -45,6 +45,7 @@ if (ajvVersion !== "8.17.1") {
 }
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+let triggerPairCount = 0;
 const schemaOnly = process.argv.includes("--schema-only");
 const gate = "task-links-contracts";
 const failures = [];
@@ -377,6 +378,7 @@ if (!schemaOnly) {
     }
     // The trigger matrix: every pair reaches exactly its rule.
     const matrix = read("tests/fixtures/task-external-links/invalid/expect.json");
+    triggerPairCount = matrix.pairs.length;
     for (const pair of matrix.pairs) {
       if (pair.command === "inspect") {
         // Evidence-side triggers: the mutated evidence document must
@@ -579,6 +581,6 @@ process.stdout.write(
     schemaOnly,
     schemasValidated: Object.keys(schemas).length + 1,
     jsonFilesScanned: jsonFiles.length,
-    triggerPairs: schemaOnly ? 0 : 18,
+    triggerPairs: schemaOnly ? 0 : triggerPairCount,
   })}\n`,
 );
