@@ -158,34 +158,51 @@ fn load_profile(
     Ok(Some(profile_pin(found)))
 }
 
-/// Join the qualified implementation projection: the evidence manifest
-/// must declare the family complete, pin the artifact digest, and the
-/// producer must validate the document against this exact compilation.
-/// The artifact bytes decode through the duplicate-key-refusing parser
-/// before the typed bridge.
-fn load_implementation(
+/// Read, hash, and decode every admitted complete evidence family
+/// artifact. Declared completeness without readable, digest-matching,
+/// decodable custody stays unverified: the assessment reports the gap
+/// instead of granting portability from an authored enum. A digest
+/// mismatch is fabricated custody and refuses outright.
+fn verify_families(
     fs: &ProjectFs,
     evidence: &lekalo_core::portability::EvidenceDocument,
+) -> Result<BTreeMap<lekalo_core::portability::wire::EvidenceFamily, Vec<u8>>, DiagnosticSet> {
+    let mut verified = BTreeMap::new();
+    for family in &evidence.families {
+        if !family.complete {
+            continue;
+        }
+        let (Some(reference), Some(digest)) = (&family.artifact_ref, &family.digest) else {
+            continue;
+        };
+        let Some(bytes) = read_bounded_opt(fs, reference)? else {
+            // An absent claimed-complete artifact is an evidence gap;
+            // the assessment demotes the family instead of trusting it.
+            continue;
+        };
+        if format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes)) != *digest {
+            return Err(invalid("family-digest"));
+        }
+        let value = lekalo_core::portability::wire::decode_dup_safe(&bytes)
+            .map_err(|_| invalid("family-shape"))?;
+        if !value.is_object() {
+            return Err(invalid("family-shape"));
+        }
+        verified.insert(family.family, bytes);
+    }
+    Ok(verified)
+}
+
+/// Join the qualified implementation projection: the evidence manifest
+/// must declare the family complete with verified artifact custody, and
+/// the producer must validate the document against this exact
+/// compilation. The artifact bytes decode through the
+/// duplicate-key-refusing parser before the typed bridge.
+fn load_implementation(
+    artifact: &[u8],
     compilation: &lekalo_core::ir::Compilation,
 ) -> Result<Option<lekalo_core::implementation::PortabilityReport>, DiagnosticSet> {
-    let family = evidence
-        .families
-        .iter()
-        .find(|f| f.family == lekalo_core::portability::wire::EvidenceFamily::Implementation);
-    let Some(family) = family else {
-        return Ok(None);
-    };
-    if !family.complete {
-        return Ok(None);
-    }
-    let (Some(reference), Some(digest)) = (&family.artifact_ref, &family.digest) else {
-        return Ok(None);
-    };
-    let bytes = read_bounded(fs, reference)?;
-    if format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes)) != *digest {
-        return Err(invalid("implementation-digest"));
-    }
-    let value: serde_json::Value = lekalo_core::portability::wire::decode_dup_safe(&bytes)
+    let value: serde_json::Value = lekalo_core::portability::wire::decode_dup_safe(artifact)
         .map_err(|_| invalid("implementation-shape"))?;
     let document = lekalo_core::implementation::ImplementationDocument::from_value(&value)
         .map_err(|_| invalid("implementation-shape"))?;
@@ -193,6 +210,52 @@ fn load_implementation(
         Ok(report) => Ok(Some(report.portability().clone())),
         Err(set) => Err(set),
     }
+}
+
+/// Qualify the claimed scenario receipts: every recorded result must
+/// present its referenced receipt artifact, digest-bound to the exact
+/// pinned bytes, decoded as a JSON object, and naming exactly the
+/// claimed scenario and destination. Anything else stays unqualified
+/// and never upgrades a join to executed or failed.
+fn qualify_receipts(
+    fs: &ProjectFs,
+    evidence: &lekalo_core::portability::EvidenceDocument,
+) -> Result<std::collections::BTreeSet<(String, String)>, DiagnosticSet> {
+    let mut qualified = std::collections::BTreeSet::new();
+    for record in &evidence.scenarios {
+        let (Some(reference), Some(digest)) = (&record.receipt_ref, &record.receipt_digest) else {
+            continue;
+        };
+        let Some(target) = &record.target_id else {
+            continue;
+        };
+        let Some(bytes) = read_bounded_opt(fs, reference)? else {
+            continue;
+        };
+        if format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes)) != *digest {
+            return Err(invalid("receipt-digest"));
+        }
+        let value = lekalo_core::portability::wire::decode_dup_safe(&bytes)
+            .map_err(|_| invalid("receipt-shape"))?;
+        let Some(object) = value.as_object() else {
+            return Err(invalid("receipt-shape"));
+        };
+        // Scope qualification: the receipt must name exactly the claimed
+        // scenario and destination; a receipt for another join never
+        // proves this one executed.
+        let scenario_matches = object
+            .get("scenario")
+            .and_then(|v| v.as_str())
+            .is_some_and(|scenario| scenario == record.scenario);
+        let target_matches = object
+            .get("targetId")
+            .and_then(|v| v.as_str())
+            .is_some_and(|named| named == target);
+        if scenario_matches && target_matches {
+            qualified.insert((record.scenario.clone(), target.clone()));
+        }
+    }
+    Ok(qualified)
 }
 
 fn execute(args: Args) -> Result<DomainResult, DiagnosticSet> {
@@ -284,20 +347,28 @@ fn execute(args: Args) -> Result<DomainResult, DiagnosticSet> {
 
     // Profile pins, adapter snapshots, and verified storage-profile
     // artifact reads per configured target. The declared storage and
-    // adapter references are read and digest-pinned here: the report
-    // never echoes a reference it has not verified through the
-    // confined filesystem.
+    // adapter references are read, decoded, and digest-pinned here: the
+    // report never echoes a reference it has not verified through the
+    // confined filesystem, and unparseable artifacts refuse outright.
     let subjects = extract(&compilation.project, &recipe);
     let mut pins: BTreeMap<String, Option<lekalo_core::portability::ProfilePin>> = BTreeMap::new();
     let mut adapters: BTreeMap<String, Option<lekalo_core::portability::wire::AdapterSnapshot>> =
         BTreeMap::new();
     let mut storage_refs: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut adapter_evidence_digests: BTreeMap<String, String> = BTreeMap::new();
     if let Some(document) = &targets {
         for binding in &document.targets {
             pins.insert(binding.target_id.clone(), load_profile(&fs, binding)?);
             let mut verified_refs = Vec::new();
             for reference in &binding.storage_profile_refs {
                 let bytes = read_bounded(&fs, reference)?;
+                // Admission: a storage profile artifact must decode as a
+                // closed storage-engine-profile document; arbitrary JSON
+                // or bytes never pass as a storage profile.
+                let value = lekalo_core::portability::wire::decode_dup_safe(&bytes)
+                    .map_err(|_| invalid("storage-profile-shape"))?;
+                lekalo_core::storage_engine_profile::StorageEngineProfile::from_value(&value)
+                    .map_err(|_| invalid("storage-profile-shape"))?;
                 verified_refs.push(format!(
                     "{}#sha256:{}",
                     reference,
@@ -306,11 +377,19 @@ fn execute(args: Args) -> Result<DomainResult, DiagnosticSet> {
             }
             storage_refs.insert(binding.target_id.clone(), verified_refs);
             if let Some(adapter_ref) = &binding.adapter_evidence_ref {
-                // The adapter evidence reference is opened and pinned;
-                // its qualified snapshot still comes from the evidence
-                // manifest, never from the referenced file's content.
+                // The adapter evidence reference is opened, decoded, and
+                // digest-pinned: its verified custody stays bound to the
+                // destination snapshot in the report.
                 let bytes = read_bounded(&fs, adapter_ref)?;
-                let _ = format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes));
+                let value = lekalo_core::portability::wire::decode_dup_safe(&bytes)
+                    .map_err(|_| invalid("adapter-shape"))?;
+                if !value.is_object() {
+                    return Err(invalid("adapter-shape"));
+                }
+                adapter_evidence_digests.insert(
+                    binding.target_id.clone(),
+                    format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes)),
+                );
             }
         }
     }
@@ -324,6 +403,7 @@ fn execute(args: Args) -> Result<DomainResult, DiagnosticSet> {
                     version: adapter.version.clone(),
                     protocol: adapter.protocol.clone(),
                     capability_digest: adapter.capability_digest.clone(),
+                    evidence_digest: adapter_evidence_digests.get(&adapter.target_id).cloned(),
                 }),
             );
         }
@@ -337,16 +417,71 @@ fn execute(args: Args) -> Result<DomainResult, DiagnosticSet> {
         &storage_refs,
     )?;
 
-    // The lock custody pin, recorded separately from the evidence
-    // trust: the canonical `lekalo.lock` at the resolved project root,
-    // read through the confined filesystem.
-    let lock_digest = read_bounded_opt(&fs, LOCK_PATH)?
-        .map(|bytes| format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes)));
-
-    // The qualified implementation join.
-    let implementation = match &evidence {
-        Some(document) => load_implementation(&fs, document, &compilation)?,
+    // The lock custody pin: the canonical `lekalo.lock` at the resolved
+    // project root, read through the confined filesystem, decoded
+    // through the strict lock parser, and reconciled against the exact
+    // profile pins of the selected targets. Garbage bytes or a lock
+    // that contradicts a selected pin refuse; hashing alone never
+    // establishes provenance.
+    let selected_for_lock: Vec<&lekalo_core::portability::TargetInput> =
+        std::iter::once(&resolved.source)
+            .chain(resolved.destinations.iter())
+            .collect();
+    let lock_digest = match read_bounded_opt(&fs, LOCK_PATH)? {
+        Some(bytes) => {
+            let lock = lekalo_core::lockfile::Lockfile::parse_canonical(&bytes)
+                .map_err(|_| invalid("lock-shape"))?;
+            for target in &selected_for_lock {
+                let Some(pin) = &target.profile else {
+                    continue;
+                };
+                if let Some(entry) = lock
+                    .profiles()
+                    .iter()
+                    .find(|profile| profile.id().as_str() == pin.id)
+                {
+                    let matches = entry.version().as_str() == pin.version
+                        && entry.source_digest().as_str() == pin.source_digest
+                        && entry.digest().as_str() == pin.resolved_digest;
+                    if !matches {
+                        return Err(invalid("lock-profile"));
+                    }
+                }
+            }
+            Some(format!(
+                "sha256:{}",
+                lekalo_core::digest::sha256_hex(&bytes)
+            ))
+        }
         None => None,
+    };
+
+    // The qualified evidence families: every admitted complete family
+    // artifact read, hash-verified, and decoded.
+    let verified_families = match &evidence {
+        Some(document) => verify_families(&fs, document)?,
+        None => BTreeMap::new(),
+    };
+    let implementation = match &evidence {
+        Some(document) => {
+            let family = document.families.iter().find(|f| {
+                f.family == lekalo_core::portability::wire::EvidenceFamily::Implementation
+            });
+            match family {
+                Some(family)
+                    if family.complete && verified_families.contains_key(&family.family) =>
+                {
+                    load_implementation(&verified_families[&family.family], &compilation)?
+                }
+                _ => None,
+            }
+        }
+        None => None,
+    };
+    // The qualified scenario receipts.
+    let receipts_qualified = match &evidence {
+        Some(document) => qualify_receipts(&fs, document)?,
+        None => std::collections::BTreeSet::new(),
     };
 
     let assessment = core::Assessment {
@@ -358,6 +493,8 @@ fn execute(args: Args) -> Result<DomainResult, DiagnosticSet> {
         destinations: resolved.destinations.clone(),
         evidence: evidence.as_ref(),
         implementation: implementation.as_ref(),
+        verified_families: verified_families.into_keys().collect(),
+        receipts_qualified,
         targets_input,
         lock_digest,
         evidence_digest,
@@ -390,15 +527,14 @@ fn execute(args: Args) -> Result<DomainResult, DiagnosticSet> {
     }
 
     let human = human_summary(&report);
-    let mut canonical = lekalo_core::portability::canonical::canonical_bytes(&report);
+    let canonical = lekalo_core::portability::canonical::canonical_bytes(&report);
     // The recipe's declared report byte bound is enforced against the
     // canonical bytes; an oversized report is an explicit analysis
     // failure, never a silently truncated emission.
     if canonical.len() as u64 > recipe.document.limits.max_report_bytes {
         return Err(invalid("report-size"));
     }
-    let json = format!("{{\"status\":\"valid\",\"portability\":{}}}", canonical);
-    canonical.clear();
+    let json = format!("{{\"portability\":{}}}", canonical);
 
     // The strict gate: unresolved required obligations deny while the
     // report stays visible in the denied envelope.
@@ -416,6 +552,10 @@ fn execute(args: Args) -> Result<DomainResult, DiagnosticSet> {
 
     let set = DiagnosticSet::try_from_unsorted(diagnostics, Status::Valid)
         .map_err(|_| invalid("diagnostic-bound"))?;
+    // The valid envelope states its own status beside the payload; the
+    // denied envelope carries the payload without re-asserting a
+    // contradicting inner status.
+    let json = format!("{{\"status\":\"valid\",{}", &json[1..]);
     Ok(DomainResult::validation(
         json,
         human,
