@@ -64,6 +64,14 @@ fn is_owned_temp_name(name: &str) -> bool {
     name.strip_suffix(TEMP_SUFFIX)
         .is_some_and(|stem| stem.ends_with('.'))
 }
+
+/// The exact legacy fixed spelling: a dotfile whose stem ends in
+/// `.` + [`TEMP_SUFFIX`] (e.g. `.project.yaml.lekalo-format-new`).
+fn is_legacy_temp_name(name: &str) -> bool {
+    name.strip_prefix('.')
+        .and_then(|rest| rest.strip_suffix(TEMP_SUFFIX))
+        .is_some_and(|stem| stem.ends_with('.'))
+}
 /// The internal, versioned runtime-record identity (never a public
 /// contract; the reader owns this version).
 const RUNTIME_SCHEMA: &str = "lekalo/format-transaction/v0.8.0";
@@ -358,11 +366,16 @@ pub(crate) fn recover_pending(
         })
     })?;
     let write = FormatWrite::new(root);
-    // A project with no formatter state at all gets no runtime-home
-    // writes: the no-op apply on a canonical tree stays byte-identical
-    // and creates nothing (the reviewed gate premise). Any state — a
-    // plan home of any kind — proceeds to the owned window below.
-    if plan_directories_from(&write).is_empty() {
+    // A project with no formatter state at all and no reclaimable
+    // residue gets no runtime-home writes: the no-op apply on a
+    // canonical tree stays byte-identical and creates nothing (the
+    // reviewed gate premise). Any state — a plan home of any kind — or
+    // any stranded crash residue proceeds to the owned window below
+    // (finding r3 4): a legacy source-tree temp is exactly the state
+    // the mutating run exists to clean, and the former plan-directory
+    // early return skipped its cleanup on precisely the state-less
+    // trees the residue keeps unloadable.
+    if plan_directories_from(&write).is_empty() && !write.has_reclaimable_residue() {
         return Ok(None);
     }
     // The ownership lock precedes every runtime-home decision: only the
@@ -1539,37 +1552,108 @@ impl FormatWrite {
         Ok(())
     }
 
-    /// Reclaim legacy rename temps that an older binary stranded inside
-    /// the governed source tree: `.{name}.lekalo-format-new` siblings in
-    /// the admitted module directories. The governed scan rejects those
-    /// dotfiles — the project stays unloadable until this owned sweep
-    /// reclaims them — so the mutating run removes exactly that fixed
-    /// legacy spelling beside the loader's own enumeration, never any
-    /// other source entry.
-    fn sweep_legacy_source_temps(&self) -> Result<(), ()> {
-        // The closed set of admitted source directories: every module of
-        // the project. `lekalo/modules` itself is scanned for the module
-        // directory names; nothing outside it is ever touched.
+    /// Whether reclaimable crash residue exists anywhere the sweeps look
+    /// (finding r3 4): an orphaned runtime temp or a legacy source-tree
+    /// temp. The read-only probe behind the recovery entry decision:
+    /// stranded residue keeps the project unloadable exactly as a
+    /// journal would, so a state-less tree carrying it must still reach
+    /// the owned sweep. Anomalies (links, hostile spellings) are skipped
+    /// here — the owned sweep refuses them instead.
+    fn has_reclaimable_residue(&self) -> bool {
+        if let Ok(home) = self.physical(TEMP_HOME, false) {
+            if let Ok(read) = std::fs::read_dir(&home) {
+                for entry in read.flatten() {
+                    let Ok(metadata) = entry.metadata() else {
+                        continue;
+                    };
+                    if metadata.file_type().is_symlink() || !metadata.is_file() {
+                        continue;
+                    }
+                    #[cfg(windows)]
+                    {
+                        if reparse_point(&metadata) {
+                            continue;
+                        }
+                    }
+                    if let Some(name) = entry.file_name().to_str() {
+                        if is_owned_temp_name(name) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        for directory in self.legacy_source_directories() {
+            let Ok(dir_path) = self.physical(&directory, false) else {
+                continue;
+            };
+            let Ok(read) = std::fs::read_dir(&dir_path) else {
+                continue;
+            };
+            for entry in read.flatten() {
+                let Ok(metadata) = entry.metadata() else {
+                    continue;
+                };
+                if metadata.file_type().is_symlink() || !metadata.is_file() {
+                    continue;
+                }
+                #[cfg(windows)]
+                {
+                    if reparse_point(&metadata) {
+                        continue;
+                    }
+                }
+                if let Some(name) = entry.file_name().to_str() {
+                    if is_legacy_temp_name(name) {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// The closed set of source directories that ever held a legacy
+    /// rename temp (finding r3 4): the `lekalo/` project root — where
+    /// the legacy `project.yaml` temp sibling landed — plus every
+    /// admitted module directory. A missing tree yields an empty set;
+    /// nothing outside these directories is ever touched.
+    fn legacy_source_directories(&self) -> Vec<String> {
+        let mut directories = vec!["lekalo".to_owned()];
         let modules_home = "lekalo/modules".to_owned();
-        let module_dirs: Vec<String> = {
-            let Ok(home) = self.physical(&modules_home, false) else {
-                return Ok(());
-            };
-            let Ok(read) = std::fs::read_dir(&home) else {
-                return Ok(());
-            };
-            read.flatten()
-                .filter(|entry| {
-                    entry
-                        .metadata()
-                        .map(|metadata| metadata.is_dir() && !metadata.file_type().is_symlink())
-                        .unwrap_or(false)
-                })
-                .filter_map(|entry| entry.file_name().to_str().map(str::to_owned))
-                .map(|name| format!("{modules_home}/{name}"))
-                .collect()
-        };
-        for directory in module_dirs {
+        if let Ok(home) = self.physical(&modules_home, false) {
+            if let Ok(read) = std::fs::read_dir(&home) {
+                directories.extend(
+                    read.flatten()
+                        .filter(|entry| {
+                            entry
+                                .metadata()
+                                .map(|metadata| {
+                                    metadata.is_dir() && !metadata.file_type().is_symlink()
+                                })
+                                .unwrap_or(false)
+                        })
+                        .filter_map(|entry| entry.file_name().to_str().map(str::to_owned))
+                        .map(|name| format!("{modules_home}/{name}")),
+                );
+            }
+        }
+        directories
+    }
+
+    /// Reclaim legacy rename temps that an older binary stranded inside
+    /// the governed source tree: `.{name}.lekalo-format-new` siblings
+    /// at the `lekalo/` project root and in the admitted module
+    /// directories (finding r3 4: the former sweep covered only the
+    /// module directories — the `project.yaml` sibling survived every
+    /// sweep — and was skipped entirely whenever the optional runtime
+    /// temp home was absent). The governed scan rejects those dotfiles —
+    /// the project stays unloadable until this owned sweep reclaims
+    /// them — so the mutating run removes exactly that fixed legacy
+    /// spelling beside the loader's own enumeration, never any other
+    /// source entry.
+    fn sweep_legacy_source_temps(&self) -> Result<(), ()> {
+        for directory in self.legacy_source_directories() {
             let Ok(dir_path) = self.physical(&directory, false) else {
                 continue;
             };
@@ -1595,13 +1679,7 @@ impl FormatWrite {
                 };
                 // Exactly the legacy fixed spelling: a dotfile whose stem
                 // ends in `.lekalo-format-new`.
-                let is_legacy_temp = name.starts_with('.')
-                    && name
-                        .strip_prefix('.')
-                        .and_then(|rest| rest.strip_suffix(TEMP_SUFFIX))
-                        .map(|stem| stem.ends_with('.'))
-                        .unwrap_or(false);
-                if is_legacy_temp {
+                if is_legacy_temp_name(name) {
                     let _ = std::fs::remove_file(entry.path());
                 }
             }

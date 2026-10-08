@@ -1071,12 +1071,14 @@ fn a_symlinked_ownership_file_is_refused_by_the_open_itself() {
     });
 }
 
-#[cfg(unix)]
 #[test]
 fn an_orphaned_rename_temp_in_a_source_directory_is_reclaimed_by_apply() {
-    // Finding r2 3: a legacy crash left a temp sibling inside the
-    // governed tree; the governed scan rejects the dotfile, so the
-    // mutating run must reclaim it before its own load succeeds.
+    // Finding r2 3 (platform-independent since the r3 4 fix): a legacy
+    // crash left a temp sibling inside the governed tree with NO
+    // formatter state on disk at all; the governed scan rejects the
+    // dotfile, so the mutating run must reclaim it — through the owned
+    // residue probe, never skipped for a missing runtime home — before
+    // its own load succeeds.
     in_sandbox("stale-temp", "seeds/noncanonical", |root| {
         let stale = root.join("lekalo/modules/scheduling/.module.yaml.lekalo-format-new");
         fs::write(&stale, b"orphaned: partial bytes\n").expect("orphan temp");
@@ -1141,5 +1143,54 @@ fn an_orphaned_recovery_temp_does_not_poison_the_next_recovery() {
         assert!(!home.join("journal.json").exists(), "the journal cleared");
         let leftover = temps.read_dir().map(|entries| entries.count()).unwrap_or(0);
         assert_eq!(leftover, 0, "no rename temp survives a committed recovery");
+    });
+}
+
+#[test]
+fn a_legacy_project_root_temp_is_reclaimed_without_any_formatter_state() {
+    // Finding r3 4: the legacy emitter could strand its rename temp as
+    // the `project.yaml` sibling at the `lekalo/` root, but the legacy
+    // sweep covered only the module directories — the project stayed
+    // permanently unloadable. The root is part of the closed sweep set
+    // now, and the cleanup runs even with no formatter state on disk.
+    in_sandbox("legacy-root-temp", "seeds/noncanonical", |root| {
+        let orphan = root.join("lekalo/.project.yaml.lekalo-format-new");
+        fs::write(&orphan, b"orphaned: partial bytes\n").expect("orphan temp");
+        assert!(!root.join(".lekalo").exists(), "no formatter state planted");
+        // Sanity: the governed scan really refuses this tree.
+        let blocked = lekalo_core::loader::run(
+            &lekalo_core::loader::LoadSelection {
+                project: Some(".".to_owned()),
+            },
+            false,
+        );
+        assert_ne!(
+            blocked.status(),
+            Status::Valid,
+            "the dotfile blocks readers"
+        );
+        let result = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
+        assert_eq!(result.status(), Status::Valid, "{result:?}");
+        assert!(!orphan.exists(), "the project-root orphan was reclaimed");
+    });
+}
+
+#[test]
+fn a_module_temp_is_swept_when_the_runtime_temp_home_is_absent() {
+    // Finding r3 4 control: a record-less plan home and a module orphan
+    // with NO runtime temp home — the former sweep's `temps`-home error
+    // returned before the legacy pass, so the orphan survived and the
+    // run failed with structure.path-segment. The legacy pass is
+    // independent of the optional runtime home now.
+    in_sandbox("legacy-no-temps-home", "seeds/noncanonical", |root| {
+        let orphan = root.join("lekalo/modules/scheduling/.module.yaml.lekalo-format-new");
+        fs::write(&orphan, b"orphaned: partial bytes\n").expect("orphan temp");
+        let home = root.join(".lekalo/cache/format/aabbccdd-1");
+        fs::create_dir_all(&home).expect("plan home");
+        assert!(!root.join(".lekalo/cache/format/temps").exists());
+        let result = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
+        assert_eq!(result.status(), Status::Valid, "{result:?}");
+        assert!(!orphan.exists(), "the module orphan was reclaimed");
+        assert!(!home.exists(), "the record-less plan home was reclaimed");
     });
 }
