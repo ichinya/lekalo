@@ -55,6 +55,15 @@ const MANIFEST: &str = "manifest.json";
 /// The rename-temp home inside the formatter runtime (finding r2 3):
 /// temps live here, never as siblings inside the governed source tree.
 const TEMP_HOME: &str = ".lekalo/cache/format/temps";
+
+/// The producer-accepted runtime temp spelling: a name ending in
+/// `.` + [`TEMP_SUFFIX`] (e.g.
+/// `...apply.module.yaml.lekalo-format-new`). The sweep and the emitter
+/// agree on this exact suffix (finding r3 3).
+fn is_owned_temp_name(name: &str) -> bool {
+    name.strip_suffix(TEMP_SUFFIX)
+        .is_some_and(|stem| stem.ends_with('.'))
+}
 /// The internal, versioned runtime-record identity (never a public
 /// contract; the reader owns this version).
 const RUNTIME_SCHEMA: &str = "lekalo/format-transaction/v0.8.0";
@@ -361,6 +370,14 @@ pub(crate) fn recover_pending(
     let guard = write
         .acquire_ownership()
         .map_err(|_| RecoveryFailure::LiveWriter)?;
+    // Orphan reclaim precedes recovery (finding r3 3): a process death
+    // during recovery strands its own restore temp under a fixed
+    // spelling, and the next recovery's exclusive create would collide
+    // with that orphan and die in the same restore-failed state forever
+    // — recovery used to run before the sweep, so retries never reached
+    // cleanup. The same pass reclaims legacy source-tree temps whether
+    // or not the optional runtime homes exist (finding r3 4).
+    let _ = write.sweep_stale_temps();
     // Reader-gate state first: a journaled plan recovers, or fails the
     // run, before anything else touches the home or the tree.
     let plans = plan_directories_from(&write);
@@ -382,12 +399,6 @@ pub(crate) fn recover_pending(
             let _ = write.remove_dir(&format!("{FORMAT_HOME}/{plan_id}"));
         }
     }
-    // Orphaned replacement temps in the governed source tree (finding
-    // r2 3): a process death between temp creation and rename leaves a
-    // dotfile sibling the governed scan rejects — the project stays
-    // unloadable until the owned sweep reclaims it. The fixed temp name
-    // would otherwise collide with every retry.
-    let _ = write.sweep_stale_temps();
     Ok(Some(guard))
 }
 
@@ -1462,32 +1473,45 @@ impl FormatWrite {
 
     /// The per-run temp namespace prefix: unique per process and plan
     /// window, so orphan reclamation (below) never races a live writer's
-    /// temps and two attempts never share a temp name.
+    /// The per-run temp namespace prefix: unique per process and plan
+    /// window, so orphan reclamation (below) never races a live writer's
+    /// temps and two attempts never share a temp name. Recovery runs
+    /// before any plan identity exists; its fallback namespace is
+    /// process-unique too (finding r3 3), so a crashed recovery's orphan
+    /// can never collide with the next recovery's temp even ahead of the
+    /// entry sweep.
     fn temp_namespace(&self) -> String {
         self.temp_namespace
             .clone()
-            .unwrap_or_else(|| "owned".to_owned())
+            .unwrap_or_else(|| format!("recover.{}", std::process::id()))
     }
 
-    /// Reclaim orphaned formatter temps inside the runtime home (finding
-    /// r2 3): any plain file spelled `*.new` under the temp home is a
-    /// crashed rename temp — the exclusive owner (this caller) is the
-    /// only legitimate writer of this home, so every orphan is
-    /// reclaimable custody. Links, directories, and foreign spellings
-    /// refuse the sweep instead of being followed or removed.
+    /// Reclaim crashed rename temps everywhere they can strand (finding
+    /// r2 3, r3 3): the runtime temp home first — its absence or a
+    /// hostile spelling never suppresses the legacy pass — then the
+    /// legacy source-tree spellings. The caller holds the exclusive
+    /// ownership lock, so no live writer's temps exist during this pass.
     fn sweep_stale_temps(&self) -> Result<(), ()> {
-        self.sweep_home_temps()?;
-        self.sweep_legacy_source_temps()
+        let home = self.sweep_home_temps();
+        let legacy = self.sweep_legacy_source_temps();
+        home.and(legacy)
     }
 
-    /// Reclaim orphaned temps inside the runtime temp home: any plain
-    /// file spelled `*.new` under the temp home is a crashed rename temp
-    /// — the exclusive owner (this caller) is the only legitimate writer
-    /// of this home, so every orphan is reclaimable custody. Links,
-    /// directories, and foreign spellings refuse the sweep instead of
-    /// being followed or removed.
+    /// Reclaim orphaned temps inside the runtime temp home (finding r2
+    /// 3, r3 3): any plain file with the producer's exact temp suffix is
+    /// a crashed rename temp — the exclusive owner (this caller) is the
+    /// only legitimate writer of this home, so every orphan is
+    /// reclaimable custody. The suffix agrees with the emitter's
+    /// spelling (finding r3 3): the former `.new` matcher never matched
+    /// the emitted `*.lekalo-format-new` names, so a crashed run's
+    /// orphan survived every sweep and collided every retry of the next
+    /// recovery. A missing temp home is simply empty; links, hostile
+    /// home spellings, directories, and foreign names are left untouched
+    /// and never followed or removed.
     fn sweep_home_temps(&self) -> Result<(), ()> {
-        let home = self.physical(TEMP_HOME, false)?;
+        let Ok(home) = self.physical(TEMP_HOME, false) else {
+            return Ok(());
+        };
         for entry in std::fs::read_dir(&home).map_err(|_| ())? {
             let entry = entry.map_err(|_| ())?;
             let metadata = entry.metadata().map_err(|_| ())?;
@@ -1504,7 +1528,7 @@ impl FormatWrite {
             let Some(name) = name.to_str() else {
                 return Err(());
             };
-            if name.ends_with(".new") {
+            if is_owned_temp_name(name) {
                 if !metadata.is_file() {
                     return Err(());
                 }

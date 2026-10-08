@@ -1100,3 +1100,46 @@ fn an_orphaned_rename_temp_in_a_source_directory_is_reclaimed_by_apply() {
         assert_eq!(leftover, 0, "no rename temp survives a committed apply");
     });
 }
+
+#[test]
+fn an_orphaned_recovery_temp_does_not_poison_the_next_recovery() {
+    // Finding r3 3: a process death between a recovery temp's creation
+    // and its rename strands the fixed-name restore temp. Recovery used
+    // to run before the sweep, so every retry died in the same
+    // restore-failed state: the recovery's own exclusive create collided
+    // with the orphan it could never reach. The mutating run now reclaims
+    // the orphan on entry — before recovery — and recovery temps carry a
+    // process-unique namespace, so a stale orphan can never block the
+    // recovery it stranded.
+    in_sandbox("recovery-orphan", "seeds/noncanonical", |root| {
+        let golden = fs::read(
+            workspace_root()
+                .join(FIXTURES)
+                .join("planner-canonical/lekalo/modules/scheduling/module.yaml"),
+        )
+        .expect("golden");
+        let (home, _plan_id) = plant_interrupted_with_golden_after(root, &golden);
+        // The exact orphan a crashed recovery leaves: the producer's
+        // temp suffix under the runtime temp home.
+        let temps = root.join(".lekalo/cache/format/temps");
+        fs::create_dir_all(&temps).expect("temps home");
+        let orphan = temps.join("owned.restore.module.yaml.lekalo-format-new");
+        fs::write(&orphan, b"orphaned: partial bytes\n").expect("orphan temp");
+        // Two consecutive mutating runs: the first reclaims the orphan
+        // and recovers; the second proves the retry is no longer
+        // poisoned by anything the recovery left behind.
+        for attempt in 1..=2 {
+            let result =
+                lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
+            assert_eq!(
+                result.status(),
+                Status::Valid,
+                "attempt {attempt}: {result:?}"
+            );
+        }
+        assert!(!orphan.exists(), "the stranded orphan was reclaimed");
+        assert!(!home.join("journal.json").exists(), "the journal cleared");
+        let leftover = temps.read_dir().map(|entries| entries.count()).unwrap_or(0);
+        assert_eq!(leftover, 0, "no rename temp survives a committed recovery");
+    });
+}
