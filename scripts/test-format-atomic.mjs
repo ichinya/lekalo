@@ -160,28 +160,65 @@ try {
     writeFileSync(join(home, "journal.json"), Buffer.from(`{"schema_version":"lekalo/format-transaction/v0.8.0","plan_id":"${planId}","manifest_sha256":"${sha256(manifest)}"}\n`));
     // Establish the live lock and PROVE ownership before the competitor:
     // the holder takes the lock non-blocking (so a stale owner would fail
-    // the gate immediately) and then sleeps, keeping the lock held.
+    // the gate immediately) and then sleeps, keeping the lock held. The
+    // holder is detached — its own process group — because flock(1)
+    // forks the sleep child, which inherits the locked descriptor: the
+    // lock lives on that shared open file description, so ending only
+    // the parent would leave the child holding it forever (finding r3
+    // 5). The teardown therefore kills the whole group, and both
+    // handshakes below (held, then released) prove the lock's real
+    // state through independent non-blocking acquisitions instead of
+    // assuming it.
     const lockPath = join(formatHome(project), "active.lock");
     const holder = spawn("flock", ["-n", lockPath, "-c", "sleep 30"], {
       stdio: "ignore",
+      detached: true,
     });
+    const contention = () =>
+      spawnSync("flock", ["-n", lockPath, "true"], { timeout: 10000 });
     try {
-      // Ownership proof: while the holder lives, the same non-blocking
-      // acquisition must refuse — the lock is genuinely contended.
-      const proof = spawnSync("flock", ["-n", lockPath, "true"], { timeout: 10000 });
-      assert.notEqual(proof.status, 0, "the holder owns the lock (contention is real)");
+      // Readiness handshake: poll until a non-blocking acquisition
+      // genuinely refuses — the lock is held right now, not merely
+      // spawned.
+      const ownedDeadline = Date.now() + 15000;
+      while (contention().status === 0) {
+        if (Date.now() > ownedDeadline) {
+          throw new Error("the holder never acquired the lock");
+        }
+        if (holder.exitCode !== null || holder.signalCode !== null) {
+          throw new Error("the holder exited before acquiring the lock");
+        }
+        await new Promise((resolveHold) => setTimeout(resolveHold, 50));
+      }
       const second = run(project, ["format"]);
       assert.equal(second.status, 3, `the live writer is refused as busy: ${second.stdout} ${second.stderr}`);
       assert.match(second.stdout + second.stderr, /format\.locked/, "the registered busy denial");
       assert.ok(readFileSync(module).equals(applied), "the live writer's applied bytes were not rolled back");
       assert.ok(existsSync(join(home, "journal.json")), "the journal stays");
     } finally {
-      // Release: end the holder and wait for the kernel to drop the lock.
-      holder.kill("SIGTERM");
+      // Release: end the holder AND its descriptor-inheriting children
+      // (the whole process group), then await the leader's exit.
+      if (holder.pid) {
+        try {
+          process.kill(-holder.pid, "SIGTERM");
+        } catch {
+          // Already gone — the release handshake below still verifies.
+        }
+      }
       await new Promise((resolveHold) => {
         holder.once("exit", resolveHold);
         holder.once("error", resolveHold);
       });
+    }
+    // Release handshake: poll until a non-blocking acquisition genuinely
+    // succeeds — the lock died with its owner and the recovery below is
+    // never racing a residual holder.
+    const releasedDeadline = Date.now() + 15000;
+    while (contention().status !== 0) {
+      if (Date.now() > releasedDeadline) {
+        throw new Error("the lock survived its holder (descriptor still inherited)");
+      }
+      await new Promise((resolveHold) => setTimeout(resolveHold, 50));
     }
     // Once the owner exited, recovery proceeds.
     const recovered = run(project, ["format"]);
@@ -232,12 +269,22 @@ try {
   //    originals. An INCOMPLETE rollback (one source left replaced) is
   //    the fail-closed case instead: readers refuse until recovery.
   //
-  //    The sorted candidate order puts lekalo/project.yaml first and the
-  //    planner module files after it, so the read-only planner directory
-  //    fails at project.yaml+1: the planner module files were already
-  //    replaced when the failure lands — a real prefix > 0 partial
-  //    rollback (finding r2 16, previously only the index-0 prefix was
-  //    exercised).
+  //    The changed candidates iterate in raw path-byte order:
+  //
+  //      lekalo/modules/planner/entities.yaml
+  //      lekalo/modules/planner/module.yaml
+  //      lekalo/modules/planner/scenarios.yaml
+  //      lekalo/modules/scheduling/module.yaml
+  //      lekalo/project.yaml
+  //
+  //    so the read-only SCHEDULING directory fails at index 3: the
+  //    three planner files were already replaced when the failure
+  //    lands, and restore_prefix(3) walks them back in reverse from the
+  //    verified backups — a real prefix > 0 partial rollback (finding
+  //    r3 6: the former gate read-only'd the planner directory, which
+  //    holds the FIRST three candidates, so the failure landed at index
+  //    0 and only restore_prefix(0) was ever exercised; the planner
+  //    directory must stay writable for that rollback to succeed).
   if (process.platform !== "win32") {
     const project = seed("readonly", "seeds/noncanonical");
     const originals = new Map([
@@ -249,7 +296,7 @@ try {
     ]);
     const changedBefore = run(project, ["format", "--check", "--json"]);
     assert.equal(changedBefore.status, 3, "the seed needs formatting");
-    chmodSync(join(project, "lekalo/modules/planner"), 0o555);
+    chmodSync(join(project, "lekalo/modules/scheduling"), 0o555);
     try {
       const applied = run(project, ["format"]);
       assert.equal(applied.status, 1, "the write failure is invalid");
@@ -262,7 +309,7 @@ try {
       }
       assert.equal(run(project, ["load"]).status, 0, "a fully rolled-back tree loads clean");
     } finally {
-      chmodSync(join(project, "lekalo/modules/planner"), 0o755);
+      chmodSync(join(project, "lekalo/modules/scheduling"), 0o755);
     }
     rmSync(project, { recursive: true, force: true });
     passed += 1;
