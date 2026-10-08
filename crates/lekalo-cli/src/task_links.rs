@@ -90,12 +90,28 @@ fn invalid(detail: &'static str) -> DomainResult {
 
 /// Open one file no-follow and read at most [`tl::MAX_BYTES`] bytes.
 ///
-/// A symlink or Windows reparse point at the operand path is refused
-/// (`attachment-file`): the same no-follow discipline the project
-/// filesystem applies to every project-owned path, applied to the
-/// command's file operands so a planted link cannot redirect a read
-/// outside the intended root.
+/// The no-follow discipline is component-wise: every ancestor of the
+/// operand path is checked for symlinks/Windows reparse points (a
+/// junctioned intermediate directory can no more redirect the read
+/// than a linked leaf), and the leaf itself is opened with the
+/// no-reparse/no-follow flag so the metadata check and the open cannot
+/// disagree. This is the same discipline the project filesystem
+/// applies to every project-owned path, applied to the command's file
+/// operands.
 fn read_bounded(path: &str) -> Result<Vec<u8>, DomainResult> {
+    // Walk every component: a link anywhere along the path is refused
+    // (`attachment-file`), matching the repo convention.
+    let operand = std::path::Path::new(path);
+    for ancestor in operand.ancestors() {
+        if ancestor.as_os_str().is_empty() {
+            continue;
+        }
+        let metadata =
+            std::fs::symlink_metadata(ancestor).map_err(|_| invalid("attachment-unreadable"))?;
+        if is_link(&metadata) {
+            return Err(invalid("attachment-file"));
+        }
+    }
     let metadata = std::fs::symlink_metadata(path).map_err(|_| invalid("attachment-unreadable"))?;
     if is_link(&metadata) || !metadata.is_file() {
         return Err(invalid("attachment-file"));
@@ -103,7 +119,9 @@ fn read_bounded(path: &str) -> Result<Vec<u8>, DomainResult> {
     if metadata.len() as usize > tl::MAX_BYTES {
         return Err(invalid("attachment-bound"));
     }
-    let file = std::fs::File::open(path).map_err(|_| invalid("attachment-unreadable"))?;
+    // Open the leaf without following any final reparse point, so the
+    // checked path and the opened file are the same object.
+    let file = open_nofollow(path).map_err(|_| invalid("attachment-unreadable"))?;
     let mut bytes = vec![];
     file.take(tl::MAX_BYTES as u64 + 1)
         .read_to_end(&mut bytes)
@@ -112,6 +130,27 @@ fn read_bounded(path: &str) -> Result<Vec<u8>, DomainResult> {
         return Err(invalid("attachment-bound"));
     }
     Ok(bytes)
+}
+
+/// Open one file with the platform's no-follow flag on the final
+/// component (`FILE_FLAG_OPEN_REPARSE_POINT` on Windows,
+/// `O_NOFOLLOW` elsewhere).
+fn open_nofollow(path: &str) -> std::io::Result<std::fs::File> {
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+        options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        const O_NOFOLLOW: i32 = 0o200_000;
+        options.custom_flags(O_NOFOLLOW);
+    }
+    options.open(path)
 }
 
 /// Whether raw metadata identifies a symlink or Windows reparse point.

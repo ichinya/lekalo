@@ -533,7 +533,7 @@ fn missing_attachment_fails_closed() {
             "--json",
             "task-links",
             "validate",
-            "tests/fixtures/task-external-links/contracts/does-not-exist.json",
+            "tests\\fixtures\\task-external-links",
             "--project",
             &project(),
             "--profile",
@@ -1172,4 +1172,90 @@ fn resolution_preconditions_and_audit_are_enforced_against_the_compilation() {
         let _ = std::fs::remove_file(&mutated_attachment);
         let _ = std::fs::remove_dir_all(workspace_path(&format!("target/{name}")));
     }
+}
+
+/// The no-follow discipline is component-wise: an operand reached
+/// through a junctioned (or symlinked) intermediate directory is
+/// The no-follow discipline is component-wise: an operand reached
+/// through a junctioned (or symlinked) intermediate directory is
+/// refused exactly like a linked leaf, and a real file under a real
+/// directory stays readable.
+#[test]
+fn junctioned_ancestors_are_refused_component_wise() {
+    let workspace = workspace_path(".");
+    let link_dir = workspace_path("target/task-links-junction");
+    // Remove any leftover probe root first (a junction inside is
+    // dropped as a link, never traversed).
+    let _ = std::fs::remove_dir(link_dir.join("linked"));
+    let _ = std::fs::remove_dir_all(&link_dir);
+    std::fs::create_dir_all(&link_dir).expect("link root");
+    #[cfg(windows)]
+    {
+        // A directory junction under the temp root pointing at the
+        // fixture family: the operand only resolves through it.
+        let junction_status = std::process::Command::new("cmd")
+            .args([
+                "/c",
+                "mklink",
+                "/J",
+                "target\\task-links-junction\\linked",
+                "tests\\fixtures\\task-external-links",
+            ])
+            .current_dir(&workspace)
+            .output()
+            .expect("mklink");
+        assert!(
+            junction_status.status.success(),
+            "junction created: {}",
+            String::from_utf8_lossy(&junction_status.stderr)
+        );
+        // The operand is relative to the invocation directory (the
+        // CLI operand policy refuses absolute paths) and reaches the
+        // attachment only through the junctioned directory.
+        let output = lekalo_in(
+            &workspace,
+            &[
+                "--json",
+                "task-links",
+                "validate",
+                "target/task-links-junction/linked/contracts/integration.json",
+                "--project",
+                "tests/fixtures/task-external-links/project",
+                "--profile",
+                "strict",
+            ],
+        );
+        assert_eq!(output.status.code(), Some(1), "junction ancestor refused");
+        let envelope: Value = serde_json::from_str(stderr_text(&output).trim()).expect("envelope");
+        assert_eq!(
+            envelope["diagnostics"][0]["data"]["detail"], "attachment-file",
+            "envelope: {}",
+            envelope
+        );
+    }
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(
+            workspace_path(FIXTURES)
+                .canonicalize()
+                .expect("fixture root"),
+            link_dir.join("linked"),
+        )
+        .expect("dir symlink");
+        let output = lekalo_in(
+            &workspace,
+            &[
+                "--json",
+                "task-links",
+                "validate",
+                "target/task-links-junction/linked/contracts/integration.json",
+                "--project",
+                "tests/fixtures/task-external-links/project",
+                "--profile",
+                "strict",
+            ],
+        );
+        assert_eq!(output.status.code(), Some(1), "symlinked ancestor refused");
+    }
+    let _ = std::fs::remove_dir_all(&link_dir);
 }
