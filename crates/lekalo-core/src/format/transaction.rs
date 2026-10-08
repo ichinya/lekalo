@@ -116,9 +116,17 @@ impl FormatGuard {
     /// never gates anything; diagnostics read it only as a hint. An
     /// adopted (not freshly created) ownership file is never mutated:
     /// the stamp must never become a write primitive through a planted
-    /// link (finding r2 1).
+    /// link (finding r2 1). Even a freshly created file is re-verified
+    /// through its own handle immediately before the write (finding r3
+    /// 1): a hard link planted between creation and stamp would share
+    /// the inode with an outside victim, and the write would clobber
+    /// it — the link count through the held handle is the truth, so a
+    /// multiply linked handle is never written.
     fn stamp(&self, plan_id: &str) {
         if !self.fresh {
+            return;
+        }
+        if !singly_linked(&self.file) {
             return;
         }
         use std::io::{Seek, Write};
@@ -128,6 +136,39 @@ impl FormatGuard {
             let _ = file.write_all(format!("{plan_id}\n").as_bytes());
         }
     }
+}
+
+/// Whether the open handle's inode currently has exactly one hard link.
+/// Best-effort by design: any probe failure keeps the file untouched.
+fn singly_linked(file: &std::fs::File) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        file.metadata().map(|m| m.nlink() == 1).unwrap_or(false)
+    }
+    #[cfg(windows)]
+    {
+        handle_link_count(file)
+            .map(|count| count == 1)
+            .unwrap_or(false)
+    }
+}
+
+/// The hard-link count of an open Windows file handle (stable std
+/// exposes no link count, so the Windows query goes through
+/// `GetFileInformationByHandle`).
+#[cfg(windows)]
+fn handle_link_count(file: &std::fs::File) -> Result<u32, ()> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
+    };
+    let mut information: BY_HANDLE_FILE_INFORMATION = unsafe { std::mem::zeroed() };
+    let ok = unsafe { GetFileInformationByHandle(file.as_raw_handle() as _, &mut information) };
+    if ok == 0 {
+        return Err(());
+    }
+    Ok(information.nNumberOfLinks)
 }
 
 /// One write failure of the apply pipeline.
@@ -1059,13 +1100,18 @@ impl FormatWrite {
     /// every owner locks the same inode; a held lock refuses a second
     /// owner immediately (non-blocking). The final component is opened
     /// without following links (POSIX `O_NOFOLLOW`; Windows reparse
-    /// attribute), and an existing file is adopted only when it is an
-    /// unlinked-since-check regular file: a planted hard link (nlink
-    /// above 1) or any other non-regular spelling refuses the ownership
-    /// instead of handing the stamp a write primitive through the link
-    /// (finding r2 1).
+    /// attribute).
     ///
-    /// Only a freshly created lock is ever stamped.
+    /// Freshness is decided by exclusive creation (finding r3 1): the
+    /// owner first tries `O_EXCL`/`CREATE_NEW` — success means this
+    /// process created the inode, so the stamp can never adopt outside
+    /// bytes. When the name already exists the file is adopted only
+    /// after the opened handle proves it is a regular, reparse-free,
+    /// singly linked file whose canonical resolution stays inside the
+    /// project root — a planted hard link to an outside victim (link
+    /// count above 1) or any link spelling is refused outright instead
+    /// of handing the stamp a write primitive through the link (finding
+    /// r2 1). An adopted lock is never stamped.
     fn acquire_ownership(&self) -> Result<FormatGuard, ()> {
         self.ensure_dir(FORMAT_HOME)?;
         let path = self
@@ -1073,25 +1119,53 @@ impl FormatWrite {
             .0;
         #[cfg(unix)]
         {
-            use std::os::unix::fs::MetadataExt;
-            use std::os::unix::fs::OpenOptionsExt;
-            // O_NOFOLLOW|O_CLOEXEC: the open itself refuses a final
-            // symlink instead of following it out of the runtime home.
+            use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+            // O_NOFOLLOW|O_CLOEXEC|O_EXCL: the create-or-fail open
+            // refuses a final symlink instead of following it out of
+            // the runtime home, and succeeds only for a name that did
+            // not exist — the owned builder binding keeps the
+            // OpenOptions local alive across `open` (finding r3 2: the
+            // single chained expression previously borrowed a dropped
+            // temporary and failed to compile on the unix target with
+            // E0716).
             const O_NOFOLLOW: i32 = 0o400000;
             const O_CLOEXEC: i32 = 0o2000000;
-            let options = std::fs::OpenOptions::new()
+            let mut builder = std::fs::OpenOptions::new();
+            let options = builder
                 .read(true)
                 .write(true)
-                .create(true)
-                .truncate(false)
+                .create_new(true)
                 .custom_flags(O_NOFOLLOW | O_CLOEXEC);
-            let file = options.open(&path).map_err(|_| ())?;
+            let file = match options.open(&path) {
+                Ok(file) => file,
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                    // Adoption: the name predates this run (the file is
+                    // never removed, so this is the steady state). The
+                    // same no-follow flags apply; a symlink still fails
+                    // the open outright.
+                    let mut adopt_builder = std::fs::OpenOptions::new();
+                    let adopt = adopt_builder
+                        .read(true)
+                        .write(true)
+                        .custom_flags(O_NOFOLLOW | O_CLOEXEC);
+                    let file = adopt.open(&path).map_err(|_| ())?;
+                    Self::verify_adopted_lock(&file, &path, &self.root)?;
+                    let fresh = false;
+                    use rustix::fs::{flock, FlockOperation};
+                    flock(&file, FlockOperation::NonBlockingLockExclusive).map_err(|_| ())?;
+                    return Ok(FormatGuard { file, fresh });
+                }
+                Err(_) => return Err(()),
+            };
+            // The created inode must still be a regular singly linked
+            // file at the expected path (a race replacing the name
+            // between create and stat leaves our handle on an unlinked
+            // inode — harmless, but the run refuses rather than lock a
+            // home it cannot see).
             let metadata = file.metadata().map_err(|_| ())?;
-            if !metadata.is_file() || metadata.nlink() > 1 {
+            if !metadata.is_file() || metadata.nlink() != 1 {
                 return Err(());
             }
-            // The path must still be the opened inode: a swapped file
-            // (hard-link/replace between open and stat) is refused.
             let on_disk = std::fs::symlink_metadata(&path).map_err(|_| ())?;
             if on_disk.is_symlink()
                 || !on_disk.is_file()
@@ -1100,7 +1174,7 @@ impl FormatWrite {
             {
                 return Err(());
             }
-            let fresh = metadata.len() == 0 && metadata.nlink() == 1;
+            let fresh = true;
             use rustix::fs::{flock, FlockOperation};
             flock(&file, FlockOperation::NonBlockingLockExclusive).map_err(|_| ())?;
             Ok(FormatGuard { file, fresh })
@@ -1113,32 +1187,86 @@ impl FormatWrite {
             // refuses it outright.
             const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
             const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
-            let file = std::fs::OpenOptions::new()
+            // CREATE_NEW first: success proves this process created the
+            // inode, so the stamp can never adopt outside bytes.
+            let file = match std::fs::OpenOptions::new()
                 .read(true)
                 .write(true)
-                .create(true)
-                .truncate(false)
+                .create_new(true)
                 .share_mode(0)
                 .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS)
                 .open(&path)
-                .map_err(|_| ())?;
+            {
+                Ok(file) => file,
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                    // Adoption: steady state for the never-removed lock
+                    // (or a planted name — the checks below refuse it).
+                    // share_mode(0) is the exclusion itself: a live
+                    // owner's handle fails this open immediately.
+                    let file = std::fs::OpenOptions::new()
+                        .read(true)
+                        .write(true)
+                        .share_mode(0)
+                        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS)
+                        .open(&path)
+                        .map_err(|_| ())?;
+                    Self::verify_adopted_lock(&file, &path, &self.root)?;
+                    let fresh = false;
+                    return Ok(FormatGuard { file, fresh });
+                }
+                Err(_) => return Err(()),
+            };
             let metadata = file.metadata().map_err(|_| ())?;
             if !metadata.is_file() || reparse_point(&metadata) {
                 return Err(());
             }
-            // A hard-linked lock shares its content with an external
-            // victim; the stamp would clobber that victim. File indices
-            // are unavailable on stable std, so the pre-open stat plus
-            // the opened handle's size close the class: a planted hard
-            // link carries non-empty content (the victim's bytes), and
-            // any non-empty ownership file is adopted unstamped.
             let on_disk = std::fs::symlink_metadata(&path).map_err(|_| ())?;
             if reparse_point(&on_disk) || !on_disk.is_file() {
                 return Err(());
             }
-            let fresh = metadata.len() == 0;
+            let fresh = true;
             Ok(FormatGuard { file, fresh })
         }
+    }
+
+    /// The adoption verdict for a pre-existing ownership file (finding
+    /// r3 1): the opened handle must be a regular, reparse-free,
+    /// singly linked file whose canonical resolution stays inside the
+    /// project root. A hard-linked lock shares its content with an
+    /// external victim (link count above 1 — stable std exposes no
+    /// Windows link count, so the query goes through
+    /// `GetFileInformationByHandle`); any link spelling or escape is
+    /// refused instead of adopted, so the stamp can never write through
+    /// a link and the lock can never resolve outside the root.
+    fn verify_adopted_lock(file: &std::fs::File, path: &Path, root: &Path) -> Result<(), ()> {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            let metadata = file.metadata().map_err(|_| ())?;
+            if !metadata.is_file() || metadata.nlink() != 1 {
+                return Err(());
+            }
+        }
+        #[cfg(windows)]
+        {
+            let metadata = file.metadata().map_err(|_| ())?;
+            if !metadata.is_file() || reparse_point(&metadata) {
+                return Err(());
+            }
+            if handle_link_count(file)? != 1 {
+                return Err(());
+            }
+        }
+        // The resolved real path must stay inside the resolved root:
+        // canonicalize is the last word on where the opened inode
+        // actually lives (a link component that slipped every
+        // attribute check still resolves here and is refused).
+        let canonical_target = std::fs::canonicalize(path).map_err(|_| ())?;
+        let canonical_root = std::fs::canonicalize(root).map_err(|_| ())?;
+        if !canonical_target.starts_with(&canonical_root) {
+            return Err(());
+        }
+        Ok(())
     }
 
     /// The validated physical path of the ownership file: every chain
