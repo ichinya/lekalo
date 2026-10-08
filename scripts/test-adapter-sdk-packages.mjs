@@ -31,7 +31,7 @@
  */
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, readdirSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -170,9 +170,14 @@ try {
         const retainedDigest = sha256File(cratePath);
         const unpack = join(scratch, "crate-unpack");
         mkdirSync(unpack, { recursive: true });
-        // Windows' bundled bsdtar interprets `C:\...` as a remote host;
-        // the force flag tells it the archive is local.
-        const extract = run("tar", ["-xzf", cratePath, "--force-local", "-C", unpack], ROOT);
+        // Portable extraction (issue #106 review r2 #9): `tar --force-local`
+        // is GNU-only — the stock Windows/macOS bsdtar refuses the flag —
+        // and an absolute `-f C:/...` path parses as a remote host. Copy
+        // the candidate into the unpack directory under a plain name and
+        // extract it by that basename with cwd at the target: no flag the
+        // stock toolchain lacks, no drive-letter spelling anywhere.
+        copyFileSync(cratePath, join(unpack, "candidate.crate"));
+        const extract = run("tar", ["-xzf", "candidate.crate"], unpack);
         check(extract.status === 0, "crate-unpack", (extract.stderr ?? "").slice(-200));
         const unpackedRoot = join(unpack, `${pkg.name}-${pkg.version}`);
         const unpackedManifest = join(unpackedRoot, "Cargo.toml");
