@@ -598,8 +598,16 @@ jobs:
         # Four provisioned runtimes (Node ships with the runner, Go/PHP
         # are provisioned above, Rust by the toolchain step) replay the
         # shared corpus; a missing runtime is a failed setup, not a skip.
+        # The lane also runs the real per-language lifecycle lanes, the
+        # file-transport exchange, and the full-corpus production oracle
+        # (issue #106 review r2 #8/#10).
         timeout-minutes: 15
         run: node scripts/test-adapter-sdk-vectors.mjs --language all
+      - name: Run the adapter-SDK Go unit smoke (issue #106 review r2 #17)
+        # The Go SDK ships its own smoke suite beside the vectors runner
+        # so `go test ./...` exercises the runtime directly.
+        run: go test ./...
+        working-directory: sdk/go
       - name: Run the adapter-SDK conformance and package gates (issue #106)
         # The host binary was built above in this job, so the confined
         # strict battery, the feature-limited examples, and the packed

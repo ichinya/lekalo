@@ -22,7 +22,12 @@ public domain result and the status/exit mapping.
 1. Read exactly one bounded UTF-8 JSON request from stdin or the
    host-owned `--lekalo-request-file PATH` coordinate. This file
    coordinate is transport-owned, never a portable project path or an
-   extra project-read grant. Refuse ambiguous input sources, trailing
+   extra project-read grant. When both channels are present the file
+   coordinate WINS: the host always spawns adapters with piped stdin —
+   including on file-transport exchanges, where the same request bytes
+   ride both channels — so pipe-ness is never ambiguous, and the file
+   bytes are the authoritative request document. Empty stdin without a
+   file coordinate is the only missing-input refusal. Refuse trailing
    documents, duplicate decoded keys (including escaped spellings),
    invalid UTF-8, unsupported exact versions, and invalid operation
    shapes before invoking any callback.
@@ -44,7 +49,12 @@ public domain result and the status/exit mapping.
    keys, no whitespace, no trailing LF). Logs go to a bounded, redacted
    stderr logger and never carry raw request, source, or environment
    content. Progress stays in the accepted response member; stdout
-   banners and streaming records are forbidden.
+   banners and streaming records are forbidden. The serve loop RETURNS
+   the process exit code and every executable entry point propagates
+   it: any refusal class (undecodable input, oversize, invalid UTF-8,
+   output-limit, builder refusal) exits nonzero while a successful
+   exchange exits 0 — launchers that classify by `$?` never see a
+   fabricated success (the lifecycle lane asserts this per language).
 5. Cooperative deadline/cancellation tokens reach callbacks using the
    accepted request limits. Cap local work and output at the tighter of
    the host request and SDK bounds. Hard cancellation and descendant
@@ -76,6 +86,13 @@ public domain result and the status/exit mapping.
 - Canonical output is byte-sorted compact JSON with no trailing LF;
   array order is preserved; string escapes use the closed JSON set;
   numbers keep integer/float distinction within the safe range.
+- Integral limits: a limits member in range is admitted whether spelled
+  as an integer (`1`) or an integral float (`1.0`), and every admitted
+  spelling binds the emitted-output ceiling the same way — the
+  `max_output_bytes` ceiling is enforced on ENCODED UTF-8 BYTES of the
+  complete envelope (never UTF-16 code units), and the effective
+  ceiling is min(declared, default). The multibyte and budget vectors
+  pin this in every language.
 - Request identifiers hash the canonical envelope minus `request_id`;
   plan identifiers hash the canonical ordered plan; write digests frame
   exact file bytes. The framing is contract-specific — a universal JSON
