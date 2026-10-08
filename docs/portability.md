@@ -37,10 +37,13 @@ reviewed recipe assigns to its definition kind:
 
 - **Portable** — the destination covers the obligation with no recorded loss.
 - **Supported with mapping** — a reviewed semantic mapping credits the row;
-  the mapping is scoped to exactly this destination, and the mapped
-  capability must be declared by the destination profile's resolved
-  capability set at full support. A mapping authored for another target is
-  invisible here.
+  the mapping is scoped to exactly this destination and names exactly this
+  obligation's requirement, bridges through a reviewed recipe definition
+  (exact definition-version pin, reviewed preconditions only), and the
+  mapped capability must be declared by the destination profile's resolved
+  capability set at full support. A mapping authored for another target,
+  another requirement, or with unreviewed pins/conditions is invisible or
+  unqualified here — never a credit.
 - **Partial / behavior loss** — restricted coverage (a weaker capability, a
   narrowed decimal policy, an unsupported implicit hook). These rows block
   the strict gate.
@@ -59,7 +62,13 @@ advisory migration surface: stable planning rows with actions
 (`implement-hook`, `replace-mapping`, `review-storage-policy`, `bind-target`,
 `verify-scenario`, `collect-evidence`), each with prerequisites, affected
 scenarios and gates, and the evidence still needed. A recorded scenario
-failure surfaces as its own `failed` join state, never as "planned".
+failure surfaces as its own `failed` join state, never as "planned", and a
+failure dominates any sibling pass for the same scenario.
+
+With no destination resolved at all (a bare run whose selection leaves no
+other target), the report is the structural inventory plus an explicit
+`destination-evidence-gap` diagnostic — no supported destination is ever
+fabricated, and the strict gate denies the empty join.
 
 ## Inputs and provenance
 
@@ -68,17 +77,25 @@ failure surfaces as its own `failed` join state, never as "planned".
   source/destination defaults. Absent defaults derive from the declared Model
   targets.
 - **Evidence manifest** (`--evidence`): digest-pinned families, recorded
-  adapter snapshots, reviewed semantic mappings (destination-scoped),
+  adapter snapshots (exact identity/version/protocol when recorded),
+  reviewed semantic mappings (destination- and requirement-scoped),
   required/offered storage policies, operational requirements, scenario
-  receipts, gates, and observed implicit hooks. The manifest pins the exact
+  receipts, gates, and observed implicit hooks. A claimed receipt result is
+  digest-bound custody: the referenced receipt artifact must exist, hash to
+  the pinned digest, and name exactly the claimed scenario and destination,
+  or the join stays untested. The manifest pins the exact
   project IR revision and the exact reviewed recipe; anything stale is
-  refused before assessment.
+  refused before assessment. A family declared complete must present its
+  artifact: readable, digest-matching custody is verified before any
+  completeness may grade an absence.
 - **Profile documents**: resolved through the existing target-profile
   resolver; the report carries the exact id, version, declaration digest,
   effective digest, component versions, and composed capabilities of every
   pinned profile.
-- **Lock**: when `lekalo.lock` exists at the project root, its digest is
-  recorded in the report's input pins.
+- **Lock**: when `lekalo.lock` exists at the project root, it is decoded
+  through the strict lock parser and reconciled against the selected
+  targets' exact profile pins before its digest is recorded in the report's
+  input pins; garbage bytes or a contradicting pin refuse.
 
 Every artifact read goes through the confined, reparse-checked project
 filesystem: a symlink or junction inside the project can never redirect a
