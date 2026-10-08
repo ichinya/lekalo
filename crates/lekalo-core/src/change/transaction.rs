@@ -521,8 +521,7 @@ fn validated_target(root: &Path, logical: &str) -> Result<PathBuf, ChangeError> 
         // way is an escape attempt, not a restorable target).
         Ok(crate::project_fs::EntryType::File) => {}
         // Missing is acceptable only for the history sidecar creation.
-        Ok(crate::project_fs::EntryType::Symlink)
-        | Ok(crate::project_fs::EntryType::Special) => {
+        Ok(crate::project_fs::EntryType::Symlink) | Ok(crate::project_fs::EntryType::Special) => {
             return Err(ChangeError::WriteBoundaryDenied)
         }
         Err(crate::project_fs::FsErrorKind::NotFound) => {}
@@ -543,7 +542,10 @@ fn validated_target(root: &Path, logical: &str) -> Result<PathBuf, ChangeError> 
 /// removed again. Verification failures keep the journal (and the reader
 /// barrier) in place. Returns the bounded per-file outcomes of the
 /// rollback in journal order.
-pub(crate) fn recover(root: &Path, transaction: &str) -> Result<Vec<super::receipt::FileOutcome>, ChangeError> {
+pub(crate) fn recover(
+    root: &Path,
+    transaction: &str,
+) -> Result<Vec<super::receipt::FileOutcome>, ChangeError> {
     if !transaction
         .bytes()
         .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
@@ -561,7 +563,8 @@ pub(crate) fn recover(root: &Path, transaction: &str) -> Result<Vec<super::recei
             subject: "transaction".to_owned(),
             detail: "journal-missing",
         })?;
-    let journal = Journal::decode(&journal_bytes).map_err(|error| error.with_transaction(transaction))?;
+    let journal =
+        Journal::decode(&journal_bytes).map_err(|error| error.with_transaction(transaction))?;
     if journal.transaction != transaction {
         return Err(ChangeError::CommitFailed {
             transaction: transaction.to_owned(),

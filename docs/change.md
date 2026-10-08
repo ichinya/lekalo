@@ -91,6 +91,24 @@ leaves a recoverable journal that blocks every project reader until
 explicit `lekalo change recover` succeeds
 (`change.recovery-required`, denied 3).
 
+Every journaled path is validated component-wise against the confined
+project root (no-follow, including Windows reparse points) before any
+recovery write, and every backup is digest-verified against the
+`beforeDigest` pin written into the journal at staging time; a forged
+or corrupted journal/backup refuses with the reader barrier intact
+(`change.write-boundary-denied`, denied 3). Recovery reclaims a stale
+writer lock whose recorded holder is provably dead; a live holder still
+denies (`change.precondition-failed`). The rollback reports receipt
+state `rolled-back` — never `committed` — as a flat change-receipt
+document.
+
+The canonical history is a tamper-evident chain: each record carries a
+digest over the previous record's digest plus its own pinned fields and
+embedded receipt state, recomputed and verified on every decode.
+Forged records, field tampering, insertion, deletion, reordering, and
+zero-byte ledger files all fail closed (`change.history-invalid`,
+invalid 1); replay never guesses from current source bytes.
+
 The raw idempotency key never enters any wire surface: only its
 `sha256:` digest is stored. Receipt states (`committed`, `replayed`,
 `no-op`, `rejected`, `rolled-back`, `recovery-required`) are Change

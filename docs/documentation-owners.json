@@ -2291,7 +2291,7 @@
       "id": "contract:contracts/change-policy.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/change-policy.schema.v0.8.0.json",
-      "sourceDigest": "sha256:1f743cc43459b3dd46bcf937a4c9139ec7b6ccfb786fb523f639e66eb61a7bfa",
+      "sourceDigest": "sha256:03897f5ada222adf7a7b0558f49ad1275ef8d1b166209ab65fd22843f339d23c",
       "owner": "docs/change.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

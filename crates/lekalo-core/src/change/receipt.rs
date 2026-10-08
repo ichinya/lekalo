@@ -211,21 +211,18 @@ impl History {
         // A zero-byte ledger file is a corrupt document, not an empty
         // history (review finding 11): decode fails closed on it.
         if bytes.is_empty() || bytes.iter().all(|byte| byte.is_ascii_whitespace()) {
-            return Err(super::diagnostic::ChangeError::HistoryInvalid {
-                detail: "empty",
-            });
+            return Err(super::diagnostic::ChangeError::HistoryInvalid { detail: "empty" });
         }
         if bytes.len() > MAX_HISTORY_BYTES {
             return Err(super::diagnostic::ChangeError::HistoryInvalid {
                 detail: "over-limit",
             });
         }
-        let value: Json =
-            super::request::unique_json(bytes).map_err(|_| {
-                super::diagnostic::ChangeError::HistoryInvalid {
-                    detail: "json-shape",
-                }
-            })?;
+        let value: Json = super::request::unique_json(bytes).map_err(|_| {
+            super::diagnostic::ChangeError::HistoryInvalid {
+                detail: "json-shape",
+            }
+        })?;
         let map = value
             .as_object()
             .ok_or(super::diagnostic::ChangeError::HistoryInvalid {
@@ -334,14 +331,16 @@ impl History {
                 &files,
             )?;
             let digest = record_digest(
-                &chain,
-                sequence,
-                &key_digest,
-                &request_digest,
-                &plan_id,
+                RecordIdentity {
+                    previous: &chain,
+                    sequence,
+                    key_digest: &key_digest,
+                    request_digest: &request_digest,
+                    plan_id: &plan_id,
+                    state: receipt_state,
+                },
                 &operations,
                 &files,
-                receipt_state,
             );
             let anchor = receipt
                 .get("history")
@@ -350,7 +349,7 @@ impl History {
                 .ok_or(super::diagnostic::ChangeError::HistoryInvalid {
                     detail: "record-digest-missing",
                 })?;
-            if anchor != &digest {
+            if anchor != digest {
                 return Err(super::diagnostic::ChangeError::HistoryInvalid {
                     detail: "record-digest",
                 });
@@ -442,19 +441,28 @@ pub(crate) const GENESIS_DIGEST: &str =
 /// tampering all break the chain and fail decode closed (review finding
 /// 5). Encode ([`super::apply_prepared`]) and decode
 /// ([`History::decode`]) compute exactly this formula.
+pub(crate) struct RecordIdentity<'a> {
+    pub previous: &'a str,
+    pub sequence: u64,
+    pub key_digest: &'a str,
+    pub request_digest: &'a str,
+    pub plan_id: &'a str,
+    pub state: &'a str,
+}
+
 pub(crate) fn record_digest(
-    previous: &str,
-    sequence: u64,
-    key_digest: &str,
-    request_digest: &str,
-    plan_id: &str,
+    identity: RecordIdentity<'_>,
     operations: &[String],
     files: &[String],
-    state: &str,
 ) -> String {
     let canonical = format!(
-        "{previous}\u{1f}{sequence}\u{1f}{key_digest}\u{1f}{request_digest}\u{1f}{plan_id}\
-         \u{1f}{state}\u{1f}{}\u{1f}{}",
+        "{}\u{1f}{}\u{1f}{}\u{1f}{}\u{1f}{}\u{1f}{}\u{1f}{}\u{1f}{}",
+        identity.previous,
+        identity.sequence,
+        identity.key_digest,
+        identity.request_digest,
+        identity.plan_id,
+        identity.state,
         operations.join("\u{1e}"),
         files.join("\u{1e}"),
     );
@@ -470,7 +478,8 @@ pub fn key_digest(key: &str) -> String {
 /// Whether one serialized JSON object document contains any duplicate key
 /// at any nesting level (strict-parser safety assertion for emitted
 /// change documents).
-pub(crate) fn has_duplicate_keys(document: &str) -> bool {    fn walk(value: &Json) -> bool {
+pub(crate) fn has_duplicate_keys(document: &str) -> bool {
+    fn walk(value: &Json) -> bool {
         match value {
             Json::Object(map) => {
                 let mut keys = std::collections::BTreeSet::new();
@@ -503,18 +512,17 @@ fn verify_receipt_projection<'a>(
     operations: &[String],
     files: &[String],
 ) -> Result<&'a str, super::diagnostic::ChangeError> {
-    let invalid = |detail: &'static str| {
-        Err(super::diagnostic::ChangeError::HistoryInvalid { detail })
-    };
-    let map = receipt.as_object().ok_or_else(|| {
-        super::diagnostic::ChangeError::HistoryInvalid {
+    let invalid =
+        |detail: &'static str| Err(super::diagnostic::ChangeError::HistoryInvalid { detail });
+    let map = receipt
+        .as_object()
+        .ok_or(super::diagnostic::ChangeError::HistoryInvalid {
             detail: "receipt-shape",
-        }
-    })?;
+        })?;
     let text = |name: &str| {
         map.get(name)
             .and_then(Json::as_str)
-            .ok_or_else(|| super::diagnostic::ChangeError::HistoryInvalid {
+            .ok_or(super::diagnostic::ChangeError::HistoryInvalid {
                 detail: "receipt-member",
             })
     };
@@ -538,21 +546,19 @@ fn verify_receipt_projection<'a>(
     ) {
         return invalid("receipt-state");
     }
-    let receipt_operations = map
-        .get("operations")
-        .and_then(Json::as_array)
-        .ok_or_else(|| super::diagnostic::ChangeError::HistoryInvalid {
+    let receipt_operations = map.get("operations").and_then(Json::as_array).ok_or(
+        super::diagnostic::ChangeError::HistoryInvalid {
             detail: "receipt-operations",
-        })?;
+        },
+    )?;
     let receipt_operations: Option<Vec<&str>> = receipt_operations
         .iter()
         .map(|value| value.get("operation").and_then(Json::as_str))
         .collect();
-    let receipt_operations = receipt_operations.ok_or_else(|| {
-        super::diagnostic::ChangeError::HistoryInvalid {
+    let receipt_operations =
+        receipt_operations.ok_or(super::diagnostic::ChangeError::HistoryInvalid {
             detail: "receipt-operations",
-        }
-    })?;
+        })?;
     if receipt_operations.len() != operations.len()
         || receipt_operations
             .iter()
@@ -561,20 +567,18 @@ fn verify_receipt_projection<'a>(
     {
         return invalid("receipt-operations-mismatch");
     }
-    let receipt_files = map
-        .get("files")
-        .and_then(Json::as_array)
-        .ok_or_else(|| super::diagnostic::ChangeError::HistoryInvalid {
+    let receipt_files = map.get("files").and_then(Json::as_array).ok_or(
+        super::diagnostic::ChangeError::HistoryInvalid {
             detail: "receipt-files",
-        })?;
+        },
+    )?;
     let receipt_files: Option<Vec<&str>> = receipt_files
         .iter()
         .map(|value| value.get("path").and_then(Json::as_str))
         .collect();
-    let receipt_files =
-        receipt_files.ok_or_else(|| super::diagnostic::ChangeError::HistoryInvalid {
-            detail: "receipt-files",
-        })?;
+    let receipt_files = receipt_files.ok_or(super::diagnostic::ChangeError::HistoryInvalid {
+        detail: "receipt-files",
+    })?;
     if receipt_files.len() != files.len()
         || receipt_files
             .iter()
@@ -584,18 +588,14 @@ fn verify_receipt_projection<'a>(
         return invalid("receipt-files-mismatch");
     }
     // The history anchor must be a well-formed sequence + digest pair.
-    let history = map
-        .get("history")
-        .and_then(Json::as_object)
-        .ok_or_else(|| super::diagnostic::ChangeError::HistoryInvalid {
+    let history = map.get("history").and_then(Json::as_object).ok_or(
+        super::diagnostic::ChangeError::HistoryInvalid {
             detail: "receipt-history",
-        })?;
+        },
+    )?;
     if history.len() != 2
         || history.get("sequence").and_then(Json::as_u64).is_none()
-        || history
-            .get("recordDigest")
-            .and_then(Json::as_str)
-            .is_none()
+        || history.get("recordDigest").and_then(Json::as_str).is_none()
     {
         return invalid("receipt-history");
     }

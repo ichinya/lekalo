@@ -223,20 +223,18 @@ fn repeated_key_replays_the_original_receipt_without_duplicating() {
     let request = add_priority_request();
     let first = apply_request(&sandbox, &request, "add-priority-v1", false).expect("commits");
     assert_eq!(first.state(), ReceiptState::Committed);
-    assert_eq!(first.replayed, false);
+    assert!(!first.replayed);
     // The Model already carries the field; the ledger still replays.
     let second = apply_request(&sandbox, &request, "add-priority-v1", false).expect("replays");
     assert_eq!(second.state(), ReceiptState::Replayed);
-    assert_eq!(second.replayed, true);
+    assert!(second.replayed);
     assert_eq!(second.plan_id, first.plan_id);
     // Exactly one history record and one committed field.
     let history: serde_json::Value =
         serde_json::from_slice(&std::fs::read(sandbox.history_path()).expect("history"))
             .expect("history json");
     assert_eq!(history["records"].as_array().expect("records").len(), 1);
-    let model = lekalo_core::loader::normalize_model(&sandbox.selection())
-        .ok()
-        .expect("loads");
+    let model = lekalo_core::loader::normalize_model(&sandbox.selection()).expect("loads");
     let entity = model
         .definitions
         .iter()
@@ -478,9 +476,8 @@ fn recovery_refuses_a_journal_path_that_escapes_the_project_root() {
         br#"{"transaction":"change-escape01","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","files":[{"path":"../le73-ESCAPE.txt","beforeDigest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","afterDigest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","creation":false}],"history":false}"#,
     )
     .expect("journal");
-    let error =
-        change::recover_transaction(Some(&sandbox.selection_str()), "change-escape01")
-            .expect_err("traversal refused");
+    let error = change::recover_transaction(Some(&sandbox.selection_str()), "change-escape01")
+        .expect_err("traversal refused");
     assert!(
         matches!(error, ChangeError::WriteBoundaryDenied),
         "got {error:?}"
@@ -488,7 +485,12 @@ fn recovery_refuses_a_journal_path_that_escapes_the_project_root() {
     // Nothing was written outside the project and the journal stays (the
     // barrier keeps readers blocked until a legitimate recovery).
     assert!(!sandbox.root.join("le73-ESCAPE.txt").exists());
-    assert!(!sandbox.root.parent().unwrap().join("le73-ESCAPE.txt").exists());
+    assert!(!sandbox
+        .root
+        .parent()
+        .unwrap()
+        .join("le73-ESCAPE.txt")
+        .exists());
     assert!(journal_dir.join("journal.json").is_file());
 }
 
@@ -502,10 +504,12 @@ fn recovery_refuses_an_absolute_and_absolute_windows_journal_path() {
         br#"{"transaction":"change-absol001","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","files":[{"path":"lekalo/modules/tasks/entities.yaml","beforeDigest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","afterDigest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","creation":false},{"path":"/etc/lekalo-pwn","beforeDigest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","afterDigest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","creation":false}],"history":false}"#,
     )
     .expect("journal");
-    let error =
-        change::recover_transaction(Some(&sandbox.selection_str()), "change-absol001")
-            .expect_err("absolute path refused");
-    assert!(matches!(error, ChangeError::WriteBoundaryDenied), "{error:?}");
+    let error = change::recover_transaction(Some(&sandbox.selection_str()), "change-absol001")
+        .expect_err("absolute path refused");
+    assert!(
+        matches!(error, ChangeError::WriteBoundaryDenied),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -527,9 +531,8 @@ fn recovery_refuses_a_corrupted_backup_and_keeps_the_barrier() {
     );
     std::fs::write(journal_dir.join("journal.json"), journal).expect("journal");
     let before = sandbox.entities_bytes();
-    let error =
-        change::recover_transaction(Some(&sandbox.selection_str()), "change-corrupt01")
-            .expect_err("corrupt backup refused");
+    let error = change::recover_transaction(Some(&sandbox.selection_str()), "change-corrupt01")
+        .expect_err("corrupt backup refused");
     assert!(
         matches!(
             error,
@@ -567,9 +570,8 @@ fn recovery_restores_verified_backups_and_reports_the_rollback() {
         digest(&original)
     );
     std::fs::write(journal_dir.join("journal.json"), journal).expect("journal");
-    let outcome =
-        change::recover_transaction(Some(&sandbox.selection_str()), "change-restore01")
-            .expect("recovers");
+    let outcome = change::recover_transaction(Some(&sandbox.selection_str()), "change-restore01")
+        .expect("recovers");
     assert_eq!(outcome.transaction, "change-restore01");
     assert_eq!(outcome.files.len(), 1);
     assert_eq!(outcome.files[0].path, "lekalo/modules/tasks/entities.yaml");
@@ -600,7 +602,10 @@ fn recovery_reclaims_a_stale_writer_lock_but_honors_a_live_one() {
     std::fs::write(cache.join("writer.lock"), b"").expect("stale lock");
     std::fs::write(
         cache.join("writer.lock.json"),
-        format!("{{\"pid\":999999999,\"boot\":\"{}\"}}", "definitely-not-this-boot"),
+        format!(
+            "{{\"pid\":999999999,\"boot\":\"{}\"}}",
+            "definitely-not-this-boot"
+        ),
     )
     .expect("stale lock meta");
     change::recover_transaction(Some(&sandbox.selection_str()), "change-stale0001")
@@ -621,9 +626,8 @@ fn recovery_refuses_malformed_journal_members_instead_of_skipping() {
         br#"{"transaction":"change-malfm0001","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","files":[{"path":"lekalo/modules/tasks/entities.yaml","beforeDigest":42,"afterDigest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","creation":false}],"history":false}"#,
     )
     .expect("journal");
-    let error =
-        change::recover_transaction(Some(&sandbox.selection_str()), "change-malfm0001")
-            .expect_err("malformed journal refused");
+    let error = change::recover_transaction(Some(&sandbox.selection_str()), "change-malfm0001")
+        .expect_err("malformed journal refused");
     assert!(
         matches!(
             error,
@@ -856,7 +860,6 @@ fn a_valid_multi_operation_batch_on_one_file_commits() {
     assert!(after.contains("- name: \"owner\""));
     // The re-decoded candidate compiled identically: the project still loads.
     let model = lekalo_core::loader::normalize_model(&sandbox.selection())
-        .ok()
         .expect("loads after batch commit");
     let entity = model
         .definitions

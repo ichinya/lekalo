@@ -288,7 +288,8 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
     }
     per_file_planned.sort_by(|left, right| left.0.as_bytes().cmp(right.0.as_bytes()));
     let mut changed_documents: Vec<LoadedDocument> = Vec::new();
-    for (path, edits) in &per_file_planned {        let document = load
+    for (path, edits) in &per_file_planned {
+        let document = load
             .documents
             .iter()
             .find(|document| &document.document.path == path)
@@ -298,17 +299,14 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
             })?;
         let bytes = document.bytes.clone();
         let edited = apply_edits_descending(&bytes, edits);
-        let decoded = crate::loader::decode_document_bytes(
-            path,
-            crate::loader::DocKind::Symbol,
-            &edited,
-        )
-        .map_err(|diagnostics| {
-            ChangeError::LoadFailed(crate::loader::diagnostic::failure(
-                crate::result::Status::Invalid,
-                diagnostics,
-            ))
-        })?;
+        let decoded =
+            crate::loader::decode_document_bytes(path, crate::loader::DocKind::Symbol, &edited)
+                .map_err(|diagnostics| {
+                    ChangeError::LoadFailed(crate::loader::diagnostic::failure(
+                        crate::result::Status::Invalid,
+                        diagnostics,
+                    ))
+                })?;
         changed_documents.push(LoadedDocument {
             document: decoded,
             bytes: edited,
@@ -566,10 +564,7 @@ pub fn apply_request(options: &ApplyRequestOptions) -> Result<Receipt, ChangeErr
         root.join(version::HISTORY_LOGICAL_PATH.replace('/', std::path::MAIN_SEPARATOR_STR));
     // Absent reads as "no history"; an existing zero-byte ledger is a
     // corrupt document and fails closed (review finding 11).
-    let history_bytes = match std::fs::read(&history_file) {
-        Ok(bytes) => bytes,
-        Err(_) => Vec::new(),
-    };
+    let history_bytes = std::fs::read(&history_file).unwrap_or_default();
     if !history_bytes.is_empty() {
         let history = History::decode(&history_bytes)?;
         if let Some(record) = history.by_key(&key) {
@@ -633,10 +628,7 @@ pub fn apply_prepared(
     // closed inside `History::decode` (review finding 11).
     let history_logical = version::HISTORY_LOGICAL_PATH;
     let history_file = root.join(history_logical.replace('/', std::path::MAIN_SEPARATOR_STR));
-    let history_bytes = match std::fs::read(&history_file) {
-        Ok(bytes) => bytes,
-        Err(_) => Vec::new(),
-    };
+    let history_bytes = std::fs::read(&history_file).unwrap_or_default();
     let mut history = if history_bytes.is_empty() {
         History {
             project: prepared.project_id.clone(),
@@ -750,14 +742,16 @@ pub fn apply_prepared(
     let anchor = HistoryAnchor {
         sequence,
         record_digest: receipt::record_digest(
-            &previous_digest,
-            sequence,
-            &key,
-            prepared.request_digest().as_str(),
-            prepared.plan_id().as_str(),
+            receipt::RecordIdentity {
+                previous: &previous_digest,
+                sequence,
+                key_digest: &key,
+                request_digest: prepared.request_digest().as_str(),
+                plan_id: prepared.plan_id().as_str(),
+                state: state.as_str(),
+            },
             &record_operations,
             &record_files,
-            state.as_str(),
         ),
     };
     let receipt = receipt::Receipt {
@@ -845,10 +839,7 @@ pub fn lookup_receipt(
     };
     let history = History::decode(&history_bytes)?;
     let key = receipt::key_digest(idempotency_key);
-    Ok(history
-        .by_key(&key)
-        .map(stored_receipt)
-        .transpose()?)
+    history.by_key(&key).map(stored_receipt).transpose()
 }
 
 /// The outcome of one successful recovery: the flat receipt document of
