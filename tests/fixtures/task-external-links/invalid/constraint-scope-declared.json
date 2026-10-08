@@ -1,15 +1,15 @@
 {
   "schemaVersion": "lekalo/task-links-integration/v0.8.0",
   "identity": "dev.lekalo.task-links-integration@0.8.0",
-  "attachmentRevision": "sha256:f1bc25ab98d05aec14e5b8931ff07899e1d59f72dd15011bbe24c2e53a0974ae",
+  "attachmentRevision": "sha256:bb7465510154769345b21a5ef83243d40c0965259e4ef4f9f3fbe18bae4e0451",
   "projectId": "tasklinks",
   "modelRef": {
     "schemaVersion": "0.2.16",
-    "irDigest": "sha256:2527fc3742315806ea5d6260d3b2a5dda34ed7c5eda92f8a7ee8076bc4e07178"
+    "irDigest": "sha256:141112c5d302ca7d0212e3939267bf5a0191798249c5b0f5e5dbaf37dc4ac74d"
   },
   "irRef": {
     "identity": "dev.lekalo.ir@0.2.16",
-    "digest": "sha256:2527fc3742315806ea5d6260d3b2a5dda34ed7c5eda92f8a7ee8076bc4e07178"
+    "digest": "sha256:141112c5d302ca7d0212e3939267bf5a0191798249c5b0f5e5dbaf37dc4ac74d"
   },
   "ownerContractPins": [
     {

@@ -948,3 +948,209 @@ fn admitted_evidence_summary_carries_only_validated_symbols() {
     }
     let _ = rendered;
 }
+
+/// Conflict resolution is enforced executably against the compilation:
+/// removing the expected-version precondition (or the immutable audit
+/// effect) from the Model and correctly re-pinning the attachment
+/// still refuses with the registered resolution rule — never a silent
+/// pass. This is the adversarial project-copy flow an independent
+/// reviewer used, committed as a regression test.
+#[test]
+fn resolution_preconditions_and_audit_are_enforced_against_the_compilation() {
+    use lekalo_core::digest::sha256_hex;
+    let workspace = workspace_path(".");
+    let project_root = workspace_path(project().as_str());
+    // Canonical bytes of a serde_json Value: compact, recursively
+    // key-sorted (serde_json maps are BTreeMaps by default), exactly
+    // the bytes the core verifier hashes.
+    fn canonical(value: &Value) -> Vec<u8> {
+        match value {
+            Value::Object(map) => {
+                let mut out = String::from("{");
+                for (index, (key, item)) in map.iter().enumerate() {
+                    if index > 0 {
+                        out.push(',');
+                    }
+                    out.push_str(&serde_json::to_string(key).expect("key"));
+                    out.push(':');
+                    out.push_str(&String::from_utf8(canonical(item)).expect("utf8"));
+                }
+                out.push('}');
+                out.into_bytes()
+            }
+            Value::Array(items) => {
+                let mut out = String::from("[");
+                for (index, item) in items.iter().enumerate() {
+                    if index > 0 {
+                        out.push(',');
+                    }
+                    out.push_str(&String::from_utf8(canonical(item)).expect("utf8"));
+                }
+                out.push(']');
+                out.into_bytes()
+            }
+            other => serde_json::to_vec(other).expect("value"),
+        }
+    }
+    let ir_digest_of = |project: &Path| -> String {
+        let output = lekalo_in(
+            &workspace,
+            &[
+                "--json",
+                "load",
+                "--project",
+                &project.to_string_lossy(),
+                "--ir",
+            ],
+        );
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "project must compile: {}",
+            stderr_text(&output)
+        );
+        let envelope: Value = serde_json::from_str(&stdout_text(&output)).expect("envelope");
+        let digest = sha256_hex(&canonical(&envelope["ir"]));
+        format!("sha256:{digest}")
+    };
+    let repin = |project: &Path, mutation: &dyn Fn(&mut String) -> bool| -> String {
+        let attachment =
+            std::fs::read_to_string(workspace_path(attachment().as_str())).expect("attachment");
+        let mut document: Value = serde_json::from_str(&attachment).expect("attachment json");
+        let digest = ir_digest_of(project);
+        document["irRef"]["digest"] = Value::String(digest.clone());
+        document["modelRef"]["irDigest"] = Value::String(digest);
+        let mut text = serde_json::to_string_pretty(&document).expect("render");
+        assert!(mutation(&mut text), "the mutation must apply");
+        // Recompute the canonical attachment revision over the 16
+        // covered members.
+        let mut mutated: Value = serde_json::from_str(&text).expect("mutated json");
+        let mut revision = serde_json::Map::new();
+        for member in [
+            "schemaVersion",
+            "identity",
+            "projectId",
+            "modelRef",
+            "irRef",
+            "ownerContractPins",
+            "entities",
+            "relations",
+            "uniqueConstraints",
+            "providerContracts",
+            "linkCapabilityRequirements",
+            "fieldPolicies",
+            "actionPolicies",
+            "operationBindings",
+            "deliveryRules",
+            "contributions",
+        ] {
+            revision.insert(member.to_owned(), mutated[member].clone());
+        }
+        let revision_digest = sha256_hex(&canonical(&Value::Object(revision)));
+        mutated["attachmentRevision"] = Value::String(format!("sha256:{revision_digest}"));
+        let path = workspace.join(format!("target/task-links-{}", std::process::id()));
+        std::fs::write(
+            &path,
+            serde_json::to_string_pretty(&mutated).expect("render"),
+        )
+        .expect("write mutated attachment");
+        path.to_string_lossy().into_owned()
+    };
+    let copy_project = |name: &str| -> String {
+        let destination = workspace_path(&format!("target/{name}/lekalo"));
+        let _ = std::fs::remove_dir_all(destination.parent().unwrap());
+        std::fs::create_dir_all(destination.join("modules/tasklinks")).expect("dirs");
+        for entry in ["modules/planner", "modules/tasklinks"] {
+            std::fs::create_dir_all(destination.join(entry)).expect("dirs");
+            for file in
+                std::fs::read_dir(project_root.join(format!("lekalo/{entry}"))).expect("files")
+            {
+                let file = file.expect("file");
+                let target = destination.join(entry).join(file.file_name());
+                std::fs::copy(file.path(), &target).expect("copy");
+            }
+        }
+        std::fs::copy(
+            project_root.join("lekalo/project.yaml"),
+            destination.join("project.yaml"),
+        )
+        .expect("copy");
+        // The CLI only accepts project selectors relative to the
+        // invocation directory.
+        format!("target/{name}")
+    };
+    for (name, mutation, expected_detail) in [
+        (
+            "resolution-no-version-project",
+            Box::new(|text: &mut String| {
+                let found = text.contains("expected_link_version");
+                *text = text.replace(
+                    "      - name: expected_link_version\n        type: \"tasklinks.revision\"\n        required: true\n",
+                    "",
+                );
+                found
+            }) as Box<dyn Fn(&mut String) -> bool>,
+            "resolution-precondition-missing",
+        ),
+        (
+            "resolution-no-audit-project",
+            Box::new(|text: &mut String| {
+                let found = text.contains("record_resolution_audit");
+                *text = text.replace("      - \"tasklinks.effect.record_resolution_audit\"\n", "");
+                found
+            }) as Box<dyn Fn(&mut String) -> bool>,
+            "resolution-audit-missing",
+        ),
+    ] {
+        let commands_yaml =
+            std::fs::read_to_string(project_root.join("lekalo/modules/tasklinks/commands.yaml"))
+                .expect("commands");
+        let mutated_yaml = {
+            // The checkout may carry CRLF line endings; normalize so the
+            // mutation literals match, then write LF (YAML is agnostic).
+            let mut text = commands_yaml.replace("\r\n", "\n");
+            assert!(mutation(&mut text), "the project mutation must apply");
+            text
+        };
+        let project = copy_project(name);
+        std::fs::write(
+            workspace_path(&format!("{project}/lekalo/modules/tasklinks/commands.yaml")),
+            mutated_yaml,
+        )
+        .expect("write mutated project");
+        let mutated_attachment = repin(Path::new(&project), &|_| true);
+        let output = lekalo_in(
+            &workspace,
+            &[
+                "--json",
+                "task-links",
+                "validate",
+                &mutated_attachment,
+                "--project",
+                &project,
+                "--profile",
+                "strict",
+            ],
+        );
+        assert_eq!(output.status.code(), Some(1), "{name} must refuse");
+        let envelope: Value = serde_json::from_str(stderr_text(&output).trim()).expect("envelope");
+        let details: Vec<&str> = envelope["diagnostics"]
+            .as_array()
+            .expect("diagnostics")
+            .iter()
+            .filter_map(|d| d["data"]["detail"].as_str())
+            .collect();
+        assert!(
+            details.contains(&expected_detail),
+            "{name}: expected {expected_detail} in {details:?}"
+        );
+        assert!(
+            details
+                .iter()
+                .all(|detail| detail.starts_with("resolution-")),
+            "{name}: only resolution findings may fire, got {details:?}"
+        );
+        let _ = std::fs::remove_file(&mutated_attachment);
+        let _ = std::fs::remove_dir_all(workspace_path(&format!("target/{name}")));
+    }
+}

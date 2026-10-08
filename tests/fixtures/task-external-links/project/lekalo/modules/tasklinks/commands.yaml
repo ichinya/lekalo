@@ -30,6 +30,12 @@ definitions:
     description: "Inbox receipt write"
     operation: create
     entity: "tasklinks.inbox_receipt"
+  - id: tasklinks.effect.record_resolution_audit
+    kind: effect
+    version: 1
+    description: "Immutable conflict-resolution audit append"
+    operation: create
+    entity: "tasklinks.resolution_audit"
   - id: tasklinks.effect.resolve_conflict
     kind: effect
     version: 1
@@ -131,6 +137,7 @@ definitions:
         required: true
     effects:
       - "tasklinks.effect.resolve_conflict"
+      - "tasklinks.effect.record_resolution_audit"
   - id: tasklinks.dispatch_outbox
     kind: command
     version: 1

@@ -570,6 +570,102 @@ pub fn reserve_identity(
     }
 }
 
+/// One recorded conflict awaiting explicit resolution.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConflictRecord {
+    /// Stable conflict id.
+    pub conflict_id: String,
+    /// The originating link.
+    pub link_id: String,
+    /// The base revision the link state was built on.
+    pub base_revision: String,
+    /// The observed revision that raised the conflict (the current
+    /// provider-side version an expected-version precondition must
+    /// match).
+    pub observed_revision: String,
+    /// The lifecycle state.
+    pub state: ConflictState,
+}
+
+/// The closed conflict lifecycle state.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConflictState {
+    /// Unresolved: writes through the link are blocked.
+    Open,
+    /// Explicitly resolved under a matching expected-version
+    /// precondition; the resolution is audited.
+    Resolved,
+}
+
+/// One immutable conflict-resolution audit entry. The audit log is
+/// append-only by construction: no API rewrites or removes entries.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResolutionAudit {
+    /// The resolved conflict.
+    pub conflict_id: String,
+    /// The originating link.
+    pub link_id: String,
+    /// The expected version the resolver presented (the precondition
+    /// that matched).
+    pub expected_revision: String,
+    /// The resolved revision.
+    pub resolved_revision: String,
+    /// The resolving actor class.
+    pub actor: String,
+}
+
+/// The outcome of one explicit resolution attempt.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ResolveOutcome {
+    /// The precondition matched; the conflict closed and the audit
+    /// entry was appended.
+    Resolved,
+    /// The expected version did not match the observed revision: the
+    /// stale resolver is refused with no state change and no audit.
+    Stale,
+    /// The conflict id is unknown.
+    Unknown,
+    /// The conflict was already resolved (a replay of the same
+    /// resolution); the audit log is not duplicated.
+    Replayed,
+}
+
+/// Resolve one conflict under an explicit expected-version
+/// precondition, appending an immutable audit entry atomically with
+/// the resolution.
+///
+/// A resolver whose expected version does not equal the record's
+/// observed revision is stale: it is refused outright, leaving the
+/// conflict open and the audit log untouched. A fresh resolution
+/// closes the conflict and appends exactly one audit entry; resolving
+/// an already-resolved record replays without a duplicate entry.
+pub fn resolve_conflict(
+    conflicts: &mut BTreeMap<String, ConflictRecord>,
+    audit_log: &mut Vec<ResolutionAudit>,
+    conflict_id: &str,
+    expected_revision: &str,
+    actor: &str,
+) -> ResolveOutcome {
+    let Some(record) = conflicts.get_mut(conflict_id) else {
+        return ResolveOutcome::Unknown;
+    };
+    if record.state == ConflictState::Resolved {
+        return ResolveOutcome::Replayed;
+    }
+    if record.observed_revision != expected_revision {
+        return ResolveOutcome::Stale;
+    }
+    record.state = ConflictState::Resolved;
+    audit_log.push(ResolutionAudit {
+        conflict_id: conflict_id.to_owned(),
+        link_id: record.link_id.clone(),
+        expected_revision: expected_revision.to_owned(),
+        resolved_revision: record.observed_revision.clone(),
+        actor: actor.to_owned(),
+    });
+    ResolveOutcome::Resolved
+}
+
 /// Detach one link: state only. History, receipts, conflicts, and the
 /// external object are retained by construction; nothing here reaches a
 /// provider.

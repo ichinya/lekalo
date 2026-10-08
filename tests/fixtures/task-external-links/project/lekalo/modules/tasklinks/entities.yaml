@@ -125,6 +125,28 @@ definitions:
       - name: payload
         type: "tasklinks.external_id"
         required: true
+  - id: tasklinks.resolution_audit
+    kind: entity
+    version: 1
+    description: "One immutable conflict-resolution audit entry; appended atomically with the resolution, never updated or deleted"
+    fields:
+      - name: audit_id
+        type: "tasklinks.link_id"
+        required: true
+      - name: conflict_id
+        type: "tasklinks.link_id"
+        required: true
+      - name: link_id
+        type: "tasklinks.link_id"
+        required: true
+      - name: resolved_revision
+        type: "tasklinks.revision"
+        required: true
+      - name: actor
+        type: "tasklinks.external_id"
+        required: true
+    identity:
+      - audit_id
   - id: tasklinks.task_external_link
     kind: entity
     version: 1

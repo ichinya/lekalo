@@ -663,7 +663,6 @@ fn check_decisions(
 }
 
 fn check_bindings(attachment: &Attachment, compilation: &Compilation, findings: &mut Vec<Finding>) {
-    let effects = ir_effects(compilation);
     let declared_commands: BTreeSet<&str> = compilation
         .project
         .definitions
@@ -723,15 +722,42 @@ fn check_bindings(attachment: &Attachment, compilation: &Compilation, findings: 
         .iter()
         .map(|policy| policy.policy_id.as_str())
         .collect();
+    // The declared commands of the compilation (id -> definition), and
+    // the entities every effect updates or deletes. Conflict resolution
+    // is enforced executably: its command must carry the explicit
+    // expected-version precondition and an append-only audit effect.
+    let mut commands: BTreeMap<&str, &crate::ir::CommandDef> = BTreeMap::new();
+    let mut mutating_entities: BTreeSet<&str> = BTreeSet::new();
+    let mut effects: BTreeMap<&str, (&str, &str)> = BTreeMap::new();
+    for definition in &compilation.project.definitions {
+        match definition {
+            Definition::Command(command) => {
+                commands.insert(definition.id().as_str(), command);
+            }
+            Definition::Effect(effect) => {
+                effects.insert(
+                    definition.id().as_str(),
+                    (effect.entity.as_str(), effect.operation.as_str()),
+                );
+                if effect.operation.as_str() != "create" {
+                    mutating_entities.insert(effect.entity.as_str());
+                }
+            }
+            _ => {}
+        }
+    }
     for binding in attachment.operation_bindings() {
-        // Conflict resolution is audited by construction: its bound
-        // effect must be a declared update on the conflict entity (a
-        // valid, immutable transition), not an unrelated write.
+        // Conflict resolution is enforced executably, not by prose:
+        // the resolver's bound effect must be a declared update on the
+        // conflict entity, the command must declare an explicit
+        // expected-version input of the link revision type, and its
+        // effects must append an immutable audit record (a create on an
+        // audit entity that no effect ever updates or deletes).
         if binding.action == "tasklinks.resolve_conflict" {
             let audited = effects.get(binding.effect_ref.as_str());
             let valid = matches!(
                 audited,
-                Some((entity, operation)) if entity == "tasklinks.conflict" && operation == "update"
+                Some((entity, operation)) if *entity == "tasklinks.conflict" && *operation == "update"
             );
             if !valid {
                 finding(
@@ -740,6 +766,46 @@ fn check_bindings(attachment: &Attachment, compilation: &Compilation, findings: 
                     binding.operation.clone(),
                     "resolution-transition-invalid",
                 );
+            }
+            if let Some(command) = commands.get("tasklinks.resolve_conflict") {
+                let has_precondition = command.input.iter().any(|field| {
+                    field.name.as_str().starts_with("expected_")
+                        && matches!(
+                            &field.r#type,
+                            crate::ir::TypeRef::Ref(id) if id.as_str() == "tasklinks.revision"
+                        )
+                });
+                if !has_precondition {
+                    finding(
+                        findings,
+                        diagnostic::CONFLICT_RESOLUTION_INVALID,
+                        binding.operation.clone(),
+                        "resolution-precondition-missing",
+                    );
+                }
+                let audit_effect = command.effects.iter().find_map(|effect_id| {
+                    let (entity, operation) = effects.get(effect_id.as_str())?;
+                    (*operation == "create" && entity.ends_with("_audit"))
+                        .then_some((*entity, effect_id.as_str()))
+                });
+                match audit_effect {
+                    None => finding(
+                        findings,
+                        diagnostic::CONFLICT_RESOLUTION_INVALID,
+                        binding.operation.clone(),
+                        "resolution-audit-missing",
+                    ),
+                    Some((audit_entity, _)) => {
+                        if mutating_entities.contains(audit_entity) {
+                            finding(
+                                findings,
+                                diagnostic::CONFLICT_RESOLUTION_INVALID,
+                                binding.operation.clone(),
+                                "resolution-audit-mutable",
+                            );
+                        }
+                    }
+                }
             }
         }
         // The bound operation and action must both be declared
@@ -788,25 +854,6 @@ fn check_bindings(attachment: &Attachment, compilation: &Compilation, findings: 
             );
         }
     }
-}
-
-/// The declared Model effects of the compilation: id -> (entity, operation).
-fn ir_effects(compilation: &Compilation) -> BTreeMap<String, (String, String)> {
-    compilation
-        .project
-        .definitions
-        .iter()
-        .filter_map(|definition| match definition {
-            Definition::Effect(effect) => Some((
-                effect.id.as_str().to_owned(),
-                (
-                    effect.entity.as_str().to_owned(),
-                    effect.operation.as_str().to_owned(),
-                ),
-            )),
-            _ => None,
-        })
-        .collect()
 }
 
 fn check_delivery(attachment: &Attachment, findings: &mut Vec<Finding>) {

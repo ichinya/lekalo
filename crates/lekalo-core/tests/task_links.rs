@@ -1465,3 +1465,75 @@ mod native_leg {
         assert_eq!(winners, 1, "exactly one reservation wins over the DB");
     }
 }
+
+/// Conflict resolution is an enforced transition, not a label: a stale
+/// expected version refuses outright (no state change, no audit), a
+/// fresh resolution closes the conflict and appends exactly one
+/// immutable audit entry, and a replay never duplicates the entry.
+#[test]
+fn scenario_stale_resolution_refuses_and_fresh_resolution_audits() {
+    use decision::{ConflictRecord, ConflictState};
+    let mut conflicts = BTreeMap::new();
+    let mut audit_log = Vec::new();
+    conflicts.insert(
+        "conflict-1".to_owned(),
+        ConflictRecord {
+            conflict_id: "conflict-1".to_owned(),
+            link_id: LINK_A.to_owned(),
+            base_revision: "r-5".to_owned(),
+            observed_revision: "r-7".to_owned(),
+            state: ConflictState::Open,
+        },
+    );
+    // Stale resolver: the expected version names the base, not the
+    // observed revision. Refused; nothing changes anywhere.
+    let outcome = decision::resolve_conflict(
+        &mut conflicts,
+        &mut audit_log,
+        "conflict-1",
+        "r-5",
+        "identity.user",
+    );
+    assert_eq!(outcome, decision::ResolveOutcome::Stale);
+    assert_eq!(conflicts["conflict-1"].state, ConflictState::Open);
+    assert!(audit_log.is_empty(), "a stale resolution never audits");
+    // Unknown conflict ids refuse too.
+    assert_eq!(
+        decision::resolve_conflict(
+            &mut conflicts,
+            &mut audit_log,
+            "conflict-x",
+            "r-7",
+            "identity.user"
+        ),
+        decision::ResolveOutcome::Unknown
+    );
+    // Fresh resolver: the expected version matches the observed
+    // revision. The conflict closes and exactly one audit entry lands.
+    let outcome = decision::resolve_conflict(
+        &mut conflicts,
+        &mut audit_log,
+        "conflict-1",
+        "r-7",
+        "identity.user",
+    );
+    assert_eq!(outcome, decision::ResolveOutcome::Resolved);
+    assert_eq!(conflicts["conflict-1"].state, ConflictState::Resolved);
+    assert_eq!(audit_log.len(), 1);
+    assert_eq!(audit_log[0].conflict_id, "conflict-1");
+    assert_eq!(audit_log[0].link_id, LINK_A);
+    assert_eq!(audit_log[0].expected_revision, "r-7");
+    // A replay resolves nothing twice: the audit log stays append-only
+    // with exactly one entry.
+    assert_eq!(
+        decision::resolve_conflict(
+            &mut conflicts,
+            &mut audit_log,
+            "conflict-1",
+            "r-7",
+            "identity.user"
+        ),
+        decision::ResolveOutcome::Replayed
+    );
+    assert_eq!(audit_log.len(), 1, "the audit log never duplicates");
+}
