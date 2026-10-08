@@ -87,7 +87,9 @@ for (const file of listFiles(resolve(root, FIXTURE))) {
 for (const script of SCRIPTS) {
   inventory.push(resolve(root, script));
 }
-const SOURCE_EXTENSIONS = new Set([".json", ".yaml", ".yml", ".md", ".mjs"]);
+// The native runtime lane is part of the public inventory and is
+// scanned like every other source file.
+const SOURCE_EXTENSIONS = new Set([".json", ".yaml", ".yml", ".md", ".mjs", ".php"]);
 // Every file without a scannable text extension is opaque inventory:
 // it cannot be neutrality-checked, so it fails the gate instead of
 // silently evading the scan (no binary blobs in a public fixture).

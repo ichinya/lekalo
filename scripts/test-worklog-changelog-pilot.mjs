@@ -26,7 +26,7 @@
 // are never counted as passes.
 
 import { createRequire } from "node:module";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -240,6 +240,93 @@ if (evidence.compositionRef.digest !== compositionDigest) {
   process.exit(1);
 }
 
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// 3b. The native runtime lane (target php): the committed domain model
+//     executes every scenario assertion in-process with the scripted
+//     fake transport, and the live results are bound into the report.
+//     A missing interpreter or a failing assertion fails the gate; the
+//     lane is never skipped and never counted as a pass without
+//     execution.
+// ---------------------------------------------------------------------------
+const nativeResults = {};
+if (target === "php") {
+  const phpCandidates = (process.env.LEKALO_PHP ?? "php").split(";").filter(Boolean);
+  let phpBinary;
+  for (const candidate of phpCandidates) {
+    const probe = spawnSync(candidate, ["-v"], { encoding: "utf8" });
+    if (probe.status === 0) {
+      phpBinary = candidate;
+      break;
+    }
+  }
+  if (!phpBinary) {
+    process.stderr.write(
+      JSON.stringify({ ok: false, reason: "php-missing", detail: "no PHP interpreter found; install PHP >= 8.3 or set LEKALO_PHP" }, null, 2) + "\n",
+    );
+    process.exit(1);
+  }
+  const lanePath = resolve(root, fixtureRoot, "php/run.php");
+  const laneRun = spawnSync(phpBinary, [lanePath], { cwd: root, encoding: "utf8", timeout: 120_000, maxBuffer: 64 * 1024 * 1024 });
+  if (laneRun.status !== 0) {
+    process.stderr.write(
+      JSON.stringify({ ok: false, reason: "native-lane-failed", exit: laneRun.status, stderr: String(laneRun.stderr).slice(0, 400) }, null, 2) + "\n",
+    );
+    process.exit(1);
+  }
+  let lane;
+  try {
+    lane = JSON.parse(laneRun.stdout.trim().split("\n").pop());
+  } catch {
+    process.stderr.write(
+      JSON.stringify({ ok: false, reason: "native-lane-unparseable" }, null, 2) + "\n",
+    );
+    process.exit(1);
+  }
+  if (lane.target !== "php" || lane.execution !== "executed") {
+    process.stderr.write(
+      JSON.stringify({ ok: false, reason: "native-lane-not-executed", lane: { target: lane.target, execution: lane.execution } }, null, 2) + "\n",
+    );
+    process.exit(1);
+  }
+  // The lane asserts exactly the committed scenario corpus.
+  const corpusIds = scenarioFiles
+    .map((name) => name.replace(/\.scenario\.json$/, ""))
+    .sort();
+  const laneIds = lane.assertions.map((row) => row.scenario).sort();
+  if (JSON.stringify(corpusIds) !== JSON.stringify(laneIds)) {
+    process.stderr.write(
+      JSON.stringify({ ok: false, reason: "native-lane-corpus-drift", corpus: corpusIds.length, lane: laneIds.length }, null, 2) + "\n",
+    );
+    process.exit(1);
+  }
+  const failed = lane.assertions.filter((row) => row.status === "fail");
+  if (failed.length > 0) {
+    process.stderr.write(
+      JSON.stringify({ ok: false, reason: "native-assertions-failed", failed: failed.map((row) => row.scenario) }, null, 2) + "\n",
+    );
+    process.exit(1);
+  }
+  nativeResults.php = lane;
+  // Bind the live results: the php target row reflects what the native
+  // runtime just executed, never a stale committed claim.
+  const phpRow = evidence.targets.find((row) => row.target === "php");
+  if (!phpRow) {
+    process.stderr.write(
+      JSON.stringify({ ok: false, reason: "target-missing", target: "php" }, null, 2) + "\n",
+    );
+    process.exit(1);
+  }
+  phpRow.execution = "executed";
+  phpRow.backend = lane.backend;
+  phpRow.assertions = lane.assertions;
+  phpRow.capabilities = lane.capabilities;
+  phpRow.blocking = [];
+  process.stderr.write(
+    JSON.stringify({ nativeLane: "php", assertions: lane.assertions.length, allPassed: true }) + "\n",
+  );
+}
+
 // The profile the selected target runs under: the admission re-derives
 // the verdict from the rows through the production core (`lekalo pilot
 // admit`), so the report's own verdict claim cannot drift. The
@@ -356,6 +443,7 @@ const verdict = {
   staticChecks: staticResults.length,
   staticProven: staticResults.filter((row) => row.result === "pass").length,
   runtimeRetained: runtimeChecks,
+  nativeLane: target === "php" ? { assertions: nativeResults.php.assertions.length, executed: true } : undefined,
   targetVerdict: targetReport.execution,
   admissionVerdict,
   admissionExit,
