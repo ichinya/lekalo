@@ -82,7 +82,12 @@ impl<'a> KeyLexer<'a> {
         {
             self.position += 1;
         }
-        let text = std::str::from_utf8(&self.bytes[start..self.position]).map_err(|_| ())?;
+        let text = std::str::from_utf8(&self.bytes[start..self.position])
+            .map_err(|_| ())?
+            .to_owned();
+        if text.is_empty() {
+            return Err(());
+        }
         text.parse::<i64>()
             .map(|value| Json::Number(value.into()))
             .or_else(|_| text.parse::<f64>().map(Json::from).map_err(|_| ()))
@@ -112,9 +117,14 @@ impl<'a> KeyLexer<'a> {
                         b'r' => out.push('\r'),
                         b't' => out.push('\t'),
                         b'u' => {
-                            let hex =
-                                std::str::from_utf8(&self.bytes[self.position..self.position + 4])
-                                    .map_err(|_| ())?;
+                            // A truncated \uXXXX escape (fewer than four
+                            // hex bytes left) is a malformed document,
+                            // never a panic: slice with get and refuse.
+                            let hex = self
+                                .bytes
+                                .get(self.position..self.position + 4)
+                                .and_then(|window| std::str::from_utf8(window).ok())
+                                .ok_or(())?;
                             let code = u32::from_str_radix(hex, 16).map_err(|_| ())?;
                             self.position += 4;
                             let character = char::from_u32(code).ok_or(())?;
@@ -124,7 +134,8 @@ impl<'a> KeyLexer<'a> {
                     }
                 }
                 Some(_) => {
-                    // Consume one UTF-8 scalar (multi-byte safe).
+                    // Consume one UTF-8 scalar (multi-byte safe); a
+                    // truncated scalar is malformed, never a panic.
                     let rest = std::str::from_utf8(&self.bytes[self.position..]).map_err(|_| ())?;
                     let character = rest.chars().next().ok_or(())?;
                     out.push(character);
@@ -237,6 +248,28 @@ mod tests {
         assert!(reject_duplicate_keys(r#"{"a":1,"b":2}"#).is_ok());
         assert!(reject_duplicate_keys(r#"[{"a":1},{"a":2}]"#).is_ok());
         assert!(reject_duplicate_keys("[1,2,]").is_err());
+    }
+
+    #[test]
+    fn adversarial_bytes_are_typed_refusals_never_panics() {
+        // A truncated \u escape: the historic panic class.
+        assert!(reject_duplicate_keys("{\"x\":\"\\u").is_err());
+        assert!(reject_duplicate_keys("{\"x\":\"\\u00").is_err());
+        assert!(reject_duplicate_keys("{\"x\":\"\\uzzzz\"}").is_err());
+        // Lone surrogates are not scalar values, and unpaired escapes
+        // never decode (fail-closed, matching the closed lexer).
+        assert!(reject_duplicate_keys("{\"x\":\"\\ud800\"}").is_err());
+        assert!(reject_duplicate_keys("{\"x\":\"\\uDC00\\uD800\"}").is_err());
+        assert!(reject_duplicate_keys("{\"x\":\"\\uD83D\\uDE00\"}").is_err());
+        // A truncated multi-byte scalar, a bare value, and truncation
+        // anywhere all refuse.
+        assert!(reject_duplicate_keys("{\"x\":\"\u{e4}\"").is_err());
+        assert!(reject_duplicate_keys("trunc").is_err());
+        assert!(reject_duplicate_keys("{").is_err());
+        assert!(reject_duplicate_keys("-").is_err());
+        assert!(reject_duplicate_keys("1e").is_err());
+        assert!(reject_duplicate_keys("\"").is_err());
+        assert!(reject_duplicate_keys("\"\\").is_err());
     }
 
     #[test]
