@@ -1027,14 +1027,18 @@ fn stdin_mode_formats_the_whole_buffer_of_its_declared_document() {
     });
 }
 
-#[cfg(unix)]
 #[test]
 fn a_hard_linked_ownership_file_is_refused_and_never_stamped() {
-    // Finding r2 1 on POSIX: a hard link at active.lock pointing at an
-    // external victim must refuse the ownership (multiply-linked file)
-    // instead of truncating the victim through the link with the plan
-    // stamp. O_NOFOLLOW additionally refuses the symlink spelling.
-    in_sandbox("hardlink-lock", "planner-canonical", |root| {
+    // Finding r2 1/r3 1, platform-independent since the r3 Windows
+    // verdict: a hard link at active.lock pointing at an external victim
+    // must refuse the ownership (multiply-linked file) instead of
+    // stamping the plan id through the link into the victim. The seed
+    // needs formatting so the mutating run genuinely reaches the
+    // ownership acquisition — a canonical tree is a no-op apply that
+    // never touches the lock (the former canonical fixture proved
+    // nothing). Windows joins the gate with the link count read through
+    // GetFileInformationByHandle.
+    in_sandbox("hardlink-lock", "seeds/noncanonical", |root| {
         let victim = root.join("outside-victim.txt");
         fs::write(&victim, b"DO NOT TOUCH EXTERNAL FILE\n").expect("victim");
         let home = root.join(".lekalo/cache/format");
@@ -1051,6 +1055,10 @@ fn a_hard_linked_ownership_file_is_refused_and_never_stamped() {
             b"DO NOT TOUCH EXTERNAL FILE\n",
             "the external victim is never clobbered through the link"
         );
+        assert!(
+            home.join("active.lock").exists(),
+            "the lock is never removed"
+        );
     });
 }
 
@@ -1058,8 +1066,12 @@ fn a_hard_linked_ownership_file_is_refused_and_never_stamped() {
 #[test]
 fn a_symlinked_ownership_file_is_refused_by_the_open_itself() {
     // O_NOFOLLOW semantics: the open of the final component refuses the
-    // symlink before any handle exists, so no stamp can follow it.
-    in_sandbox("symlink-lock", "planner-canonical", |root| {
+    // symlink before any handle exists, so no stamp can follow it. The
+    // seed needs formatting so the run genuinely reaches the open — a
+    // canonical tree is a no-op apply that never touches the lock (the
+    // former canonical fixture passed only through the loader's runtime
+    // hygiene scan, never through the open).
+    in_sandbox("symlink-lock", "seeds/noncanonical", |root| {
         let victim = root.join("outside-victim.txt");
         fs::write(&victim, b"victim\n").expect("victim");
         let home = root.join(".lekalo/cache/format");
