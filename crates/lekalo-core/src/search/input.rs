@@ -127,11 +127,27 @@ impl InputEntry {
         if self.path.is_empty() || self.path.len() > MAX_PATH_BYTES {
             return Err(input_invalid("path-bounds", None));
         }
-        if self.path.starts_with('/')
-            || self.path.starts_with('\\')
-            || self.path.split(['/', '\\']).any(|part| part == "..")
+        // The path is a logical project-relative POSIX spelling under the
+        // frozen privacy path policy: absolute forms (leading separator,
+        // Windows drive, UNC, URI scheme, home), traversal segments, and
+        // separator escapes are all refused before any read site is even
+        // constructible. `Path::is_absolute` alone is platform-dependent,
+        // so the closed textual grammar is the authority; the typed
+        // component check below is the second, platform-native barrier.
+        if crate::project_fs::path_violation(&self.path).is_some() {
+            return Err(input_invalid("path-traversal", None));
+        }
+        let logical = std::path::Path::new(&self.path);
+        if logical.is_absolute()
+            || logical.components().any(|component| {
+                matches!(
+                    component,
+                    std::path::Component::Prefix(_)
+                        | std::path::Component::RootDir
+                        | std::path::Component::ParentDir
+                )
+            })
         {
-            // Traversal and absolute paths are refused, never rewritten.
             return Err(input_invalid("path-traversal", None));
         }
         if let Some(identity) = &self.identity {
@@ -338,7 +354,7 @@ mod tests {
             "identity": "dev.lekalo.search-inputs@0.8.0",
             "projectId": "planner",
             "inputs": [
-                {"kind": "trace", "path": ".ai-factory/traces/plan.json"},
+                {"kind": "trace", "path": "ai-factory/traces/plan.json"},
                 {"kind": "effects", "path": "evidence/effects.json",
                  "identity": "dev.lekalo.effects@0.2.16",
                  "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"}
@@ -365,6 +381,28 @@ mod tests {
             SearchInputs::parse(ok(r#"{"kind":"trace","path":"../escape"}"#).as_bytes()).is_err()
         );
         assert!(SearchInputs::parse(ok(r#"{"kind":"trace","path":"/abs"}"#).as_bytes()).is_err());
+        // Windows drive-absolute and UNC spellings never admit: the read
+        // site would discard the project root on `Path::join`.
+        assert!(SearchInputs::parse(
+            ok(r#"{"kind":"trace","path":"C:/tmp/evil.json"}"#).as_bytes()
+        )
+        .is_err());
+        assert!(
+            SearchInputs::parse(ok(r#"{"kind":"trace","path":"D:\\evil.json"}"#).as_bytes())
+                .is_err()
+        );
+        assert!(SearchInputs::parse(
+            ok(r#"{"kind":"trace","path":"\\\\host/share/x"}"#).as_bytes()
+        )
+        .is_err());
+        // URI-scheme and home-relative spellings are absolute forms too.
+        assert!(SearchInputs::parse(
+            ok(r#"{"kind":"trace","path":"file:///etc/passwd"}"#).as_bytes()
+        )
+        .is_err());
+        assert!(
+            SearchInputs::parse(ok(r#"{"kind":"trace","path":"~/escape"}"#).as_bytes()).is_err()
+        );
         assert!(SearchInputs::parse(ok(r#"{"kind":"who","path":"x"}"#).as_bytes()).is_err());
         let duplicated_inputs = r#"{"schemaVersion":"lekalo/search-inputs/v0.8.0","identity":"dev.lekalo.search-inputs@0.8.0","projectId":"planner","inputs":[{"kind":"trace","path":"a"},{"kind":"trace","path":"a"}]}"#;
         assert!(SearchInputs::parse(duplicated_inputs.as_bytes()).is_err());
