@@ -141,6 +141,7 @@ impl Writer {
     }
 
     /// The bound this writer enforces.
+    #[allow(dead_code)]
     #[cfg(test)]
     pub fn max_response_bytes(&self) -> usize {
         self.max_response_bytes
@@ -420,7 +421,7 @@ mod tests {
         assert_eq!(document["error"]["data"]["code"], "LEK-MCP-005");
         // The refusal frame itself stays under the bound and never
         // carries the refused payload.
-        assert!(written.len() + 1 <= 256, "{}", written.len());
+        assert!(written.len() < 256, "{}", written.len());
         assert!(!written.contains("xxxxxxxxxx"));
     }
 

@@ -189,7 +189,9 @@ mod tests {
         let root = temporary.path();
         let outside = tempfile::tempdir().expect("outside tempdir");
         std::fs::write(outside.path().join("full.trace.json"), b"{}").expect("outside file");
-        // The parent directory `traces` itself is a link to outside.
+        // The parent directory `traces` itself is a link to outside. The
+        // junction spellings are test-only; the production seam checks the
+        // same reparse-point attribute per component.
         #[cfg(unix)]
         {
             std::os::unix::fs::symlink(outside.path(), root.join("traces")).expect("symlink");
@@ -197,36 +199,11 @@ mod tests {
         #[cfg(windows)]
         {
             std::os::windows::fs::symlink_dir(outside.path(), root.join("traces"))
-                .or_else(|_| {
-                    // Junction fallback via the mkbuilt-in command is not
-                    // admitted; the developer junction probe (dev mode)
-                    // covers the same attribute check.
-                    junction_fallback(outside.path(), &root.join("traces"))
-                })
-                .expect("junction");
+                .expect("directory symlink (developer mode)");
         }
         assert_eq!(
             read_admitted(root, "traces/full.trace.json", 16),
             Err(ReadRefusal::Link)
         );
-    }
-
-    #[cfg(windows)]
-    fn junction_fallback(target: &Path, link: &Path) -> std::io::Result<()> {
-        // `mklink /J` needs cmd; New-Item needs powershell. Both spawn a
-        // shell, which this seam never does in production; the test-only
-        // helper is allowed to, but a plain directory symlink is tried
-        // first above.
-        let output = std::process::Command::new("cmd")
-            .args(["/c", "mklink"])
-            .arg("/J")
-            .arg(link)
-            .arg(target)
-            .output()?;
-        if output.status.success() {
-            Ok(())
-        } else {
-            Err(std::io::Error::other("junction creation failed"))
-        }
     }
 }

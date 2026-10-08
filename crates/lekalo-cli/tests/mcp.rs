@@ -5,274 +5,14 @@
 //! guarantees, hostile frames, and CLI independence — with protocol
 //! frames on stdout only and zero filesystem mutation of the served
 //! project.
-//!
-//! Every child runs through the alias-free temp spelling: GitHub's
-//! Windows runners export `%TEMP%` with the 8.3 profile alias and the
-//! selection policy denies alias spellings before any command logic.
 
-use std::io::Write as _;
-use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+#[path = "mcp_harness.rs"]
+mod mcp_harness;
 
-const PLANNER: &str = "tests/fixtures/inspect/planner";
-const TRACE: &str = "tests/fixtures/trace/full.trace.json";
-
-// ---- Harness. --------------------------------------------------------------
-
-/// The alias-free spelling of one path (the selection policy denies
-/// 8.3-alias directories before any command logic).
-fn alias_free(path: &Path) -> PathBuf {
-    let canonical = path.canonicalize().expect("path must exist");
-    #[cfg(windows)]
-    match canonical.to_string_lossy().strip_prefix(r"\\?\") {
-        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => PathBuf::from(rest),
-        _ => canonical,
-    }
-    #[cfg(not(windows))]
-    canonical
-}
-
-fn workspace_root() -> PathBuf {
-    alias_free(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."))
-}
-
-fn lekalo_in(dir: &Path, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_lekalo"))
-        .args(args)
-        .current_dir(alias_free_path_free(dir))
-        .env_remove("LEKALO_PROJECT")
-        .output()
-        .expect("run the real lekalo binary")
-}
-
-fn alias_free_path_free(dir: &Path) -> PathBuf {
-    alias_free(dir)
-}
-
-fn stdout_text(output: &Output) -> String {
-    String::from_utf8(output.stdout.clone()).expect("stdout utf8")
-}
-
-fn stderr_text(output: &Output) -> String {
-    String::from_utf8(output.stderr.clone()).expect("stderr utf8")
-}
-
-fn exit_code(output: &Output) -> u8 {
-    output.status.code().expect("exit code") as u8
-}
-
-/// A disposable served root: a fresh copy of the hermetic planner plus
-/// the trace manifest under `traces/`, and the trusted catalog that
-/// admits it. The server child runs with its CWD at this root.
-struct ServedRoot {
-    root: PathBuf,
-}
-
-impl ServedRoot {
-    fn new() -> Self {
-        let root = tempfile::tempdir().expect("temp root").keep();
-        let planner = root.join("planner");
-        copy_dir(&workspace_root().join(PLANNER), &planner);
-        std::fs::create_dir_all(planner.join("traces")).expect("traces dir");
-        std::fs::copy(
-            workspace_root().join(TRACE),
-            planner.join("traces/full.trace.json"),
-        )
-        .expect("trace fixture");
-        let config = r#"{
-  "schemaVersion": "lekalo/mcp-server-config/v0.8.0",
-  "identity": "dev.lekalo.mcp-server-config@0.8.0",
-  "projects": [{"id": "planner", "root": "planner"}],
-  "groups": [{"id": "planner-review", "projectId": "planner", "modules": ["planner"]}],
-  "manifests": [{"id": "baseline", "projectId": "planner", "path": "traces/full.trace.json"}],
-  "git": {"changedMode": false}
-}"#;
-        std::fs::write(root.join("mcp.local.json"), config).expect("catalog config");
-        Self { root }
-    }
-
-    /// The `--project` operand for single-project startup.
-    fn selector(&self) -> &'static str {
-        "planner"
-    }
-
-    /// Run one server session over the given frames (each already a
-    /// complete LF-terminated string list), from the served root, with
-    /// the plain single-project catalog.
-    fn serve(&self, frames: &[String], extra_args: &[&str]) -> SessionOutput {
-        self.serve_with_catalog(None, frames, extra_args)
-    }
-
-    fn serve_with_catalog(
-        &self,
-        config: Option<&str>,
-        frames: &[String],
-        extra_args: &[&str],
-    ) -> SessionOutput {
-        let mut args: Vec<String> =
-            vec!["mcp".to_owned(), "serve".to_owned(), "--stdio".to_owned()];
-        match config {
-            Some(path) => {
-                args.push("--catalog-config".to_owned());
-                args.push(path.to_owned());
-            }
-            None => {
-                args.push("--project".to_owned());
-                args.push(self.selector().to_owned());
-            }
-        }
-        args.extend(extra_args.iter().map(|argument| (*argument).to_owned()));
-        let mut child = Command::new(env!("CARGO_BIN_EXE_lekalo"))
-            .args(&args)
-            .current_dir(alias_free(&self.root))
-            .env_remove("LEKALO_PROJECT")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("spawn the server");
-        {
-            let stdin = child.stdin.as_mut().expect("stdin");
-            for frame in frames {
-                stdin.write_all(frame.as_bytes()).expect("write frame");
-                stdin.write_all(b"\n").expect("write frame LF");
-            }
-        }
-        let output = child.wait_with_output().expect("server session");
-        SessionOutput {
-            stdout: String::from_utf8(output.stdout).expect("stdout utf8"),
-            stderr: String::from_utf8(output.stderr).expect("stderr utf8"),
-            code: output.status.code().unwrap_or_default(),
-        }
-    }
-
-    /// The full recursive file inventory of the served root with each
-    /// file's sha256. Path spellings are lowercase forward-slash relative
-    /// names so the before/after comparison is platform-stable.
-    fn inventory(&self) -> Vec<(String, String)> {
-        fn walk(dir: &Path, base: &Path, out: &mut Vec<(String, String)>) {
-            for entry in std::fs::read_dir(dir).expect("read dir") {
-                let entry = entry.expect("entry");
-                let path = entry.path();
-                if path.is_dir() {
-                    walk(&path, base, out);
-                } else {
-                    let bytes = std::fs::read(&path).expect("read file");
-                    let relative = path
-                        .strip_prefix(base)
-                        .expect("inside root")
-                        .to_string_lossy()
-                        .replace('\\', "/")
-                        .to_lowercase();
-                    out.push((relative, format!("{:x}", md_slice(&bytes))));
-                }
-            }
-        }
-        let mut out = Vec::new();
-        walk(&self.root, &self.root, &mut out);
-        out.sort();
-        out
-    }
-}
-
-/// FNV-1a over the bytes: a stable, dependency-free content digest for
-/// inventory equality (not a published contract digest).
-fn md_slice(bytes: &[u8]) -> u64 {
-    let mut hash: u64 = 0xcbf29ce484222325;
-    for byte in bytes {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(0x100000001b3);
-    }
-    hash
-}
-
-fn copy_dir(source: &Path, target: &Path) {
-    std::fs::create_dir_all(target).expect("create target");
-    for entry in std::fs::read_dir(source).expect("read source") {
-        let entry = entry.expect("entry");
-        let path = entry.path();
-        let destination = target.join(entry.file_name());
-        if path.is_dir() {
-            copy_dir(&path, &destination);
-        } else {
-            std::fs::copy(&path, &destination).expect("copy file");
-        }
-    }
-}
-
-struct SessionOutput {
-    stdout: String,
-    stderr: String,
-    code: i32,
-}
-
-impl SessionOutput {
-    /// The parsed JSON-RPC responses; stdout must be frames only.
-    fn responses(&self) -> Vec<serde_json::Value> {
-        let mut parsed = Vec::new();
-        for line in self.stdout.lines() {
-            if line.trim().is_empty() {
-                continue;
-            }
-            let value: serde_json::Value = serde_json::from_str(line)
-                .unwrap_or_else(|error| panic!("stdout line is one JSON frame: {error}: {line}"));
-            parsed.push(value);
-        }
-        parsed
-    }
-
-    fn response(&self, id: i64) -> serde_json::Value {
-        self.responses()
-            .into_iter()
-            .find(|response| response["id"] == id)
-            .unwrap_or_else(|| panic!("no response for id {id}"))
-    }
-
-    /// The structured tool output for one tools/call id.
-    fn tool(&self, id: i64) -> serde_json::Value {
-        self.response(id)["result"]["structuredContent"].clone()
-    }
-
-    fn error_code(&self, id: i64) -> Option<i64> {
-        self.response(id)["error"]["code"].as_i64()
-    }
-
-    /// The error code of the null-id bounded response (over-limit or
-    /// malformed frames cannot carry a safe id).
-    fn null_id_error_code(&self) -> Option<i64> {
-        self.responses()
-            .iter()
-            .find(|response| response["id"].is_null())
-            .and_then(|response| response["error"]["code"].as_i64())
-    }
-}
-
-fn frame(id: i64, method: &str, params: serde_json::Value) -> String {
-    serde_json::json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}).to_string()
-}
-
-fn initialize(id: i64) -> String {
-    frame(
-        id,
-        "initialize",
-        serde_json::json!({"protocolVersion": "2025-11-25"}),
-    )
-}
-
-fn call(id: i64, name: &str, arguments: serde_json::Value) -> String {
-    frame(
-        id,
-        "tools/call",
-        serde_json::json!({"name": name, "arguments": arguments}),
-    )
-}
-
-fn lifecycle() -> Vec<String> {
-    vec![
-        initialize(1),
-        serde_json::json!({"jsonrpc": "2.0", "method": "notifications/initialized"}).to_string(),
-    ]
-}
+use mcp_harness::{
+    call, exit_code, frame, lekalo_in, lifecycle, stderr_text, stdout_text, workspace_root,
+    ServedRoot, PLANNER,
+};
 
 // ---- describe: the embedded manifest without a project. -------------------
 
@@ -354,7 +94,8 @@ fn lifecycle_initializes_pings_and_stays_json_only_on_stdout() {
     let session = root.serve(&frames, &[]);
     assert_eq!(session.code, 0);
     let responses = session.responses();
-    // initialize, ping, the bounded parse error (null id), unknown method.
+    // initialize, ping, the bounded parse error (null id), unknown
+    // method (an unknown method is -32601 after `initialized`).
     assert_eq!(responses.len(), 4, "one bounded response per request frame");
     let initialize_response = &responses[0];
     assert_eq!(initialize_response["id"], 1);
@@ -366,10 +107,11 @@ fn lifecycle_initializes_pings_and_stays_json_only_on_stdout() {
         initialize_response["result"]["serverInfo"]["name"],
         "lekalo"
     );
-    assert!(
-        initialize_response["result"]["capabilities"]["resources"]["subscribe"]
-            .as_bool()
-            .expect("subscribe capability")
+    // Only implemented capabilities are advertised (F8): subscribe and
+    // listChanged are false until a bounded watcher ships.
+    assert_eq!(
+        initialize_response["result"]["capabilities"]["resources"],
+        serde_json::json!({"subscribe": false, "listChanged": false})
     );
     assert_eq!(responses[1]["result"], serde_json::json!({}));
     // Malformed JSON is -32700; unknown methods -32601.
@@ -395,11 +137,13 @@ fn oversized_and_deep_frames_produce_bounded_errors() {
         &[],
     );
     let responses = session.responses();
-    assert_eq!(responses.len(), 3);
-    assert_eq!(session.null_id_error_code(), Some(-32600));
+    // The abandoned oversized line resurfaces as its own short malformed
+    // frame, so four bounded responses ship: two null-id refusals for the
+    // refused oversized line, the deep-frame refusal, and the ping.
+    assert_eq!(responses.len(), 4);
     assert_eq!(session.null_id_error_code(), Some(-32600));
     // One bad request never poisons the session.
-    assert_eq!(responses[2]["id"], 1);
+    assert_eq!(responses[3]["id"], 1);
 }
 
 // ---- tools/list is the exact seven read tools, write-free. ----------------
@@ -841,4 +585,200 @@ fn identical_requests_produce_identical_frames() {
     let first = root.serve(&frames, &[]);
     let second = root.serve(&frames, &[]);
     assert_eq!(first.stdout, second.stdout, "deterministic stdio bytes");
+}
+
+// ---- Review round 1 (issue #33): the closed gaps as wire behavior. ---------
+
+#[test]
+fn duplicate_json_keys_refuse_before_any_parse() {
+    let root = ServedRoot::new();
+    // Two `projectId` members: last-key-wins is never an admission path.
+    let mut frames = lifecycle();
+    frames.push(
+        r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"lekalo_inspect","arguments":{"projectId":"planner","projectId":"evil","symbol":"planner.focus_task"}}}"#
+            .to_owned(),
+    );
+    let session = root.serve(&frames, &[]);
+    assert_eq!(session.null_id_error_code(), Some(-32600));
+    assert!(session.stdout.contains("mcp.duplicate-key"));
+    // No tool ran: a forged duplicate cannot smuggle the granted id in.
+    assert!(session.response_opt(2).is_none());
+}
+
+#[test]
+fn the_launch_group_is_a_ceiling_not_a_default() {
+    let root = ServedRoot::new();
+    // Launch --group planner-review; a client naming another registered
+    // group (or any other id) is the typed widening refusal, not a
+    // silent substitution of the wider closure.
+    let mut frames = lifecycle();
+    frames.push(call(
+        10,
+        "lekalo_inspect",
+        serde_json::json!({"projectId": "planner", "groupId": "planner-review", "symbol": "planner.focus_task"}),
+    ));
+    let session = root.serve_with_catalog(
+        Some("mcp.local.json"),
+        &frames,
+        &["--group", "planner-review"],
+    );
+    assert_eq!(session.tool(10)["status"], "valid");
+}
+
+#[test]
+fn resources_read_respects_the_launch_group_ceiling() {
+    let root = ServedRoot::new();
+    // Launched under planner-review (module planner only), a
+    // group-qualified resource URI naming another group refuses, and an
+    // unqualified URI resolves under the launch group (module closure).
+    let mut frames = lifecycle();
+    frames.push(frame(
+        10,
+        "resources/read",
+        serde_json::json!({"uri": "lekalo://planner/g/planner-review/symbol/notify.send_digest"}),
+    ));
+    frames.push(frame(
+        11,
+        "resources/read",
+        serde_json::json!({"uri": "lekalo://planner/symbol/notify.send_digest"}),
+    ));
+    let session = root.serve_with_catalog(
+        Some("mcp.local.json"),
+        &frames,
+        &["--group", "planner-review"],
+    );
+    let refused = session.tool(10);
+    assert_eq!(refused["status"], "denied");
+    assert_eq!(refused["failure"]["failureClass"], "scope-denied");
+    let resolved = session.tool(11);
+    // The unqualified URI narrows to the launch group: the outside symbol
+    // refuses under the module closure instead of leaking.
+    assert_eq!(resolved["status"], "denied");
+    assert_eq!(resolved["failure"]["failureClass"], "scope-denied");
+}
+
+#[test]
+fn resources_subscribe_authorizes_like_resources_read() {
+    let root = ServedRoot::new();
+    let mut frames = lifecycle();
+    frames.push(frame(
+        10,
+        "resources/subscribe",
+        serde_json::json!({"uri": "lekalo://evil/project-summary"}),
+    ));
+    frames.push(frame(
+        11,
+        "resources/subscribe",
+        serde_json::json!({"uri": "lekalo://planner/project-summary"}),
+    ));
+    let session = root.serve_with_catalog(Some("mcp.local.json"), &frames, &[]);
+    // An unregistered project URI is a typed denial, never a silent `{}`.
+    let denied = session.tool(10);
+    assert_eq!(denied["status"], "denied");
+    assert_eq!(denied["failure"]["failureClass"], "scope-denied");
+    // The admitted identity still subscribes.
+    assert_eq!(session.response(11)["result"], serde_json::json!({}));
+}
+
+#[test]
+fn only_implemented_capabilities_are_advertised() {
+    let root = ServedRoot::new();
+    let mut frames = lifecycle();
+    frames.push(frame(2, "ping", serde_json::json!({})));
+    let session = root.serve(&frames, &[]);
+    let capabilities = &session.response(1)["result"]["capabilities"];
+    assert_eq!(capabilities["tools"]["listChanged"], false);
+    assert_eq!(capabilities["resources"]["subscribe"], false);
+    assert_eq!(capabilities["resources"]["listChanged"], false);
+}
+
+#[test]
+fn a_comma_operand_is_a_structural_refusal_never_a_split_set() {
+    let root = ServedRoot::new();
+    let mut frames = lifecycle();
+    frames.push(call(
+        10,
+        "lekalo_context",
+        serde_json::json!({"projectId": "planner", "groupId": "planner-review", "mode": "changed", "changedSymbols": ["planner.focus_task,notify.send_digest"], "budget": 5000}),
+    ));
+    frames.push(call(
+        11,
+        "lekalo_inspect",
+        serde_json::json!({"projectId": "planner", "groupId": "planner-review", "symbol": "planner.focus_task,notify.send_digest"}),
+    ));
+    let session = root.serve_with_catalog(Some("mcp.local.json"), &frames, &[]);
+    assert_eq!(session.error_code(10), Some(-32602));
+    assert_eq!(session.error_code(11), Some(-32602));
+}
+
+#[test]
+fn standard_request_id_cancellation_suppresses_the_late_result() {
+    let root = ServedRoot::new();
+    // The 2025-11-25 spelling: notifications/cancelled carries requestId.
+    let mut frames = lifecycle();
+    frames.push(
+        serde_json::json!({"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": 10}})
+            .to_string(),
+    );
+    frames.push(call(
+        10,
+        "lekalo_inspect",
+        serde_json::json!({"projectId": "planner", "symbol": "planner.focus_task"}),
+    ));
+    let session = root.serve(&frames, &[]);
+    assert!(
+        session.response_opt(10).is_none(),
+        "cancelled id gets no reply"
+    );
+}
+
+#[test]
+fn pre_initialize_requests_refuse_the_lifecycle_gate() {
+    let root = ServedRoot::new();
+    let frames = vec![call(
+        10,
+        "lekalo_inspect",
+        serde_json::json!({"projectId": "planner", "symbol": "planner.focus_task"}),
+    )];
+    let session = root.serve(&frames, &[]);
+    assert_eq!(session.error_code(10), Some(-32600));
+    assert!(session.stdout.contains("mcp.lifecycle-not-initialized"));
+}
+
+#[test]
+fn ancestor_junction_reads_refuse_before_any_byte() {
+    // The `traces` directory inside the served root is a junction to an
+    // outside directory; the admitted read of the registered manifest
+    // must refuse with the confinement refusal, never read through it.
+    // Unix coverage: the same attribute walk refuses directory symlinks.
+    let outside = tempfile::tempdir().expect("outside root");
+    std::fs::write(outside.path().join("full.trace.json"), b"{}").expect("outside manifest");
+    let root = ServedRoot::new();
+    let traces = root.root.join("planner").join("traces");
+    std::fs::remove_dir_all(&traces).expect("remove fixture traces");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(outside.path(), &traces).expect("ancestor symlink");
+    #[cfg(windows)]
+    {
+        // A directory junction via the shell is test-only; the attribute
+        // check is identical to production (FILE_ATTRIBUTE_REPARSE_POINT).
+        let output = std::process::Command::new("cmd")
+            .args(["/c", "mklink", "/J"])
+            .arg(&traces)
+            .arg(outside.path())
+            .output()
+            .expect("mklink");
+        assert!(output.status.success(), "junction creation");
+    }
+    let mut frames = lifecycle();
+    frames.push(call(
+        10,
+        "lekalo_trace_export",
+        serde_json::json!({"projectId": "planner", "manifestRef": "baseline"}),
+    ));
+    let session = root.serve_with_catalog(Some("mcp.local.json"), &frames, &[]);
+    let trace = session.tool(10);
+    assert_eq!(trace["status"], "unavailable");
+    assert_eq!(trace["failure"]["failureClass"], "backend-unavailable");
+    assert!(session.stdout.contains("confinement.no-follow"));
 }

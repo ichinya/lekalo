@@ -4,10 +4,15 @@
 //! After `initialize`/`notifications/initialized`, the served methods are
 //! ping, tools/list, tools/call, resources/list, resources/templates/list,
 //! resources/read, resources/subscribe, and resources/unsubscribe. Only
-//! implemented capabilities are advertised: tools plus resource
-//! subscribe/listChanged; no prompts, sampling, elicitation, tasks, HTTP
-//! transport, or client-driven root expansion. A timeout produces a typed
-//! bounded tool error while the client is still waiting; a cancellation
+//! implemented capabilities are advertised: tools only, with resource
+//! subscribe/listChanged false (F8) until a bounded watcher ships; no
+//! prompts, sampling, elicitation, tasks, HTTP transport, or client-driven
+//! root expansion. The launcher `--group` is the disclosure ceiling of
+//! every tool call and resource read (F3/F4); inbound frames refuse
+//! duplicate keys (F10); the lifecycle is enforced before any other
+//! method (F12). A timeout produces a typed bounded tool error while the
+//! client is still waiting and the abandoned worker keeps holding its
+//! concurrency slot until it finishes (F14/F19); a cancellation
 //! notification suppresses the late success and never gets a reply.
 
 use std::collections::BTreeSet;
@@ -26,9 +31,16 @@ use super::execution;
 use super::stdio::log_event;
 use super::stdio::Writer;
 
+/// The slot-ownership states of one dispatched worker (`SLOT_BUSY` while
+/// the worker still holds its concurrency slot; `SLOT_RELEASED` once the
+/// dispatcher or the worker handed it back — exactly once).
+const SLOT_BUSY: usize = 0;
+const SLOT_RELEASED: usize = 1;
+
 /// The JSON-RPC protocol codes this server uses.
 const PARSE_ERROR: i64 = -32700;
 const INVALID_REQUEST: i64 = -32600;
+const METHOD_NOT_FOUND: i64 = -32601;
 const INVALID_PARAMS: i64 = -32602;
 
 /// One live server session: the immutable catalog plus the mutable
@@ -162,6 +174,11 @@ pub fn serve(session: Arc<Session>) {
             continue;
         }
         if let Some(response) = route(&session, &incoming) {
+            // A cancelled request id ships no reply at all (the worker
+            // already ran; the late envelope is suppressed here).
+            if response.is_null() {
+                continue;
+            }
             // The single outbound chokepoint: a routed result is the
             // success member; the closed protocol-error marker becomes a
             // JSON-RPC error frame (measure-and-substitute happens in the
@@ -234,7 +251,7 @@ fn route(session: &Arc<Session>, incoming: &Incoming) -> Option<Value> {
         "resources/read" => Some(resources_read(session, incoming)),
         "resources/subscribe" => Some(resources_subscribe(session, incoming)),
         "resources/unsubscribe" => Some(resources_unsubscribe(session, incoming)),
-        _ => None,
+        _ => Some(protocol_error_value(METHOD_NOT_FOUND, "method-not-found")),
     }
 }
 
@@ -266,8 +283,7 @@ fn tools_list() -> Value {
                 table
                     .iter()
                     .find(|(name, _)| *name == slug)
-                    .map(|(_, bytes)| serde_json::from_slice::<Value>(bytes).ok())
-                    .flatten()
+                    .and_then(|(_, bytes)| serde_json::from_slice::<Value>(bytes).ok())
                     .unwrap_or(Value::Null)
             };
             let input_schema = find(&lekalo_core::mcp::schemas::INPUT_SCHEMAS);
@@ -372,23 +388,27 @@ fn tools_call(session: &Arc<Session>, incoming: &Incoming) -> Value {
     let worker_session = Arc::clone(session);
     let worker_request = request.clone();
     let (sender, receiver) = mpsc::channel();
-    // The detached flag marks a timed-out worker: it keeps executing, so
-    // it must keep holding its concurrency slot (F14/F19).
-    let detached_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let worker_detached = std::sync::Arc::clone(&detached_flag);
+    // Slot ownership (F14/F19): the dispatcher and the worker coordinate
+    // the single release of the concurrency slot through one flag.
+    // `SLOT_BUSY` -> `SLOT_RELEASED` happens exactly once: a completed
+    // outcome releases on the dispatcher; a timed-out outcome leaves the
+    // slot owned by the worker, which keeps executing and releases on
+    // completion.
+    let slot_released = Arc::new(AtomicUsize::new(SLOT_BUSY));
+    let worker_released = Arc::clone(&slot_released);
     let spawned = std::thread::Builder::new()
         .name("lekalo-mcp-worker".to_owned())
         .spawn(move || {
             let output = execution::execute(&worker_session.catalog, &worker_request);
-            if worker_detached.load(Ordering::SeqCst) {
-                // The dispatcher already answered the timeout; the
-                // abandoned worker releases its own slot on completion.
+            let _ = sender.send(output);
+            // Once the result is handed off, this worker is abandoned
+            // only when the dispatcher timed out without taking it (and
+            // so never released). Release the slot exactly once, if the
+            // dispatcher did not already.
+            if worker_released.swap(SLOT_RELEASED, Ordering::SeqCst) == SLOT_BUSY {
                 worker_session.live.fetch_sub(1, Ordering::SeqCst);
                 worker_session.detached.fetch_sub(1, Ordering::SeqCst);
-            } else {
-                worker_session.live.fetch_sub(1, Ordering::SeqCst);
             }
-            let _ = sender.send(output);
         });
     if spawned.is_err() {
         // A spawn failure frees the slot it reserved.
@@ -421,12 +441,17 @@ fn tools_call(session: &Arc<Session>, incoming: &Incoming) -> Value {
         }
     };
     if outcome.is_none() {
-        // Timeout: the worker is abandoned while still running; it keeps
-        // its slot and decrements the counters itself on completion.
-        detached_flag.store(true, Ordering::SeqCst);
+        // Timeout: the worker keeps executing, so it keeps its slot and
+        // releases on completion (its swap still observes SLOT_BUSY,
+        // because this arm does not release).
         session.detached.fetch_add(1, Ordering::SeqCst);
     } else {
-        session.live.fetch_sub(1, Ordering::SeqCst);
+        // Completed (or the sender dropped): the dispatcher owns the
+        // release; the worker's later swap observes SLOT_RELEASED and
+        // never double-fires.
+        if slot_released.swap(SLOT_RELEASED, Ordering::SeqCst) == SLOT_BUSY {
+            session.live.fetch_sub(1, Ordering::SeqCst);
+        }
     }
     // The late-success suppression: a cancelled request id never
     // receives the completed envelope, and a timed-out worker is
@@ -498,7 +523,7 @@ fn protocol_error_value(code: i64, message: &str) -> Value {
 /// is parsed once into a `serde_json::Value` (the single serialization
 /// chokepoint in the writer measures the whole encoded frame).
 fn tool_result(_id: &Value, envelope: &str, is_error: bool) -> Value {
-    let structured: Value = serde_json::from_str(envelope).unwrap_or_else(|_| Value::Null);
+    let structured: Value = serde_json::from_str(envelope).unwrap_or(Value::Null);
     let text = serde_json::to_string(&structured).unwrap_or_else(|_| "\"\"".to_owned());
     serde_json::json!({
         "content": [{"type": "text", "text": text}],
