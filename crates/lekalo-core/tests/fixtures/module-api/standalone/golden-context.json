@@ -3,7 +3,7 @@
   "budget": 4000,
   "consumer": "planner",
   "dependencies": [],
-  "digest": "sha256:783a868ab8e21f269afab3157d3d9fd49247e6e5e4f6722824d46d88d6424cb3",
+  "digest": "sha256:daefac2728ba56f0e0582610b48cc93361a630b0c487f00163eb090278ac1955",
   "estimator": {
     "id": "module-context-estimator",
     "recipe": "public-facts-chars4/1",
@@ -43,7 +43,7 @@
     "module": "tasks",
     "project": "tasks"
   },
-  "producerDigest": "sha256:0e258ab140e6a10bdfd4b87fb6ee84060c7415c0dc686225a59d7a4f7084c0aa",
+  "producerDigest": "sha256:dc76bd8b92a0ebbe99a8ef42a9920f43dda93efa17ccc51d0df72b2393e4e9de",
   "requiredCost": 101,
   "schemaVersion": "lekalo/module-consumer-context/v0.8.0",
   "selectedCost": 101

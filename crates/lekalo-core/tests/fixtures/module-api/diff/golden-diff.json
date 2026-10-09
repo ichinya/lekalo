@@ -1,1 +1,70 @@
-{"moduleApiDiff":{"after":{"apiVersion":"1.2.0","digest":"sha256:eb4533a82ff9b225e5cd2664656adde78327fef164cc23b045e1a910bf10033d","module":"tasks","project":"tasks"},"before":{"apiVersion":"1.2.0","digest":"sha256:0e258ab140e6a10bdfd4b87fb6ee84060c7415c0dc686225a59d7a4f7084c0aa","module":"tasks","project":"tasks"},"changes":[{"after":null,"before":"state!:tasks.task_state","class":"source-breaking","export":"tasks.task_view","member":"state","reason":"field-removed"}],"consumers":[{"changes":["tasks.task_view"],"consumer":"planner","policy":"version-range","presentIn":"both","reason":"policy-incompatible","status":"affected","witness":["planner::tasks.task_view"]},{"changes":[],"consumer":"provider","policy":"exact-version","presentIn":"both","reason":null,"status":"unaffected","witness":[]}],"coverage":{"known":1,"possible":["planner","provider"],"unknownReasons":["external-callers-unknown"]},"identity":"dev.lekalo.module-api-diff@0.8.0","schemaVersion":"lekalo/module-api-diff/v0.8.0","verdict":"policy-denied","versionPolicy":{"actual":"1.2.0","decision":"violation","detail":"bump-missing","expected":"major"}},"status":"valid"}
+{
+  "moduleApiDiff": {
+    "after": {
+      "apiVersion": "1.2.0",
+      "digest": "sha256:c239085eb2f6ebe05e1e44a3dca9152ef88c594d30c5089f8f5008bda6122888",
+      "module": "tasks",
+      "project": "tasks"
+    },
+    "before": {
+      "apiVersion": "1.2.0",
+      "digest": "sha256:dc76bd8b92a0ebbe99a8ef42a9920f43dda93efa17ccc51d0df72b2393e4e9de",
+      "module": "tasks",
+      "project": "tasks"
+    },
+    "changes": [
+      {
+        "after": null,
+        "before": "state!:tasks.task_state",
+        "class": "source-breaking",
+        "export": "tasks.task_view",
+        "member": "state",
+        "reason": "field-removed"
+      }
+    ],
+    "consumers": [
+      {
+        "changes": [
+          "tasks.task_view"
+        ],
+        "consumer": "planner",
+        "policy": "version-range",
+        "presentIn": "both",
+        "reason": "policy-accepted",
+        "status": "affected",
+        "witness": [
+          "planner::tasks.task_view"
+        ]
+      },
+      {
+        "changes": [],
+        "consumer": "provider",
+        "policy": "exact-version",
+        "presentIn": "both",
+        "reason": null,
+        "status": "unaffected",
+        "witness": []
+      }
+    ],
+    "coverage": {
+      "known": 1,
+      "possible": [
+        "planner",
+        "provider"
+      ],
+      "unknownReasons": [
+        "external-callers-unknown"
+      ]
+    },
+    "identity": "dev.lekalo.module-api-diff@0.8.0",
+    "schemaVersion": "lekalo/module-api-diff/v0.8.0",
+    "verdict": "breaking",
+    "versionPolicy": {
+      "actual": "1.2.0",
+      "decision": "violation",
+      "detail": "bump-missing",
+      "expected": "major"
+    }
+  },
+  "status": "valid"
+}

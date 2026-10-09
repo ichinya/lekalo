@@ -50,10 +50,10 @@
       ]
     }
   ],
-  "digest": "sha256:6caf6a60cb6ebf8f2fb37675f5fd007711aac7c2624e4ce65933b10cdda84a1c",
+  "digest": "sha256:6003d88da6b4849dab52057986c971cc1b5a8115ad39295291f4f89ce348afd9",
   "identity": "dev.lekalo.module-api-consumers@0.8.0",
   "pins": {
-    "apiDigest": "sha256:dce21400fb4e43b49ae062204b6d5b6e3a6cef4bcabe8a651f2552719a40d128",
+    "apiDigest": "sha256:dc76bd8b92a0ebbe99a8ef42a9920f43dda93efa17ccc51d0df72b2393e4e9de",
     "irDigest": "sha256:f60bad30f53d2b660eaeeafcc4cabb55a529f5baa0e69e7cf9a4160199a8614e",
     "modelVersion": "0.2.16",
     "project": "tasks"

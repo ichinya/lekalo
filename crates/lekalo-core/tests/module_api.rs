@@ -22,7 +22,6 @@ fn attachment(project: &str) -> Vec<u8> {
     std::fs::read(format!("{project}/module-api.json")).expect("attachment fixture")
 }
 
-const FIXTURES: &str = "tests/fixtures/module-api";
 const REFERENCE: &str = "tests/fixtures/module-api/reference/tasks";
 
 #[test]
@@ -52,8 +51,7 @@ fn visibility_probes_reject_unexported_cross_module_references() {
     let exported: Vec<&str> = verdict
         .evidence
         .iter()
-        .filter(|e| e.export.is_some())
-        .map(|e| e.export.as_deref().unwrap())
+        .filter_map(|e| e.export.as_deref())
         .collect();
     assert!(exported.contains(&"tasks.task_state"));
     assert!(verdict
@@ -245,7 +243,10 @@ fn public_diff_classifies_breaking_changes_and_affected_consumers() {
         Some(&consumers_after),
     )
     .expect("diff runs");
-    assert_eq!(report.verdict, "policy-denied");
+    // The planner range accepts the candidate resolution, so the verdict
+    // is the source break itself; strict denial rides the version-policy
+    // violation instead of a phantom consumer incompatibility.
+    assert_eq!(report.verdict, "breaking");
     // The exact breaking change.
     let removed = report
         .changes
@@ -263,6 +264,7 @@ fn public_diff_classifies_breaking_changes_and_affected_consumers() {
         .find(|c| c.consumer == "planner")
         .expect("planner");
     assert_eq!(planner.status, "affected");
+    assert_eq!(planner.reason.as_deref(), Some("policy-accepted"));
     let provider = report
         .consumers
         .iter()
@@ -314,8 +316,6 @@ fn public_context_needs_only_the_bundle() {
     .expect("capsule");
     assert_eq!(capsule.digest, again.digest);
     // Exact selectors only: no short names, no duplicates, bounded budget.
-    let compilation = ();
-    let _ = compilation;
     assert!(plan_consumer_context(&bundle, "planner", &["tasks.task".to_owned()], 4000).is_err());
     assert!(plan_consumer_context(
         &bundle,
@@ -350,16 +350,26 @@ fn version_policy_evaluates_bumps_independently() {
     let v = |text: &str| ApiVersion::parse(text).expect("version");
     // Stable majors: breaking demands major; satisfied major is compliant.
     assert_eq!(
-        RequiredBump::evaluate(Some(&v("2.0.0")), Some(&v("2.0.0")), true, false),
+        RequiredBump::evaluate(Some(&v("2.0.0")), Some(&v("2.0.0")), true, true, false),
         RequiredBump::Major
     );
     assert_eq!(
-        RequiredBump::evaluate(Some(&v("2.0.0")), Some(&v("3.0.0")), true, false),
+        RequiredBump::evaluate(Some(&v("2.0.0")), Some(&v("3.0.0")), true, true, false),
         RequiredBump::None
     );
     // Pre-1.0 pins minor-breaking behavior explicitly.
     assert_eq!(
-        RequiredBump::evaluate(Some(&v("0.3.0")), Some(&v("0.3.0")), true, false),
+        RequiredBump::evaluate(Some(&v("0.3.0")), Some(&v("0.3.0")), true, true, false),
+        RequiredBump::Minor
+    );
+    // Identical bundles never demand a bump (finding 9).
+    assert_eq!(
+        RequiredBump::evaluate(Some(&v("1.2.0")), Some(&v("1.2.0")), false, false, false),
+        RequiredBump::None
+    );
+    // Additive surface on stable majors needs a minor, not a patch (finding 11).
+    assert_eq!(
+        RequiredBump::evaluate(Some(&v("1.2.0")), Some(&v("1.2.1")), true, false, true),
         RequiredBump::Minor
     );
 }

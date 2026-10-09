@@ -1,7 +1,7 @@
 {
   "apiVersion": "1.2.0",
   "consumer": "planner",
-  "digest": "sha256:b721c19012229684d651c0183982ec4a234bb4675e3810379c2286a7162da259",
+  "digest": "sha256:9a91e72dc04cfffcc57fbec9ef3a160dbe5d86737d86fc19b0e3dc454f38c3b7",
   "identity": "dev.lekalo.module-api-lock@0.8.0",
   "policy": {
     "lower": "1.0.0",
