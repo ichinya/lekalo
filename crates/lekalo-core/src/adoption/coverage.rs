@@ -19,16 +19,22 @@ use super::wire::{
 use crate::observed::types::{BindingStatus, ObservedIndex};
 use crate::result::DomainResult;
 
-/// The executed-verification provenance of one coverage join: the
-/// sorted digests of the completed adoption apply/confirmation receipts
-/// recorded under the project's receipt home. Real executions only —
-/// every digest here names a persisted receipt document the rollback
-/// surface can still consume.
-fn executed_receipt_digests(ctx: &AdoptionContext) -> Vec<String> {
-    let mut digests = Vec::new();
+/// The executed-verification provenance available to one coverage join:
+/// every completed apply/confirmation receipt recorded under the
+/// project's receipt home, as its content digest plus the exact write
+/// paths it installed. Real executions only — every entry names a
+/// persisted receipt document the rollback surface can still consume,
+/// and undecodable or non-completed files are not provenance.
+struct ExecutedReceipt {
+    digest: String,
+    paths: BTreeSet<String>,
+}
+
+fn executed_receipts(ctx: &AdoptionContext) -> Vec<ExecutedReceipt> {
+    let mut receipts = Vec::new();
     let home = ctx.root.join(version::RECEIPTS_DIR);
     let Ok(heads) = std::fs::read_dir(&home) else {
-        return digests;
+        return receipts;
     };
     for head in heads.flatten() {
         let Ok(tails) = std::fs::read_dir(head.path()) else {
@@ -43,19 +49,59 @@ fn executed_receipt_digests(ctx: &AdoptionContext) -> Vec<String> {
                 continue;
             };
             let head_hex = head.file_name().to_string_lossy().to_string();
-            if head_hex.len() == 32
-                && hex.len() == 32
-                && head_hex
+            if head_hex.len() != 32
+                || hex.len() != 32
+                || !head_hex
                     .bytes()
                     .chain(hex.bytes())
                     .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
             {
-                digests.push(format!("sha256:{head_hex}{hex}"));
+                continue;
             }
+            let Ok(bytes) = std::fs::read(tail.path()) else {
+                continue;
+            };
+            let Ok(receipt) = wire::receipt_of_bytes(&bytes) else {
+                continue;
+            };
+            if receipt.outcome != "completed"
+                || (receipt.phase != "apply" && receipt.phase != "confirmation")
+            {
+                continue;
+            }
+            receipts.push(ExecutedReceipt {
+                digest: receipt.receipt,
+                paths: receipt
+                    .writes
+                    .iter()
+                    .map(|write| write.path.clone())
+                    .collect(),
+            });
         }
     }
-    digests.sort();
-    digests
+    receipts.sort_by(|left, right| left.digest.cmp(&right.digest));
+    receipts
+}
+
+/// The executed provenance of one coverage row: the receipt digests
+/// whose writes touched a path the row actually consumes — its observed
+/// location, candidates, linked tests, or (for rows joined from the
+/// conformed registry alone) the recorded source path (X11).
+fn row_verification(
+    row_paths: &BTreeSet<String>,
+    receipts: &[ExecutedReceipt],
+) -> Option<String> {
+    let mut joined: BTreeSet<String> = BTreeSet::new();
+    for receipt in receipts {
+        if receipt.paths.iter().any(|path| row_paths.contains(path)) {
+            joined.insert(receipt.digest.clone());
+        }
+    }
+    if joined.is_empty() {
+        None
+    } else {
+        Some(joined.into_iter().collect::<Vec<_>>().join(","))
+    }
 }
 
 /// Produce the coverage join for exactly one selected scope.
@@ -124,7 +170,7 @@ pub fn coverage(
         .unwrap_or_default();
     let mut rows = Vec::new();
     let mut gaps = Vec::new();
-    let receipt_digests = executed_receipt_digests(ctx);
+    let receipts = executed_receipts(ctx);
     for id in &ids {
         let record = index.and_then(|index| index.symbol(id));
         let is_canonical = canonical.contains(id.as_str());
@@ -230,11 +276,34 @@ pub fn coverage(
                 detail: "conformance-fingerprint-drift".to_owned(),
             });
         }
-        // Executed provenance (X11): a conformed row carries the
-        // persisted apply/confirmation receipt digests, so trace can
-        // join real executions instead of a hard-wired empty list.
-        let verification = if is_conformed && !receipt_digests.is_empty() {
-            Some(receipt_digests.join(","))
+        // Executed provenance (X11): a row carries exactly the receipt
+        // digests whose writes touched the paths it consumes, so trace
+        // joins real executions instead of a hard-wired empty list —
+        // and never credits a row with a run that did not touch it.
+        let mut row_paths: BTreeSet<String> = BTreeSet::new();
+        if let Some(record) = record {
+            if let Some(location) = &record.location {
+                row_paths.insert(location.path.clone());
+            }
+            for candidate in &record.candidates {
+                row_paths.insert(candidate.path.clone());
+            }
+            for test in &record.native_tests {
+                row_paths.insert(test.clone());
+            }
+        }
+        if let Some(symbol) = registry
+            .as_ref()
+            .and_then(|registry| registry.symbols.iter().find(|symbol| &symbol.id == id))
+        {
+            row_paths.insert(symbol.source.path.clone());
+            for test in &symbol.native_tests {
+                row_paths.insert(test.clone());
+            }
+        }
+        row_paths.retain(|path| version::is_rel_path(path));
+        let verification = if is_conformed {
+            row_verification(&row_paths, &receipts)
         } else {
             None
         };
