@@ -288,6 +288,36 @@ fn policy_bytes(execution: &ExecutionArgs) -> Result<Option<Vec<u8>>, DomainResu
     }
 }
 
+/// Merge the shared `--expect-model` flag into a JSON request document
+/// (round 2, finding 11): the flag is a shared execution precondition and
+/// applies to the request-file entry point exactly like the sugar
+/// lowering. A request declaring a different expectation is a
+/// disagreement and refuses; bytes the closed decoder cannot parse here
+/// pass through unchanged so the decoder reports the exact failure.
+fn merge_expect_model(execution: &ExecutionArgs, bytes: Vec<u8>) -> Result<Vec<u8>, DomainResult> {
+    let Some(expected) = execution.expect_model.as_deref() else {
+        return Ok(bytes);
+    };
+    let Ok(mut value) = serde_json::from_slice::<Json>(&bytes) else {
+        return Ok(bytes);
+    };
+    let Some(map) = value.as_object_mut() else {
+        return Ok(bytes);
+    };
+    if let Some(existing) = map.get("expectModel") {
+        if existing.as_str() != Some(expected) {
+            return Err(ChangeError::RequestInvalid {
+                detail: "expect-model-disagreement",
+            }
+            .into());
+        }
+        return Ok(bytes);
+    }
+    map.insert("expectModel".to_owned(), Json::String(expected.to_owned()));
+    serde_json::to_vec(&value)
+        .map_err(|_| ChangeError::RequestInvalid { detail: "lowering" }.into())
+}
+
 /// Run one change command; the caller renders the result.
 pub(crate) fn run(command: ChangeCommands) -> DomainResult {
     match command {
@@ -356,6 +386,13 @@ pub(crate) fn run(command: ChangeCommands) -> DomainResult {
                     }
                     .into()
                 }
+            };
+            // The shared --expect-model flag merges into the JSON request
+            // too (round 2, finding 11): a disagreement refuses instead of
+            // silently ignoring the CLI precondition.
+            let bytes = match merge_expect_model(&args.execution, bytes) {
+                Ok(bytes) => bytes,
+                Err(error) => return error,
             };
             execute(
                 &args.execution,

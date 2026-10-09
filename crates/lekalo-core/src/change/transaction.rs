@@ -34,7 +34,6 @@ use serde::Deserialize;
 use serde_json::Value as Json;
 
 use super::diagnostic::ChangeError;
-use super::edit::ByteEdit;
 use crate::project_fs::{EntryType, Fs, FsErrorKind};
 
 /// The journal file name inside one transaction directory.
@@ -387,8 +386,7 @@ impl Transaction {
                 detail: "before-digest",
             });
         }
-        let after_bytes = ByteEdit::apply_all(&current, &plan.edits);
-        let after_digest = format!("sha256:{}", crate::digest::sha256_hex(&after_bytes));
+        let after_digest = format!("sha256:{}", crate::digest::sha256_hex(&plan.after_bytes));
         if after_digest != plan.after_digest {
             return Err(ChangeError::CommitFailed {
                 transaction: self.id.clone(),
@@ -408,7 +406,7 @@ impl Transaction {
         self.staged.push(StagedFile {
             target,
             backup,
-            after_bytes,
+            after_bytes: plan.after_bytes.clone(),
             after_digest,
         });
         Ok(())
@@ -527,7 +525,11 @@ pub(crate) struct ReplacementPlan {
     pub logical: String,
     pub before_digest: String,
     pub after_digest: String,
-    pub edits: Vec<ByteEdit>,
+    /// The exact prospective bytes pinned at preparation time (re-verified
+    /// against `after_digest` at staging). Sequential batches compose their
+    /// per-operation edits into these bytes, so the transaction applies
+    /// exactly what the sealed plan validated (round 2, finding 16).
+    pub after_bytes: Vec<u8>,
     /// The file does not exist yet (a canonical home creation).
     pub creation: bool,
 }

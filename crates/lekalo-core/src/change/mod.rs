@@ -216,132 +216,118 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
     let base_compiled = ir::compile(&load.model)
         .map_err(|failure| ChangeError::LoadFailed(failure.into_result()))?;
 
-    // Resolve every operation against the typed model; unsupported
+    // Sequential batch execution (round 2, finding 16): every operation
+    // resolves against the candidate its predecessors produced — one
+    // prospective Model — and each operation's byte edit is planned
+    // against the evolving prospective bytes of its file. Unsupported
     // cataloged operations fail the whole batch before any candidate work.
+    let mut documents = load.documents.clone();
+    // The evolving prospective bytes per touched logical path.
+    let mut prospective: Vec<(String, Vec<u8>)> = Vec::new();
     let mut resolved_rows = Vec::with_capacity(request.operations.len());
     for operation in &request.operations {
-        resolved_rows.push(resolve_operation(&load.model, operation)?);
-    }
-
-    // Build the candidate documents with typed tree edits.
-    let mut documents = load.documents.clone();
-    for (row, operation) in resolved_rows.iter().zip(&request.operations) {
+        let row = resolve_operation(&documents, operation)?;
         if row.status != "resolved" {
             return Err(ChangeError::OperationUnsupported {
                 operation: operation.operation().to_owned(),
             });
         }
+        // The typed tree edit advances the semantic candidate.
         apply_tree_edit(&mut documents, operation)?;
-    }
-
-    // Plan the exact byte edits for every changed document. Every
-    // operation in the batch contributes its own edits against the
-    // ORIGINAL pinned bytes and spans (the ranges are original-relative
-    // and must not overlap); the mutated candidate trees above exist only
-    // for the semantic comparison. Batches on one file are legal (review
-    // finding 7): the edits accumulate per file, are verified disjoint,
-    // and apply in descending-offset order.
-    let mut per_file_planned: Vec<(String, Vec<ByteEdit>)> = Vec::new();
-    for operation in &request.operations {
+        // The byte edit is planned against the file's evolving prospective
+        // bytes, re-decoded so spans match exactly what earlier operations
+        // in this batch already wrote.
         let subject = operation
             .subject()
             .ok_or(ChangeError::RequestInvalid {
                 detail: "subject-missing",
             })?
             .to_owned();
-        let definition = load
-            .model
+        let path = documents
+            .iter()
+            .find(|document| {
+                document
+                    .document
+                    .definitions
+                    .iter()
+                    .any(|definition| definition.id == subject)
+            })
+            .map(|document| document.document.path.clone())
+            .ok_or(ChangeError::SubjectConflict {
+                subject: subject.clone(),
+                detail: "document-missing",
+            })?;
+        let working = match prospective.iter().find(|(planned, _)| planned == &path) {
+            Some((_, bytes)) => bytes.clone(),
+            None => load
+                .documents
+                .iter()
+                .find(|document| document.document.path == path)
+                .ok_or(ChangeError::SubjectConflict {
+                    subject: path.clone(),
+                    detail: "document-missing",
+                })?
+                .bytes
+                .clone(),
+        };
+        let decoded =
+            crate::loader::decode_document_bytes(&path, crate::loader::DocKind::Symbol, &working)
+                .map_err(|diagnostics| {
+                ChangeError::LoadFailed(crate::loader::diagnostic::failure(
+                    crate::result::Status::Invalid,
+                    diagnostics,
+                ))
+            })?;
+        let tree_definition = decoded
             .definitions
             .iter()
             .find(|definition| definition.id == subject)
             .ok_or(ChangeError::SubjectConflict {
-                subject,
-                detail: "definition-missing",
-            })?;
-        let path = definition.path.clone();
-        let document = load
-            .documents
-            .iter()
-            .find(|document| document.document.path == path)
-            .ok_or(ChangeError::SubjectConflict {
-                subject: path.clone(),
-                detail: "document-missing",
-            })?;
-        let bytes = document.bytes.clone();
-        let tree = &document.document;
-        let tree_definition = tree
-            .definitions
-            .iter()
-            .find(|candidate| candidate.id == definition.id)
-            .ok_or(ChangeError::SubjectConflict {
-                subject: definition.id.clone(),
+                subject: subject.clone(),
                 detail: "document-definition-missing",
             })?;
-        let edits = plan_source_edits(&bytes, tree_definition, &load.model, operation)?;
-        if edits.is_empty() {
+        let edit = plan_source_edits(&working, tree_definition, &load.model, operation)?;
+        if edit.is_empty() {
             continue;
         }
-        match per_file_planned
-            .iter_mut()
-            .find(|(planned, _)| planned == &path)
-        {
-            Some((_, planned)) => planned.extend(edits),
-            None => per_file_planned.push((path, edits)),
+        let after = apply_edits_descending(&working, &edit);
+        match prospective.iter_mut().find(|(planned, _)| planned == &path) {
+            Some((_, bytes)) => *bytes = after,
+            None => prospective.push((path, after)),
         }
+        resolved_rows.push(row);
     }
-    // Verify every per-file edit set is sorted and non-overlapping, then
-    // fold in descending-offset order so each range stays original-relative.
-    for (path, edits) in per_file_planned.iter_mut() {
-        edits.sort_by(|left, right| left.start.cmp(&right.start).then(left.end.cmp(&right.end)));
-        for pair in edits.windows(2) {
-            if pair[0].end > pair[1].start {
-                return Err(ChangeError::SourcePreservation {
-                    subject: path.clone(),
-                    detail: "edit-overlap",
-                });
-            }
-        }
-    }
-    per_file_planned.sort_by(|left, right| left.0.as_bytes().cmp(right.0.as_bytes()));
-    let mut changed_documents: Vec<LoadedDocument> = Vec::new();
-    for (path, edits) in &per_file_planned {
-        let document = load
-            .documents
+    // Canonical path order for every derived projection.
+    prospective.sort_by(|left, right| left.0.as_bytes().cmp(right.0.as_bytes()));
+
+    // Rebuild the candidate from the re-decoded prospective bytes and
+    // assert compiled-candidate equality with the tree-edited candidate.
+    let mut candidate_documents: Vec<LoadedDocument> = Vec::with_capacity(documents.len());
+    for document in &documents {
+        match prospective
             .iter()
-            .find(|document| &document.document.path == path)
-            .ok_or(ChangeError::SubjectConflict {
-                subject: path.clone(),
-                detail: "document-missing",
-            })?;
-        let bytes = document.bytes.clone();
-        let edited = apply_edits_descending(&bytes, edits);
-        let decoded =
-            crate::loader::decode_document_bytes(path, crate::loader::DocKind::Symbol, &edited)
+            .find(|(path, _)| path == &document.document.path)
+        {
+            Some((path, bytes)) => {
+                let decoded = crate::loader::decode_document_bytes(
+                    path,
+                    crate::loader::DocKind::Symbol,
+                    bytes,
+                )
                 .map_err(|diagnostics| {
                     ChangeError::LoadFailed(crate::loader::diagnostic::failure(
                         crate::result::Status::Invalid,
                         diagnostics,
                     ))
                 })?;
-        changed_documents.push(LoadedDocument {
-            document: decoded,
-            bytes: edited,
-        });
+                candidate_documents.push(LoadedDocument {
+                    document: decoded,
+                    bytes: bytes.clone(),
+                });
+            }
+            None => candidate_documents.push(document.clone()),
+        }
     }
-    let per_file_edits = per_file_planned;
-
-    // Rebuild the candidate from the re-decoded prospective bytes and
-    // assert compiled-candidate equality with the tree-edited candidate.
-    let mut candidate_documents: Vec<LoadedDocument> = documents
-        .iter()
-        .filter(|document| {
-            !changed_documents
-                .iter()
-                .any(|changed| changed.document.path == document.document.path)
-        })
-        .cloned()
-        .collect();
-    candidate_documents.extend(changed_documents.clone());
     let tree_candidate = build_candidate(&load, &documents)?;
     let byte_documents: Vec<crate::loader::Document> = candidate_documents
         .iter()
@@ -482,26 +468,25 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
         }
     }
 
-    let file_edits: Vec<FileEdit> = per_file_edits
+    let file_edits: Vec<FileEdit> = prospective
         .iter()
-        .map(|(path, edits)| {
+        .map(|(path, after)| {
             let original = load
                 .documents
                 .iter()
                 .find(|document| &document.document.path == path)
                 .expect("pinned document");
             let before = &original.bytes;
-            let after = apply_edits_descending(before, edits);
             FileEdit {
                 path: path.clone(),
                 before_digest: format!("sha256:{}", crate::digest::sha256_hex(before)),
-                after_digest: format!("sha256:{}", crate::digest::sha256_hex(&after)),
+                after_digest: format!("sha256:{}", crate::digest::sha256_hex(after)),
             }
         })
         .collect();
     let mut file_diffs = Vec::new();
     let mut diff_complete = true;
-    for (path, edits) in &per_file_edits {
+    for (path, after_bytes) in &prospective {
         let original = load
             .documents
             .iter()
@@ -512,9 +497,8 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
                 subject: path.clone(),
                 detail: "encoding",
             })?;
-        let after_bytes = apply_edits_descending(&original.bytes, edits);
         let after =
-            std::str::from_utf8(&after_bytes).map_err(|_| ChangeError::SourcePreservation {
+            std::str::from_utf8(after_bytes).map_err(|_| ChangeError::SourcePreservation {
                 subject: path.clone(),
                 detail: "encoding",
             })?;
@@ -552,7 +536,7 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
         denied_breaking_classes,
         mode: "preview",
         project_id,
-        edits: per_file_edits,
+        edits: prospective,
         root,
         diff_complete,
         allow_breaking: options.allow_breaking,
@@ -601,7 +585,10 @@ pub fn apply_request(options: &ApplyRequestOptions) -> Result<Receipt, ChangeErr
             // The durable execution intent is part of the binding (round 2,
             // finding 10): the same key under a different policy, expected
             // plan, or acknowledgement is a conflict.
-            let policy_digest = options.policy.as_ref().map(|bytes| receipt::bytes_digest(bytes));
+            let policy_digest = options
+                .policy
+                .as_ref()
+                .map(|bytes| receipt::bytes_digest(bytes));
             let intent = receipt::intent_digest(
                 policy_digest.as_deref(),
                 options.expect_plan,
@@ -711,6 +698,42 @@ pub fn apply_prepared(
         }
     }
 
+    // Round 2, finding 6: the sealed plan is only valid for the exact
+    // input inventory it validated. The full project load re-runs under
+    // the writer lock and every admitted document (path + digest) must
+    // still match the pins — a canonical document added, removed, or
+    // changed after preparation refuses before any mutation. The reload
+    // also re-runs the structural admission, so a link planted after
+    // preparation is refused by the loader's own no-follow checks.
+    {
+        let reloaded =
+            crate::loader::load_validated_root(root.clone()).map_err(ChangeError::LoadFailed)?;
+        let mut actual: Vec<(String, String)> = reloaded
+            .documents
+            .iter()
+            .map(|document| {
+                (
+                    document.document.path.clone(),
+                    format!("sha256:{}", crate::digest::sha256_hex(&document.bytes)),
+                )
+            })
+            .collect();
+        actual.sort();
+        let mut pinned: Vec<(String, String)> = prepared
+            .inputs
+            .iter()
+            .filter(|pin| pin.path != version::HISTORY_LOGICAL_PATH)
+            .map(|pin| (pin.path.clone(), pin.digest.clone()))
+            .collect();
+        pinned.sort();
+        if actual != pinned {
+            return Err(ChangeError::PreconditionFailed {
+                subject: "input-inventory".to_owned(),
+                detail: "inventory-changed",
+            });
+        }
+    }
+
     // The compatibility gate re-evaluates under the sealed plan's own
     // policy pins: denied classes refuse before any mutation.
     if !prepared.denied_breaking_classes.is_empty() {
@@ -719,19 +742,20 @@ pub fn apply_prepared(
         });
     }
 
-    // The source replacement plans, in canonical path order.
+    // The source replacement plans, in canonical path order. The exact
+    // prospective bytes were pinned at preparation; the before digest
+    // re-read is the CAS point against concurrent edits.
     let mut plans: Vec<ReplacementPlan> = prepared
         .edits
         .iter()
-        .map(|(path, edits)| {
+        .map(|(path, after_bytes)| {
             let before = std::fs::read(root.join(path.replace('/', std::path::MAIN_SEPARATOR_STR)))
                 .unwrap_or_default();
-            let after = apply_edits_descending(&before, edits);
             ReplacementPlan {
                 logical: path.clone(),
                 before_digest: format!("sha256:{}", crate::digest::sha256_hex(&before)),
-                after_digest: format!("sha256:{}", crate::digest::sha256_hex(&after)),
-                edits: edits.clone(),
+                after_digest: format!("sha256:{}", crate::digest::sha256_hex(after_bytes)),
+                after_bytes: after_bytes.clone(),
                 creation: false,
             }
         })
@@ -868,12 +892,7 @@ pub fn apply_prepared(
             Some(bytes) => format!("sha256:{}", crate::digest::sha256_hex(bytes)),
         },
         after_digest: format!("sha256:{}", crate::digest::sha256_hex(&final_history_bytes)),
-        edits: vec![ByteEdit {
-            start: 0,
-            end: history_bytes.as_ref().map(Vec::len).unwrap_or(0),
-            replacement: String::from_utf8(final_history_bytes.clone())
-                .map_err(|_| ChangeError::HistoryInvalid { detail: "encoding" })?,
-        }],
+        after_bytes: final_history_bytes.clone(),
         creation: !history_present,
     });
 
@@ -1075,15 +1094,17 @@ fn stored_receipt(record: &HistoryRecord) -> Result<Receipt, ChangeError> {
     })
 }
 
-/// Resolve one operation against the typed model: exact identity, exact
-/// kind, exact member; no text search of any kind.
+/// Resolve one operation against the current candidate documents: exact
+/// identity, exact kind, exact member; no text search of any kind. Every
+/// operation of a batch sees the candidate its predecessors produced
+/// (round 2, finding 16).
 fn resolve_operation(
-    model: &NormalizedModel,
+    documents: &[LoadedDocument],
     operation: &Operation,
 ) -> Result<ResolvedOperation, ChangeError> {
     let (subject, supported) = match operation {
         Operation::EntityFieldAdd { entity, field } => {
-            let definition = find_definition(model, entity)?;
+            let definition = find_definition(documents, entity)?;
             check_field_kind(definition)?;
             if definition_member_exists(&definition.node, "fields", &field.name) {
                 return Err(ChangeError::SubjectConflict {
@@ -1100,7 +1121,7 @@ fn resolve_operation(
             (entity.clone(), true)
         }
         Operation::EntityFieldRemove { entity, name } => {
-            let definition = find_definition(model, entity)?;
+            let definition = find_definition(documents, entity)?;
             check_field_kind(definition)?;
             if !definition_member_exists(&definition.node, "fields", name) {
                 return Err(ChangeError::SubjectConflict {
@@ -1111,7 +1132,7 @@ fn resolve_operation(
             (entity.clone(), true)
         }
         Operation::EntityFieldRename { entity, name, to } => {
-            let definition = find_definition(model, entity)?;
+            let definition = find_definition(documents, entity)?;
             check_field_kind(definition)?;
             if !definition_member_exists(&definition.node, "fields", name) {
                 return Err(ChangeError::SubjectConflict {
@@ -1128,7 +1149,7 @@ fn resolve_operation(
             (entity.clone(), true)
         }
         Operation::EnumCaseAdd { enum_id, case } => {
-            let definition = find_definition(model, enum_id)?;
+            let definition = find_definition(documents, enum_id)?;
             if definition_kind_of(definition) != "enum" {
                 return Err(ChangeError::SubjectConflict {
                     subject: enum_id.clone(),
@@ -1154,7 +1175,7 @@ fn resolve_operation(
     Ok(ResolvedOperation {
         operation: operation.operation().to_owned(),
         subject,
-        subject_family: family_for(model, operation),
+        subject_family: family_for(documents, operation),
         status: if supported { "resolved" } else { "unsupported" }.to_owned(),
         detail: if supported {
             None
@@ -1165,24 +1186,19 @@ fn resolve_operation(
 }
 
 /// The wire family of the operation subject.
-fn family_for(model: &NormalizedModel, operation: &Operation) -> String {
+fn family_for(documents: &[LoadedDocument], operation: &Operation) -> String {
     match operation {
         Operation::Unsupported { .. } => "none".to_owned(),
         _ => operation
             .subject()
-            .and_then(|subject| {
-                model
-                    .definitions
-                    .iter()
-                    .find(|definition| definition.id == subject)
-            })
+            .and_then(|subject| find_definition(documents, subject).ok())
             .map(definition_kind_of)
             .unwrap_or_else(|| "none".to_owned()),
     }
 }
 
 /// The kind of one model definition as the closed family token.
-fn definition_kind_of(definition: &crate::loader::NormalizedDefinition) -> String {
+fn definition_kind_of(definition: &crate::loader::project_docs::Definition) -> String {
     definition
         .node
         .get("kind")
@@ -1191,23 +1207,32 @@ fn definition_kind_of(definition: &crate::loader::NormalizedDefinition) -> Strin
         .to_owned()
 }
 
-/// Find one definition by exact typed identity.
-fn find_definition<'model>(
-    model: &'model NormalizedModel,
+/// Find one definition by exact typed identity across the candidate
+/// documents (the declaring document owns the definition's node).
+fn find_definition<'a>(
+    documents: &'a [LoadedDocument],
     id: &str,
-) -> Result<&'model crate::loader::NormalizedDefinition, ChangeError> {
-    model
-        .definitions
-        .iter()
-        .find(|definition| definition.id == id)
-        .ok_or(ChangeError::SubjectConflict {
-            subject: id.to_owned(),
-            detail: "definition-missing",
-        })
+) -> Result<&'a crate::loader::project_docs::Definition, ChangeError> {
+    for document in documents {
+        if let Some(definition) = document
+            .document
+            .definitions
+            .iter()
+            .find(|definition| definition.id == id)
+        {
+            return Ok(definition);
+        }
+    }
+    Err(ChangeError::SubjectConflict {
+        subject: id.to_owned(),
+        detail: "definition-missing",
+    })
 }
 
 /// Whether the definition accepts field members (entity, value-object).
-fn check_field_kind(definition: &crate::loader::NormalizedDefinition) -> Result<(), ChangeError> {
+fn check_field_kind(
+    definition: &crate::loader::project_docs::Definition,
+) -> Result<(), ChangeError> {
     let kind = definition_kind_of(definition);
     if matches!(kind.as_str(), "entity" | "value-object") {
         Ok(())
@@ -1525,7 +1550,10 @@ fn plan_source_edits(
 }
 
 /// The typed impact projection: every diff seed analyzed on its own graph
-/// side with bounded reverse reachability.
+/// side with bounded reverse reachability. The seed subject itself is
+/// always reported alongside every reverse-reachable consumer (round 2,
+/// finding 12: the closure never drops the seed or its evidence, and a
+/// both-sides seed analyzes both graphs).
 fn project_impact(
     base: &ir::CompiledProject,
     candidate: &ir::CompiledProject,
@@ -1536,51 +1564,54 @@ fn project_impact(
     let mut seeds = Vec::new();
     let mut affected = Vec::new();
     let mut complete = true;
-    let mut seen_affected = std::collections::BTreeSet::new();
     for seed in diff.seeds() {
         let subject = seed.subject();
-        let side = match seed.side() {
-            diff::Side::Base => "base",
-            // Candidate-side and both-sides seeds analyze the candidate.
-            diff::Side::Candidate | diff::Side::Both => "candidate",
-        };
-        seeds.push(SeedEntry {
-            family: subject.family().key().to_owned(),
-            id: subject.id().to_owned(),
-            member: subject.member().map(str::to_owned),
-            side,
-        });
-        let graph = match (side, base_graph.as_ref(), candidate_graph.as_ref()) {
-            ("base", Some(graph), _) => graph,
-            ("candidate", _, Some(graph)) => graph,
-            _ => {
+        let mut sides: Vec<&'static str> = Vec::new();
+        match seed.side() {
+            diff::Side::Base => sides.push("base"),
+            diff::Side::Candidate => sides.push("candidate"),
+            // A both-sides seed is analyzed on both graphs (round 2,
+            // finding 12): neither side's consumers are dropped.
+            diff::Side::Both => {
+                sides.push("base");
+                sides.push("candidate");
+            }
+        }
+        for side in sides {
+            seeds.push(SeedEntry {
+                family: subject.family().key().to_owned(),
+                id: subject.id().to_owned(),
+                member: subject.member().map(str::to_owned),
+                side,
+            });
+            let graph = match (side, base_graph.as_ref(), candidate_graph.as_ref()) {
+                ("base", Some(graph), _) => graph,
+                ("candidate", _, Some(graph)) => graph,
+                _ => {
+                    complete = false;
+                    continue;
+                }
+            };
+            let Some(root) = graph.resolve_id(subject.id()) else {
                 complete = false;
                 continue;
+            };
+            let reached = reverse_closure(graph, root);
+            if !reached.complete {
+                complete = false;
             }
-        };
-        let Some(root) = graph.resolve_id(subject.id()) else {
-            complete = false;
-            continue;
-        };
-        let reached = reverse_closure(graph, root);
-        if !reached.complete {
-            complete = false;
+            // The via chain includes the seed itself plus every
+            // reverse-reachable consumer, deterministically sorted and
+            // bounded.
+            let via: Vec<String> = reached.ids.into_iter().take(64).collect();
+            affected.push(AffectedEntry {
+                subject: subject.id().to_owned(),
+                subject_family: subject.family().key().to_owned(),
+                direction: side,
+                via,
+            });
         }
-        let via: Vec<String> = reached.ids.into_iter().take(64).collect();
-        for id in &via {
-            seen_affected.insert((side.to_owned(), id.clone()));
-        }
-        affected.push(AffectedEntry {
-            subject: subject.id().to_owned(),
-            subject_family: subject.family().key().to_owned(),
-            direction: diff_side(side),
-            via,
-        });
     }
-    // One entry per affected subject per direction, deterministically.
-    affected.retain(|entry| {
-        seen_affected.contains(&(entry.direction.to_owned(), entry.subject.clone()))
-    });
     plan::ImpactProjection {
         seeds,
         affected,
@@ -1588,15 +1619,9 @@ fn project_impact(
     }
 }
 
-fn diff_side(side: &str) -> &'static str {
-    if side == "base" {
-        "base"
-    } else {
-        "candidate"
-    }
-}
-
-/// Bounded deterministic reverse closure over the dependency graph.
+/// Bounded deterministic reverse closure over the dependency graph. The
+/// root itself stays in the closure: the changed subject is evidence of
+/// its own impact (round 2, finding 12).
 fn reverse_closure(
     graph: &crate::graph::DependencyGraph,
     root: &crate::graph::NodeId,
@@ -1610,14 +1635,14 @@ fn reverse_closure(
             complete = false;
             break;
         }
+        visited.insert(node.as_str().to_owned());
         for edge in graph.incoming(&node, &filter) {
             let from = edge.key().from();
-            if visited.insert(from.as_str().to_owned()) {
+            if !visited.contains(from.as_str()) {
                 frontier.push(from.clone());
             }
         }
     }
-    visited.remove(root.as_str());
     ClosureOutcome {
         ids: visited,
         complete,

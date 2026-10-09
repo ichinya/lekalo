@@ -331,7 +331,12 @@ impl ChangeRequest {
             return Err(RequestInvalid::UnsupportedVersion);
         }
         let expect_model = match map.get("expectModel") {
-            None | Some(Json::Null) => None,
+            None => None,
+            Some(Json::Null) => {
+                // The closed schema types expectModel as a sha256 string;
+                // explicit null is not absence (round 2, finding 17).
+                return Err(RequestInvalid::Shape("expect-model-not-string"));
+            }
             Some(value) => {
                 let text = value
                     .as_str()
@@ -373,14 +378,22 @@ fn decode_operation(catalog: &Catalog, value: &Json) -> Result<Operation, &'stat
         .ok_or("discriminator-missing")?;
     let entry = catalog.entry(discriminator).ok_or("unknown-operation")?;
     if entry.status() == OperationStatus::Unsupported {
-        if map.len() - 1 > MAX_LITERAL_MEMBERS {
-            return Err("members-over-bound");
-        }
+        // Closed runtime parity for cataloged-but-unimplemented branches
+        // (round 2, finding 17): the same required/optional/unknown-member
+        // rules and typed-member grammars the published schema enforces,
+        // applied before the availability dispatch. A schema-invalid
+        // payload is malformed (exit 1), never a deferred unsupported
+        // outcome for a shape the contract refuses.
+        let (required, optional) =
+            unsupported_member_rules(discriminator).ok_or("implemented-without-executor")?;
+        require_members(map, &required, &required)?;
+        let allowed: std::collections::BTreeSet<&str> =
+            required.iter().chain(optional.iter()).copied().collect();
         for (key, value) in map {
-            if key.len() > 64 {
-                return Err("member-key-over-bound");
+            if key != "operation" && !allowed.contains(key.as_str()) {
+                return Err("unknown-member");
             }
-            literal_of(value, 1).map_err(|_| "payload-invalid")?;
+            validate_unsupported_member(key, value)?;
         }
         return Ok(Operation::Unsupported {
             operation: discriminator.to_owned(),
@@ -451,6 +464,147 @@ const SUBJECT_MEMBERS: [&str; 9] = [
     "step",
 ];
 
+/// The closed required/optional member rules of the cataloged-but-
+/// unsupported operations, mirroring the published request-schema
+/// variants exactly (round 2, finding 17).
+fn unsupported_member_rules(discriminator: &str) -> Option<(Vec<&'static str>, Vec<&'static str>)> {
+    let (required, optional): (&[&str], &[&str]) = match discriminator {
+        "enum-case:change" => (&["operation", "enum", "name", "definition"], &[]),
+        "definition:add" => (&["operation", "kind", "module", "definition"], &[]),
+        "operation-input:set" => (&["operation", "operationTarget", "definition"], &[]),
+        "operation-output:set" => (&["operation", "operationTarget", "type"], &[]),
+        "operation-error:set" => (&["operation", "operationTarget", "definition"], &[]),
+        "command-effect:add" | "command-effect:remove" => {
+            (&["operation", "command"], &["effect", "emit"])
+        }
+        "query-effect:add" | "query-effect:remove" => (&["operation", "query", "effect"], &[]),
+        "binding:add" => (&["operation", "symbol", "definition"], &[]),
+        "ownership:set" => (&["operation", "subject", "mode", "evidence"], &[]),
+        "requirement:link" | "requirement:unlink" => (&["operation", "symbol", "requirement"], &[]),
+        "symbol:move" => (&["operation", "symbol", "toModule"], &["toName"]),
+        "module:move" => (&["operation", "module", "directory"], &[]),
+        "migration:apply" => (&["operation", "step"], &["parameters"]),
+        _ => return None,
+    };
+    Some((required.to_vec(), optional.to_vec()))
+}
+
+/// Enforce the typed-member grammar of one unsupported-branch member
+/// exactly as the published schema does (round 2, finding 17).
+fn validate_unsupported_member(key: &str, value: &Json) -> Result<(), &'static str> {
+    let symbol_member = matches!(
+        key,
+        "entity"
+            | "enum"
+            | "command"
+            | "query"
+            | "symbol"
+            | "subject"
+            | "operationTarget"
+            | "effect"
+            | "emit"
+    );
+    if symbol_member {
+        let text = value.as_str().ok_or("type-invalid")?;
+        if text.len() > 192 {
+            return Err("string-over-bound");
+        }
+        if !super::symbol_id_valid(text) {
+            return Err("symbol-grammar");
+        }
+        return Ok(());
+    }
+    // The single-segment identities (module ids, member names) share the
+    // closed member grammar the schema pins for them.
+    if matches!(key, "module" | "toModule" | "toName" | "requirement") {
+        let text = value.as_str().ok_or("type-invalid")?;
+        if !super::field_name_valid(text) {
+            return Err("member-grammar");
+        }
+        return Ok(());
+    }
+    match key {
+        "kind" => {
+            let text = value.as_str().ok_or("type-invalid")?;
+            if matches!(text, "command" | "query" | "event" | "policy" | "scenario") {
+                Ok(())
+            } else {
+                Err("kind-unknown")
+            }
+        }
+        "mode" => {
+            let text = value.as_str().ok_or("type-invalid")?;
+            if matches!(text, "observed" | "contracted" | "managed") {
+                Ok(())
+            } else {
+                Err("mode-unknown")
+            }
+        }
+        "directory" => {
+            let text = value.as_str().ok_or("type-invalid")?;
+            // The schema pins the moduleId grammar for the safe leaf.
+            if text.len() <= 63
+                && text
+                    .bytes()
+                    .next()
+                    .is_some_and(|byte| byte.is_ascii_lowercase())
+                && text
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+            {
+                Ok(())
+            } else {
+                Err("directory-grammar")
+            }
+        }
+        "step" => {
+            let text = value.as_str().ok_or("type-invalid")?;
+            if !text.is_empty()
+                && text.len() <= 128
+                && text
+                    .bytes()
+                    .next()
+                    .is_some_and(|byte| byte.is_ascii_lowercase())
+                && text.bytes().all(|byte| {
+                    byte.is_ascii_lowercase()
+                        || byte.is_ascii_digit()
+                        || byte == b'.'
+                        || byte == b'-'
+                })
+            {
+                Ok(())
+            } else {
+                Err("step-grammar")
+            }
+        }
+        "definition" | "evidence" | "parameters" | "type" => {
+            // Declaration payloads are closed objects (the schema's
+            // closedPayload); `type` is a closed type reference.
+            if key == "type" {
+                type_ref(value, 1).map(|_| ())
+            } else {
+                if value.as_object().is_none() {
+                    return Err("payload-not-object");
+                }
+                literal_of(value, 1)
+                    .map(|_| ())
+                    .map_err(|_| "payload-invalid")
+            }
+        }
+        _ => {
+            // The discriminator and any remaining member are bounded
+            // literals.
+            if key == "operation" {
+                value.as_str().map(|_| ()).ok_or("discriminator-missing")
+            } else {
+                literal_of(value, 1)
+                    .map(|_| ())
+                    .map_err(|_| "payload-invalid")
+            }
+        }
+    }
+}
+
 /// Reject any member outside the closed member set.
 fn require_members(
     map: &serde_json::Map<String, Json>,
@@ -480,13 +634,15 @@ fn member_string(map: &serde_json::Map<String, Json>, key: &str) -> Result<Strin
     Ok(text.to_owned())
 }
 
-/// Decode one closed optional-text member.
+/// Decode one closed optional-text member. The schema types these
+/// members as strings, so explicit null is refused (round 2, finding 17).
 fn member_text(
     map: &serde_json::Map<String, Json>,
     key: &str,
 ) -> Result<Option<String>, &'static str> {
     match map.get(key) {
-        None | Some(Json::Null) => Ok(None),
+        None => Ok(None),
+        Some(Json::Null) => Err("type-invalid"),
         Some(value) => {
             let text = value.as_str().ok_or("type-invalid")?;
             if text.is_empty() || text.len() > 2000 {
@@ -510,7 +666,9 @@ fn field_decl(value: &Json) -> Result<FieldDecl, &'static str> {
         return Err("name-grammar");
     }
     let required = match map.get("required") {
-        None | Some(Json::Null) => false,
+        None => false,
+        // The schema pins `required` to the constant true; null (or false)
+        // is not absence (round 2, finding 17).
         Some(Json::Bool(true)) => true,
         Some(_) => return Err("type-invalid"),
     };
@@ -809,5 +967,74 @@ mod tests {
             ("a".to_owned(), Literal::Str("x".to_owned())),
         ]);
         assert_eq!(literal.to_json_string(), "{\"a\":\"x\",\"b\":2}");
+    }
+
+    #[test]
+    fn null_expect_model_is_not_absence() {
+        let text = "{\"schemaVersion\":\"lekalo/change-request/v0.8.0\",\"expectModel\":null,\"operations\":[{\"operation\":\"entity-field:add\",\"entity\":\"tasks.task\",\"field\":{\"name\":\"priority\",\"type\":{\"ref\":\"tasks.text\"}}}]}";
+        assert_eq!(
+            decode_err(text),
+            RequestInvalid::Shape("expect-model-not-string")
+        );
+    }
+
+    #[test]
+    fn null_description_and_null_required_are_type_invalid() {
+        let text = request(
+            "{\"operation\":\"entity-field:add\",\"entity\":\"tasks.task\",\"field\":{\"name\":\"priority\",\"type\":{\"ref\":\"tasks.text\"},\"description\":null}}",
+        );
+        assert!(matches!(
+            decode_err(&text),
+            RequestInvalid::Operation {
+                detail: "type-invalid",
+                ..
+            }
+        ));
+        let text = request(
+            "{\"operation\":\"entity-field:add\",\"entity\":\"tasks.task\",\"field\":{\"name\":\"priority\",\"type\":{\"ref\":\"tasks.text\"},\"required\":null}}",
+        );
+        assert!(matches!(
+            decode_err(&text),
+            RequestInvalid::Operation {
+                detail: "type-invalid",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn unsupported_branches_enforce_the_closed_member_rules() {
+        // A schema-invalid payload is malformed (exit 1), never a deferred
+        // unsupported outcome (round 2, finding 17).
+        let cases = [
+            // binding:add with an arbitrary member and a missing payload.
+            request("{\"operation\":\"binding:add\",\"symbol\":\"tasks.task\",\"force\":true}"),
+            // definition:add missing its required payload.
+            request("{\"operation\":\"definition:add\",\"kind\":\"command\",\"module\":\"tasks\"}"),
+            // definition:add with an unknown kind.
+            request("{\"operation\":\"definition:add\",\"kind\":\"mixin\",\"module\":\"tasks\",\"definition\":{}}"),
+            // ownership:set with an unknown mode.
+            request("{\"operation\":\"ownership:set\",\"subject\":\"tasks.task\",\"mode\":\"theirs\",\"evidence\":{}}"),
+            // symbol:move with a multi-segment toModule.
+            request("{\"operation\":\"symbol:move\",\"symbol\":\"tasks.task\",\"toModule\":\"tasks.sub\",\"definition\":{}}"),
+        ];
+        for case in cases {
+            assert!(matches!(
+                decode_err(&case),
+                RequestInvalid::Operation { .. } | RequestInvalid::Shape("unknown-member")
+            ));
+        }
+        // A schema-valid unsupported payload still decodes and is refused
+        // later with the registered unsupported outcome.
+        let ok = request(
+            "{\"operation\":\"binding:add\",\"symbol\":\"tasks.task\",\"definition\":{\"target\":\"node-typescript\"}}",
+        );
+        let decoded = decode_ok(&ok);
+        match &decoded.operations[0] {
+            Operation::Unsupported { operation, .. } => {
+                assert_eq!(operation, "binding:add");
+            }
+            other => panic!("unexpected operation: {other:?}"),
+        }
     }
 }

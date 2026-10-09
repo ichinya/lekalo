@@ -11,7 +11,6 @@
 use serde::Serialize;
 
 use super::catalog::Catalog;
-use super::edit::ByteEdit;
 use super::policy::Policy;
 use super::version;
 use crate::digest::sha256_hex;
@@ -174,9 +173,10 @@ pub struct PreparedChange {
     pub(crate) mode: &'static str,
     /// The project semantic id.
     pub(crate) project_id: String,
-    /// The sealed in-memory byte edits per changed logical path (never
+    /// The sealed in-memory prospective bytes per changed logical path —
+    /// the composed result of every sequential operation (never
     /// serialized: the wire carries only digests).
-    pub(crate) edits: Vec<(String, Vec<ByteEdit>)>,
+    pub(crate) edits: Vec<(String, Vec<u8>)>,
     /// The resolved project root.
     pub(crate) root: std::path::PathBuf,
     /// Whether every file diff fit inside the bounded plan export.

@@ -960,3 +960,140 @@ fn an_invalid_semantic_candidate_is_a_typed_diagnostic_not_a_panic() {
     }
     assert!(!sandbox.history_path().exists());
 }
+
+#[test]
+fn ordered_batches_resolve_against_the_updated_candidate() {
+    // Round 2, finding 16: every operation resolves against the candidate
+    // its predecessors produced — add-then-rename in one request works.
+    let sandbox = Sandbox::new("ordered");
+    let request = serde_json::to_vec(&serde_json::json!({
+        "schemaVersion": "lekalo/change-request/v0.8.0",
+        "operations": [
+            {
+                "operation": "entity-field:add",
+                "entity": "tasks.task",
+                "field": { "name": "extra", "type": { "ref": "tasks.text" } }
+            },
+            {
+                "operation": "entity-field:rename",
+                "entity": "tasks.task",
+                "name": "extra",
+                "to": "renamed"
+            }
+        ]
+    }))
+    .expect("serializes");
+    let prepared = prepare(&sandbox, &request).expect("prepares");
+    assert_eq!(prepared.file_edits().len(), 1, "both ops hit one file");
+    let receipt = change::apply_prepared(
+        &prepared,
+        &ApplyOptions {
+            idempotency_key: "ordered-v1",
+            expect_plan: None,
+            allow_breaking: false,
+        },
+    )
+    .expect("commits");
+    assert_eq!(receipt.state(), ReceiptState::Committed);
+    let after = String::from_utf8(sandbox.entities_bytes()).expect("utf8");
+    assert!(after.contains("- name: \"renamed\""), "{after}");
+    assert!(
+        !after.contains("- name: \"extra\""),
+        "the intermediate name is gone"
+    );
+    assert!(
+        !after.contains(
+            "- name: \"renamed\"
+        type: \"tasks.text\"
+        description:"
+        ),
+        "unrelated members keep their shape"
+    );
+}
+
+#[test]
+fn impact_reports_the_seed_and_every_known_consumer() {
+    // Round 2, finding 12: a change with a known consumer never reports
+    // an empty affected set with complete=true; the seed itself is part
+    // of the evidence.
+    let sandbox = Sandbox::new("impact");
+    // A query that reads/returns the entity the change touches: a direct
+    // known consumer of tasks.task.
+    let queries = sandbox.root.join("lekalo/modules/tasks/queries.yaml");
+    std::fs::write(
+        &queries,
+        "schema_version: \"0.2.16\"
+definitions:
+  - id: tasks.consumer
+    kind: query
+    version: 1
+    reads:
+      - \"tasks.task\"
+    returns:
+      ref: \"tasks.task\"
+",
+    )
+    .expect("consumer written");
+    let prepared = prepare(&sandbox, &add_priority_request()).expect("prepares");
+    let plan: serde_json::Value =
+        serde_json::from_str(&prepared.to_json_string()).expect("plan json");
+    let affected = plan["impact"]["affected"].as_array().expect("affected");
+    assert!(
+        !affected.is_empty(),
+        "a known consumer must not be dropped: {affected:?}"
+    );
+    let seed = affected
+        .iter()
+        .find(|entry| entry["subject"] == "tasks.task")
+        .expect("the seed subject is reported");
+    let via = seed["via"].as_array().expect("via");
+    assert!(
+        via.iter()
+            .any(|id| id.as_str().unwrap_or("").ends_with("tasks.consumer")),
+        "the reverse-reachable consumer is reported: {via:?}"
+    );
+}
+
+#[test]
+fn a_document_added_after_prepare_refuses_the_sealed_plan() {
+    // Round 2, finding 6: apply re-enumerates the admitted inventory; a
+    // valid canonical document added after preparation refuses before any
+    // mutation.
+    let sandbox = Sandbox::new("inventory");
+    let prepared = prepare(&sandbox, &add_priority_request()).expect("prepares");
+    std::fs::write(
+        sandbox.root.join("lekalo/modules/tasks/queries.yaml"),
+        "schema_version: \"0.2.16\"
+definitions:
+  - id: tasks.late
+    kind: query
+    version: 1
+    reads:
+      - \"tasks.task\"
+    returns:
+      ref: \"tasks.task\"
+",
+    )
+    .expect("late document written");
+    let error = change::apply_prepared(
+        &prepared,
+        &ApplyOptions {
+            idempotency_key: "late-v1",
+            expect_plan: None,
+            allow_breaking: false,
+        },
+    )
+    .expect_err("added input refuses");
+    match error {
+        ChangeError::PreconditionFailed { subject, detail } => {
+            assert_eq!(subject, "input-inventory");
+            assert_eq!(detail, "inventory-changed");
+        }
+        other => panic!("expected precondition failure, got {other:?}"),
+    }
+    // Nothing mutated.
+    assert!(!sandbox.history_path().exists());
+    assert!(!String::from_utf8(sandbox.entities_bytes())
+        .expect("utf8")
+        .contains("- name: \"priority\""));
+}
