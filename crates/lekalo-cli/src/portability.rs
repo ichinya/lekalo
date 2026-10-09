@@ -768,9 +768,35 @@ fn execute(args: Args) -> Result<DomainResult, DiagnosticSet> {
     ))
 }
 
-/// The human projection: the four risk summaries before anything else,
-/// then blockers, partial mappings, custom/foreign/external obligations,
-/// behavior loss, and unknown verification.
+/// The bounded list projection: every listed class is fully enumerable
+/// in the machine output, so the human form names its truncation and
+/// the concrete complete-output route instead of silently clipping.
+const HUMAN_LIST_LIMIT: usize = 16;
+
+fn push_bounded_list(lines: &mut Vec<String>, title: &str, items: &[String]) {
+    if items.is_empty() {
+        return;
+    }
+    if items.len() <= HUMAN_LIST_LIMIT {
+        lines.push(format!("{title} ({}):", items.len()));
+    } else {
+        lines.push(format!(
+            "{title} ({} shown of {}; complete rows in the JSON output):",
+            HUMAN_LIST_LIMIT,
+            items.len()
+        ));
+    }
+    lines.extend(
+        items
+            .iter()
+            .take(HUMAN_LIST_LIMIT)
+            .map(|l| format!("  {l}")),
+    );
+}
+
+/// The human projection: every destination's four risk dimension
+/// summaries before anything else, then the structural ratio, aggregate
+/// counters, and the bounded blocker/partial/obligation listings.
 fn human_summary(report: &lekalo_core::portability::Report) -> String {
     let mut lines = Vec::new();
     lines.push(format!(
@@ -780,6 +806,29 @@ fn human_summary(report: &lekalo_core::portability::Report) -> String {
         report.source.target_id
     ));
     for summary in &report.summaries {
+        lines.push(format!("{} risk dimensions:", summary.destination));
+        for (dimension, entry) in &summary.dimensions {
+            lines.push(format!(
+                "  {}: portable {}, supported-with-mapping {}, partial {}, target-specific {}, unsupported {}, unknown {}, non-applicable {}, eligible-applicable {}",
+                dimension.as_str(),
+                entry.portable,
+                entry.supported_with_mapping,
+                entry.partial,
+                entry.target_specific,
+                entry.unsupported,
+                entry.unknown,
+                entry.non_applicable,
+                entry.eligible_applicable,
+            ));
+            let verification = &entry.verification;
+            lines.push(format!(
+                "    verification: untested {}, recorded-pass {}, recorded-fail {}, not-applicable {}",
+                verification.untested,
+                verification.recorded_pass,
+                verification.recorded_fail,
+                verification.not_applicable,
+            ));
+        }
         let structural = summary
             .dimensions
             .get(&lekalo_core::portability::Dimension::Structural)
@@ -789,19 +838,12 @@ fn human_summary(report: &lekalo_core::portability::Report) -> String {
             None => "unknown".to_owned(),
         };
         lines.push(format!(
-            "{}: structural portable {}, mapped {}, partial {}, target-specific {}, unsupported {}, unknown {} (ratio {})",
+            "{}: structural portable ratio {}, blockers {}, unknowns {}, custom obligations {}",
             summary.destination,
-            structural.portable,
-            structural.supported_with_mapping,
-            structural.partial,
-            structural.target_specific,
-            structural.unsupported,
-            structural.unknown,
             ratio,
-        ));
-        lines.push(format!(
-            "{}: blockers {}, unknowns {}, custom obligations {}",
-            summary.destination, summary.blockers, summary.unknowns, summary.custom_obligations
+            summary.blockers,
+            summary.unknowns,
+            summary.custom_obligations
         ));
     }
     let mut blockers = Vec::new();
@@ -857,33 +899,11 @@ fn human_summary(report: &lekalo_core::portability::Report) -> String {
             }
         }
     }
-    if !blockers.is_empty() {
-        lines.push(format!("Blockers ({}):", blockers.len()));
-        lines.extend(blockers.iter().take(16).map(|l| format!("  {l}")));
-    }
-    if !partials.is_empty() {
-        lines.push(format!("Partial mappings ({}):", partials.len()));
-        lines.extend(partials.iter().take(16).map(|l| format!("  {l}")));
-    }
-    if !customs.is_empty() {
-        lines.push(format!(
-            "Custom/foreign/external obligations ({}):",
-            customs.len()
-        ));
-        lines.extend(customs.iter().take(16).map(|l| format!("  {l}")));
-    }
-    if !losses.is_empty() {
-        lines.push(format!("Behavior loss ({}):", losses.len()));
-        lines.extend(losses.iter().take(16).map(|l| format!("  {l}")));
-    }
-    if !unknowns.is_empty() {
-        lines.push(format!(
-            "Untested verification states ({} shown of {}):",
-            unknowns.iter().take(16).count(),
-            unknowns.len()
-        ));
-        lines.extend(unknowns.iter().take(16).map(|l| format!("  {l}")));
-    }
+    push_bounded_list(&mut lines, "Blockers", &blockers);
+    push_bounded_list(&mut lines, "Partial mappings", &partials);
+    push_bounded_list(&mut lines, "Custom/foreign/external obligations", &customs);
+    push_bounded_list(&mut lines, "Behavior loss", &losses);
+    push_bounded_list(&mut lines, "Untested verification states", &unknowns);
     lines.push(format!(
         "Migration surface: {} missing implementations, {} storage reviews, {} affected scenarios, {} affected gates, planning rows {}.",
         report.migration_surface.missing_implementations,
