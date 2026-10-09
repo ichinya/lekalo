@@ -378,6 +378,14 @@ pub fn rollback(
             before_digest: write.before.clone(),
         })
         .collect();
+    // Preflight before the first mutation (X6): every snapshot of the
+    // whole receipt is read back and digest-verified up front. A single
+    // corrupt or missing snapshot refuses the entire rollback with the
+    // current files untouched — never a partial restore that stops
+    // halfway through the write set.
+    for record in &records {
+        transaction::read_snapshot(&ctx.root, record)?;
+    }
     for record in &records {
         if let Err(result) = transaction::cas_restore(&ctx.root, record) {
             journal.steps.push(JournalStep {
