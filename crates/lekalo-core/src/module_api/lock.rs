@@ -10,7 +10,7 @@
 use super::diagnostic::Evidence;
 
 use super::resolve::Resolved;
-use super::wire::{self, ConsumerLock, ProducerPin, PublicBundle};
+use super::wire::{self, ConsumerLock, ProducerPin};
 use crate::diagnostics::DiagnosticSet;
 use crate::ir::Compilation;
 
@@ -33,16 +33,20 @@ pub fn resolve_lock(
         return Err(super::diagnostic::invalid("unknown-consumer"));
     };
     let bundle = super::validate::bundle(resolved, compilation, producer)?;
+    // Every transitive public dependency pin the consumer's public view
+    // actually carries: the shared reference collector covers field/input/
+    // payload/return types, reads, effect obligations, invocations, and
+    // governed operations — nothing required is silently dropped from the
+    // lock (finding 7).
     let dependencies = bundle
         .public_dependencies
         .iter()
         .filter(|dependency| {
             bundle.exports.iter().any(|export| {
-                export
-                    .fields
+                super::context::export_references(export)
                     .iter()
-                    .any(|field| type_uses(&field.r#type, &dependency.exports))
-            }) || uses_export(&bundle, &dependency.exports)
+                    .any(|reference| dependency.exports.contains(reference))
+            })
         })
         .cloned()
         .collect();
@@ -60,36 +64,6 @@ pub fn resolve_lock(
         public_dependencies: dependencies,
         selected: declaration.uses.clone(),
     })
-}
-
-fn uses_export(bundle: &PublicBundle, exports: &[String]) -> bool {
-    bundle
-        .exports
-        .iter()
-        .any(|export| export.reads.iter().any(|read| exports.contains(read)))
-        || bundle
-            .exports
-            .iter()
-            .any(|export| export.emits.iter().any(|event| exports.contains(event)))
-        || bundle.exports.iter().any(|export| {
-            export
-                .operations
-                .iter()
-                .any(|operation| exports.contains(operation))
-        })
-        || bundle
-            .exports
-            .iter()
-            .any(|export| exports.contains(&export.export))
-            && false
-}
-
-fn type_uses(expression: &super::wire::TypeExpr, exports: &[String]) -> bool {
-    match expression {
-        super::wire::TypeExpr::Ref { r#ref } => exports.contains(r#ref),
-        super::wire::TypeExpr::List { list } => type_uses(list, exports),
-        super::wire::TypeExpr::Optional { optional } => type_uses(optional, exports),
-    }
 }
 
 /// Parse and validate a consumer lock document.
@@ -178,45 +152,75 @@ pub fn check_lock(current: &ConsumerLock, supplied: &ConsumerLock) -> Vec<Eviden
         finding.actual = Some(supplied.selected.join(","));
         evidence.push(finding);
     }
+    // The declared policy: a policy change is a resolution change.
+    if current.policy != supplied.policy {
+        let mut finding = Evidence::new("module-api.lock-stale", &supplied.consumer, "lock-policy");
+        finding.consumer = Some(supplied.consumer.clone());
+        finding.producer = Some(current.producer.module.clone());
+        finding.expected = Some(
+            current
+                .policy
+                .as_ref()
+                .map(policy_kind)
+                .unwrap_or_else(|| "none".to_owned()),
+        );
+        finding.actual = Some(
+            supplied
+                .policy
+                .as_ref()
+                .map(policy_kind)
+                .unwrap_or_else(|| "none".to_owned()),
+        );
+        evidence.push(finding);
+    }
+    // The independent API version pin.
+    if current.api_version != supplied.api_version {
+        let mut finding = Evidence::new(
+            "module-api.lock-stale",
+            &supplied.consumer,
+            "lock-api-version",
+        );
+        finding.consumer = Some(supplied.consumer.clone());
+        finding.producer = Some(current.producer.module.clone());
+        finding.expected = current.api_version.clone();
+        finding.actual = supplied.api_version.clone();
+        evidence.push(finding);
+    }
+    // Symmetric dependency diff: a supplied pin missing from the current
+    // resolution is as stale as a missing or changed pin (finding 15).
+    let current_deps: std::collections::BTreeSet<&str> = current
+        .public_dependencies
+        .iter()
+        .map(|dependency| dependency.module_id.as_str())
+        .collect();
+    let mut extra_modules: Vec<String> = supplied
+        .public_dependencies
+        .iter()
+        .filter(|dependency| !current_deps.contains(dependency.module_id.as_str()))
+        .map(|dependency| dependency.module_id.clone())
+        .collect();
+    extra_modules.sort();
+    for module_id in extra_modules {
+        let mut finding = Evidence::new(
+            "module-api.lock-stale",
+            &supplied.consumer,
+            "lock-dependency-extra",
+        );
+        finding.consumer = Some(supplied.consumer.clone());
+        finding.producer = Some(current.producer.module.clone());
+        finding.path = vec![module_id];
+        finding.expected = Some("absent".to_owned());
+        finding.actual = Some("pinned".to_owned());
+        evidence.push(finding);
+    }
     evidence
 }
 
-/// Freshness verdict for one bundle against its own lock (the lock seam of
-/// `module api lock --check` without consumer context).
-pub fn bundle_lock_evidence(bundle: &PublicBundle, supplied: &ConsumerLock) -> Vec<Evidence> {
-    let mut evidence = Vec::new();
-    if bundle.digest != supplied.digest {
-        let mut finding = Evidence::new("module-api.lock-stale", &supplied.consumer, "lock-digest");
-        finding.consumer = Some(supplied.consumer.clone());
-        finding.producer = Some(bundle.producer.module.clone());
-        finding.expected = Some(bundle.digest.clone());
-        finding.actual = Some(supplied.digest.clone());
-        evidence.push(finding);
+/// The stable policy spelling for evidence text.
+fn policy_kind(policy: &super::wire::VersionPolicyWire) -> String {
+    match policy {
+        super::wire::VersionPolicyWire::ExactDigest { .. } => "exact-digest".to_owned(),
+        super::wire::VersionPolicyWire::ExactVersion { .. } => "exact-version".to_owned(),
+        super::wire::VersionPolicyWire::VersionRange { .. } => "version-range".to_owned(),
     }
-    let supplied_deps: std::collections::BTreeMap<&str, &str> = supplied
-        .public_dependencies
-        .iter()
-        .map(|dependency| (dependency.module_id.as_str(), dependency.digest.as_str()))
-        .collect();
-    for dependency in &bundle.public_dependencies {
-        if supplied_deps
-            .get(dependency.module_id.as_str())
-            .is_some_and(|digest| *digest != dependency.digest)
-        {
-            let mut finding = Evidence::new(
-                "module-api.lock-stale",
-                &supplied.consumer,
-                "lock-dependency-digest",
-            );
-            finding.consumer = Some(supplied.consumer.clone());
-            finding.producer = Some(bundle.producer.module.clone());
-            finding.path = vec![dependency.module_id.clone()];
-            finding.expected = Some(dependency.digest.clone());
-            finding.actual = supplied_deps
-                .get(dependency.module_id.as_str())
-                .map(|digest| (*digest).to_owned());
-            evidence.push(finding);
-        }
-    }
-    evidence
 }

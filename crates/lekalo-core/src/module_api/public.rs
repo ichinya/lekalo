@@ -18,7 +18,7 @@ use super::wire::{
 };
 use crate::diagnostics::DiagnosticSet;
 use crate::error_contract::registry::ErrorRegistry;
-use crate::ir::{Compilation, Definition, Portability, TypeRef};
+use crate::ir::{Compilation, Definition, TypeRef};
 use std::collections::BTreeMap;
 
 /// Derive the certified public bundle of one module. An incomplete or
@@ -29,135 +29,205 @@ pub fn export_public(
     compilation: &Compilation,
     module: &str,
 ) -> Result<PublicBundle, DiagnosticSet> {
-    let Some(policy) = resolved.modules.get(module) else {
-        return Err(invalid("unknown-module"));
-    };
-    let project = &compilation.project;
-    let by_id: BTreeMap<&str, &Definition> = project
-        .definitions
-        .iter()
-        .map(|definition| (definition.id().as_str(), definition))
-        .collect();
-    let mut exports: Vec<PublicExport> = Vec::new();
-    let mut foreign: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    let mut path: Vec<String> = Vec::new();
-    for entry in &policy.exports {
-        if entry.kind == "error" {
-            exports.push(error_export(&entry.export)?);
-            continue;
-        }
-        let Some(definition) = by_id.get(entry.export.as_str()) else {
-            return Err(invalid("unknown-export"));
-        };
-        project_export(
-            definition,
-            &by_id,
-            module,
-            &mut exports,
-            &mut foreign,
-            &mut path,
-        )?;
+    match ExportSession::new(resolved, compilation).bundle_checked(module) {
+        Ok(bundle) => Ok(bundle),
+        Err(ExportFailure::Cycle(_)) => Err(invalid("public-dependency-cycle")),
+        Err(ExportFailure::Invalid(set)) => Err(set),
     }
-    // Public dependency pins: one exact pin per foreign module.
-    let mut public_dependencies: Vec<PublicDependency> = Vec::new();
-    for (foreign_module, symbols) in foreign {
-        let Some(policy) = resolved.modules.get(&foreign_module) else {
-            // A foreign type from an unattached module: no public pin can
-            // exist, so the closure is incomplete by construction.
-            return Err(invalid("unattached-public-dependency"));
-        };
-        for symbol in &symbols {
-            if !policy.exports.iter().any(|entry| entry.export == *symbol) {
-                // The foreign type is not exported: the bundle refuses.
-                return Err(invalid("foreign-type-not-exported"));
-            }
-        }
-        public_dependencies.push(PublicDependency {
-            module_id: foreign_module.to_owned(),
-            digest: String::new(), // filled after recursion below
-            api_version: policy.api_version.clone(),
-            exports: symbols,
-        });
-    }
-    // The producer's own digest: canonical public semantics.
-    let api_version = policy.api_version.clone();
-    let pins = PublicPins {
-        model_version: wire::MODEL_VERSION.to_owned(),
-        ir_digest: format!(
-            "sha256:{}",
-            crate::digest::sha256_hex(project.to_canonical_json().as_bytes())
-        ),
-        source_revision: super::wire::State::Unknown,
-    };
-    let producer = ProducerPin {
-        project: resolved.project.clone(),
-        module: module.to_owned(),
-    };
-    // Resolve public dependency digests recursively with a depth bound.
-    let mut seen = vec![module.to_owned()];
-    resolve_dependency_digests(
-        resolved,
-        compilation,
-        &mut public_dependencies,
-        &mut seen,
-        0,
-    )?;
-    let partial = PublicBundle {
-        schema_version: format!("{}/v{}", wire::PUBLIC_SCHEMA, wire::VERSION),
-        identity: format!("{}@{}", wire::PUBLIC_IDENTITY, wire::VERSION),
-        producer,
-        api_version: api_version.clone(),
-        digest: String::new(),
-        pins,
-        exports,
-        public_dependencies,
-        ports: policy.ports.clone(),
-        capabilities: policy.capabilities.clone(),
-        deprecations: policy
-            .deprecations
-            .iter()
-            .filter(|entry| {
-                policy
-                    .exports
-                    .iter()
-                    .any(|export| export.export == entry.export)
-            })
-            .cloned()
-            .collect(),
-    };
-    // The digest excludes its own digest member; the canonical projection
-    // below carries an empty digest field so equivalent bundles agree.
-    let mut without_digest = partial.clone();
-    without_digest.digest = String::new();
-    let digest = wire::digest(
-        wire::DIGEST_DOMAIN_PUBLIC,
-        &wire::canonical(&without_digest),
-    );
-    Ok(PublicBundle { digest, ..partial })
 }
 
-/// Recursively resolve public dependency digests; the nesting bound keeps
-/// the closure bounded and cycles explicit.
-fn resolve_dependency_digests(
-    resolved: &Resolved,
-    compilation: &Compilation,
-    dependencies: &mut [PublicDependency],
-    seen: &mut Vec<String>,
-    depth: usize,
-) -> Result<(), DiagnosticSet> {
-    if depth > wire::MAX_DEPENDENCY_NESTING {
-        return Err(invalid("dependency-nesting"));
-    }
-    for dependency in dependencies.iter_mut() {
-        if seen.contains(&dependency.module_id) {
-            dependency.digest = "sha256:cycle".to_owned();
-            continue;
+/// One export failure: a typed invalid set or a real public dependency
+/// cycle with its exact active path.
+pub enum ExportFailure {
+    Invalid(DiagnosticSet),
+    Cycle(Vec<String>),
+}
+
+/// One memoized export session over one compilation plus attachment
+/// (issue #113 review fix: the public export is linear, never exponential
+/// and never stack-bound). Each module's bundle is computed at most once,
+/// public dependency digests resolve through an explicit worklist with an
+/// active-path cycle check, and the compilation digest is canonicalized
+/// exactly once per session. Adversarial module graphs therefore hit the
+/// recorded node and depth bounds instead of the process stack.
+pub struct ExportSession<'a> {
+    resolved: &'a Resolved,
+    compilation: &'a Compilation,
+    bundles: BTreeMap<String, PublicBundle>,
+    /// The active dependency path: a real cycle witness, not a memo hit.
+    active: Vec<String>,
+    ir_digest: String,
+}
+
+impl<'a> ExportSession<'a> {
+    pub fn new(resolved: &'a Resolved, compilation: &'a Compilation) -> Self {
+        let ir_digest = format!(
+            "sha256:{}",
+            crate::digest::sha256_hex(compilation.project.to_canonical_json().as_bytes())
+        );
+        Self {
+            resolved,
+            compilation,
+            bundles: BTreeMap::new(),
+            active: Vec::new(),
+            ir_digest,
         }
-        seen.push(dependency.module_id.clone());
-        let bundle = export_public(resolved, compilation, &dependency.module_id)?;
-        dependency.digest = bundle.digest.clone();
     }
-    Ok(())
+
+    /// The certified bundle of one module, memoized across the session.
+    /// A public dependency cycle refuses with the exact active path.
+    pub fn bundle(&mut self, module: &str) -> Result<PublicBundle, DiagnosticSet> {
+        match self.bundle_checked(module) {
+            Ok(bundle) => Ok(bundle),
+            Err(ExportFailure::Cycle(_)) => Err(invalid("public-dependency-cycle")),
+            Err(ExportFailure::Invalid(set)) => Err(set),
+        }
+    }
+
+    /// The checked bundle with the typed cycle failure exposed.
+    pub fn bundle_checked(&mut self, module: &str) -> Result<PublicBundle, ExportFailure> {
+        if let Some(bundle) = self.bundles.get(module) {
+            return Ok(bundle.clone());
+        }
+        if self.active.iter().any(|entered| entered == module) {
+            let mut path = self.active.clone();
+            path.push(module.to_owned());
+            return Err(ExportFailure::Cycle(path));
+        }
+        if self.active.len() > wire::MAX_DEPENDENCY_NESTING
+            || self.bundles.len() > wire::MAX_MODULES
+        {
+            return Err(ExportFailure::Invalid(invalid("public-closure-bound")));
+        }
+        self.active.push(module.to_owned());
+        let built = self.build(module);
+        self.active.pop();
+        match built {
+            Ok(bundle) => {
+                self.bundles.insert(module.to_owned(), bundle.clone());
+                Ok(bundle)
+            }
+            Err(set) => Err(ExportFailure::Invalid(set)),
+        }
+    }
+
+    /// The active public dependency path (a cycle witness), exposed to the
+    /// boundary check so the reported cycle is the real one.
+    pub fn active_path(&self) -> Vec<String> {
+        self.active.clone()
+    }
+
+    fn build(&mut self, module: &str) -> Result<PublicBundle, DiagnosticSet> {
+        let Some(policy) = self.resolved.modules.get(module) else {
+            return Err(invalid("unknown-module"));
+        };
+        let compilation = self.compilation;
+        let resolved = self.resolved;
+        let project = &compilation.project;
+        let by_id: BTreeMap<&str, &Definition> = project
+            .definitions
+            .iter()
+            .map(|definition| (definition.id().as_str(), definition))
+            .collect();
+        let exported: std::collections::BTreeSet<String> = policy
+            .exports
+            .iter()
+            .map(|entry| entry.export.clone())
+            .collect();
+        let mut exports: Vec<PublicExport> = Vec::new();
+        let mut foreign: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for entry in &policy.exports {
+            if entry.kind == "error" {
+                exports.push(error_export(&entry.export)?);
+                continue;
+            }
+            let Some(definition) = by_id.get(entry.export.as_str()) else {
+                return Err(invalid("unknown-export"));
+            };
+            project_export(
+                definition,
+                &by_id,
+                module,
+                &exported,
+                &mut exports,
+                &mut foreign,
+            )?;
+        }
+        // Public dependency pins: one exact pin per foreign module.
+        let mut public_dependencies: Vec<PublicDependency> = Vec::new();
+        for (foreign_module, symbols) in foreign {
+            let Some(policy) = resolved.modules.get(&foreign_module) else {
+                // A foreign type from an unattached module: no public pin can
+                // exist, so the closure is incomplete by construction.
+                return Err(invalid("unattached-public-dependency"));
+            };
+            for symbol in &symbols {
+                if !policy.exports.iter().any(|entry| entry.export == *symbol) {
+                    // The foreign type is not exported: the bundle refuses.
+                    return Err(invalid("foreign-type-not-exported"));
+                }
+            }
+            public_dependencies.push(PublicDependency {
+                module_id: foreign_module.to_owned(),
+                digest: String::new(), // filled after recursion below
+                api_version: policy.api_version.clone(),
+                exports: symbols,
+            });
+        }
+        // The producer's own digest: canonical public semantics.
+        let api_version = policy.api_version.clone();
+        let pins = PublicPins {
+            model_version: wire::MODEL_VERSION.to_owned(),
+            ir_digest: self.ir_digest.clone(),
+            source_revision: super::wire::State::Unknown,
+        };
+        let producer = ProducerPin {
+            project: resolved.project.clone(),
+            module: module.to_owned(),
+        };
+        // Resolve public dependency digests through the memoized session: an
+        // explicit active path bounds the depth, every cone is computed once.
+        for dependency in &mut public_dependencies {
+            dependency.digest = self.bundle(&dependency.module_id)?.digest;
+        }
+        let partial = PublicBundle {
+            schema_version: format!("{}/v{}", wire::PUBLIC_SCHEMA, wire::VERSION),
+            identity: format!("{}@{}", wire::PUBLIC_IDENTITY, wire::VERSION),
+            producer,
+            api_version: api_version.clone(),
+            digest: String::new(),
+            pins,
+            exports,
+            public_dependencies,
+            ports: policy.ports.clone(),
+            capabilities: policy.capabilities.clone(),
+            deprecations: policy
+                .deprecations
+                .iter()
+                .filter(|entry| {
+                    policy
+                        .exports
+                        .iter()
+                        .any(|export| export.export == entry.export)
+                })
+                .cloned()
+                .collect(),
+        };
+        // The digest covers canonical public semantics only: it excludes its
+        // own digest member and the integer definition revision (a private
+        // edit that only bumps the revision preserves the public identity),
+        // so equivalent bundles agree byte-for-byte on the digest input.
+        let mut digest_projection = partial.clone();
+        digest_projection.digest = String::new();
+        for export in &mut digest_projection.exports {
+            export.version = 0;
+        }
+        let digest = wire::digest(
+            wire::DIGEST_DOMAIN_PUBLIC,
+            &wire::canonical(&digest_projection),
+        );
+        Ok(PublicBundle { digest, ..partial })
+    }
 }
 
 /// Project one owned definition into the closed export surface.
@@ -165,9 +235,9 @@ fn project_export(
     definition: &Definition,
     by_id: &BTreeMap<&str, &Definition>,
     module: &str,
+    exported: &std::collections::BTreeSet<String>,
     exports: &mut Vec<PublicExport>,
     foreign: &mut BTreeMap<String, Vec<String>>,
-    path: &mut Vec<String>,
 ) -> Result<(), DiagnosticSet> {
     let id = definition.id().as_str().to_owned();
     let version = definition.common().version;
@@ -213,11 +283,11 @@ fn project_export(
             )?;
         }
         Definition::ValueObject(value_object) => {
-            let fields = project_fields(&value_object.fields, by_id, module, foreign, path)?;
+            let fields = project_fields(&value_object.fields, by_id, module, exported, foreign)?;
             push_type("value-object", None, vec![], fields, vec![])?;
         }
         Definition::Entity(entity) => {
-            let fields = project_fields(&entity.fields, by_id, module, foreign, path)?;
+            let fields = project_fields(&entity.fields, by_id, module, exported, foreign)?;
             let identity = entity
                 .identity
                 .iter()
@@ -226,7 +296,7 @@ fn project_export(
             push_type("entity", None, vec![], fields, identity)?;
         }
         Definition::Command(command) => {
-            let input = project_fields(&command.input, by_id, module, foreign, path)?;
+            let input = project_fields(&command.input, by_id, module, exported, foreign)?;
             let effects = command
                 .effects
                 .iter()
@@ -246,11 +316,13 @@ fn project_export(
                 })
                 .collect::<Result<Vec<_>, DiagnosticSet>>()?;
             // Effect obligations are part of the public signature: the
-            // affected entity and its events must be exported here too.
+            // affected entity and its events are admitted by identity, so
+            // consumers can observe the obligation without the aggregate
+            // shape ever entering the bundle.
             for obligation in &effects {
-                record_public_ref(by_id, module, &obligation.entity, foreign, path)?;
+                record_public_ref(by_id, module, exported, &obligation.entity, foreign, false)?;
                 for event in &obligation.emits {
-                    record_public_ref(by_id, module, event, foreign, path)?;
+                    record_public_ref(by_id, module, exported, event, foreign, false)?;
                 }
             }
             exports.push(PublicExport {
@@ -266,7 +338,7 @@ fn project_export(
             let returns = query
                 .returns
                 .as_ref()
-                .map(|returns| project_type(returns, by_id, module, foreign, path))
+                .map(|returns| project_type(returns, by_id, module, exported, foreign))
                 .transpose()?
                 .map(Box::new)
                 .map(|boxed| *boxed);
@@ -274,7 +346,7 @@ fn project_export(
                 .reads
                 .iter()
                 .map(|read| {
-                    record_public_ref(by_id, module, read.as_str(), foreign, path)?;
+                    record_public_ref(by_id, module, exported, read.as_str(), foreign, false)?;
                     Ok(read.as_str().to_owned())
                 })
                 .collect::<Result<Vec<_>, DiagnosticSet>>()?;
@@ -288,7 +360,7 @@ fn project_export(
             });
         }
         Definition::Event(event) => {
-            let payload = project_fields(&event.payload, by_id, module, foreign, path)?;
+            let payload = project_fields(&event.payload, by_id, module, exported, foreign)?;
             exports.push(PublicExport {
                 export: id.clone(),
                 kind: "event".to_owned(),
@@ -298,7 +370,14 @@ fn project_export(
             });
         }
         Definition::Effect(effect) => {
-            record_public_ref(by_id, module, effect.entity.as_str(), foreign, path)?;
+            record_public_ref(
+                by_id,
+                module,
+                exported,
+                effect.entity.as_str(),
+                foreign,
+                false,
+            )?;
             exports.push(PublicExport {
                 export: id.clone(),
                 kind: "effect".to_owned(),
@@ -309,7 +388,7 @@ fn project_export(
                     .emits
                     .iter()
                     .map(|event| {
-                        record_public_ref(by_id, module, event.as_str(), foreign, path)?;
+                        record_public_ref(by_id, module, exported, event.as_str(), foreign, false)?;
                         Ok(event.as_str().to_owned())
                     })
                     .collect::<Result<Vec<_>, DiagnosticSet>>()?,
@@ -318,7 +397,7 @@ fn project_export(
         }
         Definition::Endpoint(endpoint) => {
             let invokes = endpoint.invokes.as_str().to_owned();
-            record_public_ref(by_id, module, &invokes, foreign, path)?;
+            record_public_ref(by_id, module, exported, &invokes, foreign, false)?;
             exports.push(PublicExport {
                 export: id.clone(),
                 kind: "endpoint".to_owned(),
@@ -334,7 +413,7 @@ fn project_export(
                 .applies_to
                 .iter()
                 .map(|operation| {
-                    record_public_ref(by_id, module, operation.as_str(), foreign, path)?;
+                    record_public_ref(by_id, module, exported, operation.as_str(), foreign, false)?;
                     Ok(operation.as_str().to_owned())
                 })
                 .collect::<Result<Vec<_>, DiagnosticSet>>()?;
@@ -366,15 +445,15 @@ fn project_fields(
     fields: &[crate::ir::Field],
     by_id: &BTreeMap<&str, &Definition>,
     module: &str,
+    exported: &std::collections::BTreeSet<String>,
     foreign: &mut BTreeMap<String, Vec<String>>,
-    path: &mut Vec<String>,
 ) -> Result<Vec<PublicField>, DiagnosticSet> {
     fields
         .iter()
         .map(|field| {
             Ok(PublicField {
                 name: field.name.as_str().to_owned(),
-                r#type: project_type(&field.r#type, by_id, module, foreign, path)?,
+                r#type: project_type(&field.r#type, by_id, module, exported, foreign)?,
                 required: field.required,
             })
         })
@@ -386,47 +465,57 @@ fn project_type(
     type_ref: &TypeRef,
     by_id: &BTreeMap<&str, &Definition>,
     module: &str,
+    exported: &std::collections::BTreeSet<String>,
     foreign: &mut BTreeMap<String, Vec<String>>,
-    path: &mut Vec<String>,
 ) -> Result<TypeExpr, DiagnosticSet> {
     match type_ref {
         TypeRef::Ref(symbol) => {
-            record_public_ref(by_id, module, symbol.as_str(), foreign, path)?;
+            record_public_ref(by_id, module, exported, symbol.as_str(), foreign, true)?;
             Ok(TypeExpr::Ref {
                 r#ref: symbol.as_str().to_owned(),
             })
         }
         TypeRef::List(inner) => Ok(TypeExpr::List {
-            list: Box::new(project_type(inner, by_id, module, foreign, path)?),
+            list: Box::new(project_type(inner, by_id, module, exported, foreign)?),
         }),
         TypeRef::Optional(inner) => Ok(TypeExpr::Optional {
-            optional: Box::new(project_type(inner, by_id, module, foreign, path)?),
+            optional: Box::new(project_type(inner, by_id, module, exported, foreign)?),
         }),
     }
 }
 
-/// Record one referenced symbol: local or foreign public dependency.
+/// Record one referenced symbol. A public shape reference (`shape: true`:
+/// field, input, payload, and result types) owned by the producing module
+/// must be exported — a private symbol may never become a portable public
+/// contract member. Identity-only references (reads, effect obligations,
+/// invocations, policy operations) are admitted without export because
+/// they never carry the referenced shape into the bundle.
 fn record_public_ref(
     by_id: &BTreeMap<&str, &Definition>,
     module: &str,
+    exported: &std::collections::BTreeSet<String>,
     symbol: &str,
     foreign: &mut BTreeMap<String, Vec<String>>,
-    path: &mut Vec<String>,
+    shape: bool,
 ) -> Result<(), DiagnosticSet> {
     let Some(owner) = symbol.split_once('.').map(|(owner, _)| owner) else {
         return Err(invalid("symbol-id"));
     };
     if owner == module {
+        if shape && !exported.contains(symbol) {
+            // The certified bundle refuses even in advisory mode; the
+            // boundary check reports the exact LEK-MODULE-005 path.
+            return Err(invalid("nonexported-public-closure"));
+        }
         return Ok(());
     }
     let Some(definition) = by_id.get(symbol) else {
         return Err(invalid("unresolved-reference"));
     };
-    if definition.common().portability == Some(Portability::TargetSpecific) {
-        // A target-specific type can never enter the portable closure
-        // silently; the boundary validator reports the exact path.
-        path.push(symbol.to_owned());
-    }
+    // A target-specific type can never enter the portable closure silently;
+    // the boundary validator reports the exact path (LEK-MODULE-006) while
+    // the dependency pin still exists so consumers see the obligation.
+    let _ = definition;
     foreign
         .entry(owner.to_owned())
         .or_default()
@@ -499,8 +588,13 @@ pub fn parse_bundle(bytes: &[u8]) -> Result<PublicBundle, DiagnosticSet> {
     if !is_digest(&bundle.digest) {
         return Err(invalid("bundle-digest"));
     }
+    // The digest domain excludes its own digest member and the integer
+    // definition revision (private provenance), matching the export seam.
     let mut without_digest = bundle.clone();
     without_digest.digest = String::new();
+    for export in &mut without_digest.exports {
+        export.version = 0;
+    }
     let expected = wire::digest(
         wire::DIGEST_DOMAIN_PUBLIC,
         &wire::canonical(&without_digest),

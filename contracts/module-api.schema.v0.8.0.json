@@ -165,7 +165,6 @@
         "uses": {
           "type": "array",
           "items": { "$ref": "#/$defs/semanticId" },
-          "minItems": 1,
           "maxItems": 4096,
           "uniqueItems": true
         },

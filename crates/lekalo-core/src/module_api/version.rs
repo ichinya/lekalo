@@ -203,10 +203,14 @@ impl RequiredBump {
     }
 
     /// Evaluate the required bump between two API versions under the
-    /// declared policy kind of the module.
+    /// declared policy kind of the module. `changed` reports whether any
+    /// semantic change exists at all: identical bundles demand no bump
+    /// regardless of version equality (finding: identical bundles diffed
+    /// as breaking with a phantom patch requirement).
     pub fn evaluate(
         before: Option<&ApiVersion>,
         after: Option<&ApiVersion>,
+        changed: bool,
         breaking: bool,
         additive: bool,
     ) -> Self {
@@ -214,6 +218,9 @@ impl RequiredBump {
             // Digest-only or newly versioned: no SemVer claim to evaluate.
             return Self::None;
         };
+        if !changed {
+            return Self::None;
+        }
         if after.major != before.major {
             return Self::None; // the major segment changed; compliant
         }
@@ -230,11 +237,15 @@ impl RequiredBump {
             };
         }
         if additive {
-            return if after.minor != before.minor || after.major >= 1 && after.patch != before.patch
-            {
+            // Additive public surface needs at least a minor bump on
+            // stable majors; pre-1.0 modules may ship additive surface in
+            // a patch (finding: patch bump accepted additive change).
+            return if after.minor != before.minor {
                 Self::None
-            } else {
+            } else if after.major >= 1 {
                 Self::Minor
+            } else {
+                Self::None
             };
         }
         if after.patch != before.patch || after.minor != before.minor {
@@ -306,39 +317,63 @@ mod tests {
         let v = |text: &str| ApiVersion::parse(text).expect("version");
         // Stable majors require a major bump on breaking changes.
         assert_eq!(
-            RequiredBump::evaluate(Some(&v("2.0.0")), Some(&v("2.0.0")), true, false),
+            RequiredBump::evaluate(Some(&v("2.0.0")), Some(&v("2.0.0")), true, true, false),
             RequiredBump::Major
         );
         assert_eq!(
-            RequiredBump::evaluate(Some(&v("2.0.0")), Some(&v("2.1.0")), true, false),
+            RequiredBump::evaluate(Some(&v("2.0.0")), Some(&v("2.1.0")), true, true, false),
             RequiredBump::Major
         );
         assert_eq!(
-            RequiredBump::evaluate(Some(&v("2.0.0")), Some(&v("3.0.0")), true, false),
+            RequiredBump::evaluate(Some(&v("2.0.0")), Some(&v("3.0.0")), true, true, false),
             RequiredBump::None
         );
         // Pre-1.0 minor-breaking policy.
         assert_eq!(
-            RequiredBump::evaluate(Some(&v("0.3.0")), Some(&v("0.3.0")), true, false),
+            RequiredBump::evaluate(Some(&v("0.3.0")), Some(&v("0.3.0")), true, true, false),
             RequiredBump::Minor
         );
         assert_eq!(
-            RequiredBump::evaluate(Some(&v("0.3.0")), Some(&v("0.4.0")), true, false),
+            RequiredBump::evaluate(Some(&v("0.3.0")), Some(&v("0.4.0")), true, true, false),
             RequiredBump::None
         );
-        // Additive surface needs at least a minor.
+        // Additive surface needs at least a minor on stable majors; a
+        // patch-only bump is a violation (finding 11).
         assert_eq!(
-            RequiredBump::evaluate(Some(&v("1.2.0")), Some(&v("1.2.0")), false, true),
+            RequiredBump::evaluate(Some(&v("1.2.0")), Some(&v("1.2.0")), true, false, true),
             RequiredBump::Minor
+        );
+        assert_eq!(
+            RequiredBump::evaluate(Some(&v("1.2.0")), Some(&v("1.2.1")), true, false, true),
+            RequiredBump::Minor
+        );
+        assert_eq!(
+            RequiredBump::evaluate(Some(&v("1.2.0")), Some(&v("1.3.0")), true, false, true),
+            RequiredBump::None
+        );
+        // Pre-1.0 additive surface may ship in a patch.
+        assert_eq!(
+            RequiredBump::evaluate(Some(&v("0.3.0")), Some(&v("0.3.1")), true, false, true),
+            RequiredBump::None
         );
         // Compatible behavior needs a patch.
         assert_eq!(
-            RequiredBump::evaluate(Some(&v("1.2.0")), Some(&v("1.2.0")), false, false),
+            RequiredBump::evaluate(Some(&v("1.2.0")), Some(&v("1.2.0")), true, false, false),
             RequiredBump::Patch
+        );
+        // Identical bundles never demand a bump, independent of version
+        // equality (finding 9).
+        assert_eq!(
+            RequiredBump::evaluate(Some(&v("1.2.0")), Some(&v("1.2.0")), false, false, false),
+            RequiredBump::None
+        );
+        assert_eq!(
+            RequiredBump::evaluate(Some(&v("3.1.4")), Some(&v("3.1.4")), false, false, false),
+            RequiredBump::None
         );
         // Digest-only modules carry no SemVer claim.
         assert_eq!(
-            RequiredBump::evaluate(None, None, true, false),
+            RequiredBump::evaluate(None, None, true, true, false),
             RequiredBump::None
         );
     }

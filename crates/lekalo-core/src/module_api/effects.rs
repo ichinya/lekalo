@@ -11,10 +11,8 @@
 
 use super::diagnostic::Evidence;
 use super::resolve::Resolved;
-use super::wire::GrantPolicy;
 use crate::effects::{EffectGraph, EffectKind};
 use crate::ir::{Compilation, Definition};
-use std::collections::BTreeMap;
 
 /// The owner module of one semantic symbol id (`module.symbol`).
 pub(crate) fn owner_of(symbol: &str) -> Option<&str> {
@@ -47,15 +45,6 @@ pub fn check_writes(
     _compilation: &Compilation,
     effects: &EffectGraph,
 ) -> Vec<Evidence> {
-    let mut grants: BTreeMap<&str, Vec<&GrantPolicy>> = BTreeMap::new();
-    for module in resolved.modules.values() {
-        for grant in &module.grants {
-            grants
-                .entry(grant.consumer.as_str())
-                .or_default()
-                .push(grant);
-        }
-    }
     let mut evidence = Vec::new();
     for edge in effects.declared() {
         let kind = edge.key().kind();

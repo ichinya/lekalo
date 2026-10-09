@@ -129,7 +129,10 @@ pub fn consumer_snapshot(
             "sha256:{}",
             crate::digest::sha256_hex(project.to_canonical_json().as_bytes())
         ),
-        api_digest: resolved.digest.clone(),
+        // The same digest backs the consumer snapshot, the consumer lock,
+        // and the context capsule: the producer's certified public bundle
+        // digest, never the raw attachment bytes digest (finding 13).
+        api_digest: super::public::export_public(resolved, compilation, producer)?.digest,
     };
     let producer_pin = ProducerPin {
         project: resolved.project.clone(),

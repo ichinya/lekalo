@@ -80,11 +80,17 @@ pub fn plan_consumer_context(
             }
         }
     }
-    // Required public dependencies of the selected exports: the bundle's
-    // bounded dependency set carries the exact pins, so no implicit fetch
-    // is needed.
+    // Required public dependencies of the selected exports: the closure is
+    // transitive over local exports (a selected command's input may reach
+    // a local value object whose fields pin the dependency), so every
+    // required pin is materialized and nothing is silently dropped.
     let mut required_dependencies: Vec<PublicDependency> = Vec::new();
-    for export in &selected {
+    let mut queued: std::collections::BTreeSet<&str> = selected
+        .iter()
+        .map(|export| export.export.as_str())
+        .collect();
+    let mut work: Vec<&PublicExport> = selected.clone();
+    while let Some(export) = work.pop() {
         let references = export_references(export);
         for dependency in &bundle.public_dependencies {
             if references
@@ -95,6 +101,13 @@ pub fn plan_consumer_context(
                     .any(|pinned| pinned.module_id == dependency.module_id)
             {
                 required_dependencies.push((*dependency).clone());
+            }
+        }
+        for reference in references {
+            if let Some(local) = by_id.get(reference.as_str()) {
+                if queued.insert(local.export.as_str()) {
+                    work.push(local);
+                }
             }
         }
     }
@@ -187,8 +200,10 @@ pub fn plan_consumer_context(
     Ok(ContextCapsule { digest, ..capsule })
 }
 
-/// Every semantic reference one export carries.
-fn export_references(export: &PublicExport) -> Vec<String> {
+/// Every semantic reference one export carries: the shared reference
+/// collector for lock dependency extraction, consumer-impact propagation,
+/// and capsule planning.
+pub(crate) fn export_references(export: &PublicExport) -> Vec<String> {
     let mut references: Vec<String> = Vec::new();
     let push_type = |expression: &super::wire::TypeExpr, references: &mut Vec<String>| {
         references.push(expression.leaf().to_owned());

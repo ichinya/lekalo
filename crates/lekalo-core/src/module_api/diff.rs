@@ -45,14 +45,24 @@ pub fn compare_public(
         return Err(super::diagnostic::invalid("consumer-pair"));
     }
     // Bind each side to its own snapshot, never to identical digests.
-    if let Some(before_snapshot) = &before_snapshot {
-        if before_snapshot.producer.module != before.producer.module {
-            return Err(super::diagnostic::invalid("snapshot-side"));
-        }
-    }
-    if let Some(after_snapshot) = &after_snapshot {
-        if after_snapshot.producer.module != after.producer.module {
-            return Err(super::diagnostic::invalid("snapshot-side"));
+    // Every pin is verified: a snapshot minted for another project or a
+    // stale/different producer revision is invalid input, never a silent
+    // participant in exact-consumer reporting (finding 12).
+    for (snapshot, bundle) in [
+        (before_snapshot.as_ref(), &before),
+        (after_snapshot.as_ref(), &after),
+    ]
+    .into_iter()
+    .filter_map(|(snapshot, bundle)| snapshot.map(|snapshot| (snapshot, bundle)))
+    {
+        let bound = snapshot.producer.module == bundle.producer.module
+            && snapshot.producer.project == bundle.producer.project
+            && snapshot.pins.project == bundle.producer.project
+            && snapshot.pins.model_version == bundle.pins.model_version
+            && snapshot.pins.ir_digest == bundle.pins.ir_digest
+            && snapshot.pins.api_digest == bundle.digest;
+        if !bound {
+            return Err(super::diagnostic::invalid("snapshot-binding"));
         }
     }
     let module = before.producer.module.clone();
@@ -142,12 +152,139 @@ pub fn compare_public(
             }
         }
     }
-    // Version policy evaluation.
+    // Bundle-level public policy facts: ports, capabilities, and
+    // deprecation declarations are public semantics the diff must never
+    // ignore (finding 6).
+    {
+        let before_ports: std::collections::BTreeMap<&str, &super::wire::PortPolicy> = before
+            .ports
+            .iter()
+            .map(|port| (port.port.as_str(), port))
+            .collect();
+        for port in &after.ports {
+            match before_ports.get(port.port.as_str()) {
+                None => {
+                    changes.push(DiffChange {
+                        export: port.port.clone(),
+                        member: None,
+                        class: "additive".to_owned(),
+                        reason: "port-added".to_owned(),
+                        before: None,
+                        after: Some(port.operations.join(",")),
+                    });
+                    additive = true;
+                }
+                Some(before_port) => {
+                    if before_port.operations != port.operations {
+                        changes.push(DiffChange {
+                            export: port.port.clone(),
+                            member: None,
+                            class: "behavioral".to_owned(),
+                            reason: "port-operations-changed".to_owned(),
+                            before: Some(before_port.operations.join(",")),
+                            after: Some(port.operations.join(",")),
+                        });
+                    }
+                }
+            }
+        }
+        for port in &before.ports {
+            if !after.ports.iter().any(|added| added.port == port.port) {
+                changes.push(DiffChange {
+                    export: port.port.clone(),
+                    member: None,
+                    class: "wire-breaking".to_owned(),
+                    reason: "port-removed".to_owned(),
+                    before: Some(port.operations.join(",")),
+                    after: None,
+                });
+                breaking = true;
+            }
+        }
+        let before_capabilities: std::collections::BTreeMap<&str, &super::wire::CapabilityPolicy> =
+            before
+                .capabilities
+                .iter()
+                .map(|capability| (capability.capability.as_str(), capability))
+                .collect();
+        for capability in &after.capabilities {
+            match before_capabilities.get(capability.capability.as_str()) {
+                None => {
+                    changes.push(DiffChange {
+                        export: capability.capability.clone(),
+                        member: None,
+                        class: "additive".to_owned(),
+                        reason: "capability-added".to_owned(),
+                        before: None,
+                        after: Some(capability.obligation.clone()),
+                    });
+                    additive = true;
+                }
+                Some(before_capability) => {
+                    if before_capability.obligation != capability.obligation {
+                        changes.push(DiffChange {
+                            export: capability.capability.clone(),
+                            member: None,
+                            class: "behavioral".to_owned(),
+                            reason: "capability-obligation-changed".to_owned(),
+                            before: Some(before_capability.obligation.clone()),
+                            after: Some(capability.obligation.clone()),
+                        });
+                    }
+                }
+            }
+        }
+        for capability in &before.capabilities {
+            if !after
+                .capabilities
+                .iter()
+                .any(|added| added.capability == capability.capability)
+            {
+                changes.push(DiffChange {
+                    export: capability.capability.clone(),
+                    member: None,
+                    class: "wire-breaking".to_owned(),
+                    reason: "capability-removed".to_owned(),
+                    before: Some(capability.obligation.clone()),
+                    after: None,
+                });
+                breaking = true;
+            }
+        }
+        let before_deprecations: std::collections::BTreeMap<&str, &super::wire::DeprecationPolicy> =
+            before
+                .deprecations
+                .iter()
+                .map(|entry| (entry.export.as_str(), entry))
+                .collect();
+        for entry in &after.deprecations {
+            if let Some(before_entry) = before_deprecations.get(entry.export.as_str()) {
+                if before_entry.replacement != entry.replacement {
+                    changes.push(DiffChange {
+                        export: entry.export.clone(),
+                        member: None,
+                        class: "behavioral".to_owned(),
+                        reason: "deprecation-replacement-changed".to_owned(),
+                        before: before_entry.replacement.clone(),
+                        after: entry.replacement.clone(),
+                    });
+                }
+            }
+        }
+    }
+    // Version policy evaluation: identical bundles demand no bump.
     let before_version = before.api_version.as_deref().and_then(ApiVersion::parse);
     let after_version = after.api_version.as_deref().and_then(ApiVersion::parse);
+    // Deprecation windows: a removal before the declared window, a
+    // removal due that never happened, and a broken replacement obligation
+    // are policy violations with typed evidence (finding 18: the parsed
+    // deprecation surface is enforced at the diff seam).
+    let deprecation_evidence = deprecation_findings(&before, &after, after_version.as_ref());
+    let deprecation_denial = !deprecation_evidence.is_empty();
     let required = RequiredBump::evaluate(
         before_version.as_ref(),
         after_version.as_ref(),
+        !changes.is_empty(),
         breaking,
         additive,
     );
@@ -182,19 +319,18 @@ pub fn compare_public(
     if version_policy.decision == "violation" {
         breaking = true;
     }
-    // Consumer impact over the union inventory.
+    // Consumer impact over the union inventory; dependency changes
+    // propagate through the used-export transitive closure.
     let (consumers, coverage) = consumer_impact(
         &before_map,
         &after_map,
         &changes,
         &before_snapshot,
         &after_snapshot,
+        &after,
     );
-    let verdict = if consumers
-        .iter()
-        .any(|consumer| consumer.status == "affected" && consumer.policy.is_some())
-        && strict_denial(&consumers)
-    {
+    let policy_denied = strict_denial(&consumers) || deprecation_denial;
+    let verdict = if policy_denied {
         "policy-denied"
     } else if breaking {
         "breaking"
@@ -222,7 +358,7 @@ pub fn compare_public(
         version_policy,
         verdict: verdict.to_owned(),
     };
-    let mut evidence = Vec::new();
+    let mut evidence = deprecation_evidence;
     if report.version_policy.decision == "violation" {
         let mut finding = Evidence::new(
             "module-api.version-policy-violation",
@@ -231,10 +367,11 @@ pub fn compare_public(
         );
         finding.expected = report.version_policy.expected.clone();
         finding.actual = report.version_policy.actual.clone();
+        finding.path = vec!["bump-missing".to_owned()];
         evidence.push(finding);
     }
     for consumer in &report.consumers {
-        if consumer.status == "affected" {
+        if consumer.status == "affected" && consumer.reason.as_deref() != Some("policy-accepted") {
             let mut finding = Evidence::new(
                 "module-api.consumer-incompatible",
                 &report.after.module,
@@ -242,25 +379,104 @@ pub fn compare_public(
             );
             finding.consumer = Some(consumer.consumer.clone());
             finding.producer = Some(report.after.module.clone());
-            finding.path = consumer
-                .changes
-                .first()
-                .map(|change| vec![change.clone()])
-                .unwrap_or_default();
+            finding.path = vec![consumer
+                .policy
+                .clone()
+                .unwrap_or_else(|| "unversioned".to_owned())];
             evidence.push(finding);
         }
     }
     Ok((report, evidence))
 }
 
-/// Whether strict policy denies: any affected consumer carrying an
-/// incompatible declared policy.
+/// Deprecation-window evidence across the two bundles: a removed export
+/// that left its declared window early, a still-present export whose
+/// window has closed at the candidate version, and a replacement
+/// obligation pointing at a non-public target.
+fn deprecation_findings(
+    before: &super::wire::PublicBundle,
+    after: &super::wire::PublicBundle,
+    after_version: Option<&ApiVersion>,
+) -> Vec<Evidence> {
+    let mut findings = Vec::new();
+    let version_of = |text: &str| ApiVersion::parse(text);
+    // The after side: still-present exports whose removal window closed.
+    for entry in &after.deprecations {
+        let Some(removed_in) = entry.removed_in.as_deref().and_then(version_of) else {
+            continue;
+        };
+        let Some(current) = after_version else {
+            continue;
+        };
+        let still_present = after
+            .exports
+            .iter()
+            .any(|export| export.export == entry.export);
+        if still_present && *current >= removed_in {
+            let mut finding = Evidence::new(
+                "module-api.deprecation-window-violation",
+                &after.producer.module,
+                "removal-window-closed",
+            );
+            finding.export = Some(entry.export.clone());
+            finding.expected = Some(format!("removed-by-{removed_in}"));
+            finding.actual = after.api_version.clone();
+            findings.push(finding);
+        }
+    }
+    // Removals before the window and broken replacement obligations.
+    for entry in &before.deprecations {
+        if after
+            .exports
+            .iter()
+            .any(|export| export.export == entry.export)
+        {
+            continue;
+        }
+        if let (Some(removed_in), Some(current)) = (
+            entry.removed_in.as_deref().and_then(version_of),
+            after_version,
+        ) {
+            if *current < removed_in {
+                let mut finding = Evidence::new(
+                    "module-api.deprecation-window-violation",
+                    &after.producer.module,
+                    "removal-before-window",
+                );
+                finding.export = Some(entry.export.clone());
+                finding.expected = Some(format!("not-before-{removed_in}"));
+                finding.actual = after.api_version.clone();
+                findings.push(finding);
+            }
+        }
+        if let Some(replacement) = &entry.replacement {
+            if !after
+                .exports
+                .iter()
+                .any(|export| &export.export == replacement)
+            {
+                let mut finding = Evidence::new(
+                    "module-api.deprecation-window-violation",
+                    &after.producer.module,
+                    "replacement-obligation",
+                );
+                finding.export = Some(entry.export.clone());
+                finding.expected = Some(replacement.clone());
+                finding.actual = Some("absent".to_owned());
+                findings.push(finding);
+            }
+        }
+    }
+    findings
+}
+
+/// Whether any consumer row denies under strict policy: an affected
+/// consumer whose declared policy rejects the candidate resolution.
 fn strict_denial(consumers: &[ConsumerImpact]) -> bool {
     consumers.iter().any(|consumer| {
         consumer.status == "affected" && consumer.reason == Some("policy-incompatible".to_owned())
     })
 }
-
 /// The wire kind spelling of one export for evidence text.
 fn export_kind(export: &super::wire::PublicExport) -> String {
     export.kind.clone()
@@ -442,15 +658,128 @@ fn compare_exports(
             after.retryable.map(|value| value.to_string()),
         ));
     }
-    // Effect obligations.
-    if before.effects != after.effects {
+    // Scalar base: the public primitive domain of the type.
+    if before.base != after.base {
+        changes.push((
+            None,
+            "wire-breaking".to_owned(),
+            "base-changed".to_owned(),
+            before.base.clone(),
+            after.base.clone(),
+        ));
+        breaking = true;
+    }
+    // Entity identity members are public semantics.
+    if before.identity != after.identity {
+        changes.push((
+            None,
+            "wire-breaking".to_owned(),
+            "identity-changed".to_owned(),
+            Some(before.identity.join(",")),
+            Some(after.identity.join(",")),
+        ));
+        breaking = true;
+    }
+    // Query read sets are pinned public obligations.
+    if before.reads != after.reads {
         changes.push((
             None,
             "behavioral".to_owned(),
-            "effects-changed".to_owned(),
-            Some(format!("{}", before.effects.len())),
-            Some(format!("{}", after.effects.len())),
+            "reads-changed".to_owned(),
+            Some(before.reads.join(",")),
+            Some(after.reads.join(",")),
         ));
+    }
+    // Endpoint wire binding: method and path are the route contract.
+    if before.method != after.method || before.path != after.path {
+        changes.push((
+            None,
+            "wire-breaking".to_owned(),
+            "route-changed".to_owned(),
+            Some(format!(
+                "{} {}",
+                before.method.as_deref().unwrap_or_default(),
+                before.path.as_deref().unwrap_or_default()
+            )),
+            Some(format!(
+                "{} {}",
+                after.method.as_deref().unwrap_or_default(),
+                after.path.as_deref().unwrap_or_default()
+            )),
+        ));
+        breaking = true;
+    }
+    if before.invokes != after.invokes {
+        changes.push((
+            None,
+            "wire-breaking".to_owned(),
+            "operation-changed".to_owned(),
+            before.invokes.clone(),
+            after.invokes.clone(),
+        ));
+        breaking = true;
+    }
+    // Policy decision and governed operations.
+    if before.decision != after.decision {
+        changes.push((
+            None,
+            "behavioral".to_owned(),
+            "decision-changed".to_owned(),
+            before.decision.clone(),
+            after.decision.clone(),
+        ));
+    }
+    if before.operations != after.operations {
+        changes.push((
+            None,
+            "behavioral".to_owned(),
+            "operations-changed".to_owned(),
+            Some(before.operations.join(",")),
+            Some(after.operations.join(",")),
+        ));
+    }
+    // Effect obligations, keyed by (entity, operation): a removed
+    // obligation is a wire break; additions and emit changes are
+    // behavioral facts consumers must observe.
+    {
+        let key = |obligation: &super::wire::EffectObligation| {
+            (obligation.entity.clone(), obligation.operation.clone())
+        };
+        let before_effects: std::collections::BTreeMap<_, _> =
+            before.effects.iter().map(|o| (key(o), o)).collect();
+        let after_effects: std::collections::BTreeMap<_, _> =
+            after.effects.iter().map(|o| (key(o), o)).collect();
+        for (key, obligation) in &before_effects {
+            if !after_effects.contains_key(key) {
+                changes.push((
+                    None,
+                    "wire-breaking".to_owned(),
+                    "effect-removed".to_owned(),
+                    Some(format!("{}|{}", key.0, key.1)),
+                    None,
+                ));
+                breaking = true;
+            } else if after_effects[key].emits != obligation.emits {
+                changes.push((
+                    None,
+                    "behavioral".to_owned(),
+                    "effect-emits-changed".to_owned(),
+                    Some(obligation.emits.join(",")),
+                    Some(after_effects[key].emits.join(",")),
+                ));
+            }
+        }
+        for key in after_effects.keys() {
+            if !before_effects.contains_key(key) {
+                changes.push((
+                    None,
+                    "behavioral".to_owned(),
+                    "effect-added".to_owned(),
+                    None,
+                    Some(format!("{}|{}", key.0, key.1)),
+                ));
+            }
+        }
     }
     (changes, breaking)
 }
@@ -474,7 +803,10 @@ fn public_type_text(expression: &super::wire::TypeExpr) -> String {
     }
 }
 
-/// The union before/after consumer inventory partition.
+/// The union before/after consumer inventory partition. A public
+/// dependency change marks every consumer whose used exports transitively
+/// reach the changed dependency (finding 19); each declared policy is
+/// evaluated against the candidate resolution (finding 5).
 #[allow(clippy::type_complexity)]
 fn consumer_impact<'a>(
     before_map: &std::collections::BTreeMap<&'a str, &'a super::wire::PublicExport>,
@@ -482,10 +814,61 @@ fn consumer_impact<'a>(
     changes: &[DiffChange],
     before_snapshot: &Option<ConsumerSnapshot>,
     after_snapshot: &Option<ConsumerSnapshot>,
+    after: &super::wire::PublicBundle,
 ) -> (Vec<ConsumerImpact>, DiffCoverage) {
+    // The hard-impact export set: every export with a non-additive change
+    // plus the transitive dependents of changed public dependencies.
+    let mut hard: std::collections::BTreeSet<&str> = changes
+        .iter()
+        .filter(|change| change.class != "additive")
+        .map(|change| change.export.as_str())
+        .collect();
+    let changed_deps: std::collections::BTreeSet<&str> = changes
+        .iter()
+        .filter(|change| change.reason == "public-dependency-changed")
+        .map(|change| change.export.as_str())
+        .collect();
+    if !changed_deps.is_empty() {
+        let dep_symbols: std::collections::BTreeSet<&str> = after
+            .public_dependencies
+            .iter()
+            .filter(|dependency| changed_deps.contains(dependency.module_id.as_str()))
+            .flat_map(|dependency| dependency.exports.iter().map(String::as_str))
+            .collect();
+        for export_id in after_map.keys() {
+            // Explicit worklist over the local reference closure; a hit on
+            // any changed dependency symbol marks the dependent export.
+            let mut visited: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+            let mut stack: Vec<&str> = vec![*export_id];
+            let mut touches = false;
+            while let Some(node) = stack.pop() {
+                if !visited.insert(node) {
+                    continue;
+                }
+                if let Some(node_export) = after_map.get(node) {
+                    for reference in super::context::export_references(node_export) {
+                        if dep_symbols.contains(reference.as_str()) {
+                            touches = true;
+                            break;
+                        }
+                        if let Some((key, _)) = after_map.get_key_value(reference.as_str()) {
+                            stack.push(*key);
+                        }
+                    }
+                }
+                if touches {
+                    break;
+                }
+            }
+            if touches {
+                hard.insert(export_id);
+            }
+        }
+    }
     let impacted: std::collections::BTreeSet<&str> = changes
         .iter()
         .map(|change| change.export.as_str())
+        .chain(hard.iter().copied())
         .collect();
     let mut rows: std::collections::BTreeMap<
         String,
@@ -562,29 +945,44 @@ fn consumer_impact<'a>(
             (false, true) => "after",
             (false, false) => "both",
         };
-        let status = if hits.is_empty() {
+        let mut status = if hits.is_empty() {
             "unaffected"
-        } else if changes
-            .iter()
-            .any(|change| change.class != "additive" && hits.contains(&change.export.as_str()))
-        {
+        } else if hits.iter().any(|hit| hard.contains(hit)) {
             "affected"
         } else {
             "compatible"
         };
+        let policy_kind = policy.map(policy_kind_text);
+        // The declared policy is evaluated against the candidate
+        // resolution (finding 5): an accepted range/version keeps the
+        // break visible without denying; a rejected resolution marks the
+        // consumer affected and denies under strict even when the public
+        // change itself is additive (the pinned digest no longer matches).
+        let policy_verdict = policy
+            .and_then(super::version::ConsumerPolicy::parse)
+            .map(|parsed| {
+                if parsed.accepts(&after.digest, after.api_version.as_deref()) {
+                    "policy-accepted"
+                } else {
+                    "policy-incompatible"
+                }
+            });
+        if !hits.is_empty() && policy_verdict == Some("policy-incompatible") {
+            status = "affected";
+        }
         if status != "unaffected" {
             known += 1;
         }
-        let policy_kind = policy.map(policy_kind_text);
         let reason = match status {
-            "affected" => {
-                if policy_kind.is_some() {
-                    Some("policy-incompatible".to_owned())
-                } else {
-                    Some("unversioned-consumer".to_owned())
-                }
-            }
-            "compatible" => Some("additive-only".to_owned()),
+            "affected" => match policy_verdict {
+                Some("policy-incompatible") => Some("policy-incompatible".to_owned()),
+                Some(_) => Some("policy-accepted".to_owned()),
+                None => Some("unversioned-consumer".to_owned()),
+            },
+            "compatible" => match policy_verdict {
+                Some("policy-incompatible") => Some("policy-incompatible".to_owned()),
+                _ => Some("additive-only".to_owned()),
+            },
             _ => None,
         };
         consumers.push(ConsumerImpact {

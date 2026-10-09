@@ -122,10 +122,14 @@ pub(crate) fn diagnostic(evidence: &Evidence) -> Result<Diagnostic, DiagnosticSe
             );
         }
         "module-api.symbol-not-exported" | "module-api.import-undeclared" => {
-            data.insert(
-                "consumer".to_owned(),
-                token_value(evidence.consumer.as_deref().unwrap_or_default()),
-            );
+            // The registry allowlist admits producer/export for both rules;
+            // `import-undeclared` never declares a consumer field.
+            if evidence.rule == "module-api.symbol-not-exported" {
+                data.insert(
+                    "consumer".to_owned(),
+                    token_value(evidence.consumer.as_deref().unwrap_or_default()),
+                );
+            }
             data.insert(
                 "producer".to_owned(),
                 token_value(evidence.producer.as_deref().unwrap_or_default()),
@@ -171,7 +175,7 @@ pub(crate) fn diagnostic(evidence: &Evidence) -> Result<Diagnostic, DiagnosticSe
                 ),
             );
         }
-        "module-api.consumer-incompatible" | "module-api.lock-stale" => {
+        "module-api.consumer-incompatible" => {
             data.insert(
                 "consumer".to_owned(),
                 token_value(evidence.consumer.as_deref().unwrap_or_default()),
@@ -190,6 +194,10 @@ pub(crate) fn diagnostic(evidence: &Evidence) -> Result<Diagnostic, DiagnosticSe
                         .unwrap_or_default(),
                 ),
             );
+            // expected/actual stay report-only: the registry data
+            // allowlist for this rule carries no version witnesses.
+        }
+        "module-api.lock-stale" => {
             data.insert(
                 "expected".to_owned(),
                 token_value(evidence.expected.as_deref().unwrap_or_default()),
@@ -198,6 +206,8 @@ pub(crate) fn diagnostic(evidence: &Evidence) -> Result<Diagnostic, DiagnosticSe
                 "actual".to_owned(),
                 token_value(evidence.actual.as_deref().unwrap_or_default()),
             );
+            // consumer/producer/policy stay report-only: the registry data
+            // allowlist for this rule carries only the pin witnesses.
         }
         "module-api.version-policy-violation" | "module-api.deprecation-window-violation" => {
             data.insert(
@@ -261,15 +271,90 @@ pub(crate) fn diagnostic(evidence: &Evidence) -> Result<Diagnostic, DiagnosticSe
         .map_err(|_| crate::result::singleton_set("diagnostics.registry-invalid"))
 }
 
-/// Build a validated set from evidence under one status or collapse to the
-/// invariant set.
+/// The registry-allowed statuses of one rule (mirrors
+/// diagnostic-registry.v0.8.0.json). Producers must never discover them
+/// through a failed set construction: a mismatched status collapses the
+/// whole typed report into one generic registry invariant diagnostic and
+/// destroys the evidence.
+pub(crate) fn allowed_statuses(rule: &str) -> &'static [Status] {
+    match rule {
+        "module-api.input-invalid" => &[Status::Invalid],
+        "module-api.version-unsupported" => &[Status::UnsupportedVersion],
+        "module-api.symbol-not-exported"
+        | "module-api.import-undeclared"
+        | "module-api.public-private-exposure"
+        | "module-api.public-target-exposure"
+        | "module-api.cross-module-write-forbidden"
+        | "module-api.dependency-cycle" => &[Status::Valid, Status::Invalid],
+        "module-api.consumer-incompatible"
+        | "module-api.version-policy-violation"
+        | "module-api.deprecation-window-violation"
+        | "module-api.lock-stale" => &[Status::Valid, Status::Denied],
+        "module-api.evidence-incomplete" => &[Status::Valid, Status::Unavailable],
+        "module-api.policy-denied" => &[Status::Denied],
+        _ => &[Status::Invalid],
+    }
+}
+
+/// Build a validated set from evidence under one status. Evidence whose
+/// rule does not allow the status is deterministically excluded here (it
+/// stays in the typed report payload) instead of collapsing the entire
+/// report to the registry-invariant set; an over-limit admissible set is
+/// truncated in the same canonical order with the report carrying the
+/// incompleteness. Only a true registry invariant (unknown rule, registry
+/// failure) still collapses.
 pub fn set(evidence: &[Evidence], status: Status) -> Result<DiagnosticSet, DiagnosticSet> {
-    let diagnostics = evidence
+    let mut admissible: Vec<&Evidence> = evidence
         .iter()
-        .map(diagnostic)
-        .collect::<Result<Vec<_>, _>>()?;
-    DiagnosticSet::try_from_unsorted(diagnostics, status)
-        .map_err(|_| crate::result::singleton_set("diagnostics.registry-invalid"))
+        .filter(|finding| allowed_statuses(finding.rule).contains(&status))
+        .collect();
+    admissible.sort_by(|left, right| {
+        (left.rule, left.subject.as_str(), left.detail.as_str()).cmp(&(
+            right.rule,
+            right.subject.as_str(),
+            right.detail.as_str(),
+        ))
+    });
+    admissible.dedup_by(|left, right| {
+        left.rule == right.rule && left.subject == right.subject && left.detail == right.detail
+    });
+    let mut taken = admissible.len();
+    loop {
+        let diagnostics = admissible[..taken]
+            .iter()
+            .map(|finding| diagnostic(finding))
+            .collect::<Result<Vec<_>, _>>()?;
+        match DiagnosticSet::try_from_unsorted(diagnostics, status) {
+            Ok(set) => return Ok(set),
+            Err(crate::diagnostics::normalize::SetError::OverLimit) => {
+                let bound = crate::diagnostics::types::limits::DIAGNOSTICS_PER_RESULT;
+                if taken <= bound {
+                    taken = taken.saturating_sub(1);
+                } else {
+                    taken = bound;
+                }
+            }
+            Err(_) => return Err(crate::result::singleton_set("diagnostics.registry-invalid")),
+        }
+    }
+}
+
+/// The denied seam: only denied-allowed evidence plus one terminal
+/// policy-denied marker, so a stale lock mixed with boundary findings can
+/// never collapse the report (finding: diagnostic envelope collapse).
+pub fn denied_set(
+    evidence: &[Evidence],
+    subject: &str,
+    detail: &str,
+) -> Result<DiagnosticSet, DiagnosticSet> {
+    let mut marker = Evidence::new("module-api.policy-denied", subject, detail);
+    marker.path = evidence
+        .iter()
+        .map(|finding| finding.rule.to_owned())
+        .collect();
+    let mut all: Vec<Evidence> = evidence.to_vec();
+    all.push(marker);
+    set(&all, Status::Denied)
 }
 
 /// One invalid input set.

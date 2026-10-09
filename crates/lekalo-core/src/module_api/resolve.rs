@@ -13,28 +13,18 @@ use super::diagnostic::invalid;
 use super::version::{is_digest, ApiVersion, ConsumerPolicy};
 use super::wire::{
     self, Attachment, ModuleMap, VersionPolicyWire, MAX_EXPORTS_PER_MODULE, MAX_MODULES,
+    MAX_USES_PER_CONSUMER,
 };
 use crate::diagnostics::DiagnosticSet;
 use crate::ir::{Compilation, DefinitionKind, Visibility};
-use std::collections::BTreeMap;
 
-/// The resolved, bound attachment: policy per exact module id plus the
-/// sorted exports each module owns.
+/// The resolved, bound attachment: policy per exact module id.
 #[derive(Clone, Debug)]
 pub struct Resolved {
     pub project: String,
     pub modules: ModuleMap,
-    /// The exports each declared module owns, sorted by symbol bytes.
-    pub owned_exports: BTreeMap<String, Vec<OwnedExport>>,
     /// The exact attachment bytes digest (domain-prefixed).
     pub digest: String,
-}
-
-/// One exportable definition owned by the producing module.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct OwnedExport {
-    pub symbol: String,
-    pub kind: DefinitionKind,
 }
 
 /// The export kinds the closed grammar admits.
@@ -72,7 +62,6 @@ pub fn resolve(bytes: &[u8], compilation: &Compilation) -> Result<Resolved, Diag
         }
     }
     let mut modules = ModuleMap::new();
-    let mut owned_exports: BTreeMap<String, Vec<OwnedExport>> = BTreeMap::new();
     for module in &attachment.modules {
         if modules
             .insert(module.module_id.clone(), module.clone())
@@ -104,7 +93,7 @@ pub fn resolve(bytes: &[u8], compilation: &Compilation) -> Result<Resolved, Diag
         if module.exports.len() > MAX_EXPORTS_PER_MODULE {
             return Err(invalid("export-bound"));
         }
-        let mut exports: Vec<OwnedExport> = Vec::with_capacity(module.exports.len());
+        let mut seen_symbols: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
         for entry in &module.exports {
             // The export id is `module.symbol` and the symbol must be owned.
             let Some((owner, symbol)) = entry.export.split_once('.') else {
@@ -113,7 +102,7 @@ pub fn resolve(bytes: &[u8], compilation: &Compilation) -> Result<Resolved, Diag
             if owner != module.module_id {
                 return Err(invalid("foreign-export"));
             }
-            if exports.iter().any(|owned| owned.symbol == symbol) {
+            if !seen_symbols.insert(symbol) {
                 return Err(invalid("duplicate-export"));
             }
             let Some(definition) = project
@@ -135,23 +124,24 @@ pub fn resolve(bytes: &[u8], compilation: &Compilation) -> Result<Resolved, Diag
                 // Model definition kind; existence is checked at export.
                 continue;
             };
-            let _ = kind;
-            exports.push(OwnedExport {
-                symbol: symbol.to_owned(),
-                kind: *kind,
-            });
+            // The declared kind must agree with the actual definition kind:
+            // a mislabeled attachment row is contradictory input, never a
+            // silent relabeling of the exported surface.
+            if definition.kind() != *kind {
+                return Err(invalid("kind-contradiction"));
+            }
         }
-        exports.sort_by(|left, right| left.symbol.cmp(&right.symbol));
-        owned_exports.insert(module.module_id.clone(), exports);
         // apiVersion, when present, must be canonical stable SemVer.
         if let Some(version) = &module.api_version {
             if ApiVersion::parse(version).is_none() {
                 return Err(invalid("api-version"));
             }
         }
-        // Consumer declarations parse their closed policies now.
+        // Consumer declarations parse their closed policies now. Declared
+        // zero-use consumers stay in scope (subscriptions and range
+        // policies never vanish); the per-consumer use bound is enforced.
         for consumer in &module.consumers {
-            if consumer.uses.is_empty() || consumer.uses.len() > MAX_EXPORTS_PER_MODULE {
+            if consumer.uses.len() > MAX_USES_PER_CONSUMER {
                 return Err(invalid("consumer-use-bound"));
             }
             let mut unique = consumer.uses.clone();
@@ -235,6 +225,22 @@ pub fn resolve(bytes: &[u8], compilation: &Compilation) -> Result<Resolved, Diag
                 return Err(invalid("unknown-grant-consumer"));
             }
         }
+        // Every declared import use must be an exact public export of the
+        // imported module: selected uses are policy facts about the
+        // provider's allowlist, never guessed or private symbols.
+        for import in &module.imports {
+            if import.uses.is_empty() {
+                continue;
+            }
+            let Some(provider) = modules.get(&import.module_id) else {
+                return Err(invalid("unknown-import-module"));
+            };
+            for use_id in &import.uses {
+                if !entry_exported(&provider.exports, use_id) {
+                    return Err(invalid("unknown-import-use"));
+                }
+            }
+        }
     }
     let project_id = attachment.project.clone();
     let digest = wire::digest(wire::DIGEST_DOMAIN_API, &wire::canonical(&attachment));
@@ -242,7 +248,6 @@ pub fn resolve(bytes: &[u8], compilation: &Compilation) -> Result<Resolved, Diag
         project: project_id,
         digest,
         modules,
-        owned_exports,
     })
 }
 
