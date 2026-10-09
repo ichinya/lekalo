@@ -99,6 +99,19 @@ pub(crate) fn absent_digest() -> String {
     format!("sha256:{}", crate::digest::sha256_hex(b""))
 }
 
+/// The exact bytes of the canonical history sidecar: `None` when the file
+/// does not exist. Any other read failure is corruption and fails closed
+/// (round 2, finding 8): an existing empty ledger is decoded by
+/// [`History::decode`] and refused there.
+fn read_history_bytes(root: &Path) -> Result<Option<Vec<u8>>, ChangeError> {
+    let path = root.join(version::HISTORY_LOGICAL_PATH.replace('/', std::path::MAIN_SEPARATOR_STR));
+    match std::fs::read(&path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(_) => Err(ChangeError::HistoryInvalid { detail: "read" }),
+    }
+}
+
 /// Whether one candidate symbol id satisfies the semantic-id grammar the
 /// loader already enforces; request decoding refuses everything else.
 pub(crate) fn symbol_id_valid(id: &str) -> bool {
@@ -147,6 +160,9 @@ pub struct ApplyOptions<'a> {
     pub idempotency_key: &'a str,
     /// The expected plan identity; a mismatch refuses before mutation.
     pub expect_plan: Option<&'a str>,
+    /// Explicit acknowledgement of reported breaking classes (part of the
+    /// durable execution intent; round 2, finding 10).
+    pub allow_breaking: bool,
 }
 
 /// The options of one full apply run over raw request bytes.
@@ -397,14 +413,18 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
         complete_reason: diff.complete_reason().map(str::to_owned),
     };
 
-    // Compatibility gate: breaking classes need policy or explicit
-    // acknowledgement. Invalid candidates never reach this line.
+    // Compatibility gate: breaking classes need policy, explicit
+    // acknowledgement, or (for evidence classes) reviewed evidence.
+    // Invalid candidates never reach this line. The acknowledgement flag
+    // never authorizes data-loss or storage classes (round 2, finding 15):
+    // those need a reviewed policy with migration evidence.
     let mut denied_breaking_classes = Vec::new();
     for class in &semantic_diff.classification {
-        if policy::BREAKING_CLASSES.contains(&class.as_str())
-            && !policy.allows(class)
-            && !options.allow_breaking
-        {
+        if !policy::BREAKING_CLASSES.contains(&class.as_str()) {
+            continue;
+        }
+        let flag_authorizes = options.allow_breaking && !policy::requires_evidence(class);
+        if !policy.allows(class) && !flag_authorizes {
             denied_breaking_classes.push(class.clone());
         }
     }
@@ -420,7 +440,9 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
         note: "plan-only; run `lekalo generate --locked` to execute".to_owned(),
     };
 
-    // Complete input inventory with exact byte pins.
+    // Complete input inventory with exact byte pins. The history sidecar
+    // distinguishes absent from empty (round 2, finding 8): a present but
+    // empty or unreadable ledger refuses before any mutation.
     let mut inputs: Vec<InputPin> = load
         .documents
         .iter()
@@ -430,17 +452,13 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
         })
         .collect();
     let history_path = version::HISTORY_LOGICAL_PATH.to_owned();
-    let history_bytes =
-        std::fs::read(root.join(history_path.replace('/', std::path::MAIN_SEPARATOR_STR)))
-            .unwrap_or_default();
-    let history_present = !history_bytes.is_empty();
+    let history_digest = match read_history_bytes(&root)? {
+        None => absent_digest(),
+        Some(bytes) => format!("sha256:{}", crate::digest::sha256_hex(&bytes)),
+    };
     inputs.push(InputPin {
         path: history_path,
-        digest: if history_present {
-            format!("sha256:{}", crate::digest::sha256_hex(&history_bytes))
-        } else {
-            absent_digest()
-        },
+        digest: history_digest,
     });
     inputs.sort_by(|left, right| left.path.as_bytes().cmp(right.path.as_bytes()));
 
@@ -537,6 +555,7 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
         edits: per_file_edits,
         root,
         diff_complete,
+        allow_breaking: options.allow_breaking,
     };
     if !prepared.denied_breaking_classes.is_empty() {
         return Err(ChangeError::CompatibilityDenied {
@@ -556,16 +575,13 @@ pub fn apply_request(options: &ApplyRequestOptions) -> Result<Receipt, ChangeErr
     }
     let root = resolve_root(options.project)?;
     refuse_while_recovery_pending(&root)?;
+    let key = receipt::key_digest(options.idempotency_key);
     // The durable ledger answers before any preparation runs: the Model
     // already carries the committed change, so a fresh resolve would refuse
-    // as a duplicate. Replay must still work.
-    let key = receipt::key_digest(options.idempotency_key);
-    let history_file =
-        root.join(version::HISTORY_LOGICAL_PATH.replace('/', std::path::MAIN_SEPARATOR_STR));
-    // Absent reads as "no history"; an existing zero-byte ledger is a
-    // corrupt document and fails closed (review finding 11).
-    let history_bytes = std::fs::read(&history_file).unwrap_or_default();
-    if !history_bytes.is_empty() {
+    // as a duplicate. Replay must still work. Absent (NotFound) means no
+    // ledger yet; any other read failure, or an existing empty ledger, is
+    // corruption and fails closed (round 2, finding 8).
+    if let Some(history_bytes) = read_history_bytes(&root)? {
         let history = History::decode(&history_bytes)?;
         if let Some(record) = history.by_key(&key) {
             // The ledger binds canonical request bytes, so a repeated key
@@ -582,6 +598,18 @@ pub fn apply_request(options: &ApplyRequestOptions) -> Result<Receipt, ChangeErr
             if record.request_digest != request_digest {
                 return Err(ChangeError::IdempotencyConflict);
             }
+            // The durable execution intent is part of the binding (round 2,
+            // finding 10): the same key under a different policy, expected
+            // plan, or acknowledgement is a conflict.
+            let policy_digest = options.policy.as_ref().map(|bytes| receipt::bytes_digest(bytes));
+            let intent = receipt::intent_digest(
+                policy_digest.as_deref(),
+                options.expect_plan,
+                options.allow_breaking,
+            );
+            if record.intent_digest != intent {
+                return Err(ChangeError::IdempotencyConflict);
+            }
             return replayed_receipt(record);
         }
     }
@@ -596,6 +624,7 @@ pub fn apply_request(options: &ApplyRequestOptions) -> Result<Receipt, ChangeErr
         &ApplyOptions {
             idempotency_key: options.idempotency_key,
             expect_plan: options.expect_plan,
+            allow_breaking: options.allow_breaking,
         },
     )
 }
@@ -624,23 +653,31 @@ pub fn apply_prepared(
 
     // The durable ledger is authoritative: replay first, conflict second.
     // Absent (NotFound) means the first commit creates it; an existing
-    // zero-byte or whitespace-only file is a corrupt document and fails
-    // closed inside `History::decode` (review finding 11).
+    // empty or unreadable ledger is a corrupt document and fails closed
+    // (round 2, finding 8).
     let history_logical = version::HISTORY_LOGICAL_PATH;
-    let history_file = root.join(history_logical.replace('/', std::path::MAIN_SEPARATOR_STR));
-    let history_bytes = std::fs::read(&history_file).unwrap_or_default();
-    let mut history = if history_bytes.is_empty() {
-        History {
+    let history_bytes = read_history_bytes(&root)?;
+    let mut history = match &history_bytes {
+        None => History {
             project: prepared.project_id.clone(),
             next_sequence: 1,
             records: Vec::new(),
-        }
-    } else {
-        History::decode(&history_bytes)?
+        },
+        Some(bytes) => History::decode(bytes)?,
     };
     let key = receipt::key_digest(options.idempotency_key);
     if let Some(record) = history.by_key(&key) {
         if record.request_digest != prepared.request_digest() {
+            return Err(ChangeError::IdempotencyConflict);
+        }
+        // The durable execution intent is part of the binding (round 2,
+        // finding 10).
+        let intent = receipt::intent_digest(
+            prepared.policy.digest.as_deref(),
+            options.expect_plan,
+            prepared.allow_breaking,
+        );
+        if record.intent_digest != intent {
             return Err(ChangeError::IdempotencyConflict);
         }
         return replayed_receipt(record);
@@ -648,13 +685,23 @@ pub fn apply_prepared(
 
     // Re-verify the complete pinned input set before any mutation (the
     // prepare-to-apply CAS point, including the history sidecar itself).
+    // Absent vs empty stay distinct for the sidecar (round 2, finding 8).
     for pin in &prepared.inputs {
-        let bytes = std::fs::read(root.join(pin.path.replace('/', std::path::MAIN_SEPARATOR_STR)))
-            .unwrap_or_default();
-        let digest = if bytes.is_empty() && pin.path == history_logical {
-            absent_digest()
+        let digest = if pin.path == history_logical {
+            match read_history_bytes(&root)? {
+                None => absent_digest(),
+                Some(bytes) => format!("sha256:{}", crate::digest::sha256_hex(&bytes)),
+            }
         } else {
-            format!("sha256:{}", crate::digest::sha256_hex(&bytes))
+            match std::fs::read(root.join(pin.path.replace('/', std::path::MAIN_SEPARATOR_STR))) {
+                Ok(bytes) => format!("sha256:{}", crate::digest::sha256_hex(&bytes)),
+                Err(_) => {
+                    return Err(ChangeError::PreconditionFailed {
+                        subject: pin.path.clone(),
+                        detail: "input-digest",
+                    })
+                }
+            }
         };
         if digest != pin.digest {
             return Err(ChangeError::PreconditionFailed {
@@ -723,9 +770,12 @@ pub fn apply_prepared(
         .map(|(path, _)| path.clone())
         .collect();
     // The chain anchor: the digest over the previous record's digest plus
-    // this record's pinned fields and receipt state. The anchor value is
+    // the ENTIRE receipt projection (operations with subjects/statuses,
+    // file before/after digests, transaction identity/state, accepted
+    // policy/evidence, state, and the history sequence — the anchor's own
+    // digest member is excluded from the hash input). The anchor value is
     // embedded in the receipt projection below, so decode recomputes and
-    // verifies the whole chain (review finding 5).
+    // verifies the whole chain (round 2, finding 7).
     let previous_digest = history
         .records
         .last()
@@ -739,22 +789,24 @@ pub fn apply_prepared(
                 .to_owned()
         })
         .unwrap_or_else(|| receipt::GENESIS_DIGEST.to_owned());
-    let anchor = HistoryAnchor {
-        sequence,
-        record_digest: receipt::record_digest(
-            receipt::RecordIdentity {
-                previous: &previous_digest,
-                sequence,
-                key_digest: &key,
-                request_digest: prepared.request_digest().as_str(),
-                plan_id: prepared.plan_id().as_str(),
-                state: state.as_str(),
-            },
-            &record_operations,
-            &record_files,
-        ),
+    // The accepted policy and evidence recorded on the receipt (round 2,
+    // finding 15): a data-loss/storage authorization is only recorded
+    // when the reviewed policy actually carries the migration evidence.
+    let policy_acceptance = receipt::PolicyAcceptance {
+        policy_digest: prepared.policy.digest.clone(),
+        allow_breaking: prepared.allow_breaking,
+        evidence: if prepared
+            .semantic_diff
+            .classification
+            .iter()
+            .any(|class| policy::requires_evidence(class))
+        {
+            prepared.policy.migration_evidence().map(str::to_owned)
+        } else {
+            None
+        },
     };
-    let receipt = receipt::Receipt {
+    let mut receipt = receipt::Receipt {
         status: "valid".to_owned(),
         state: state.as_str().to_owned(),
         plan_id: Some(prepared.plan_id()),
@@ -762,7 +814,11 @@ pub fn apply_prepared(
         key_digest: Some(key.clone()),
         operations: prepared.operations.clone(),
         files,
-        history: Some(anchor),
+        policy: Some(policy_acceptance),
+        history: Some(HistoryAnchor {
+            sequence,
+            record_digest: String::new(),
+        }),
         transaction: Some(receipt::TransactionWire {
             id: transaction_id.clone(),
             state: TransactionState::Committed.as_str().to_owned(),
@@ -770,11 +826,26 @@ pub fn apply_prepared(
         diagnostic_ids: Vec::new(),
         replayed: false,
     };
+    let projection = receipt
+        .history_projection()
+        .ok_or(ChangeError::HistoryInvalid {
+            detail: "projection",
+        })?;
+    let record_digest_value = receipt::record_digest(&previous_digest, &projection);
+    receipt.history = Some(HistoryAnchor {
+        sequence,
+        record_digest: record_digest_value,
+    });
     let record = HistoryRecord {
         sequence,
         key_digest: key,
         request_digest: prepared.request_digest(),
         plan_id: prepared.plan_id(),
+        intent_digest: receipt::intent_digest(
+            prepared.policy.digest.as_deref(),
+            options.expect_plan,
+            prepared.allow_breaking,
+        ),
         operations: record_operations,
         files: record_files,
         receipt: receipt
@@ -789,21 +860,21 @@ pub fn apply_prepared(
     // The history sidecar replacement joins the same transaction so the
     // ledger and the sources commit together; source replacements restore
     // before it on ordinary failure.
+    let history_present = history_bytes.is_some();
     plans.push(ReplacementPlan {
         logical: history_logical.to_owned(),
-        before_digest: if history_bytes.is_empty() {
-            absent_digest()
-        } else {
-            format!("sha256:{}", crate::digest::sha256_hex(&history_bytes))
+        before_digest: match &history_bytes {
+            None => absent_digest(),
+            Some(bytes) => format!("sha256:{}", crate::digest::sha256_hex(bytes)),
         },
         after_digest: format!("sha256:{}", crate::digest::sha256_hex(&final_history_bytes)),
         edits: vec![ByteEdit {
             start: 0,
-            end: history_bytes.len(),
+            end: history_bytes.as_ref().map(Vec::len).unwrap_or(0),
             replacement: String::from_utf8(final_history_bytes.clone())
                 .map_err(|_| ChangeError::HistoryInvalid { detail: "encoding" })?,
         }],
-        creation: history_bytes.is_empty(),
+        creation: !history_present,
     });
 
     let mut transaction =
@@ -849,14 +920,12 @@ pub fn lookup_receipt(
             });
         }
     }
-    let history_file =
-        root.join(version::HISTORY_LOGICAL_PATH.replace('/', std::path::MAIN_SEPARATOR_STR));
     // Absent reads as "no record"; an existing zero-byte (or
     // whitespace-only) ledger is a corrupt document and fails closed
-    // (review finding 11).
-    let history_bytes = match std::fs::read(&history_file) {
-        Ok(bytes) => bytes,
-        Err(_) => return Ok(None),
+    // (round 2, finding 8), as is any read failure other than NotFound.
+    let history_bytes = match read_history_bytes(&root)? {
+        Some(bytes) => bytes,
+        None => return Ok(None),
     };
     let history = History::decode(&history_bytes)?;
     let key = receipt::key_digest(idempotency_key);
@@ -974,6 +1043,11 @@ fn stored_receipt(record: &HistoryRecord) -> Result<Receipt, ChangeError> {
         .map(|transaction| serde_json::from_value(transaction.clone()))
         .transpose()
         .map_err(|_| invalid())?;
+    let policy = value
+        .get("policy")
+        .map(|policy| serde_json::from_value(policy.clone()))
+        .transpose()
+        .map_err(|_| invalid())?;
     Ok(Receipt {
         status: "valid".to_owned(),
         state,
@@ -982,6 +1056,7 @@ fn stored_receipt(record: &HistoryRecord) -> Result<Receipt, ChangeError> {
         key_digest: Some(record.key_digest.clone()),
         operations,
         files,
+        policy,
         history,
         transaction,
         diagnostic_ids: value

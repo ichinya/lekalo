@@ -19,7 +19,7 @@ use crate::digest::sha256_hex;
 const MAX_HISTORY_BYTES: usize = 4 * 1024 * 1024;
 
 /// The exact member count of one canonical history record.
-const RECORD_MEMBERS: usize = 7;
+const RECORD_MEMBERS: usize = 8;
 
 /// The closed receipt state vocabulary.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -82,6 +82,19 @@ pub struct FileOutcome {
     pub outcome: String,
 }
 
+/// The accepted policy and evidence recorded on every receipt (round 2,
+/// finding 15): which reviewed policy bytes authorized the change, whether
+/// explicit acknowledgement was given, and the migration-evidence digest
+/// when a data-loss or storage class was authorized.
+#[derive(Clone, Debug, Serialize, serde::Deserialize, Eq, PartialEq)]
+pub struct PolicyAcceptance {
+    #[serde(rename = "policyDigest")]
+    pub policy_digest: Option<String>,
+    #[serde(rename = "allowBreaking")]
+    pub allow_breaking: bool,
+    pub evidence: Option<String>,
+}
+
 /// The closed wire projection of one receipt.
 #[derive(Clone, Debug, Serialize, Eq, PartialEq)]
 pub struct Receipt {
@@ -100,6 +113,9 @@ pub struct Receipt {
     pub key_digest: Option<String>,
     pub operations: Vec<ResolvedOperation>,
     pub files: Vec<FileOutcome>,
+    /// The accepted policy/evidence of the run (`null` where no plan
+    /// applies, e.g. a recovery receipt).
+    pub policy: Option<PolicyAcceptance>,
     pub history: Option<HistoryAnchor>,
     pub transaction: Option<TransactionWire>,
     #[serde(rename = "diagnosticIds")]
@@ -193,6 +209,11 @@ pub struct HistoryRecord {
     pub request_digest: String,
     /// The plan identity of the committed change.
     pub plan_id: String,
+    /// The `sha256:` digest of the execution intent (policy digest, expected
+    /// plan, acknowledgement flag) the record was committed under (round 2,
+    /// finding 10): same key plus a different policy or expectation is a
+    /// conflict, never a silent replay.
+    pub intent_digest: String,
     /// The operation discriminators in request order.
     pub operations: Vec<String>,
     /// The logical paths of the files the transaction replaced.
@@ -294,6 +315,18 @@ impl History {
                 .and_then(Json::as_str)
                 .ok_or(super::diagnostic::ChangeError::HistoryInvalid { detail: "plan-id" })?
                 .to_owned();
+            let intent_digest = record_map
+                .get("intentDigest")
+                .and_then(Json::as_str)
+                .ok_or(super::diagnostic::ChangeError::HistoryInvalid {
+                    detail: "intent-digest",
+                })?
+                .to_owned();
+            if super::expect_digest(&intent_digest).is_none() {
+                return Err(super::diagnostic::ChangeError::HistoryInvalid {
+                    detail: "intent-digest-shape",
+                });
+            }
             let operations = record_map
                 .get("operations")
                 .and_then(Json::as_array)
@@ -322,26 +355,16 @@ impl History {
             // fields and carry its own chain anchor: a forged record with
             // invented plan/files/receipt members is refused here, and
             // decode never defaults a missing state (review finding 5).
-            let receipt_state = verify_receipt_projection(
+            verify_receipt_projection(
                 &receipt,
+                sequence,
                 &key_digest,
                 &request_digest,
                 &plan_id,
                 &operations,
                 &files,
             )?;
-            let digest = record_digest(
-                RecordIdentity {
-                    previous: &chain,
-                    sequence,
-                    key_digest: &key_digest,
-                    request_digest: &request_digest,
-                    plan_id: &plan_id,
-                    state: receipt_state,
-                },
-                &operations,
-                &files,
-            );
+            let digest = record_digest(&chain, &receipt);
             let anchor = receipt
                 .get("history")
                 .and_then(|history| history.get("recordDigest"))
@@ -360,6 +383,7 @@ impl History {
                 key_digest,
                 request_digest,
                 plan_id,
+                intent_digest,
                 operations,
                 files,
                 receipt,
@@ -394,6 +418,7 @@ impl History {
                     "keyDigest": record.key_digest,
                     "requestDigest": record.request_digest,
                     "planId": record.plan_id,
+                    "intentDigest": record.intent_digest,
                     "operations": record.operations,
                     "files": record.files,
                     "receipt": record.receipt,
@@ -434,39 +459,53 @@ impl History {
 pub(crate) const GENESIS_DIGEST: &str =
     "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
-/// The canonical per-record digest: binds one history record to its exact
-/// fields, to its embedded receipt's pinned state, and — through the
-/// previous record's digest — to every earlier record (chain; the genesis
-/// uses the empty-bytes digest). Insertion, deletion, reorder, and field
-/// tampering all break the chain and fail decode closed (review finding
-/// 5). Encode ([`super::apply_prepared`]) and decode
+/// The canonical per-record digest: binds one history record to the
+/// ENTIRE receipt projection it stores — every operation row (subject,
+/// family, status, detail), every file outcome (path, before/after
+/// digests, outcome), the transaction identity and state, the accepted
+/// policy/evidence, the receipt state, and the history sequence —
+/// chained to every earlier record through the previous record's digest
+/// (the genesis uses the empty-bytes digest). The anchor's own
+/// `recordDigest` member is removed before hashing, so the digest is
+/// computable on both encode and decode without circularity. Insertion,
+/// deletion, reorder, and field tampering all break the chain and fail
+/// decode closed (round 2, finding 7: hash chaining alone is not
+/// authentication — every security-relevant claim is inside the digest
+/// input). Encode ([`super::apply_prepared`]) and decode
 /// ([`History::decode`]) compute exactly this formula.
-pub(crate) struct RecordIdentity<'a> {
-    pub previous: &'a str,
-    pub sequence: u64,
-    pub key_digest: &'a str,
-    pub request_digest: &'a str,
-    pub plan_id: &'a str,
-    pub state: &'a str,
+pub(crate) fn record_digest(previous: &str, receipt_projection: &Json) -> String {
+    let mut projection = receipt_projection.clone();
+    if let Some(history) = projection.get_mut("history").and_then(Json::as_object_mut) {
+        history.remove("recordDigest");
+    }
+    let canonical = serde_json::to_string(&projection).unwrap_or_default();
+    format!(
+        "sha256:{}",
+        sha256_hex(format!("{previous}\u{1f}{canonical}").as_bytes())
+    )
 }
 
-pub(crate) fn record_digest(
-    identity: RecordIdentity<'_>,
-    operations: &[String],
-    files: &[String],
+/// The `sha256:` digest of the durable execution intent of one apply run
+/// (round 2, finding 10): the exact policy bytes, the expected plan, and
+/// the explicit-acknowledgement flag. Same key plus a different intent is
+/// a conflict, never a silent replay.
+pub(crate) fn intent_digest(
+    policy_digest: Option<&str>,
+    expect_plan: Option<&str>,
+    allow_breaking: bool,
 ) -> String {
     let canonical = format!(
-        "{}\u{1f}{}\u{1f}{}\u{1f}{}\u{1f}{}\u{1f}{}\u{1f}{}\u{1f}{}",
-        identity.previous,
-        identity.sequence,
-        identity.key_digest,
-        identity.request_digest,
-        identity.plan_id,
-        identity.state,
-        operations.join("\u{1e}"),
-        files.join("\u{1e}"),
+        "{}\u{1f}{}\u{1f}{}",
+        policy_digest.unwrap_or("none"),
+        expect_plan.unwrap_or("none"),
+        if allow_breaking { "allowed" } else { "default" },
     );
     format!("sha256:{}", sha256_hex(canonical.as_bytes()))
+}
+
+/// The bounded `sha256:` digest of raw bytes (the policy-bytes pin).
+pub(crate) fn bytes_digest(bytes: &[u8]) -> String {
+    format!("sha256:{}", sha256_hex(bytes))
 }
 
 /// The bounded `sha256:` digest of one raw idempotency key. The raw key
@@ -506,6 +545,7 @@ pub(crate) fn has_duplicate_keys(document: &str) -> bool {
 /// record — right key digest, invented plan/receipt — fails here.
 fn verify_receipt_projection<'a>(
     receipt: &'a Json,
+    sequence: u64,
     key_digest: &str,
     request_digest: &str,
     plan_id: &str,
@@ -587,14 +627,41 @@ fn verify_receipt_projection<'a>(
     {
         return invalid("receipt-files-mismatch");
     }
-    // The history anchor must be a well-formed sequence + digest pair.
+    // The accepted policy/evidence member must be present and well-formed
+    // (round 2, finding 15): null for plan-less recovery receipts, or the
+    // closed acceptance object. Its content is hash-bound by the chain.
+    match map.get("policy") {
+        Some(Json::Null) => {}
+        Some(policy) => {
+            let Some(policy) = policy.as_object() else {
+                return invalid("receipt-policy");
+            };
+            if policy.len() != 3
+                || !matches!(policy.get("allowBreaking"), Some(Json::Bool(_)))
+                || !matches!(
+                    policy.get("policyDigest"),
+                    None | Some(Json::Null) | Some(Json::String(_))
+                )
+                || !matches!(
+                    policy.get("evidence"),
+                    None | Some(Json::Null) | Some(Json::String(_))
+                )
+            {
+                return invalid("receipt-policy");
+            }
+        }
+        None => return invalid("receipt-policy"),
+    }
+    // The history anchor must be a well-formed sequence + digest pair, and
+    // its sequence must equal the record's own sequence (round 2,
+    // finding 7: no drifted anchor).
     let history = map.get("history").and_then(Json::as_object).ok_or(
         super::diagnostic::ChangeError::HistoryInvalid {
             detail: "receipt-history",
         },
     )?;
     if history.len() != 2
-        || history.get("sequence").and_then(Json::as_u64).is_none()
+        || history.get("sequence").and_then(Json::as_u64) != Some(sequence)
         || history.get("recordDigest").and_then(Json::as_str).is_none()
     {
         return invalid("receipt-history");

@@ -231,7 +231,9 @@ if (receipt.code !== 0) fail("receipt-exit", { code: receipt.code });
 if (receipt.json?.state !== "committed") fail("receipt-state", receipt.json);
 if (receipt.json?.planId !== apply.json.planId) fail("receipt-plan-id");
 
-// 9. The breaking removal denies without the explicit acknowledgement.
+// 9. The breaking removal denies without acknowledgement AND under the
+//    bare flag (round 2 finding 15: data-loss classes need reviewed
+//    evidence); a reviewed policy with migration evidence authorizes it.
 const removalRequest = writeJson("gate-removal.json", {
   schemaVersion: "lekalo/change-request/v0.8.0",
   operations: [{ operation: "entity-field:remove", entity: "tasks.task", name: "priority" }],
@@ -251,6 +253,27 @@ if (denied.code !== 3) fail("breaking-exit", { code: denied.code });
 if (!denied.json?.reasonCodes?.includes("change.compatibility-denied")) {
   fail("breaking-rule", denied.json?.reasonCodes);
 }
+const flagOnly = run([
+  "change",
+  "request",
+  ...projectArgs,
+  "--request",
+  removalRequest,
+  "--apply",
+  "--idempotency-key",
+  "gate-remove-v2",
+  "--allow-breaking",
+  "--json",
+]);
+if (flagOnly.code !== 3) fail("breaking-flag-bypassed-evidence", { code: flagOnly.code });
+const evidenceDigest =
+  "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const evidencePolicy = writeJson("gate-evidence-policy.json", {
+  schemaVersion: "lekalo/change-policy/v0.8.0",
+  identity: "dev.lekalo.change-policy@0.8.0",
+  allowBreakingClasses: ["data-loss-risk", "source-breaking"],
+  evidence: { migrationPlanDigest: evidenceDigest },
+});
 const allowed = run([
   "change",
   "request",
@@ -260,11 +283,15 @@ const allowed = run([
   "--apply",
   "--idempotency-key",
   "gate-remove-v1",
-  "--allow-breaking",
+  "--policy",
+  evidencePolicy,
   "--json",
 ]);
 if (allowed.code !== 0) fail("breaking-allowed-exit", { code: allowed.code });
 if (allowed.json?.state !== "committed") fail("breaking-allowed-state", allowed.json);
+if (allowed.json?.policy?.evidence !== evidenceDigest) {
+  fail("breaking-allowed-evidence-recorded", allowed.json?.policy);
+}
 if (readFileSync(entities, "utf8").includes('- name: "priority"')) {
   fail("breaking-allowed-not-applied");
 }

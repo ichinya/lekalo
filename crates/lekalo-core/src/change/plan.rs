@@ -181,6 +181,10 @@ pub struct PreparedChange {
     pub(crate) root: std::path::PathBuf,
     /// Whether every file diff fit inside the bounded plan export.
     pub(crate) diff_complete: bool,
+    /// Whether the preparation run carried the explicit breaking-class
+    /// acknowledgement (part of the durable execution intent; round 2,
+    /// finding 10). Evidence classes are never authorized by it.
+    pub(crate) allow_breaking: bool,
 }
 
 impl PreparedChange {

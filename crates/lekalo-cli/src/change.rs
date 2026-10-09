@@ -324,6 +324,7 @@ pub(crate) fn run(command: ChangeCommands) -> DomainResult {
                     "keyDigest": Json::Null,
                     "operations": [],
                     "files": outcome.files,
+                    "policy": Json::Null,
                     "history": Json::Null,
                     "transaction": {
                         "id": transaction,

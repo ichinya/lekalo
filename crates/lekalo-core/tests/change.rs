@@ -105,14 +105,39 @@ fn apply_request(
     key: &str,
     allow_breaking: bool,
 ) -> Result<change::Receipt, ChangeError> {
+    apply_request_opts(sandbox, request, key, allow_breaking, None)
+}
+
+fn apply_request_opts(
+    sandbox: &Sandbox,
+    request: &[u8],
+    key: &str,
+    allow_breaking: bool,
+    policy: Option<Vec<u8>>,
+) -> Result<change::Receipt, ChangeError> {
     change::apply_request(&ApplyRequestOptions {
         project: Some(&sandbox.selection_str()),
         request,
-        policy: None,
+        policy: policy.as_deref(),
         allow_breaking,
         idempotency_key: key,
         expect_plan: None,
     })
+}
+
+/// A reviewed policy that authorizes the evidence classes with migration
+/// evidence (round 2, finding 15): the boolean flag alone can never
+/// authorize `data-loss-risk` or `storage-migration-required`.
+fn evidence_policy() -> Vec<u8> {
+    serde_json::to_vec(&serde_json::json!({
+        "schemaVersion": "lekalo/change-policy/v0.8.0",
+        "identity": "dev.lekalo.change-policy@0.8.0",
+        "allowBreakingClasses": ["data-loss-risk", "source-breaking"],
+        "evidence": {
+            "migrationPlanDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+    }))
+    .expect("policy serializes")
 }
 
 #[test]
@@ -184,7 +209,7 @@ fn dry_run_writes_nothing_and_carries_both_diffs() {
 }
 
 #[test]
-fn breaking_remove_denies_without_acknowledgement_and_applies_with_it() {
+fn breaking_remove_needs_reviewed_evidence_not_just_the_flag() {
     let sandbox = Sandbox::new("breaking");
     // Land the field first.
     let request = add_priority_request();
@@ -208,9 +233,27 @@ fn breaking_remove_denies_without_acknowledgement_and_applies_with_it() {
         other => panic!("expected compatibility denial, got {other:?}"),
     }
     assert_eq!(sandbox.entities_bytes(), before, "nothing mutated");
-    let receipt =
-        apply_request(&sandbox, &remove, "remove-priority-v1", true).expect("applies with flag");
+    // Round 2, finding 15: the flag alone never authorizes a data-loss
+    // class — removal stays denied under `--allow-breaking`.
+    let error = apply_request(&sandbox, &remove, "remove-priority-v1", true)
+        .expect_err("flag cannot bypass data-loss evidence");
+    assert!(
+        matches!(error, ChangeError::CompatibilityDenied { .. }),
+        "got {error:?}"
+    );
+    assert_eq!(sandbox.entities_bytes(), before, "still nothing mutated");
+    // A reviewed policy with migration evidence authorizes the removal.
+    let receipt = apply_request_opts(
+        &sandbox,
+        &remove,
+        "remove-priority-v1",
+        false,
+        Some(evidence_policy()),
+    )
+    .expect("applies with the reviewed policy");
     assert_eq!(receipt.state(), ReceiptState::Committed);
+    // The receipt records the accepted policy and evidence.
+    assert!(receipt.policy.is_some(), "policy acceptance recorded");
     let after = String::from_utf8(sandbox.entities_bytes()).expect("utf8");
     assert!(!after.contains("- name: \"priority\""));
     // The enum definition survives the member removal.
@@ -357,6 +400,7 @@ fn drifted_inputs_refuse_the_sealed_plan() {
         &ApplyOptions {
             idempotency_key: "drift-v1",
             expect_plan: None,
+            allow_breaking: false,
         },
     )
     .expect_err("precondition");
@@ -694,13 +738,16 @@ fn rename_touches_only_the_identity_scalar_bytes() {
         denied,
         ChangeError::CompatibilityDenied { ref classes } if !classes.is_empty()
     ));
+    // Round 2, finding 15: a member rename reports data-loss-risk, so the
+    // boolean flag alone cannot authorize it — the reviewed policy with
+    // migration evidence can.
     let prepared = change::prepare(&PrepareOptions {
         project: Some(&sandbox.selection_str()),
         request: &request,
-        policy: None,
-        allow_breaking: true,
+        policy: Some(&evidence_policy()),
+        allow_breaking: false,
     })
-    .expect("prepares with acknowledgement");
+    .expect("prepares with the reviewed policy");
     let plan: serde_json::Value =
         serde_json::from_str(&prepared.to_json_string()).expect("plan json");
     let patch = plan["fileDiff"][0]["patch"].as_array().expect("patch");
@@ -724,6 +771,7 @@ fn rename_touches_only_the_identity_scalar_bytes() {
         &ApplyOptions {
             idempotency_key: "rename-v1",
             expect_plan: None,
+            allow_breaking: false,
         },
     )
     .expect("commits");
@@ -858,6 +906,7 @@ fn a_valid_multi_operation_batch_on_one_file_commits() {
         &ApplyOptions {
             idempotency_key: "batch-v1",
             expect_plan: None,
+            allow_breaking: false,
         },
     )
     .expect("commits");

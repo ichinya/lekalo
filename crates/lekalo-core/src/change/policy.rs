@@ -17,6 +17,24 @@ pub const BREAKING_CLASSES: [&str; 4] = [
     "source-breaking",
 ];
 
+/// The breaking classes that additionally require reviewed migration
+/// evidence: `--allow-breaking` alone never authorizes them, and a policy
+/// must carry the evidence to allow them (round 2, finding 15 — the
+/// boolean alone is insufficient for these consequences).
+pub const EVIDENCE_CLASSES: [&str; 2] = ["data-loss-risk", "storage-migration-required"];
+
+/// Whether one breaking class additionally requires reviewed evidence.
+pub fn requires_evidence(class: &str) -> bool {
+    EVIDENCE_CLASSES.contains(&class)
+}
+
+/// The reviewed evidence a policy carries (round 2, finding 15).
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Evidence {
+    /// The exact `sha256:` digest of the reviewed migration plan.
+    pub migration_plan_digest: Option<String>,
+}
+
 /// Maximum accepted policy bytes before any decode runs.
 const MAX_POLICY_BYTES: usize = 64 * 1024;
 
@@ -26,6 +44,8 @@ pub struct Policy {
     /// The allowed breaking classes in canonical order (subset order of
     /// [`BREAKING_CLASSES`]).
     pub allow_breaking_classes: Vec<String>,
+    /// The reviewed evidence the policy carries.
+    pub evidence: Option<Evidence>,
     /// The exact `sha256:` digest of the policy bytes, when one was loaded.
     pub digest: Option<String>,
 }
@@ -57,7 +77,7 @@ impl Policy {
         for key in map.keys() {
             if !matches!(
                 key.as_str(),
-                "schemaVersion" | "identity" | "allowBreakingClasses"
+                "schemaVersion" | "identity" | "allowBreakingClasses" | "evidence"
             ) {
                 return Err(ChangeError::PolicyInvalid {
                     detail: "unknown-member",
@@ -111,17 +131,70 @@ impl Policy {
                         .position(|candidate| candidate == right),
                 )
         });
+        // The optional reviewed evidence (round 2, finding 15): a closed
+        // object whose only member is the reviewed migration-plan digest.
+        let mut evidence: Option<Evidence> = None;
+        if let Some(value) = map.get("evidence") {
+            let object = value.as_object().ok_or(ChangeError::PolicyInvalid {
+                detail: "evidence-not-object",
+            })?;
+            for key in object.keys() {
+                if key != "migrationPlanDigest" {
+                    return Err(ChangeError::PolicyInvalid {
+                        detail: "unknown-evidence-member",
+                    });
+                }
+            }
+            let migration_plan_digest = match object.get("migrationPlanDigest") {
+                None | Some(Json::Null) => None,
+                Some(digest) => {
+                    let text = digest.as_str().ok_or(ChangeError::PolicyInvalid {
+                        detail: "evidence-digest-type",
+                    })?;
+                    Some(
+                        super::expect_digest(text).ok_or(ChangeError::PolicyInvalid {
+                            detail: "evidence-digest-shape",
+                        })?,
+                    )
+                }
+            };
+            evidence = Some(Evidence {
+                migration_plan_digest,
+            });
+        }
         Ok(Self {
             allow_breaking_classes,
+            evidence,
             digest: Some(format!("sha256:{}", crate::digest::sha256_hex(bytes))),
         })
     }
 
-    /// Whether this policy allows the given breaking class.
+    /// Whether this policy allows the given breaking class. Evidence
+    /// classes additionally require the reviewed migration evidence
+    /// (round 2, finding 15): an allow-list entry alone is insufficient.
     pub fn allows(&self, class: &str) -> bool {
-        self.allow_breaking_classes
+        if !self
+            .allow_breaking_classes
             .iter()
             .any(|allowed| allowed == class)
+        {
+            return false;
+        }
+        if requires_evidence(class) {
+            return self
+                .evidence
+                .as_ref()
+                .and_then(|evidence| evidence.migration_plan_digest.as_ref())
+                .is_some();
+        }
+        true
+    }
+
+    /// The reviewed migration-evidence digest, when the policy carries it.
+    pub fn migration_evidence(&self) -> Option<&str> {
+        self.evidence
+            .as_ref()
+            .and_then(|evidence| evidence.migration_plan_digest.as_deref())
     }
 
     /// Whether every reported breaking class is allowed.
@@ -214,5 +287,58 @@ mod tests {
         let policy = Policy::decode(format!("{HEADER}}}").as_bytes()).expect("decodes");
         assert!(policy.allow_breaking_classes.is_empty());
         assert!(!policy.allows("wire-breaking"));
+    }
+
+    #[test]
+    fn evidence_classes_require_the_reviewed_migration_evidence() {
+        // Round 2, finding 15: an allow-list entry alone never authorizes
+        // data-loss/storage classes; the reviewed evidence must be present.
+        let without = Policy::decode(
+            format!("{HEADER},\"allowBreakingClasses\":[\"data-loss-risk\",\"source-breaking\"]}}")
+                .as_bytes(),
+        )
+        .expect("policy decodes");
+        assert!(without.allows("source-breaking"));
+        assert!(!without.allows("data-loss-risk"));
+        let with = Policy::decode(
+            format!(
+                "{HEADER},\"allowBreakingClasses\":[\"data-loss-risk\"],\"evidence\":{{\"migrationPlanDigest\":\"sha256:{}\"}}}}",
+                "a".repeat(64)
+            )
+            .as_bytes(),
+        )
+        .expect("policy with evidence decodes");
+        assert!(with.allows("data-loss-risk"));
+        assert_eq!(
+            with.migration_evidence(),
+            Some("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        );
+    }
+
+    #[test]
+    fn evidence_member_is_closed_and_strictly_typed() {
+        let unknown = Policy::decode(
+            format!(
+                "{HEADER},\"evidence\":{{\"plan\":\"sha256:{}\"}}}}",
+                "a".repeat(64)
+            )
+            .as_bytes(),
+        );
+        assert!(matches!(
+            unknown,
+            Err(ChangeError::PolicyInvalid {
+                detail: "unknown-evidence-member"
+            })
+        ));
+        let bad_shape = Policy::decode(
+            format!("{HEADER},\"evidence\":{{\"migrationPlanDigest\":\"sha256:nope\"}}}}")
+                .as_bytes(),
+        );
+        assert!(matches!(
+            bad_shape,
+            Err(ChangeError::PolicyInvalid {
+                detail: "evidence-digest-shape"
+            })
+        ));
     }
 }

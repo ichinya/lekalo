@@ -7,6 +7,7 @@
       "files": [
         "lekalo/modules/tasks/entities.yaml"
       ],
+      "intentDigest": "sha256:be559fffeadea9b7295b84c387e898eb1c755c041e12f1d18648a294366a05ae",
       "keyDigest": "sha256:426fcff9463b3f01eb47cc6e5f40b36d473534083837305a5500634e1a624ca7",
       "operations": [
         "entity-field:add"
@@ -23,7 +24,7 @@
           }
         ],
         "history": {
-          "recordDigest": "sha256:1873fb74a0bf8a89fd58b66b10afb7ac61ac8de34cdff79f6f7573d5586ec01d",
+          "recordDigest": "sha256:36cad096de460e16a9bca402d4ce3c4c695b8f70ba357f335726ae914e2aa6bd",
           "sequence": 1
         },
         "identity": "dev.lekalo.change-receipt@0.8.0",
@@ -37,6 +38,11 @@
           }
         ],
         "planId": "sha256:39cd0aece77351166ded338045da3fc60fdaa3b328be994c78a7202bec4b4817",
+        "policy": {
+          "allowBreaking": false,
+          "evidence": null,
+          "policyDigest": null
+        },
         "replayed": false,
         "requestDigest": "sha256:d4512aa94f9458bb36a78869e4db527ec8bde05527ed56550dc5e81134e20f6a",
         "schemaVersion": "lekalo/change-receipt/v0.8.0",

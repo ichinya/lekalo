@@ -310,7 +310,38 @@ fn breaking_operation_denies_without_the_explicit_flag() {
         "--json",
     ]);
     assert_eq!(exit, 1, "invalid subjects stay invalid under the flag");
-    // A valid breaking operation commits with the flag and one key.
+    // Round 2, finding 15: the flag alone never authorizes a data-loss
+    // class — the removal stays denied under --allow-breaking.
+    let (exit, still_denied, _) = sandbox.run(&[
+        "change",
+        "request",
+        "--project",
+        &selection,
+        "--request",
+        &removal,
+        "--apply",
+        "--idempotency-key",
+        "remove-done-v3",
+        "--allow-breaking",
+        "--json",
+    ]);
+    assert_eq!(exit, 3, "the flag cannot bypass data-loss evidence");
+    assert_eq!(still_denied["status"], "denied");
+    // A reviewed policy with migration evidence authorizes the removal.
+    let policy_file = sandbox.root.join("evidence-policy.json");
+    std::fs::write(
+        &policy_file,
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "schemaVersion": "lekalo/change-policy/v0.8.0",
+            "identity": "dev.lekalo.change-policy@0.8.0",
+            "allowBreakingClasses": ["data-loss-risk", "source-breaking"],
+            "evidence": {
+                "migrationPlanDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+        }))
+        .expect("policy serializes"),
+    )
+    .expect("policy written");
     let (exit, receipt, _) = sandbox.run(&[
         "change",
         "request",
@@ -321,11 +352,18 @@ fn breaking_operation_denies_without_the_explicit_flag() {
         "--apply",
         "--idempotency-key",
         "remove-done-v1",
-        "--allow-breaking",
+        "--policy",
+        policy_file.to_str().expect("policy path"),
         "--json",
     ]);
     assert_eq!(exit, 0);
     assert_eq!(receipt["state"], "committed");
+    // The accepted policy and evidence are recorded on the receipt.
+    assert_eq!(receipt["policy"]["allowBreaking"], false);
+    assert_eq!(
+        receipt["policy"]["evidence"],
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    );
 }
 
 #[test]

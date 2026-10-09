@@ -22,9 +22,14 @@
       "outcome": "replaced"
     }
   ],
+  "policy": {
+    "policyDigest": null,
+    "allowBreaking": false,
+    "evidence": null
+  },
   "history": {
     "sequence": 1,
-    "recordDigest": "sha256:1873fb74a0bf8a89fd58b66b10afb7ac61ac8de34cdff79f6f7573d5586ec01d"
+    "recordDigest": "sha256:36cad096de460e16a9bca402d4ce3c4c695b8f70ba357f335726ae914e2aa6bd"
   },
   "transaction": {
     "id": "change-39cd0aec-1",

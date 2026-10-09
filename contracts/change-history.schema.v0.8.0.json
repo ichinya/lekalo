@@ -55,6 +55,7 @@
         "keyDigest",
         "requestDigest",
         "planId",
+        "intentDigest",
         "operations",
         "files",
         "receipt"
@@ -96,6 +97,9 @@
         },
         "receipt": {
           "$ref": "#/$defs/receiptProjection"
+        },
+        "intentDigest": {
+          "$ref": "#/$defs/sha256"
         }
       }
     },
@@ -112,6 +116,7 @@
         "keyDigest",
         "operations",
         "files",
+        "policy",
         "history",
         "transaction",
         "diagnosticIds",
@@ -175,6 +180,16 @@
         },
         "status": {
           "const": "valid"
+        },
+        "policy": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/policyAcceptance"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     },
@@ -293,6 +308,40 @@
         "state": {
           "enum": [
             "committed"
+          ]
+        }
+      }
+    },
+    "policyAcceptance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policyDigest",
+        "allowBreaking",
+        "evidence"
+      ],
+      "properties": {
+        "policyDigest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "allowBreaking": {
+          "type": "boolean"
+        },
+        "evidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
           ]
         }
       }

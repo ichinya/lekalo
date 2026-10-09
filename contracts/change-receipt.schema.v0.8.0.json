@@ -15,6 +15,7 @@
     "keyDigest",
     "operations",
     "files",
+    "policy",
     "history",
     "transaction",
     "diagnosticIds",
@@ -118,6 +119,17 @@
     "status": {
       "const": "valid",
       "description": "The envelope status of the run; only valid runs carry a plan or receipt payload."
+    },
+    "policy": {
+      "description": "The accepted policy and evidence of the run; null where no plan applies.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/policyAcceptance"
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
   "$defs": {
@@ -249,6 +261,40 @@
             "committed",
             "rolled-back",
             "recovery-required"
+          ]
+        }
+      }
+    },
+    "policyAcceptance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policyDigest",
+        "allowBreaking",
+        "evidence"
+      ],
+      "properties": {
+        "policyDigest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "allowBreaking": {
+          "type": "boolean"
+        },
+        "evidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
           ]
         }
       }
