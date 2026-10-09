@@ -54,8 +54,9 @@ use crate::result::DomainResult;
 /// and hands them here so the same duplicate-key refusal the
 /// composition and evidence documents enforce closes the last wire
 /// seam; the core stays the single owner of the closed decode.
-pub fn parse_unique_consumed(text: &str) -> Result<serde_json::Value, crate::diagnostics::DiagnosticSet>
-{
+pub fn parse_unique_consumed(
+    text: &str,
+) -> Result<serde_json::Value, crate::diagnostics::DiagnosticSet> {
     canonical::canonical_parse_unique(text)
 }
 

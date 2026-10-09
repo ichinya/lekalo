@@ -415,15 +415,18 @@ fn evidence_admission_target(
 
 /// The engine provenance receipt the shell resolves for the fixture:
 /// the compiled target binding names the php lane, so its bound
-/// backend must equal this receipt.
+/// backend must equal this receipt (the sha256 of the exact lane
+/// bytes the engine executes).
 fn admitted_backends() -> std::collections::BTreeMap<String, BackendProvenance> {
     let mut provenance = std::collections::BTreeMap::new();
+    let lane = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/fixtures/pilot/worklog-changelog/php/run.php");
+    let bytes = std::fs::read(lane).expect("the committed php lane reads");
     provenance.insert(
         "php".to_owned(),
         BackendProvenance {
             identity: "taskhub.runtime/fake-transport".to_owned(),
-            digest: "sha256:895ff99de892811b60bbe95eeb6484d960e0ff5e39de4db932b762a12e73b2bc"
-                .to_owned(),
+            digest: format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes)),
         },
     );
     provenance

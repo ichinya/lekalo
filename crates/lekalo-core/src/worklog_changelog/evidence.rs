@@ -840,18 +840,15 @@ pub fn admit(
     let mut covered_operations = std::collections::BTreeSet::new();
     let mut derived_consumer_blockers: Vec<String> = Vec::new();
     for definition in &project.definitions {
-        match definition {
-            Definition::Query(query) => {
-                let returns_dto = query
-                    .returns
-                    .as_ref()
-                    .is_some_and(|type_ref| names_dto(type_ref, &dto_subject));
-                if returns_dto {
-                    declared_consumers.insert(format!("operation:{}", query.id.as_str()));
-                    covered_operations.insert(query.id.as_str().to_owned());
-                }
+        if let Definition::Query(query) = definition {
+            let returns_dto = query
+                .returns
+                .as_ref()
+                .is_some_and(|type_ref| names_dto(type_ref, &dto_subject));
+            if returns_dto {
+                declared_consumers.insert(format!("operation:{}", query.id.as_str()));
+                covered_operations.insert(query.id.as_str().to_owned());
             }
-            _ => {}
         }
     }
     let mut covered_endpoints = std::collections::BTreeSet::new();
@@ -864,13 +861,10 @@ pub fn admit(
                 }
             }
             Definition::Scenario(scenario) => {
-                let covers = scenario
-                    .covers
-                    .iter()
-                    .any(|covered| {
-                        covered_operations.contains(covered.as_str())
-                            || covered_endpoints.contains(covered.as_str())
-                    });
+                let covers = scenario.covers.iter().any(|covered| {
+                    covered_operations.contains(covered.as_str())
+                        || covered_endpoints.contains(covered.as_str())
+                });
                 if covers {
                     declared_consumers.insert(format!("scenario:{}", scenario.id.as_str()));
                 }
@@ -1019,10 +1013,8 @@ pub fn admit(
                 .collect();
             for scenario in &required_scenarios {
                 if !asserted.contains(scenario.as_str()) {
-                    target_blockers.push(format!(
-                        "{}:{}:assertion-missing",
-                        target.target, scenario
-                    ));
+                    target_blockers
+                        .push(format!("{}:{}:assertion-missing", target.target, scenario));
                 }
             }
         }
@@ -1074,9 +1066,7 @@ pub fn admit(
         match scenario_status.get(scenario.as_str()) {
             None => blockers.push(format!("scenarios:{scenario}:missing")),
             Some(&"fail") => blockers.push(format!("scenarios:{scenario}:fail")),
-            Some(&"unsupported") => {
-                blockers.push(format!("scenarios:{scenario}:unsupported"))
-            }
+            Some(&"unsupported") => blockers.push(format!("scenarios:{scenario}:unsupported")),
             Some(&"not_executed") => {
                 let executed = report.targets.iter().any(|target| {
                     target.execution == "executed"

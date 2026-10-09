@@ -307,7 +307,7 @@ impl RequirementsAttachment {
 
         // Load every declared provider snapshot through the confined
         // read-only capability.
-        let fs = crate::project_fs::Fs::open(&root).map_err(|_| {
+        let fs = crate::project_fs::Fs::open(root).map_err(|_| {
             DomainResult::invalid(diagnostic::provider_invalid("root-unreadable", None))
         })?;
         let referenced: std::collections::BTreeSet<&str> = self

@@ -241,6 +241,13 @@ if (evidence.compositionRef.digest !== compositionDigest) {
 }
 
 // ---------------------------------------------------------------------------
+// The committed public DTO schema: the lane's public transport
+// projection must satisfy it exactly (payloadVersion, camelCase
+// allowlist fields, UUID entry id, ISO-8601 UTC timestamp).
+const publicSchema = read(`${fixtureRoot}/public/changelog-entry.schema.json`);
+ajv.addFormat("uuid", /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+const validatePublicEntry = ajv.compile(publicSchema);
+
 // ---------------------------------------------------------------------------
 // 3b. The native runtime lane (target php): the committed domain model
 //     executes every scenario assertion in-process with the scripted
@@ -307,9 +314,64 @@ if (target === "php") {
     );
     process.exit(1);
   }
+  // The lane's own assertions are not trusted by name alone: every
+  // committed scenario document's outcome assertions (typed errors,
+  // entity presence, idempotent replay, contract match) must be
+  // observed by the lane exactly as declared. An assertion row that
+  // reports pass while the committed IR's outcomes were not observed
+  // fails the gate — inverting a lane assertion cannot flip the
+  // verdict.
+  const observationOf = (scenarioId, stepId) =>
+    lane.assertions.find((row) => row.scenario === scenarioId)?.observations?.[stepId];
+  for (const name of scenarioFiles) {
+    const doc = read(`${scenarioDir}/${name}`);
+    if (scenario !== "all" && doc.scenarioId !== scenario) continue;
+    for (const thenStep of doc.then) {
+      const kind = thenStep.assertion.kind;
+      let expected;
+      if (kind === "error") expected = `error:${thenStep.assertion.error}`;
+      else if (kind === "entity_state") {
+        const presence =
+          thenStep.assertion.expect?.count !== undefined
+            ? `count=${thenStep.assertion.expect.count}`
+            : (thenStep.assertion.expect?.presence ?? "exists");
+        expected = `entity:${thenStep.assertion.entity}:${presence}`;
+      } else if (kind === "idempotency") expected = `replay:${thenStep.assertion.replay}`;
+      else if (kind === "contract_match") expected = `contract:${thenStep.assertion.contract}`;
+      else continue; // forbidden_effect is asserted statically / retained as runtime
+      const observed = observationOf(doc.scenarioId, thenStep.stepId);
+      if (observed !== expected) {
+        process.stderr.write(
+          JSON.stringify(
+            { ok: false, reason: "scenario-observation-mismatch", scenario: doc.scenarioId, step: thenStep.stepId, expected, observed },
+            null,
+            2,
+          ) + "\n",
+        );
+        process.exit(1);
+      }
+    }
+  }
+  // The public transport projection is validated against the exact
+  // committed public DTO schema: a lane emitting the internal
+  // snake_case shape instead of the wire DTO fails here.
+  if (lane.publicEntry == null) {
+    process.stderr.write(
+      JSON.stringify({ ok: false, reason: "public-entry-missing" }, null, 2) + "\n",
+    );
+    process.exit(1);
+  }
+  if (!validatePublicEntry(lane.publicEntry)) {
+    process.stderr.write(
+      JSON.stringify({ ok: false, reason: "public-entry-schema-invalid", errors: validatePublicEntry.errors }, null, 2) + "\n",
+    );
+    process.exit(1);
+  }
   nativeResults.php = lane;
   // Bind the live results: the php target row reflects what the native
-  // runtime just executed, never a stale committed claim.
+  // runtime just executed, never a stale committed claim. The wire
+  // schema closes assertion rows to {scenario, status}; the outcome
+  // observations stay a lane-result surface only.
   const phpRow = evidence.targets.find((row) => row.target === "php");
   if (!phpRow) {
     process.stderr.write(
@@ -319,7 +381,7 @@ if (target === "php") {
   }
   phpRow.execution = "executed";
   phpRow.backend = lane.backend;
-  phpRow.assertions = lane.assertions;
+  phpRow.assertions = lane.assertions.map(({ scenario: id, status }) => ({ scenario: id, status }));
   phpRow.capabilities = lane.capabilities;
   phpRow.blocking = [];
   process.stderr.write(
@@ -336,8 +398,11 @@ if (target === "php") {
 const tempRoot = mkdtempSync(join(tmpdir(), "lekalo-pilot-"));
 const evidencePath = join(tempRoot, "evidence.json");
 writeFileSync(evidencePath, JSON.stringify(evidence));
-const compositionPath = join(tempRoot, "composition.json");
-writeFileSync(compositionPath, compositionBytes);
+// The composition is the committed document itself, not a temp copy:
+// its consumed attachments ride the composition directory, and the
+// admission's custody join must see exactly those bytes. The digest
+// equality above already proved the temp report pins these bytes.
+const compositionPath = resolve(root, `${fixtureRoot}/attachments/pilot.json`);
 let admissionExit;
 let admission;
 try {
@@ -428,11 +493,19 @@ process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 // 5. The verdict.
 // ---------------------------------------------------------------------------
 
-const targetUnsupported =
-  targetReport.execution !== "executed" ||
-  targetReport.capabilities.some((row) => row.blocking && row.support !== "supported") ||
-  targetReport.blocking.length > 0;
-const strictPass = profile === "permissive" || !targetUnsupported;
+// The verdict comes from the admission receipt the harness just ran
+// through the production core, never from the lane's self-report: the
+// receipt's per-target verdict for the selected target decides, so
+// admission-derived blockers (execution, backend provenance, assertion
+// coverage, scenario conflicts) refuse the gate even when the lane's
+// own capability rows claim otherwise.
+const receiptTargets =
+  admission?.pilot?.targets ?? admission?.payload?.pilot?.targets ?? [];
+const selectedReceipt = receiptTargets.find((row) => row.target === target);
+const receiptVerdict = selectedReceipt?.verdict ?? "unknown";
+const strictPass =
+  profile === "permissive" ||
+  (admissionVerdict !== "unknown" && receiptVerdict === "pass");
 const verdict = {
   ok: expectDenied ? true : strictPass,
   gate: "test-worklog-changelog-pilot",
@@ -445,6 +518,7 @@ const verdict = {
   runtimeRetained: runtimeChecks,
   nativeLane: target === "php" ? { assertions: nativeResults.php.assertions.length, executed: true } : undefined,
   targetVerdict: targetReport.execution,
+  receiptVerdict,
   admissionVerdict,
   admissionExit,
   expectedDenied: expectDenied,

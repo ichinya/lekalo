@@ -6534,8 +6534,11 @@ fn validate_consumed_attachments(
                     Ok(document) => document,
                     Err(set) => return Err(DomainResult::invalid(set)),
                 };
-                match lekalo_core::authorization::review::review(compilation, document.as_ref(), true)
-                {
+                match lekalo_core::authorization::review::review(
+                    compilation,
+                    document.as_ref(),
+                    true,
+                ) {
                     lekalo_core::authorization::Review::Invalid(set) => {
                         return Err(DomainResult::invalid(set));
                     }
