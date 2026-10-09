@@ -8,7 +8,9 @@
   "tool": {
     "program": "node",
     "args": [
-      "tools/verify.mjs"
+      "tools/verify.mjs",
+      "test/tasks.test.mjs",
+      "tools/oracle.mjs"
     ],
     "digest": null
   },

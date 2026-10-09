@@ -171,11 +171,21 @@ if (readFileSync(join(project, "src/tasks.mjs"), "utf8") !== patchedExpected) {
   fail("apply-bytes", "src/tasks.mjs does not carry the reviewed candidate bytes");
 }
 
-// Negative: the faulty candidate really fails its oracle, and an apply
-// built on the failed execution refuses and completes nothing.
+// Negative: the faulty candidate really fails its oracle. The good
+// apply already mutated the tree, so the faulty run first plans fresh
+// against the current bytes (the pre-execution staleness barrier
+// refuses a plan whose pins no longer hold — exactly the X3 class),
+// then verifies the faulty patch on top of the applied state.
+const faultyRefactor = run([
+  "--no-cache", "--json", "adoption", "refactor",
+  "--use-case", "complete_case", "--target", "node-typescript", "--profile", "default",
+  "--verification", spec, "--candidate", faulty, "--project", ".",
+]);
+if (faultyRefactor.status !== 0) fail("faulty-refactor-exit", faultyRefactor.stderr);
+const faultyPlanPath = save("faulty-plan.json", faultyRefactor);
 const faultyVerify = run([
   "--json", "adoption", "verify",
-  "--plan", refactorPath, "--verification", spec, "--candidate", faulty, "--project", ".",
+  "--plan", faultyPlanPath, "--verification", spec, "--candidate", faulty, "--project", ".",
 ]);
 if (faultyVerify.status !== 0) fail("faulty-verify-exit", faultyVerify.stderr);
 const faultyExecution = parse(faultyVerify);
@@ -204,8 +214,8 @@ if (!oracleCheck) fail("oracle-check-missing", faultyExecution.candidate);
 const faultyExecutionPath = save("faulty-execution.json", faultyVerify);
 const faultyApply = run([
   "--json", "adoption", "apply",
-  "--plan", refactorPath, "--verification", faultyExecutionPath, "--candidate", candidate,
-  "--confirm", digest, "--project", ".",
+  "--plan", faultyPlanPath, "--verification", faultyExecutionPath, "--candidate", faulty,
+  "--confirm", parse(faultyRefactor).plan, "--project", ".",
 ]);
 if (faultyApply.status !== 1) fail("faulty-apply-exit", faultyApply.status);
 if (!parse(faultyApply).diagnostics.some((item) => item.code === "LEK-ADOPT-007")) {

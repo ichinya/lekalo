@@ -12,20 +12,32 @@
 //! conclusion is honestly `unavailable` and no test is reported as
 //! passed. Never a marker, never an environment backdoor.
 //!
+//! Confinement honesty: the disposable copy is the child's working
+//! directory and its environment is scrubbed, but the child keeps the
+//! invoking user's privileges — this is run hygiene, not an
+//! operating-system write or network boundary. A specification that
+//! requests a confinement dimension the executor cannot actually
+//! enforce (`no-network`) is refused with a typed scope refusal, never
+//! silently run while the claim is dropped.
+//!
 //! Custody: [`admit_execution`] is the only path an execution document
 //! takes into apply. It re-derives the execution envelope's binding to
 //! the exact plan, plan-pinned candidate digest, and complete consumed
 //! input set, and demands the measured results be execution custody —
-//! the run digest and measured timestamp this module alone assembles —
-//! with the measured outcomes in exact 1:1 correspondence to the
-//! declared checks and the oracle verdict re-derived from them. The
-//! custody recipe is public and recomputable by design: what makes a
-//! hand-written envelope refuse is the consumed-input binding — the
-//! baseline-source tree line must re-derive from the argv script bytes
-//! consumed at run time and the plan's pinned tree must still hold at
-//! admission — together with the replay refusal on the candidate
-//! digest. A forged, stale, or replayed conclusion refuses before any
-//! write.
+//! the run digest and measured timestamp this module assembles over the
+//! measured document — with the measured outcomes in exact 1:1
+//! correspondence to the declared checks and the oracle verdict and
+//! conclusion re-derived from them. The custody recipe is public and
+//! recomputable by design, so the stated guarantee is binding and
+//! consistency, not authenticity: a document whose measurements do not
+//! cover the declared checks 1:1, whose oracle or conclusion was not
+//! derived from its own measurements, whose runner bytes or plan-pinned
+//! tree drifted after the run, or that replays another candidate's run
+//! refuses before any write. A deliberate hand-forgery that recomputes
+//! every public member over invented outcomes is not excluded by any
+//! checksum scheme — the honest claim is that nothing but a real run
+//! produces the measured classes this module emits, and every internal,
+//! staleness, coverage, and replay defect is caught at admission.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -133,30 +145,26 @@ impl ConsumedInputs {
     fn bounded(&self) -> bool {
         self.scripts.len() <= version::MAX_SOURCE_FILES
             && self.absent.len() <= version::MAX_SOURCE_FILES
-            && self
-                .scripts
-                .iter()
-                .all(|script| version::is_rel_path(&script.path) && version::is_sha256(&script.sha256))
+            && self.scripts.iter().all(|script| {
+                version::is_rel_path(&script.path) && version::is_sha256(&script.sha256)
+            })
             && self.absent.iter().all(|path| version::is_rel_path(path))
     }
 }
 
-/// The consumed-input manifest of one disposable-copy run: the tool
-/// argv's first argument is the runner script the specification really
-/// executes, so its exact bytes (or typed absence) are pinned into the
-/// execution and revalidated before install. The runner's own import
-/// graph is the project's business — the native test, oracle, and
-/// source dependencies it touches are read inside the disposable copy,
-/// never trusted as admission evidence from outside (F2/X3 fix). The
-/// manifest covers exactly the bytes a forged document cannot know
-/// without reading the tree at run time.
-fn consumed_manifest(
-    root: &Path,
-    tool: &super::wire::ToolRef,
-) -> ConsumedInputs {
+/// The consumed-input manifest of one disposable-copy run: every
+/// relative-path entry of the tool argv — the runner script and every
+/// test, oracle, or config path the specification passes it — is pinned
+/// with its exact bytes (or typed absence) into the execution and
+/// revalidated before install (F3/X3). The specification's argv is the
+/// closed declaration of what the tool consumes; an import reached only
+/// through the runner's own loader is the runner's business and is read
+/// inside the disposable copy, never trusted as admission evidence from
+/// outside. Anything a consumer needs bound must travel in argv.
+fn consumed_manifest(root: &Path, tool: &super::wire::ToolRef) -> ConsumedInputs {
     let mut scripts = Vec::new();
     let mut absent = Vec::new();
-    for arg in tool.args.iter().take(1) {
+    for arg in &tool.args {
         if version::is_rel_path(arg) {
             match std::fs::read(root.join(arg)) {
                 Ok(bytes) => scripts.push(ScriptPin {
@@ -173,8 +181,10 @@ fn consumed_manifest(
 }
 
 /// Execute one specification against the current tree: baseline and
-/// candidate runs happen inside disposable copies only; the project is
-/// never modified and no report or cache home is written.
+/// candidate runs happen in disposable copies — the copy is the child's
+/// working directory, never a claimed operating-system write boundary —
+/// and no report or cache home is written. A requested `no-network`
+/// confinement is refused as unenforceable before any process exists.
 pub fn execute(
     ctx: &super::analysis::AdoptionContext,
     plan: &RefactorPlan,
@@ -192,6 +202,17 @@ pub fn execute(
         let value = serde_json::to_value(&spec).expect("spec serializes");
         wire::digest("adoption-verification", &value)
     };
+    // Confinement honesty (X2): the executor enforces exactly what it
+    // can — the disposable-copy working directory, bounded captured
+    // output, the qualified allow-list, the scrubbed environment, and
+    // the deadline. A requested dimension it cannot enforce at the
+    // process level is a typed refusal, never a silently dropped claim.
+    if spec.confinement.iter().any(|token| token == "no-network") {
+        return Err(DomainResult::denied(diagnostic::scope_refused_set(
+            "confinement",
+            "no-network-unenforceable",
+        )));
+    }
     if plan.verification.as_deref() != Some(spec_digest.as_str()) {
         return Err(DomainResult::invalid(diagnostic::input_invalid_set(
             "verification",
@@ -210,8 +231,7 @@ pub fn execute(
         let changed: Vec<String> = source_drift(&plan.pins, &current);
         if !changed.is_empty() {
             return Err(DomainResult::denied(diagnostic::plan_stale_set(
-                &plan.plan,
-                &changed,
+                &plan.plan, &changed,
             )));
         }
     }
@@ -385,10 +405,6 @@ pub fn execute(
     // Execution custody: the run binds the exact plan, candidate
     // revision, and consumed-input tree line into the envelope only
     // this module assembles for real runs.
-    execution.baseline_source = Some(consumed.tree_digest());
-    // Execution custody: the run binds the exact plan, candidate
-    // revision, and consumed-input tree line into the envelope only
-    // this module assembles for real runs.
     let measured_ms = (started.elapsed().as_millis() as u64).clamp(1, 60_000_000);
     execution.custody = Some(custody_of(&execution, measured_ms));
     Ok(execution)
@@ -472,14 +488,15 @@ pub(crate) fn admit_execution(
             "custody-bounds",
         )));
     }
-    // A forged document can recompute any self-consistent envelope, so
-    // admission rests on the one thing a hand-written document cannot
-    // fake retroactively: the consumed-input manifest this module
-    // derived from the live tree at run time. The recorded tree line
-    // must re-derive exactly from the manifest members over the named
-    // paths, and the manifest must cover the specification's argv
-    // script (or its typed absence) — the bytes a trivialized or
-    // swapped runner would have measured (F3/X3).
+    // A self-consistent envelope can still be assembled by hand, so
+    // admission re-derives the consumed-input manifest from the live
+    // tree and demands exact agreement with the recorded binding: a
+    // swapped or trivialized runner, a tree that drifted after the run,
+    // or a stale plan refuses here before any measurement is read
+    // (F3/X3). The remaining admission duties — measured coverage,
+    // oracle and conclusion re-derivation, candidate replay — run
+    // below; the custody checksum itself is a consistency envelope,
+    // never an authenticity proof.
     validate_consumed_binding(&execution, &ctx.root)?;
     // The measured conclusion must be preserved: conclusions are
     // checked before candidate coverage so a failed run is honestly
@@ -537,8 +554,7 @@ pub(crate) fn admit_execution(
         let changed: Vec<String> = source_drift(&plan.pins, &current);
         if !changed.is_empty() {
             return Err(DomainResult::denied(diagnostic::plan_stale_set(
-                &plan.plan,
-                &changed,
+                &plan.plan, &changed,
             )));
         }
     }
@@ -550,10 +566,7 @@ pub(crate) fn admit_execution(
 /// pinned sources against the live tree without an observed-index
 /// rescan, so scan-evidence members (adapter/index/model/lock) are out
 /// of scope here while every source drift is caught.
-fn source_drift(
-    expected: &super::wire::Pins,
-    current: &super::wire::Pins,
-) -> Vec<String> {
+fn source_drift(expected: &super::wire::Pins, current: &super::wire::Pins) -> Vec<String> {
     use std::collections::BTreeMap;
     let expected_sources: BTreeMap<&str, &str> = expected
         .sources
@@ -567,8 +580,10 @@ fn source_drift(
         .collect();
     let mut changed: Vec<String> = expected_sources
         .iter()
-        .filter(|(path, digest)| current_sources.get(*path) != Some(&&**digest))
-        .map(|(path, _)| (*path).to_string())
+        .filter_map(|(path, digest)| match current_sources.get(path) {
+            Some(found) if found == digest => None,
+            _ => Some((*path).to_string()),
+        })
         .collect();
     for path in current_sources.keys() {
         if !expected_sources.contains_key(path) {
@@ -583,15 +598,13 @@ fn source_drift(
 /// The consumed-input binding of one execution (F3/X3): the recorded
 /// baseline-source tree line must be exactly the digest of the recorded
 /// manifest members, the manifest must be bounded and well-formed, and
-/// every manifest path must be exactly the specification's argv script
-/// consumed at run time — re-derived from the current project tree, so
-/// a drifted or swapped runner refuses before any write. An execution
+/// the manifest must cover exactly the specification's rel-path argv
+/// entries (runner, tests, oracle — or their typed absence),
+/// re-derived from the current project tree, so a drifted or swapped
+/// runner refuses before any write. An execution
 /// without the binding (or one whose tree line does not re-derive)
 /// never admits.
-fn validate_consumed_binding(
-    execution: &VerificationDocument,
-    root: &Path,
-) -> Outcome<()> {
+fn validate_consumed_binding(execution: &VerificationDocument, root: &Path) -> Outcome<()> {
     let Some(recorded) = &execution.baseline_source else {
         return Err(DomainResult::invalid(diagnostic::input_invalid_set(
             "verification",
@@ -599,8 +612,8 @@ fn validate_consumed_binding(
         )));
     };
     // The manifest travels in the run digest; the tree line is the
-    // content address of the manifest members. Reconstruct the manifest
-    // from the argv script consumed now and compare.
+    // content address of the manifest members. Reconstruct the
+    // manifest from the argv entries consumed now and compare.
     let Some(tool) = &execution.tool else {
         return Err(DomainResult::invalid(diagnostic::input_invalid_set(
             "verification",
@@ -689,7 +702,9 @@ fn oracle_holds(execution: &VerificationDocument) -> bool {
     if oracle_ids.is_empty() {
         return oracle == Some("unavailable");
     }
-    oracle == Some("passed") && both_passed(&execution.baseline) && both_passed(&execution.candidate)
+    oracle == Some("passed")
+        && both_passed(&execution.baseline)
+        && both_passed(&execution.candidate)
 }
 
 /// The conclusion re-derived from the whole envelope — the exact
@@ -792,25 +807,6 @@ fn shell(
         conclusion: None,
         custody: None,
     }
-}
-
-/// Stamp the exact candidate revision the run covered into the
-/// confinement dimension; the bare token form remains the no-candidate
-/// spelling. The admission path rejects a bound token naming any other
-/// digest, so a replayed run can never stand in for this candidate.
-#[cfg(test)]
-pub(crate) fn bind_candidate(execution: &mut VerificationDocument, patch_digest: &str) {
-    execution.confinement = execution
-        .confinement
-        .iter()
-        .map(|token| {
-            if token == "disposable-copy" {
-                format!("disposable-copy:{patch_digest}")
-            } else {
-                token.clone()
-            }
-        })
-        .collect();
 }
 
 /// Resolve one qualified program name through PATH.
@@ -1043,8 +1039,8 @@ fn copy_tree(root: &Path) -> Outcome<(PathBuf, tempdir::Guard)> {
 /// empty parent litter.
 mod tempdir {
     use super::diagnostic;
-    use std::path::{Path, PathBuf};
     use crate::result::DomainResult;
+    use std::path::{Path, PathBuf};
 
     pub(super) struct Guard {
         path: Option<PathBuf>,
@@ -1055,7 +1051,10 @@ mod tempdir {
             // tempfile is the accepted bounded-temp seam; the handle is
             // kept alive through the guard so only an explicit success
             // path can shorten its lifetime.
-            match tempfile::Builder::new().prefix("lekalo-adoption-").tempdir() {
+            match tempfile::Builder::new()
+                .prefix("lekalo-adoption-")
+                .tempdir()
+            {
                 Ok(dir) => Ok(Self {
                     path: Some(dir.keep()),
                 }),
@@ -1159,4 +1158,189 @@ fn apply_patch(copy: &Path, patch: &PatchDocument) -> Outcome<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn check(id: &str, kind: &str) -> wire::CheckSpec {
+        wire::CheckSpec {
+            id: id.to_owned(),
+            kind: kind.to_owned(),
+            expect_exit: 0,
+            expect_stdout: Vec::new(),
+        }
+    }
+
+    fn outcome(id: &str, status: &str) -> CheckOutcome {
+        CheckOutcome {
+            id: id.to_owned(),
+            status: status.to_owned(),
+            exit: Some(0),
+            detail: "ok".to_owned(),
+        }
+    }
+
+    fn side(checks: Vec<CheckOutcome>) -> Option<CheckResults> {
+        Some(CheckResults { checks })
+    }
+
+    fn execution(
+        spec_checks: Vec<wire::CheckSpec>,
+        baseline: Vec<CheckOutcome>,
+        candidate: Vec<CheckOutcome>,
+        oracle: Option<OracleVerdict>,
+    ) -> VerificationDocument {
+        let mut execution = VerificationDocument {
+            schema_version: String::new(),
+            identity: String::new(),
+            variant: "execution".to_owned(),
+            verification: "spec".to_owned(),
+            spec: Some("sha256:spec".to_owned()),
+            plan: Some("sha256:plan".to_owned()),
+            tool: None,
+            baseline_source: None,
+            checks: spec_checks,
+            confinement: Vec::new(),
+            baseline: side(baseline),
+            candidate: side(candidate),
+            oracle,
+            conclusion: None,
+            custody: None,
+        };
+        execution.conclusion = derived_conclusion(&execution).map(str::to_owned);
+        execution
+    }
+
+    const NATIVE: &str = "tasks.native-test";
+    const ORACLE: &str = "complete-task.behavior-oracle";
+
+    #[test]
+    fn measured_coverage_is_one_to_one_or_refused() {
+        let spec_checks = vec![
+            check(NATIVE, "native-test"),
+            check(ORACLE, "behavior-oracle"),
+        ];
+        // Exact 1:1 coverage on both sides supports the measurements.
+        let passed = vec![outcome(NATIVE, "passed"), outcome(ORACLE, "passed")];
+        let document = execution(
+            spec_checks.clone(),
+            passed.clone(),
+            passed.clone(),
+            Some(OracleVerdict {
+                status: "passed".to_owned(),
+                detail: "declared-obligations-held".to_owned(),
+            }),
+        );
+        assert!(measured_1to1(&document.baseline, &document.checks, "baseline").is_ok());
+        assert!(oracle_holds(&document));
+        assert_eq!(derived_conclusion(&document), Some("preserved"));
+
+        // The empty-measurement forgery (X1/F11): empty arrays never
+        // pass an exact 1:1 coverage demand.
+        let mut empty = document.clone();
+        empty.baseline = side(Vec::new());
+        empty.candidate = side(Vec::new());
+        assert!(measured_1to1(&empty.baseline, &empty.checks, "baseline").is_err());
+
+        // A dropped check refuses on coverage; an invented id refuses on
+        // identity.
+        let mut missing = document.clone();
+        missing.baseline = side(vec![outcome(NATIVE, "passed")]);
+        assert!(measured_1to1(&missing.baseline, &missing.checks, "baseline").is_err());
+        let mut invented = document.clone();
+        invented.baseline = side(vec![
+            outcome(NATIVE, "passed"),
+            outcome("invented", "passed"),
+        ]);
+        assert!(measured_1to1(&invented.baseline, &invented.checks, "baseline").is_err());
+    }
+
+    #[test]
+    fn oracle_verdict_is_rederived_not_accepted() {
+        let spec_checks = vec![
+            check(NATIVE, "native-test"),
+            check(ORACLE, "behavior-oracle"),
+        ];
+        let native_passed_oracle_failed =
+            vec![outcome(NATIVE, "passed"), outcome(ORACLE, "failed")];
+        // A caller-supplied passed verdict beside a failed oracle
+        // measurement is never accepted (X1).
+        let document = execution(
+            spec_checks.clone(),
+            native_passed_oracle_failed.clone(),
+            native_passed_oracle_failed,
+            Some(OracleVerdict {
+                status: "passed".to_owned(),
+                detail: "invented".to_owned(),
+            }),
+        );
+        assert!(!oracle_holds(&document));
+        assert_eq!(derived_conclusion(&document), Some("failed"));
+
+        // With no oracle checks declared, the verdict must be the
+        // unavailable spelling, never an asserted pass.
+        let no_oracle = vec![check(NATIVE, "native-test")];
+        let passed = vec![outcome(NATIVE, "passed")];
+        let document = execution(
+            no_oracle,
+            passed.clone(),
+            passed,
+            Some(OracleVerdict {
+                status: "passed".to_owned(),
+                detail: "invented".to_owned(),
+            }),
+        );
+        assert!(!oracle_holds(&document));
+    }
+
+    #[test]
+    fn conclusion_follows_measurements() {
+        let spec_checks = vec![
+            check(NATIVE, "native-test"),
+            check(ORACLE, "behavior-oracle"),
+        ];
+        let unavailable = vec![outcome(NATIVE, "passed"), outcome(ORACLE, "unavailable")];
+        let document = execution(
+            spec_checks,
+            unavailable.clone(),
+            unavailable,
+            Some(OracleVerdict {
+                status: "unavailable".to_owned(),
+                detail: "no-oracle-declared".to_owned(),
+            }),
+        );
+        assert_eq!(derived_conclusion(&document), Some("unavailable"));
+        assert_eq!(document.conclusion.as_deref(), Some("unavailable"));
+    }
+
+    #[test]
+    fn consumed_manifest_covers_every_argv_path() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("runner.mjs"), b"runner").expect("write");
+        std::fs::write(dir.path().join("oracle.mjs"), b"oracle").expect("write");
+        let tool = wire::ToolRef {
+            program: "node".to_owned(),
+            args: vec![
+                "runner.mjs".to_owned(),
+                "--flag".to_owned(),
+                "oracle.mjs".to_owned(),
+                "missing.mjs".to_owned(),
+            ],
+            digest: None,
+        };
+        let manifest = consumed_manifest(dir.path(), &tool);
+        assert_eq!(manifest.scripts.len(), 2, "rel-path argv entries only");
+        assert_eq!(manifest.scripts[0].path, "oracle.mjs");
+        assert_eq!(manifest.scripts[1].path, "runner.mjs");
+        assert_eq!(manifest.absent, vec!["missing.mjs".to_owned()]);
+        assert!(manifest.bounded());
+        // The tree line is stable and content-addressed.
+        let again = consumed_manifest(dir.path(), &tool);
+        assert_eq!(manifest.tree_digest(), again.tree_digest());
+        std::fs::write(dir.path().join("oracle.mjs"), b"drifted").expect("write");
+        let drifted = consumed_manifest(dir.path(), &tool);
+        assert_ne!(manifest.tree_digest(), drifted.tree_digest());
+    }
 }
