@@ -150,10 +150,13 @@ pub enum AdoptionCommands {
         #[arg(long, value_name = "DIR")]
         project: Option<String>,
     },
-    /// The durable recovery view of one plan: the interrupted apply or
-    /// confirmation phase's journal with every snapshot's integrity
+    /// The durable recovery surface of one plan: the interrupted apply
+    /// or confirmation phase's journal with every snapshot's integrity
     /// classified, so a partial mutation is discoverable instead of
-    /// invisible.
+    /// invisible. With `--restore`, a stranded installation is actually
+    /// restored from the journal's snapshots and pre-states — the
+    /// executable path for a receipt failure after committed writes
+    /// (no completed receipt required).
     Recovery {
         /// The plan digest (or a saved plan file) to inspect.
         #[arg(long, value_name = "FILE", conflicts_with = "digest")]
@@ -161,6 +164,9 @@ pub enum AdoptionCommands {
         /// The exact plan digest to inspect.
         #[arg(long = "digest", value_name = "DIGEST", conflicts_with = "plan")]
         digest: Option<String>,
+        /// Restore every journaled write to its exact pre-state.
+        #[arg(long, requires = "digest")]
+        restore: bool,
         /// Project root selector, relative to the invocation directory.
         #[arg(long, value_name = "DIR")]
         project: Option<String>,
@@ -303,6 +309,7 @@ pub fn run(command: AdoptionCommands) -> DomainResult {
         AdoptionCommands::Recovery {
             plan,
             digest,
+            restore,
             project,
         } => {
             let resolved = match (plan, digest) {
@@ -346,7 +353,11 @@ pub fn run(command: AdoptionCommands) -> DomainResult {
                 }
                 _ => return DomainResult::usage_error(),
             };
-            run_recovery(&resolved, &project)
+            if restore {
+                run_recovery_restore(&resolved, &project)
+            } else {
+                run_recovery(&resolved, &project)
+            }
         }
         AdoptionCommands::Coverage {
             symbol,
@@ -742,6 +753,29 @@ fn run_recovery(plan_digest: &str, project: &Option<String>) -> DomainResult {
                 view.phase.as_deref().unwrap_or("none"),
                 view.steps.len(),
                 view.intact
+            ),
+        ),
+        Err(result) => result,
+    }
+}
+
+/// The executable recovery path (X5): restore every journaled write of
+/// a stranded apply/confirmation to its exact pre-state, independent of
+/// any completed receipt.
+fn run_recovery_restore(plan_digest: &str, project: &Option<String>) -> DomainResult {
+    let selection = selection_for(project);
+    let context = match lekalo_core::adoption::context(&selection) {
+        Ok(context) => context,
+        Err(result) => return result,
+    };
+    match lekalo_core::adoption::recover(&context.root, plan_digest) {
+        Ok(outcome) => emit(
+            serde_json::to_string_pretty(&outcome).expect("recovery outcome serializes"),
+            format!(
+                "adoption recovery --restore : plan {} {} ({} paths restored)",
+                outcome.plan,
+                outcome.outcome,
+                outcome.restored.len()
             ),
         ),
         Err(result) => result,

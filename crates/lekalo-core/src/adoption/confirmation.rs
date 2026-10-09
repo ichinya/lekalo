@@ -332,7 +332,7 @@ pub fn apply(
     // path; the index is never left mutated without a receipt naming
     // its restoration.
     for write in writes.iter().filter(|write| write.action == "binding") {
-        if let Err(result) = install_binding(ctx, index, write, &mut journal, &home) {
+        if let Err(result) = install_binding(ctx, index, write, &mut journal, &home, &snapshots) {
             return Err(rollback_partial(
                 ctx,
                 &home,
@@ -346,7 +346,10 @@ pub fn apply(
 
     // Step 2: the canonical documents, one compare-and-swap write per
     // path, journaled as they complete. A failure rolls every completed
-    // byte (binding included) back and refuses.
+    // byte (binding included) back and refuses. Every written step
+    // carries its full restoration metadata so an interrupted
+    // confirmation stranded by a later receipt failure is recoverable
+    // from the journal alone (X5).
     for write in &document.writes {
         if let Err(result) = transaction::cas_install(&ctx.root, write) {
             return Err(rollback_partial(
@@ -358,10 +361,16 @@ pub fn apply(
                 result,
             ));
         }
+        let snapshot = snapshots
+            .iter()
+            .find(|record| record.path == write.path)
+            .map(|record| record.snapshot.clone());
         journal.steps.push(super::transaction::JournalStep {
             path: write.path.clone(),
             state: "written".to_owned(),
-            snapshot: None,
+            snapshot,
+            action: Some(write.action.clone()),
+            before: write.before.clone(),
         });
         transaction::persist_journal(&ctx.root, &home, &journal)?;
     }
@@ -390,6 +399,10 @@ pub fn apply(
         receipt: digest,
         ..receipt
     };
+    // The receipt is inside the recoverable transaction (X5): a
+    // persistence failure is a classified recovery-required refusal —
+    // the journal above names every stranded step with its snapshot and
+    // pre-state, so recovery can complete without this receipt.
     transaction::persist_receipt(&ctx.root, &document.plan, &receipt)?;
     Ok(receipt)
 }
@@ -503,13 +516,20 @@ fn install_binding(
     write: &wire::WriteEntry,
     journal: &mut Journal,
     home: &transaction::RecoveryHome,
+    snapshots: &[transaction::SnapshotRecord],
 ) -> Outcome<()> {
     transaction::cas_install(&ctx.root, write)?;
     let _ = index;
+    let snapshot = snapshots
+        .iter()
+        .find(|record| record.path == write.path)
+        .map(|record| record.snapshot.clone());
     journal.steps.push(super::transaction::JournalStep {
         path: write.path.clone(),
         state: "written".to_owned(),
-        snapshot: None,
+        snapshot,
+        action: Some(write.action.clone()),
+        before: write.before.clone(),
     });
     transaction::persist_journal(&ctx.root, home, journal)
 }
@@ -539,6 +559,8 @@ fn rollback_partial(
                 "restore-failed".to_owned()
             },
             snapshot: Some(record.snapshot.clone()),
+            action: None,
+            before: None,
         });
     }
     let _ = transaction::persist_journal(&ctx.root, home, &recovery);

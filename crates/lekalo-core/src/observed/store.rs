@@ -75,7 +75,16 @@ pub(crate) fn write_confined(
     }
     let temporary = prefix.join(format!("{name}.tmp"));
     let _ = std::fs::remove_file(&temporary);
-    std::fs::write(&temporary, bytes).map_err(|_| diagnostic::index_io_set("index-write"))?;
-    std::fs::rename(&temporary, &target).map_err(|_| diagnostic::index_io_set("index-rename"))?;
+    if std::fs::write(&temporary, bytes).is_err() {
+        // Never leave a partial temporary behind on a failed write.
+        let _ = std::fs::remove_file(&temporary);
+        return Err(diagnostic::index_io_set("index-write"));
+    }
+    if std::fs::rename(&temporary, &target).is_err() {
+        // An obstructed destination (a directory at the target, a
+        // held lock) must not orphan the temporary file next to it.
+        let _ = std::fs::remove_file(&temporary);
+        return Err(diagnostic::index_io_set("index-rename"));
+    }
     Ok(())
 }

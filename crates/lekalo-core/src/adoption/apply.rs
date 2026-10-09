@@ -6,11 +6,15 @@
 //!
 //! Custody model: apply admits an execution document only through
 //! [`verification::admit_execution`] — the execution binds to this
-//! exact plan, the exact plan-pinned candidate-patch digest, the
-//! complete consumed input set (oracle/runner sources pinned by the
-//! plan or typed absent), and execution-measured results carried with
-//! the run's digest and timestamp. A forged or hand-written conclusion
-//! without that custody is refused before any write.
+//! exact plan, the exact plan-pinned candidate-patch digest, and the
+//! complete consumed input set, and its measured results are re-derived
+//! at admission: outcomes must cover the declared checks 1:1, the
+//! oracle verdict and conclusion must follow from the measurements, the
+//! consumed runner bytes and plan-pinned tree must still hold, and the
+//! run must name this exact candidate. Documents that are internally
+//! inconsistent, measured-empty, stale, swapped, or replayed refuse
+//! before any write; the custody recipe is public, so the guarantee is
+//! binding and consistency, not a checksum-proof of authenticity.
 
 use super::analysis::{compute_pins, AdoptionContext, Outcome};
 use super::diagnostic;
@@ -66,8 +70,10 @@ pub fn apply(
     // Execution custody before anything else: the document must decode
     // as an execution variant whose measurements this tree can accept —
     // bound to this exact plan, the exact pinned candidate digest, the
-    // complete consumed-input set, and execution-measured results. A
-    // forged `preserved` never reaches a write.
+    // complete consumed-input set, and measured results that cover the
+    // declared checks 1:1 with a re-derived oracle and conclusion. An
+    // inconsistent, measured-empty, stale, or replayed `preserved`
+    // never reaches a write.
     let execution: VerificationDocument =
         verification::admit_execution(ctx, &document, patch_digest, execution_bytes)?;
 
@@ -132,10 +138,20 @@ pub fn apply(
                 result,
             ));
         }
+        // The written step carries its full restoration metadata — the
+        // snapshot path, the mutation class, and the exact pre-state —
+        // so an interrupted installation is recoverable from the
+        // journal alone, with no completed receipt required (X5).
+        let snapshot = snapshots
+            .iter()
+            .find(|record| record.path == file.path)
+            .map(|record| record.snapshot.clone());
         journal.steps.push(JournalStep {
             path: file.path.clone(),
             state: "written".to_owned(),
-            snapshot: None,
+            snapshot,
+            action: Some(entry.action.clone()),
+            before: entry.before.clone(),
         });
         transaction::persist_journal(&ctx.root, &home, &journal)?;
         writes.push(entry);
@@ -164,7 +180,22 @@ pub fn apply(
         receipt: digest,
         ..receipt
     };
-    transaction::persist_receipt(&ctx.root, &document.plan, &receipt)?;
+    // The receipt is inside the recoverable transaction: a persistence
+    // failure here is a classified recovery-required refusal over
+    // committed writes — the journal names every stranded step with its
+    // snapshot and pre-state, so `adoption recovery --restore` can
+    // complete the transaction without this receipt ever existing (X5).
+    if let Err(result) = transaction::persist_receipt(&ctx.root, &document.plan, &receipt) {
+        journal.steps.push(JournalStep {
+            path: home.journal_relative.clone(),
+            state: "receipt-write-failed".to_owned(),
+            snapshot: None,
+            action: None,
+            before: None,
+        });
+        let _ = transaction::persist_journal(&ctx.root, &home, &journal);
+        return Err(result);
+    }
     Ok(receipt)
 }
 
@@ -185,6 +216,8 @@ fn failed_apply(
         path: path.to_owned(),
         state: "failed".to_owned(),
         snapshot: None,
+        action: None,
+        before: None,
     });
     let persisted = transaction::persist_journal(root, home, journal);
     if persisted.is_err() {
@@ -317,8 +350,7 @@ pub fn rollback(
     // every path is derived from the path itself (sha256 hex), the
     // digest-keyed file is reparse-checked before read, and the bytes
     // are verified against the receipt's recorded `before` digest
-    // before anything moves. A corrupted snapshot is a typed
-    // recovery-required refusal that keeps the current files.
+    // before anything moves.
     let Some(home) = transaction::recovery_home(&ctx.root, &receipt.plan) else {
         return Err(DomainResult::invalid(diagnostic::input_invalid_set(
             "receipt",
@@ -352,6 +384,8 @@ pub fn rollback(
                 path: record.path.clone(),
                 state: "restore-failed".to_owned(),
                 snapshot: None,
+                action: None,
+                before: None,
             });
             let _ = transaction::persist_journal(&ctx.root, &home, &journal);
             return Err(result);
@@ -360,6 +394,8 @@ pub fn rollback(
             path: record.path.clone(),
             state: "restored".to_owned(),
             snapshot: Some(record.snapshot.clone()),
+            action: None,
+            before: None,
         });
         transaction::persist_journal(&ctx.root, &home, &journal)?;
     }

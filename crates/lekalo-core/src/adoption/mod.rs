@@ -37,7 +37,9 @@ pub use confirmation::{apply as confirm_apply, plan as confirm_plan, ConfirmRequ
 pub use coverage::{
     coverage, coverage_digest, impact_report, load_coverage, status_report, trace_report,
 };
-pub use transaction::{load_journal, recovery_view, RecoveryStep, RecoveryView};
+pub use transaction::{
+    load_journal, recover, recovery_view, RecoveryOutcome, RecoveryStep, RecoveryView,
+};
 /// The CLI-facing refusal constructor for unreadable input files.
 pub fn diagnostic_input_invalid(field: &str, reason: &str) -> crate::diagnostics::DiagnosticSet {
     diagnostic::input_invalid_set(field, reason)

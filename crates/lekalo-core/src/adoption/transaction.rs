@@ -44,6 +44,18 @@ pub struct JournalStep {
     pub path: String,
     pub state: String,
     pub snapshot: Option<String>,
+    /// The mutation class of a written step (`create`, `replace`,
+    /// `delete`, or `binding`); absent on snapshot-only bookkeeping
+    /// rows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action: Option<String>,
+    /// The exact pre-state digest a written step replaced — `None`
+    /// means the path was created by the phase. Together with the
+    /// snapshot path this is the complete restoration metadata an
+    /// independent recovery consumes when no completed receipt exists
+    /// (X5).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub before: Option<String>,
 }
 
 impl Journal {
@@ -199,6 +211,8 @@ pub(crate) fn snapshot_targets(
             path: path.clone(),
             state: "snapshotted".to_owned(),
             snapshot: Some(records.last().expect("pushed").snapshot.clone()),
+            action: None,
+            before: None,
         });
         persist_journal(root, home, journal)?;
     }
@@ -323,6 +337,120 @@ pub struct RecoveryStep {
     pub path: String,
     pub state: String,
     pub snapshot: Option<String>,
+}
+
+/// The outcome of one executable recovery: the interrupted phase, the
+/// restored paths, and the per-step result classes.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct RecoveryOutcome {
+    pub plan: String,
+    pub phase: String,
+    pub outcome: String,
+    pub restored: Vec<RecoveryStep>,
+}
+
+/// Restore one stranded installation without a completed receipt
+/// (X5): the journaled `written` steps of an interrupted apply or
+/// confirmation regain their exact prior bytes (or are removed again
+/// when the phase created them). Every snapshot is digest-verified in
+/// a preflight before the first byte moves — a corrupt snapshot
+/// refuses the whole recovery and keeps the stranded state exactly as
+/// journaled — and every completed step is journaled into a
+/// `recovery` phase so the result is never invisible. A completed
+/// receipt for the same plan refuses: [`super::apply::rollback`] is
+/// the confirmed path for completed work.
+pub fn recover(root: &Path, plan_digest: &str) -> Outcome<RecoveryOutcome> {
+    let journal = load_journal(root, plan_digest)?;
+    let Some(journal) = journal else {
+        return Err(DomainResult::invalid(diagnostic::input_invalid_set(
+            "journal", "missing",
+        )));
+    };
+    if journal.phase != "apply" && journal.phase != "confirmation" {
+        return Err(DomainResult::invalid(diagnostic::input_invalid_set(
+            "journal",
+            "phase-not-recoverable",
+        )));
+    }
+    if receipt_path(root, plan_digest).is_some_and(|path| path.is_file()) {
+        // Completed work has a receipt; the rollback surface owns it.
+        return Err(DomainResult::denied(diagnostic::rollback_conflict_set(
+            plan_digest,
+            &["completed-receipt-exists".to_owned()],
+        )));
+    }
+    // Only steps that physically mutated the tree restore anything.
+    let mut records: Vec<SnapshotRecord> = Vec::new();
+    for step in &journal.steps {
+        if step.state != "written" {
+            continue;
+        }
+        let Some(snapshot) = &step.snapshot else {
+            // A written step without restoration metadata can never be
+            // independently recovered; refuse instead of guessing.
+            return Err(DomainResult::invalid(diagnostic::recovery_required_set(
+                plan_digest,
+                "journal-incomplete",
+            )));
+        };
+        records.push(SnapshotRecord {
+            path: step.path.clone(),
+            snapshot: snapshot.clone(),
+            present: step.before.is_some(),
+            before_digest: step.before.clone(),
+        });
+    }
+    if records.is_empty() {
+        return Err(DomainResult::invalid(diagnostic::input_invalid_set(
+            "journal",
+            "nothing-to-restore",
+        )));
+    }
+    // Preflight (the X6 discipline): verify every snapshot before the
+    // first restoration.
+    for record in &records {
+        read_snapshot(root, record)?;
+    }
+    let Some(home) = recovery_home(root, plan_digest) else {
+        return Err(DomainResult::invalid(diagnostic::input_invalid_set(
+            "plan",
+            "invalid-digest",
+        )));
+    };
+    let mut recovery = Journal::new(plan_digest, "recovery");
+    let mut restored = Vec::new();
+    for record in &records {
+        let result = cas_restore(root, record);
+        let state = match &result {
+            Ok(()) => "restored".to_owned(),
+            Err(_) => "restore-failed".to_owned(),
+        };
+        recovery.steps.push(JournalStep {
+            path: record.path.clone(),
+            state: state.clone(),
+            snapshot: Some(record.snapshot.clone()),
+            action: None,
+            before: None,
+        });
+        restored.push(RecoveryStep {
+            path: record.path.clone(),
+            state,
+            snapshot: Some(record.snapshot.clone()),
+        });
+        let _ = persist_journal(root, &home, &recovery);
+        if result.is_err() {
+            return Err(DomainResult::invalid(diagnostic::recovery_required_set(
+                plan_digest,
+                "restore",
+            )));
+        }
+    }
+    Ok(RecoveryOutcome {
+        plan: plan_digest.to_owned(),
+        phase: journal.phase.clone(),
+        outcome: "restored".to_owned(),
+        restored,
+    })
 }
 
 /// The durable recovery view of one plan's installation.
@@ -467,7 +595,11 @@ pub(crate) fn receipt_path(root: &Path, plan_digest: &str) -> Option<PathBuf> {
     )
 }
 
-/// Persist one receipt document through the confined store.
+/// Persist one receipt document through the confined store. A failure
+/// here is classified recovery-required: every intended write already
+/// completed and the durable journal names the stranded steps, so the
+/// refusal is the executable recovery contract (X5), never a raw
+/// storage error over committed work.
 pub(crate) fn persist_receipt(
     root: &Path,
     plan_digest: &str,
@@ -496,7 +628,12 @@ pub(crate) fn persist_receipt(
             name.to_string_lossy().to_string(),
         )
     };
-    crate::observed::store::write_confined(root, &dir, &name, &bytes).map_err(DomainResult::invalid)
+    crate::observed::store::write_confined(root, &dir, &name, &bytes).map_err(|_| {
+        DomainResult::invalid(diagnostic::recovery_required_set(
+            plan_digest,
+            "receipt-write",
+        ))
+    })
 }
 
 /// Build the exact write entry of one file change: before/after digests
