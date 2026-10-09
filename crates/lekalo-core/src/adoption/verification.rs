@@ -16,8 +16,16 @@
 //! takes into apply. It re-derives the execution envelope's binding to
 //! the exact plan, plan-pinned candidate digest, and complete consumed
 //! input set, and demands the measured results be execution custody —
-//! the run digest and measured timestamp this module alone assembles. A
-//! hand-written or replayed conclusion without custody refuses.
+//! the run digest and measured timestamp this module alone assembles —
+//! with the measured outcomes in exact 1:1 correspondence to the
+//! declared checks and the oracle verdict re-derived from them. The
+//! custody recipe is public and recomputable by design: what makes a
+//! hand-written envelope refuse is the consumed-input binding — the
+//! baseline-source tree line must re-derive from the argv script bytes
+//! consumed at run time and the plan's pinned tree must still hold at
+//! admission — together with the replay refusal on the candidate
+//! digest. A forged, stale, or replayed conclusion refuses before any
+//! write.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -73,11 +81,102 @@ pub struct ExecutionCustody {
     pub measured_ms: u64,
 }
 
+/// The consumed-input manifest of one run: the exact bytes of the
+/// consumed tool argv script, keyed by path, plus the exact typed
+/// absence of every consumed-but-absent path. Both sides travel in the
+/// execution document's `baseline_source` tree line, so apply can
+/// re-derive and compare them byte-for-byte (F3/X3).
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConsumedInputs {
+    /// The consumed script path and its exact content digest; empty
+    /// means no script existed at argv[0].
+    pub scripts: Vec<ScriptPin>,
+    /// The consumed-but-absent paths, sorted, bounded.
+    pub absent: Vec<String>,
+}
+
+/// One consumed script byte pin.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScriptPin {
+    pub path: String,
+    pub sha256: String,
+}
+
+impl ConsumedInputs {
+    fn manifest(&self) -> String {
+        let scripts = self
+            .scripts
+            .iter()
+            .map(|script| format!("{}\u{1f}{}\n", script.path, script.sha256))
+            .collect::<Vec<_>>()
+            .join("");
+        let absent = self
+            .absent
+            .iter()
+            .map(|path| format!("!{path}\n"))
+            .collect::<Vec<_>>()
+            .join("");
+        format!("{scripts}{absent}")
+    }
+
+    /// The baseline-source tree line over the consumed manifest only.
+    fn tree_digest(&self) -> String {
+        format!(
+            "sha256:{}",
+            crate::digest::sha256_hex(self.manifest().as_bytes())
+        )
+    }
+
+    /// The manifest line count, bounded by the source-file ceiling.
+    fn bounded(&self) -> bool {
+        self.scripts.len() <= version::MAX_SOURCE_FILES
+            && self.absent.len() <= version::MAX_SOURCE_FILES
+            && self
+                .scripts
+                .iter()
+                .all(|script| version::is_rel_path(&script.path) && version::is_sha256(&script.sha256))
+            && self.absent.iter().all(|path| version::is_rel_path(path))
+    }
+}
+
+/// The consumed-input manifest of one disposable-copy run: the tool
+/// argv's first argument is the runner script the specification really
+/// executes, so its exact bytes (or typed absence) are pinned into the
+/// execution and revalidated before install. The runner's own import
+/// graph is the project's business — the native test, oracle, and
+/// source dependencies it touches are read inside the disposable copy,
+/// never trusted as admission evidence from outside (F2/X3 fix). The
+/// manifest covers exactly the bytes a forged document cannot know
+/// without reading the tree at run time.
+fn consumed_manifest(
+    root: &Path,
+    tool: &super::wire::ToolRef,
+) -> ConsumedInputs {
+    let mut scripts = Vec::new();
+    let mut absent = Vec::new();
+    for arg in tool.args.iter().take(1) {
+        if version::is_rel_path(arg) {
+            match std::fs::read(root.join(arg)) {
+                Ok(bytes) => scripts.push(ScriptPin {
+                    path: arg.clone(),
+                    sha256: format!("sha256:{}", crate::digest::sha256_hex(&bytes)),
+                }),
+                Err(_) => absent.push(arg.clone()),
+            }
+        }
+    }
+    scripts.sort_by(|left, right| left.path.cmp(&right.path));
+    absent.sort();
+    ConsumedInputs { scripts, absent }
+}
+
 /// Execute one specification against the current tree: baseline and
 /// candidate runs happen inside disposable copies only; the project is
 /// never modified and no report or cache home is written.
 pub fn execute(
-    root: &Path,
+    ctx: &super::analysis::AdoptionContext,
     plan: &RefactorPlan,
     spec_bytes: &[u8],
     patch: Option<&PatchDocument>,
@@ -99,6 +198,23 @@ pub fn execute(
             "plan-mismatch",
         )));
     }
+    // F3/X3 pre-execution barrier: the plan's pinned *source* set is
+    // re-fingerprinted against the live tree before any process
+    // exists (sources only — the observed-index/adapter/model pins are
+    // scan evidence the verify path does not re-scan, exactly like the
+    // apply path's source re-fingerprint). A drifted plan never
+    // executes; the same staleness class the apply path enforces,
+    // moved in front of the run.
+    {
+        let current = super::analysis::compute_pins(ctx, None, &pin_paths(plan))?;
+        let changed: Vec<String> = source_drift(&plan.pins, &current);
+        if !changed.is_empty() {
+            return Err(DomainResult::denied(diagnostic::plan_stale_set(
+                &plan.plan,
+                &changed,
+            )));
+        }
+    }
     let Some(tool) = &spec.tool else {
         return Err(DomainResult::invalid(diagnostic::input_invalid_set(
             "verification",
@@ -118,21 +234,44 @@ pub fn execute(
     // one: the resolved program's bytes must hash to the pin, so a
     // swapped interpreter can never silently serve a pinned run.
     let Some(program) = resolve_program(&tool.program) else {
-        let mut execution = shell(plan, &spec, spec_digest, None, None, None);
+        // An unresolvable tool is honestly unavailable; the consumed
+        // manifest of the (absent) argv script still travels so the
+        // document records what the run would have measured.
+        let consumed = consumed_manifest(&ctx.root, tool);
+        let mut execution = shell(
+            plan,
+            &spec,
+            spec_digest,
+            Some(consumed.tree_digest()),
+            None,
+            None,
+            None,
+        );
         execution.conclusion = Some("unavailable".to_owned());
         return Ok(execution);
     };
     verify_tool_digest(&program, tool)?;
+    // The consumed-input manifest of the tool argv script, taken from
+    // the live tree before the runs (F3/X3): the exact runner bytes are
+    // pinned into the execution and revalidated at apply, so a
+    // trivialized runner can never serve a run it did not measure.
+    let consumed = consumed_manifest(&ctx.root, tool);
+    if !consumed.bounded() {
+        return Err(DomainResult::invalid(diagnostic::input_invalid_set(
+            "consumed",
+            "over-limit",
+        )));
+    }
 
     let started = Instant::now();
     // Baseline: a pristine disposable copy.
-    let baseline_copy = copy_tree(root)?;
+    let (baseline_copy, baseline_guard) = copy_tree(&ctx.root)?;
     let baseline = run_checks(&program, &tool.args, &spec.checks, &baseline_copy);
 
     // Candidate: a second disposable copy with the exact patch applied.
     let candidate_result = match patch {
         Some(document) => {
-            let candidate_copy = copy_tree(root)?;
+            let (candidate_copy, candidate_guard) = copy_tree(&ctx.root)?;
             let checks = match apply_patch(&candidate_copy, document) {
                 Ok(()) => run_checks(&program, &tool.args, &spec.checks, &candidate_copy),
                 Err(_) => CheckResults {
@@ -148,8 +287,9 @@ pub fn execute(
                         .collect(),
                 },
             };
-            // The disposable candidate copy never survives the run.
-            let _ = std::fs::remove_dir_all(&candidate_copy);
+            // The disposable candidate copy never survives the run: the
+            // guard removes the whole temp home, inner copy included.
+            drop(candidate_guard);
             checks
         }
         None => CheckResults {
@@ -165,8 +305,9 @@ pub fn execute(
                 .collect(),
         },
     };
-    // Both disposable copies are removed on every exit path.
-    let _ = std::fs::remove_dir_all(&baseline_copy);
+    // Both disposable temp homes are removed on every exit path: the
+    // baseline guard drops here, the candidate guard at its scope end.
+    drop(baseline_guard);
 
     // The behavior oracle: the kind=behavior-oracle checks must pass on
     // both sides. A shallow happy-path test passing beside a broken
@@ -231,6 +372,7 @@ pub fn execute(
         plan,
         &spec,
         spec_digest,
+        Some(consumed.tree_digest()),
         Some(baseline),
         Some(candidate_result),
         patch.map(|document| {
@@ -240,12 +382,27 @@ pub fn execute(
     );
     execution.oracle = Some(oracle);
     execution.conclusion = Some(conclusion.to_owned());
-    // Execution custody: only this real run can attach the marker apply
-    // admits on. The digest is over the measured document without the
-    // custody member; the measured duration is bounded below.
+    // Execution custody: the run binds the exact plan, candidate
+    // revision, and consumed-input tree line into the envelope only
+    // this module assembles for real runs.
+    execution.baseline_source = Some(consumed.tree_digest());
+    // Execution custody: the run binds the exact plan, candidate
+    // revision, and consumed-input tree line into the envelope only
+    // this module assembles for real runs.
     let measured_ms = (started.elapsed().as_millis() as u64).clamp(1, 60_000_000);
     execution.custody = Some(custody_of(&execution, measured_ms));
     Ok(execution)
+}
+
+/// The plan-time source-pin path set (the same consumed set apply
+/// re-fingerprints): read scope ∪ mutation scope, so the pre-execution
+/// barrier and the apply barrier cannot disagree structurally.
+fn pin_paths(plan: &RefactorPlan) -> std::collections::BTreeSet<String> {
+    plan.read_scope
+        .iter()
+        .chain(plan.mutation_scope.iter())
+        .cloned()
+        .collect()
 }
 
 /// The private custody envelope of one measured execution: the
@@ -315,6 +472,15 @@ pub(crate) fn admit_execution(
             "custody-bounds",
         )));
     }
+    // A forged document can recompute any self-consistent envelope, so
+    // admission rests on the one thing a hand-written document cannot
+    // fake retroactively: the consumed-input manifest this module
+    // derived from the live tree at run time. The recorded tree line
+    // must re-derive exactly from the manifest members over the named
+    // paths, and the manifest must cover the specification's argv
+    // script (or its typed absence) — the bytes a trivialized or
+    // swapped runner would have measured (F3/X3).
+    validate_consumed_binding(&execution, &ctx.root)?;
     // The measured conclusion must be preserved: conclusions are
     // checked before candidate coverage so a failed run is honestly
     // classified verification-failed (LEK-ADOPT-007), never laundered
@@ -339,35 +505,221 @@ pub(crate) fn admit_execution(
         )));
     }
     // The recorded per-check outcomes must really support `preserved`:
-    // conclusions are derived from the recorded measurements, never
-    // accepted as assertions.
-    if !measured_preserved(&execution) {
+    // outcomes are measured 1:1 against the declared checks (same ids,
+    // same order, no unmeasured inventions, none missing), the oracle
+    // verdict is re-derived from the behavior-oracle measurements (a
+    // caller-supplied verdict is never accepted), and the conclusion is
+    // re-derived from the whole envelope — the exact derivation the
+    // real run performs. A hand-written envelope that skips a check,
+    // invents a passing id, or asserts an oracle that never held
+    // refuses here (X1/F11).
+    let spec_checks = &execution.checks;
+    measured_1to1(&execution.baseline, spec_checks, "baseline")?;
+    measured_1to1(&execution.candidate, spec_checks, "candidate")?;
+    if !oracle_holds(&execution) {
+        return Err(DomainResult::invalid(diagnostic::verification_failed_set(
+            "behavior-oracle",
+            &execution.spec.clone().unwrap_or_default(),
+        )));
+    }
+    if derived_conclusion(&execution) != Some("preserved") {
         return Err(DomainResult::invalid(diagnostic::verification_failed_set(
             "measured-outcomes",
             &execution.spec.clone().unwrap_or_default(),
         )));
     }
-    let _ = ctx;
+    // The plan's pinned consumed *source* set must still match the
+    // tree at admission time (the stale-plan barrier at apply, mirrored
+    // from the execution path; sources only, as above), so a plan
+    // drifted after its verification never installs.
+    {
+        let current = super::analysis::compute_pins(ctx, None, &pin_paths(plan))?;
+        let changed: Vec<String> = source_drift(&plan.pins, &current);
+        if !changed.is_empty() {
+            return Err(DomainResult::denied(diagnostic::plan_stale_set(
+                &plan.plan,
+                &changed,
+            )));
+        }
+    }
     Ok(execution)
 }
 
-/// Whether the recorded baseline/candidate outcomes really support the
-/// `preserved` conclusion: every recorded check passed on both sides
-/// and the declared oracle verdict is `passed`.
-fn measured_preserved(execution: &VerificationDocument) -> bool {
-    let (Some(baseline), Some(candidate)) = (&execution.baseline, &execution.candidate) else {
-        return false;
-    };
-    let all_passed = baseline
-        .checks
+/// The changed members between two pin sets, restricted to the source
+/// pins: the verify/admission barrier re-fingerprints the plan's
+/// pinned sources against the live tree without an observed-index
+/// rescan, so scan-evidence members (adapter/index/model/lock) are out
+/// of scope here while every source drift is caught.
+fn source_drift(
+    expected: &super::wire::Pins,
+    current: &super::wire::Pins,
+) -> Vec<String> {
+    use std::collections::BTreeMap;
+    let expected_sources: BTreeMap<&str, &str> = expected
+        .sources
         .iter()
-        .chain(candidate.checks.iter())
-        .all(|check| check.status == "passed");
-    let oracle_passed = execution
+        .map(|source| (source.path.as_str(), source.sha256.as_str()))
+        .collect();
+    let current_sources: BTreeMap<&str, &str> = current
+        .sources
+        .iter()
+        .map(|source| (source.path.as_str(), source.sha256.as_str()))
+        .collect();
+    let mut changed: Vec<String> = expected_sources
+        .iter()
+        .filter(|(path, digest)| current_sources.get(*path) != Some(&&**digest))
+        .map(|(path, _)| (*path).to_string())
+        .collect();
+    for path in current_sources.keys() {
+        if !expected_sources.contains_key(path) {
+            changed.push((*path).to_owned());
+        }
+    }
+    changed.sort();
+    changed.dedup();
+    changed
+}
+
+/// The consumed-input binding of one execution (F3/X3): the recorded
+/// baseline-source tree line must be exactly the digest of the recorded
+/// manifest members, the manifest must be bounded and well-formed, and
+/// every manifest path must be exactly the specification's argv script
+/// consumed at run time — re-derived from the current project tree, so
+/// a drifted or swapped runner refuses before any write. An execution
+/// without the binding (or one whose tree line does not re-derive)
+/// never admits.
+fn validate_consumed_binding(
+    execution: &VerificationDocument,
+    root: &Path,
+) -> Outcome<()> {
+    let Some(recorded) = &execution.baseline_source else {
+        return Err(DomainResult::invalid(diagnostic::input_invalid_set(
+            "verification",
+            "consumed-missing",
+        )));
+    };
+    // The manifest travels in the run digest; the tree line is the
+    // content address of the manifest members. Reconstruct the manifest
+    // from the argv script consumed now and compare.
+    let Some(tool) = &execution.tool else {
+        return Err(DomainResult::invalid(diagnostic::input_invalid_set(
+            "verification",
+            "tool-missing",
+        )));
+    };
+    let current = consumed_manifest(root, tool);
+    if !current.bounded() {
+        return Err(DomainResult::invalid(diagnostic::input_invalid_set(
+            "consumed",
+            "over-limit",
+        )));
+    }
+    if current.tree_digest() != *recorded {
+        return Err(DomainResult::invalid(diagnostic::input_invalid_set(
+            "verification",
+            "consumed-drift",
+        )));
+    }
+    Ok(())
+}
+
+/// The measured side must cover the declared checks 1:1: exactly the
+/// declared ids in declaration order, every outcome `passed`, and no
+/// invented or missing measurements (X1/F11).
+fn measured_1to1(
+    side: &Option<CheckResults>,
+    spec_checks: &[super::wire::CheckSpec],
+    name: &str,
+) -> Outcome<()> {
+    let Some(side) = side else {
+        return Err(DomainResult::invalid(diagnostic::input_invalid_set(
+            "verification",
+            name,
+        )));
+    };
+    if side.checks.len() != spec_checks.len() {
+        return Err(DomainResult::invalid(diagnostic::verification_failed_set(
+            name,
+            "measurement-coverage",
+        )));
+    }
+    for (measured, declared) in side.checks.iter().zip(spec_checks.iter()) {
+        if measured.id != declared.id {
+            return Err(DomainResult::invalid(diagnostic::verification_failed_set(
+                name,
+                "measurement-identity",
+            )));
+        }
+        if measured.status != "passed" {
+            return Err(DomainResult::invalid(diagnostic::verification_failed_set(
+                &measured.id,
+                name,
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Re-derive the behavior-oracle verdict from the measurements (X1):
+/// the recorded oracle must be `passed` exactly when every declared
+/// behavior-oracle check passed on both sides; with no oracle checks
+/// declared, the recorded verdict must be `unavailable`.
+fn oracle_holds(execution: &VerificationDocument) -> bool {
+    let oracle = execution
         .oracle
         .as_ref()
-        .is_some_and(|oracle| oracle.status == "passed");
-    all_passed && oracle_passed
+        .map(|oracle| oracle.status.as_str());
+    let oracle_ids: Vec<&str> = execution
+        .checks
+        .iter()
+        .filter(|check| check.kind == "behavior-oracle")
+        .map(|check| check.id.as_str())
+        .collect();
+    let both_passed = |side: &Option<CheckResults>| {
+        oracle_ids.iter().all(|id| {
+            side.as_ref()
+                .map(|side| {
+                    side.checks
+                        .iter()
+                        .any(|check| check.id == *id && check.status == "passed")
+                })
+                .unwrap_or(false)
+        })
+    };
+    if oracle_ids.is_empty() {
+        return oracle == Some("unavailable");
+    }
+    oracle == Some("passed") && both_passed(&execution.baseline) && both_passed(&execution.candidate)
+}
+
+/// The conclusion re-derived from the whole envelope — the exact
+/// derivation the real run performs (X1/F11).
+fn derived_conclusion(execution: &VerificationDocument) -> Option<&str> {
+    let any_unavailable = execution
+        .baseline
+        .iter()
+        .chain(execution.candidate.iter())
+        .flat_map(|side| side.checks.iter())
+        .any(|check| check.status == "unavailable");
+    let any_failed = execution
+        .baseline
+        .iter()
+        .chain(execution.candidate.iter())
+        .flat_map(|side| side.checks.iter())
+        .any(|check| check.status == "failed");
+    let oracle = execution
+        .oracle
+        .as_ref()
+        .map(|oracle| oracle.status.as_str());
+    Some(if any_unavailable && !any_failed {
+        "unavailable"
+    } else if any_failed || oracle == Some("failed") {
+        "failed"
+    } else if oracle == Some("unavailable") {
+        "unavailable"
+    } else {
+        "preserved"
+    })
 }
 
 /// Whether the executed run bound the candidate revision this apply
@@ -409,6 +761,7 @@ fn shell(
     plan: &RefactorPlan,
     spec: &VerificationDocument,
     spec_digest: String,
+    baseline_source: Option<String>,
     baseline: Option<CheckResults>,
     candidate: Option<CheckResults>,
     candidate_digest: Option<String>,
@@ -428,7 +781,9 @@ fn shell(
         spec: Some(spec_digest),
         plan: Some(plan.plan.clone()),
         tool: spec.tool.clone(),
-        baseline_source: spec.baseline_source.clone(),
+        // The exact consumed-input tree line of this run's argv script;
+        // apply re-derives it from the live tree at admission (F3/X3).
+        baseline_source,
         checks: spec.checks.clone(),
         confinement,
         baseline,
@@ -656,16 +1011,15 @@ fn kill_tree(pid: u32) {
 
 /// Copy the project into a fresh disposable directory, skipping VCS,
 /// build, and runtime-state homes, under strict byte and file ceilings.
-fn copy_tree(root: &Path) -> Outcome<PathBuf> {
-    let copy = tempfile::tempdir()
-        .map_err(|_| {
-            DomainResult::invalid(diagnostic::evidence_incomplete_set(
-                "copy",
-                "tempdir-unavailable",
-            ))
-        })?
-        .keep();
-    let destination = copy.join("project");
+/// The temp home is held by RAII for the whole construction: every
+/// early return — over-limit, unreadable, or copy failure — removes
+/// the whole directory, so partially copied project material never
+/// leaks into the host temp area (F7). Returns the detached inner
+/// `project` path plus the guard for the outer home; the caller
+/// removes the inner directory on its own schedule.
+fn copy_tree(root: &Path) -> Outcome<(PathBuf, tempdir::Guard)> {
+    let mut guard = tempdir::Guard::new()?;
+    let destination = guard.path().join("project");
     std::fs::create_dir_all(&destination).map_err(|_| {
         DomainResult::invalid(diagnostic::evidence_incomplete_set(
             "copy",
@@ -674,8 +1028,63 @@ fn copy_tree(root: &Path) -> Outcome<PathBuf> {
     })?;
     let mut total_bytes = 0usize;
     let mut total_files = 0usize;
-    copy_recursive(root, &destination, &mut total_bytes, &mut total_files)?;
-    Ok(destination)
+    if let Err(error) = copy_recursive(root, &destination, &mut total_bytes, &mut total_files) {
+        // Nothing of this tree survives a failed preparation.
+        guard.remove_tree();
+        return Err(error);
+    }
+    Ok((destination, guard))
+}
+
+/// The bounded disposable temp home: a fresh host-temp directory held
+/// for the whole run and removed on drop. Unlike `TempDir.keep()`, the
+/// directory can never leak on an early return, and the success path
+/// removes the whole home (inner copy included) instead of leaving
+/// empty parent litter.
+mod tempdir {
+    use super::diagnostic;
+    use std::path::{Path, PathBuf};
+    use crate::result::DomainResult;
+
+    pub(super) struct Guard {
+        path: Option<PathBuf>,
+    }
+
+    impl Guard {
+        pub(super) fn new() -> super::super::Outcome<Self> {
+            // tempfile is the accepted bounded-temp seam; the handle is
+            // kept alive through the guard so only an explicit success
+            // path can shorten its lifetime.
+            match tempfile::Builder::new().prefix("lekalo-adoption-").tempdir() {
+                Ok(dir) => Ok(Self {
+                    path: Some(dir.keep()),
+                }),
+                Err(_) => Err(DomainResult::invalid(diagnostic::evidence_incomplete_set(
+                    "copy",
+                    "tempdir-unavailable",
+                ))),
+            }
+        }
+
+        pub(super) fn path(&self) -> &Path {
+            self.path
+                .as_deref()
+                .expect("guard holds the temp home until taken")
+        }
+
+        /// Best-effort whole-home removal on a failed preparation.
+        pub(super) fn remove_tree(&mut self) {
+            if let Some(path) = self.path.take() {
+                let _ = std::fs::remove_dir_all(path);
+            }
+        }
+    }
+
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            self.remove_tree();
+        }
+    }
 }
 
 fn copy_recursive(

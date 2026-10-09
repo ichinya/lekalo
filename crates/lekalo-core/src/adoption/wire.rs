@@ -503,9 +503,6 @@ impl ClosedValidate for VerificationDocument {
             if !version::is_scope_id(&check.id) || !seen_ids.insert(check.id.as_str()) {
                 return Err(WireError::Shape);
             }
-            if check.expect_exit > 255 {
-                return Err(WireError::Shape);
-            }
             if check.expect_stdout.len() > 64
                 || check
                     .expect_stdout

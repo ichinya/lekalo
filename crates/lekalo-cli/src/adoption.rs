@@ -586,7 +586,7 @@ fn run_verify(
         Ok(bytes) => bytes,
         Err(result) => return result,
     };
-    match lekalo_core::adoption::verify(&context.root, &plan, &verification_bytes, patch.as_ref()) {
+    match lekalo_core::adoption::verify(&context, &plan, &verification_bytes, patch.as_ref()) {
         Ok(execution) => emit(
             serde_json::to_string_pretty(&execution).expect("verification serializes"),
             format!(
