@@ -82,7 +82,21 @@
       "preconditions": [
         "same-database-engine-family",
         "declared-isolation-level-at-least-required"
-      ]
+      ],
+      "destinationPreconditions": {
+        "node-typescript": [
+          "same-database-engine-family",
+          "declared-isolation-level-at-least-required"
+        ],
+        "php-laravel": [
+          "same-database-engine-family",
+          "declared-isolation-level-at-least-required"
+        ],
+        "go-service": [
+          "same-database-engine-family",
+          "declared-isolation-level-at-least-required"
+        ]
+      }
     },
     {
       "requirement": "storage.decimal-policy",
@@ -92,7 +106,24 @@
         "identical-precision",
         "identical-scale",
         "identical-rounding"
-      ]
+      ],
+      "destinationPreconditions": {
+        "node-typescript": [
+          "identical-precision",
+          "identical-scale",
+          "identical-rounding"
+        ],
+        "php-laravel": [
+          "identical-precision",
+          "identical-scale",
+          "identical-rounding"
+        ],
+        "go-service": [
+          "identical-precision",
+          "identical-scale",
+          "identical-rounding"
+        ]
+      }
     },
     {
       "requirement": "verify.operations",
@@ -100,7 +131,18 @@
       "definitionVersion": "0.4.0",
       "preconditions": [
         "recorded-scenario-receipt"
-      ]
+      ],
+      "destinationPreconditions": {
+        "node-typescript": [
+          "recorded-scenario-receipt"
+        ],
+        "php-laravel": [
+          "recorded-scenario-receipt"
+        ],
+        "go-service": [
+          "recorded-scenario-receipt"
+        ]
+      }
     },
     {
       "requirement": "behavior.hook",
@@ -110,7 +152,14 @@
         "replacement-binding-declared",
         "php-84",
         "laravel-11"
-      ]
+      ],
+      "destinationPreconditions": {
+        "php-laravel": [
+          "replacement-binding-declared",
+          "php-84",
+          "laravel-11"
+        ]
+      }
     },
     {
       "requirement": "behavior.hook",
@@ -119,7 +168,13 @@
       "preconditions": [
         "replacement-binding-declared",
         "go-122"
-      ]
+      ],
+      "destinationPreconditions": {
+        "go-service": [
+          "replacement-binding-declared",
+          "go-122"
+        ]
+      }
     }
   ]
 }

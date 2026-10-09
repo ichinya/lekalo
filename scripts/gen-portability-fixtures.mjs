@@ -165,7 +165,7 @@ const evidence = {
       targetId: "php-laravel",
       subject: "planner.schedule_calculate",
       coverage: "full",
-      conditions: ["php-84", "laravel-11"],
+      conditions: ["replacement-binding-declared", "php-84", "laravel-11"],
       definitionPins: [{ id: "runtime.async", version: "0.2.16" }],
     },
     {
@@ -175,7 +175,7 @@ const evidence = {
       targetId: "go-service",
       subject: "planner.count_focused",
       coverage: "full",
-      conditions: ["go-122"],
+      conditions: ["replacement-binding-declared", "go-122"],
       definitionPins: [{ id: "storage.returning", version: "0.2.16" }],
     },
   ],

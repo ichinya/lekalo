@@ -944,12 +944,17 @@ pub struct StorageOffering {
     pub policy: Policy,
 }
 
-/// One qualified operational requirement of the manifest.
+/// One qualified operational requirement of the manifest. A bridged
+/// requirement is admitted only with the exact reviewed precondition set
+/// for its destination and an agreeing definition pin, exactly like a
+/// behavioral mapping record.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OperationalRequirement {
     pub subject: String,
     pub requirement: String,
+    pub conditions: Vec<String>,
+    pub definition_pins: Vec<DefinitionPin>,
 }
 
 /// One recorded scenario receipt of the manifest.
@@ -1061,7 +1066,11 @@ pub struct RatioBasis {
     pub formula: String,
 }
 
-/// One reviewed semantic mapping definition of the recipe.
+/// One reviewed semantic mapping definition of the recipe. The optional
+/// `destinationPreconditions` map scopes the reviewed precondition set
+/// per destination target: a mapping record on a keyed destination must
+/// declare exactly that set, so a precondition that names another
+/// target's runtime can never admit a mapping here.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RecipeMapping {
@@ -1069,6 +1078,19 @@ pub struct RecipeMapping {
     pub capability: String,
     pub definition_version: String,
     pub preconditions: Vec<String>,
+    #[serde(default)]
+    pub destination_preconditions: BTreeMap<String, Vec<String>>,
+}
+
+impl RecipeMapping {
+    /// The exact reviewed precondition set of one destination: the
+    /// destination-scoped list when keyed, the global list otherwise.
+    pub fn preconditions_for(&self, destination: &str) -> &[String] {
+        match self.destination_preconditions.get(destination) {
+            Some(conditions) => conditions,
+            None => &self.preconditions,
+        }
+    }
 }
 
 /// The decoded recipe with its exact instance digest.

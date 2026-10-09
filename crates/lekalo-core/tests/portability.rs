@@ -1181,7 +1181,27 @@ mod decoder_parity {
     fn malformed_operational_requirement_is_refused() {
         let bytes = mutated_evidence(|value| {
             value["operationalRequirements"] = serde_json::json!([
-                {"subject": "command:planner.focus_task", "requirement": "bad requirement!"}
+                {
+                    "subject": "command:planner.focus_task",
+                    "requirement": "bad requirement!",
+                    "conditions": ["recorded-scenario-receipt"],
+                    "definitionPins": []
+                }
+            ]);
+        });
+        expect_refusal(&bytes, "operational-requirement", false);
+    }
+
+    #[test]
+    fn operational_requirement_with_duplicate_conditions_is_refused() {
+        let bytes = mutated_evidence(|value| {
+            value["operationalRequirements"] = serde_json::json!([
+                {
+                    "subject": "command:planner.focus_task",
+                    "requirement": "verify.operations",
+                    "conditions": ["recorded-scenario-receipt", "recorded-scenario-receipt"],
+                    "definitionPins": []
+                }
             ]);
         });
         expect_refusal(&bytes, "operational-requirement", false);

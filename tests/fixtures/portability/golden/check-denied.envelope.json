@@ -368,7 +368,7 @@
         },
         {
           "code": "portability.evidence-incomplete",
-          "detail": "hook-foreign-unmapped",
+          "detail": "hook-external-unmapped",
           "dimension": "behavioral",
           "subject": "planner.archive_task_cmd"
         },
@@ -472,7 +472,7 @@
       "identity": "dev.lekalo.portability-report@0.8.0",
       "inputs": {
         "evidence": {
-          "digest": "sha256:23f702c894aa015787f3832fae2641af6bde804e279ab3331902c0bc10995272",
+          "digest": "sha256:6155694f2674c9e811bfb6c31394b43502bc4a004448eea4fcdd784cd0dd9cd2",
           "state": "supplied"
         },
         "lockDigest": {
@@ -543,7 +543,7 @@
               "planner.archive_task",
               "planner.task_id"
             ],
-            "reason": "hook-foreign-unmapped",
+            "reason": "hook-external-unmapped",
             "requirement": "planner.archive_task",
             "scenarios": [],
             "subject": "command:planner.archive_task_cmd"
@@ -599,7 +599,7 @@
             "prerequisites": [
               "planner.task"
             ],
-            "reason": "hook-foreign-unmapped",
+            "reason": "hook-external-unmapped",
             "requirement": "planner.task",
             "scenarios": [],
             "subject": "effect:planner.archive_task"
@@ -1470,7 +1470,7 @@
         "projectId": "planner"
       },
       "recipeRef": {
-        "digest": "sha256:16cad8eb327daa241290f8b82adc9eb78e9b5fd71785c2d651025f23b0b81de0",
+        "digest": "sha256:d715766f8daf9410ff63fd31ddd6e9cc07403d5b1767911f2dec5d88bea5cb04",
         "id": "dev.lekalo.portability-recipe",
         "version": "0.8.0"
       },
@@ -2562,7 +2562,7 @@
               "dimension": "behavioral",
               "evidenceRefs": [],
               "offered": null,
-              "reason": "hook-foreign-unmapped",
+              "reason": "hook-external-unmapped",
               "required": null,
               "verification": "untested",
               "witnesses": [
@@ -2723,7 +2723,7 @@
               "dimension": "behavioral",
               "evidenceRefs": [],
               "offered": null,
-              "reason": "hook-foreign-unmapped",
+              "reason": "hook-external-unmapped",
               "required": null,
               "verification": "untested",
               "witnesses": [

@@ -558,17 +558,55 @@
     "operationalRequirement": {
       "type": "object",
       "additionalProperties": false,
+      "description": "One qualified operational requirement. A requirement bridged through a reviewed semantic mapping is admitted only with the exact reviewed precondition set for its destination and an agreeing definition pin, exactly like behavioral mappings; unbridged requirements keep their raw identity and stay explicit evidence gaps.",
       "properties": {
         "subject": {
           "$ref": "#/$defs/semanticId"
         },
         "requirement": {
           "$ref": "#/$defs/capabilityId"
+        },
+        "conditions": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[a-z][a-z0-9-]*$"
+          }
+        },
+        "definitionPins": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/capabilityId"
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32,
+                "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+              }
+            },
+            "required": [
+              "id",
+              "version"
+            ],
+            "unevaluatedProperties": false
+          }
         }
       },
       "required": [
         "subject",
-        "requirement"
+        "requirement",
+        "conditions",
+        "definitionPins"
       ],
       "unevaluatedProperties": false
     },

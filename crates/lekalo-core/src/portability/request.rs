@@ -436,6 +436,24 @@ pub fn parse_evidence(
         {
             return Err(diagnostic::invalid("operational-requirement"));
         }
+        let mut conditions = std::collections::BTreeSet::new();
+        for condition in &requirement.conditions {
+            if condition.is_empty()
+                || condition.len() > 128
+                || !wire::is_lower_token(condition)
+                || !conditions.insert(condition.as_str())
+            {
+                return Err(diagnostic::invalid("operational-requirement"));
+            }
+        }
+        if requirement.conditions.len() > 16 || requirement.definition_pins.len() > 16 {
+            return Err(diagnostic::invalid("operational-requirement"));
+        }
+        for pin in &requirement.definition_pins {
+            if !wire::is_capability_id(&pin.id) || !wire::is_semver(&pin.version) {
+                return Err(diagnostic::invalid("operational-requirement"));
+            }
+        }
     }
     {
         let mut requirements = std::collections::BTreeSet::new();

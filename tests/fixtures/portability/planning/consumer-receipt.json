@@ -78,7 +78,7 @@
       "subject": "effect:planner.archive_task",
       "destination": "go-service",
       "dimension": "behavioral",
-      "reason": "hook-foreign-unmapped"
+      "reason": "hook-external-unmapped"
     },
     {
       "subject": "effect:planner.archive_task",
@@ -96,7 +96,7 @@
       "subject": "command:planner.archive_task_cmd",
       "destination": "go-service",
       "dimension": "behavioral",
-      "reason": "hook-foreign-unmapped"
+      "reason": "hook-external-unmapped"
     },
     {
       "subject": "effect:planner.create_task",

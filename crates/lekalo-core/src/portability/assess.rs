@@ -91,6 +91,7 @@ pub mod reasons {
     pub const CAPABILITY_EXPLICIT_UNSUPPORTED: &str = "capability-explicit-unsupported";
     pub const IMPLICIT_HOOK_UNSUPPORTED: &str = "implicit-hook-unsupported";
     pub const MAPPING_UNQUALIFIED: &str = "mapping-unqualified";
+    pub const REQUIREMENT_UNQUALIFIED: &str = "requirement-unqualified";
     pub const NO_OPERATIONAL_OBLIGATION: &str = "no-operational-obligation";
     pub const DIMENSION_NOT_ASSIGNED: &str = "dimension-not-assigned";
     pub const DESTINATION_EVIDENCE_GAP: &str = "destination-evidence-gap";
@@ -801,33 +802,67 @@ pub const HOOK_REQUIREMENT: &str = "behavior.hook";
 /// Whether one mapping record is an admissible credit for the reviewed
 /// obligation: it must bridge through a reviewed recipe semantic mapping
 /// (exact requirement and capability), pin that capability's exact
-/// reviewed definition version, and declare only conditions the reviewed
-/// definition anticipates. Anything else is unqualified evidence, never
-/// a silent credit.
+/// reviewed definition version with every pin naming the capability in
+/// agreement, and declare exactly the reviewed precondition set of the
+/// mapping's own destination. Anything else is unqualified evidence,
+/// never a silent credit.
 fn admissible_mapping(input: &Assessment, record: &wire::MappingRecord) -> bool {
-    let Some(bridge) = input
-        .recipe
-        .document
-        .semantic_mappings
+    admissible_bridge_record(
+        &input.recipe.document.semantic_mappings,
+        &record.requirement,
+        &record.capability,
+        &record.target_id,
+        &record.conditions,
+        &record.definition_pins,
+    )
+}
+
+/// The shared bridge admission of behavioral mappings and operational
+/// requirements: a reviewed bridge, an agreeing exact definition pin for
+/// the mapped capability, and exactly the destination's reviewed
+/// precondition set as declared conditions.
+fn admissible_bridge_record(
+    bridges: &[wire::RecipeMapping],
+    requirement: &str,
+    capability: &str,
+    destination: &str,
+    conditions: &[String],
+    pins: &[wire::DefinitionPin],
+) -> bool {
+    let Some(bridge) = bridges
         .iter()
-        .find(|m| m.requirement == record.requirement && m.capability == record.capability)
+        .find(|m| m.requirement == requirement && m.capability == capability)
     else {
         return false;
     };
-    let exact_definition_pin = record
-        .definition_pins
-        .iter()
-        .any(|pin| pin.id == record.capability && pin.version == bridge.definition_version);
-    if !exact_definition_pin {
+    // Exactly one agreeing definition pin per capability: every pin
+    // naming the mapped capability must carry the bridge's reviewed
+    // definition version, and at least one such pin must exist — a
+    // contradictory version beside a correct one poisons the credit
+    // instead of being ignored by a first-match scan.
+    let pins_for_capability: Vec<&wire::DefinitionPin> =
+        pins.iter().filter(|pin| pin.id == capability).collect();
+    if pins_for_capability.is_empty()
+        || pins_for_capability
+            .iter()
+            .any(|pin| pin.version != bridge.definition_version)
+    {
         return false;
     }
-    // The record's declared conditions must stay inside the reviewed
-    // precondition vocabulary of the bridge; an invented condition is an
-    // unreviewed limitation the assessment cannot admit.
-    record
-        .conditions
+    // The declared conditions must be non-empty and equal, as a set, the
+    // reviewed precondition set of this exact destination: an empty list
+    // is vacuously true and never reviewed, a subset is cherry-picked,
+    // and another target's vocabulary never admits this destination.
+    if conditions.is_empty() {
+        return false;
+    }
+    let declared: BTreeSet<&str> = conditions.iter().map(String::as_str).collect();
+    let required: BTreeSet<&str> = bridge
+        .preconditions_for(destination)
         .iter()
-        .all(|condition| bridge.preconditions.iter().any(|p| p == condition))
+        .map(String::as_str)
+        .collect();
+    declared == required
 }
 
 fn mapping_outcome(
@@ -855,17 +890,25 @@ fn mapping_outcome(
         })
         .unwrap_or_default();
     if mappings.is_empty() {
+        // The unmapped reason names the binding kind: an external
+        // binding is not a foreign one, and the registered evidence
+        // need follows the external token.
+        let unmapped_reason = if binding == Binding::Foreign {
+            reasons::HOOK_FOREIGN_UNMAPPED
+        } else {
+            reasons::HOOK_EXTERNAL_UNMAPPED
+        };
         sink.push(
             codes::EVIDENCE_INCOMPLETE,
             Some(symbol.to_owned()),
             Some(Dimension::Behavioral),
-            reasons::HOOK_FOREIGN_UNMAPPED,
+            unmapped_reason,
         );
         return HookOutcome {
             classification: Classification::Unknown,
             binding: Some(binding),
             blocking: true,
-            reason: reasons::HOOK_FOREIGN_UNMAPPED,
+            reason: unmapped_reason,
             evidence_refs: vec![],
         };
     }
@@ -1213,20 +1256,53 @@ fn operational(
     // Every obligation keeps its own requirement identity: the emitted
     // row names exactly the obligation it evaluates. A requirement with
     // no reviewed bridge keeps its raw requirement identity and stays an
-    // explicit unknown; it is never silently dropped or anonymized.
-    let mut obligations: Vec<String> = Vec::new();
+    // explicit unknown; it is never silently dropped or anonymized. A
+    // bridged requirement is admitted only through the same reviewed
+    // precondition/pin admission as behavioral mappings — a broad
+    // capability declaration alone never establishes the bridge.
+    struct OperationalObligation {
+        identity: String,
+        capability: String,
+        admitted: bool,
+    }
+    let mut obligations: Vec<OperationalObligation> = Vec::new();
     if has_publication {
-        obligations.push("events.publication".to_owned());
+        obligations.push(OperationalObligation {
+            identity: "events.publication".to_owned(),
+            capability: "events.publication".to_owned(),
+            admitted: true,
+        });
     }
     let recipe = input.recipe;
     for requirement in &requirements {
-        let mapped = recipe
+        let bridge = recipe
             .document
             .semantic_mappings
             .iter()
-            .find(|m| m.requirement == requirement.requirement)
-            .map(|m| m.capability.clone());
-        obligations.push(mapped.unwrap_or_else(|| requirement.requirement.clone()));
+            .find(|m| m.requirement == requirement.requirement);
+        let obligation = match bridge {
+            Some(bridge) => {
+                let admitted = admissible_bridge_record(
+                    &recipe.document.semantic_mappings,
+                    &requirement.requirement,
+                    &bridge.capability,
+                    destination,
+                    &requirement.conditions,
+                    &requirement.definition_pins,
+                );
+                OperationalObligation {
+                    identity: requirement.requirement.clone(),
+                    capability: bridge.capability.clone(),
+                    admitted,
+                }
+            }
+            None => OperationalObligation {
+                identity: requirement.requirement.clone(),
+                capability: requirement.requirement.clone(),
+                admitted: true,
+            },
+        };
+        obligations.push(obligation);
     }
     let profile = input
         .destinations
@@ -1248,13 +1324,35 @@ fn operational(
                 Classification::Unknown,
                 true,
                 reasons::CAPABILITY_ABSENT,
-                vec![obligation.clone()],
+                vec![obligation.identity.clone()],
             ));
         }
         return rows;
     };
     for obligation in &obligations {
-        let capability = profile.capabilities.iter().find(|c| &c.id == obligation);
+        // An unadmitted bridge is an explicit evidence gap: the record
+        // names a reviewed requirement but did not present the reviewed
+        // preconditions or an agreeing definition pin.
+        if !obligation.admitted {
+            sink.push(
+                codes::EVIDENCE_INCOMPLETE,
+                Some(subject.typed_id.clone()),
+                Some(Dimension::Operational),
+                reasons::REQUIREMENT_UNQUALIFIED,
+            );
+            rows.push(finish(
+                base(true, reasons::REQUIREMENT_UNQUALIFIED),
+                Classification::Unknown,
+                true,
+                reasons::REQUIREMENT_UNQUALIFIED,
+                vec![obligation.identity.clone()],
+            ));
+            continue;
+        }
+        let capability = profile
+            .capabilities
+            .iter()
+            .find(|c| c.id == obligation.capability);
         let Some(capability) = capability else {
             // An unsatisfied declaration is not proof that the native
             // runtime cannot implement the capability.
@@ -1269,7 +1367,7 @@ fn operational(
                 Classification::Unknown,
                 true,
                 reasons::CAPABILITY_ABSENT,
-                vec![obligation.clone()],
+                vec![obligation.identity.clone()],
             ));
             continue;
         };
@@ -1279,7 +1377,7 @@ fn operational(
                 Classification::Portable,
                 false,
                 reasons::CAPABILITY_DECLARED,
-                vec![obligation.clone()],
+                vec![obligation.identity.clone()],
             ),
             "partial" => {
                 sink.push(
@@ -1293,7 +1391,7 @@ fn operational(
                     Classification::Partial,
                     true,
                     reasons::CAPABILITY_PARTIAL,
-                    vec![obligation.clone()],
+                    vec![obligation.identity.clone()],
                 )
             }
             _ => {
@@ -1308,7 +1406,7 @@ fn operational(
                     Classification::Unknown,
                     true,
                     reasons::CAPABILITY_ABSENT,
-                    vec![obligation.clone()],
+                    vec![obligation.identity.clone()],
                 )
             }
         });

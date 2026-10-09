@@ -437,6 +437,87 @@ const withEvidence = (temp, mutate) => {
   }
 }
 
+// F1b — mapping precondition/pin admission: an empty condition list is
+// vacuously true and never credits, another target's precondition
+// vocabulary never admits this destination, a cherry-picked subset is
+// unreviewed, and a contradictory definition pin poisons the credit —
+// every variant must stay blocked instead of `supported-with-mapping`.
+{
+  const admissionCases = [
+    // empty conditions
+    (mapping) => { mapping.conditions = []; },
+    // foreign target's vocabulary
+    (mapping) => { mapping.conditions = ["php-84", "laravel-11"]; },
+    // cherry-picked subset
+    (mapping) => { mapping.conditions = ["go-122"]; },
+    // contradictory definition pin beside the correct one
+    (mapping) => { mapping.definitionPins.push({ id: "storage.returning", version: "99.0.0" }); },
+  ];
+  for (const [index, mutate] of admissionCases.entries()) {
+    const temp = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
+    try {
+      cpSync(project, temp, { recursive: true });
+      withEvidence(temp, (manifest) => {
+        mutate(manifest.mappings.find((m) => m.id === "map.reading-go"));
+      });
+      const run = tryRun(["--json", "portability", "--to", "go-service", "--symbol", "planner.count_focused", "--evidence", "reports/portability-evidence.json"], temp);
+      if (run.code !== 0) fail("f1b-exit", `${index}: ${run.code}`);
+      const report = JSON.parse(run.stdout).portability;
+      const reading = report.subjects.find((s) => s.subject === "query:planner.count_focused");
+      const goRow = reading.rows.find((r) => r.destination === "go-service" && r.dimension === "behavioral");
+      if (goRow.classification === "supported-with-mapping") fail("f1b-vacuous-credit", `${index}: ${JSON.stringify(goRow)}`);
+      if (!goRow.blocking) fail("f1b-green", `${index}: ${JSON.stringify(goRow)}`);
+      if (goRow.reason !== "mapping-unqualified") fail("f1b-reason", `${index}: ${goRow.reason}`);
+      const denied = tryRun(["--json", "portability", "--to", "go-service", "--symbol", "planner.count_focused", "--evidence", "reports/portability-evidence.json", "--check"], temp);
+      if (denied.code !== 3) fail("f1b-check", `${index}: ${denied.code}`);
+    } finally {
+      rmSync(temp, { recursive: true, force: true });
+    }
+  }
+}
+
+// F1c — operational requirements go through the same bridge admission: a
+// bridged requirement without the reviewed preconditions and pin is an
+// explicit unqualified gap, never portable capability credit.
+{
+  const temp = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
+  try {
+    cpSync(project, temp, { recursive: true });
+    withEvidence(temp, (manifest) => {
+      manifest.operationalRequirements.push({
+        subject: "command:planner.focus_task",
+        requirement: "verify.operations",
+        conditions: [],
+        definitionPins: [],
+      });
+      // A php-side profile declares the capability at full support; the
+      // unqualified record must still not read as portable.
+      manifest.operationalRequirements.push({
+        subject: "command:planner.focus_task",
+        requirement: "storage.transactions",
+        conditions: [],
+        definitionPins: [],
+      });
+    });
+    const run = tryRun(["--json", "portability", "--to", "php-laravel", "--symbol", "planner.focus_task", "--evidence", "reports/portability-evidence.json"], temp);
+    if (run.code !== 0) fail("f1c-exit", String(run.code));
+    const report = JSON.parse(run.stdout).portability;
+    const focus = report.subjects.find((s) => s.subject === "command:planner.focus_task");
+    const phpRows = focus.rows.filter((r) => r.destination === "php-laravel" && r.dimension === "operational");
+    for (const row of phpRows) {
+      if (row.classification === "portable") fail("f1c-unearned-portable", JSON.stringify(row));
+    }
+    const unqualified = phpRows.filter((r) => r.reason === "requirement-unqualified");
+    if (unqualified.length !== 2) fail("f1c-unqualified-gap", JSON.stringify(phpRows));
+    // The authored requirement identity survives on the row.
+    if (!phpRows.some((r) => r.evidenceRefs.includes("storage.transactions"))) {
+      fail("f1c-identity-lost", JSON.stringify(phpRows));
+    }
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
+}
+
 // F2 — declared family completeness without verified artifact custody is
 // an evidence gap: the decimal obligation stays unknown and blocking,
 // never portable.
@@ -590,8 +671,18 @@ const withEvidence = (temp, mutate) => {
   try {
     cpSync(project, temp, { recursive: true });
     withEvidence(temp, (manifest) => {
-      manifest.operationalRequirements.push({ subject: "command:planner.focus_task", requirement: "verify.operations" });
-      manifest.operationalRequirements.push({ subject: "command:planner.focus_task", requirement: "unmapped.requirement" });
+      manifest.operationalRequirements.push({
+        subject: "command:planner.focus_task",
+        requirement: "verify.operations",
+        conditions: ["recorded-scenario-receipt"],
+        definitionPins: [{ id: "testing.native-scenario", version: "0.4.0" }],
+      });
+      manifest.operationalRequirements.push({
+        subject: "command:planner.focus_task",
+        requirement: "unmapped.requirement",
+        conditions: [],
+        definitionPins: [],
+      });
     });
     const run = tryRun(["--json", "portability", "--evidence", "reports/portability-evidence.json"], temp);
     if (run.code !== 0) fail("f9-exit", String(run.code));
