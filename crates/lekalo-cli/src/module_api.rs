@@ -9,17 +9,15 @@
 
 use clap::Subcommand;
 use lekalo_core::loader::LoadSelection;
-use lekalo_core::module_api::consumers::parse_snapshot;
 use lekalo_core::module_api::diagnostic::invalid;
 use lekalo_core::module_api::diff::compare_public;
-use lekalo_core::module_api::lock::parse_lock;
-use lekalo_core::module_api::public::parse_bundle;
+use lekalo_core::module_api::lock::{check_lock, parse_lock, resolve_lock};
 use lekalo_core::module_api::wire;
 use lekalo_core::module_api::{
-    self, bundle_lock_evidence, check, check_lock, consumer_snapshot, plan_consumer_context,
-    resolve, resolve_lock, FindingClass,
+    self, check, consumer_snapshot, plan_consumer_context, resolve, FindingClass,
 };
 use lekalo_core::{DomainResult, Status};
+use std::collections::BTreeSet;
 use std::io::Read;
 
 /// The `module api` subcommands.
@@ -153,20 +151,77 @@ fn read(path: &str) -> Result<Vec<u8>, Failure> {
 }
 
 /// The certified-bundle gate: the boundary check must report no exact
-/// semantic violation for the module before a bundle or lock may be
-/// emitted. Illegal closures refuse regardless of advisory mode.
+/// semantic violation for the module *and for every transitive public
+/// dependency of its certified closure* before a bundle or lock may be
+/// emitted (finding 20: a dirty dependency's own closure can never hide
+/// behind --module scoping). Illegal closures refuse regardless of
+/// advisory mode.
 fn certified(
     attachment: &[u8],
     compilation: &lekalo_core::ir::Compilation,
     module: &str,
 ) -> Result<(), Failure> {
-    let verdict = check(attachment, compilation, false, Some(module)).map_err(Failure::from)?;
-    if verdict.report.assessment == "fail" {
-        let set = lekalo_core::module_api::diagnostic::set(&verdict.evidence, Status::Invalid)
+    let resolved = resolve(attachment, compilation)?;
+    let mut session = lekalo_core::module_api::public::ExportSession::new(&resolved, compilation);
+    if let Err(failure) = session.bundle_checked(module) {
+        return match failure {
+            lekalo_core::module_api::public::ExportFailure::Invalid(set) => Err(Failure::Set(set)),
+            lekalo_core::module_api::public::ExportFailure::Cycle(_) => {
+                Err(Failure::Set(invalid("public-dependency-cycle")))
+            }
+        };
+    }
+    // The certified closure: every transitive public dependency pin.
+    let mut scope: BTreeSet<String> = BTreeSet::new();
+    scope.insert(module.to_owned());
+    let mut work: Vec<String> = vec![module.to_owned()];
+    let mut seen: BTreeSet<String> = work.iter().cloned().collect();
+    while let Some(current) = work.pop() {
+        let Ok(bundle) = session.bundle(&current) else {
+            continue;
+        };
+        for dependency in &bundle.public_dependencies {
+            scope.insert(dependency.module_id.clone());
+            if seen.insert(dependency.module_id.clone()) {
+                work.push(dependency.module_id.clone());
+            }
+        }
+    }
+    // The unfiltered boundary check owns the whole project; the certified
+    // set refuses when any scoped member owns a boundary violation.
+    let verdict = check(attachment, compilation, false, None).map_err(Failure::from)?;
+    let scoped: Vec<_> = verdict
+        .evidence
+        .iter()
+        .filter(|finding| {
+            is_boundary_rule(finding.rule)
+                && finding
+                    .consumer
+                    .as_deref()
+                    .or(finding.producer.as_deref())
+                    .is_some_and(|owner| scope.contains(owner))
+        })
+        .cloned()
+        .collect();
+    if !scoped.is_empty() {
+        let set = lekalo_core::module_api::diagnostic::set(&scoped, Status::Invalid)
             .map_err(Failure::from)?;
         return Err(Failure::Set(set));
     }
     Ok(())
+}
+
+/// Whether one rule is an exact semantic boundary violation.
+fn is_boundary_rule(rule: &str) -> bool {
+    matches!(
+        rule,
+        "module-api.symbol-not-exported"
+            | "module-api.import-undeclared"
+            | "module-api.public-private-exposure"
+            | "module-api.public-target-exposure"
+            | "module-api.cross-module-write-forbidden"
+            | "module-api.dependency-cycle"
+    )
 }
 
 /// Map one core failure set to the typed result: unsupported family
@@ -254,42 +309,33 @@ pub fn run_validate_seam(seam: ValidateSeam) -> DomainResult {
         let mut evidence = verdict.evidence.clone();
         let mut lock_stale = false;
         if let Some(lock_path) = &seam.lock {
+            // One freshness comparison everywhere (finding 15): the full
+            // check_lock comparison, never a digest-only shortcut.
             let supplied = parse_lock(&read(lock_path)?)?;
             let resolved = resolve(&attachment, &compilation)?;
             let producer = supplied.producer.module.clone();
-            let bundle = module_api::export_public(&resolved, &compilation, &producer)?;
-            let findings = bundle_lock_evidence(&bundle, &supplied);
+            let current = resolve_lock(&resolved, &compilation, &producer, &supplied.consumer)?;
+            let findings = check_lock(&current, &supplied);
             lock_stale = !findings.is_empty();
             evidence.extend(findings.iter().cloned());
         }
-        if evidence.iter().any(|finding| {
-            matches!(
-                finding.rule,
-                "module-api.symbol-not-exported"
-                    | "module-api.import-undeclared"
-                    | "module-api.public-private-exposure"
-                    | "module-api.public-target-exposure"
-                    | "module-api.cross-module-write-forbidden"
-                    | "module-api.dependency-cycle"
-            )
-        }) {
+        // Strict boundary violations invalidate (finding 8: the gate is
+        // seam.strict, never unconditional); the advisory default keeps
+        // the base verdict and records the findings as valid evidence.
+        if seam.strict
+            && evidence
+                .iter()
+                .any(|finding| is_boundary_rule(finding.rule))
+        {
             let set = lekalo_core::module_api::diagnostic::set(&evidence, Status::Invalid)?;
             return Ok(DomainResult::invalid(set));
         }
         if lock_stale {
-            let mut all = lekalo_core::module_api::diagnostic::set(&evidence, Status::Denied)?;
-            let denied = lekalo_core::module_api::diagnostic::set(
-                &[lekalo_core::module_api::diagnostic::Evidence::new(
-                    "module-api.policy-denied",
-                    "validate",
-                    "lock-policy-denied",
-                )],
-                Status::Denied,
+            let all = lekalo_core::module_api::diagnostic::denied_set(
+                &evidence,
+                "validate",
+                "lock-policy-denied",
             )?;
-            let mut items = all.as_slice().to_vec();
-            items.extend(denied.as_slice().iter().cloned());
-            all = lekalo_core::diagnostics::DiagnosticSet::try_from_unsorted(items, Status::Denied)
-                .map_err(|_| invalid("diagnostic-bound"))?;
             return Ok(DomainResult::denied(all));
         }
         if base.status() != Status::Valid {
@@ -333,7 +379,6 @@ pub fn run(command: ApiCommands) -> DomainResult {
         Err(Failure::Finished(result)) => result,
     }
 }
-
 fn execute(command: ApiCommands) -> Result<DomainResult, Failure> {
     match command {
         ApiCommands::Check {
@@ -355,16 +400,14 @@ fn execute(command: ApiCommands) -> Result<DomainResult, Failure> {
                 let Some(lock_path) = &lock else {
                     return Err(Failure::Set(invalid("lock-required")));
                 };
+                // One freshness comparison everywhere (finding 15): the
+                // full identity/digest/policy/selection/dependency
+                // comparison against the current resolution.
                 let supplied = parse_lock(&read(lock_path)?)?;
-                let bundle = parse_bundle(&{
-                    // The check seam verifies the producer bundle of the
-                    // lock's own producer module.
-                    let resolved = resolve(&attachment, &compilation)?;
-                    let producer = supplied.producer.module.clone();
-                    let bundle = module_api::export_public(&resolved, &compilation, &producer)?;
-                    serde_json::to_vec(&bundle).expect("typed bundle serializes")
-                })?;
-                let findings = bundle_lock_evidence(&bundle, &supplied);
+                let resolved = resolve(&attachment, &compilation)?;
+                let producer = supplied.producer.module.clone();
+                let current = resolve_lock(&resolved, &compilation, &producer, &supplied.consumer)?;
+                let findings = check_lock(&current, &supplied);
                 evidence.extend(findings.iter().cloned());
                 lock_name = format!("{}::{}", supplied.producer.module, supplied.consumer);
             }
@@ -446,24 +489,15 @@ fn execute(command: ApiCommands) -> Result<DomainResult, Failure> {
                     .map(|finding| finding.detail.as_str())
                     .collect::<Vec<_>>()
                     .join(",");
-                let set = lekalo_core::module_api::diagnostic::set(&findings, Status::Denied)?;
-                let denied = lekalo_core::module_api::diagnostic::set(
-                    &[lekalo_core::module_api::diagnostic::Evidence::new(
-                        "module-api.policy-denied",
-                        format!("{module}::{consumer}"),
-                        if detail.is_empty() {
-                            "lock-policy".to_owned()
-                        } else {
-                            detail.clone()
-                        },
-                    )],
-                    Status::Denied,
+                let final_set = lekalo_core::module_api::diagnostic::denied_set(
+                    &findings,
+                    &format!("{module}::{consumer}"),
+                    if detail.is_empty() {
+                        "lock-policy"
+                    } else {
+                        &detail
+                    },
                 )?;
-                let mut all = set.as_slice().to_vec();
-                all.extend(denied.as_slice().iter().cloned());
-                let final_set =
-                    lekalo_core::diagnostics::DiagnosticSet::try_from_unsorted(all, Status::Denied)
-                        .map_err(|_| invalid("diagnostic-bound"))?;
                 let payload = serde_json::json!({
                     "status": "denied",
                     "moduleApiLock": current,
@@ -503,25 +537,30 @@ fn execute(command: ApiCommands) -> Result<DomainResult, Failure> {
                 report.changes.len(),
                 report.verdict
             );
-            if strict && report.verdict == "policy-denied" {
+            // Strict denies both an incompatible consumer resolution and a
+            // bare version-policy violation (finding 10: the gate is
+            // toothless without consumer snapshots otherwise).
+            if strict
+                && (report.verdict == "policy-denied"
+                    || report.version_policy.decision == "violation")
+            {
                 let detail = evidence
                     .iter()
                     .map(|finding| finding.detail.as_str())
                     .collect::<Vec<_>>()
                     .join(",");
-                let denied = lekalo_core::module_api::diagnostic::set(
-                    &[lekalo_core::module_api::diagnostic::Evidence::new(
-                        "module-api.policy-denied",
-                        &report.after.module,
-                        if detail.is_empty() {
-                            "diff-policy".to_owned()
-                        } else {
-                            detail.clone()
-                        },
-                    )],
-                    Status::Denied,
+                let denied = lekalo_core::module_api::diagnostic::denied_set(
+                    &evidence,
+                    &report.after.module,
+                    if detail.is_empty() {
+                        "diff-policy"
+                    } else {
+                        &detail
+                    },
                 )?;
-                let payload = serde_json::json!({ "status": "denied", "moduleApiDiff": report });
+                let mut payload =
+                    serde_json::json!({ "status": "denied", "moduleApiDiff": report });
+                payload["status"] = "denied".into();
                 return Ok(DomainResult::denied_json(
                     payload.to_string(),
                     human,
@@ -580,7 +619,9 @@ fn report(
         verdict.report.findings.len(),
         verdict.report.assessment
     );
-    let payload = serde_json::json!({ "status": "valid", "moduleApiReport": verdict.report });
+    // The denied payload carries its denied status: the embedded report
+    // never claims valid on a denied run (finding 15).
+    let mut payload = serde_json::json!({ "status": "valid", "moduleApiReport": verdict.report });
     match verdict.class {
         FindingClass::Invalid => {
             let set = lekalo_core::module_api::diagnostic::set(evidence, Status::Invalid)?;
@@ -595,19 +636,12 @@ fn report(
                 .iter()
                 .any(|finding| finding.rule == "module-api.lock-stale") =>
         {
-            let mut all = lekalo_core::module_api::diagnostic::set(evidence, Status::Denied)?;
-            let denied = lekalo_core::module_api::diagnostic::set(
-                &[lekalo_core::module_api::diagnostic::Evidence::new(
-                    "module-api.policy-denied",
-                    lock_name,
-                    "lock-policy-denied",
-                )],
-                Status::Denied,
+            let all = lekalo_core::module_api::diagnostic::denied_set(
+                evidence,
+                lock_name,
+                "lock-policy-denied",
             )?;
-            let mut items = all.as_slice().to_vec();
-            items.extend(denied.as_slice().iter().cloned());
-            all = lekalo_core::diagnostics::DiagnosticSet::try_from_unsorted(items, Status::Denied)
-                .map_err(|_| invalid("diagnostic-bound"))?;
+            payload["status"] = "denied".into();
             Ok(DomainResult::denied_json(payload.to_string(), human, all))
         }
         _ => {
@@ -619,28 +653,4 @@ fn report(
             ))
         }
     }
-}
-
-/// Parse one snapshot document (the CLI-side snapshot seam used by tests).
-#[allow(dead_code)]
-fn parse_snapshot_sealed(
-    bytes: &[u8],
-) -> Result<wire::ConsumerSnapshot, lekalo_core::diagnostics::DiagnosticSet> {
-    parse_snapshot(bytes)
-}
-
-/// Parse one public bundle document (the CLI-side bundle seam).
-#[allow(dead_code)]
-fn parse_bundle_sealed(
-    bytes: &[u8],
-) -> Result<wire::PublicBundle, lekalo_core::diagnostics::DiagnosticSet> {
-    parse_bundle(bytes)
-}
-
-/// Parse one consumer lock document (the CLI-side lock seam).
-#[allow(dead_code)]
-fn parse_lock_sealed(
-    bytes: &[u8],
-) -> Result<wire::ConsumerLock, lekalo_core::diagnostics::DiagnosticSet> {
-    parse_lock(bytes)
 }

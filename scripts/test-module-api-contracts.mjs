@@ -270,7 +270,12 @@ const payload = (document, name) => document[name] ?? document.payload?.[name];
   const args = ['module', 'api', 'diff', `${diff}/golden-bundle-before.json`, `${diff}/golden-bundle-after.json`, '--consumers-before', `${diff}/golden-consumers-before.json`, '--consumers-after', `${diff}/golden-consumers-after.json`];
   const report = payload(run(args).document, 'moduleApiDiff');
   assert.deepEqual(report, read(`${diff}/golden-diff.json`).moduleApiDiff);
-  assert.equal(report.verdict, 'policy-denied');
+  // The planner's declared range accepts the candidate resolution, so the
+  // verdict is the honest source break; strict denies through the missing
+  // major bump (version-policy violation), never through a phantom
+  // consumer policy incompatibility.
+  assert.equal(report.verdict, 'breaking');
+  assert.equal(report.consumers.find((c) => c.consumer === 'planner').reason, 'policy-accepted');
   const removed = report.changes.find((c) => c.reason === 'field-removed');
   assert.equal(removed.export, 'tasks.task_view');
   assert.equal(removed.member, 'state');

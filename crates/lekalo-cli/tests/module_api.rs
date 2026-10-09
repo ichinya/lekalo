@@ -351,7 +351,11 @@ fn diff_identifies_exact_consumers_and_strict_policy_denies() {
     assert_eq!(advisory.status.code(), Some(0));
     let document = envelope(&advisory);
     let report = &document["moduleApiDiff"];
-    assert_eq!(report["verdict"], "policy-denied");
+    // The planner's declared range accepts the candidate resolution, so
+    // the verdict is the honest source break; strict denies through the
+    // missing major bump, never through a phantom consumer policy
+    // incompatibility (findings 5/9/10).
+    assert_eq!(report["verdict"], "breaking");
     let removed = report["changes"]
         .as_array()
         .unwrap()
@@ -367,14 +371,16 @@ fn diff_identifies_exact_consumers_and_strict_policy_denies() {
         .find(|c| c["consumer"] == "planner")
         .unwrap();
     assert_eq!(planner["status"], "affected");
+    assert_eq!(planner["reason"], "policy-accepted");
     let provider = consumers
         .iter()
         .find(|c| c["consumer"] == "provider")
         .unwrap();
     assert_eq!(provider["status"], "unaffected");
     assert_eq!(report["coverage"]["known"], 1);
-    // Strict denies the incompatible declared policy with the terminal
-    // registry error; the advisory report rides the evidence payload.
+    // Strict denies the missing major bump (version-policy violation) with
+    // the terminal registry error; the advisory report rides the evidence
+    // payload.
     let strict = lekalo_in(&dir, &append(&args, "--strict"));
     assert_eq!(strict.status.code(), Some(3));
     assert!(codes(&strict).contains(&"LEK-MODULE-014".to_owned()));
