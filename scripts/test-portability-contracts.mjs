@@ -54,6 +54,7 @@ const schemas = {
   recipeSchema: read("contracts/portability-recipe.schema.v0.8.0.json"),
   report: read("contracts/portability-report.schema.v0.8.0.json"),
   family: read("contracts/portability-family.schema.v0.8.0.json"),
+  receipt: read("contracts/portability-receipt.schema.v0.8.0.json"),
   registry: read("contracts/diagnostic-registry.schema.v0.8.0.json"),
   diagnostic: read("contracts/diagnostic.schema.v0.2.16.json"),
 };
@@ -333,6 +334,8 @@ const controls = [
   ["invalid/duplicate-storage-ref.targets.json", "duplicate-storage-ref", 1, false],
   ["invalid/duplicate-conditions.evidence.json", "mapping-conditions", 1, false],
   ["invalid/requirement-grammar.evidence.json", "operational-requirement", 1, false],
+  ["invalid/gate-fabricated-executed.evidence.json", "gate-custody", 1, false],
+  ["invalid/receipt-result-contradiction.evidence.json", "receipt-result", 1, true],
 ];
 for (const [relative, reason, expectedExit, schemaValid] of controls) {
   const temp = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
@@ -668,22 +671,140 @@ const withEvidence = (temp, mutate) => {
   const temp = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
   try {
     cpSync(project, temp, { recursive: true });
+    // 1. the pass receipt cannot evidence a claimed failure: the
+    // claim/custody disagreement refuses outright — a fail receipt can
+    // never be silently reported as a pass, and a pass receipt can
+    // never be silently reported as a failure.
     withEvidence(temp, (manifest) => {
-      const focus = manifest.scenarios.find((s) => s.scenario === "planner.focus_flow");
-      focus.state = "recorded-fail";
-      manifest.scenarios.push({
-        scenario: "planner.focus_flow",
-        targetId: "go-service",
-        state: "recorded-pass",
-        receiptRef: focus.receiptRef,
-        receiptDigest: focus.receiptDigest,
-      });
+      manifest.scenarios[0].state = "recorded-fail";
     });
+    const refused = tryRun(["--json", "portability", "--evidence", "reports/portability-evidence.json"], temp);
+    if (refused.code !== 1) fail("f4-contradiction-exit", String(refused.code));
+    if (!(refused.stderr + refused.stdout).includes('"receipt-result"')) fail("f4-contradiction-reason", refused.stderr);
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
+}
+{
+  const temp = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
+  try {
+    cpSync(project, temp, { recursive: true });
+    // 2. a qualified failing receipt makes the join failed: the failure
+    // dominates, provenance-pinned to this compilation and profile.
+    const manifest = JSON.parse(readFileSync(join(temp, "reports/portability-evidence.json"), "utf8"));
+    const targets = JSON.parse(readFileSync(join(temp, "config/portability-targets.json"), "utf8"));
+    const laravel = targets.targets.find((t) => t.targetId === "php-laravel").profileRef;
+    const failReceipt = {
+      schemaVersion: "lekalo/portability-receipt/v0.8.0",
+      identity: "dev.lekalo.portability-receipt@0.8.0",
+      kind: "scenario",
+      subject: "planner.focus_flow",
+      targetId: "php-laravel",
+      result: "fail",
+      projectRef: manifest.projectRef,
+      profileRef: { id: laravel.id, version: laravel.version, resolvedDigest: laravel.resolvedDigest },
+    };
+    const failBytes = Buffer.from(JSON.stringify(failReceipt, null, 2) + "\n");
+    writeFileSync(join(temp, "reports/receipts/focus-flow-fail.json"), failBytes);
+    manifest.scenarios[0] = {
+      scenario: "planner.focus_flow",
+      targetId: "php-laravel",
+      state: "recorded-fail",
+      receiptRef: "reports/receipts/focus-flow-fail.json",
+      receiptDigest: `sha256:${sha256(failBytes)}`,
+    };
+    writeFileSync(join(temp, "reports/portability-evidence.json"), JSON.stringify(manifest, null, 2) + "\n");
     const run = tryRun(["--json", "portability", "--evidence", "reports/portability-evidence.json"], temp);
-    if (run.code !== 0) fail("f4-dominance-exit", String(run.code));
+    if (run.code !== 0) fail("f4-fail-exit", String(run.code));
     const report = JSON.parse(run.stdout).portability;
     const joined = report.affectedScenarios.find((s) => s.scenario === "planner.focus_flow");
     if (joined.state !== "failed") fail("f4-failure-masked", JSON.stringify(joined));
+    if (!validate.receipt(failReceipt)) fail("f4-receipt-schema", validate.receipt.errors);
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
+}
+
+// F3b — gate execution custody: an authored `executed` state with zero
+// custody demotes to declared with a named gap, a qualified failing
+// gate receipt reports failed, and an affected scenario with no gate
+// record at all is an explicit unknown gate-coverage indication.
+{
+  const temp = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
+  try {
+    cpSync(project, temp, { recursive: true });
+    withEvidence(temp, (manifest) => {
+      // The authored executed state presents custody of the wrong kind:
+      // the scenario receipt cannot qualify a gate. The claim demotes
+      // to declared with a named gap instead of reporting execution.
+      manifest.gates[0].state = "executed";
+      manifest.gates[0].targetId = "php-laravel";
+      manifest.gates[0].receiptRef = manifest.scenarios[0].receiptRef;
+      manifest.gates[0].receiptDigest = manifest.scenarios[0].receiptDigest;
+    });
+    const run = tryRun(["--json", "portability", "--evidence", "reports/portability-evidence.json"], temp);
+    if (run.code !== 0) fail("f3b-gate-exit", String(run.code));
+    const report = JSON.parse(run.stdout).portability;
+    const gate = report.affectedGates.find((g) => g.gate === "planner.native-scenario-gate");
+    if (gate.state === "executed" || gate.state === "failed") fail("f3b-gate-executed", JSON.stringify(gate));
+    if (!report.diagnostics.some((d) => d.code === "portability.evidence-incomplete" && d.detail === "gate-unqualified")) {
+      fail("f3b-gap-silent", JSON.stringify(report.diagnostics));
+    }
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
+}
+{
+  const temp = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
+  try {
+    cpSync(project, temp, { recursive: true });
+    withEvidence(temp, (manifest) => {
+      manifest.gates = [];
+    });
+    const run = tryRun(["--json", "portability", "--evidence", "reports/portability-evidence.json"], temp);
+    if (run.code !== 0) fail("f3b-coverage-exit", String(run.code));
+    const report = JSON.parse(run.stdout).portability;
+    if (report.affectedScenarios.length === 0) fail("f3b-affected-empty", "no affected scenarios");
+    if (report.affectedGates.length !== 0) fail("f3b-gates-linger", JSON.stringify(report.affectedGates));
+    if (!report.diagnostics.some((d) => d.code === "portability.evidence-incomplete" && d.detail === "gate-coverage-unknown")) {
+      fail("f3b-coverage-silent", JSON.stringify(report.diagnostics));
+    }
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
+}
+{
+  const temp = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
+  try {
+    cpSync(project, temp, { recursive: true });
+    // A qualified failing gate receipt: the gate joins as failed, never
+    // executed, from digest-bound provenance-pinned custody.
+    const manifest = JSON.parse(readFileSync(join(temp, "reports/portability-evidence.json"), "utf8"));
+    const targets = JSON.parse(readFileSync(join(temp, "config/portability-targets.json"), "utf8"));
+    const laravel = targets.targets.find((t) => t.targetId === "php-laravel").profileRef;
+    const gateFail = {
+      schemaVersion: "lekalo/portability-receipt/v0.8.0",
+      identity: "dev.lekalo.portability-receipt@0.8.0",
+      kind: "gate",
+      subject: "planner.native-scenario-gate",
+      targetId: "php-laravel",
+      result: "fail",
+      projectRef: manifest.projectRef,
+      profileRef: { id: laravel.id, version: laravel.version, resolvedDigest: laravel.resolvedDigest },
+    };
+    const gateBytes = Buffer.from(JSON.stringify(gateFail, null, 2) + "\n");
+    writeFileSync(join(temp, "reports/receipts/gate-fail.json"), gateBytes);
+    manifest.gates[0].state = "executed";
+    manifest.gates[0].targetId = "php-laravel";
+    manifest.gates[0].receiptRef = "reports/receipts/gate-fail.json";
+    manifest.gates[0].receiptDigest = `sha256:${sha256(gateBytes)}`;
+    writeFileSync(join(temp, "reports/portability-evidence.json"), JSON.stringify(manifest, null, 2) + "\n");
+    const run = tryRun(["--json", "portability", "--evidence", "reports/portability-evidence.json"], temp);
+    if (run.code !== 0) fail("f3b-qualified-exit", String(run.code));
+    const report = JSON.parse(run.stdout).portability;
+    const gate = report.affectedGates.find((g) => g.gate === "planner.native-scenario-gate");
+    if (gate.state !== "failed") fail("f3b-qualified-failed", JSON.stringify(gate));
+    if (report.diagnostics.some((d) => d.detail === "gate-unqualified")) fail("f3b-qualified-flagged", JSON.stringify(report.diagnostics));
   } finally {
     rmSync(temp, { recursive: true, force: true });
   }

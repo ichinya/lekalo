@@ -71,9 +71,9 @@
       "subject": "planner.schedule_calculate",
       "coverage": "full",
       "conditions": [
-        "laravel-11",
+        "replacement-binding-declared",
         "php-84",
-        "replacement-binding-declared"
+        "laravel-11"
       ],
       "definitionPins": [
         {
@@ -90,8 +90,8 @@
       "subject": "planner.count_focused",
       "coverage": "full",
       "conditions": [
-        "go-122",
-        "replacement-binding-declared"
+        "replacement-binding-declared",
+        "go-122"
       ],
       "definitionPins": [
         {
@@ -110,7 +110,7 @@
       "targetId": "php-laravel",
       "state": "recorded-pass",
       "receiptRef": "reports/receipts/focus-flow.json",
-      "receiptDigest": "sha256:f59cb90df2b962ce41d8def1929eb699d74cba042b7c9053c656f873ae12f37a"
+      "receiptDigest": "sha256:0a3589ecc11b38df0413c7a157b4c2f9803451ea5a200ecd6886bdf5a4e82809"
     },
     {
       "scenario": "planner.schedule_flow",
@@ -127,7 +127,10 @@
         "planner.focus_flow",
         "planner.schedule_flow"
       ],
-      "state": "declared"
+      "state": "declared",
+      "targetId": null,
+      "receiptRef": null,
+      "receiptDigest": null
     }
   ],
   "hooks": [

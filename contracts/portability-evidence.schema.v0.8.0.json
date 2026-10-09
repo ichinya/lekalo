@@ -717,6 +717,7 @@
     "gateRecord": {
       "type": "object",
       "additionalProperties": false,
+      "description": "One declared or recorded gate. An authored executed state is a claim, never evidence: it qualifies only through the same digest-bound receipt custody as scenario joins, and an unqualified claim demotes to declared with an explicit diagnostic.",
       "properties": {
         "gate": {
           "$ref": "#/$defs/semanticId"
@@ -736,12 +737,72 @@
             "executed",
             "unknown"
           ]
+        },
+        "targetId": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[a-z][a-z0-9-]*$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "receiptRef": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/artifactRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "receiptDigest": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
         "gate",
         "scenarios",
-        "state"
+        "state",
+        "targetId",
+        "receiptRef",
+        "receiptDigest"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "executed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "targetId": {
+                "type": "string"
+              },
+              "receiptRef": {
+                "type": "string"
+              },
+              "receiptDigest": {
+                "$ref": "#/$defs/digest"
+              }
+            }
+          }
+        }
       ],
       "unevaluatedProperties": false
     },

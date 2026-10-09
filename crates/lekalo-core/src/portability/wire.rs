@@ -1038,13 +1038,98 @@ pub enum ScenarioReceipt {
     RecordedFail,
 }
 
-/// One declared or recorded gate of the manifest.
+/// One declared or recorded gate of the manifest. An authored `executed`
+/// state is a claim, never evidence: it qualifies only through the same
+/// digest-bound receipt custody as scenario joins, and an unqualified
+/// claim demotes to `declared` with an explicit diagnostic.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GateRecord {
     pub gate: String,
     pub scenarios: Vec<String>,
     pub state: JoinState,
+    pub target_id: Option<String>,
+    pub receipt_ref: Option<String>,
+    pub receipt_digest: Option<String>,
+}
+
+/// The decoded, digest-verified execution-receipt custody artifact: the
+/// closed binding of subject, destination, compilation provenance,
+/// destination profile pin, and one execution result.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReceiptArtifact {
+    pub schema_version: String,
+    pub identity: String,
+    pub kind: ReceiptKind,
+    pub subject: String,
+    pub target_id: String,
+    pub result: ReceiptResult,
+    pub project_ref: ProjectRef,
+    pub profile_ref: ReceiptProfileRef,
+}
+
+/// The closed receipt-kind vocabulary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReceiptKind {
+    Scenario,
+    Gate,
+}
+
+/// The closed receipt-result vocabulary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReceiptResult {
+    Pass,
+    Fail,
+}
+
+/// The exact destination profile pin a receipt binds to.
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReceiptProfileRef {
+    pub id: String,
+    pub version: String,
+    pub resolved_digest: String,
+}
+
+/// Decode one execution-receipt custody artifact through its closed
+/// contract: duplicate-key-safe, identity- and kind-pinned, with every
+/// provenance member inside the published grammar.
+pub fn decode_receipt(bytes: &[u8]) -> Result<ReceiptArtifact, DiagnosticSet> {
+    let value = decode_dup_safe(bytes)?;
+    let object = value
+        .as_object()
+        .ok_or_else(|| diagnostic::invalid("receipt-shape"))?;
+    for member in [
+        "schemaVersion",
+        "identity",
+        "kind",
+        "subject",
+        "targetId",
+        "result",
+        "projectRef",
+        "profileRef",
+    ] {
+        if !object.contains_key(member) {
+            return Err(diagnostic::invalid("receipt-shape"));
+        }
+    }
+    let receipt: ReceiptArtifact =
+        serde_json::from_value(value).map_err(|_| diagnostic::invalid("receipt-shape"))?;
+    if receipt.schema_version != version::RECEIPT_SCHEMA_VERSION
+        || receipt.identity != version::RECEIPT_IDENTITY
+    {
+        return Err(diagnostic::invalid("receipt-envelope"));
+    }
+    if !is_semantic_id(&receipt.subject) || !is_target_id(&receipt.target_id) {
+        return Err(diagnostic::invalid("receipt-shape"));
+    }
+    if !is_target_id(&receipt.profile_ref.id) || !is_semver(&receipt.profile_ref.version) {
+        return Err(diagnostic::invalid("receipt-shape"));
+    }
+    Ok(receipt)
 }
 
 /// One qualified observed implicit hook: an inferred status with an

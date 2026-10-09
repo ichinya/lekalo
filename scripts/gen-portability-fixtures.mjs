@@ -99,27 +99,38 @@ const implementationDigest = `sha256:${sha256(
 )}`;
 
 // The recorded scenario receipt: a claimed result carries digest-bound
-// receipt custody, never an authored enum alone.
-const focusReceiptArtifact = "reports/receipts/focus-flow.json";
-const focusReceiptDigest = `sha256:${sha256(
-  read(`tests/fixtures/portability/planner/${focusReceiptArtifact}`),
-)}`;
-
+// receipt custody through the closed receipt contract — kind, subject,
+// destination, compilation provenance, destination profile pin, and one
+// result. The manifest pins its bytes with the computed digest.
 const recipeDigest = `sha256:${sha256(read("contracts/portability-recipe.v0.8.0.json"))}`;
-
-// The receipt artifact body: it names exactly the scenario and target
-// it qualifies; the manifest pins its bytes with the computed digest.
-const focusReceipt = {
-  scenario: "planner.focus_flow",
-  targetId: "php-laravel",
-  state: "pass",
-  recordedContext: "synthetic authored receipt; no native runtime executed",
-};
 
 // The Model/IR pins require the production compiler; they are template
 // constants re-derived live by the contract gate.
 const modelPin = "sha256:ab765c6824e9af88aa643e29ca339574ba8c020ad3cb0f1d9d0a9a5ad8302e64";
 const irPin = "sha256:f9a4b5d6649787482014dffcdac03de55e231950af28cd853e6deaa6f1a29578";
+
+const focusReceiptArtifact = "reports/receipts/focus-flow.json";
+const focusReceipt = {
+  schemaVersion: "lekalo/portability-receipt/v0.8.0",
+  identity: "dev.lekalo.portability-receipt@0.8.0",
+  kind: "scenario",
+  subject: "planner.focus_flow",
+  targetId: "php-laravel",
+  result: "pass",
+  projectRef: {
+    projectId: "planner",
+    modelVersion: "0.2.16",
+    irDigest: irPin,
+  },
+  profileRef: {
+    id: profilePins["laravel.json"].id,
+    version: profilePins["laravel.json"].version,
+    resolvedDigest: profilePins["laravel.json"].resolvedDigest,
+  },
+};
+const focusReceiptDigest = `sha256:${sha256(
+  Buffer.from(`${JSON.stringify(focusReceipt, null, 2)}\n`),
+)}`;
 
 const evidence = {
   schemaVersion: "lekalo/portability-evidence/v0.8.0",
@@ -221,6 +232,9 @@ const evidence = {
       gate: "planner.native-scenario-gate",
       scenarios: ["planner.focus_flow", "planner.schedule_flow"],
       state: "declared",
+      targetId: null,
+      receiptRef: null,
+      receiptDigest: null,
     },
   ],
   hooks: [
@@ -284,6 +298,129 @@ const invalidControls = [
   ["invalid/duplicate-storage-ref.targets.json", "duplicate-storage-ref"],
   ["invalid/duplicate-conditions.evidence.json", "mapping-conditions"],
   ["invalid/requirement-grammar.evidence.json", "operational-requirement"],
+  ["invalid/gate-fabricated-executed.evidence.json", "gate-custody"],
+  ["invalid/receipt-result-contradiction.evidence.json", "receipt-result"],
+];
+
+// The invalid controls are authored here, exactly like the manifests:
+// each names its base document and its one distortion; write and --check
+// modes emit/verify the committed bytes. `duplicate-keys` is authored
+// raw (a duplicate key is invisible to a JSON round-trip) and stays
+// existence-checked only.
+const zero = `sha256:${"0".repeat(64)}`;
+const ones = `sha256:${"1".repeat(64)}`;
+const twos = `sha256:${"2".repeat(64)}`;
+const controlAuthors = [
+  ["invalid/stale-project-pin.evidence.json", "evidence", (m) => { m.projectRef.projectId = "foreign-project"; }],
+  ["invalid/recipe-pin.evidence.json", "evidence", (m) => { m.recipeRef.digest = ones; }],
+  ["invalid/unknown-source.targets.json", "targets", (m) => { m.defaultSource = "ruby-rails"; }],
+  ["invalid/duplicate-binding.targets.json", "targets", (m) => { m.targets.push(structuredClone(m.targets[0])); }],
+  ["invalid/stale-profile-pin.targets.json", "targets", (m) => { m.targets[2].profileRef.resolvedDigest = twos; }],
+  ["invalid/unknown-member.evidence.json", "evidence", (m) => { m.unexpectedMember = true; }],
+  ["invalid/cross-target-mapping.evidence.json", "evidence", (m) => { m.mappings[0].targetId = "go-service"; }],
+  ["invalid/mapping-unqualified.evidence.json", "evidence", (m) => {
+    m.mappings[0] = {
+      id: "map.schedule-php",
+      requirement: "unrelated.requirement",
+      capability: "analysis.lint",
+      targetId: "php-laravel",
+      subject: "planner.schedule_calculate",
+      coverage: "full",
+      conditions: ["replacement-binding-declared", "php-84", "laravel-11"],
+      definitionPins: [{ id: "nonexistent.capability", version: "99.0.0" }],
+    };
+  }],
+  ["invalid/mapping-conflict.evidence.json", "evidence", (m) => {
+    m.mappings.push({
+      id: "map.reading-go-partial",
+      requirement: "behavior.hook",
+      capability: "storage.returning",
+      targetId: "go-service",
+      subject: "planner.count_focused",
+      coverage: "partial",
+      conditions: ["replacement-binding-declared", "go-122"],
+      definitionPins: [{ id: "storage.returning", version: "0.2.16" }],
+    });
+  }],
+  ["invalid/forged-storage.evidence.json", "evidence", (m) => {
+    m.storageRequired = [];
+    m.storageOffered = [];
+    m.families[1] = { family: "storage", complete: true, artifactRef: "reports/nonexistent-storage.json", digest: zero };
+  }],
+  ["invalid/bad-family-digest.evidence.json", "evidence", (m) => {
+    m.families[1] = { family: "storage", complete: true, artifactRef: "reports/implementation.json", digest: zero };
+  }],
+  ["invalid/forged-receipt.evidence.json", "evidence", (m) => {
+    m.scenarios.push({
+      scenario: "planner.schedule_flow",
+      targetId: "go-service",
+      state: "recorded-pass",
+      receiptRef: "reports/receipts/missing.json",
+      receiptDigest: zero,
+    });
+  }],
+  ["invalid/receipt-conflict.evidence.json", "evidence", (m) => {
+    m.scenarios.push({
+      scenario: "planner.focus_flow",
+      targetId: "php-laravel",
+      state: "recorded-fail",
+      receiptRef: m.scenarios[0].receiptRef,
+      receiptDigest: m.scenarios[0].receiptDigest,
+    });
+  }],
+  ["invalid/adapter-missing-version.evidence.json", "evidence", (m) => {
+    m.adapters[1] = {
+      targetId: "php-laravel",
+      state: "recorded",
+      identity: "composer/lekalo-planner-adapter",
+      version: null,
+      protocol: null,
+      capabilityDigest: zero,
+    };
+  }],
+  ["invalid/omitted-nullable.evidence.json", "evidence", (m) => { delete m.recordedContext.note; }],
+  ["invalid/path-traversal.evidence.json", "evidence", (m) => {
+    m.families[1] = { family: "storage", complete: false, artifactRef: "reports/a/../b.json", digest: zero };
+  }],
+  ["invalid/duplicate-defaults.targets.json", "targets", (m) => { m.defaultDestinations = ["go-service", "go-service"]; }],
+  ["invalid/empty-targets.targets.json", "targets", (m) => { m.targets = []; }],
+  ["invalid/defaults-null.targets.json", "targets", (m) => { m.defaultDestinations = null; }],
+  ["invalid/revision-grammar.evidence.json", "evidence", (m) => { m.recordedContext.revision = "zzz-not-hex"; }],
+  ["invalid/policy-precision-zero.evidence.json", "evidence", (m) => { m.storageRequired[0].policy.precision = 0; }],
+  ["invalid/policy-kind-evil.evidence.json", "evidence", (m) => {
+    m.storageRequired[0].policy = { kind: "evil-kind", value: "exact", precision: 18, scale: 6 };
+  }],
+  ["invalid/duplicate-required.evidence.json", "evidence", (m) => { m.storageRequired.push(structuredClone(m.storageRequired[0])); }],
+  ["invalid/duplicate-offer.evidence.json", "evidence", (m) => {
+    m.storageOffered.unshift({ targetId: "php-laravel", policy: { kind: "decimal", value: "exact", precision: 18, scale: 6 } });
+  }],
+  ["invalid/adapter-bad-version.evidence.json", "evidence", (m) => {
+    m.adapters[1] = {
+      targetId: "php-laravel",
+      state: "recorded",
+      identity: "evil-adapter",
+      version: "banana",
+      protocol: "made/up",
+      capabilityDigest: zero,
+    };
+  }],
+  ["invalid/mapping-identity.evidence.json", "evidence", (m) => { m.mappings[0].id = "INVALID ID"; }],
+  ["invalid/duplicate-storage-ref.targets.json", "targets", (m) => {
+    m.targets[1].storageProfileRefs = ["config/profiles/laravel.json", "config/profiles/laravel.json"];
+  }],
+  ["invalid/duplicate-conditions.evidence.json", "evidence", (m) => {
+    m.mappings[0].conditions = ["php-84", "php-84", "laravel-11", "replacement-binding-declared"];
+  }],
+  ["invalid/requirement-grammar.evidence.json", "evidence", (m) => {
+    m.operationalRequirements = [{
+      subject: "command:planner.focus_task",
+      requirement: "bad requirement!",
+      conditions: ["recorded-scenario-receipt"],
+      definitionPins: [],
+    }];
+  }],
+  ["invalid/gate-fabricated-executed.evidence.json", "evidence", (m) => { m.gates[0].state = "executed"; }],
+  ["invalid/receipt-result-contradiction.evidence.json", "evidence", (m) => { m.scenarios[0].state = "recorded-fail"; }],
 ];
 
 // ---------------------------------------------------------------------------
@@ -296,8 +433,18 @@ if (write) {
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, documents.get(relative));
   }
+  for (const [relative, base, mutate] of controlAuthors) {
+    const path = join(fixtureDir, relative);
+    mkdirSync(dirname(path), { recursive: true });
+    const document = base === "targets" ? structuredClone(targets) : structuredClone(evidence);
+    mutate(document);
+    writeFileSync(path, `${JSON.stringify(document, null, 2)}\n`);
+  }
   process.stdout.write(
-    `${JSON.stringify({ ok: true, written: [...documents.keys()].length })}\n`,
+    `${JSON.stringify({
+      ok: true,
+      written: documents.size + controlAuthors.length,
+    })}\n`,
   );
   process.exit(0);
 }
@@ -308,6 +455,16 @@ for (const [relative, expected] of documents) {
   if (!existsSync(path)) fail("missing-fixture", relative);
   const actual = readText(`tests/fixtures/portability/${relative}`);
   if (actual !== expected) fail("fixture-drift", relative);
+}
+for (const [relative, base, mutate] of controlAuthors) {
+  const path = join(fixtureDir, relative);
+  if (!existsSync(path)) fail("missing-fixture", relative);
+  const document = base === "targets" ? structuredClone(targets) : structuredClone(evidence);
+  mutate(document);
+  const expected = `${JSON.stringify(document, null, 2)}\n`;
+  if (readText(`tests/fixtures/portability/${relative}`) !== expected) {
+    fail("control-drift", relative);
+  }
 }
 
 // Internal coherence the Node side can prove by hashing:

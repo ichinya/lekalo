@@ -30,6 +30,12 @@ pub const FAMILY_SCHEMA_VERSION: &str = "lekalo/portability-family/v0.8.0";
 /// The exact family-artifact envelope identity.
 pub const FAMILY_IDENTITY: &str = "dev.lekalo.portability-family@0.8.0";
 
+/// The exact wire discriminator of the execution-receipt custody artifact.
+pub const RECEIPT_SCHEMA_VERSION: &str = "lekalo/portability-receipt/v0.8.0";
+
+/// The exact execution-receipt identity.
+pub const RECEIPT_IDENTITY: &str = "dev.lekalo.portability-receipt@0.8.0";
+
 /// The exact wire discriminator of the reviewed recipe contract.
 pub const RECIPE_SCHEMA_VERSION: &str = "lekalo/portability-recipe/v0.8.0";
 

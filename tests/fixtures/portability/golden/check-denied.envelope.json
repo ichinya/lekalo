@@ -472,7 +472,7 @@
       "identity": "dev.lekalo.portability-report@0.8.0",
       "inputs": {
         "evidence": {
-          "digest": "sha256:6155694f2674c9e811bfb6c31394b43502bc4a004448eea4fcdd784cd0dd9cd2",
+          "digest": "sha256:0688b184a204295376ef1612969e182921cf8e56def7f6534a313e38f444ce46",
           "state": "supplied"
         },
         "lockDigest": {

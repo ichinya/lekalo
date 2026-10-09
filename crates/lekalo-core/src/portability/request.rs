@@ -489,6 +489,30 @@ pub fn parse_evidence(
                 return Err(diagnostic::invalid("gate-identity"));
             }
         }
+        // An authored executed state is a claim that must present the
+        // same digest-bound receipt custody as a scenario join: a
+        // target-qualified receipt reference and its exact digest.
+        if gate.state == wire::JoinState::Executed {
+            let qualified = gate.target_id.is_some()
+                && gate.receipt_ref.is_some()
+                && gate.receipt_digest.as_deref().is_some_and(wire::is_digest);
+            if !qualified {
+                return Err(diagnostic::invalid("gate-custody"));
+            }
+            if crate::project_fs::path_violation(gate.receipt_ref.as_deref().unwrap_or_default())
+                .is_some()
+            {
+                return Err(diagnostic::invalid("artifact-ref"));
+            }
+        }
+    }
+    {
+        let mut gate_ids = std::collections::BTreeSet::new();
+        for gate in &document.gates {
+            if !gate_ids.insert(gate.gate.as_str()) {
+                return Err(diagnostic::invalid("duplicate-gate"));
+            }
+        }
     }
     for hook in &document.hooks {
         if !wire::is_semantic_id(&hook.subject)

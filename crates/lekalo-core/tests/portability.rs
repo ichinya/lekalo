@@ -191,9 +191,35 @@ fn fixture_assessment() -> (lekalo_core::ir::Compilation, wire::Report) {
             &format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes)),
             "the receipt digest must pin the exact bytes"
         );
-        let receipt: serde_json::Value = serde_json::from_slice(&bytes).expect("receipt JSON");
-        assert_eq!(receipt["scenario"], record.scenario.as_str());
-        assert_eq!(receipt["targetId"], target.as_str());
+        let receipt = wire::decode_receipt(&bytes).expect("the receipt decodes");
+        assert_eq!(receipt.kind, wire::ReceiptKind::Scenario);
+        assert_eq!(receipt.subject, record.scenario);
+        assert_eq!(receipt.target_id, *target);
+        // Provenance: the exact compilation and the destination's
+        // verified profile pin.
+        assert_eq!(
+            receipt.project_ref.project_id,
+            compilation
+                .project
+                .project
+                .as_ref()
+                .map(|p| p.id.as_str().to_owned())
+                .unwrap_or_default()
+        );
+        assert_eq!(
+            receipt.profile_ref.resolved_digest,
+            pins.get(target)
+                .cloned()
+                .flatten()
+                .expect("pinned target")
+                .resolved_digest
+        );
+        let result_pass = receipt.result == wire::ReceiptResult::Pass;
+        assert_eq!(
+            result_pass,
+            record.state == wire::ScenarioReceipt::RecordedPass,
+            "the claim must agree with the custody result"
+        );
         receipts_qualified.insert((record.scenario.clone(), target.clone()));
     }
     let assessment = Assessment {
@@ -208,6 +234,7 @@ fn fixture_assessment() -> (lekalo_core::ir::Compilation, wire::Report) {
         verified_families,
         verified_storage_inventory: None,
         receipts_qualified,
+        gates_qualified: std::collections::BTreeMap::new(),
         targets_input: wire::TargetsInput {
             state: wire::PinState::Pinned,
             path: Some("config/portability-targets.json".to_owned()),
@@ -618,6 +645,7 @@ mod request_rules {
             verified_families: std::collections::BTreeSet::new(),
             verified_storage_inventory: None,
             receipts_qualified: std::collections::BTreeSet::new(),
+            gates_qualified: std::collections::BTreeMap::new(),
             targets_input: wire::TargetsInput {
                 state: wire::PinState::Pinned,
                 path: None,
@@ -737,6 +765,7 @@ mod request_rules {
             verified_families: std::collections::BTreeSet::new(),
             verified_storage_inventory: None,
             receipts_qualified: std::collections::BTreeSet::new(),
+            gates_qualified: std::collections::BTreeMap::new(),
             targets_input: wire::TargetsInput {
                 state: wire::PinState::Derived,
                 path: None,
@@ -808,6 +837,7 @@ mod evidence_gaps {
             verified_families: std::collections::BTreeSet::new(),
             verified_storage_inventory: None,
             receipts_qualified: std::collections::BTreeSet::new(),
+            gates_qualified: std::collections::BTreeMap::new(),
             targets_input: wire::TargetsInput {
                 state: wire::PinState::Pinned,
                 path: Some("config/portability-targets.json".to_owned()),
@@ -914,6 +944,7 @@ mod evidence_gaps {
             ]),
             verified_storage_inventory: None,
             receipts_qualified: std::collections::BTreeSet::new(),
+            gates_qualified: std::collections::BTreeMap::new(),
             targets_input: wire::TargetsInput {
                 state: wire::PinState::Pinned,
                 path: None,

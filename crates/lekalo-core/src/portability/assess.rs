@@ -57,6 +57,11 @@ pub struct Assessment<'a> {
     /// read, digest-verified, and scope-checked: an unqualified receipt
     /// never upgrades a join to executed or failed.
     pub receipts_qualified: BTreeSet<(String, String)>,
+    /// The gates whose authored `executed` claim the caller qualified
+    /// through digest-bound, provenance-pinned receipt custody, mapping
+    /// the gate id to its reconciled result (true = pass, false = fail).
+    /// An unqualified authored execution demotes to declared.
+    pub gates_qualified: BTreeMap<String, bool>,
     pub targets_input: TargetsInput,
     pub lock_digest: Option<String>,
     /// The exact manifest digest pin, supplied by the caller.
@@ -97,6 +102,8 @@ pub mod reasons {
     pub const IMPLICIT_HOOK_UNSUPPORTED: &str = "implicit-hook-unsupported";
     pub const MAPPING_UNQUALIFIED: &str = "mapping-unqualified";
     pub const REQUIREMENT_UNQUALIFIED: &str = "requirement-unqualified";
+    pub const GATE_UNQUALIFIED: &str = "gate-unqualified";
+    pub const GATE_COVERAGE_UNKNOWN: &str = "gate-coverage-unknown";
     pub const NO_OPERATIONAL_OBLIGATION: &str = "no-operational-obligation";
     pub const DIMENSION_NOT_ASSIGNED: &str = "dimension-not-assigned";
     pub const DESTINATION_EVIDENCE_GAP: &str = "destination-evidence-gap";
@@ -213,6 +220,7 @@ pub fn assess(input: &Assessment) -> Result<Report, DiagnosticSet> {
     let evidence = input.evidence;
     let destinations = &input.destinations;
     report_unqualified_receipts(input, evidence, &mut sink);
+    report_unqualified_gates(input, evidence, &mut sink);
 
     // Per-subject, per-destination, per-dimension obligation rows.
     let mut subject_rows: Vec<SubjectRow> = Vec::new();
@@ -523,6 +531,54 @@ fn report_unqualified_receipts(
                 Some(record.scenario.clone()),
                 None,
                 reasons::RECEIPT_UNQUALIFIED,
+            );
+        }
+    }
+}
+
+/// Surface every authored-but-unqualified gate execution and every
+/// affected scenario no gate record covers: an authored `executed` enum
+/// with zero custody demotes to declared (visible as a named gap), and
+/// an affected scenario without any gate coverage is an explicit
+/// unknown gate-coverage indication, never a silent complete surface.
+fn report_unqualified_gates(
+    input: &Assessment,
+    evidence: Option<&EvidenceDocument>,
+    sink: &mut Sink,
+) {
+    let Some(evidence) = evidence else {
+        return;
+    };
+    for gate in &evidence.gates {
+        if gate.state == wire::JoinState::Executed
+            && !input.gates_qualified.contains_key(&gate.gate)
+        {
+            sink.push(
+                codes::EVIDENCE_INCOMPLETE,
+                Some(gate.gate.clone()),
+                None,
+                reasons::GATE_UNQUALIFIED,
+            );
+        }
+    }
+    let covered: BTreeSet<&str> = evidence
+        .gates
+        .iter()
+        .flat_map(|gate| gate.scenarios.iter().map(String::as_str))
+        .collect();
+    for record in &evidence.scenarios {
+        let affected = input.destinations.iter().any(|destination| {
+            input
+                .receipts_qualified
+                .contains(&(record.scenario.clone(), destination.target_id.clone()))
+                || record.target_id.as_deref() == Some(destination.target_id.as_str())
+        });
+        if affected && !covered.contains(record.scenario.as_str()) {
+            sink.push(
+                codes::EVIDENCE_INCOMPLETE,
+                Some(record.scenario.clone()),
+                None,
+                reasons::GATE_COVERAGE_UNKNOWN,
             );
         }
     }

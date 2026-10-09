@@ -275,16 +275,63 @@ fn load_implementation(
     }
 }
 
-/// Qualify the claimed scenario receipts: every recorded result must
-/// present its referenced receipt artifact, digest-bound to the exact
-/// pinned bytes, decoded as a JSON object, and naming exactly the
-/// claimed scenario and destination. Anything else stays unqualified
-/// and never upgrades a join to executed or failed.
-fn qualify_receipts(
+/// Whether one decoded receipt's provenance pins match this exact run:
+/// the compilation (project, model, IR) and the named destination's
+/// verified profile pin. A receipt minted for another project, another
+/// revision, or another profile never qualifies a claim here.
+fn custody_provenance_matches(
+    receipt: &lekalo_core::portability::wire::ReceiptArtifact,
+    compilation: &lekalo_core::ir::Compilation,
+    pins: &BTreeMap<String, Option<lekalo_core::portability::ProfilePin>>,
+    target: &str,
+) -> bool {
+    let project = &compilation.project;
+    let project_id = project
+        .project
+        .as_ref()
+        .map(|p| p.id.as_str().to_owned())
+        .unwrap_or_default();
+    if receipt.project_ref.project_id != project_id
+        || receipt.project_ref.model_version != project.model_version.as_str()
+        || receipt.project_ref.ir_digest != lekalo_core::implementation::ir_digest(project).as_str()
+    {
+        return false;
+    }
+    match pins.get(target) {
+        Some(Some(pin)) => {
+            receipt.profile_ref.id == pin.id
+                && receipt.profile_ref.version == pin.version
+                && receipt.profile_ref.resolved_digest == pin.resolved_digest
+        }
+        _ => false,
+    }
+}
+
+/// The qualified execution custody: the (scenario, destination) joins
+/// with verified receipt custody, and the gate ids qualified through
+/// receipt custody with their reconciled results.
+type QualifiedCustody = (
+    std::collections::BTreeSet<(String, String)>,
+    BTreeMap<String, bool>,
+);
+
+/// Qualify the claimed execution custody: every claimed scenario or gate
+/// result must present its referenced receipt artifact, digest-bound to
+/// the exact pinned bytes, decoded through the closed receipt contract,
+/// naming exactly the claimed subject and destination, pinned to this
+/// compilation and to the destination's verified profile, and stating a
+/// result that agrees with the claim. Anything else stays unqualified
+/// and never upgrades a join; a contradicting result is fabricated
+/// custody and refuses outright — a fail receipt can never evidence a
+/// pass.
+fn qualify_custody(
     fs: &ProjectFs,
     evidence: &lekalo_core::portability::EvidenceDocument,
-) -> Result<std::collections::BTreeSet<(String, String)>, DiagnosticSet> {
-    let mut qualified = std::collections::BTreeSet::new();
+    compilation: &lekalo_core::ir::Compilation,
+    pins: &BTreeMap<String, Option<lekalo_core::portability::ProfilePin>>,
+) -> Result<QualifiedCustody, DiagnosticSet> {
+    let mut scenarios = std::collections::BTreeSet::new();
+    let mut gates = BTreeMap::new();
     for record in &evidence.scenarios {
         let (Some(reference), Some(digest)) = (&record.receipt_ref, &record.receipt_digest) else {
             continue;
@@ -298,27 +345,62 @@ fn qualify_receipts(
         if format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes)) != *digest {
             return Err(invalid("receipt-digest"));
         }
-        let value = lekalo_core::portability::wire::decode_dup_safe(&bytes)
-            .map_err(|_| invalid("receipt-shape"))?;
-        let Some(object) = value.as_object() else {
-            return Err(invalid("receipt-shape"));
-        };
+        let receipt = lekalo_core::portability::wire::decode_receipt(&bytes)?;
         // Scope qualification: the receipt must name exactly the claimed
-        // scenario and destination; a receipt for another join never
+        // subject and destination; a receipt for another join never
         // proves this one executed.
-        let scenario_matches = object
-            .get("scenario")
-            .and_then(|v| v.as_str())
-            .is_some_and(|scenario| scenario == record.scenario);
-        let target_matches = object
-            .get("targetId")
-            .and_then(|v| v.as_str())
-            .is_some_and(|named| named == target);
-        if scenario_matches && target_matches {
-            qualified.insert((record.scenario.clone(), target.clone()));
+        if receipt.kind != lekalo_core::portability::wire::ReceiptKind::Scenario
+            || receipt.subject != record.scenario
+            || receipt.target_id != *target
+        {
+            continue;
         }
+        if !custody_provenance_matches(&receipt, compilation, pins, target) {
+            continue;
+        }
+        // The manifest's claim must agree with the custody's result.
+        let claims_pass =
+            record.state == lekalo_core::portability::wire::ScenarioReceipt::RecordedPass;
+        let claims_fail =
+            record.state == lekalo_core::portability::wire::ScenarioReceipt::RecordedFail;
+        let result_pass = receipt.result == lekalo_core::portability::wire::ReceiptResult::Pass;
+        if (claims_pass && !result_pass) || (claims_fail && result_pass) {
+            return Err(invalid("receipt-result"));
+        }
+        scenarios.insert((record.scenario.clone(), target.clone()));
     }
-    Ok(qualified)
+    for gate in &evidence.gates {
+        if gate.state != lekalo_core::portability::wire::JoinState::Executed {
+            continue;
+        }
+        let (Some(reference), Some(digest)) = (&gate.receipt_ref, &gate.receipt_digest) else {
+            continue;
+        };
+        let Some(target) = &gate.target_id else {
+            continue;
+        };
+        let Some(bytes) = read_bounded_opt(fs, reference)? else {
+            continue;
+        };
+        if format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes)) != *digest {
+            return Err(invalid("receipt-digest"));
+        }
+        let receipt = lekalo_core::portability::wire::decode_receipt(&bytes)?;
+        if receipt.kind != lekalo_core::portability::wire::ReceiptKind::Gate
+            || receipt.subject != gate.gate
+            || receipt.target_id != *target
+        {
+            continue;
+        }
+        if !custody_provenance_matches(&receipt, compilation, pins, target) {
+            continue;
+        }
+        gates.insert(
+            gate.gate.clone(),
+            receipt.result == lekalo_core::portability::wire::ReceiptResult::Pass,
+        );
+    }
+    Ok((scenarios, gates))
 }
 
 fn execute(args: Args) -> Result<DomainResult, DiagnosticSet> {
@@ -543,10 +625,12 @@ fn execute(args: Args) -> Result<DomainResult, DiagnosticSet> {
         }
         None => None,
     };
-    // The qualified scenario receipts.
-    let receipts_qualified = match &evidence {
-        Some(document) => qualify_receipts(&fs, document)?,
-        None => std::collections::BTreeSet::new(),
+    // The qualified execution custody: scenario receipts and executed
+    // gates, each digest-bound, scope-checked, provenance-pinned, and
+    // result-reconciled.
+    let (receipts_qualified, gates_qualified) = match &evidence {
+        Some(document) => qualify_custody(&fs, document, &compilation, &pins)?,
+        None => (std::collections::BTreeSet::new(), BTreeMap::new()),
     };
 
     let assessment = core::Assessment {
@@ -561,6 +645,7 @@ fn execute(args: Args) -> Result<DomainResult, DiagnosticSet> {
         verified_families: verified_family_artifacts.into_keys().collect(),
         verified_storage_inventory,
         receipts_qualified,
+        gates_qualified,
         targets_input,
         lock_digest,
         evidence_digest,

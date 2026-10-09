@@ -122,9 +122,21 @@ pub(super) fn affected_joins(
             if joined.is_empty() {
                 continue;
             }
+            // An authored executed state is a claim, never evidence: it
+            // joins only through qualified receipt custody, reconciled
+            // with the custody's result; an unqualified claim demotes to
+            // declared, and a qualified failure stays failed.
+            let state = match gate.state {
+                JoinState::Executed => match input.gates_qualified.get(&gate.gate) {
+                    Some(true) => JoinState::Executed,
+                    Some(false) => JoinState::Failed,
+                    None => JoinState::Declared,
+                },
+                other => other,
+            };
             gates.push(AffectedGate {
                 gate: gate.gate.clone(),
-                state: gate.state,
+                state,
                 scenarios: joined,
             });
         }
