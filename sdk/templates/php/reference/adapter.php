@@ -505,6 +505,19 @@ final class Paths {
         return preg_match('/^[a-z][a-z0-9-]*$/', $value) === 1;
     }
 
+    /** The production ai-lint identifier grammar (issue #106 review r3
+     * #5): core ai_lint::input::token gates the lint scope items,
+     * binding nativeId/symbol, and the revision pin's known value —
+     * non-empty, at most 256 bytes, ASCII alphanumeric or
+     * `_.:/#@\\-`, starting alphanumeric. The SDK used to enforce a
+     * length bound only. */
+    public static function isWireToken(string $value): bool {
+        if ($value === '' || strlen($value) > 256) {
+            return false;
+        }
+        return preg_match('/^[A-Za-z0-9][A-Za-z0-9_.:\/#@\\\\-]*$/', $value) === 1;
+    }
+
     public static function isCapabilityId(string $value): bool {
         if ($value === '' || strlen($value) > 128) {
             return false;
@@ -814,19 +827,18 @@ final class Decode {
         return array_key_exists($key, $value) && $value[$key] === null;
     }
 
+    /** The typed integer test (issue #106 review r3 #3): production
+     * decodes every wire number as serde `u64`, which refuses float
+     * lexemes outright — json_decode maps an integer spelling to int
+     * and a float spelling (1.0, 1e2) to float, so `is_int` enforces
+     * the exact production syntax boundary. */
     private static function isInt(mixed $value): bool {
-        return is_int($value) || (is_float($value) && floor($value) === $value);
+        return is_int($value);
     }
 
     /** The integral-number range test; shared with the serve emit ceiling. */
     public static function numberInRange(mixed $value, int $min, int $max): bool {
-        if (is_int($value)) {
-            return $value >= $min && $value <= $max;
-        }
-        if (is_float($value) && floor($value) === $value) {
-            return $value >= $min && $value <= $max;
-        }
-        return false;
+        return is_int($value) && $value >= $min && $value <= $max;
     }
 
     private static function isSorted(array $items): bool {
@@ -911,11 +923,20 @@ final class Decode {
             if (!self::isClosedObject($limits, ['max_output_bytes', 'timeout_ms'])) {
                 return self::refuse('decode', 'shape');
             }
+            // Production requires BOTH members whenever `limits` is
+            // present (wire.rs: absent or out-of-range is `shape`).
             foreach (['timeout_ms' => ['LIMITS_TIMEOUT_MIN', 'LIMITS_TIMEOUT_MAX'], 'max_output_bytes' => ['LIMITS_OUTPUT_MIN', 'LIMITS_OUTPUT_MAX']] as $member => $bounds) {
                 if (self::explicitNull($limits, $member)) {
                     return self::refuse('decode', 'explicit-null');
                 }
-                if (array_key_exists($member, $limits) && !self::numberInRange($limits[$member], Protocol::BOUNDS[$bounds[0]], Protocol::BOUNDS[$bounds[1]])) {
+                if (!array_key_exists($member, $limits)) {
+                    return self::refuse('decode', 'shape');
+                }
+                if (is_float($limits[$member])) {
+                    // A float lexeme where production types `u64` is `shape`.
+                    return self::refuse('decode', 'shape');
+                }
+                if (!self::numberInRange($limits[$member], Protocol::BOUNDS[$bounds[0]], Protocol::BOUNDS[$bounds[1]])) {
                     return self::refuse('decode', 'bounds');
                 }
             }
@@ -1650,7 +1671,12 @@ final class Decode {
             if (!self::lintSpan($span)) {
                 return self::refuse('decode', 'bounds');
             }
-            $key = json_encode($span);
+            // The uniqueness key is the CANONICAL serialization (recursively
+            // sorted member names), not member order (issue #106 review r3
+            // #10): json_encode preserves insertion order, so two deep-equal
+            // spans with permuted members used to hash differently and a
+            // permuted duplicate passed the uniqueItems check.
+            $key = Json::canonicalJson($span);
             if (isset($spanKeys[$key])) {
                 return self::refuse('decode', 'bounds');
             }
@@ -1963,6 +1989,13 @@ final class Decode {
             if (!self::isSorted($scope) || !self::isSorted($files)) {
                 return $invalid('lint-request');
             }
+            // Production gates scope items with the ai-lint token grammar,
+            // not a length bound (issue #106 review r3 #5).
+            foreach ($scope as $item) {
+                if (!is_string($item) || !Paths::isWireToken($item)) {
+                    return $invalid('lint-request');
+                }
+            }
             foreach ($files as $file) {
                 if (!Paths::isLogicalPath($file)) {
                     return $invalid('lint-request');
@@ -1977,8 +2010,9 @@ final class Decode {
                 if (!Ids::isSha256Digest($binding['fingerprint'] ?? '')) {
                     return $invalid('lint-binding');
                 }
-                $symbol = $binding['symbol'] ?? '';
-                if ($symbol === '' || mb_strlen($symbol) > 128) {
+                // nativeId and symbol carry the ai-lint token grammar
+                // (issue #106 review r3 #5), not a length bound.
+                if (!Paths::isWireToken($binding['nativeId'] ?? '') || !Paths::isWireToken($binding['symbol'] ?? '')) {
                     return $invalid('lint-binding');
                 }
                 $key = $path . "\0" . $binding['nativeId'] . "\0" . $binding['kind'];
@@ -2007,7 +2041,7 @@ final class Decode {
                 }
             }
             $revision = $pinKnown($pins['revision'] ?? null);
-            if ($revision !== null && ($revision === '' || mb_strlen($revision) > 128)) {
+            if ($revision !== null && !Paths::isWireToken($revision)) {
                 return $invalid('lint-pin');
             }
         }

@@ -156,16 +156,25 @@ function defaultIo() {
   };
 }
 
-/** Read exactly the host-delivered request document. */
+/** Read exactly the host-delivered request document with strict UTF-8
+ * admission (issue #106 review r3 #6): bytes are accumulated bounded and
+ * decoded with a fatal decoder — invalid sequences refuse the transport
+ * (nonzero exit, no repaired U+FFFD ever reaches admission) instead of
+ * being replaced, and the stdin path decodes with `stream: true` so a
+ * multibyte character split across 64KiB read chunks survives intact.
+ * `ignoreBOM: true` keeps the encoded BOM in the text so the strict
+ * parser's BOM refusal still applies, exactly like the old byte→string
+ * reads. */
 function readRequestInput() {
   const marker = process.argv.indexOf("--lekalo-request-file");
   if (marker !== -1 && process.argv[marker + 1]) {
-    return readFileSync(process.argv[marker + 1], "utf8");
+    return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(readFileSync(process.argv[marker + 1]));
   }
+  const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
   const chunk = 65_536;
-  const parts = [];
   const buffer = Buffer.alloc(chunk);
   let total = 0;
+  let text = "";
   while (total <= MAX_REQUEST_BYTES) {
     let got;
     try {
@@ -174,10 +183,11 @@ function readRequestInput() {
       break;
     }
     if (got === 0) break;
-    parts.push(buffer.toString("utf8", 0, got));
+    text += decoder.decode(buffer.subarray(0, got), { stream: true });
     total += got;
   }
-  return parts.join("");
+  text += decoder.decode();
+  return text;
 }
 
 /**
