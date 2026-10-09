@@ -844,30 +844,43 @@ b: 2
         // canonical re-quoting it stays a plain-scalar comment, so the
         // second render is a fixed point.
         assert_eq!(
-            rendered_ok("zeta: \"1\" # stays
+            rendered_ok(
+                "zeta: \"1\" # stays
 alpha: '2'
-"),
+"
+            ),
             "\"alpha\": \"2\"
 \"zeta\": \"1\" # stays
 "
         );
         assert_eq!(
-            rendered_ok("outer:
+            rendered_ok(
+                "outer:
   inner: \"v\" # c
 list:
   - \"one\" # d
-"),
+"
+            ),
             "\"list\":
   - \"one\" # d
 \"outer\":
   \"inner\": \"v\" # c
 "
         );
-        let once = rendered_ok("a: \"1\" # c
-");
-        assert_eq!(once, "\"a\": \"1\" # c
-");
-        assert_eq!(rendered_ok(&once), once, "the formatted form is a fixed point");
+        let once = rendered_ok(
+            "a: \"1\" # c
+",
+        );
+        assert_eq!(
+            once,
+            "\"a\": \"1\" # c
+"
+        );
+        assert_eq!(
+            rendered_ok(&once),
+            once,
+            "the formatted form is a fixed point"
+        );
     }
 
     #[test]
@@ -937,7 +950,8 @@ definitions:
         // group separators that drive the ordering, so the second run
         // saw one merged group and re-sorted — F(F(x)) != F(x). The
         // partition now round-trips exactly like the YAML block style.
-        let text = "{\"schema_version\":\"0.2.16\",\n\n\"definitions\":[{\"id\":\"z\"},{\"id\":\"a\"}]}\n";
+        let text =
+            "{\"schema_version\":\"0.2.16\",\n\n\"definitions\":[{\"id\":\"z\"},{\"id\":\"a\"}]}\n";
         let once = render_with(text, Syntax::Json);
         assert!(once.losses.is_empty(), "no losses: {:?}", once.losses);
         assert_eq!(
@@ -953,7 +967,10 @@ definitions:
             seq_once.text,
             "{\n  \"imports\": [\n    \"scheduling\",\n\n    \"planner\"\n  ]\n}\n"
         );
-        assert_eq!(render_with(&seq_once.text, Syntax::Json).text, seq_once.text);
+        assert_eq!(
+            render_with(&seq_once.text, Syntax::Json).text,
+            seq_once.text
+        );
         // No groups: unchanged canonical output (no stray separators).
         let flat = render_with("{\"b\":1,\"a\":2}\n", Syntax::Json);
         assert_eq!(flat.text, "{\n  \"a\": 2,\n  \"b\": 1\n}\n");

@@ -67,7 +67,11 @@ impl Trivia {
 /// inside the quotes stay string data.
 fn scalar_spans(text: &str, root: &Node, out: &mut Vec<(usize, usize)>) {
     match &root.value {
-        Value::Scalar(_) => out.push(clamped_scalar_span(text, root.span.start.byte, root.span.end.byte)),
+        Value::Scalar(_) => out.push(clamped_scalar_span(
+            text,
+            root.span.start.byte,
+            root.span.end.byte,
+        )),
         Value::Seq(items) => {
             for item in items {
                 scalar_spans(text, item, out);

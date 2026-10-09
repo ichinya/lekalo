@@ -1261,7 +1261,9 @@ fn quoted_scalar_trailing_comments_are_preserved_everywhere() {
         );
         assert_eq!(stdin.status(), Status::Valid, "{stdin:?}");
         assert!(
-            stdin.to_human_string("lekalo").contains("# trailing at the root"),
+            stdin
+                .to_human_string("lekalo")
+                .contains("# trailing at the root"),
             "editor replacement keeps the trailing comment"
         );
     });
@@ -1285,13 +1287,21 @@ fn a_journal_in_the_temp_home_never_blocks_readers() {
             },
             false,
         );
-        assert_eq!(load.status(), Status::Valid, "readers are not blocked by temps custody");
+        assert_eq!(
+            load.status(),
+            Status::Valid,
+            "readers are not blocked by temps custody"
+        );
         let check = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Check), None);
         assert_eq!(check.status(), Status::Valid, "check is not blocked either");
         // And a genuine plan home still blocks: the gate keeps its teeth.
         let real = root.join(".lekalo/cache/format/abc123");
         fs::create_dir_all(&real).expect("plan home");
-        fs::write(real.join("journal.json"), b"{\"schema_version\":\"lekalo/format-transaction/v0.8.0\"}\n").expect("real journal");
+        fs::write(
+            real.join("journal.json"),
+            b"{\"schema_version\":\"lekalo/format-transaction/v0.8.0\"}\n",
+        )
+        .expect("real journal");
         let blocked = lekalo_core::loader::run(
             &lekalo_core::loader::LoadSelection {
                 project: Some(".".to_owned()),
@@ -1319,10 +1329,8 @@ fn legacy_cleanup_never_touches_unrelated_user_files() {
         fs::write(&user_three, b"USER FILE - NEVER A FORMATTER TEMP\n").expect("user file");
         // The owned legacy temps for the emitted documents of the tree.
         let owned_root = root.join("lekalo/.project.yaml.lekalo-format-new");
-        let owned_module =
-            root.join("lekalo/modules/planner/.module.yaml.lekalo-format-new");
-        let owned_kind =
-            root.join("lekalo/modules/planner/.scenarios.yaml.lekalo-format-new");
+        let owned_module = root.join("lekalo/modules/planner/.module.yaml.lekalo-format-new");
+        let owned_kind = root.join("lekalo/modules/planner/.scenarios.yaml.lekalo-format-new");
         fs::write(&owned_root, b"orphaned: root temp\n").expect("owned temp");
         fs::write(&owned_module, b"orphaned: module temp\n").expect("owned temp");
         fs::write(&owned_kind, b"orphaned: kind temp\n").expect("owned temp");
@@ -1409,7 +1417,8 @@ fn a_forged_semantic_preimage_is_refused_before_any_restore() {
         );
         let home = root.join(".lekalo/cache/format").join(&plan_id);
         fs::create_dir_all(home.join("before/modules/scheduling")).expect("backup dirs");
-        fs::write(home.join("before/modules/scheduling/module.yaml"), forged).expect("forged backup");
+        fs::write(home.join("before/modules/scheduling/module.yaml"), forged)
+            .expect("forged backup");
         fs::write(home.join("manifest.json"), manifest).expect("manifest");
         fs::write(home.join("journal.json"), journal).expect("journal");
         let result = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);

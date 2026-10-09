@@ -110,7 +110,11 @@ const RUNTIME_SCHEMA: &str = "lekalo/format-transaction/v0.8.0";
 /// self-consistent but forged pin.
 fn supported_policy_digest() -> &'static str {
     use std::sync::LazyLock;
-    static PIN: LazyLock<String> = LazyLock::new(|| Policy::embedded().expect("embedded policy is pinned").digest);
+    static PIN: LazyLock<String> = LazyLock::new(|| {
+        Policy::embedded()
+            .expect("embedded policy is pinned")
+            .digest
+    });
     &PIN
 }
 
@@ -1762,9 +1766,7 @@ impl FormatWrite {
                 for entry in read.flatten() {
                     let is_module_dir = entry
                         .metadata()
-                        .map(|metadata| {
-                            metadata.is_dir() && !metadata.file_type().is_symlink()
-                        })
+                        .map(|metadata| metadata.is_dir() && !metadata.file_type().is_symlink())
                         .unwrap_or(false);
                     if !is_module_dir {
                         continue;
@@ -1773,10 +1775,7 @@ impl FormatWrite {
                         continue;
                     };
                     for stem in crate::project_fs::MODULE_STEMS {
-                        targets.push((
-                            format!("lekalo/modules/{name}"),
-                            format!("{stem}.yaml"),
-                        ));
+                        targets.push((format!("lekalo/modules/{name}"), format!("{stem}.yaml")));
                     }
                 }
             }
@@ -1928,15 +1927,25 @@ mod legacy_name_tests {
     // untouched.
     #[test]
     fn legacy_temp_names_are_limited_to_emitted_documents() {
-        assert!(super::is_legacy_temp_name(".project.yaml.lekalo-format-new"));
+        assert!(super::is_legacy_temp_name(
+            ".project.yaml.lekalo-format-new"
+        ));
         for kind in crate::project_fs::KIND_STEMS {
-            assert!(super::is_legacy_temp_name(&format!(".{kind}.yaml.lekalo-format-new")));
+            assert!(super::is_legacy_temp_name(&format!(
+                ".{kind}.yaml.lekalo-format-new"
+            )));
         }
         assert!(super::is_legacy_temp_name(".module.yaml.lekalo-format-new"));
         // Unrelated user files are never owned.
-        assert!(!super::is_legacy_temp_name(".private-notes.lekalo-format-new"));
-        assert!(!super::is_legacy_temp_name(".unrelated.txt.lekalo-format-new"));
-        assert!(!super::is_legacy_temp_name(".invented.yaml.lekalo-format-new"));
+        assert!(!super::is_legacy_temp_name(
+            ".private-notes.lekalo-format-new"
+        ));
+        assert!(!super::is_legacy_temp_name(
+            ".unrelated.txt.lekalo-format-new"
+        ));
+        assert!(!super::is_legacy_temp_name(
+            ".invented.yaml.lekalo-format-new"
+        ));
         // The owned temp (non-legacy) family stays intact.
         assert!(super::is_owned_temp_name(
             "plan.pid.apply.module.yaml.lekalo-format-new"
