@@ -77,19 +77,18 @@ final class Decode {
         return array_key_exists($key, $value) && $value[$key] === null;
     }
 
+    /** The typed integer test (issue #106 review r3 #3): production
+     * decodes every wire number as serde `u64`, which refuses float
+     * lexemes outright — json_decode maps an integer spelling to int
+     * and a float spelling (1.0, 1e2) to float, so `is_int` enforces
+     * the exact production syntax boundary. */
     private static function isInt(mixed $value): bool {
-        return is_int($value) || (is_float($value) && floor($value) === $value);
+        return is_int($value);
     }
 
     /** The integral-number range test; shared with the serve emit ceiling. */
     public static function numberInRange(mixed $value, int $min, int $max): bool {
-        if (is_int($value)) {
-            return $value >= $min && $value <= $max;
-        }
-        if (is_float($value) && floor($value) === $value) {
-            return $value >= $min && $value <= $max;
-        }
-        return false;
+        return is_int($value) && $value >= $min && $value <= $max;
     }
 
     private static function isSorted(array $items): bool {
@@ -174,11 +173,20 @@ final class Decode {
             if (!self::isClosedObject($limits, ['max_output_bytes', 'timeout_ms'])) {
                 return self::refuse('decode', 'shape');
             }
+            // Production requires BOTH members whenever `limits` is
+            // present (wire.rs: absent or out-of-range is `shape`).
             foreach (['timeout_ms' => ['LIMITS_TIMEOUT_MIN', 'LIMITS_TIMEOUT_MAX'], 'max_output_bytes' => ['LIMITS_OUTPUT_MIN', 'LIMITS_OUTPUT_MAX']] as $member => $bounds) {
                 if (self::explicitNull($limits, $member)) {
                     return self::refuse('decode', 'explicit-null');
                 }
-                if (array_key_exists($member, $limits) && !self::numberInRange($limits[$member], Protocol::BOUNDS[$bounds[0]], Protocol::BOUNDS[$bounds[1]])) {
+                if (!array_key_exists($member, $limits)) {
+                    return self::refuse('decode', 'shape');
+                }
+                if (is_float($limits[$member])) {
+                    // A float lexeme where production types `u64` is `shape`.
+                    return self::refuse('decode', 'shape');
+                }
+                if (!self::numberInRange($limits[$member], Protocol::BOUNDS[$bounds[0]], Protocol::BOUNDS[$bounds[1]])) {
                     return self::refuse('decode', 'bounds');
                 }
             }

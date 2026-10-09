@@ -285,22 +285,40 @@ func utf8Width(byte byte) int {
 	}
 }
 
+// The complete JSON number grammar (issue #106 review r3 #4): an
+// optional minus, then `0` or [1-9][0-9]* (leading zeros refused), then
+// an optional fraction ("." plus at least one digit) and an optional
+// exponent (e/E, optional sign, at least one digit). Malformed
+// spellings like "010000" or "1." are ReasonNotJSON, exactly as the
+// host's serde parser refuses them.
 func (p *parser) parseNumber() (Value, ParseReason) {
 	start := p.index
 	if c, _ := p.peek(); c == '-' {
 		p.index++
 	}
-	for {
-		if c, ok := p.peek(); ok && c >= '0' && c <= '9' {
-			p.index++
-			continue
+	c, ok := p.peek()
+	if !ok || c < '0' || c > '9' {
+		return nil, ReasonNotJSON
+	}
+	if c == '0' {
+		p.index++
+	} else {
+		for {
+			if c, ok := p.peek(); ok && c >= '0' && c <= '9' {
+				p.index++
+				continue
+			}
+			break
 		}
-		break
 	}
 	isFloat := false
 	if c, _ := p.peek(); c == '.' {
 		isFloat = true
 		p.index++
+		c, ok := p.peek()
+		if !ok || c < '0' || c > '9' {
+			return nil, ReasonNotJSON
+		}
 		for {
 			if c, ok := p.peek(); ok && c >= '0' && c <= '9' {
 				p.index++
@@ -315,6 +333,10 @@ func (p *parser) parseNumber() (Value, ParseReason) {
 		if c, _ := p.peek(); c == '+' || c == '-' {
 			p.index++
 		}
+		c, ok := p.peek()
+		if !ok || c < '0' || c > '9' {
+			return nil, ReasonNotJSON
+		}
 		for {
 			if c, ok := p.peek(); ok && c >= '0' && c <= '9' {
 				p.index++
@@ -324,9 +346,6 @@ func (p *parser) parseNumber() (Value, ParseReason) {
 		}
 	}
 	text := string(p.bytes[start:p.index])
-	if text == "" || text == "-" {
-		return nil, ReasonNotJSON
-	}
 	if isFloat {
 		var value float64
 		if _, err := fmt.Sscanf(text, "%g", &value); err != nil {
@@ -488,16 +507,15 @@ func IsNull(object Value, key string) bool {
 	return exists && value == nil
 }
 
-// GetNumber returns the non-negative integer member value.
+// GetNumber returns the non-negative integer member value. Only an
+// integer JSON lexeme qualifies (issue #106 review r3 #3): production
+// decodes every wire number as serde `u64`, which refuses float
+// spellings outright — an integral float (1.0, 1e2) is admission
+// `shape`, never an accepted integer.
 func GetNumber(object Value, key string) (int64, bool) {
 	if object, ok := object.(map[string]any); ok {
-		switch typed := object[key].(type) {
-		case int64:
+		if typed, ok := object[key].(int64); ok && typed >= 0 {
 			return typed, true
-		case float64:
-			if typed == float64(int64(typed)) {
-				return int64(typed), true
-			}
 		}
 	}
 	return 0, false

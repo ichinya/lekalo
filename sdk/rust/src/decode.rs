@@ -226,6 +226,9 @@ fn admit_limits(value: &Value) -> Result<(), Refusal> {
     if !is_closed_object(value, &["max_output_bytes", "timeout_ms"]) {
         return Err(Refusal::new("decode", "shape"));
     }
+    // Production requires BOTH members whenever `limits` is present
+    // (wire.rs: absent or out-of-range is admission `shape`); the SDK
+    // used to admit partial limits objects.
     for (member, (min, max)) in [
         (
             "timeout_ms",
@@ -245,11 +248,16 @@ fn admit_limits(value: &Value) -> Result<(), Refusal> {
         if explicit_null(value, member) {
             return Err(Refusal::new("decode", "explicit-null"));
         }
-        if let Some(number) = value.get(member) {
-            match number.as_u64() {
-                Some(number) if (min..=max).contains(&number) => {}
-                _ => return Err(Refusal::new("decode", "bounds")),
-            }
+        let Some(number) = value.get(member) else {
+            return Err(Refusal::new("decode", "shape"));
+        };
+        if matches!(number, Value::Float(_)) {
+            // A float lexeme where production types `u64` is `shape`.
+            return Err(Refusal::new("decode", "shape"));
+        }
+        match number.as_u64() {
+            Some(number) if (min..=max).contains(&number) => {}
+            _ => return Err(Refusal::new("decode", "bounds")),
         }
     }
     Ok(())

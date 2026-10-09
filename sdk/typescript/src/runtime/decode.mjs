@@ -7,7 +7,7 @@
  * refusal carries one closed safe reason token — never payload content.
  */
 import { WIRE_TOKEN, SUPPORTED_PROTOCOL_VERSIONS, LATEST_OPERATIONS, BOUNDS, ENUMS } from "../generated/protocol.mjs";
-import { readSingleObject } from "./json.mjs";
+import { JsonFloat, readSingleObject } from "./json.mjs";
 import { isPlanId, isRequestId, isSha256Digest } from "./ids.mjs";
 import { isCapabilityId, isContractVersion, isLogicalPath, isToken } from "./paths.mjs";
 
@@ -76,13 +76,21 @@ function decodeEvidence(value) {
 function decodeLimits(value) {
   const closed = closeObject(value, ["max_output_bytes", "timeout_ms"]);
   if (closed) return closed;
-  for (const member of ["max_output_bytes", "timeout_ms"]) {
+  // Production requires BOTH members whenever `limits` is present
+  // (wire.rs: absent or out-of-range is admission `shape`); the SDK used
+  // to admit partial limits objects. Member order mirrors production's
+  // validate: timeout_ms first, so a zero timeout still refuses `bounds`
+  // before the missing-member `shape` is reached. A float lexeme (1.0,
+  // 1e2 — a `JsonFloat` from the lexeme-aware parser) where production
+  // types `u64` is likewise `shape`, never an accepted integer (issue
+  // #106 review r3 #3): integrality of the rounded value is never
+  // consulted.
+  for (const member of ["timeout_ms", "max_output_bytes"]) {
     const absent = optional(value[member]);
     if (absent) return absent;
-    if (value[member] !== undefined) {
-      const range = member === "timeout_ms" ? [BOUNDS.LIMITS_TIMEOUT_MIN, BOUNDS.LIMITS_TIMEOUT_MAX] : [BOUNDS.LIMITS_OUTPUT_MIN, BOUNDS.LIMITS_OUTPUT_MAX];
-      if (!isInt(value[member]) || value[member] < range[0] || value[member] > range[1]) return failure("bounds");
-    }
+    if (value[member] === undefined || value[member] instanceof JsonFloat) return failure("shape");
+    const range = member === "timeout_ms" ? [BOUNDS.LIMITS_TIMEOUT_MIN, BOUNDS.LIMITS_TIMEOUT_MAX] : [BOUNDS.LIMITS_OUTPUT_MIN, BOUNDS.LIMITS_OUTPUT_MAX];
+    if (!isInt(value[member]) || value[member] < range[0] || value[member] > range[1]) return failure("bounds");
   }
   return { ok: true, value };
 }

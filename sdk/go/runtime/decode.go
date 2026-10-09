@@ -48,27 +48,13 @@ func boundedText(value Value, max int) bool {
 	return len([]rune(text)) <= max
 }
 
-func isInt(value Value) bool {
-	switch typed := value.(type) {
-	case int64:
-		return true
-	case float64:
-		return typed == float64(int64(typed))
-	}
-	return false
-}
-
+// The typed integer range test (issue #106 review r3 #3): only an
+// integer JSON lexeme qualifies. Production decodes every wire number
+// as serde `u64`, which refuses float spellings outright — an integral
+// float (1.0, 1e2) is admission `shape`, never an accepted integer.
 func numberInRange(value Value, min, max int64) bool {
-	number, ok := GetNumber(value, "")
-	_ = number
-	_ = ok
-	switch typed := value.(type) {
-	case int64:
-		return typed >= min && typed <= max
-	case float64:
-		return typed == float64(int64(typed)) && float64(min) <= typed && typed <= float64(max)
-	}
-	return false
+	typed, ok := value.(int64)
+	return ok && typed >= min && typed <= max
 }
 
 // AdmitRequest decodes and fully validates one request document.
@@ -202,17 +188,31 @@ func admitLimits(value Value) *Refusal {
 	if !isClosedObject(value, []string{"max_output_bytes", "timeout_ms"}) {
 		return refuse(stageDecode, "shape")
 	}
-	if IsNull(value, "timeout_ms") {
-		return refuse(stageDecode, "explicit-null")
-	}
-	if Has(value, "timeout_ms") && !numberInRange(value.(map[string]any)["timeout_ms"], generated.LIMITS_TIMEOUT_MIN, generated.LIMITS_TIMEOUT_MAX) {
-		return refuse(stageDecode, "bounds")
-	}
-	if IsNull(value, "max_output_bytes") {
-		return refuse(stageDecode, "explicit-null")
-	}
-	if Has(value, "max_output_bytes") && !numberInRange(value.(map[string]any)["max_output_bytes"], generated.LIMITS_OUTPUT_MIN, generated.LIMITS_OUTPUT_MAX) {
-		return refuse(stageDecode, "bounds")
+	// Production requires BOTH members whenever `limits` is present
+	// (wire.rs: absent or out-of-range is admission `shape`); the SDK
+	// used to admit partial limits objects. Member order mirrors
+	// production's validate: timeout_ms first, so a zero timeout still
+	// refuses `bounds` before the missing-member `shape` is reached.
+	for _, bound := range []struct {
+		member      string
+		min, max int64
+	}{
+		{"timeout_ms", generated.LIMITS_TIMEOUT_MIN, generated.LIMITS_TIMEOUT_MAX},
+		{"max_output_bytes", generated.LIMITS_OUTPUT_MIN, generated.LIMITS_OUTPUT_MAX},
+	} {
+		if IsNull(value, bound.member) {
+			return refuse(stageDecode, "explicit-null")
+		}
+		if !Has(value, bound.member) {
+			return refuse(stageDecode, "shape")
+		}
+		if _, isFloat := value.(map[string]any)[bound.member].(float64); isFloat {
+			// A float lexeme where production types `u64` is `shape`.
+			return refuse(stageDecode, "shape")
+		}
+		if !numberInRange(value.(map[string]any)[bound.member], bound.min, bound.max) {
+			return refuse(stageDecode, "bounds")
+		}
 	}
 	return nil
 }

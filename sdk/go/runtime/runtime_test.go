@@ -20,29 +20,29 @@ func TestStrictParseAcceptsSingleObject(t *testing.T) {
 	}
 }
 
-func TestNumberInRangeAcceptsBothSpellings(t *testing.T) {
-	// The integer and integral-float spellings of an integer JSON number
-	// are both admitted (issue #106 review r2 #4): the strict parser
-	// emits int64 for `1` and float64 for `1.0`, and admission accepts
-	// both within the same closed range.
+func TestNumberInRangeAcceptsOnlyIntegerSpellings(t *testing.T) {
+	// Only an integer JSON lexeme is admitted (issue #106 review r3 #3):
+	// production types every wire number `u64` (serde refuses float
+	// spellings outright), so the strict parser's float64 for `1.0` is
+	// admission `shape`, never an accepted integer.
 	if !numberInRange(int64(1), 1, 1073741824) {
 		t.Fatal("integer spelling refused")
 	}
-	if !numberInRange(float64(1), 1, 1073741824) {
-		t.Fatal("integral-float spelling refused")
+	if numberInRange(float64(1), 1, 1073741824) {
+		t.Fatal("integral-float spelling admitted")
 	}
 	if numberInRange(0, 1, 1073741824) {
 		t.Fatal("below-range value admitted")
 	}
 }
 
-func TestGetNumberResolvesBothSpellings(t *testing.T) {
+func TestGetNumberResolvesOnlyIntegerSpellings(t *testing.T) {
 	document := map[string]any{"i": int64(1), "f": float64(1)}
 	if n, ok := GetNumber(document, "i"); !ok || n != 1 {
 		t.Fatalf("GetNumber integer = %v,%v", n, ok)
 	}
-	if n, ok := GetNumber(document, "f"); !ok || n != 1 {
-		t.Fatalf("GetNumber integral float = %v,%v", n, ok)
+	if n, ok := GetNumber(document, "f"); ok {
+		t.Fatalf("GetNumber integral float admitted = %v,%v", n, ok)
 	}
 }
 

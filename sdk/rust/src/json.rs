@@ -76,10 +76,13 @@ impl Value {
         }
     }
 
+    /// The typed integer accessor (issue #106 review r3 #3): production
+    /// decodes every wire number as serde `u64`, which refuses float
+    /// lexemes outright — an integral `Float` spelling (`1.0`, `1e2`) is
+    /// admission `shape`, never an accepted integer.
     pub fn as_u64(&self) -> Option<u64> {
         match self {
             Self::Int(value) if *value >= 0 => Some(*value as u64),
-            Self::Float(value) if value.fract() == 0.0 && *value >= 0.0 => Some(*value as u64),
             _ => None,
         }
     }
@@ -295,18 +298,33 @@ impl<'a> Parser<'a> {
         Ok(value)
     }
 
+    /// The complete JSON number grammar (issue #106 review r3 #4): an
+    /// optional minus, then `0` or `[1-9][0-9]*` (leading zeros are
+    /// refused), then an optional fraction (`.` plus ≥1 digit) and an
+    /// optional exponent (`e`/`E`, optional sign, ≥1 digit). Malformed
+    /// spellings like `010000` or `1.` are `NotJson`, exactly as the
+    /// host's serde parser refuses them.
     fn parse_number(&mut self) -> Result<Value, ParseReason> {
         let start = self.index;
         if self.peek() == Some(b'-') {
             self.index += 1;
         }
-        while self.peek().is_some_and(|b| b.is_ascii_digit()) {
-            self.index += 1;
+        match self.peek() {
+            Some(b'0') => self.index += 1,
+            Some(c) if c.is_ascii_digit() => {
+                while self.peek().is_some_and(|b| b.is_ascii_digit()) {
+                    self.index += 1;
+                }
+            }
+            _ => return Err(ParseReason::NotJson),
         }
         let mut is_float = false;
         if self.peek() == Some(b'.') {
             is_float = true;
             self.index += 1;
+            if !self.peek().is_some_and(|b| b.is_ascii_digit()) {
+                return Err(ParseReason::NotJson);
+            }
             while self.peek().is_some_and(|b| b.is_ascii_digit()) {
                 self.index += 1;
             }
@@ -317,15 +335,15 @@ impl<'a> Parser<'a> {
             if matches!(self.peek(), Some(b'+') | Some(b'-')) {
                 self.index += 1;
             }
+            if !self.peek().is_some_and(|b| b.is_ascii_digit()) {
+                return Err(ParseReason::NotJson);
+            }
             while self.peek().is_some_and(|b| b.is_ascii_digit()) {
                 self.index += 1;
             }
         }
         let text = std::str::from_utf8(&self.bytes[start..self.index])
             .map_err(|_| ParseReason::NotJson)?;
-        if text.is_empty() || text == "-" {
-            return Err(ParseReason::NotJson);
-        }
         if is_float {
             let value: f64 = text.parse().map_err(|_| ParseReason::NotJson)?;
             Ok(Value::Float(value))
