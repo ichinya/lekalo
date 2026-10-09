@@ -30,6 +30,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::format::policy::Policy;
 use crate::loader::LoadSelection;
 use crate::result::{DomainResult, Status};
 
@@ -99,6 +100,19 @@ fn is_legacy_temp_name(name: &str) -> bool {
 /// The internal, versioned runtime-record identity (never a public
 /// contract; the reader owns this version).
 const RUNTIME_SCHEMA: &str = "lekalo/format-transaction/v0.8.0";
+
+/// The exact policy pin every legitimate transaction record carries
+/// (finding r4 5): the digest of the embedded contract this binary
+/// plans under, recomputed once per process. A record whose pin names
+/// any other policy — however internally hash-consistent — was not
+/// produced by this formatter's policy and is refused before any
+/// restore, so recovery can never admit foreign preimages under a
+/// self-consistent but forged pin.
+fn supported_policy_digest() -> &'static str {
+    use std::sync::LazyLock;
+    static PIN: LazyLock<String> = LazyLock::new(|| Policy::embedded().expect("embedded policy is pinned").digest);
+    &PIN
+}
 
 /// Why an interrupted transaction could not be recovered.
 #[derive(Debug)]
@@ -580,6 +594,10 @@ fn recover_plan(write: &FormatWrite, plan_id: &str) -> Result<(), RecoveryFailur
             reason: "journal-mismatch",
         }));
     }
+    // The verified backup bytes of every pinned file, collected in the
+    // preflight below and consumed by the semantic-neutrality oracle and
+    // the restore loop.
+    let mut preflight: Vec<(String, Vec<u8>)> = Vec::with_capacity(manifest.files.len());
     // Preflight EVERY source+backup pair before the first restore
     // (finding B). A source whose current digest is neither the before
     // nor the after pin is a post-crash edit; recovery must never erase
@@ -615,6 +633,54 @@ fn recover_plan(write: &FormatWrite, plan_id: &str) -> Result<(), RecoveryFailur
             return Err(RecoveryFailure::Recovery(RecoveryError {
                 plan_id: plan_id.to_owned(),
                 reason: "backup-mismatch",
+            }));
+        }
+        preflight.push((file.path.clone(), backup));
+    }
+    // Semantic neutrality of the restore, decided BEFORE any write
+    // (finding r4 5): a forged record can digest-pin a semantic edit as
+    // its backup, and restoring it would change the Model ahead of the
+    // formatter's own oracle. The normal oracle over the current tree
+    // must equal the oracle over the projected post-restore tree (every
+    // pinned file swapped to its verified backup); a forged backup can
+    // only pass by producing identical Model bytes — exactly the
+    // formatter's own no-semantic-change invariant. An oracle that
+    // refuses either side (a malformed or unadmittable backup) is the
+    // same fail-closed refusal, never a partial restore.
+    {
+        let snapshot =
+            crate::loader::load_validated_root_opt(write.root_path(), true).map_err(|_| {
+                RecoveryFailure::Recovery(RecoveryError {
+                    plan_id: plan_id.to_owned(),
+                    reason: "restore-oracle-refused",
+                })
+            })?;
+        let model_version = snapshot.model.model_version;
+        let mut overlay: Vec<crate::loader::LoadedDocument> =
+            Vec::with_capacity(snapshot.documents.len());
+        for document in &snapshot.documents {
+            let mut bytes = document.bytes.clone();
+            for (path, backup) in &preflight {
+                if path == &document.document.path {
+                    bytes = backup.clone();
+                }
+            }
+            overlay.push(crate::loader::LoadedDocument {
+                document: document.document.clone(),
+                bytes,
+            });
+        }
+        let neutrality = match (
+            super::semantic_oracle(&snapshot.documents, model_version),
+            super::semantic_oracle(&overlay, model_version),
+        ) {
+            (Ok(before_state), Ok(after_state)) => before_state == after_state,
+            _ => false,
+        };
+        if !neutrality {
+            return Err(RecoveryFailure::Recovery(RecoveryError {
+                plan_id: plan_id.to_owned(),
+                reason: "restore-semantic",
             }));
         }
     }
@@ -1061,6 +1127,14 @@ impl Manifest {
         ) {
             return Err("manifest-policy");
         }
+        // The policy pin is an authenticity claim, not just a shape
+        // (finding r4 5): only the digest of the embedded contract this
+        // binary plans under is supported. A self-consistent forged
+        // record naming any other policy — the all-zeros spelling the
+        // probes used — refused here, before any restore runs.
+        if self.policy_digest != supported_policy_digest() {
+            return Err("manifest-policy");
+        }
         if self.files.is_empty() || self.files.len() > RECORD_MAX_FILES {
             return Err("manifest-limit");
         }
@@ -1143,6 +1217,12 @@ impl FormatWrite {
             root,
             temp_namespace: None,
         }
+    }
+
+    /// The validated project root the capability was derived from (the
+    /// recovery oracle re-reads the tree through the loader's own path).
+    fn root_path(&self) -> PathBuf {
+        self.root.clone()
     }
 
     /// Bind the temp namespace to one plan identity (apply time).

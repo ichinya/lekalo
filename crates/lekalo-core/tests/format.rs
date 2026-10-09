@@ -85,6 +85,16 @@ fn first_reason(result: &DomainResult) -> String {
         .unwrap_or_default()
 }
 
+/// The exact policy pin valid recovery material must carry (finding r4
+/// 5): the digest of the embedded contract this test binary plans
+/// under. Synthetic recovery records use it so the boundary is
+/// exercised with re-signed, genuinely supported records.
+fn embedded_policy_digest() -> String {
+    lekalo_core::format::Policy::embedded()
+        .expect("embedded policy is pinned")
+        .digest
+}
+
 #[test]
 fn the_embedded_policy_pins_the_contract_digest() {
     let policy = lekalo_core::format::Policy::embedded().expect("policy valid");
@@ -431,7 +441,7 @@ fn real_recovery_restores_the_pinned_preimages_and_formats() {
         // suffix, and the manifest's pins must recompute exactly that
         // base identity before recovery accepts the material.
         let base = {
-            let policy_digest = format!("sha256:{}", "0".repeat(64));
+            let policy_digest = embedded_policy_digest();
             let mut material = String::new();
             material.push_str(&policy_digest);
             material.push('\u{1F}');
@@ -526,7 +536,7 @@ fn plant_interrupted(root: &Path, current: &[u8]) -> (PathBuf, String) {
     let before_digest = lekalo_core::digest::sha256_hex(&before);
     let after_digest = lekalo_core::digest::sha256_hex(current);
     let (plan_id, manifest, journal) = plan_record(
-        &format!("sha256:{}", "0".repeat(64)),
+        &embedded_policy_digest(),
         "lekalo/modules/scheduling/module.yaml",
         &before_digest,
         &after_digest,
@@ -593,7 +603,7 @@ fn unknown_fields_and_versions_refuse_recovery() {
         let before = fs::read(&module).expect("preimage");
         let digest = lekalo_core::digest::sha256_hex(&before);
         let (plan_id, manifest, _journal) = plan_record(
-            &format!("sha256:{}", "0".repeat(64)),
+            &embedded_policy_digest(),
             "lekalo/modules/scheduling/module.yaml",
             &digest,
             &digest,
@@ -778,7 +788,11 @@ fn a_live_windows_writer_is_refused_and_never_rolled_back() {
         // ownership file (std only). The second formatter refuses as busy
         // and never rolls the live writer's applied sources back.
         let module = root.join("lekalo/modules/scheduling/module.yaml");
-        let replaced = b"schema_version: \"0.2.16\"\ndefinitions:\n- id: scheduling\n  kind: module\n  version: 1\n  description: The live writer's applied bytes\n";
+        // The live writer's applied bytes: the canonical rendering of the
+        // pinned preimage (comment-only difference — a live writer's
+        // replace is always the plan's after state, never a semantic
+        // edit; finding r4 5's restore oracle refuses semantic drift).
+        let replaced = b"# the live writer applied this\n\"definitions\":\n  - \"description\": \"Slot scheduling module\"\n    \"id\": \"scheduling\"\n    \"kind\": \"module\"\n    \"version\": 1\n\"schema_version\": \"0.2.16\"\n";
         let (home, _plan_id) = plant_interrupted(root, replaced);
         let lock = root.join(".lekalo/cache/format/active.lock");
         std::fs::create_dir_all(lock.parent().unwrap()).expect("home");
@@ -823,7 +837,7 @@ fn plant_interrupted_with_golden_after(root: &Path, current: &[u8]) -> (PathBuf,
     .expect("golden");
     let after_digest = lekalo_core::digest::sha256_hex(&golden);
     let (plan_id, manifest, journal) = plan_record(
-        &format!("sha256:{}", "0".repeat(64)),
+        &embedded_policy_digest(),
         "lekalo/modules/scheduling/module.yaml",
         &before_digest,
         &after_digest,
@@ -1370,5 +1384,71 @@ fn an_unowned_suffixed_file_is_answered_by_the_structure_scan_not_the_sweep() {
         let result = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
         assert_ne!(result.status(), Status::Valid, "{result:?}");
         assert_eq!(fs::read(&user).expect("user file"), b"USER FILE\n");
+    });
+}
+
+#[test]
+fn a_forged_semantic_preimage_is_refused_before_any_restore() {
+    // Finding r4 5: recovery material whose backup digest-pins a
+    // semantic edit must never reach the disk. The record is fully
+    // hash-consistent and carries the supported policy pin; its after
+    // pin names the honest canonical source, so the preflight conflict
+    // class never fires — the restore itself is what would smuggle the
+    // edit in. The pre-restore semantic oracle refuses it.
+    in_sandbox("forged-preimage-core", "planner-canonical", |root| {
+        let module_path = root.join("lekalo/modules/scheduling/module.yaml");
+        let before = fs::read(&module_path).expect("canonical bytes");
+        let before_digest = lekalo_core::digest::sha256_hex(&before);
+        let forged = b"# forged semantic edit\n\"definitions\":\n  - \"description\": \"FORGED SEMANTIC EDIT\"\n    \"id\": \"scheduling\"\n    \"kind\": \"module\"\n    \"version\": 1\n\"schema_version\": \"0.2.16\"\n";
+        let forged_digest = lekalo_core::digest::sha256_hex(forged);
+        let (plan_id, manifest, journal) = plan_record(
+            &embedded_policy_digest(),
+            "lekalo/modules/scheduling/module.yaml",
+            &forged_digest,
+            &before_digest,
+        );
+        let home = root.join(".lekalo/cache/format").join(&plan_id);
+        fs::create_dir_all(home.join("before/modules/scheduling")).expect("backup dirs");
+        fs::write(home.join("before/modules/scheduling/module.yaml"), forged).expect("forged backup");
+        fs::write(home.join("manifest.json"), manifest).expect("manifest");
+        fs::write(home.join("journal.json"), journal).expect("journal");
+        let result = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
+        assert_eq!(result.status(), Status::Invalid, "{result:?}");
+        assert_eq!(first_reason(&result), "format.recovery-required");
+        assert!(home.join("journal.json").exists(), "material never dropped");
+        assert_eq!(
+            fs::read(&module_path).expect("source"),
+            before,
+            "the canonical source never receives the forged semantics"
+        );
+    });
+}
+
+#[test]
+fn an_unsupported_policy_pin_refuses_recovery() {
+    // Finding r4 5 control: a perfectly re-signed record naming the
+    // all-zeros policy pin is refused — hash-consistency is not
+    // authenticity — while the identical record under the embedded pin
+    // is admitted.
+    in_sandbox("stale-pin-core", "planner-canonical", |root| {
+        let module_path = root.join("lekalo/modules/scheduling/module.yaml");
+        let before = fs::read(&module_path).expect("canonical bytes");
+        let digest = lekalo_core::digest::sha256_hex(&before);
+        let (plan_id, manifest, journal) = plan_record(
+            &format!("sha256:{}", "9".repeat(64)),
+            "lekalo/modules/scheduling/module.yaml",
+            &digest,
+            &digest,
+        );
+        let home = root.join(".lekalo/cache/format").join(&plan_id);
+        fs::create_dir_all(home.join("before/modules/scheduling")).expect("backup dirs");
+        fs::write(home.join("before/modules/scheduling/module.yaml"), &before).expect("backup");
+        fs::write(home.join("manifest.json"), manifest).expect("manifest");
+        fs::write(home.join("journal.json"), journal).expect("journal");
+        let result = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
+        assert_eq!(result.status(), Status::Invalid, "{result:?}");
+        assert_eq!(first_reason(&result), "format.recovery-required");
+        assert!(home.join("journal.json").exists(), "material never dropped");
+        assert_eq!(fs::read(&module_path).expect("source"), before);
     });
 }

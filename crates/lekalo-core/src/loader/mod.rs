@@ -247,6 +247,20 @@ pub(crate) fn load_with_snapshot(selection: &LoadSelection) -> Result<ProjectLoa
 /// Load an already-selected absolute root through phases 2-8 (the migration
 /// post-apply verification reuses the exact read path this way).
 pub(crate) fn load_validated_root(root: PathBuf) -> Result<ProjectLoad, DomainResult> {
+    load_validated_root_opt(root, false)
+}
+
+/// [`load_validated_root`] with the formatter recovery gate made
+/// journal-neutral: only the formatter's own post-restore semantic
+/// oracle may pass `true`, after it has already restored every pinned
+/// preimage and before it clears the journal (finding r4 5). The
+/// migration gate (2b) and every other phase stay armed; the option
+/// never widens any read — it only defers the one gate the recovering
+/// owner has already satisfied by construction.
+pub(crate) fn load_validated_root_opt(
+    root: PathBuf,
+    ignore_format_journal: bool,
+) -> Result<ProjectLoad, DomainResult> {
     let failure =
         |status, diagnostics: Vec<Diagnostic>| Err(diagnostic::failure(status, diagnostics));
 
@@ -284,9 +298,14 @@ pub(crate) fn load_validated_root(root: PathBuf) -> Result<ProjectLoad, DomainRe
 
     // Phase 2c (issue #94): the same fail-closed rule for an interrupted
     // formatter transaction; readers refuse, only an explicit mutating
-    // format recovers.
+    // format recovers. The recovering owner's own post-restore oracle
+    // (finding r4 5) is journal-neutral by construction: it runs after
+    // every pinned preimage has been restored, while the journal that
+    // authorizes the restore is still in place.
     if let Some(code) = crate::format::transaction::recovery_code(&fs) {
-        return failure(Status::Invalid, vec![Diagnostic::new(code)]);
+        if !ignore_format_journal {
+            return failure(Status::Invalid, vec![Diagnostic::new(code)]);
+        }
     }
 
     // Phase 3: capability-safe enumeration and reads.

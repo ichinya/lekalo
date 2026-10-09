@@ -22,6 +22,11 @@ if (!existsSync(binary)) {
 }
 
 const sha256 = (data) => createHash("sha256").update(data).digest("hex");
+// The exact policy pin valid recovery material must carry (finding r4
+// 5): the digest embedded in the format-policy contract.
+const embeddedPolicyDigest = JSON.parse(
+  readFileSync(join(root, "contracts/format-policy.v0.8.0.json"), "utf8")
+).policyDigest;
 const workspace = mkdtempSync(join(tmpdir(), "lekalo-format-atomic-"));
 let passed = 0;
 try {
@@ -71,7 +76,7 @@ try {
     // The pinned record family: the plan home carries the 47-hex base
     // identity plus the attempt suffix, the policy digest is a full
     // sha256 spelling, and the manifest's pins recompute the base.
-    const policyDigest = `sha256:${"0".repeat(64)}`;
+    const policyDigest = embeddedPolicyDigest;
     const base = sha256(Buffer.concat([
       Buffer.from(policyDigest), Buffer.from([0x1f]),
       Buffer.from("lekalo/modules/scheduling/module.yaml"), Buffer.from([0x1f]),
@@ -110,6 +115,97 @@ try {
     passed += 1;
   }
 
+  // 3b. A self-consistent record naming an UNSUPPORTED policy pin is
+  //     refused before any restore (finding r4 5): hash-consistency is
+  //     not authenticity. The record below is perfectly re-signed — the
+  //     pins recompute its base identity — but its policy digest is the
+  //     all-zeros spelling no supported policy ever produced.
+  {
+    const project = seed("stale-policy", "planner-canonical");
+    const module = modulePath(project);
+    const before = readFileSync(module);
+    const beforeDigest = sha256(before);
+    const afterDigest = sha256(before); // identical pins, forged pin below
+    const policyDigest = `sha256:${"0".repeat(64)}`;
+    const base = sha256(Buffer.concat([
+      Buffer.from(policyDigest), Buffer.from([0x1f]),
+      Buffer.from("lekalo/modules/scheduling/module.yaml"), Buffer.from([0x1f]),
+      Buffer.from(beforeDigest), Buffer.from([0x1f]),
+      Buffer.from(afterDigest),
+    ]));
+    const planId = `${base.slice(0, 47)}-1`;
+    const home = join(formatHome(project), planId);
+    mkdirSync(join(home, "before/modules/scheduling"), { recursive: true });
+    writeFileSync(join(home, "before/modules/scheduling/module.yaml"), before);
+    const manifest = `{"schema_version":"lekalo/format-transaction/v0.8.0","plan_id":"${planId}","policy_digest":"${policyDigest}","files":[{"path":"lekalo/modules/scheduling/module.yaml","before_sha256":"${beforeDigest}","after_sha256":"${afterDigest}"}]}`;
+    writeFileSync(join(home, "manifest.json"), Buffer.from(manifest));
+    writeFileSync(join(home, "journal.json"), Buffer.from(`{"schema_version":"lekalo/format-transaction/v0.8.0","plan_id":"${planId}","manifest_sha256":"${sha256(manifest)}"}\n`));
+    const applied = run(project, ["format"]);
+    assert.equal(applied.status, 1, applied.stdout + applied.stderr);
+    assert.match(applied.stderr, /format.recovery-required/);
+    assert.ok(existsSync(join(home, "journal.json")), "the forged-pin material is never dropped");
+    assert.ok(readFileSync(module).equals(before), "the source is never touched under a foreign pin");
+    // The refused material is never silently dropped; an operator must
+    // remove it explicitly before the home is usable again.
+    rmSync(home, { recursive: true, force: true });
+    // Control: the SAME record re-signed under the embedded policy pin
+    // is admitted and recovers — the boundary is the pin, nothing else.
+    const goodBase = sha256(Buffer.concat([
+      Buffer.from(embeddedPolicyDigest), Buffer.from([0x1f]),
+      Buffer.from("lekalo/modules/scheduling/module.yaml"), Buffer.from([0x1f]),
+      Buffer.from(beforeDigest), Buffer.from([0x1f]),
+      Buffer.from(afterDigest),
+    ]));
+    const goodId = `${goodBase.slice(0, 47)}-1`;
+    const goodHome = join(formatHome(project), goodId);
+    mkdirSync(join(goodHome, "before/modules/scheduling"), { recursive: true });
+    writeFileSync(join(goodHome, "before/modules/scheduling/module.yaml"), before);
+    const goodManifest = `{"schema_version":"lekalo/format-transaction/v0.8.0","plan_id":"${goodId}","policy_digest":"${embeddedPolicyDigest}","files":[{"path":"lekalo/modules/scheduling/module.yaml","before_sha256":"${beforeDigest}","after_sha256":"${afterDigest}"}]}`;
+    writeFileSync(join(goodHome, "manifest.json"), Buffer.from(goodManifest));
+    writeFileSync(join(goodHome, "journal.json"), Buffer.from(`{"schema_version":"lekalo/format-transaction/v0.8.0","plan_id":"${goodId}","manifest_sha256":"${sha256(goodManifest)}"}\n`));
+    const recovered = run(project, ["format"]);
+    assert.equal(recovered.status, 0, recovered.stdout + recovered.stderr);
+    assert.ok(!existsSync(join(goodHome, "journal.json")), "the supported-pin material recovers");
+    rmSync(project, { recursive: true, force: true });
+    passed += 1;
+  }
+
+  // 3c. A digest-pinned backup carrying a SEMANTIC edit is refused
+  //     before any restore (finding r4 5): recovery must never change
+  //     semantics ahead of the formatter's own oracle. The record is
+  //     fully hash-consistent, pins the supported policy, and its after
+  //     pin names the honest canonical source — so the preflight
+  //     conflict class never fires; the restore itself is what would
+  //     smuggle the edit into canonical source. The pre-restore
+  //     semantic oracle refuses it.
+  {
+    const project = seed("forged-preimage", "planner-canonical");
+    const module = modulePath(project);
+    const before = readFileSync(module);
+    const beforeDigest = sha256(before);
+    const forged = Buffer.from("# forged semantic edit\n\"definitions\":\n  - \"description\": \"FORGED SEMANTIC EDIT\"\n    \"id\": \"scheduling\"\n    \"kind\": \"module\"\n    \"version\": 1\n\"schema_version\": \"0.2.16\"\n");
+    const forgedDigest = sha256(forged);
+    const base = sha256(Buffer.concat([
+      Buffer.from(embeddedPolicyDigest), Buffer.from([0x1f]),
+      Buffer.from("lekalo/modules/scheduling/module.yaml"), Buffer.from([0x1f]),
+      Buffer.from(forgedDigest), Buffer.from([0x1f]),
+      Buffer.from(beforeDigest),
+    ]));
+    const planId = `${base.slice(0, 47)}-1`;
+    const home = join(formatHome(project), planId);
+    mkdirSync(join(home, "before/modules/scheduling"), { recursive: true });
+    writeFileSync(join(home, "before/modules/scheduling/module.yaml"), forged);
+    const manifest = `{"schema_version":"lekalo/format-transaction/v0.8.0","plan_id":"${planId}","policy_digest":"${embeddedPolicyDigest}","files":[{"path":"lekalo/modules/scheduling/module.yaml","before_sha256":"${forgedDigest}","after_sha256":"${beforeDigest}"}]}`;
+    writeFileSync(join(home, "manifest.json"), Buffer.from(manifest));
+    writeFileSync(join(home, "journal.json"), Buffer.from(`{"schema_version":"lekalo/format-transaction/v0.8.0","plan_id":"${planId}","manifest_sha256":"${sha256(manifest)}"}\n`));
+    const applied = run(project, ["format"]);
+    assert.equal(applied.status, 1, applied.stdout + applied.stderr);
+    assert.match(applied.stderr, /format.recovery-required/);
+    assert.ok(existsSync(join(home, "journal.json")), "the forged-preimage material is never dropped");
+    assert.ok(readFileSync(module).equals(before), "the canonical source never receives the forged semantics");
+    rmSync(project, { recursive: true, force: true });
+    passed += 1;
+  }
   // 4. A stale lock file without a journal is not a reader signal (the
   //    OS ownership lock is the real exclusion): readers work, and the
   //    explicit mutating run owns the home and rewrites the stamp.
@@ -144,7 +240,7 @@ try {
     const beforeDigest = sha256(before);
     const applied = Buffer.from('# the live writer applied this\n"definitions":\n  - "description": "Slot scheduling module"\n    "id": "scheduling"\n    "kind": "module"\n    "version": 1\n"schema_version": "0.2.16"\n');
     writeFileSync(module, applied);
-    const policyDigest = `sha256:${"0".repeat(64)}`;
+    const policyDigest = embeddedPolicyDigest;
     const base = sha256(Buffer.concat([
       Buffer.from(policyDigest), Buffer.from([0x1f]),
       Buffer.from("lekalo/modules/scheduling/module.yaml"), Buffer.from([0x1f]),
@@ -328,7 +424,7 @@ try {
       const beforeDigest = sha256(before);
       const replaced = Buffer.from('# a half-applied replacement\n"definitions":\n  - "description": "Slot scheduling module"\n    "id": "scheduling"\n    "kind": "module"\n    "version": 1\n"schema_version": "0.2.16"\n');
       writeFileSync(modulePath(project), replaced);
-      const policyDigest = `sha256:${"0".repeat(64)}`;
+      const policyDigest = embeddedPolicyDigest;
       const base = sha256(Buffer.concat([
         Buffer.from(policyDigest), Buffer.from([0x1f]),
         Buffer.from("lekalo/modules/scheduling/module.yaml"), Buffer.from([0x1f]),
