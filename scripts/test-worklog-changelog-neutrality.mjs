@@ -74,6 +74,11 @@ const fail = (reason, detail) => {
 const listFiles = (dir, files = []) => {
   for (const entry of readdirSync(dir)) {
     const abs = join(dir, entry);
+    // The documented generated runtime residue (the loader's cache
+    // under the model project's .lekalo directory, gitignored as such)
+    // is not public fixture inventory: a CLI run may regenerate it at
+    // any moment, and it is an opaque build artifact, never content.
+    if (abs.replaceAll("\\", "/").includes(`${FIXTURE}/model/.lekalo/`)) continue;
     if (statSync(abs).isDirectory()) listFiles(abs, files);
     else files.push(abs);
   }
