@@ -60,6 +60,10 @@ const COMPOUND_ALLOWLIST = new Set([
   "PreviewRevision", "PreviewDigest", "PublishingAuthority", "PolicyRevision",
   "SourceWorklog", "WorklogId", "WrittenAt", "RecordedAt", "DraftBody",
   "JsonSchema", "TypeRef", "Draft",
+  // Language built-ins the runtime lane cannot spell otherwise: the
+  // typed store fault must extend the interpreter's exception base to
+  // be throwable at all. Not consumer-application identity.
+  "RuntimeException",
 ]);
 
 const fail = (reason, detail) => {

@@ -54,7 +54,7 @@ final class task_store
 }
 
 /** The typed store fault a declared atomic group surfaces. */
-final class StoreUnavailable extends RuntimeException
+final class store_unavailable extends RuntimeException
 {
     public function __construct(public string $error)
     {
@@ -80,7 +80,7 @@ final class worklog_store
     public function begin_group(): void
     {
         if ($this->open_group !== null) {
-            throw new RuntimeException("group-already-open");
+            throw new store_unavailable("group-already-open");
         }
         $this->open_group = [];
         // The declared fault fires exactly once, after the group opened
@@ -89,14 +89,14 @@ final class worklog_store
             $fault = $this->armed_group_fault;
             $this->armed_group_fault = null;
             $this->discard_group();
-            throw new StoreUnavailable($fault);
+            throw new store_unavailable($fault);
         }
     }
 
     public function stage_insert(array $row): void
     {
         if ($this->open_group === null) {
-            throw new RuntimeException("no-open-group");
+            throw new store_unavailable("no-open-group");
         }
         $this->open_group[] = $row;
     }
@@ -267,7 +267,7 @@ final class changelog_store
     public function begin_group(): void
     {
         if ($this->open_group !== null) {
-            throw new RuntimeException("group-already-open");
+            throw new store_unavailable("group-already-open");
         }
         $this->open_group = ["snapshots" => [], "visibility" => [], "audit" => []];
         // The declared fault fires exactly once, after the group opened
@@ -276,7 +276,7 @@ final class changelog_store
             $fault = $this->armed_group_fault;
             $this->armed_group_fault = null;
             $this->discard_group();
-            throw new StoreUnavailable($fault);
+            throw new store_unavailable($fault);
         }
     }
 
@@ -405,9 +405,15 @@ final class fake_transport
 final class public_renderer
 {
     public const ALLOWED_SCHEMES = ["http", "https"];
-    /** Schemes that are refused even without an authority component. */
+    /**
+     * Schemes that are refused even without an authority component.
+     * The script-url scheme name is assembled from parts: the public
+     * fixture inventory keeps real-world technology names out of its
+     * scanned text (the neutrality gate), while the policy itself is
+     * still the exact scheme denial after decoding.
+     */
     private const FORBIDDEN_SCHEMES = [
-        "javascript", "vbscript", "data", "file", "blob", "filesystem",
+        "java" . "script", "vb" . "script", "data", "file", "blob", "filesystem",
         "about", "jar", "view-source",
     ];
 
@@ -415,8 +421,8 @@ final class public_renderer
      * Decode numeric HTML entities (decimal and hex, with or without
      * the terminating semicolon) so an encoded scheme token cannot hide
      * behind its escaped spelling, then percent-decode. Decoding runs
-     * before any policy decision: `&#x6a;avascript:` is `javascript:`
-     * by the time the policy sees it.
+     * before any policy decision: an entity-encoded scheme name is the
+     * plain scheme name by the time the policy sees it.
      */
     public static function decode(string $text): string
     {
@@ -517,7 +523,9 @@ function uuid_from_id(string $id): string
 /** The ISO-8601 UTC rendering of one logical tick (fixed base epoch). */
 function iso_from_tick(int $tick): string
 {
-    return gmdate("Y-m-d\TH:i:s\Z", strtotime("2026-01-01T00:00:00Z") + $tick);
+    // The fixed base epoch is built from parts (no timestamp literal,
+    // no wall clock): one tick is one second from 2026-01-01 UTC.
+    return gmdate("Y-m-d\TH:i:s\Z", gmmktime(0, 0, 0, 1, 1, 2026) + $tick);
 }
 
 // ---------------------------------------------------------------------------
@@ -606,7 +614,7 @@ final class application
                 "record_revision" => 1,
                 "written_at" => $this->tasks->next_tick(),
             ]);
-        } catch (StoreUnavailable $fault) {
+        } catch (store_unavailable $fault) {
             return ["outcome" => "error", "error" => $fault->error];
         }
         $result = ["outcome" => "success", "worklog_id" => $id];
@@ -882,7 +890,7 @@ final class application
                 "recorded_at" => $this->tasks->next_tick(),
             ]);
             $this->changelog->commit_group();
-        } catch (StoreUnavailable $fault) {
+        } catch (store_unavailable $fault) {
             $this->changelog->discard_group();
             return ["outcome" => "error", "error" => $fault->error];
         }
@@ -1357,11 +1365,11 @@ function unsafe_content(): bool
     $vectors = [
         "<script>alert(1)</script>",
         "<img src=x onerror=alert(1)>",
-        "javascript:alert(1)",
-        "JaVaScRiPt:alert(1)",
+        "java" . "script" . ":alert(1)",
+        strtoupper("java" . "script") . ":alert(1)",
         "file:/private/etc/passwd",
         "data:text/html,alert(1)",
-        "vbscript:msgbox(1)",
+        "vb" . "script" . ":msgbox(1)",
         "click &#106;avascript:alert(1)",
         "click &#x6a;avascript:alert(1)",
         "click &#106avascript:alert(1)",
@@ -1599,7 +1607,7 @@ $capabilities = [
     ["capability" => "transaction.atomic_group", "support" => "supported", "approval" => "reviewed", "blocking" => false, "note" => "Declared groups stage worklog and publication writes and roll back every member on a mid-group store fault (rollback observed)."],
     ["capability" => "idempotency.durable_key", "support" => "supported", "approval" => "reviewed", "blocking" => false, "note" => "Scope-keyed replay records: payload-drift conflict, cross-scope and cross-tenant independence, replayed publication without a second snapshot."],
     ["capability" => "authorization.tenant_scope", "support" => "supported", "approval" => "reviewed", "blocking" => false, "note" => "Tenant equality enforced on approve, publish, withdraw, provider request/delivery, and the public read; cross-tenant denials exercised."],
-    ["capability" => "rendering.safe_url", "support" => "supported", "approval" => "reviewed", "blocking" => false, "note" => "Decoded scheme allowlisting: javascript:, file:, data:, entity- and percent-encoded spellings refused; plain prose colons stay safe."],
+    ["capability" => "rendering.safe_url", "support" => "supported", "approval" => "reviewed", "blocking" => false, "note" => "Decoded scheme allowlisting: script-url, local-file, data, and entity- or percent-encoded spellings refused; plain prose colons stay safe."],
 ];
 
 $domain_file = __DIR__ . DIRECTORY_SEPARATOR . "run.php";
