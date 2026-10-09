@@ -16,6 +16,6 @@ for(const family of Object.values(registry.families)) {
  assert.equal(family.versions[0].state,'supported');
  assert.ok(family.versions[0].reason.length>0);
 }
-const projected = {status:'valid',registryVersion:registry.registryVersion,families:Object.entries(registry.families).map(([family,f])=>({family,current:f.current,min:f.current,max:f.versions.at(-1).version,aliases:[],versions:f.versions.map(({version,state,classification})=>({version,state,classification}))}))};
+const projected = {status:'valid',registryVersion:registry.registryVersion,families:Object.entries(registry.families).map(([family,f])=>({family,current:f.current,min:f.versions[0].version,max:f.versions.at(-1).version,aliases:[],versions:f.versions.map(({version,state,classification})=>({version,state,classification}))}))};
 assert.deepEqual(read('tests/fixtures/versioning/compatibility.golden.json'),projected);
 console.log(JSON.stringify({ok:true,version:registry.registryVersion,families:Object.keys(registry.families)}));

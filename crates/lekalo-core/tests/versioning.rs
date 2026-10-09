@@ -244,11 +244,12 @@ mod compatibility {
         let registry = VersionRegistry::embedded().expect("valid");
         let report = CompatibilityReport::from_registry(registry);
         assert_eq!(report.status, "valid");
-        assert_eq!(report.registry_version, "0.6.4");
+        assert_eq!(report.registry_version, "0.8.0");
         let names: Vec<&str> = report.families.iter().map(|f| f.family).collect();
         assert_eq!(names, ["model", "ir", "protocol"]);
         let model_family: &CompatibilityReportFamilyAlias = &report.families[0];
-        assert_eq!(model_family.current.as_deref(), Some("0.2.16"));
+        assert_eq!(model_family.current.as_deref(), Some("0.8.0"));
+        assert_eq!(model_family.min.as_deref(), Some("0.2.16"));
     }
 
     type CompatibilityReportFamilyAlias = lekalo_core::versioning::compatibility::FamilySummary;
@@ -273,8 +274,8 @@ mod digests {
 #[test]
 fn baseline_rejects_old_model_and_undeclared_migration() {
     let registry = VersionRegistry::embedded().unwrap();
-    assert_eq!(registry.model().versions().len(), 1);
-    assert_eq!(registry.model().current().unwrap().as_str(), "0.2.16");
+    assert_eq!(registry.model().versions().len(), 2);
+    assert_eq!(registry.model().current().unwrap().as_str(), "0.8.0");
     for version in ["0.1.0", "1.0.0", "0.2.15"] {
         assert!(registry.model().record(&model(version)).is_none());
     }

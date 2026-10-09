@@ -5,7 +5,7 @@
     {
       "family": "model",
       "current": "0.8.0",
-      "min": "0.8.0",
+      "min": "0.2.16",
       "max": "0.8.0",
       "aliases": [],
       "versions": [
@@ -24,7 +24,7 @@
     {
       "family": "ir",
       "current": "0.8.0",
-      "min": "0.8.0",
+      "min": "0.2.16",
       "max": "0.8.0",
       "aliases": [],
       "versions": [
