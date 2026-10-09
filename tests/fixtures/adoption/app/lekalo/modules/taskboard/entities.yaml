@@ -1,6 +1,7 @@
 schema_version: "0.2.16"
 definitions:
   - id: taskboard.audit_event
-    kind: event
+    kind: scalar
     version: 1
+    base: "string"
     description: "New contracted feature (authored canonically, maintained by hand)"

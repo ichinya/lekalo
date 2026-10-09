@@ -22,17 +22,6 @@
         "reads": []
       },
       "effects": []
-    },
-    {
-      "id": "taskboard.audit_event",
-      "kind": "event",
-      "source": {
-        "path": "features/audit.mjs",
-        "line": 3
-      },
-      "fingerprint": "sha256:061b1ccd4adf0ca8453a695a413e5ab301bb2da91bf21d4979ab99757cd4fe48",
-      "signature": null,
-      "effects": []
     }
   ],
   "artifacts": []

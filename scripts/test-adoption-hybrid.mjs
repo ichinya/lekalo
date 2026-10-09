@@ -343,7 +343,7 @@ const deleteRollback = run([
   "--confirm", deleteReceipt.receipt, "--project", ".",
 ]);
 if (deleteRollback.status !== 0) fail("delete-rollback-exit", deleteRollback.stderr);
-if (Buffer.compare(readFileSync(auditLegacyPath), readFileSync(auditLegacyPath)) !== 0) {
+if (Buffer.compare(readFileSync(auditLegacyPath), Buffer.from(featureContent, "utf8")) !== 0) {
   fail("delete-rollback-bytes");
 }
 if (!existsSync(auditLegacyPath)) fail("delete-rollback-missing");
@@ -429,6 +429,90 @@ if (parse(unusedApply).outcome !== "completed") fail("unused-apply", parse(unuse
 if (existsSync(join(project, "src/unused.mjs"))) fail("unused-delete-kept");
 
 // ---------------------------------------------------------------------------
+// AC5: the three-mode fixture through the conformed registry — the
+// adapted legacy command and the new contracted symbol coexist beside
+// the untouched rows, and the executed provenance join carries exactly
+// the receipts that really wrote a row's paths.
+// ---------------------------------------------------------------------------
+// A fresh confirmable analysis: the F4 rescan moved the observed index.
+const conformAnalysis = save("analysis-conform.json", run([
+  "--no-cache", "--json", "adoption", "analyze",
+  "--module", "taskboard", "--target", "node-typescript", "--profile", "default", "--project", ".",
+]));
+const conformPreview = run([
+  "--no-cache", "--json", "adoption", "confirm", "--analysis", conformAnalysis,
+  "--definition", "taskboard.complete_task", "--dry-run", "--project", ".",
+]);
+if (conformPreview.status !== 0) fail("conform-preview-exit", conformPreview.stderr);
+const conformPlan = parse(conformPreview);
+const conformPlanPath = save("conform-plan.json", conformPreview);
+const conformApply = run([
+  "--json", "adoption", "confirm", "--plan", conformPlanPath, "--confirm", conformPlan.plan, "--project", ".",
+]);
+if (conformApply.status !== 0) fail("conform-apply-exit", conformApply.stderr);
+
+// The adapted legacy command: the shipped declaration names the exact
+// current bytes of src/tasks.mjs, so check passes now and fails after
+// any drift.
+cpSync(join(root, S, "contracts/declaration.json"), join(project, "declaration-legacy.json"));
+const legacyUpdate = run(["--json", "contract", "update", "--declaration", "declaration-legacy.json", "--project", "."]);
+if (legacyUpdate.status !== 0) fail("legacy-update-exit", legacyUpdate.stderr);
+if (run(["--json", "contract", "attach", "taskboard.complete_task", "--native-test", "test/tasks.test.mjs#completeTask", "--project", "."]).status !== 0) {
+  fail("legacy-attach");
+}
+if (run(["--json", "contract", "check", "--project", "."]).status !== 0) fail("legacy-check");
+
+// The new contracted symbol: authored canonically, never observed by
+// the scanner, declared over the exact created bytes.
+const featureDecl = {
+  schemaVersion: "lekalo/contracted-declaration/v0.4.0",
+  adapter: { id: "lekalo-target-node-typescript", version: "0.2.16", digest: null },
+  project: "taskboard",
+  revision: "sha256:1361a56d4a5b8e7c1c9f0d2a3b4c5d6e7f8091a2b3c4d5e6f70819a2b3c4d5e6",
+  symbols: [
+    {
+      id: "taskboard.audit_event",
+      kind: "scalar",
+      source: { path: "src/audit.mjs", line: 3 },
+      fingerprint: sha256(readFileSync(join(project, "src/audit.mjs"))),
+      signature: null,
+      effects: [],
+    },
+  ],
+  artifacts: [],
+};
+writeFileSync(join(project, "declaration-feature.json"), JSON.stringify(featureDecl, null, 2));
+const featureUpdate = run(["--json", "contract", "update", "--declaration", "declaration-feature.json", "--project", "."]);
+if (featureUpdate.status !== 0) fail("feature-update-exit", featureUpdate.stderr);
+if (run(["--json", "contract", "attach", "taskboard.audit_event", "--native-test", "test/audit.test.mjs#completeAudit", "--project", "."]).status !== 0) {
+  fail("feature-attach");
+}
+if (run(["--json", "contract", "check", "--project", "."]).status !== 0) fail("feature-check");
+
+// The join proves the mixed-mode project: nonzero contracted-legacy AND
+// contracted-new, untouched rows still present, and the audit row
+// carries exactly the executed receipts whose writes touched its path.
+const conformedCoverage = run(["--no-cache", "--json", "adoption", "coverage", "--module", "taskboard", "--project", "."]);
+if (conformedCoverage.status !== 0) fail("conformed-coverage-exit", conformedCoverage.stderr);
+const conformedDoc = parse(conformedCoverage);
+const conformedCounts = conformedDoc.counts;
+if (conformedCounts.contracted_legacy < 1 || conformedCounts.contracted_new < 1) {
+  fail("three-modes", conformedCounts);
+}
+if (conformedCounts.observed + conformedCounts.unbound < 1) fail("untouched-rows", conformedCounts);
+const auditRow = conformedDoc.rows.find((row) => row.symbol === "taskboard.audit_event");
+if (!auditRow || auditRow.effective !== "contracted-new") {
+  fail("contracted-new-row", auditRow);
+}
+const legacyRow = conformedDoc.rows.find((row) => row.symbol === "taskboard.complete_task");
+if (!legacyRow || legacyRow.effective !== "contracted-legacy" || legacyRow.verification) {
+  // No completed receipt has ever written src/tasks.mjs in this walk
+  // (the feature/delete applies were rolled back): an executed
+  // provenance grant here would be fabricated.
+  fail("legacy-row-shape", legacyRow);
+}
+
+// ---------------------------------------------------------------------------
 // F5: the wrapper commands honor the exact --project selection from an
 // unrelated working directory.
 // ----------------------------------------------------------------------------
@@ -465,6 +549,94 @@ if (staleReport.panels.some((panel) => panel.state === "current" && panel.freshn
 writeFileSync(join(project, "src/limits.mjs"), readFileSync(join(root, FIXTURE, "src/limits.mjs")));
 
 // ---------------------------------------------------------------------------
+// X11 (live conformance + executed provenance): one verified apply of
+// the reviewed tasks refactor both drifts the contracted legacy source
+// and writes the receipt the coverage join must carry. The conformance
+// gate refuses, a freshly regenerated attachment downgrades the row to
+// conflicting with the typed gap, the status panel is stale, the trace
+// join carries the real receipt digest — and the exact rollback
+// restores the conformant state byte-for-byte.
+// ---------------------------------------------------------------------------
+const tasksBeforeDrift = readFileSync(join(project, "src/tasks.mjs"), "utf8");
+const driftAnalysis = save("analysis-drift.json", run([
+  "--no-cache", "--json", "adoption", "analyze",
+  "--use-case", "complete_case", "--target", "node-typescript", "--profile", "default", "--project", ".",
+]));
+if (!existsSync(driftAnalysis)) fail("drift-analysis");
+const driftCandidatePath = join(root, S, "refactor/candidate-patch.json");
+const driftPlanRun = run([
+  "--no-cache", "--json", "adoption", "refactor",
+  "--use-case", "complete_case", "--target", "node-typescript", "--profile", "default",
+  "--verification", spec, "--candidate", driftCandidatePath, "--project", ".",
+]);
+if (driftPlanRun.status !== 0) fail("drift-refactor-exit", driftPlanRun.stderr);
+const driftPlan = parse(driftPlanRun);
+const driftPlanPath = save("drift-plan.json", driftPlanRun);
+const driftVerify = run([
+  "--json", "adoption", "verify", "--plan", driftPlanPath, "--verification", spec,
+  "--candidate", driftCandidatePath, "--project", ".",
+]);
+if (driftVerify.status !== 0) fail("drift-verify-exit", driftVerify.stderr);
+if (parse(driftVerify).conclusion !== "preserved") fail("drift-verify", parse(driftVerify).conclusion);
+const driftExecutionPath = save("drift-execution.json", driftVerify);
+const driftApply = run([
+  "--json", "adoption", "apply", "--plan", driftPlanPath, "--verification", driftExecutionPath,
+  "--candidate", driftCandidatePath, "--confirm", driftPlan.plan, "--project", ".",
+]);
+if (driftApply.status !== 0) fail("drift-apply-exit", driftApply.stderr);
+if (parse(driftApply).outcome !== "completed") fail("drift-apply", parse(driftApply));
+const driftReceipt = parse(driftApply);
+
+// The conformance gate now refuses: the declared legacy fingerprint no
+// longer matches the applied bytes.
+if (run(["--json", "contract", "check", "--project", "."]).status === 0) fail("drift-check-passed");
+const driftedCoverage = run(["--no-cache", "--json", "adoption", "coverage", "--module", "taskboard", "--project", "."]);
+if (driftedCoverage.status !== 0) fail("drifted-coverage-exit", driftedCoverage.stderr);
+const driftedDoc = parse(driftedCoverage);
+const driftedRow = driftedDoc.rows.find((row) => row.symbol === "taskboard.complete_task");
+if (!driftedRow || driftedRow.effective !== "conflicting") fail("drift-conflicting", driftedRow);
+if (!driftedDoc.gaps.some((gap) => gap.subject === "taskboard.complete_task" && gap.detail === "conformance-fingerprint-drift")) {
+  fail("drift-gap", driftedDoc.gaps);
+}
+// The executed provenance join credits exactly this receipt: its write
+// touched the row's recorded source path.
+if (!driftedRow.verification || !driftedRow.verification.split(",").includes(driftReceipt.receipt)) {
+  fail("drift-provenance-join", { row: driftedRow, receipt: driftReceipt.receipt });
+}
+const driftedCoveragePath = save("coverage-drifted.json", driftedCoverage);
+const driftedStatus = runFrom(sandboxBase, ["--json", "status", "--adoption", "coverage-drifted.json", "--project", "proj"]);
+if (driftedStatus.status !== 0) fail("drifted-status-exit", driftedStatus.stderr);
+const driftedPanel = parse(driftedStatus).panels.find((panel) => panel.symbol === "taskboard.complete_task");
+if (!driftedPanel || driftedPanel.freshness !== "stale") fail("drift-stale", driftedPanel);
+const traceRun = run([
+  "--json", "trace", "query", join(root, "tests/fixtures/trace/partial.trace.json"), "gaps",
+  "--adoption", driftedCoveragePath,
+]);
+if (traceRun.status !== 0) fail("trace-exit", traceRun.stderr);
+const traceReport = parse(traceRun);
+if (!Array.isArray(traceReport.verification) || !traceReport.verification.includes(driftReceipt.receipt)) {
+  fail("trace-verification-join", { verification: traceReport.verification, receipt: driftReceipt.receipt });
+}
+if (!traceReport.verification.every((digest) => /^sha256:[0-9a-f]{64}$/.test(digest))) {
+  fail("trace-verification-shape", traceReport.verification);
+}
+if (!traceReport.stale.some((gap) => gap.subject === "taskboard.complete_task")) {
+  fail("trace-stale-row", traceReport.stale);
+}
+// The exact rollback restores the conformant state: the declared
+// fingerprint matches the restored bytes again.
+const driftReceiptPath = save("drift-receipt.json", driftApply);
+const driftRollback = run([
+  "--json", "adoption", "rollback", "--receipt", driftReceiptPath,
+  "--confirm", driftReceipt.receipt, "--project", ".",
+]);
+if (driftRollback.status !== 0) fail("drift-rollback-exit", driftRollback.stderr);
+if (Buffer.compare(readFileSync(join(project, "src/tasks.mjs")), Buffer.from(tasksBeforeDrift, "utf8")) !== 0) {
+  fail("drift-rollback-bytes");
+}
+if (run(["--json", "contract", "check", "--project", "."]).status !== 0) fail("restored-check");
+
+// ---------------------------------------------------------------------------
 // F10: the durable recovery surface consumes the journaled state.
 // ----------------------------------------------------------------------------
 const recovery = run([
@@ -474,6 +646,18 @@ if (recovery.status !== 0) fail("recovery-exit", recovery.stderr);
 const recoveryView = parse(recovery);
 if (recoveryView.plan !== deletePlan.plan || !Array.isArray(recoveryView.steps)) {
   fail("recovery-shape", recoveryView);
+}
+// A completed, un-rolled-back receipt owns the restoration: the
+// executable recovery defers to the rollback surface instead of
+// restoring consumed evidence a second time. (The deletePlan journal
+// was rewritten by its rollback phase, so the unused-plan receipt is
+// the completed one.)
+const recoveryRestoreCompleted = run([
+  "--json", "adoption", "recovery", "--digest", unusedPlan.plan, "--restore", "--project", ".",
+]);
+if (recoveryRestoreCompleted.status !== 3) fail("recovery-restore-completed-exit", recoveryRestoreCompleted.status);
+if (!parse(recoveryRestoreCompleted).diagnostics.some((item) => item.code === "LEK-ADOPT-009")) {
+  fail("recovery-restore-completed-diagnostic", parse(recoveryRestoreCompleted).diagnostics);
 }
 
 rmSync(sandboxBase, { recursive: true, force: true });
