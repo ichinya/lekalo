@@ -293,7 +293,7 @@
   ],
   "storageReviews": [
     {
-      "id": "plan.review-storage-policy.php-laravel.storage.scalar.planner.weight.storage.decimal-policy",
+      "id": "plan.review-storage-policy.php-laravel.storage.scalar.planner.weight.storage.decimal-policy.decimal.exact.18.6",
       "subject": "scalar:planner.weight",
       "destination": "php-laravel",
       "required": {

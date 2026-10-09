@@ -489,7 +489,7 @@
         "affectedScenarios": 2,
         "complete": true,
         "mappedSymbols": 3,
-        "missingImplementations": 2,
+        "missingImplementations": 1,
         "rows": [
           {
             "action": "collect-evidence",
@@ -501,10 +501,12 @@
             "gates": [],
             "id": "plan.collect-evidence.go-service.behavioral.command.notify.purge_cache_cmd",
             "member": null,
+            "offered": null,
             "prerequisites": [
               "notify.user_id"
             ],
             "reason": "binding-evidence-absent",
+            "required": null,
             "requirement": "notify.user_id",
             "scenarios": [],
             "subject": "command:notify.purge_cache_cmd"
@@ -519,12 +521,14 @@
             "gates": [],
             "id": "plan.collect-evidence.go-service.behavioral.command.notify.rename_user_cmd",
             "member": null,
+            "offered": null,
             "prerequisites": [
               "notify.rename_user",
               "notify.text",
               "notify.user_id"
             ],
             "reason": "binding-evidence-absent",
+            "required": null,
             "requirement": "notify.rename_user",
             "scenarios": [],
             "subject": "command:notify.rename_user_cmd"
@@ -539,11 +543,13 @@
             "gates": [],
             "id": "plan.collect-evidence.go-service.behavioral.command.planner.archive_task_cmd",
             "member": null,
+            "offered": null,
             "prerequisites": [
               "planner.archive_task",
               "planner.task_id"
             ],
             "reason": "hook-external-unmapped",
+            "required": null,
             "requirement": "planner.archive_task",
             "scenarios": [],
             "subject": "command:planner.archive_task_cmd"
@@ -558,12 +564,14 @@
             "gates": [],
             "id": "plan.collect-evidence.go-service.behavioral.command.planner.edit_task_cmd",
             "member": null,
+            "offered": null,
             "prerequisites": [
               "planner.edit_task",
               "planner.task_id",
               "planner.text"
             ],
             "reason": "binding-evidence-absent",
+            "required": null,
             "requirement": "planner.edit_task",
             "scenarios": [],
             "subject": "command:planner.edit_task_cmd"
@@ -578,10 +586,12 @@
             "gates": [],
             "id": "plan.collect-evidence.go-service.behavioral.effect.notify.rename_user",
             "member": null,
+            "offered": null,
             "prerequisites": [
               "notify.user"
             ],
             "reason": "binding-evidence-absent",
+            "required": null,
             "requirement": "notify.user",
             "scenarios": [],
             "subject": "effect:notify.rename_user"
@@ -596,10 +606,12 @@
             "gates": [],
             "id": "plan.collect-evidence.go-service.behavioral.effect.planner.archive_task",
             "member": null,
+            "offered": null,
             "prerequisites": [
               "planner.task"
             ],
             "reason": "hook-external-unmapped",
+            "required": null,
             "requirement": "planner.task",
             "scenarios": [],
             "subject": "effect:planner.archive_task"
@@ -614,10 +626,12 @@
             "gates": [],
             "id": "plan.collect-evidence.go-service.behavioral.effect.planner.edit_task",
             "member": null,
+            "offered": null,
             "prerequisites": [
               "planner.task"
             ],
             "reason": "binding-evidence-absent",
+            "required": null,
             "requirement": "planner.task",
             "scenarios": [],
             "subject": "effect:planner.edit_task"
@@ -632,10 +646,12 @@
             "gates": [],
             "id": "plan.collect-evidence.go-service.behavioral.query.planner.list_tasks",
             "member": null,
+            "offered": null,
             "prerequisites": [
               "planner.task"
             ],
             "reason": "binding-evidence-absent",
+            "required": null,
             "requirement": "planner.task",
             "scenarios": [],
             "subject": "query:planner.list_tasks"
@@ -650,12 +666,14 @@
             "gates": [],
             "id": "plan.collect-evidence.go-service.behavioral.query.planner.user_names",
             "member": null,
+            "offered": null,
             "prerequisites": [
               "notify.user",
               "planner.task",
               "planner.text"
             ],
             "reason": "binding-evidence-absent",
+            "required": null,
             "requirement": "notify.user",
             "scenarios": [],
             "subject": "query:planner.user_names"
@@ -670,10 +688,12 @@
             "gates": [],
             "id": "plan.collect-evidence.go-service.operational.effect.planner.archive_task.events.publication",
             "member": null,
+            "offered": null,
             "prerequisites": [
               "planner.task"
             ],
             "reason": "capability-absent",
+            "required": null,
             "requirement": "events.publication",
             "scenarios": [],
             "subject": "effect:planner.archive_task"
@@ -690,10 +710,12 @@
             ],
             "id": "plan.collect-evidence.go-service.operational.effect.planner.create_task.events.publication",
             "member": null,
+            "offered": null,
             "prerequisites": [
               "planner.task"
             ],
             "reason": "capability-absent",
+            "required": null,
             "requirement": "events.publication",
             "scenarios": [
               "planner.focus_flow"
@@ -712,10 +734,12 @@
             ],
             "id": "plan.collect-evidence.go-service.operational.effect.planner.schedule_write.events.publication",
             "member": null,
+            "offered": null,
             "prerequisites": [
               "planner.task"
             ],
             "reason": "capability-absent",
+            "required": null,
             "requirement": "events.publication",
             "scenarios": [
               "planner.schedule_flow"
@@ -732,11 +756,13 @@
             "gates": [],
             "id": "plan.collect-evidence.go-service.storage.entity.notify.user",
             "member": null,
+            "offered": null,
             "prerequisites": [
               "notify.text",
               "notify.user_id"
             ],
             "reason": "storage-inventory-incomplete",
+            "required": null,
             "requirement": "notify.text",
             "scenarios": [],
             "subject": "entity:notify.user"
@@ -751,8 +777,9 @@
             "gates": [
               "planner.native-scenario-gate"
             ],
-            "id": "plan.collect-evidence.go-service.storage.entity.planner.task.storage.transactions",
+            "id": "plan.collect-evidence.go-service.storage.entity.planner.task.storage.transactions.isolation.repeatable-read",
             "member": null,
+            "offered": null,
             "prerequisites": [
               "planner.due_date",
               "planner.due_window",
@@ -761,6 +788,10 @@
               "planner.text"
             ],
             "reason": "storage-policy-unknown",
+            "required": {
+              "kind": "isolation",
+              "value": "repeatable-read"
+            },
             "requirement": "storage.transactions",
             "scenarios": [
               "planner.focus_flow",
@@ -780,8 +811,10 @@
             ],
             "id": "plan.collect-evidence.go-service.storage.enum.planner.task_state",
             "member": null,
+            "offered": null,
             "prerequisites": [],
             "reason": "storage-inventory-incomplete",
+            "required": null,
             "requirement": null,
             "scenarios": [
               "planner.focus_flow",
@@ -799,8 +832,10 @@
             "gates": [],
             "id": "plan.collect-evidence.go-service.storage.scalar.notify.text",
             "member": null,
+            "offered": null,
             "prerequisites": [],
             "reason": "storage-inventory-incomplete",
+            "required": null,
             "requirement": null,
             "scenarios": [],
             "subject": "scalar:notify.text"
@@ -815,8 +850,10 @@
             "gates": [],
             "id": "plan.collect-evidence.go-service.storage.scalar.notify.user_id",
             "member": null,
+            "offered": null,
             "prerequisites": [],
             "reason": "storage-inventory-incomplete",
+            "required": null,
             "requirement": null,
             "scenarios": [],
             "subject": "scalar:notify.user_id"
@@ -833,8 +870,10 @@
             ],
             "id": "plan.collect-evidence.go-service.storage.scalar.planner.due_date",
             "member": null,
+            "offered": null,
             "prerequisites": [],
             "reason": "storage-inventory-incomplete",
+            "required": null,
             "requirement": null,
             "scenarios": [
               "planner.focus_flow",
@@ -854,8 +893,10 @@
             ],
             "id": "plan.collect-evidence.go-service.storage.scalar.planner.task_id",
             "member": null,
+            "offered": null,
             "prerequisites": [],
             "reason": "storage-inventory-incomplete",
+            "required": null,
             "requirement": null,
             "scenarios": [
               "planner.focus_flow",
@@ -875,8 +916,10 @@
             ],
             "id": "plan.collect-evidence.go-service.storage.scalar.planner.text",
             "member": null,
+            "offered": null,
             "prerequisites": [],
             "reason": "storage-inventory-incomplete",
+            "required": null,
             "requirement": null,
             "scenarios": [
               "planner.focus_flow",
@@ -896,10 +939,12 @@
             ],
             "id": "plan.collect-evidence.go-service.storage.value-object.planner.due_window",
             "member": null,
+            "offered": null,
             "prerequisites": [
               "planner.due_date"
             ],
             "reason": "storage-inventory-incomplete",
+            "required": null,
             "requirement": "planner.due_date",
             "scenarios": [
               "planner.focus_flow",
@@ -917,10 +962,12 @@
             "gates": [],
             "id": "plan.collect-evidence.php-laravel.behavioral.command.notify.purge_cache_cmd",
             "member": null,
+            "offered": null,
             "prerequisites": [
               "notify.user_id"
             ],
             "reason": "binding-evidence-absent",
+            "required": null,
             "requirement": "notify.user_id",
             "scenarios": [],
             "subject": "command:notify.purge_cache_cmd"
@@ -935,12 +982,14 @@
             "gates": [],
             "id": "plan.collect-evidence.php-laravel.behavioral.command.notify.rename_user_cmd",
             "member": null,
+            "offered": null,
             "prerequisites": [
               "notify.rename_user",
               "notify.text",
               "notify.user_id"
             ],
             "reason": "binding-evidence-absent",
+            "required": null,
             "requirement": "notify.rename_user",
             "scenarios": [],
             "subject": "command:notify.rename_user_cmd"
@@ -955,12 +1004,14 @@
             "gates": [],
             "id": "plan.collect-evidence.php-laravel.behavioral.command.planner.edit_task_cmd",
             "member": null,
+            "offered": null,
             "prerequisites": [
               "planner.edit_task",
               "planner.task_id",
               "planner.text"
             ],
             "reason": "binding-evidence-absent",
+            "required": null,
             "requirement": "planner.edit_task",
             "scenarios": [],
             "subject": "command:planner.edit_task_cmd"
@@ -975,10 +1026,12 @@
             "gates": [],
             "id": "plan.collect-evidence.php-laravel.behavioral.effect.notify.rename_user",
             "member": null,
+            "offered": null,
             "prerequisites": [
               "notify.user"
             ],
             "reason": "binding-evidence-absent",
+            "required": null,
             "requirement": "notify.user",
             "scenarios": [],
             "subject": "effect:notify.rename_user"
@@ -993,10 +1046,12 @@
             "gates": [],
             "id": "plan.collect-evidence.php-laravel.behavioral.effect.planner.edit_task",
             "member": null,
+            "offered": null,
             "prerequisites": [
               "planner.task"
             ],
             "reason": "binding-evidence-absent",
+            "required": null,
             "requirement": "planner.task",
             "scenarios": [],
             "subject": "effect:planner.edit_task"
@@ -1011,10 +1066,12 @@
             "gates": [],
             "id": "plan.collect-evidence.php-laravel.behavioral.query.planner.list_tasks",
             "member": null,
+            "offered": null,
             "prerequisites": [
               "planner.task"
             ],
             "reason": "binding-evidence-absent",
+            "required": null,
             "requirement": "planner.task",
             "scenarios": [],
             "subject": "query:planner.list_tasks"
@@ -1029,12 +1086,14 @@
             "gates": [],
             "id": "plan.collect-evidence.php-laravel.behavioral.query.planner.user_names",
             "member": null,
+            "offered": null,
             "prerequisites": [
               "notify.user",
               "planner.task",
               "planner.text"
             ],
             "reason": "binding-evidence-absent",
+            "required": null,
             "requirement": "notify.user",
             "scenarios": [],
             "subject": "query:planner.user_names"
@@ -1049,10 +1108,12 @@
             "gates": [],
             "id": "plan.collect-evidence.php-laravel.operational.effect.planner.archive_task.events.publication",
             "member": null,
+            "offered": null,
             "prerequisites": [
               "planner.task"
             ],
             "reason": "capability-absent",
+            "required": null,
             "requirement": "events.publication",
             "scenarios": [],
             "subject": "effect:planner.archive_task"
@@ -1069,10 +1130,12 @@
             ],
             "id": "plan.collect-evidence.php-laravel.operational.effect.planner.create_task.events.publication",
             "member": null,
+            "offered": null,
             "prerequisites": [
               "planner.task"
             ],
             "reason": "capability-absent",
+            "required": null,
             "requirement": "events.publication",
             "scenarios": [
               "planner.focus_flow"
@@ -1091,10 +1154,12 @@
             ],
             "id": "plan.collect-evidence.php-laravel.operational.effect.planner.schedule_write.events.publication",
             "member": null,
+            "offered": null,
             "prerequisites": [
               "planner.task"
             ],
             "reason": "capability-absent",
+            "required": null,
             "requirement": "events.publication",
             "scenarios": [
               "planner.schedule_flow"
@@ -1111,11 +1176,13 @@
             "gates": [],
             "id": "plan.collect-evidence.php-laravel.storage.entity.notify.user",
             "member": null,
+            "offered": null,
             "prerequisites": [
               "notify.text",
               "notify.user_id"
             ],
             "reason": "storage-inventory-incomplete",
+            "required": null,
             "requirement": "notify.text",
             "scenarios": [],
             "subject": "entity:notify.user"
@@ -1130,8 +1197,9 @@
             "gates": [
               "planner.native-scenario-gate"
             ],
-            "id": "plan.collect-evidence.php-laravel.storage.entity.planner.task.storage.transactions",
+            "id": "plan.collect-evidence.php-laravel.storage.entity.planner.task.storage.transactions.isolation.repeatable-read",
             "member": null,
+            "offered": null,
             "prerequisites": [
               "planner.due_date",
               "planner.due_window",
@@ -1140,6 +1208,10 @@
               "planner.text"
             ],
             "reason": "storage-policy-unknown",
+            "required": {
+              "kind": "isolation",
+              "value": "repeatable-read"
+            },
             "requirement": "storage.transactions",
             "scenarios": [
               "planner.focus_flow",
@@ -1159,8 +1231,10 @@
             ],
             "id": "plan.collect-evidence.php-laravel.storage.enum.planner.task_state",
             "member": null,
+            "offered": null,
             "prerequisites": [],
             "reason": "storage-inventory-incomplete",
+            "required": null,
             "requirement": null,
             "scenarios": [
               "planner.focus_flow",
@@ -1178,8 +1252,10 @@
             "gates": [],
             "id": "plan.collect-evidence.php-laravel.storage.scalar.notify.text",
             "member": null,
+            "offered": null,
             "prerequisites": [],
             "reason": "storage-inventory-incomplete",
+            "required": null,
             "requirement": null,
             "scenarios": [],
             "subject": "scalar:notify.text"
@@ -1194,8 +1270,10 @@
             "gates": [],
             "id": "plan.collect-evidence.php-laravel.storage.scalar.notify.user_id",
             "member": null,
+            "offered": null,
             "prerequisites": [],
             "reason": "storage-inventory-incomplete",
+            "required": null,
             "requirement": null,
             "scenarios": [],
             "subject": "scalar:notify.user_id"
@@ -1212,8 +1290,10 @@
             ],
             "id": "plan.collect-evidence.php-laravel.storage.scalar.planner.due_date",
             "member": null,
+            "offered": null,
             "prerequisites": [],
             "reason": "storage-inventory-incomplete",
+            "required": null,
             "requirement": null,
             "scenarios": [
               "planner.focus_flow",
@@ -1233,8 +1313,10 @@
             ],
             "id": "plan.collect-evidence.php-laravel.storage.scalar.planner.task_id",
             "member": null,
+            "offered": null,
             "prerequisites": [],
             "reason": "storage-inventory-incomplete",
+            "required": null,
             "requirement": null,
             "scenarios": [
               "planner.focus_flow",
@@ -1254,8 +1336,10 @@
             ],
             "id": "plan.collect-evidence.php-laravel.storage.scalar.planner.text",
             "member": null,
+            "offered": null,
             "prerequisites": [],
             "reason": "storage-inventory-incomplete",
+            "required": null,
             "requirement": null,
             "scenarios": [
               "planner.focus_flow",
@@ -1275,10 +1359,12 @@
             ],
             "id": "plan.collect-evidence.php-laravel.storage.value-object.planner.due_window",
             "member": null,
+            "offered": null,
             "prerequisites": [
               "planner.due_date"
             ],
             "reason": "storage-inventory-incomplete",
+            "required": null,
             "requirement": "planner.due_date",
             "scenarios": [
               "planner.focus_flow",
@@ -1296,6 +1382,7 @@
             ],
             "id": "plan.implement-hook.go-service.behavioral.command.planner.schedule_calculate",
             "member": null,
+            "offered": null,
             "prerequisites": [
               "planner.due_window",
               "planner.schedule_write",
@@ -1303,6 +1390,7 @@
               "planner.weight"
             ],
             "reason": "hook-missing",
+            "required": null,
             "requirement": "planner.due_window",
             "scenarios": [
               "planner.schedule_flow"
@@ -1319,10 +1407,12 @@
             ],
             "id": "plan.implement-hook.go-service.behavioral.effect.planner.schedule_write",
             "member": null,
+            "offered": null,
             "prerequisites": [
               "planner.task"
             ],
             "reason": "hook-missing",
+            "required": null,
             "requirement": "planner.task",
             "scenarios": [
               "planner.schedule_flow"
@@ -1341,11 +1431,13 @@
             ],
             "id": "plan.replace-mapping.go-service.operational.command.planner.focus_task.behavior.hook",
             "member": null,
+            "offered": null,
             "prerequisites": [
               "planner.create_task",
               "planner.task_id"
             ],
             "reason": "implicit-hook-unsupported",
+            "required": null,
             "requirement": "behavior.hook",
             "scenarios": [
               "planner.focus_flow"
@@ -1364,6 +1456,7 @@
             ],
             "id": "plan.replace-mapping.php-laravel.behavioral.command.planner.schedule_calculate.map.schedule-php",
             "member": null,
+            "offered": null,
             "prerequisites": [
               "planner.due_window",
               "planner.schedule_write",
@@ -1371,6 +1464,7 @@
               "planner.weight"
             ],
             "reason": "hook-foreign-partial",
+            "required": null,
             "requirement": "map.schedule-php",
             "scenarios": [
               "planner.schedule_flow"
@@ -1389,10 +1483,12 @@
             ],
             "id": "plan.replace-mapping.php-laravel.behavioral.effect.planner.schedule_write",
             "member": null,
+            "offered": null,
             "prerequisites": [
               "planner.task"
             ],
             "reason": "hook-foreign-partial",
+            "required": null,
             "requirement": "planner.task",
             "scenarios": [
               "planner.schedule_flow"
@@ -1409,10 +1505,22 @@
             "gates": [
               "planner.native-scenario-gate"
             ],
-            "id": "plan.review-storage-policy.php-laravel.storage.scalar.planner.weight.storage.decimal-policy",
+            "id": "plan.review-storage-policy.php-laravel.storage.scalar.planner.weight.storage.decimal-policy.decimal.exact.18.6",
             "member": null,
+            "offered": {
+              "kind": "decimal",
+              "precision": 10,
+              "scale": 2,
+              "value": "exact"
+            },
             "prerequisites": [],
             "reason": "storage-policy-loss",
+            "required": {
+              "kind": "decimal",
+              "precision": 18,
+              "scale": 6,
+              "value": "exact"
+            },
             "requirement": "storage.decimal-policy",
             "scenarios": [
               "planner.schedule_flow"
@@ -1429,11 +1537,13 @@
             "gates": [],
             "id": "plan.verify-scenario.go-service.behavioral.query.planner.count_focused.map.reading-go",
             "member": null,
+            "offered": null,
             "prerequisites": [
               "planner.task",
               "planner.task_state"
             ],
             "reason": "hook-foreign-mapped",
+            "required": null,
             "requirement": "map.reading-go",
             "scenarios": [],
             "subject": "query:planner.count_focused"
@@ -1450,10 +1560,12 @@
             ],
             "id": "plan.verify-scenario.php-laravel.behavioral.effect.planner.create_task",
             "member": null,
+            "offered": null,
             "prerequisites": [
               "planner.task"
             ],
             "reason": "hook-custom",
+            "required": null,
             "requirement": "planner.task",
             "scenarios": [
               "planner.focus_flow"
@@ -5902,7 +6014,7 @@
               "unknown": 9,
               "unsupported": 2,
               "verification": {
-                "notApplicable": 17,
+                "notApplicable": 0,
                 "recordedFail": 0,
                 "recordedPass": 0,
                 "untested": 14
@@ -5919,7 +6031,7 @@
               "unknown": 3,
               "unsupported": 0,
               "verification": {
-                "notApplicable": 27,
+                "notApplicable": 0,
                 "recordedFail": 0,
                 "recordedPass": 0,
                 "untested": 4
@@ -5936,7 +6048,7 @@
               "unknown": 9,
               "unsupported": 0,
               "verification": {
-                "notApplicable": 21,
+                "notApplicable": 0,
                 "recordedFail": 0,
                 "recordedPass": 0,
                 "untested": 10
@@ -5967,7 +6079,7 @@
         },
         {
           "blockers": 22,
-          "customObligations": 2,
+          "customObligations": 1,
           "destination": "php-laravel",
           "dimensions": {
             "behavioral": {
@@ -5981,7 +6093,7 @@
               "unknown": 7,
               "unsupported": 0,
               "verification": {
-                "notApplicable": 17,
+                "notApplicable": 0,
                 "recordedFail": 0,
                 "recordedPass": 1,
                 "untested": 13
@@ -5998,7 +6110,7 @@
               "unknown": 3,
               "unsupported": 0,
               "verification": {
-                "notApplicable": 28,
+                "notApplicable": 0,
                 "recordedFail": 0,
                 "recordedPass": 0,
                 "untested": 3
@@ -6015,7 +6127,7 @@
               "unknown": 9,
               "unsupported": 0,
               "verification": {
-                "notApplicable": 21,
+                "notApplicable": 0,
                 "recordedFail": 0,
                 "recordedPass": 0,
                 "untested": 10

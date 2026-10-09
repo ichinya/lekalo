@@ -182,38 +182,72 @@ if (report.recipeRef.digest !== recipeDigest) fail("report-recipe-pin", report.r
 }
 for (const summary of report.summaries) {
   for (const [dimension, entry] of Object.entries(summary.dimensions)) {
-    const rows = report.subjects
-      .flatMap((subject) => subject.rows)
-      .filter((row) => row.destination === summary.destination && row.dimension === dimension);
+    // Subject-based oracle: the recipe's class counts are a partition of
+    // eligible applicable SUBJECTS. A subject with several obligations
+    // in one dimension counts once, at its conservative primary class
+    // (recipe precedence), while every row stays in the report.
+    const camel = {
+      "portable": "portable",
+      "supported-with-mapping": "supportedWithMapping",
+      "partial": "partial",
+      "target-specific": "targetSpecific",
+      "unsupported": "unsupported",
+      "unknown": "unknown",
+      "non-applicable": "nonApplicable",
+    };
+    const rankOf = {
+      "unsupported": 0,
+      "partial": 1,
+      "unknown": 2,
+      "target-specific": 3,
+      "supported-with-mapping": 4,
+      "portable": 5,
+    };
+    const verificationRank = { "recorded-fail": 3, "recorded-pass": 2, "untested": 1, "not-applicable": 0 };
+    const verificationCamel = {
+      "untested": "untested",
+      "recorded-pass": "recordedPass",
+      "recorded-fail": "recordedFail",
+      "not-applicable": "notApplicable",
+    };
+    const subjectsHere = report.subjects
+      .map((subject) => ({
+        rows: subject.rows.filter(
+          (row) => row.destination === summary.destination && row.dimension === dimension,
+        ),
+      }))
+      .filter((entry) => entry.rows.length > 0);
     const buckets = { portable: 0, supportedWithMapping: 0, partial: 0, targetSpecific: 0, unsupported: 0, unknown: 0, nonApplicable: 0 };
-    for (const row of rows) {
-      if (row.classification === "portable") buckets.portable += 1;
-      else if (row.classification === "supported-with-mapping") buckets.supportedWithMapping += 1;
-      else if (row.classification === "partial") buckets.partial += 1;
-      else if (row.classification === "target-specific") buckets.targetSpecific += 1;
-      else if (row.classification === "unsupported") buckets.unsupported += 1;
-      else if (row.classification === "unknown") buckets.unknown += 1;
-      else buckets.nonApplicable += 1;
+    const verification = { untested: 0, recordedPass: 0, recordedFail: 0, notApplicable: 0 };
+    for (const { rows } of subjectsHere) {
+      const applicable = rows.filter((row) => row.classification !== "non-applicable");
+      if (applicable.length === 0) {
+        buckets.nonApplicable += 1;
+        continue;
+      }
+      const primary = applicable
+        .map((row) => row.classification)
+        .reduce((worst, classification) => (rankOf[classification] < rankOf[worst] ? classification : worst));
+      buckets[camel[primary]] += 1;
+      const worstVerification = applicable
+        .map((row) => row.verification)
+        .reduce((worst, candidate) => (verificationRank[candidate] > verificationRank[worst] ? candidate : worst));
+      verification[verificationCamel[worstVerification]] += 1;
     }
     for (const [key, value] of Object.entries(buckets)) {
       if (entry[key] !== value) fail("summary-arithmetic", `${summary.destination}/${dimension}/${key}: ${entry[key]} vs ${value}`);
     }
-    const applicable = rows.length - buckets.nonApplicable;
-    if (entry.eligibleApplicable !== applicable) fail("summary-denominator", `${summary.destination}/${dimension}`);
+    const applicableSubjects = subjectsHere.length - buckets.nonApplicable;
+    if (entry.eligibleApplicable !== applicableSubjects) {
+      fail("summary-denominator", `${summary.destination}/${dimension}: ${entry.eligibleApplicable} vs ${applicableSubjects} subjects`);
+    }
     if (dimension === "structural") {
-      if (applicable === 0) {
+      if (applicableSubjects === 0) {
         if (entry.structuralPortable !== null) fail("ratio-zero-denominator", summary.destination);
       } else if (entry.structuralPortable.numerator !== buckets.portable
-        || entry.structuralPortable.denominator !== applicable) {
-        fail("ratio-arithmetic", `${summary.destination}: ${JSON.stringify(entry.structuralPortable)} vs ${buckets.portable}/${applicable}`);
+        || entry.structuralPortable.denominator !== applicableSubjects) {
+        fail("ratio-arithmetic", `${summary.destination}: ${JSON.stringify(entry.structuralPortable)} vs ${buckets.portable}/${applicableSubjects}`);
       }
-    }
-    const verification = { untested: 0, recordedPass: 0, recordedFail: 0, notApplicable: 0 };
-    for (const row of rows) {
-      if (row.verification === "untested") verification.untested += 1;
-      else if (row.verification === "recorded-pass") verification.recordedPass += 1;
-      else if (row.verification === "recorded-fail") verification.recordedFail += 1;
-      else verification.notApplicable += 1;
     }
     for (const [key, value] of Object.entries(verification)) {
       if (entry.verification[key] !== value) fail("verification-arithmetic", `${summary.destination}/${dimension}/${key}`);
@@ -227,14 +261,49 @@ for (const summary of report.summaries) {
     .flatMap((subject) => subject.rows)
     .filter((row) => row.destination === summary.destination && row.classification === "unknown").length;
   if (summary.unknowns !== unknowns) fail("unknown-count", summary.destination);
+  // Custom hooks count distinct primary carriers (command|query
+  // subjects); an effect joining its trigger's custom outcome never
+  // doubles one hook.
+  const customHooks = new Set(
+    report.subjects
+      .filter((subject) => subject.subject.startsWith("command:") || subject.subject.startsWith("query:"))
+      .filter((subject) =>
+        subject.rows.some(
+          (row) =>
+            row.destination === summary.destination
+            && row.classification === "supported-with-mapping"
+            && row.binding === "custom",
+        ),
+      )
+      .map((subject) => subject.subject),
+  );
+  if (summary.customObligations !== customHooks.size) {
+    fail("custom-hook-count", `${summary.destination}: ${summary.customObligations} vs ${customHooks.size}`);
+  }
 }
 
 // 8. Unsupported never collapses into unknown: the Go schedule hook is
-//    an explicit, blocking verdict from the complete inventory.
+//    an explicit, blocking verdict from the complete inventory — and one
+//    absent hook reached through its command and its triggering effect
+//    counts exactly one missing implementation (the effect rows keep
+//    their own planning rows, never their own implementation count).
 const schedule = report.subjects.find((subject) => subject.subject === "command:planner.schedule_calculate");
 const goSchedule = schedule.rows.find((row) => row.destination === "go-service" && row.dimension === "behavioral");
 if (goSchedule.classification !== "unsupported" || goSchedule.binding !== "missing" || !goSchedule.blocking) {
   fail("go-schedule-state", JSON.stringify(goSchedule));
+}
+const effectSchedule = report.subjects.find((subject) => subject.subject === "effect:planner.schedule_write");
+const goEffectSchedule = effectSchedule
+  ? effectSchedule.rows.find((row) => row.destination === "go-service" && row.dimension === "behavioral")
+  : undefined;
+const goImplementHookRows = report.migrationSurface.rows.filter(
+  (row) => row.destination === "go-service" && row.action === "implement-hook",
+);
+if (goEffectSchedule && goEffectSchedule.classification === "unsupported") {
+  if (goImplementHookRows.length < 2) fail("effect-row-dropped", JSON.stringify(goImplementHookRows));
+}
+if (report.migrationSurface.missingImplementations !== 1) {
+  fail("missing-hook-double-count", String(report.migrationSurface.missingImplementations));
 }
 const highStructural = report.summaries.find((summary) => summary.destination === "go-service");
 if (highStructural.dimensions.structural.portable === 0 || highStructural.blockers === 0) {
@@ -946,6 +1015,106 @@ const withEvidence = (temp, mutate) => {
     }
     const denied = tryRun(["--json", "portability", "--check"], temp);
     if (denied.code !== 3) fail("f11-check-denied", String(denied.code));
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
+}
+
+// F4b — an unsupported storage policy is a hard blocker with concrete
+// migration work: it emits a planning row carrying the exact policy
+// pair, and the row count can never be zero beside a known blocker.
+{
+  const temp = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
+  try {
+    cpSync(project, temp, { recursive: true });
+    withEvidence(temp, (manifest) => {
+      const offered = manifest.storageOffered.find(
+        (entry) => entry.targetId === "php-laravel" && entry.policy.kind === "decimal",
+      );
+      offered.policy = { kind: "decimal", value: "unsupported" };
+    });
+    const run = tryRun(["--json", "portability", "--to", "php-laravel", "--symbol", "planner.weight", "--evidence", "reports/portability-evidence.json"], temp);
+    if (run.code !== 0) fail("f4b-exit", String(run.code));
+    const report = JSON.parse(run.stdout).portability;
+    const weight = report.subjects.find((s) => s.subject === "scalar:planner.weight");
+    const storageRow = weight.rows.find((r) => r.destination === "php-laravel" && r.dimension === "storage");
+    if (storageRow.classification !== "unsupported" || !storageRow.blocking) fail("f4b-row", JSON.stringify(storageRow));
+    const planningRow = report.migrationSurface.rows.find(
+      (row) => row.destination === "php-laravel" && row.subject === "scalar:planner.weight" && row.dimension === "storage",
+    );
+    if (!planningRow) fail("f4b-no-planning-row", JSON.stringify(report.migrationSurface));
+    if (planningRow.action !== "review-storage-policy") fail("f4b-action", JSON.stringify(planningRow));
+    if (!planningRow.required || planningRow.required.kind !== "decimal" || planningRow.required.precision !== 18) {
+      fail("f4b-required-policy", JSON.stringify(planningRow));
+    }
+    if (report.migrationSurface.unresolvedObligations === 0) fail("f4b-unresolved-zero", "hard blocker with zero unresolved work");
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
+}
+
+// F10b — planning keeps the exact obligation identity: two same-kind
+// decimal obligations produce two rows whose ids are textually distinct
+// through their required policies (no suffix-collision) and whose
+// required fields carry the distinct precision/scale pairs.
+{
+  const temp = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
+  try {
+    cpSync(project, temp, { recursive: true });
+    withEvidence(temp, (manifest) => {
+      manifest.storageRequired.push({
+        subject: "scalar:planner.weight",
+        policy: { kind: "decimal", value: "exact", precision: 16, scale: 4 },
+      });
+    });
+    const run = tryRun(["--json", "portability", "--to", "php-laravel", "--symbol", "planner.weight", "--evidence", "reports/portability-evidence.json"], temp);
+    if (run.code !== 0) fail("f10b-exit", String(run.code));
+    const report = JSON.parse(run.stdout).portability;
+    const reviewRows = report.migrationSurface.rows.filter(
+      (row) => row.destination === "php-laravel" && row.subject === "scalar:planner.weight" && row.action === "review-storage-policy",
+    );
+    if (reviewRows.length !== 2) fail("f10b-merged", JSON.stringify(reviewRows));
+    const ids = reviewRows.map((row) => row.id);
+    if (new Set(ids).size !== 2) fail("f10b-id-collision", JSON.stringify(ids));
+    if (ids.some((id) => /\.\d$/.test(id) === false)) {
+      // the ids must distinguish through the policy identity itself
+      if (ids[0] === ids[1]) fail("f10b-suffix-only", JSON.stringify(ids));
+    }
+    const precisions = reviewRows.map((row) => row.required && row.required.precision).sort();
+    if (JSON.stringify(precisions) !== JSON.stringify([16, 18])) fail("f10b-policy-loss", JSON.stringify(reviewRows));
+    const offered = reviewRows.map((row) => row.offered && row.offered.precision);
+    if (offered.some((value) => value !== 10)) fail("f10b-offered-loss", JSON.stringify(reviewRows));
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
+}
+
+// F13 — target-specific required work blocks the strict gate: a
+// target-specific subject emits its bind-target replacement obligation
+// AND denies --check; the risk tag never greens unresolved required
+// work. The probe runs without the evidence manifest (a model
+// mutation changes the IR pin), which the structural dimension and the
+// planning surface do not need.
+{
+  const temp = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
+  try {
+    cpSync(project, temp, { recursive: true });
+    const entities = join(temp, "lekalo/modules/planner/entities.yaml");
+    const text = readFileSync(entities, "utf8").replace("portability: portable", "portability: target-specific");
+    writeFileSync(entities, text);
+    const run = tryRun(["--json", "portability", "--to", "go-service", "--symbol", "planner.weight"], temp);
+    if (run.code !== 0) fail("f13-exit", String(run.code));
+    const report = JSON.parse(run.stdout).portability;
+    const weight = report.subjects.find((s) => s.subject === "scalar:planner.weight");
+    const structural = weight.rows.find((r) => r.destination === "go-service" && r.dimension === "structural");
+    if (structural.classification !== "target-specific") fail("f13-tag", JSON.stringify(structural));
+    if (!structural.blocking) fail("f13-nonblocking", JSON.stringify(structural));
+    const bindTarget = report.migrationSurface.rows.find(
+      (row) => row.destination === "go-service" && row.subject === "scalar:planner.weight" && row.action === "bind-target",
+    );
+    if (!bindTarget) fail("f13-bind-target", JSON.stringify(report.migrationSurface.rows));
+    const denied = tryRun(["--json", "portability", "--to", "go-service", "--symbol", "planner.weight", "--check"], temp);
+    if (denied.code !== 3) fail("f13-check-green", String(denied.code));
   } finally {
     rmSync(temp, { recursive: true, force: true });
   }

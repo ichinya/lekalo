@@ -624,22 +624,27 @@ fn structural(
     subject: &super::requirements::Subject,
     destination: &str,
 ) -> ObligationRow {
-    let base = |classification, reason: &'static str| ObligationRow {
+    let base = |classification, blocking, reason: &'static str| ObligationRow {
         destination: destination.to_owned(),
         dimension: Dimension::Structural,
         classification,
         verification: Verification::Untested,
         binding: None,
-        blocking: false,
+        blocking,
         reason: reason.to_owned(),
         required: None,
         offered: None,
         evidence_refs: vec![],
         witnesses: vec![],
     };
+    // A target-specific fact carries an explicit replacement obligation
+    // for the selected destination: the bind-target planning work it
+    // emits is required work, so the strict gate must deny until a
+    // destination replacement is qualified. The risk tag stays.
     if subject.declared_portability == Some("target-specific") {
         return base(
             Classification::TargetSpecific,
+            true,
             reasons::DECLARED_TARGET_SPECIFIC,
         );
     }
@@ -658,14 +663,16 @@ fn structural(
     }) {
         return base(
             Classification::TargetSpecific,
+            true,
             reasons::DEPENDENCY_TARGET_SPECIFIC,
         );
     }
     if subject.declared_portability == Some("portable") {
-        return base(Classification::Portable, reasons::DECLARED_PORTABLE);
+        return base(Classification::Portable, false, reasons::DECLARED_PORTABLE);
     }
     base(
         Classification::Portable,
+        false,
         reasons::NO_TARGET_SPECIFIC_WITNESS,
     )
 }
@@ -1499,8 +1506,24 @@ fn operational(
     rows
 }
 
-/// The per-destination dimension summaries with the published
-/// structural ratio and the verification partitions.
+/// The conservative verification precedence: a recorded failure dominates
+/// a pass, a pass dominates untested.
+fn verification_rank(verification: Verification) -> u8 {
+    match verification {
+        Verification::RecordedFail => 3,
+        Verification::RecordedPass => 2,
+        Verification::Untested => 1,
+        Verification::NotApplicable => 0,
+    }
+}
+
+/// The per-destination dimension summaries. The recipe's class counts
+/// are a partition of eligible applicable SUBJECTS, not obligation rows:
+/// a subject with several obligations in one dimension counts exactly
+/// once, at its conservative primary class (recipe precedence), while
+/// every obligation row stays visible in the report and keeps charging
+/// the row counters. The structural ratio's denominator is therefore
+/// the distinct-subject set its name claims.
 fn summarize(destinations: &[TargetInput], subjects: &[SubjectRow]) -> Vec<Summary> {
     destinations
         .iter()
@@ -1511,44 +1534,85 @@ fn summarize(destinations: &[TargetInput], subjects: &[SubjectRow]) -> Vec<Summa
             }
             let mut blockers = 0;
             let mut unknowns = 0;
-            let mut custom = 0;
+            let mut custom_hooks: BTreeSet<String> = BTreeSet::new();
             for subject in subjects {
-                for row in &subject.rows {
-                    if row.destination != destination.target_id {
+                for dimension in Dimension::ALL {
+                    let rows: Vec<&ObligationRow> = subject
+                        .rows
+                        .iter()
+                        .filter(|row| {
+                            row.destination == destination.target_id && row.dimension == dimension
+                        })
+                        .collect();
+                    if rows.is_empty() {
                         continue;
                     }
-                    let Some(entry) = dimensions.get_mut(&row.dimension) else {
+                    let Some(entry) = dimensions.get_mut(&dimension) else {
                         continue;
                     };
-                    match row.classification {
-                        Classification::Portable => entry.portable += 1,
-                        Classification::SupportedWithMapping => {
-                            entry.supported_with_mapping += 1;
-                            if matches!(row.binding, Some(Binding::Custom)) {
-                                custom += 1;
-                            }
-                        }
-                        Classification::Partial => entry.partial += 1,
-                        Classification::TargetSpecific => entry.target_specific += 1,
-                        Classification::Unsupported => entry.unsupported += 1,
-                        Classification::Unknown => entry.unknown += 1,
-                        Classification::NonApplicable => entry.non_applicable += 1,
-                    }
-                    if row.classification != Classification::NonApplicable {
+                    let applicable: Vec<&ObligationRow> = rows
+                        .iter()
+                        .copied()
+                        .filter(|row| row.classification != Classification::NonApplicable)
+                        .collect();
+                    if applicable.is_empty() {
+                        // A subject whose every row in the dimension is
+                        // non-applicable partitions into non_applicable
+                        // exactly once.
+                        entry.non_applicable += 1;
+                    } else {
                         entry.eligible_applicable += 1;
+                        let primary = applicable
+                            .iter()
+                            .map(|row| row.classification)
+                            .min_by_key(|classification| classification.rank())
+                            .expect("non-empty applicable rows");
+                        match primary {
+                            Classification::Portable => entry.portable += 1,
+                            Classification::SupportedWithMapping => {
+                                entry.supported_with_mapping += 1
+                            }
+                            Classification::Partial => entry.partial += 1,
+                            Classification::TargetSpecific => entry.target_specific += 1,
+                            Classification::Unsupported => entry.unsupported += 1,
+                            Classification::Unknown => entry.unknown += 1,
+                            Classification::NonApplicable => unreachable!(),
+                        }
+                        let verification = applicable
+                            .iter()
+                            .map(|row| row.verification)
+                            .max_by_key(|verification| verification_rank(*verification))
+                            .expect("non-empty applicable rows");
+                        match verification {
+                            Verification::Untested => entry.verification.untested += 1,
+                            Verification::RecordedPass => entry.verification.recorded_pass += 1,
+                            Verification::RecordedFail => entry.verification.recorded_fail += 1,
+                            Verification::NotApplicable => entry.verification.not_applicable += 1,
+                        }
                     }
-                    match row.verification {
-                        Verification::Untested => entry.verification.untested += 1,
-                        Verification::RecordedPass => entry.verification.recorded_pass += 1,
-                        Verification::RecordedFail => entry.verification.recorded_fail += 1,
-                        Verification::NotApplicable => entry.verification.not_applicable += 1,
+                    // The aggregate row counters stay row-based: every
+                    // emitted obligation charges the blockers and
+                    // unknowns exactly once.
+                    for row in &rows {
+                        if row.blocking {
+                            blockers += 1;
+                        }
+                        if row.classification == Classification::Unknown {
+                            unknowns += 1;
+                        }
                     }
-                    if row.blocking {
-                        blockers += 1;
-                    }
-                    if row.classification == Classification::Unknown {
-                        unknowns += 1;
-                    }
+                }
+                // Custom hooks are counted per distinct primary carrier
+                // (the command or query): an effect that joins its
+                // trigger's custom outcome never doubles one hook.
+                if subject.rows.iter().any(|row| {
+                    row.destination == destination.target_id
+                        && row.classification == Classification::SupportedWithMapping
+                        && matches!(row.binding, Some(Binding::Custom))
+                }) && (subject.subject.starts_with("command:")
+                    || subject.subject.starts_with("query:"))
+                {
+                    custom_hooks.insert(subject.subject.clone());
                 }
             }
             for (dimension, entry) in dimensions.iter_mut() {
@@ -1564,7 +1628,7 @@ fn summarize(destinations: &[TargetInput], subjects: &[SubjectRow]) -> Vec<Summa
                 dimensions,
                 blockers,
                 unknowns,
-                custom_obligations: custom,
+                custom_obligations: custom_hooks.len() as u64,
             }
         })
         .collect()

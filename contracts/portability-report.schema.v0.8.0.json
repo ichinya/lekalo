@@ -1153,6 +1153,26 @@
             }
           ]
         },
+        "required": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/policy"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offered": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/policy"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "prerequisites": {
           "type": "array",
           "maxItems": 32,
@@ -1198,6 +1218,8 @@
         "action",
         "reason",
         "requirement",
+        "required",
+        "offered",
         "prerequisites",
         "scenarios",
         "gates",

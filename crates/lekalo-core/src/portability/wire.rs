@@ -723,6 +723,12 @@ pub struct PlanningRow {
     pub action: Action,
     pub reason: String,
     pub requirement: Option<String>,
+    /// The exact required policy of the storage obligation this row
+    /// carries, so distinct same-kind policy obligations stay
+    /// distinguishable at the planning surface.
+    pub required: Option<Policy>,
+    /// The exact offered policy, when one was compared.
+    pub offered: Option<Policy>,
     pub prerequisites: Vec<String>,
     pub scenarios: Vec<String>,
     pub gates: Vec<String>,

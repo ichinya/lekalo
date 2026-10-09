@@ -164,7 +164,13 @@ pub(super) fn migration_surface(
     affected: &AffectedJoins,
     truncated: bool,
 ) -> MigrationSurface {
+    // One missing implementation per distinct (destination, hook):
+    // an effect that joins its trigger's already-counted outcome never
+    // doubles the count for one absent hook. Only the primary hook
+    // carrier (the command or query) counts; effect rows keep their own
+    // planning rows but not their own implementation count.
     let mut missing = 0u64;
+    let mut missing_hooks: BTreeSet<(String, String)> = BTreeSet::new();
     let mut mapped: BTreeSet<String> = BTreeSet::new();
     let mut storage_reviews: BTreeSet<String> = BTreeSet::new();
     let mut unresolved = 0u64;
@@ -186,7 +192,11 @@ pub(super) fn migration_surface(
             match row.classification {
                 Classification::Unsupported => {
                     if row.dimension == Dimension::Behavioral {
-                        missing += 1;
+                        if matches!(subject.kind, "command" | "query")
+                            && missing_hooks.insert((row.destination.clone(), subject.id.clone()))
+                        {
+                            missing += 1;
+                        }
                         rows.push(planning_row(
                             subject_row,
                             row,
@@ -194,6 +204,19 @@ pub(super) fn migration_surface(
                             gate_refs.clone(),
                             scenarios.clone(),
                             vec![],
+                        ));
+                    } else if row.dimension == Dimension::Storage {
+                        // An explicitly unsupported storage policy is a
+                        // hard blocker with concrete migration work, not
+                        // an obligation that disappears from planning.
+                        storage_reviews.insert(subject.typed_id.clone());
+                        rows.push(planning_row(
+                            subject_row,
+                            row,
+                            Action::ReviewStoragePolicy,
+                            gate_refs.clone(),
+                            scenarios.clone(),
+                            vec!["storage-offered".into()],
                         ));
                     }
                 }
@@ -367,20 +390,38 @@ fn planning_row(
     // and silently merges their obligations.
     let destination_part = row.destination.as_str();
     // The obligation identity joins the id when the row carries one,
-    // keeping per-policy and per-requirement rows injective.
+    // keeping per-policy and per-requirement rows injective. A storage
+    // row's exact required policy joins too, so two same-kind policy
+    // obligations (decimal 18/6 vs decimal 16/4) are textually distinct
+    // without occurrence suffixes.
     let requirement_part = row
         .evidence_refs
         .first()
         .map(|requirement| format!(".{}", requirement.replace(':', ".")))
         .unwrap_or_default();
+    let policy_part = row
+        .required
+        .as_ref()
+        .map(|policy| {
+            let mut parts = vec![policy.kind.clone(), policy.value.clone()];
+            if let Some(precision) = policy.precision {
+                parts.push(precision.to_string());
+            }
+            if let Some(scale) = policy.scale {
+                parts.push(scale.to_string());
+            }
+            format!(".{}", parts.join("."))
+        })
+        .unwrap_or_default();
     PlanningRow {
         id: format!(
-            "plan.{}.{}.{}.{}{}",
+            "plan.{}.{}.{}.{}{}{}",
             action.as_str(),
             destination_part,
             row.dimension.as_str(),
             subject_row.subject.replace(':', "."),
-            requirement_part
+            requirement_part,
+            policy_part
         ),
         subject: subject_row.subject.clone(),
         member: subject_row.member.clone(),
@@ -393,6 +434,8 @@ fn planning_row(
             .first()
             .cloned()
             .or_else(|| subject_row.requirements.first().cloned()),
+        required: row.required.clone(),
+        offered: row.offered.clone(),
         prerequisites: subject_row.requirements.clone(),
         scenarios,
         gates,
