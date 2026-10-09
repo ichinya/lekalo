@@ -545,6 +545,49 @@ fn valid_digest(text: &str) -> bool {
     text.len() == 64 && text.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
+/// Target-defined open(2) flag values for the ownership open (finding
+/// r4 10): the former single Linux spelling silently disabled the
+/// no-follow protection on Apple targets — Linux `0o400000` is Darwin
+/// `O_NOCTTY`, and the close-on-exec values differ too (XNU fcntl.h:
+/// `O_NOFOLLOW` `0x00000100`, `O_CLOEXEC` `0x01000000`). Each supported
+/// target states its own ABI values; any other unix target refuses to
+/// compile instead of silently misflagging the open.
+#[cfg(unix)]
+mod open_flags {
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    pub const NOFOLLOW: i32 = 0o400000; // 0x020000
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    pub const CLOEXEC: i32 = 0o2000000; // 0x080000
+    #[cfg(any(
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "tvos",
+        target_os = "visionos",
+        target_os = "watchos"
+    ))]
+    pub const NOFOLLOW: i32 = 0x0000_0100;
+    #[cfg(any(
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "tvos",
+        target_os = "visionos",
+        target_os = "watchos"
+    ))]
+    pub const CLOEXEC: i32 = 0x0100_0000;
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "tvos",
+        target_os = "visionos",
+        target_os = "watchos"
+    )))]
+    std::compile_error!(
+        "unsupported unix target: no verified O_NOFOLLOW/O_CLOEXEC values for this ABI"
+    );
+}
+
 /// The conflict-side digest spelling of a deleted pinned source
 /// (finding r2 12): the 64-zero spelling that can never equal a real
 /// SHA-256 of existing bytes, so the conflict is always reported.
@@ -1264,9 +1307,13 @@ impl FormatWrite {
             // OpenOptions local alive across `open` (finding r3 2: the
             // single chained expression previously borrowed a dropped
             // temporary and failed to compile on the unix target with
-            // E0716).
-            const O_NOFOLLOW: i32 = 0o400000;
-            const O_CLOEXEC: i32 = 0o2000000;
+            // E0716). The flag values are target ABI constants, not
+            // portable spellings (finding r4 10): Linux and the Apple
+            // targets disagree, so each target states its own values
+            // and any other unix target fails to compile instead of
+            // silently misflagging the open.
+            const O_NOFOLLOW: i32 = open_flags::NOFOLLOW;
+            const O_CLOEXEC: i32 = open_flags::CLOEXEC;
             let mut builder = std::fs::OpenOptions::new();
             let options = builder
                 .read(true)
