@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "dev.lekalo.mcp-tool-inspect-output@0.8.0",
   "title": "Lekalo MCP tool output: inspect",
-  "description": "Issue #33 closed result envelope of the inspect tool. status \"valid\" carries the preserved core receipt in \"result\"; every other status carries the typed \"failure\" branch and never a fabricated payload. Presence of result/failure per status, and refusal classes, are enforced semantically by the server and by scripts/test-mcp-contracts.mjs.",
+  "description": "Issue #33 closed result envelope of the inspect tool. status \"valid\" carries the preserved core receipt in \"result\"; every other status carries the typed \"failure\" branch and never a fabricated payload. The status/result|failure coherence is the published conditional; embedded core payloads are the exact bundled upstream definitions.",
   "type": "object",
   "properties": {
     "schemaVersion": {
@@ -77,9 +77,9 @@
       "type": "array",
       "maxItems": 64,
       "items": {
-        "type": "object"
+        "$ref": "#/$defs/diagnosticItem"
       },
-      "description": "Wire diagnostic items (lekalo/diagnostic/v0.2.16) resolved against dev.lekalo.diagnostic-registry@0.8.0; scripts/test-mcp-contracts.mjs validates every item against the published diagnostic schema and the union registry."
+      "description": "Wire diagnostic items (lekalo/diagnostic/v0.2.16) resolved against dev.lekalo.diagnostic-registry@0.8.0; every item is the closed published projection bundled under $defs.diagnosticItem."
     },
     "result": {
       "type": "object",
@@ -91,7 +91,7 @@
           "const": "dev.lekalo.inspect@0.2.16"
         },
         "inspect": {
-          "type": "object"
+          "$ref": "#/$defs/inspect.Root"
         }
       },
       "required": [
@@ -146,5 +146,1708 @@
     "contractPins",
     "diagnostics"
   ],
-  "additionalProperties": false
+  "additionalProperties": false,
+  "if": {
+    "properties": {
+      "status": {
+        "const": "valid"
+      }
+    },
+    "required": [
+      "status"
+    ]
+  },
+  "then": {
+    "properties": {
+      "result": {
+        "$ref": "#/$defs/_anchor"
+      },
+      "failure": {
+        "not": {}
+      }
+    },
+    "required": [
+      "result"
+    ]
+  },
+  "else": {
+    "properties": {
+      "failure": {
+        "$ref": "#/$defs/_anchor"
+      },
+      "result": {
+        "not": {}
+      }
+    },
+    "required": [
+      "failure"
+    ]
+  },
+  "$defs": {
+    "_anchor": {},
+    "validation.counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "error",
+        "warning",
+        "info"
+      ],
+      "properties": {
+        "error": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "warning": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "info": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "validation.report": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "profileVersion",
+        "registryVersion",
+        "rulesEnabled",
+        "counts"
+      ],
+      "properties": {
+        "profile": {
+          "description": "The closed built-in profile id that ran (`default` or `strict`).",
+          "type": "string",
+          "enum": [
+            "default",
+            "strict"
+          ]
+        },
+        "profileVersion": {
+          "description": "The exact profile document version that ran.",
+          "const": "0.6.4"
+        },
+        "registryVersion": {
+          "description": "The exact diagnostic registry version the findings resolve against.",
+          "const": "0.6.4"
+        },
+        "moduleScope": {
+          "description": "Present only for a `--module`-scoped run; the module semantic id scope.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "rulesEnabled": {
+          "description": "The number of rules the profile enabled.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4096
+        },
+        "counts": {
+          "$ref": "#/$defs/validation.counts"
+        }
+      }
+    },
+    "validation.diagnostic": {
+      "ruleId": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
+        "maxLength": 128
+      },
+      "diagnosticCode": {
+        "type": "string",
+        "pattern": "^LEK-[A-Z][A-Z0-9]{1,11}-[0-9]{3}$"
+      },
+      "symbolId": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){1,2}$",
+        "maxLength": 256
+      },
+      "boundedText": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      },
+      "logicalPath": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9._-]+)*$",
+        "maxLength": 1024,
+        "not": {
+          "pattern": "(^|/)\\.\\.?(/|$)"
+        }
+      },
+      "position": {
+        "type": "object",
+        "properties": {
+          "byte": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "column": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "byte",
+          "line",
+          "column"
+        ],
+        "additionalProperties": false
+      },
+      "range": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "$ref": "#/$defs/validation.diagnostic/position"
+          },
+          "end": {
+            "$ref": "#/$defs/validation.diagnostic/position"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "additionalProperties": false
+      },
+      "source": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "$ref": "#/$defs/validation.diagnostic/logicalPath"
+          },
+          "range": {
+            "$ref": "#/$defs/validation.diagnostic/range"
+          }
+        },
+        "additionalProperties": false,
+        "minProperties": 1
+      },
+      "dataObject": {
+        "type": "object",
+        "maxProperties": 16,
+        "propertyNames": {
+          "pattern": "^[A-Za-z][A-Za-z0-9]{0,31}$"
+        },
+        "additionalProperties": {
+          "$ref": "#/$defs/validation.diagnostic/dataValue"
+        }
+      },
+      "dataValue": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 256
+          },
+          {
+            "type": "integer",
+            "minimum": 0
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "object",
+            "maxProperties": 16,
+            "propertyNames": {
+              "pattern": "^[A-Za-z][A-Za-z0-9]{0,31}$"
+            },
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 256
+                },
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "object",
+                  "maxProperties": 16,
+                  "propertyNames": {
+                    "pattern": "^[A-Za-z][A-Za-z0-9]{0,31}$"
+                  },
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 256
+                      },
+                      {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      {
+                        "type": "boolean"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 256
+                },
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            }
+          },
+          {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "object",
+              "maxProperties": 16,
+              "propertyNames": {
+                "pattern": "^[A-Za-z][A-Za-z0-9]{0,31}$"
+              },
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "location": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "$ref": "#/$defs/validation.diagnostic/logicalPath"
+          },
+          "range": {
+            "$ref": "#/$defs/validation.diagnostic/range"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
+      },
+      "relatedLocations": {
+        "type": "array",
+        "maxItems": 32,
+        "items": {
+          "type": "object",
+          "properties": {
+            "relation": {
+              "$ref": "#/$defs/validation.diagnostic/ruleId"
+            },
+            "message_id": {
+              "$ref": "#/$defs/validation.diagnostic/ruleId"
+            },
+            "location": {
+              "$ref": "#/$defs/validation.diagnostic/location"
+            }
+          },
+          "required": [
+            "relation",
+            "message_id",
+            "location"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "causes": {
+        "type": "array",
+        "maxItems": 8,
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/validation.diagnostic/ruleId"
+            },
+            "code": {
+              "$ref": "#/$defs/validation.diagnostic/diagnosticCode"
+            },
+            "message_id": {
+              "$ref": "#/$defs/validation.diagnostic/ruleId"
+            },
+            "message": {
+              "$ref": "#/$defs/validation.diagnostic/boundedText"
+            },
+            "data": {
+              "$ref": "#/$defs/validation.diagnostic/dataObject"
+            },
+            "provider": {
+              "$ref": "#/$defs/validation.diagnostic/providerMetadata"
+            }
+          },
+          "required": [
+            "id",
+            "code",
+            "message_id",
+            "message",
+            "data"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "fixes": {
+        "type": "array",
+        "maxItems": 16,
+        "items": {
+          "type": "object",
+          "properties": {
+            "fix_id": {
+              "$ref": "#/$defs/validation.diagnostic/ruleId"
+            },
+            "applicability": {
+              "enum": [
+                "safe",
+                "unsafe",
+                "breaking"
+              ]
+            },
+            "message": {
+              "$ref": "#/$defs/validation.diagnostic/boundedText"
+            },
+            "data": {
+              "$ref": "#/$defs/validation.diagnostic/dataObject"
+            },
+            "target": {
+              "$ref": "#/$defs/validation.diagnostic/location"
+            }
+          },
+          "required": [
+            "fix_id",
+            "applicability",
+            "message"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "providerMetadata": {
+        "type": "object",
+        "maxProperties": 8,
+        "propertyNames": {
+          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+:[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "maxLength": 128
+        },
+        "additionalProperties": {
+          "type": "object",
+          "properties": {
+            "original_code": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[\\x21-\\x7E]+$"
+            }
+          },
+          "required": [
+            "original_code"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "diagnosticItem": {
+      "description": "One closed `lekalo/diagnostic/v0.2.16` item: a faithful projection of the governing `contracts/diagnostic.schema.v0.2.16.json` (same grammars, bounds, and closed object shapes) with the receipt-level constants pinned.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "registry_version",
+        "id",
+        "code",
+        "severity",
+        "category",
+        "message_id",
+        "message",
+        "data",
+        "related_locations",
+        "causes",
+        "fixes",
+        "metadata"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "lekalo/diagnostic/v0.2.16"
+        },
+        "registry_version": {
+          "const": "0.6.4"
+        },
+        "id": {
+          "$ref": "#/$defs/validation.diagnostic/ruleId"
+        },
+        "code": {
+          "$ref": "#/$defs/validation.diagnostic/diagnosticCode"
+        },
+        "severity": {
+          "enum": [
+            "info",
+            "warning",
+            "error"
+          ]
+        },
+        "category": {
+          "enum": [
+            "model",
+            "semantic",
+            "compatibility",
+            "adapter",
+            "infrastructure",
+            "security"
+          ]
+        },
+        "message_id": {
+          "$ref": "#/$defs/validation.diagnostic/ruleId"
+        },
+        "message": {
+          "$ref": "#/$defs/validation.diagnostic/boundedText"
+        },
+        "symbol": {
+          "$ref": "#/$defs/validation.diagnostic/symbolId"
+        },
+        "source": {
+          "$ref": "#/$defs/validation.diagnostic/source"
+        },
+        "data": {
+          "$ref": "#/$defs/validation.diagnostic/dataObject"
+        },
+        "related_locations": {
+          "$ref": "#/$defs/validation.diagnostic/relatedLocations"
+        },
+        "causes": {
+          "$ref": "#/$defs/validation.diagnostic/causes"
+        },
+        "fixes": {
+          "$ref": "#/$defs/validation.diagnostic/fixes"
+        },
+        "metadata": {
+          "$ref": "#/$defs/validation.diagnostic/providerMetadata"
+        }
+      }
+    },
+    "inspect.Root": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": "lekalo/inspect/v0.2.16"
+        },
+        "identity": {
+          "const": "dev.lekalo.inspect@0.2.16"
+        },
+        "modelVersion": {
+          "enum": [
+            "0.2.16",
+            "0.2.16"
+          ]
+        },
+        "project": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/inspect.moduleId"
+            },
+            "modelRef": {
+              "$ref": "#/$defs/inspect.contractRef"
+            },
+            "irRef": {
+              "$ref": "#/$defs/inspect.digestRef"
+            }
+          }
+        },
+        "selector": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "input",
+            "resolvedId"
+          ],
+          "properties": {
+            "mode": {
+              "enum": [
+                "exact-id",
+                "short-name",
+                "alias"
+              ]
+            },
+            "input": {
+              "$ref": "#/$defs/inspect.selectorToken"
+            },
+            "resolvedId": {
+              "$ref": "#/$defs/inspect.semanticId"
+            }
+          }
+        },
+        "symbol": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "kind",
+            "moduleId",
+            "version"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/inspect.semanticId"
+            },
+            "kind": {
+              "$ref": "#/$defs/inspect.definitionKind"
+            },
+            "moduleId": {
+              "$ref": "#/$defs/inspect.moduleId"
+            },
+            "version": {
+              "$ref": "#/$defs/inspect.ordinal"
+            },
+            "description": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "visibility": {
+              "enum": [
+                "module",
+                "project"
+              ]
+            },
+            "portability": {
+              "enum": [
+                "portable",
+                "target-specific"
+              ]
+            },
+            "source": {
+              "$ref": "#/$defs/inspect.sourceLocation"
+            }
+          }
+        },
+        "contract": {
+          "$ref": "#/$defs/inspect.sectionContract"
+        },
+        "invariants": {
+          "$ref": "#/$defs/inspect.sectionItems"
+        },
+        "policies": {
+          "$ref": "#/$defs/inspect.sectionItems"
+        },
+        "effects": {
+          "$ref": "#/$defs/inspect.sectionItems"
+        },
+        "dependencies": {
+          "$ref": "#/$defs/inspect.sectionItems"
+        },
+        "dependents": {
+          "$ref": "#/$defs/inspect.sectionItems"
+        },
+        "scenarios": {
+          "$ref": "#/$defs/inspect.sectionItems"
+        },
+        "bindings": {
+          "$ref": "#/$defs/inspect.sectionItems"
+        },
+        "ownership": {
+          "$ref": "#/$defs/inspect.sectionUnsupported"
+        },
+        "portability": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "complete"
+          ],
+          "properties": {
+            "state": {
+              "$ref": "#/$defs/inspect.sectionState"
+            },
+            "complete": {
+              "type": "boolean"
+            },
+            "mode": {
+              "enum": [
+                "portable",
+                "target-specific"
+              ]
+            }
+          }
+        },
+        "trace": {
+          "$ref": "#/$defs/inspect.sectionUnsupported"
+        },
+        "completeness": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "reasons",
+            "omittedItems"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "complete",
+                "partial",
+                "unknown",
+                "unsupported"
+              ]
+            },
+            "reasons": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/inspect.reasonToken"
+              },
+              "maxItems": 32,
+              "uniqueItems": true
+            },
+            "omittedItems": {
+              "$ref": "#/$defs/inspect.ordinal"
+            }
+          }
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
+            "maxLength": 128
+          },
+          "maxItems": 64,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "identity",
+        "modelVersion",
+        "selector",
+        "symbol",
+        "contract",
+        "invariants",
+        "policies",
+        "effects",
+        "dependencies",
+        "dependents",
+        "scenarios",
+        "bindings",
+        "ownership",
+        "portability",
+        "trace",
+        "completeness",
+        "diagnostics"
+      ],
+      "additionalProperties": false
+    },
+    "inspect.ordinal": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295
+    },
+    "inspect.count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000000
+    },
+    "inspect.moduleId": {
+      "$comment": "A module or project semantic id: exactly one Model name segment.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "inspect.semanticId": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 192,
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){1,2}$"
+    },
+    "inspect.fieldName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "inspect.selectorToken": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){0,2}$"
+    },
+    "inspect.reasonToken": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "inspect.contractRef": {
+      "type": "string",
+      "pattern": "^dev\\.lekalo\\.model@[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "inspect.digestRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity",
+        "digest"
+      ],
+      "properties": {
+        "identity": {
+          "type": "string",
+          "pattern": "^dev\\.lekalo\\.ir@[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "inspect.definitionKind": {
+      "enum": [
+        "scalar",
+        "enum",
+        "value-object",
+        "entity",
+        "command",
+        "query",
+        "policy",
+        "event",
+        "effect",
+        "endpoint",
+        "scenario",
+        "target-binding"
+      ]
+    },
+    "inspect.confidence": {
+      "enum": [
+        "canonical",
+        "verified",
+        "extracted",
+        "inferred",
+        "unknown"
+      ]
+    },
+    "inspect.sectionState": {
+      "enum": [
+        "available",
+        "empty",
+        "unknown",
+        "unsupported",
+        "truncated",
+        "error"
+      ]
+    },
+    "inspect.sourceLocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "pointer"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^[A-Za-z0-9._/-]+$"
+        },
+        "pointer": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^(/[A-Za-z0-9_.:-]+)+$"
+        },
+        "span": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "startByte",
+            "endByte"
+          ],
+          "properties": {
+            "startByte": {
+              "$ref": "#/$defs/inspect.ordinal"
+            },
+            "endByte": {
+              "$ref": "#/$defs/inspect.ordinal"
+            }
+          }
+        }
+      }
+    },
+    "inspect.typeRef": {
+      "$comment": "Named TypeRef projected as its typed shape: a semantic leaf reference, a list wrapper, or an optional wrapper. Nesting depth is bounded by the Model type-expression depth (four including the leaf); the producer never emits deeper values.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ref"
+          ],
+          "properties": {
+            "ref": {
+              "$ref": "#/$defs/inspect.semanticId"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "list"
+          ],
+          "properties": {
+            "list": {
+              "$ref": "#/$defs/inspect.typeRef"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "optional"
+          ],
+          "properties": {
+            "optional": {
+              "$ref": "#/$defs/inspect.typeRef"
+            }
+          }
+        }
+      ]
+    },
+    "inspect.fieldItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "type",
+        "required"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/inspect.fieldName"
+        },
+        "type": {
+          "$ref": "#/$defs/inspect.typeRef"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      }
+    },
+    "inspect.enumValueItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value"
+      ],
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      }
+    },
+    "inspect.sectionContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "complete"
+      ],
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/inspect.sectionState"
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "bounds": {
+          "$ref": "#/$defs/inspect.bounds"
+        },
+        "base": {
+          "enum": [
+            "string",
+            "number",
+            "boolean",
+            "date",
+            "datetime",
+            "uuid",
+            "uri"
+          ]
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/inspect.enumValueItem"
+          },
+          "maxItems": 256
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/inspect.fieldItem"
+          },
+          "maxItems": 256
+        },
+        "input": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/inspect.fieldItem"
+          },
+          "maxItems": 256
+        },
+        "output": {
+          "$ref": "#/$defs/inspect.typeRef"
+        },
+        "decision": {
+          "enum": [
+            "allow",
+            "deny"
+          ]
+        },
+        "operation": {
+          "enum": [
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "target": {
+          "$ref": "#/$defs/inspect.semanticId"
+        },
+        "emits": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/inspect.semanticId"
+          },
+          "maxItems": 256
+        },
+        "reads": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/inspect.semanticId"
+          },
+          "maxItems": 256
+        },
+        "invokes": {
+          "$ref": "#/$defs/inspect.semanticId"
+        },
+        "method": {
+          "enum": [
+            "GET",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 512,
+          "pattern": "^(/[a-z0-9:_{}-]+)+$"
+        },
+        "targetName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_-]*$"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "covers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/inspect.semanticId"
+          },
+          "maxItems": 256
+        }
+      }
+    },
+    "inspect.bounds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "limit",
+        "returned",
+        "omitted"
+      ],
+      "properties": {
+        "limit": {
+          "$ref": "#/$defs/inspect.ordinal"
+        },
+        "returned": {
+          "$ref": "#/$defs/inspect.ordinal"
+        },
+        "omitted": {
+          "$ref": "#/$defs/inspect.ordinal"
+        },
+        "reason": {
+          "$ref": "#/$defs/inspect.reasonToken"
+        },
+        "frontier": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "inspect.sectionItems": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "complete"
+      ],
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/inspect.sectionState"
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "bounds": {
+          "$ref": "#/$defs/inspect.bounds"
+        },
+        "summary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "readerCount",
+            "writerCount",
+            "emitterCount"
+          ],
+          "properties": {
+            "readerCount": {
+              "$ref": "#/$defs/inspect.count"
+            },
+            "writerCount": {
+              "$ref": "#/$defs/inspect.count"
+            },
+            "emitterCount": {
+              "$ref": "#/$defs/inspect.count"
+            }
+          }
+        },
+        "items": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/inspect.anySectionItem"
+          }
+        }
+      }
+    },
+    "inspect.sectionUnsupported": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "complete",
+        "reason"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "unsupported",
+            "unknown",
+            "error"
+          ]
+        },
+        "complete": {
+          "const": false
+        },
+        "reason": {
+          "$ref": "#/$defs/inspect.reasonToken"
+        }
+      }
+    },
+    "inspect.anySectionItem": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/inspect.invariantItem"
+        },
+        {
+          "$ref": "#/$defs/inspect.policyItem"
+        },
+        {
+          "$ref": "#/$defs/inspect.effectItem"
+        },
+        {
+          "$ref": "#/$defs/inspect.relationItem"
+        },
+        {
+          "$ref": "#/$defs/inspect.scenarioItem"
+        },
+        {
+          "$ref": "#/$defs/inspect.bindingItem"
+        }
+      ]
+    },
+    "inspect.invariantItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "fields"
+      ],
+      "properties": {
+        "type": {
+          "const": "identity"
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/inspect.fieldName"
+          },
+          "minItems": 1,
+          "maxItems": 256
+        }
+      }
+    },
+    "inspect.policyItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "decision"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/inspect.semanticId"
+        },
+        "decision": {
+          "enum": [
+            "allow",
+            "deny"
+          ]
+        }
+      }
+    },
+    "inspect.effectItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation",
+        "kind",
+        "action",
+        "resource",
+        "field",
+        "effect",
+        "occurrence",
+        "provenance",
+        "confidence",
+        "transactionGroup",
+        "sensitivity"
+      ],
+      "properties": {
+        "operation": {
+          "type": "string",
+          "pattern": "^operation:[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "kind": {
+          "enum": [
+            "read",
+            "create",
+            "update",
+            "delete",
+            "write-field",
+            "emit-event",
+            "enqueue-job",
+            "external-call",
+            "cache-read",
+            "cache-write",
+            "cache-invalidate",
+            "publish-output",
+            "audit-log",
+            "transaction-boundary"
+          ]
+        },
+        "action": {
+          "oneOf": [
+            {
+              "enum": [
+                "set",
+                "clear",
+                "append",
+                "replace",
+                "merge"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resource": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "id"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "canonical",
+                "target-resource",
+                "external-service",
+                "cache",
+                "event",
+                "job",
+                "output",
+                "audit"
+              ]
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 192,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+            }
+          }
+        },
+        "field": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/inspect.fieldName"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effect": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^effect:[A-Za-z0-9][A-Za-z0-9._:-]*$"
+            },
+            {
+              "type": "string",
+              "pattern": "^#[0-9]+$"
+            }
+          ]
+        },
+        "occurrence": {
+          "$ref": "#/$defs/inspect.ordinal"
+        },
+        "provenance": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "type",
+                "irDigest",
+                "role",
+                "occurrence",
+                "symbol"
+              ],
+              "properties": {
+                "type": {
+                  "const": "canonical-ir"
+                },
+                "irDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "role": {
+                  "enum": [
+                    "query-reads",
+                    "command-effect",
+                    "effect-emits"
+                  ]
+                },
+                "occurrence": {
+                  "$ref": "#/$defs/inspect.ordinal"
+                },
+                "symbol": {
+                  "$ref": "#/$defs/inspect.semanticId"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "type",
+                "adapterId",
+                "targetId",
+                "protocolVersion",
+                "evidenceDigest",
+                "trust"
+              ],
+              "properties": {
+                "type": {
+                  "const": "evidence"
+                },
+                "adapterId": {
+                  "type": "string",
+                  "minLength": 3,
+                  "maxLength": 64,
+                  "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*$"
+                },
+                "targetId": {
+                  "type": "string",
+                  "minLength": 3,
+                  "maxLength": 64,
+                  "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*$"
+                },
+                "protocolVersion": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+                },
+                "evidenceDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "trust": {
+                  "enum": [
+                    "verified",
+                    "current",
+                    "extracted",
+                    "inferred",
+                    "stale",
+                    "unknown",
+                    "rejected"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "confidence": {
+          "$ref": "#/$defs/inspect.confidence"
+        },
+        "transactionGroup": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 128,
+              "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sensitivity": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "contract",
+                "state"
+              ],
+              "properties": {
+                "contract": {
+                  "type": "string",
+                  "minLength": 5,
+                  "maxLength": 128,
+                  "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*@[0-9]+\\.[0-9]+\\.[0-9]+$"
+                },
+                "state": {
+                  "enum": [
+                    "classified",
+                    "unclassified"
+                  ]
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "inspect.relationItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relation",
+        "endpoint",
+        "occurrence",
+        "provenance",
+        "confidence"
+      ],
+      "properties": {
+        "relation": {
+          "enum": [
+            "requires",
+            "references",
+            "accepts",
+            "returns",
+            "reads",
+            "writes",
+            "emits",
+            "authorizes",
+            "exposes",
+            "implements",
+            "verifies",
+            "derived_from"
+          ]
+        },
+        "endpoint": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "occurrence": {
+          "$ref": "#/$defs/inspect.ordinal"
+        },
+        "provenance": {
+          "$comment": "The exact provenance record of the accepted #13 graph: canonical-IR reference sites, typed adapter evidence, or derived records. The producer projects the graph record unchanged.",
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "referenceRole",
+                "occurrence",
+                "sourceSymbol"
+              ],
+              "properties": {
+                "referenceRole": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^[a-z][a-z0-9-]*$"
+                },
+                "occurrence": {
+                  "$ref": "#/$defs/inspect.ordinal"
+                },
+                "sourceSymbol": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 192,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "adapterId",
+                "targetId",
+                "protocolVersion",
+                "evidenceDigest",
+                "evidenceStatus"
+              ],
+              "properties": {
+                "adapterId": {
+                  "type": "string",
+                  "minLength": 3,
+                  "maxLength": 64,
+                  "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*$"
+                },
+                "targetId": {
+                  "type": "string",
+                  "minLength": 3,
+                  "maxLength": 64,
+                  "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*$"
+                },
+                "protocolVersion": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+                },
+                "evidenceDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "evidenceStatus": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32,
+                  "pattern": "^[a-z][a-z0-9-]*$"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "algorithmId",
+                "algorithmVersion",
+                "parentEdgeKeys"
+              ],
+              "properties": {
+                "algorithmId": {
+                  "type": "string",
+                  "minLength": 3,
+                  "maxLength": 64,
+                  "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*$"
+                },
+                "algorithmVersion": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+                },
+                "parentEdgeKeys": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  },
+                  "maxItems": 8
+                }
+              }
+            }
+          ]
+        },
+        "confidence": {
+          "$ref": "#/$defs/inspect.confidence"
+        }
+      }
+    },
+    "inspect.scenarioItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/inspect.semanticId"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      }
+    },
+    "inspect.bindingItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bindingId",
+        "moduleId",
+        "targetId",
+        "status",
+        "confidence"
+      ],
+      "properties": {
+        "bindingId": {
+          "$ref": "#/$defs/inspect.semanticId"
+        },
+        "moduleId": {
+          "$ref": "#/$defs/inspect.semanticId"
+        },
+        "targetId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_-]*$"
+        },
+        "status": {
+          "enum": [
+            "declared"
+          ]
+        },
+        "confidence": {
+          "$ref": "#/$defs/inspect.confidence"
+        },
+        "profileRef": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*$"
+        },
+        "details": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "namespace",
+            "schema",
+            "version",
+            "digest",
+            "data"
+          ],
+          "properties": {
+            "namespace": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 64,
+              "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*$"
+            },
+            "schema": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 128,
+              "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9-]*$"
+            },
+            "version": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+            },
+            "digest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "data": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            }
+          }
+        }
+      }
+    }
+  }
 }

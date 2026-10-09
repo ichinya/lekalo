@@ -331,8 +331,20 @@ for (const [slug, document] of minimalCases) {
 }
 
 
-// ---- A closed valid output envelope validates per tool. --------------------
+// ---- Closed valid output envelopes validate per tool. ----------------------
 
+// The embedded core payloads are described by their exact bundled upstream
+// schemas now, so the gate validates REAL recorded golden instances (the
+// same ones the per-family contract gates pin); a fabricated member can
+// no longer satisfy the published result branches.
+const golden = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf8"));
+const graphGolden = golden("tests/fixtures/graph/golden/planner.graph.json");
+const graphShow = {
+  node: graphGolden.nodes.find((node) => node.id === "operation:planner.focus_task"),
+  dependencies: graphGolden.edges.filter((edge) => edge.from === "operation:planner.focus_task"),
+  dependents: graphGolden.edges.filter((edge) => edge.to === "operation:planner.focus_task"),
+};
+if (!graphShow.node) fail("graph-show-fixture", graphGolden.nodes.slice(0, 3));
 const outputEnvelope = (tool, slug, status, extra) => ({
   schemaVersion: `lekalo/mcp-tool-${slug}-output/v0.8.0`,
   identity: `dev.lekalo.mcp-tool-${slug}-output@0.8.0`,
@@ -359,21 +371,38 @@ const outputPins = {
   "trace-export": "traceManifest",
 };
 const resultShape = {
-  inspect: { schemaVersion: "lekalo/inspect/v0.2.16", identity: "dev.lekalo.inspect@0.2.16", inspect: {} },
-  impact: { schemaVersion: "lekalo/impact/v0.2.16", identity: "dev.lekalo.impact@0.2.16", impact: {} },
-  context: { schemaVersion: "lekalo/context/v0.2.16", identity: "dev.lekalo.context@0.2.16", context: {} },
-  graph: { mode: "export" },
-  validate: { status: "valid", modelVersion: "0.2.16", validation: {} },
+  inspect: {
+    schemaVersion: "lekalo/inspect/v0.2.16",
+    identity: "dev.lekalo.inspect@0.2.16",
+    inspect: golden("tests/fixtures/inspect/golden/planner.focus_task.json").inspect,
+  },
+  impact: {
+    schemaVersion: "lekalo/impact/v0.2.16",
+    identity: "dev.lekalo.impact@0.2.16",
+    impact: golden("tests/fixtures/impact/golden/planner.impact.json"),
+  },
+  context: {
+    schemaVersion: "lekalo/context/v0.2.16",
+    identity: "dev.lekalo.context@0.2.16",
+    context: golden("tests/fixtures/context/golden/planner.context.json"),
+  },
+  graph: { mode: "export", export: graphGolden },
+  validate: {
+    ...golden("tests/fixtures/validation/golden/valid-base-strict-envelope.json"),
+  },
   "target-status": {
     schemaVersion: "lekalo/doctor/v0.3.2",
     identity: "dev.lekalo.doctor@0.3.2",
-    doctor: {},
+    doctor: golden("tests/fixtures/doctor/status.golden.json"),
   },
   "trace-export": {
     schemaVersion: "lekalo/trace-manifest/v0.2.16",
     identity: "dev.lekalo.trace-manifest@0.2.16",
-    trace: {},
-    manifestDigest: `sha256:${"b".repeat(64)}`,
+    trace: golden("tests/fixtures/trace/golden/planner.trace.json"),
+    manifestDigest: readFileSync(
+      resolve(root, "tests/fixtures/trace/golden/planner.trace.sha256"),
+      "utf8",
+    ).trim(),
   },
 };
 for (const slug of TOOL_SLUGS) {
@@ -393,9 +422,6 @@ for (const slug of TOOL_SLUGS) {
   if (entry.validate(refused) !== true) {
     fail("refusal-output-rejected", { slug, errors: entry.validate(refused) });
   }
-  // A result on a refusal is semantically wrong; the schema stays quiet
-  // (the rule is semantic) but a fabricated payload must still fail the
-  // gate's semantic validator below.
 }
 function outputPinVersion(slug) {
   return {
@@ -407,6 +433,84 @@ function outputPinVersion(slug) {
     "target-status": "0.3.2",
     "trace-export": "0.2.16",
   }[slug];
+}
+
+// The status/result|failure coherence rule is published now: a forged
+// member on the wrong branch must fail host validation (r2 F11).
+const incoherent = {
+  ...outputEnvelope(
+    TOOL_NAMES[0],
+    "inspect",
+    "denied",
+    { pins: { inspect: "0.2.16" }, failureClass: "scope-denied" },
+  ),
+  result: resultShape.inspect,
+};
+if (compiled.get("mcp-tool-inspect-output.schema.v0.8.0.json").validate(incoherent) !== false) {
+  fail("schema-must-reject-refusal-with-result");
+}
+const validWithoutResult = outputEnvelope(TOOL_NAMES[0], "inspect", "valid", {
+  pins: { inspect: "0.2.16" },
+  result: undefined,
+});
+delete validWithoutResult.result;
+if (compiled.get("mcp-tool-inspect-output.schema.v0.8.0.json").validate(validWithoutResult) !== false) {
+  fail("schema-must-reject-valid-without-result");
+}
+
+// Hostile nested tampering (r2 F11 / codex 8): the bundled upstream
+// closures reject forged payloads and forged diagnostic items.
+const inspectSchema = compiled.get("mcp-tool-inspect-output.schema.v0.8.0.json");
+const forgedResult = outputEnvelope(TOOL_NAMES[0], "inspect", "valid", {
+  pins: { inspect: "0.2.16" },
+  result: {
+    schemaVersion: "lekalo/inspect/v0.2.16",
+    identity: "dev.lekalo.inspect@0.2.16",
+    inspect: { attackerExtra: "unconstrained" },
+  },
+});
+if (inspectSchema.validate(forgedResult) !== false) {
+  fail("schema-must-reject-forged-payload");
+}
+const forgedDiagnostics = {
+  ...outputEnvelope(TOOL_NAMES[0], "inspect", "denied", {
+    pins: { inspect: "0.2.16" },
+    failureClass: "scope-denied",
+  }),
+  diagnostics: [{ anything: "not-a-diagnostic" }],
+};
+if (inspectSchema.validate(forgedDiagnostics) !== false) {
+  fail("schema-must-reject-forged-diagnostics");
+}
+// A real diagnostic item ships through the closed items schema.
+const realDiagnostic = golden(
+  "tests/fixtures/validation/golden/valid-base-strict-envelope.json",
+);
+const diagnosticRegistry = read("contracts/diagnostic-registry.v0.8.0.json");
+const diagnosticSample = (realDiagnostic.diagnostics ?? [])[0];
+if (diagnosticSample) {
+  const withDiagnostic = {
+    ...outputEnvelope(TOOL_NAMES[5], "validate", "valid", {
+      pins: { validation: "0.6.4" },
+      result: resultShape.validate,
+    }),
+    diagnostics: [diagnosticSample],
+  };
+  const validateSchema = compiled.get("mcp-tool-validate-output.schema.v0.8.0.json");
+  if (validateSchema.validate(withDiagnostic) !== true) {
+    fail("real-diagnostic-rejected", validateSchema.validate(withDiagnostic));
+  }
+}
+if (diagnosticRegistry.entries.length === 0) fail("registry-empty");
+
+// The graph show query receipt validates against the bundled defs.
+const graphOutput = compiled.get("mcp-tool-graph-output.schema.v0.8.0.json");
+const graphShowEnvelope = outputEnvelope(TOOL_NAMES[3], "graph", "valid", {
+  pins: { graph: "0.2.16" },
+  result: { mode: "show", query: graphShow },
+});
+if (graphOutput.validate(graphShowEnvelope) !== true) {
+  fail("graph-show-receipt-rejected", graphOutput.validate(graphShowEnvelope));
 }
 
 // The status/result|failure coherence semantic validator (server parity).
@@ -423,20 +527,6 @@ function semanticOutput(slug, document) {
     }
   }
   return errors;
-}
-// Built by hand: a refusal that carries a fabricated result member.
-const incoherent = {
-  ...outputEnvelope(
-    TOOL_NAMES[0],
-    "inspect",
-    "denied",
-    { pins: { inspect: "0.2.16" }, failureClass: "scope-denied" },
-  ),
-  result: resultShape.inspect,
-};
-if (compiled.get("mcp-tool-inspect-output.schema.v0.8.0.json").validate(incoherent) !== true) {
-  // The schema need not reject it, but the semantic layer must.
-  fail("schema-should-be-quiet-on-coherence");
 }
 if (semanticOutput("inspect", incoherent).length === 0) {
   fail("semantic-validator-missed-incoherence");
@@ -509,7 +599,9 @@ const resourceEnvelope = {
   schemaVersion: "lekalo/mcp-resource/v0.8.0",
   identity: "dev.lekalo.mcp-resource@0.8.0",
   kind: "project-summary",
-  uri: "lekalo://planner/project-summary",
+  // The served URI spelling: `lekalo://PROJECT/family` (the gate example
+  // uses the same `build_uri` projection the server emits).
+  uri: "lekalo://planner/summary",
   scope: { projectId: "planner", groupId: null },
   revision: `sha256-${"c".repeat(64)}`,
   data: {
@@ -522,6 +614,46 @@ const resourceEnvelope = {
 };
 if (resource.validate(resourceEnvelope) !== true) {
   fail("resource-envelope-rejected", resource.validate(resourceEnvelope).errors);
+}
+
+// Every spellable resource URI family validates, including the symbol
+// qualifier with literal dots and percent escapes and the group-qualified
+// prefix (r2 F10 / codex 9). The old frozen pattern could not admit its
+// own symbol URIs; the amended pattern must admit every family live.
+const resourceUri = (uri, kind, data) =>
+  resource.validate({
+    ...resourceEnvelope,
+    kind,
+    uri,
+    data,
+  });
+const symbolDocument = {
+  schemaVersion: "lekalo/inspect/v0.2.16",
+  identity: "dev.lekalo.inspect@0.2.16",
+  inspect: golden("tests/fixtures/inspect/golden/planner.focus_task.json").inspect,
+};
+for (const [uri, kind, data] of [
+  ["lekalo://planner/summary", "project-summary", resourceEnvelope.data],
+  ["lekalo://planner/modules", "module-list", { modules: [{ id: "planner", definitionCount: 7 }] }],
+  ["lekalo://planner/symbol/planner.focus_task", "symbol-metadata", symbolDocument],
+  ["lekalo://planner/symbol/planner%2Efocus_task", "symbol-metadata", symbolDocument],
+  ["lekalo://planner/g/planner-review/summary", "project-summary", resourceEnvelope.data],
+  ["lekalo://planner/g/planner-review/symbol/notify.send_digest", "symbol-metadata", symbolDocument],
+  ["lekalo://planner/targets", "target-status", {
+    schemaVersion: "lekalo/doctor/v0.3.2",
+    identity: "dev.lekalo.doctor@0.3.2",
+    doctor: golden("tests/fixtures/doctor/status.golden.json"),
+  }],
+  ["lekalo://planner/diagnostics", "diagnostics", {
+    diagnosticCount: 0,
+    evidenceCount: 0,
+    complete: true,
+    reasons: [],
+  }],
+]) {
+  if (resourceUri(uri, kind, data) !== true) {
+    fail("resource-uri-rejected", { uri, errors: resource.validate({ ...resourceEnvelope, kind, uri, data }) });
+  }
 }
 
 process.stdout.write(`${JSON.stringify({

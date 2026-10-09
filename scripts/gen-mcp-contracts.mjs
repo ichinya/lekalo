@@ -17,7 +17,76 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const out = (name, document) => {
+
+// The preserved upstream contracts, bundled locally into the MCP output
+// and resource schemas (review r2 F10/F11): an embedded core payload is
+// described by the exact published upstream definitions, not a bare
+// `type: object`, so a forged nested member fails host validators too.
+const upstream = (name) => JSON.parse(readFileSync(resolve(root, "contracts", name), "utf8"));
+// Deep clone with every local `$ref: "#/$defs/X"` rewritten to the
+// prefixed bundled namespace (`#/$defs/<prefix>.X`), so an upstream
+// document bundle can never collide with the MCP-side definitions.
+const rewriteRefs = (node, prefix) => {
+  if (Array.isArray(node)) return node.map((item) => rewriteRefs(item, prefix));
+  if (node && typeof node === "object") {
+    const out = {};
+    for (const [key, value] of Object.entries(node)) {
+      if (key === "$ref" && typeof value === "string" && value.startsWith("#/$defs/")) {
+        out[key] = `#/$defs/${prefix}.${value.slice("#/$defs/".length)}`;
+      } else {
+        out[key] = rewriteRefs(value, prefix);
+      }
+    }
+    return out;
+  }
+  return node;
+};
+// One bundled upstream document: the root object shape with its
+// `$defs` flattened under the prefixed names the rewritten refs name.
+const bundleDocument = (source, prefix) => {
+  const document = rewriteRefs(
+    {
+      type: "object",
+      properties: source.properties,
+      required: source.required,
+      additionalProperties: source.additionalProperties === false ? false : undefined,
+    },
+    prefix,
+  );
+  if (document.additionalProperties === undefined) delete document.additionalProperties;
+  const defs = {
+    [`${prefix}.Root`]: document,
+  };
+  for (const [name, def] of Object.entries(source.$defs ?? {})) {
+    defs[`${prefix}.${name}`] = rewriteRefs(def, prefix);
+  }
+  return { document, defs };
+};
+const INSPECT = upstream("inspect.schema.v0.2.16.json");
+const IMPACT = upstream("impact.schema.v0.2.16.json");
+const CONTEXT = upstream("context-capsule.schema.v0.2.16.json");
+const GRAPH = upstream("graph.schema.v0.2.16.json");
+const TRACE = upstream("trace-manifest.schema.v0.2.16.json");
+const VALIDATION = upstream("validation-report.schema.v0.6.4.json");
+const DOCTOR = upstream("doctor.schema.v0.3.2.json");
+// The closed wire diagnostic item, bundled into every diagnostics array:
+// the faithful projection the validation contract already publishes. Its
+// refs name the nested `diagnostic/*` sub-definitions, so they are
+// bundled under the same `validation.` prefix the item itself uses.
+const DIAGNOSTIC_ITEM = VALIDATION.$defs.diagnosticItem;
+const VALIDATION_MERGED_DEFS = () =>
+  mergeDefs(
+    ...Object.entries(VALIDATION.$defs)
+      .filter(([name]) => name !== "diagnosticItem")
+      .map(([name, def]) => ({ [`validation.${name}`]: rewriteRefs(def, "validation") })),
+  );
+const INSPECT_BUNDLE = bundleDocument(INSPECT, "inspect");
+const IMPACT_BUNDLE = bundleDocument(IMPACT, "impact");
+const CONTEXT_BUNDLE = bundleDocument(CONTEXT, "context");
+const GRAPH_BUNDLE = bundleDocument(GRAPH, "graph");
+const TRACE_BUNDLE = bundleDocument(TRACE, "trace");
+const DOCTOR_BUNDLE = bundleDocument(DOCTOR, "doctor");
+const mergeDefs = (...parts) => Object.assign({}, ...parts);const out = (name, document) => {
   writeFileSync(join(root, "contracts", name), `${JSON.stringify(document, null, 2)}\n`);
   process.stdout.write(`${name}\n`);
 };
@@ -81,9 +150,9 @@ const scopeSchema = {
 const diagnosticsSchema = {
   type: "array",
   maxItems: 64,
-  items: { type: "object" },
+  items: { $ref: "#/$defs/diagnosticItem" },
   description:
-    "Wire diagnostic items (lekalo/diagnostic/v0.2.16) resolved against dev.lekalo.diagnostic-registry@0.8.0; scripts/test-mcp-contracts.mjs validates every item against the published diagnostic schema and the union registry.",
+    "Wire diagnostic items (lekalo/diagnostic/v0.2.16) resolved against dev.lekalo.diagnostic-registry@0.8.0; every item is the closed published projection bundled under $defs.diagnosticItem.",
 };
 const contractPins = (extra) => ({
   type: "object",
@@ -96,16 +165,36 @@ const contractPins = (extra) => ({
   required: ["diagnostic", "diagnosticRegistry", "protocolProfile", ...Object.keys(extra)],
   additionalProperties: false,
 });
-const pinnedBranch = (discriminator, identityConst, payloadKey) => ({
+const pinnedBranch = (discriminator, identityConst, payloadKey, documentRef) => ({
   type: "object",
   properties: {
     schemaVersion: idConst(discriminator),
     identity: idConst(identityConst),
-    [payloadKey]: { type: "object" },
+    [payloadKey]: documentRef ? { $ref: `#/$defs/${documentRef}` } : { type: "object" },
   },
   required: ["schemaVersion", "identity", payloadKey],
   additionalProperties: false,
 });
+
+// The status/result|failure coherence rule, published as the closed
+// conditional (Draft 2020-12 if/then/else) on the envelope root: a valid
+// status carries the core result and never a failure branch; every other
+// status carries the typed failure and never a fabricated result. The
+// forbidden branch is caught with `properties: { x: { not: {} } }`,
+// which rejects any value (including null) without `required` and stays
+// strict-mode clean.
+const statusCoherence = {
+  if: { properties: { status: { const: "valid" } }, required: ["status"] },
+  then: {
+    properties: { result: { $ref: "#/$defs/_anchor" }, failure: { not: {} } },
+    required: ["result"],
+  },
+  else: {
+    properties: { failure: { $ref: "#/$defs/_anchor" }, result: { not: {} } },
+    required: ["failure"],
+  },
+};
+
 const failureBranch = {
   type: "object",
   properties: {
@@ -136,7 +225,7 @@ const outputEnvelope = (tool, toolConst, pins, discriminator, identityConst, res
   $schema: "https://json-schema.org/draft/2020-12/schema",
   $id: `dev.lekalo.mcp-tool-${tool}-output@${VERSION}`,
   title: `Lekalo MCP tool output: ${tool}`,
-  description: `Issue #33 closed result envelope of the ${tool} tool. status "valid" carries the preserved core receipt in "result"; every other status carries the typed "failure" branch and never a fabricated payload. Presence of result/failure per status, and refusal classes, are enforced semantically by the server and by scripts/test-mcp-contracts.mjs.`,
+  description: `Issue #33 closed result envelope of the ${tool} tool. status "valid" carries the preserved core receipt in "result"; every other status carries the typed "failure" branch and never a fabricated payload. The status/result|failure coherence is the published conditional; embedded core payloads are the exact bundled upstream definitions.`,
   type: "object",
   properties: {
     schemaVersion: idConst(discriminator),
@@ -161,16 +250,19 @@ const outputEnvelope = (tool, toolConst, pins, discriminator, identityConst, res
     "diagnostics",
   ],
   additionalProperties: false,
-  ...(defs ? { $defs: defs } : {}),
+  if: statusCoherence.if,
+  then: statusCoherence.then,
+  else: statusCoherence.else,
+  $defs: {
+    // A permissive anchor the coherence conditionals reference so every
+    // `$ref` resolves inside the schema; the branch rejection comes from
+    // the sibling `{ not: {} }`, never from this anchor.
+    _anchor: {},
+    ...(defs ?? {}),
+  },
 });
 
 // ---- Result branches. ------------------------------------------------------
-//
-// Uniform discriminator-pinned payload branches (inspect/impact/context)
-// preserve the core receipt object under its family key. The validate
-// receipt, the graph receipts, and the trace export have tool-specific
-// upstream shapes and pin them directly; no discriminator is ever injected
-// into a frozen core payload.
 
 // ---- The seven tool input schemas. ----------------------------------------
 
@@ -290,19 +382,23 @@ out(
 // ---- The seven tool output schemas. ---------------------------------------
 
 const RESULT_BRANCHES = {
-  inspect: pinnedBranch("lekalo/inspect/v0.2.16", "dev.lekalo.inspect@0.2.16", "inspect"),
-  impact: pinnedBranch("lekalo/impact/v0.2.16", "dev.lekalo.impact@0.2.16", "impact"),
-  context: pinnedBranch("lekalo/context/v0.2.16", "dev.lekalo.context@0.2.16", "context"),
-  "target-status": pinnedBranch("lekalo/doctor/v0.3.2", "dev.lekalo.doctor@0.3.2", "doctor"),
+  inspect: pinnedBranch("lekalo/inspect/v0.2.16", "dev.lekalo.inspect@0.2.16", "inspect", "inspect.Root"),
+  impact: pinnedBranch("lekalo/impact/v0.2.16", "dev.lekalo.impact@0.2.16", "impact", "impact.Root"),
+  context: pinnedBranch("lekalo/context/v0.2.16", "dev.lekalo.context@0.2.16", "context", "context.Root"),
+  "target-status": pinnedBranch("lekalo/doctor/v0.3.2", "dev.lekalo.doctor@0.3.2", "doctor", "doctor.Root"),
   validate: {
     type: "object",
     description:
-      "The exact validation success receipt (contracts/validation-report.schema.v0.6.4.json): status, modelVersion, the report wire, and the optional findings/reasonCodes members.",
+      "The exact validation success receipt (contracts/validation-report.schema.v0.6.4.json): status, modelVersion, the report wire, and the optional findings/reasonCodes members, all closed over their bundled upstream definitions.",
     properties: {
       status: idConst("valid"),
       modelVersion: { type: "string", pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
-      validation: { type: "object" },
-      diagnostics: { type: "array", maxItems: 512, items: { type: "object" } },
+      validation: { $ref: "#/$defs/validation.report" },
+      diagnostics: {
+        type: "array",
+        maxItems: 512,
+        items: { $ref: "#/$defs/diagnosticItem" },
+      },
       reasonCodes: {
         type: "array",
         maxItems: 512,
@@ -316,18 +412,11 @@ const RESULT_BRANCHES = {
   graph: {
     type: "object",
     description:
-      "Mode-tagged receipt: show/callers/path carry the frozen core query payload unchanged; export carries the canonical whole-graph document (lekalo/graph/v0.2.16). Mode/branch coherence is semantic.",
+      "Mode-tagged receipt: show/callers/path carry the frozen core query payload unchanged; export carries the canonical whole-graph document (lekalo/graph/v0.2.16), the exact bundled upstream document. Mode/branch coherence is semantic.",
     properties: {
       mode: { enum: ["show", "callers", "path", "export"] },
       query: { $ref: "#/$defs/graphQuery" },
-      export: {
-        type: "object",
-        properties: {
-          schemaVersion: idConst("lekalo/graph/v0.2.16"),
-          identity: idConst("dev.lekalo.graph@0.2.16"),
-        },
-        required: ["schemaVersion", "identity"],
-      },
+      export: { $ref: "#/$defs/graph.Root" },
     },
     required: ["mode"],
     additionalProperties: false,
@@ -337,7 +426,7 @@ const RESULT_BRANCHES = {
     properties: {
       schemaVersion: idConst("lekalo/trace-manifest/v0.2.16"),
       identity: idConst("dev.lekalo.trace-manifest@0.2.16"),
-      trace: { type: "object" },
+      trace: { $ref: "#/$defs/trace.Root" },
       manifestDigest: { type: "string", pattern: "^sha256:[0-9a-f]{64}$" },
     },
     required: ["schemaVersion", "identity", "trace", "manifestDigest"],
@@ -371,9 +460,9 @@ const GRAPH_QUERY_DEFS = {
       {
         type: "object",
         properties: {
-          node: { type: "object" },
-          dependencies: { type: "array", items: { type: "object" } },
-          dependents: { type: "array", items: { type: "object" } },
+          node: { $ref: "#/$defs/graph.node" },
+          dependencies: { type: "array", items: { $ref: "#/$defs/graph.edge" } },
+          dependents: { type: "array", items: { $ref: "#/$defs/graph.edge" } },
         },
         required: ["node", "dependencies", "dependents"],
         additionalProperties: false,
@@ -381,8 +470,8 @@ const GRAPH_QUERY_DEFS = {
       {
         type: "object",
         properties: {
-          node: { type: "object" },
-          callers: { type: "array", items: { type: "object" } },
+          node: { $ref: "#/$defs/graph.node" },
+          callers: { type: "array", items: { $ref: "#/$defs/graph.edge" } },
           complete: { type: "boolean" },
         },
         required: ["node", "callers", "complete"],
@@ -393,7 +482,7 @@ const GRAPH_QUERY_DEFS = {
         properties: {
           confidence: { type: "string" },
           complete: { type: "boolean" },
-          edges: { type: "array", items: { type: "object" } },
+          edges: { type: "array", items: { $ref: "#/$defs/graph.edge" } },
           from: { type: "string" },
           length: { type: "integer", minimum: 0 },
           nodes: { type: "array", items: { type: "string" } },
@@ -406,6 +495,35 @@ const GRAPH_QUERY_DEFS = {
   },
 };
 
+const graphQuery = GRAPH_QUERY_DEFS.graphQuery;
+// The $defs bundle each output schema carries: the diagnosticItem
+// projection (every diagnostics array, with its nested refs rewritten
+// into the `validation.` namespace) plus the exact upstream payload
+// definitions the tool's result branch references.
+const OUTPUT_DEFS_BASE = {
+  diagnosticItem: rewriteRefs(DIAGNOSTIC_ITEM, "validation"),
+};
+const OUTPUT_DEFS = {
+  inspect: { ...OUTPUT_DEFS_BASE, ...INSPECT_BUNDLE.defs },
+  impact: { ...OUTPUT_DEFS_BASE, ...IMPACT_BUNDLE.defs },
+  context: { ...OUTPUT_DEFS_BASE, ...CONTEXT_BUNDLE.defs },
+  graph: {
+    ...OUTPUT_DEFS_BASE,
+    ...GRAPH_BUNDLE.defs,
+    // The export branch reuses the graph document's own metadata shape.
+    "graph.metadata": rewriteRefs(GRAPH.properties.metadata, "graph"),
+    graphQuery,
+  },
+  validate: { ...OUTPUT_DEFS_BASE, ...VALIDATION_MERGED_DEFS() },
+  "target-status": { ...OUTPUT_DEFS_BASE, ...DOCTOR_BUNDLE.defs },
+  "trace-export": { ...OUTPUT_DEFS_BASE, ...TRACE_BUNDLE.defs },
+};
+// Every diagnostics array closes over the bundled diagnostic item, so the
+// nested `validation.diagnostic/*` sub-definitions ride in all schemas.
+for (const tool of Object.keys(OUTPUT_DEFS)) {
+  OUTPUT_DEFS[tool] = { ...VALIDATION_MERGED_DEFS(), ...OUTPUT_DEFS[tool] };
+}
+
 for (const tool of Object.keys(toolConsts)) {
   out(
     `mcp-tool-${tool}-output.schema.v0.8.0.json`,
@@ -416,7 +534,7 @@ for (const tool of Object.keys(toolConsts)) {
       `lekalo/mcp-tool-${tool}-output/v${VERSION}`,
       `dev.lekalo.mcp-tool-${tool}-output@${VERSION}`,
       RESULT_BRANCHES[tool],
-      tool === "graph" ? GRAPH_QUERY_DEFS : undefined,
+      OUTPUT_DEFS[tool],
     ),
   );
 }
@@ -684,6 +802,9 @@ out("mcp-server-config.schema.v0.8.0.json", {
 
 // ---- Resource envelope. --------------------------------------------------
 
+// The resource data branches: summary, module list, symbol metadata
+// (bundled inspect document), target status (bundled doctor document),
+// and the diagnostics summary.
 const resourceData = {
   oneOf: [
     {
@@ -723,8 +844,8 @@ const resourceData = {
       required: ["modules"],
       additionalProperties: false,
     },
-    pinnedBranch("lekalo/inspect/v0.2.16", "dev.lekalo.inspect@0.2.16", "inspect"),
-    pinnedBranch("lekalo/doctor/v0.3.2", "dev.lekalo.doctor@0.3.2", "doctor"),
+    pinnedBranch("lekalo/inspect/v0.2.16", "dev.lekalo.inspect@0.2.16", "inspect", "inspect.Root"),
+    pinnedBranch("lekalo/doctor/v0.3.2", "dev.lekalo.doctor@0.3.2", "doctor", "doctor.Root"),
     {
       type: "object",
       properties: {
@@ -743,19 +864,25 @@ const resourceData = {
     },
   ],
 };
-
 out("mcp-resource.schema.v0.8.0.json", {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   $id: `dev.lekalo.mcp-resource@${VERSION}`,
   title: "Lekalo MCP resource envelope",
   description:
-    "Issue #33 closed resource identity, scope, revision, data, and bounded-page metadata of the five resource families. Per-kind data branches are nested; kind/data coherence is enforced semantically by the server and the contract gate.",
+    "Issue #33 closed resource identity, scope, revision, data, and bounded-page metadata of the five resource families. Per-kind data branches are nested; the symbol/doctor payloads are the exact bundled upstream documents. Kind/data coherence is enforced semantically by the server and the contract gate.",
   type: "object",
   properties: {
     schemaVersion: idConst(`lekalo/mcp-resource/v${VERSION}`),
     identity: idConst(`dev.lekalo.mcp-resource@${VERSION}`),
     kind: { enum: RESOURCE_FAMILIES.map((family) => family.kind) },
-    uri: { type: "string", pattern: "^lekalo://[a-z][a-z0-9-]{0,63}/[a-z][a-zA-Z0-9/-]{0,240}$" },
+    uri: {
+      type: "string",
+      // The qualifier segment admits the semantic-component spelling:
+      // literal dots (planner.focus_task) and percent escapes, matching
+      // the production `encode_component` grammar (review F10).
+      pattern:
+        "^lekalo://[a-z][a-z0-9-]{0,63}(/g/[a-z][a-z0-9-]{0,63})?/(summary|modules|targets|diagnostics|symbol/[a-z][a-zA-Z0-9_.%-]{0,240})$",
+    },
     scope: scopeSchema,
     revision: { type: "string", pattern: SHA256 },
     data: resourceData,
@@ -773,6 +900,11 @@ out("mcp-resource.schema.v0.8.0.json", {
   },
   required: ["schemaVersion", "identity", "kind", "uri", "scope", "revision", "data"],
   additionalProperties: false,
+  $defs: {
+    diagnosticItem: DIAGNOSTIC_ITEM,
+    ...INSPECT_BUNDLE.defs,
+    ...DOCTOR_BUNDLE.defs,
+  },
 });
 
 // ---- Graph query describing schema. --------------------------------------

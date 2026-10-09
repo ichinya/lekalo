@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "dev.lekalo.mcp-tool-trace-export-output@0.8.0",
   "title": "Lekalo MCP tool output: trace-export",
-  "description": "Issue #33 closed result envelope of the trace-export tool. status \"valid\" carries the preserved core receipt in \"result\"; every other status carries the typed \"failure\" branch and never a fabricated payload. Presence of result/failure per status, and refusal classes, are enforced semantically by the server and by scripts/test-mcp-contracts.mjs.",
+  "description": "Issue #33 closed result envelope of the trace-export tool. status \"valid\" carries the preserved core receipt in \"result\"; every other status carries the typed \"failure\" branch and never a fabricated payload. The status/result|failure coherence is the published conditional; embedded core payloads are the exact bundled upstream definitions.",
   "type": "object",
   "properties": {
     "schemaVersion": {
@@ -77,9 +77,9 @@
       "type": "array",
       "maxItems": 64,
       "items": {
-        "type": "object"
+        "$ref": "#/$defs/diagnosticItem"
       },
-      "description": "Wire diagnostic items (lekalo/diagnostic/v0.2.16) resolved against dev.lekalo.diagnostic-registry@0.8.0; scripts/test-mcp-contracts.mjs validates every item against the published diagnostic schema and the union registry."
+      "description": "Wire diagnostic items (lekalo/diagnostic/v0.2.16) resolved against dev.lekalo.diagnostic-registry@0.8.0; every item is the closed published projection bundled under $defs.diagnosticItem."
     },
     "result": {
       "type": "object",
@@ -91,7 +91,7 @@
           "const": "dev.lekalo.trace-manifest@0.2.16"
         },
         "trace": {
-          "type": "object"
+          "$ref": "#/$defs/trace.Root"
         },
         "manifestDigest": {
           "type": "string",
@@ -151,5 +151,1102 @@
     "contractPins",
     "diagnostics"
   ],
-  "additionalProperties": false
+  "additionalProperties": false,
+  "if": {
+    "properties": {
+      "status": {
+        "const": "valid"
+      }
+    },
+    "required": [
+      "status"
+    ]
+  },
+  "then": {
+    "properties": {
+      "result": {
+        "$ref": "#/$defs/_anchor"
+      },
+      "failure": {
+        "not": {}
+      }
+    },
+    "required": [
+      "result"
+    ]
+  },
+  "else": {
+    "properties": {
+      "failure": {
+        "$ref": "#/$defs/_anchor"
+      },
+      "result": {
+        "not": {}
+      }
+    },
+    "required": [
+      "failure"
+    ]
+  },
+  "$defs": {
+    "_anchor": {},
+    "validation.counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "error",
+        "warning",
+        "info"
+      ],
+      "properties": {
+        "error": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "warning": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "info": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "validation.report": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "profileVersion",
+        "registryVersion",
+        "rulesEnabled",
+        "counts"
+      ],
+      "properties": {
+        "profile": {
+          "description": "The closed built-in profile id that ran (`default` or `strict`).",
+          "type": "string",
+          "enum": [
+            "default",
+            "strict"
+          ]
+        },
+        "profileVersion": {
+          "description": "The exact profile document version that ran.",
+          "const": "0.6.4"
+        },
+        "registryVersion": {
+          "description": "The exact diagnostic registry version the findings resolve against.",
+          "const": "0.6.4"
+        },
+        "moduleScope": {
+          "description": "Present only for a `--module`-scoped run; the module semantic id scope.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "rulesEnabled": {
+          "description": "The number of rules the profile enabled.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4096
+        },
+        "counts": {
+          "$ref": "#/$defs/validation.counts"
+        }
+      }
+    },
+    "validation.diagnostic": {
+      "ruleId": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
+        "maxLength": 128
+      },
+      "diagnosticCode": {
+        "type": "string",
+        "pattern": "^LEK-[A-Z][A-Z0-9]{1,11}-[0-9]{3}$"
+      },
+      "symbolId": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){1,2}$",
+        "maxLength": 256
+      },
+      "boundedText": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      },
+      "logicalPath": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9._-]+)*$",
+        "maxLength": 1024,
+        "not": {
+          "pattern": "(^|/)\\.\\.?(/|$)"
+        }
+      },
+      "position": {
+        "type": "object",
+        "properties": {
+          "byte": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "column": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "byte",
+          "line",
+          "column"
+        ],
+        "additionalProperties": false
+      },
+      "range": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "$ref": "#/$defs/validation.diagnostic/position"
+          },
+          "end": {
+            "$ref": "#/$defs/validation.diagnostic/position"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "additionalProperties": false
+      },
+      "source": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "$ref": "#/$defs/validation.diagnostic/logicalPath"
+          },
+          "range": {
+            "$ref": "#/$defs/validation.diagnostic/range"
+          }
+        },
+        "additionalProperties": false,
+        "minProperties": 1
+      },
+      "dataObject": {
+        "type": "object",
+        "maxProperties": 16,
+        "propertyNames": {
+          "pattern": "^[A-Za-z][A-Za-z0-9]{0,31}$"
+        },
+        "additionalProperties": {
+          "$ref": "#/$defs/validation.diagnostic/dataValue"
+        }
+      },
+      "dataValue": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 256
+          },
+          {
+            "type": "integer",
+            "minimum": 0
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "object",
+            "maxProperties": 16,
+            "propertyNames": {
+              "pattern": "^[A-Za-z][A-Za-z0-9]{0,31}$"
+            },
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 256
+                },
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "object",
+                  "maxProperties": 16,
+                  "propertyNames": {
+                    "pattern": "^[A-Za-z][A-Za-z0-9]{0,31}$"
+                  },
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 256
+                      },
+                      {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      {
+                        "type": "boolean"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 256
+                },
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            }
+          },
+          {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "object",
+              "maxProperties": 16,
+              "propertyNames": {
+                "pattern": "^[A-Za-z][A-Za-z0-9]{0,31}$"
+              },
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "location": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "$ref": "#/$defs/validation.diagnostic/logicalPath"
+          },
+          "range": {
+            "$ref": "#/$defs/validation.diagnostic/range"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
+      },
+      "relatedLocations": {
+        "type": "array",
+        "maxItems": 32,
+        "items": {
+          "type": "object",
+          "properties": {
+            "relation": {
+              "$ref": "#/$defs/validation.diagnostic/ruleId"
+            },
+            "message_id": {
+              "$ref": "#/$defs/validation.diagnostic/ruleId"
+            },
+            "location": {
+              "$ref": "#/$defs/validation.diagnostic/location"
+            }
+          },
+          "required": [
+            "relation",
+            "message_id",
+            "location"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "causes": {
+        "type": "array",
+        "maxItems": 8,
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/validation.diagnostic/ruleId"
+            },
+            "code": {
+              "$ref": "#/$defs/validation.diagnostic/diagnosticCode"
+            },
+            "message_id": {
+              "$ref": "#/$defs/validation.diagnostic/ruleId"
+            },
+            "message": {
+              "$ref": "#/$defs/validation.diagnostic/boundedText"
+            },
+            "data": {
+              "$ref": "#/$defs/validation.diagnostic/dataObject"
+            },
+            "provider": {
+              "$ref": "#/$defs/validation.diagnostic/providerMetadata"
+            }
+          },
+          "required": [
+            "id",
+            "code",
+            "message_id",
+            "message",
+            "data"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "fixes": {
+        "type": "array",
+        "maxItems": 16,
+        "items": {
+          "type": "object",
+          "properties": {
+            "fix_id": {
+              "$ref": "#/$defs/validation.diagnostic/ruleId"
+            },
+            "applicability": {
+              "enum": [
+                "safe",
+                "unsafe",
+                "breaking"
+              ]
+            },
+            "message": {
+              "$ref": "#/$defs/validation.diagnostic/boundedText"
+            },
+            "data": {
+              "$ref": "#/$defs/validation.diagnostic/dataObject"
+            },
+            "target": {
+              "$ref": "#/$defs/validation.diagnostic/location"
+            }
+          },
+          "required": [
+            "fix_id",
+            "applicability",
+            "message"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "providerMetadata": {
+        "type": "object",
+        "maxProperties": 8,
+        "propertyNames": {
+          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+:[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "maxLength": 128
+        },
+        "additionalProperties": {
+          "type": "object",
+          "properties": {
+            "original_code": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[\\x21-\\x7E]+$"
+            }
+          },
+          "required": [
+            "original_code"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "diagnosticItem": {
+      "description": "One closed `lekalo/diagnostic/v0.2.16` item: a faithful projection of the governing `contracts/diagnostic.schema.v0.2.16.json` (same grammars, bounds, and closed object shapes) with the receipt-level constants pinned.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "registry_version",
+        "id",
+        "code",
+        "severity",
+        "category",
+        "message_id",
+        "message",
+        "data",
+        "related_locations",
+        "causes",
+        "fixes",
+        "metadata"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "lekalo/diagnostic/v0.2.16"
+        },
+        "registry_version": {
+          "const": "0.6.4"
+        },
+        "id": {
+          "$ref": "#/$defs/validation.diagnostic/ruleId"
+        },
+        "code": {
+          "$ref": "#/$defs/validation.diagnostic/diagnosticCode"
+        },
+        "severity": {
+          "enum": [
+            "info",
+            "warning",
+            "error"
+          ]
+        },
+        "category": {
+          "enum": [
+            "model",
+            "semantic",
+            "compatibility",
+            "adapter",
+            "infrastructure",
+            "security"
+          ]
+        },
+        "message_id": {
+          "$ref": "#/$defs/validation.diagnostic/ruleId"
+        },
+        "message": {
+          "$ref": "#/$defs/validation.diagnostic/boundedText"
+        },
+        "symbol": {
+          "$ref": "#/$defs/validation.diagnostic/symbolId"
+        },
+        "source": {
+          "$ref": "#/$defs/validation.diagnostic/source"
+        },
+        "data": {
+          "$ref": "#/$defs/validation.diagnostic/dataObject"
+        },
+        "related_locations": {
+          "$ref": "#/$defs/validation.diagnostic/relatedLocations"
+        },
+        "causes": {
+          "$ref": "#/$defs/validation.diagnostic/causes"
+        },
+        "fixes": {
+          "$ref": "#/$defs/validation.diagnostic/fixes"
+        },
+        "metadata": {
+          "$ref": "#/$defs/validation.diagnostic/providerMetadata"
+        }
+      }
+    },
+    "trace.Root": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": "lekalo/trace-manifest/v0.2.16"
+        },
+        "identity": {
+          "const": "dev.lekalo.trace-manifest@0.2.16"
+        },
+        "manifestId": {
+          "description": "The stable logical export identity of one manifest; never a path, URL, or timestamp.",
+          "$ref": "#/$defs/trace.manifestId"
+        },
+        "projectRef": {
+          "description": "The opaque stable project identity; no repository URL or physical root.",
+          "$ref": "#/$defs/trace.semanticId"
+        },
+        "completeness": {
+          "description": "The completeness claim. full requires zero gaps, every relation confirmed, and complete sink coverage for the export profile; partial requires at least one explicit gap.",
+          "enum": [
+            "full",
+            "partial"
+          ]
+        },
+        "sourceRevision": {
+          "description": "The exact source control revision the whole manifest is bound to.",
+          "$ref": "#/$defs/trace.revision"
+        },
+        "modelRef": {
+          "description": "The exact Model contract version and canonical model digest binding.",
+          "$ref": "#/$defs/trace.contractRef"
+        },
+        "irRef": {
+          "$ref": "#/$defs/trace.contractRef"
+        },
+        "graphRef": {
+          "$ref": "#/$defs/trace.contractRef"
+        },
+        "artifactManifestRef": {
+          "$ref": "#/$defs/trace.contractRef"
+        },
+        "exportProfile": {
+          "description": "The closed chain-coverage claim: every sink node must be reachable from at least one source node of the profile following relation directions.",
+          "enum": [
+            "requirement-to-gate",
+            "requirement-to-test",
+            "requirement-to-scenario",
+            "artifact-to-gate",
+            "artifact-to-test"
+          ]
+        },
+        "nodes": {
+          "type": "array",
+          "maxItems": 100000,
+          "items": {
+            "$ref": "#/$defs/trace.node"
+          }
+        },
+        "relations": {
+          "type": "array",
+          "maxItems": 250000,
+          "items": {
+            "$ref": "#/$defs/trace.relation"
+          }
+        },
+        "gaps": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "$ref": "#/$defs/trace.gap"
+          }
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "identity",
+        "manifestId",
+        "projectRef",
+        "completeness",
+        "sourceRevision",
+        "modelRef",
+        "exportProfile",
+        "nodes",
+        "relations",
+        "gaps"
+      ],
+      "additionalProperties": false
+    },
+    "trace.semanticId": {
+      "description": "A stable semantic id: dotted lowercase segments or an uppercase requirement id (issue #6 grammar).",
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_][a-zA-Z0-9_.:-]{0,191}$",
+      "maxLength": 192
+    },
+    "trace.manifestId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9.-]{2,127}$",
+      "maxLength": 128
+    },
+    "trace.revision": {
+      "description": "An exact lowercase hex source revision: 40 hex (SHA-1) or 64 hex (SHA-256).",
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+    },
+    "trace.digest": {
+      "description": "The exact `sha256:<64 lowercase hex>` digest grammar.",
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "trace.contractVersion": {
+      "description": "A canonical `X.Y.Z` contract version.",
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "maxLength": 32
+    },
+    "trace.nodeId": {
+      "description": "One occurrence-safe node identity, unique inside one manifest.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.:-]{0,191}$",
+      "maxLength": 192
+    },
+    "trace.adapterId": {
+      "description": "A namespaced provider or adapter identity.",
+      "type": "string",
+      "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+(/[a-z][a-z0-9-]{0,62})?$",
+      "maxLength": 128
+    },
+    "trace.externalSystem": {
+      "description": "The closed external source-system vocabulary; identity data always stays owner-owned.",
+      "enum": [
+        "openspec",
+        "hlv",
+        "source-native",
+        "aifhub",
+        "lekalo"
+      ]
+    },
+    "trace.logicalPath": {
+      "description": "A privacy-safe project-relative POSIX logical path; lexical grammar only, never resolved physically.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$",
+      "maxLength": 512
+    },
+    "trace.externalRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "system",
+        "originalId"
+      ],
+      "properties": {
+        "system": {
+          "$ref": "#/$defs/trace.externalSystem"
+        },
+        "originalId": {
+          "description": "The external original id preserved verbatim (OpenSpec requirement, HLV native test/diagnostic, provider id); never display text or rendered prose.",
+          "$ref": "#/$defs/trace.semanticId"
+        },
+        "contractVersion": {
+          "$ref": "#/$defs/trace.contractVersion"
+        },
+        "revision": {
+          "$ref": "#/$defs/trace.revision"
+        },
+        "digest": {
+          "$ref": "#/$defs/trace.digest"
+        }
+      }
+    },
+    "trace.contractRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "digest"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "$ref": "#/$defs/trace.contractVersion"
+        },
+        "digest": {
+          "description": "The canonical digest of the referenced contract payload.",
+          "$ref": "#/$defs/trace.digest"
+        }
+      }
+    },
+    "trace.node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nodeId",
+        "nodeKind"
+      ],
+      "properties": {
+        "nodeId": {
+          "$ref": "#/$defs/trace.nodeId"
+        },
+        "nodeKind": {
+          "enum": [
+            "requirement",
+            "symbol",
+            "artifact",
+            "scenario",
+            "native_test",
+            "gate",
+            "diagnostic"
+          ]
+        },
+        "requirementId": {
+          "$ref": "#/$defs/trace.semanticId"
+        },
+        "semanticId": {
+          "$ref": "#/$defs/trace.semanticId"
+        },
+        "artifactId": {
+          "description": "The stable artifact-entry identity from the artifact-manifest seam.",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+          "maxLength": 128
+        },
+        "ownership": {
+          "description": "The closed artifact ownership vocabulary.",
+          "enum": [
+            "generated",
+            "scaffolded",
+            "checked",
+            "external",
+            "custom"
+          ]
+        },
+        "path": {
+          "$ref": "#/$defs/trace.logicalPath"
+        },
+        "contentDigest": {
+          "$ref": "#/$defs/trace.digest"
+        },
+        "revision": {
+          "$ref": "#/$defs/trace.revision"
+        },
+        "generatorRef": {
+          "$ref": "#/$defs/trace.adapterId"
+        },
+        "manifestDigest": {
+          "description": "The canonical digest of the artifact manifest revision the entry is bound to.",
+          "$ref": "#/$defs/trace.digest"
+        },
+        "scenarioId": {
+          "$ref": "#/$defs/trace.semanticId"
+        },
+        "testId": {
+          "$ref": "#/$defs/trace.semanticId"
+        },
+        "gateId": {
+          "$ref": "#/$defs/trace.semanticId"
+        },
+        "diagnosticId": {
+          "$ref": "#/$defs/trace.semanticId"
+        },
+        "contractVersion": {
+          "$ref": "#/$defs/trace.contractVersion"
+        },
+        "evidenceDigest": {
+          "description": "The exact digest of the referenced evidence payload; identity never derives from it.",
+          "$ref": "#/$defs/trace.digest"
+        },
+        "externalRefs": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/trace.externalRef"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "nodeKind": {
+                "const": "requirement"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "requirementId"
+            ],
+            "properties": {
+              "requirementId": {
+                "$ref": "#/$defs/trace.semanticId"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "nodeKind": {
+                "const": "symbol"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "semanticId"
+            ],
+            "properties": {
+              "semanticId": {
+                "$ref": "#/$defs/trace.semanticId"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "nodeKind": {
+                "const": "artifact"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "artifactId",
+              "ownership",
+              "path",
+              "contentDigest"
+            ],
+            "properties": {
+              "artifactId": {
+                "$ref": "#/$defs/trace.semanticId"
+              },
+              "ownership": {
+                "enum": [
+                  "generated",
+                  "scaffolded",
+                  "checked",
+                  "external",
+                  "custom"
+                ]
+              },
+              "path": {
+                "$ref": "#/$defs/trace.logicalPath"
+              },
+              "contentDigest": {
+                "$ref": "#/$defs/trace.digest"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "nodeKind": {
+                "const": "scenario"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "scenarioId"
+            ],
+            "properties": {
+              "scenarioId": {
+                "$ref": "#/$defs/trace.semanticId"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "nodeKind": {
+                "const": "native_test"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "testId"
+            ],
+            "properties": {
+              "testId": {
+                "$ref": "#/$defs/trace.semanticId"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "nodeKind": {
+                "const": "gate"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "gateId"
+            ],
+            "properties": {
+              "gateId": {
+                "$ref": "#/$defs/trace.semanticId"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "nodeKind": {
+                "const": "diagnostic"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "diagnosticId"
+            ],
+            "properties": {
+              "diagnosticId": {
+                "$ref": "#/$defs/trace.semanticId"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "trace.relation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relationId",
+        "relationKind",
+        "fromNode",
+        "toNode",
+        "occurrence",
+        "provenance",
+        "confidence",
+        "status",
+        "evidenceRefs"
+      ],
+      "properties": {
+        "relationId": {
+          "description": "The canonical identity: `sha256:` over the fixed domain tag plus the relation kind, endpoints, and occurrence, so repeated endpoint pairs stay distinct.",
+          "$ref": "#/$defs/trace.digest"
+        },
+        "relationKind": {
+          "enum": [
+            "implements",
+            "binds",
+            "covers",
+            "verifies",
+            "evidences",
+            "derived_from",
+            "references",
+            "supersedes"
+          ]
+        },
+        "fromNode": {
+          "$ref": "#/$defs/trace.nodeId"
+        },
+        "toNode": {
+          "$ref": "#/$defs/trace.nodeId"
+        },
+        "occurrence": {
+          "description": "The stable parent member/role/ordinal of this use; never an array position.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$",
+          "maxLength": 64
+        },
+        "provenance": {
+          "$ref": "#/$defs/trace.provenance"
+        },
+        "confidence": {
+          "enum": [
+            "exact",
+            "high",
+            "medium",
+            "low",
+            "unknown"
+          ]
+        },
+        "status": {
+          "enum": [
+            "confirmed",
+            "candidate",
+            "stale",
+            "conflicting",
+            "invalid",
+            "unsupported",
+            "infrastructure"
+          ]
+        },
+        "evidenceRefs": {
+          "description": "The exact nodes carrying the evidence for this relation; every reference must resolve.",
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/trace.nodeId"
+          }
+        }
+      }
+    },
+    "trace.provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "origin",
+        "sourceSystem",
+        "sourceRevision",
+        "sourceDigest",
+        "recordedBy"
+      ],
+      "properties": {
+        "origin": {
+          "enum": [
+            "declared",
+            "observed",
+            "inferred",
+            "imported"
+          ]
+        },
+        "sourceSystem": {
+          "$ref": "#/$defs/trace.externalSystem"
+        },
+        "sourceRevision": {
+          "$ref": "#/$defs/trace.revision"
+        },
+        "sourceDigest": {
+          "$ref": "#/$defs/trace.digest"
+        },
+        "recordedBy": {
+          "$ref": "#/$defs/trace.adapterId"
+        },
+        "sourcePath": {
+          "$ref": "#/$defs/trace.logicalPath"
+        }
+      }
+    },
+    "trace.gap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gapKind",
+        "status"
+      ],
+      "properties": {
+        "gapKind": {
+          "enum": [
+            "missing-requirement",
+            "missing-symbol",
+            "missing-binding",
+            "missing-artifact",
+            "missing-scenario",
+            "missing-native-test",
+            "missing-gate",
+            "stale-revision",
+            "digest-mismatch",
+            "conflict",
+            "unsupported-provider",
+            "privacy-redacted"
+          ]
+        },
+        "status": {
+          "description": "A gap is never confirmed: the closed gap statuses exclude confirmed by construction.",
+          "enum": [
+            "candidate",
+            "stale",
+            "conflicting",
+            "invalid",
+            "unsupported",
+            "infrastructure"
+          ]
+        },
+        "anchorNode": {
+          "description": "The existing node the missing chain segment hangs on.",
+          "$ref": "#/$defs/trace.nodeId"
+        },
+        "expected": {
+          "description": "The opaque external id the chain expected; never fabricated into a node.",
+          "$ref": "#/$defs/trace.semanticId"
+        },
+        "sourcePath": {
+          "$ref": "#/$defs/trace.logicalPath"
+        }
+      }
+    }
+  }
 }

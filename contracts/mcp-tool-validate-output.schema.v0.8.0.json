@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "dev.lekalo.mcp-tool-validate-output@0.8.0",
   "title": "Lekalo MCP tool output: validate",
-  "description": "Issue #33 closed result envelope of the validate tool. status \"valid\" carries the preserved core receipt in \"result\"; every other status carries the typed \"failure\" branch and never a fabricated payload. Presence of result/failure per status, and refusal classes, are enforced semantically by the server and by scripts/test-mcp-contracts.mjs.",
+  "description": "Issue #33 closed result envelope of the validate tool. status \"valid\" carries the preserved core receipt in \"result\"; every other status carries the typed \"failure\" branch and never a fabricated payload. The status/result|failure coherence is the published conditional; embedded core payloads are the exact bundled upstream definitions.",
   "type": "object",
   "properties": {
     "schemaVersion": {
@@ -77,13 +77,13 @@
       "type": "array",
       "maxItems": 64,
       "items": {
-        "type": "object"
+        "$ref": "#/$defs/diagnosticItem"
       },
-      "description": "Wire diagnostic items (lekalo/diagnostic/v0.2.16) resolved against dev.lekalo.diagnostic-registry@0.8.0; scripts/test-mcp-contracts.mjs validates every item against the published diagnostic schema and the union registry."
+      "description": "Wire diagnostic items (lekalo/diagnostic/v0.2.16) resolved against dev.lekalo.diagnostic-registry@0.8.0; every item is the closed published projection bundled under $defs.diagnosticItem."
     },
     "result": {
       "type": "object",
-      "description": "The exact validation success receipt (contracts/validation-report.schema.v0.6.4.json): status, modelVersion, the report wire, and the optional findings/reasonCodes members.",
+      "description": "The exact validation success receipt (contracts/validation-report.schema.v0.6.4.json): status, modelVersion, the report wire, and the optional findings/reasonCodes members, all closed over their bundled upstream definitions.",
       "properties": {
         "status": {
           "const": "valid"
@@ -93,13 +93,13 @@
           "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
         },
         "validation": {
-          "type": "object"
+          "$ref": "#/$defs/validation.report"
         },
         "diagnostics": {
           "type": "array",
           "maxItems": 512,
           "items": {
-            "type": "object"
+            "$ref": "#/$defs/diagnosticItem"
           }
         },
         "reasonCodes": {
@@ -164,5 +164,515 @@
     "contractPins",
     "diagnostics"
   ],
-  "additionalProperties": false
+  "additionalProperties": false,
+  "if": {
+    "properties": {
+      "status": {
+        "const": "valid"
+      }
+    },
+    "required": [
+      "status"
+    ]
+  },
+  "then": {
+    "properties": {
+      "result": {
+        "$ref": "#/$defs/_anchor"
+      },
+      "failure": {
+        "not": {}
+      }
+    },
+    "required": [
+      "result"
+    ]
+  },
+  "else": {
+    "properties": {
+      "failure": {
+        "$ref": "#/$defs/_anchor"
+      },
+      "result": {
+        "not": {}
+      }
+    },
+    "required": [
+      "failure"
+    ]
+  },
+  "$defs": {
+    "_anchor": {},
+    "validation.counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "error",
+        "warning",
+        "info"
+      ],
+      "properties": {
+        "error": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "warning": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "info": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "validation.report": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "profileVersion",
+        "registryVersion",
+        "rulesEnabled",
+        "counts"
+      ],
+      "properties": {
+        "profile": {
+          "description": "The closed built-in profile id that ran (`default` or `strict`).",
+          "type": "string",
+          "enum": [
+            "default",
+            "strict"
+          ]
+        },
+        "profileVersion": {
+          "description": "The exact profile document version that ran.",
+          "const": "0.6.4"
+        },
+        "registryVersion": {
+          "description": "The exact diagnostic registry version the findings resolve against.",
+          "const": "0.6.4"
+        },
+        "moduleScope": {
+          "description": "Present only for a `--module`-scoped run; the module semantic id scope.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "rulesEnabled": {
+          "description": "The number of rules the profile enabled.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4096
+        },
+        "counts": {
+          "$ref": "#/$defs/validation.counts"
+        }
+      }
+    },
+    "validation.diagnostic": {
+      "ruleId": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
+        "maxLength": 128
+      },
+      "diagnosticCode": {
+        "type": "string",
+        "pattern": "^LEK-[A-Z][A-Z0-9]{1,11}-[0-9]{3}$"
+      },
+      "symbolId": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){1,2}$",
+        "maxLength": 256
+      },
+      "boundedText": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      },
+      "logicalPath": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9._-]+)*$",
+        "maxLength": 1024,
+        "not": {
+          "pattern": "(^|/)\\.\\.?(/|$)"
+        }
+      },
+      "position": {
+        "type": "object",
+        "properties": {
+          "byte": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "column": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "byte",
+          "line",
+          "column"
+        ],
+        "additionalProperties": false
+      },
+      "range": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "$ref": "#/$defs/validation.diagnostic/position"
+          },
+          "end": {
+            "$ref": "#/$defs/validation.diagnostic/position"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "additionalProperties": false
+      },
+      "source": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "$ref": "#/$defs/validation.diagnostic/logicalPath"
+          },
+          "range": {
+            "$ref": "#/$defs/validation.diagnostic/range"
+          }
+        },
+        "additionalProperties": false,
+        "minProperties": 1
+      },
+      "dataObject": {
+        "type": "object",
+        "maxProperties": 16,
+        "propertyNames": {
+          "pattern": "^[A-Za-z][A-Za-z0-9]{0,31}$"
+        },
+        "additionalProperties": {
+          "$ref": "#/$defs/validation.diagnostic/dataValue"
+        }
+      },
+      "dataValue": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 256
+          },
+          {
+            "type": "integer",
+            "minimum": 0
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "object",
+            "maxProperties": 16,
+            "propertyNames": {
+              "pattern": "^[A-Za-z][A-Za-z0-9]{0,31}$"
+            },
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 256
+                },
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "object",
+                  "maxProperties": 16,
+                  "propertyNames": {
+                    "pattern": "^[A-Za-z][A-Za-z0-9]{0,31}$"
+                  },
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 256
+                      },
+                      {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      {
+                        "type": "boolean"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 256
+                },
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            }
+          },
+          {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "object",
+              "maxProperties": 16,
+              "propertyNames": {
+                "pattern": "^[A-Za-z][A-Za-z0-9]{0,31}$"
+              },
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "location": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "$ref": "#/$defs/validation.diagnostic/logicalPath"
+          },
+          "range": {
+            "$ref": "#/$defs/validation.diagnostic/range"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
+      },
+      "relatedLocations": {
+        "type": "array",
+        "maxItems": 32,
+        "items": {
+          "type": "object",
+          "properties": {
+            "relation": {
+              "$ref": "#/$defs/validation.diagnostic/ruleId"
+            },
+            "message_id": {
+              "$ref": "#/$defs/validation.diagnostic/ruleId"
+            },
+            "location": {
+              "$ref": "#/$defs/validation.diagnostic/location"
+            }
+          },
+          "required": [
+            "relation",
+            "message_id",
+            "location"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "causes": {
+        "type": "array",
+        "maxItems": 8,
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/validation.diagnostic/ruleId"
+            },
+            "code": {
+              "$ref": "#/$defs/validation.diagnostic/diagnosticCode"
+            },
+            "message_id": {
+              "$ref": "#/$defs/validation.diagnostic/ruleId"
+            },
+            "message": {
+              "$ref": "#/$defs/validation.diagnostic/boundedText"
+            },
+            "data": {
+              "$ref": "#/$defs/validation.diagnostic/dataObject"
+            },
+            "provider": {
+              "$ref": "#/$defs/validation.diagnostic/providerMetadata"
+            }
+          },
+          "required": [
+            "id",
+            "code",
+            "message_id",
+            "message",
+            "data"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "fixes": {
+        "type": "array",
+        "maxItems": 16,
+        "items": {
+          "type": "object",
+          "properties": {
+            "fix_id": {
+              "$ref": "#/$defs/validation.diagnostic/ruleId"
+            },
+            "applicability": {
+              "enum": [
+                "safe",
+                "unsafe",
+                "breaking"
+              ]
+            },
+            "message": {
+              "$ref": "#/$defs/validation.diagnostic/boundedText"
+            },
+            "data": {
+              "$ref": "#/$defs/validation.diagnostic/dataObject"
+            },
+            "target": {
+              "$ref": "#/$defs/validation.diagnostic/location"
+            }
+          },
+          "required": [
+            "fix_id",
+            "applicability",
+            "message"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "providerMetadata": {
+        "type": "object",
+        "maxProperties": 8,
+        "propertyNames": {
+          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+:[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "maxLength": 128
+        },
+        "additionalProperties": {
+          "type": "object",
+          "properties": {
+            "original_code": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[\\x21-\\x7E]+$"
+            }
+          },
+          "required": [
+            "original_code"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "diagnosticItem": {
+      "description": "One closed `lekalo/diagnostic/v0.2.16` item: a faithful projection of the governing `contracts/diagnostic.schema.v0.2.16.json` (same grammars, bounds, and closed object shapes) with the receipt-level constants pinned.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "registry_version",
+        "id",
+        "code",
+        "severity",
+        "category",
+        "message_id",
+        "message",
+        "data",
+        "related_locations",
+        "causes",
+        "fixes",
+        "metadata"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "lekalo/diagnostic/v0.2.16"
+        },
+        "registry_version": {
+          "const": "0.6.4"
+        },
+        "id": {
+          "$ref": "#/$defs/validation.diagnostic/ruleId"
+        },
+        "code": {
+          "$ref": "#/$defs/validation.diagnostic/diagnosticCode"
+        },
+        "severity": {
+          "enum": [
+            "info",
+            "warning",
+            "error"
+          ]
+        },
+        "category": {
+          "enum": [
+            "model",
+            "semantic",
+            "compatibility",
+            "adapter",
+            "infrastructure",
+            "security"
+          ]
+        },
+        "message_id": {
+          "$ref": "#/$defs/validation.diagnostic/ruleId"
+        },
+        "message": {
+          "$ref": "#/$defs/validation.diagnostic/boundedText"
+        },
+        "symbol": {
+          "$ref": "#/$defs/validation.diagnostic/symbolId"
+        },
+        "source": {
+          "$ref": "#/$defs/validation.diagnostic/source"
+        },
+        "data": {
+          "$ref": "#/$defs/validation.diagnostic/dataObject"
+        },
+        "related_locations": {
+          "$ref": "#/$defs/validation.diagnostic/relatedLocations"
+        },
+        "causes": {
+          "$ref": "#/$defs/validation.diagnostic/causes"
+        },
+        "fixes": {
+          "$ref": "#/$defs/validation.diagnostic/fixes"
+        },
+        "metadata": {
+          "$ref": "#/$defs/validation.diagnostic/providerMetadata"
+        }
+      }
+    }
+  }
 }
