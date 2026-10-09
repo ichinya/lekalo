@@ -236,6 +236,19 @@ final class Paths {
         return preg_match('/^[a-z][a-z0-9-]*$/', $value) === 1;
     }
 
+    /** The production ai-lint identifier grammar (issue #106 review r3
+     * #5): core ai_lint::input::token gates the lint scope items,
+     * binding nativeId/symbol, and the revision pin's known value —
+     * non-empty, at most 256 bytes, ASCII alphanumeric or
+     * `_.:/#@\\-`, starting alphanumeric. The SDK used to enforce a
+     * length bound only. */
+    public static function isWireToken(string $value): bool {
+        if ($value === '' || strlen($value) > 256) {
+            return false;
+        }
+        return preg_match('/^[A-Za-z0-9][A-Za-z0-9_.:\/#@\\\\-]*$/', $value) === 1;
+    }
+
     public static function isCapabilityId(string $value): bool {
         if ($value === '' || strlen($value) > 128) {
             return false;

@@ -145,6 +145,18 @@ export function isToken(value) {
   return [...value].every((c) => (c >= "a" && c <= "z") || (c >= "0" && c <= "9") || c === "-");
 }
 
+/** The production ai-lint identifier grammar (issue #106 review r3 #5):
+ * core `ai_lint::input::token` gates the lint scope items, binding
+ * nativeId/symbol, and the revision pin's known value — non-empty, at
+ * most 256 UTF-8 bytes, ASCII alphanumeric or `_.:/#@\\-`, starting
+ * alphanumeric. The SDKs used to enforce a length bound only. */
+export function isWireToken(value) {
+  if (typeof value !== "string" || value === "") return false;
+  if (Buffer.byteLength(value, "utf8") > 256) return false;
+  if (!/^[A-Za-z0-9]/.test(value)) return false;
+  return /^[A-Za-z0-9_.:\/#@\\-]*$/.test(value);
+}
+
 /** The closed capability-id grammar (lowercase dotted segments). */
 export function isCapabilityId(value) {
   if (typeof value !== "string" || value === "" || value.length > 128) return false;

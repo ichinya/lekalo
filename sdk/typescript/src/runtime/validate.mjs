@@ -6,7 +6,7 @@
  * policy.
  */
 import { BASE_OPERATIONS, ENUMS, IR_VERSIONS, LATEST_OPERATIONS, SUPPORTED_PROTOCOL_VERSIONS, WIRE_TOKEN } from "../generated/protocol.mjs";
-import { isLogicalPath } from "./paths.mjs";
+import { isLogicalPath, isWireToken } from "./paths.mjs";
 import { isPlanId, isSha256Digest } from "./ids.mjs";
 
 /** The closed semantic refusal tokens (distinct from decode reasons). */
@@ -26,7 +26,10 @@ const isSorted = (values) => {
   }
   return true;
 };
-const isDetailToken = (value) => typeof value === "string" && value.length > 0 && value.length <= 128;
+// Production gates the lint-request identifier members with the strict
+// ai-lint token grammar, not a length bound (issue #106 review r3 #5):
+// scope items refuse as lint-request, binding nativeId/symbol as
+// lint-binding, and the revision pin's known value as lint-pin.
 
 const requiresIr = (operation) => ["validate", "generate", "verify"].includes(operation);
 const declaresWrites = (operation) => ["generate", "clean", "plan-clean"].includes(operation);
@@ -44,11 +47,11 @@ export function validateRequest(request) {
     if (request.profile !== undefined || request.profile_digest !== undefined || request.profile_capabilities !== undefined) return invalid("lint-request");
     if (request.ir_path !== undefined || request.native_request !== undefined || request.dry_run !== undefined || request.plan_id !== undefined) return invalid("lint-request");
     const lint = request.lint_request;
-    if (!isSorted(lint.scope) || lint.scope.some((scope) => !isDetailToken(scope))) return invalid("lint-request");
+    if (!isSorted(lint.scope) || lint.scope.some((scope) => !isWireToken(scope))) return invalid("lint-request");
     if (!isSorted(lint.files) || lint.files.some((file) => !isLogicalPath(file))) return invalid("lint-request");
     const bindingKeys = new Set();
     for (const binding of lint.bindings) {
-      if (!isLogicalPath(binding.path) || !isDetailToken(binding.nativeId) || !isDetailToken(binding.symbol)) return invalid("lint-binding");
+      if (!isLogicalPath(binding.path) || !isWireToken(binding.nativeId) || !isWireToken(binding.symbol)) return invalid("lint-binding");
       if (!["command", "entity"].includes(binding.kind)) return invalid("lint-binding");
       if (!isSha256Digest(binding.fingerprint)) return invalid("lint-binding");
       const key = `${binding.path}\u0000${binding.nativeId}\u0000${binding.kind}`;
@@ -67,7 +70,7 @@ export function validateRequest(request) {
     for (const pin of ["observed", "profile", "capabilities"]) {
       if (pinKnown(lint.pins[pin]) !== undefined && !isSha256Digest(lint.pins[pin].value)) return invalid("lint-pin");
     }
-    if (pinKnown(lint.pins.revision) !== undefined && !isDetailToken(lint.pins.revision.value)) return invalid("lint-pin");
+    if (pinKnown(lint.pins.revision) !== undefined && !isWireToken(lint.pins.revision.value)) return invalid("lint-pin");
   }
   if (request.operation === "plan-native" && request.native_request === undefined) return invalid("native-request");
   if (request.operation !== "plan-native" && request.native_request !== undefined) return invalid("native-request");

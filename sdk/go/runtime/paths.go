@@ -296,6 +296,27 @@ func IsToken(value string) bool {
 	return true
 }
 
+// IsWireToken reports whether one lint-request identifier matches the
+// production ai-lint token grammar (issue #106 review r3 #5): non-empty,
+// at most 256 bytes, ASCII alphanumeric or `_.:/#@\\-`, starting
+// alphanumeric. The SDK used to enforce a length bound only.
+func IsWireToken(value string) bool {
+	if value == "" || len(value) > 256 {
+		return false
+	}
+	c := value[0]
+	if !(c >= 'a' && c <= 'z') && !(c >= 'A' && c <= 'Z') && !(c >= '0' && c <= '9') {
+		return false
+	}
+	for index := 0; index < len(value); index++ {
+		c := value[index]
+		if !(c >= 'a' && c <= 'z') && !(c >= 'A' && c <= 'Z') && !(c >= '0' && c <= '9') && !strings.ContainsRune("_.:/#@\\-", rune(c)) {
+			return false
+		}
+	}
+	return true
+}
+
 // IsCapabilityID reports the closed capability-id grammar.
 func IsCapabilityID(value string) bool {
 	if value == "" || len(value) > 128 {

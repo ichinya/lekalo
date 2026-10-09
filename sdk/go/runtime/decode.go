@@ -1319,6 +1319,14 @@ func ValidateRequest(value Value) *Refusal {
 		if !isSortedStrings(scope) || !isSortedStrings(files) {
 			return refuse(stageValidate, "lint-request")
 		}
+		// Production gates scope items with the ai-lint token grammar,
+		// not a length bound (issue #106 review r3 #5).
+		for _, item := range scope {
+			text, _ := item.(string)
+			if !IsWireToken(text) {
+				return refuse(stageValidate, "lint-request")
+			}
+		}
 		for _, file := range files {
 			if !IsLogicalPath(file.(string)) {
 				return refuse(stageValidate, "lint-request")
@@ -1342,8 +1350,9 @@ func ValidateRequest(value Value) *Refusal {
 			if !IsSha256Digest(GetString(binding, "fingerprint")) {
 				return refuse(stageValidate, "lint-binding")
 			}
-			symbol := GetString(binding, "symbol")
-			if symbol == "" || len(symbol) > 128 {
+			// nativeId and symbol carry the ai-lint token grammar
+			// (issue #106 review r3 #5), not a length bound.
+			if !IsWireToken(GetString(binding, "nativeId")) || !IsWireToken(GetString(binding, "symbol")) {
 				return refuse(stageValidate, "lint-binding")
 			}
 			key := path + "\x00" + GetString(binding, "nativeId") + "\x00" + GetString(binding, "kind")
@@ -1371,7 +1380,7 @@ func ValidateRequest(value Value) *Refusal {
 				return refuse(stageValidate, "lint-pin")
 			}
 		}
-		if revision, ok := pinKnown(pins.(map[string]any)["revision"]); ok && (revision == "" || len(revision) > 128) {
+		if revision, ok := pinKnown(pins.(map[string]any)["revision"]); ok && !IsWireToken(revision) {
 			return refuse(stageValidate, "lint-pin")
 		}
 	}

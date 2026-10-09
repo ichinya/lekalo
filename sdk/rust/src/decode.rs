@@ -1607,6 +1607,20 @@ fn declares_writes(operation: &str) -> bool {
 
 const LINT_VERSION: &str = "0.6.4";
 
+/// The production ai-lint identifier grammar (issue #106 review r3 #5):
+/// core `ai_lint::input::token` gates the lint scope items, binding
+/// nativeId/symbol, and the revision pin's known value — non-empty, at
+/// most 256 bytes, ASCII alphanumeric or `_.:/#@\\-`, starting
+/// alphanumeric. The SDK used to enforce a length bound only.
+fn is_wire_token(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 256
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"_.:/#@\\-".contains(&b))
+        && value.as_bytes()[0].is_ascii_alphanumeric()
+}
+
 fn is_sorted(values: &[Value]) -> bool {
     values
         .windows(2)
@@ -1652,6 +1666,9 @@ pub fn validate_request(value: &Value) -> Result<(), Refusal> {
         if !is_sorted(scope) || !is_sorted(files) {
             return invalid("lint-request");
         }
+        if scope.iter().any(|item| !is_wire_token(item.as_str().unwrap_or(""))) {
+            return invalid("lint-request");
+        }
         if files
             .iter()
             .any(|file| !file.as_str().is_some_and(is_logical_path))
@@ -1664,11 +1681,11 @@ pub fn validate_request(value: &Value) -> Result<(), Refusal> {
             .and_then(Value::as_array)
             .unwrap_or(&[])
         {
-            let path = binding.get("path").and_then(Value::as_str).unwrap_or("");
             let native_id = binding
                 .get("nativeId")
                 .and_then(Value::as_str)
                 .unwrap_or("");
+            let symbol = binding.get("symbol").and_then(Value::as_str).unwrap_or("");
             let kind = binding.get("kind").and_then(Value::as_str).unwrap_or("");
             if !is_logical_path(path) || !files.iter().any(|file| file.as_str() == Some(path)) {
                 return invalid("lint-binding");
@@ -1680,11 +1697,7 @@ pub fn validate_request(value: &Value) -> Result<(), Refusal> {
             {
                 return invalid("lint-binding");
             }
-            if !binding
-                .get("symbol")
-                .and_then(Value::as_str)
-                .is_some_and(|s| !s.is_empty() && s.len() <= 128)
-            {
+            if !is_wire_token(native_id) || !is_wire_token(symbol) {
                 return invalid("lint-binding");
             }
             if !keys.insert((path.to_owned(), native_id.to_owned(), kind.to_owned())) {
@@ -1717,7 +1730,7 @@ pub fn validate_request(value: &Value) -> Result<(), Refusal> {
             }
         }
         if let Some(value) = pin_known(pins.get("revision").unwrap_or(&Value::Null)) {
-            if value.is_empty() || value.len() > 128 {
+            if !is_wire_token(&value) {
                 return invalid("lint-pin");
             }
         }

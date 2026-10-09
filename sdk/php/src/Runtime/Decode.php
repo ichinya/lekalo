@@ -1234,6 +1234,13 @@ final class Decode {
             if (!self::isSorted($scope) || !self::isSorted($files)) {
                 return $invalid('lint-request');
             }
+            // Production gates scope items with the ai-lint token grammar,
+            // not a length bound (issue #106 review r3 #5).
+            foreach ($scope as $item) {
+                if (!is_string($item) || !Paths::isWireToken($item)) {
+                    return $invalid('lint-request');
+                }
+            }
             foreach ($files as $file) {
                 if (!Paths::isLogicalPath($file)) {
                     return $invalid('lint-request');
@@ -1248,8 +1255,9 @@ final class Decode {
                 if (!Ids::isSha256Digest($binding['fingerprint'] ?? '')) {
                     return $invalid('lint-binding');
                 }
-                $symbol = $binding['symbol'] ?? '';
-                if ($symbol === '' || mb_strlen($symbol) > 128) {
+                // nativeId and symbol carry the ai-lint token grammar
+                // (issue #106 review r3 #5), not a length bound.
+                if (!Paths::isWireToken($binding['nativeId'] ?? '') || !Paths::isWireToken($binding['symbol'] ?? '')) {
                     return $invalid('lint-binding');
                 }
                 $key = $path . "\0" . $binding['nativeId'] . "\0" . $binding['kind'];
@@ -1278,7 +1286,7 @@ final class Decode {
                 }
             }
             $revision = $pinKnown($pins['revision'] ?? null);
-            if ($revision !== null && ($revision === '' || mb_strlen($revision) > 128)) {
+            if ($revision !== null && !Paths::isWireToken($revision)) {
                 return $invalid('lint-pin');
             }
         }
