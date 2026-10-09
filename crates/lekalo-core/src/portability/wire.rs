@@ -24,6 +24,147 @@ pub fn is_digest(value: &str) -> bool {
     })
 }
 
+// The closed grammars of the published portability contracts. The typed
+// decoders enforce every pattern, enum, bound, and set rule the Draft
+// 2020-12 schemas state, so a schema-invalid document can never reach
+// semantic evaluation and an emitted report can never violate its own
+// schema (decoder/schema parity in both directions).
+
+/// The closed `semanticId` grammar: 1..192 characters, starting with an
+/// alphanumeric, then alphanumerics and `. _ : -`.
+pub(crate) fn is_semantic_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 192
+        && value.starts_with(|c: char| c.is_ascii_alphanumeric())
+        && value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | ':' | '-'))
+}
+
+/// The closed dotted `capabilityId` grammar: dot-separated lowercase
+/// components, each starting with a letter.
+pub(crate) fn is_capability_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value.split('.').all(|part| {
+            part.starts_with(|c: char| c.is_ascii_lowercase())
+                && !part.is_empty()
+                && part
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        })
+        && value.contains('.')
+}
+
+/// The closed target-id grammar: lowercase start, then lowercase,
+/// digits, and `-`.
+pub(crate) fn is_target_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value.starts_with(|c: char| c.is_ascii_lowercase())
+        && value
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+/// The exact semver grammar `major.minor.patch`, at most 32 characters.
+pub(crate) fn is_semver(value: &str) -> bool {
+    value.len() <= 32 && {
+        let parts: Vec<&str> = value.split('.').collect();
+        parts.len() == 3
+            && parts
+                .iter()
+                .all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
+    }
+}
+
+/// The closed adapter identity/protocol grammar: alphanumeric start,
+/// then alphanumerics and `. @ / _ -`.
+pub(crate) fn is_adapter_identity(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value.starts_with(|c: char| c.is_ascii_alphanumeric())
+        && value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '@' | '/' | '_' | '-'))
+}
+
+/// The closed single-token grammar (`^[a-z][a-z0-9-]*$`).
+pub(crate) fn is_lower_token(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value.starts_with(|c: char| c.is_ascii_lowercase())
+        && value
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+/// Whether one policy value satisfies the closed policy grammar: enum
+/// kind, bounded token value, and the exact numeric bounds.
+pub(crate) fn valid_policy(policy: &Policy) -> bool {
+    if !matches!(
+        policy.kind.as_str(),
+        "decimal" | "isolation" | "ordering" | "null-handling" | "rounding"
+    ) {
+        return false;
+    }
+    if policy.value.is_empty()
+        || policy.value.len() > 64
+        || !policy
+            .value
+            .starts_with(|c: char| c.is_ascii_lowercase() || c.is_ascii_digit())
+        || !policy
+            .value
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    {
+        return false;
+    }
+    if let Some(precision) = policy.precision {
+        if !(1..=1000).contains(&precision) {
+            return false;
+        }
+    }
+    if let Some(scale) = policy.scale {
+        if !(0..=1000).contains(&scale) {
+            return false;
+        }
+    }
+    true
+}
+
+/// The closed recorded-context revision grammar: 40 or 64 lowercase hex.
+pub(crate) fn is_revision(value: &str) -> bool {
+    (value.len() == 40 || value.len() == 64)
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
+/// The closed recorded-context note grammar.
+pub(crate) fn is_context_note(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 256
+        && value.starts_with(|c: char| c.is_ascii_alphanumeric())
+        && value.chars().all(|c| {
+            c.is_ascii_alphanumeric()
+                || matches!(c, ' ' | '.' | ',' | ':' | ';' | '/' | '(' | ')' | '_' | '-')
+        })
+}
+
+/// Refuse an explicit JSON `null` for a member whose type forbids it:
+/// serde's `Option` silently accepts `null` as `None`, but the closed
+/// schemas distinguish null from absent for non-nullable members.
+pub(crate) fn refuse_null_member(
+    value: &serde_json::Value,
+    member: &str,
+) -> Result<(), DiagnosticSet> {
+    if value.get(member).map(|v| v.is_null()) == Some(true) {
+        return Err(diagnostic::invalid("closed-shape"));
+    }
+    Ok(())
+}
+
 /// The closed four-dimension assessment vocabulary.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize, Hash)]
 #[serde(rename_all = "lowercase")]

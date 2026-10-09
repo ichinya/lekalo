@@ -90,6 +90,16 @@ pub fn parse_targets(bytes: &[u8]) -> Result<TargetsDocument, DiagnosticSet> {
     {
         wire::require_members(binding, &["adapterEvidenceRef", "storageProfileRefs"])?;
     }
+    // Mirror the contract's non-nullable members exactly: an explicit
+    // `null` where the schema demands a string or an array is a closed-
+    // shape refusal, never a silent reinterpretation as `absent`.
+    wire::refuse_null_member(&value, "defaultSource")?;
+    wire::refuse_null_member(&value, "defaultDestinations")?;
+    if let Some(source) = value.get("defaultSource") {
+        if !source.as_str().is_some_and(wire::is_target_id) {
+            return Err(diagnostic::invalid("default-source"));
+        }
+    }
     let document: TargetsDocument =
         serde_json::from_value(value).map_err(|_| diagnostic::invalid("closed-shape"))?;
     if document.schema_version != version::TARGETS_SCHEMA_VERSION
@@ -120,9 +130,20 @@ pub fn parse_targets(bytes: &[u8]) -> Result<TargetsDocument, DiagnosticSet> {
             }
         }
     }
+    // Mirror the contract's array bounds exactly: the schemas bound the
+    // target list and the per-binding reference lists, and an over-bound
+    // document is a refusal, never a silent truncation.
+    if document.targets.len() > 64 {
+        return Err(diagnostic::invalid("target-binding"));
+    }
+    if let Some(list) = &document.default_destinations {
+        if list.len() > 64 {
+            return Err(diagnostic::invalid("default-destination"));
+        }
+    }
     let mut ids = std::collections::BTreeSet::new();
     for binding in &document.targets {
-        if !valid_target_token(&binding.target_id) || !ids.insert(binding.target_id.as_str()) {
+        if !wire::is_target_id(&binding.target_id) || !ids.insert(binding.target_id.as_str()) {
             return Err(diagnostic::invalid("target-binding"));
         }
         for reference in [&binding.profile_document_ref]
@@ -130,16 +151,30 @@ pub fn parse_targets(bytes: &[u8]) -> Result<TargetsDocument, DiagnosticSet> {
             .chain(binding.adapter_evidence_ref.iter())
             .chain(binding.storage_profile_refs.iter())
         {
-            if crate::project_fs::path_violation(reference).is_some() {
+            if reference.len() > 256 || crate::project_fs::path_violation(reference).is_some() {
                 return Err(diagnostic::invalid("artifact-ref"));
             }
+        }
+        // The contract's `uniqueItems` on `storageProfileRefs`: repeated
+        // references would double-count one artifact and duplicate its
+        // digest pin in the report.
+        let mut unique_refs = std::collections::BTreeSet::new();
+        for reference in &binding.storage_profile_refs {
+            if !unique_refs.insert(reference.as_str()) {
+                return Err(diagnostic::invalid("duplicate-storage-ref"));
+            }
+        }
+        if binding.storage_profile_refs.len() > 16 {
+            return Err(diagnostic::invalid("target-binding"));
         }
         if !wire::is_digest(&binding.profile_ref.source_digest)
             || !wire::is_digest(&binding.profile_ref.resolved_digest)
         {
             return Err(diagnostic::invalid("profile-pin"));
         }
-        if binding.profile_ref.id.is_empty() || binding.profile_ref.version.is_empty() {
+        if !wire::is_target_id(&binding.profile_ref.id)
+            || !wire::is_semver(&binding.profile_ref.version)
+        {
             return Err(diagnostic::invalid("profile-pin"));
         }
     }
@@ -208,12 +243,41 @@ pub fn parse_evidence(
     {
         wire::require_members(scenario, &["targetId", "receiptRef", "receiptDigest"])?;
     }
+    // Mirror the evidence schema's recorded-context grammar: the
+    // revision is 40 or 64 lowercase hex and the note is bounded prose.
+    if let Some(context) = value.get("recordedContext") {
+        if let Some(revision) = context.get("revision").and_then(|r| r.as_str()) {
+            if !wire::is_revision(revision) {
+                return Err(diagnostic::invalid("recorded-context"));
+            }
+        }
+        if let Some(note) = context.get("note").and_then(|n| n.as_str()) {
+            if !wire::is_context_note(note) {
+                return Err(diagnostic::invalid("recorded-context"));
+            }
+        }
+    }
     let document: EvidenceDocument =
         serde_json::from_value(value).map_err(|_| diagnostic::invalid("closed-shape"))?;
     if document.schema_version != version::EVIDENCE_SCHEMA_VERSION
         || document.identity != version::EVIDENCE_IDENTITY
     {
         return Err(diagnostic::unsupported_version("evidence-version"));
+    }
+    // Mirror the schemas' array bounds exactly: an over-bound set-like
+    // array is a refusal, never a silent truncation or a budget surprise
+    // after decoding.
+    if document.families.len() > 64
+        || document.adapters.len() > 64
+        || document.mappings.len() > 4096
+        || document.storage_required.len() > 10_000
+        || document.storage_offered.len() > 10_000
+        || document.operational_requirements.len() > 10_000
+        || document.scenarios.len() > 10_000
+        || document.gates.len() > 10_000
+        || document.hooks.len() > 10_000
+    {
+        return Err(diagnostic::invalid("bound-exceeded"));
     }
     if document.recipe_ref.id != version::RECIPE_REF_ID
         || document.recipe_ref.version != recipe.document_version()
@@ -245,7 +309,7 @@ pub fn parse_evidence(
             return Err(diagnostic::invalid("duplicate-family"));
         }
         if let Some(reference) = &family.artifact_ref {
-            if crate::project_fs::path_violation(reference).is_some() {
+            if reference.len() > 256 || crate::project_fs::path_violation(reference).is_some() {
                 return Err(diagnostic::invalid("artifact-ref"));
             }
         }
@@ -268,17 +332,28 @@ pub fn parse_evidence(
         if !adapters.insert(adapter.target_id.as_str()) {
             return Err(diagnostic::invalid("duplicate-adapter"));
         }
+        if !wire::is_target_id(&adapter.target_id) {
+            return Err(diagnostic::invalid("adapter-target"));
+        }
         // A recorded snapshot is exact provenance: identity, version,
-        // protocol, and the digest-pinned capability must all be present.
-        // A nullable member under a recorded state is an unqualified
-        // snapshot, not an admitted one.
-        if adapter.state == wire::AdapterState::Recorded
-            && (adapter.identity.is_none()
-                || adapter.version.is_none()
-                || adapter.protocol.is_none()
-                || adapter.capability_digest.is_none()
-                || !wire::is_digest(adapter.capability_digest.as_deref().unwrap_or_default()))
-        {
+        // protocol, and the digest-pinned capability must all be present
+        // inside their closed grammars. A nullable or malformed member
+        // under a recorded state is an unqualified snapshot, never an
+        // admitted one.
+        let snapshot_qualified = adapter
+            .identity
+            .as_deref()
+            .is_some_and(wire::is_adapter_identity)
+            && adapter.version.as_deref().is_some_and(wire::is_semver)
+            && adapter
+                .protocol
+                .as_deref()
+                .is_some_and(wire::is_adapter_identity)
+            && adapter
+                .capability_digest
+                .as_deref()
+                .is_some_and(wire::is_digest);
+        if adapter.state == wire::AdapterState::Recorded && !snapshot_qualified {
             return Err(diagnostic::invalid("adapter-snapshot"));
         }
     }
@@ -287,16 +362,126 @@ pub fn parse_evidence(
         if !mappings.insert(mapping.id.as_str()) {
             return Err(diagnostic::invalid("duplicate-mapping"));
         }
-        if !valid_target_token(&mapping.target_id) {
-            return Err(diagnostic::invalid("mapping-target"));
+        if !wire::is_semantic_id(&mapping.id)
+            || !wire::is_capability_id(&mapping.requirement)
+            || !wire::is_capability_id(&mapping.capability)
+            || !wire::is_target_id(&mapping.target_id)
+            || mapping
+                .subject
+                .as_deref()
+                .is_some_and(|subject| !wire::is_semantic_id(subject))
+        {
+            return Err(diagnostic::invalid("mapping-identity"));
+        }
+        // The contract's `uniqueItems`/bounds on the set-like mapping
+        // members: repeated conditions and over-bound pin lists are a
+        // decode refusal, never silent deduplication.
+        let mut conditions = std::collections::BTreeSet::new();
+        for condition in &mapping.conditions {
+            if condition.is_empty()
+                || condition.len() > 128
+                || !wire::is_lower_token(condition)
+                || !conditions.insert(condition.as_str())
+            {
+                return Err(diagnostic::invalid("mapping-conditions"));
+            }
+        }
+        if mapping.conditions.len() > 16 || mapping.definition_pins.len() > 16 {
+            return Err(diagnostic::invalid("mapping-conditions"));
+        }
+        for pin in &mapping.definition_pins {
+            if !wire::is_capability_id(&pin.id) || !wire::is_semver(&pin.version) {
+                return Err(diagnostic::invalid("mapping-pin"));
+            }
         }
         if mapping.coverage == wire::MappingCoverage::Full && mapping.definition_pins.is_empty() {
             return Err(diagnostic::invalid("mapping-pin"));
         }
     }
+    // The closed policy grammar on every required and offered policy:
+    // an enum-breaking kind or out-of-bound precision never decodes.
+    for requirement in &document.storage_required {
+        if !wire::is_semantic_id(&requirement.subject) || !wire::valid_policy(&requirement.policy) {
+            return Err(diagnostic::invalid("policy-shape"));
+        }
+    }
+    {
+        let mut required = std::collections::BTreeSet::new();
+        for requirement in &document.storage_required {
+            if !required.insert((&requirement.subject, &requirement.policy)) {
+                return Err(diagnostic::invalid("duplicate-requirement"));
+            }
+        }
+    }
+    for offering in &document.storage_offered {
+        if !wire::is_target_id(&offering.target_id) || !wire::valid_policy(&offering.policy) {
+            return Err(diagnostic::invalid("policy-shape"));
+        }
+    }
+    // The contract's set semantics on offered policies: two declarations
+    // for the same (target, kind) are a contradiction, and array order
+    // must never decide which one is believed (worst-offer and
+    // first-offer reconciliations are both fabricatable).
+    {
+        let mut offers = std::collections::BTreeSet::new();
+        for offering in &document.storage_offered {
+            if !offers.insert((&offering.target_id, &offering.policy.kind)) {
+                return Err(diagnostic::invalid("duplicate-offer"));
+            }
+        }
+    }
+    for requirement in &document.operational_requirements {
+        if !wire::is_semantic_id(&requirement.subject)
+            || !wire::is_capability_id(&requirement.requirement)
+        {
+            return Err(diagnostic::invalid("operational-requirement"));
+        }
+    }
+    {
+        let mut requirements = std::collections::BTreeSet::new();
+        for requirement in &document.operational_requirements {
+            if !requirements.insert((&requirement.subject, &requirement.requirement)) {
+                return Err(diagnostic::invalid("duplicate-requirement"));
+            }
+        }
+    }
     // Receipt custody is one identity per (scenario, destination): two
     // records for the same join with different results or digests are a
     // contradiction the assessment must never silently reconcile.
+    // The closed record grammars: scenario/gate/hook identities and the
+    // gate scenario sets stay inside their published patterns and
+    // bounds, so no malformed identity reaches the report.
+    for record in &document.scenarios {
+        if !wire::is_semantic_id(&record.scenario)
+            || record
+                .target_id
+                .as_deref()
+                .is_some_and(|target| !wire::is_target_id(target))
+        {
+            return Err(diagnostic::invalid("scenario-identity"));
+        }
+    }
+    for gate in &document.gates {
+        if !wire::is_semantic_id(&gate.gate) || gate.scenarios.len() > 256 {
+            return Err(diagnostic::invalid("gate-identity"));
+        }
+        let mut gate_scenarios = std::collections::BTreeSet::new();
+        for scenario in &gate.scenarios {
+            if !wire::is_semantic_id(scenario) || !gate_scenarios.insert(scenario.as_str()) {
+                return Err(diagnostic::invalid("gate-identity"));
+            }
+        }
+    }
+    for hook in &document.hooks {
+        if !wire::is_semantic_id(&hook.subject)
+            || hook.hook.is_empty()
+            || hook.hook.len() > 64
+            || !wire::is_lower_token(&hook.hook)
+            || !wire::is_target_id(&hook.target_id)
+        {
+            return Err(diagnostic::invalid("hook-identity"));
+        }
+    }
     let mut receipts = std::collections::BTreeSet::new();
     for record in &document.scenarios {
         if !receipts.insert((record.scenario.as_str(), record.target_id.as_deref())) {

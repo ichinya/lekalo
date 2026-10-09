@@ -228,6 +228,27 @@
         "revision",
         "note"
       ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "absent"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "revision": {
+                "type": "null"
+              },
+              "note": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ],
       "unevaluatedProperties": false
     },
     "family": {

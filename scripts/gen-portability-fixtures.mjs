@@ -273,6 +273,17 @@ const invalidControls = [
   ["invalid/path-traversal.evidence.json", "artifact-ref"],
   ["invalid/duplicate-defaults.targets.json", "default-destination"],
   ["invalid/empty-targets.targets.json", "target-binding"],
+  ["invalid/defaults-null.targets.json", "closed-shape"],
+  ["invalid/revision-grammar.evidence.json", "recorded-context"],
+  ["invalid/policy-precision-zero.evidence.json", "policy-shape"],
+  ["invalid/policy-kind-evil.evidence.json", "policy-shape"],
+  ["invalid/duplicate-required.evidence.json", "duplicate-requirement"],
+  ["invalid/duplicate-offer.evidence.json", "duplicate-offer"],
+  ["invalid/adapter-bad-version.evidence.json", "adapter-snapshot"],
+  ["invalid/mapping-identity.evidence.json", "mapping-identity"],
+  ["invalid/duplicate-storage-ref.targets.json", "duplicate-storage-ref"],
+  ["invalid/duplicate-conditions.evidence.json", "mapping-conditions"],
+  ["invalid/requirement-grammar.evidence.json", "operational-requirement"],
 ];
 
 // ---------------------------------------------------------------------------

@@ -1093,3 +1093,211 @@ mod evidence_gaps {
         let _ = request::SelectorError::Missing;
     }
 }
+
+/// Decoder/schema parity: the typed decoders enforce the closed Draft
+/// 2020-12 grammar (patterns, enums, bounds, uniqueItems, null-vs-
+/// absent) in both directions, so a schema-invalid document is refused
+/// with a named token and no schema-invalid value reaches evaluation.
+mod decoder_parity {
+    use super::*;
+    use lekalo_core::portability::diagnostic;
+
+    fn fixture_targets() -> Vec<u8> {
+        read(&format!("{FIXTURE}/config/portability-targets.json"))
+    }
+
+    fn fixture_evidence() -> Vec<u8> {
+        read(EVIDENCE)
+    }
+
+    fn evidence_document() -> serde_json::Value {
+        serde_json::from_slice(&fixture_evidence()).expect("fixture evidence JSON")
+    }
+
+    fn targets_document() -> serde_json::Value {
+        serde_json::from_slice(&fixture_targets()).expect("fixture targets JSON")
+    }
+
+    fn expect_refusal(bytes: &[u8], detail: &str, targets: bool) {
+        let _guard = CWD_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let compilation = compilation();
+        let recipe = embedded_recipe().expect("embedded recipe");
+        let outcome = if targets {
+            parse_targets(bytes).expect_err("expected refusal")
+        } else {
+            parse_evidence(bytes, &compilation, &recipe).expect_err("expected refusal")
+        };
+        assert!(
+            outcome.as_slice().iter().any(|d| {
+                d.id() == "portability.input-invalid"
+                    && d.data()
+                        .get("detail")
+                        .map(|value| {
+                            matches!(value, lekalo_core::diagnostics::DataValue::Token(token) if token == detail)
+                        })
+                        .unwrap_or(false)
+            }),
+            "expected {detail} refusal, got {outcome:?}"
+        );
+    }
+
+    fn mutated_evidence(mutate: impl FnOnce(&mut serde_json::Value)) -> Vec<u8> {
+        let mut value = evidence_document();
+        mutate(&mut value);
+        serde_json::to_vec(&value).expect("serialize")
+    }
+
+    fn mutated_targets(mutate: impl FnOnce(&mut serde_json::Value)) -> Vec<u8> {
+        let mut value = targets_document();
+        mutate(&mut value);
+        serde_json::to_vec(&value).expect("serialize")
+    }
+
+    #[test]
+    fn null_default_destinations_is_refused_not_reinterpreted() {
+        let bytes = mutated_targets(|value| {
+            value["defaultDestinations"] = serde_json::Value::Null;
+        });
+        expect_refusal(&bytes, "closed-shape", true);
+    }
+
+    #[test]
+    fn null_default_source_is_refused_not_reinterpreted() {
+        let bytes = mutated_targets(|value| {
+            value["defaultSource"] = serde_json::Value::Null;
+        });
+        expect_refusal(&bytes, "closed-shape", true);
+    }
+
+    #[test]
+    fn malformed_revision_is_refused() {
+        let bytes = mutated_evidence(|value| {
+            value["recordedContext"]["revision"] = "zzz-not-hex".into();
+        });
+        expect_refusal(&bytes, "recorded-context", false);
+    }
+
+    #[test]
+    fn malformed_operational_requirement_is_refused() {
+        let bytes = mutated_evidence(|value| {
+            value["operationalRequirements"] = serde_json::json!([
+                {"subject": "command:planner.focus_task", "requirement": "bad requirement!"}
+            ]);
+        });
+        expect_refusal(&bytes, "operational-requirement", false);
+    }
+
+    #[test]
+    fn enum_breaking_policy_kind_is_refused() {
+        let bytes = mutated_evidence(|value| {
+            value["storageRequired"][0]["policy"]["kind"] = "evil-kind".into();
+        });
+        expect_refusal(&bytes, "policy-shape", false);
+    }
+
+    #[test]
+    fn zero_precision_is_refused() {
+        let bytes = mutated_evidence(|value| {
+            value["storageRequired"][0]["policy"]["precision"] = 0.into();
+        });
+        expect_refusal(&bytes, "policy-shape", false);
+    }
+
+    #[test]
+    fn duplicate_storage_required_is_refused_not_deduplicated() {
+        let bytes = mutated_evidence(|value| {
+            let first = value["storageRequired"][0].clone();
+            value["storageRequired"].as_array_mut().unwrap().push(first);
+        });
+        expect_refusal(&bytes, "duplicate-requirement", false);
+    }
+
+    #[test]
+    fn contradictory_same_target_kind_offers_are_refused_regardless_of_order() {
+        let offer = serde_json::json!({"targetId": "php-laravel", "policy": {"kind": "decimal", "value": "exact", "precision": 18, "scale": 6}});
+        for position in [0usize, 1] {
+            let bytes = mutated_evidence(|value| {
+                let offers = value["storageOffered"].as_array_mut().unwrap();
+                offers.insert(position, offer.clone());
+            });
+            expect_refusal(&bytes, "duplicate-offer", false);
+        }
+    }
+
+    #[test]
+    fn recorded_adapter_with_malformed_version_is_refused() {
+        let bytes = mutated_evidence(|value| {
+            value["adapters"][1] = serde_json::json!({
+                "targetId": "php-laravel",
+                "state": "recorded",
+                "identity": "evil-adapter",
+                "version": "banana",
+                "protocol": "made/up",
+                "capabilityDigest": format!("sha256:{}", "0".repeat(64))
+            });
+        });
+        expect_refusal(&bytes, "adapter-snapshot", false);
+    }
+
+    #[test]
+    fn malformed_mapping_identity_is_refused() {
+        let bytes = mutated_evidence(|value| {
+            value["mappings"][0]["id"] = "INVALID ID".into();
+        });
+        expect_refusal(&bytes, "mapping-identity", false);
+    }
+
+    #[test]
+    fn duplicate_mapping_conditions_are_refused() {
+        let bytes = mutated_evidence(|value| {
+            value["mappings"][0]["conditions"] =
+                serde_json::json!(["php-84", "php-84", "laravel-11"]);
+        });
+        expect_refusal(&bytes, "mapping-conditions", false);
+    }
+
+    #[test]
+    fn contradictory_definition_pins_are_refused_at_decode_shape() {
+        // A pin for a different capability id is legal shape; the pin
+        // grammar test here pins malformed versions.
+        let bytes = mutated_evidence(|value| {
+            value["mappings"][0]["definitionPins"][0]["version"] = "banana".into();
+        });
+        expect_refusal(&bytes, "mapping-pin", false);
+    }
+
+    #[test]
+    fn duplicate_storage_profile_refs_are_refused() {
+        let bytes = mutated_targets(|value| {
+            value["targets"][1]["storageProfileRefs"] = serde_json::json!([
+                "config/profiles/laravel.json",
+                "config/profiles/laravel.json"
+            ]);
+        });
+        expect_refusal(&bytes, "duplicate-storage-ref", true);
+    }
+
+    #[test]
+    fn over_bound_arrays_are_refused() {
+        let bytes = mutated_evidence(|value| {
+            let hook = value["hooks"][0].clone();
+            let hooks = value["hooks"].as_array_mut().unwrap();
+            for _ in 0..10_001 {
+                hooks.push(hook.clone());
+            }
+        });
+        expect_refusal(&bytes, "bound-exceeded", false);
+    }
+
+    #[test]
+    fn the_unmutated_fixtures_still_decode() {
+        let _guard = CWD_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let compilation = compilation();
+        let recipe = embedded_recipe().expect("embedded recipe");
+        parse_targets(&fixture_targets()).expect("targets decode");
+        parse_evidence(&fixture_evidence(), &compilation, &recipe).expect("evidence decode");
+        // The named diagnostic constructor stays reachable for the
+        // refusal vocabulary.
+        let _ = diagnostic::invalid("closed-shape");
+    }
+}

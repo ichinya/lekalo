@@ -321,6 +321,17 @@ const controls = [
   ["invalid/adapter-missing-version.evidence.json", "adapter-snapshot", 1, false],
   ["invalid/receipt-conflict.evidence.json", "duplicate-receipt", 1, true],
   ["invalid/bad-family-digest.evidence.json", "family-digest", 1, true],
+  ["invalid/defaults-null.targets.json", "closed-shape", 1, false],
+  ["invalid/revision-grammar.evidence.json", "recorded-context", 1, false],
+  ["invalid/policy-precision-zero.evidence.json", "policy-shape", 1, false],
+  ["invalid/policy-kind-evil.evidence.json", "policy-shape", 1, false],
+  ["invalid/duplicate-required.evidence.json", "duplicate-requirement", 1, false],
+  ["invalid/duplicate-offer.evidence.json", "duplicate-offer", 1, true],
+  ["invalid/adapter-bad-version.evidence.json", "adapter-snapshot", 1, false],
+  ["invalid/mapping-identity.evidence.json", "mapping-identity", 1, false],
+  ["invalid/duplicate-storage-ref.targets.json", "duplicate-storage-ref", 1, false],
+  ["invalid/duplicate-conditions.evidence.json", "mapping-conditions", 1, false],
+  ["invalid/requirement-grammar.evidence.json", "operational-requirement", 1, false],
 ];
 for (const [relative, reason, expectedExit, schemaValid] of controls) {
   const temp = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
@@ -666,9 +677,12 @@ const withEvidence = (temp, mutate) => {
   if (!(refused.stderr + refused.stdout).includes('"destination-source"')) fail("self-assessment-reason", refused.stderr);
 }
 
-// 11. The strict --check denial: exit 3, status denied, report preserved.
+// 11. The strict --check denial: exit 3, status denied, report preserved
+//      and schema-valid: the denied envelope's embedded report must pass
+//      the published report schema exactly like the valid one.
 const denied = JSON.parse(deniedRun);
 if (denied.status !== "denied") fail("check-status", denied.status);
+if (!validate.report(denied.payload.portability)) fail("denied-report-schema", validate.report.errors);
 if (denied.payload.portability.schemaVersion !== "lekalo/portability-report/v0.8.0") {
   fail("check-report-preserved", denied.payload.portability.schemaVersion);
 }
