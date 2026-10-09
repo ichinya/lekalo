@@ -540,7 +540,12 @@ fn apply_transaction_is_recoverable_and_exact() {
         PlanAction::Regeneration,
         &admitted,
         &coverage,
-        record.input_closure.clone(),
+        record
+            .input_closure
+            .iter()
+            .filter(|pin| !pin.path.starts_with(".lekalo/managed-authority/"))
+            .cloned()
+            .collect(),
         &before,
         Some(generation.clone()),
         None,

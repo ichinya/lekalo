@@ -514,6 +514,17 @@ pub fn verify_plan(bytes: &[u8]) -> Result<GenerationPlan, DomainResult> {
     Ok(document)
 }
 
+/// Whether `text` is a valid committed input-closure pin path: either a
+/// project-relative coordinate or a reserved derived authority pin under
+/// `.lekalo/managed-authority/` (the canonical Model/IR/lock custody
+/// evidence; derived, never read as a project file — finding 8).
+fn input_pin_path(text: &str) -> bool {
+    if let Some(rest) = text.strip_prefix(".lekalo/managed-authority/") {
+        return matches!(rest, "model" | "ir" | "lock");
+    }
+    rel_path(text)
+}
+
 /// Validate a committed generation record.
 pub fn parse_record(bytes: &[u8]) -> Result<GenerationRecord, DomainResult> {
     let document: GenerationRecord = decode(bytes, "managed-generation-record")?;
@@ -537,7 +548,7 @@ pub fn parse_record(bytes: &[u8]) -> Result<GenerationRecord, DomainResult> {
         || document
             .input_closure
             .iter()
-            .any(|p| !rel_path(&p.path) || !pin(&p.digest))
+            .any(|p| !input_pin_path(&p.path) || !pin(&p.digest))
     {
         return Err(invalid("input-closure"));
     }

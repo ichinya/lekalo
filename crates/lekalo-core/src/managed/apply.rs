@@ -402,15 +402,37 @@ fn staged_apply(
         }
     }
     // Input provenance: the committed closure unions the previous closure
-    // with the plan's; the plan's own pins win on a shared path.
+    // with the plan's; the plan's own pins win on a shared path. The
+    // canonical generation authority rides the closure as derived pins
+    // (finding 8): the exact canonical Model, typed IR, and lock revision
+    // this generation was admitted under are custody evidence, so a
+    // Model/IR/lock move always changes the committed closure.
     let mut closure: BTreeMap<String, InputPin> = BTreeMap::new();
     if let Some(record) = &previous_record {
         for pin in &record.input_closure {
+            if pin.path.starts_with(".lekalo/managed-authority/") {
+                continue;
+            }
             closure.insert(pin.path.clone(), pin.clone());
         }
     }
     for pin in &plan.input_closure {
         closure.insert(pin.path.clone(), pin.clone());
+    }
+    if let Some(authority) = authority {
+        for (name, digest_value) in [
+            ("model", &authority.model_digest),
+            ("ir", &authority.ir_digest),
+            ("lock", &authority.lock_digest),
+        ] {
+            closure.insert(
+                format!(".lekalo/managed-authority/{name}"),
+                InputPin {
+                    path: format!(".lekalo/managed-authority/{name}"),
+                    digest: digest_value.clone(),
+                },
+            );
+        }
     }
     let closure: Vec<InputPin> = closure.into_values().collect();
     let transaction_id = history::transaction_id(root, &plan.plan_digest)?;

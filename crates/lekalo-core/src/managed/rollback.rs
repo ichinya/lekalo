@@ -251,8 +251,13 @@ pub fn apply(
     // Destination input closure: every pinned input of the destination
     // generation must still exist with its exact recorded bytes — the
     // current Model and attachments are still the ones the destination was
-    // generated from.
+    // generated from. Derived authority pins (`.lekalo/managed-authority/*`)
+    // are the committed Model/IR/lock custody evidence, not project files:
+    // they are revalidated against the live lock digest below instead.
     for pin in &destination_record.input_closure {
+        if pin.path.starts_with(".lekalo/managed-authority/") {
+            continue;
+        }
         match fs::read_file(root, &pin.path) {
             Ok(Some(bytes)) => {
                 if super::digest(&bytes) != pin.digest {
