@@ -206,6 +206,7 @@ fn fixture_assessment() -> (lekalo_core::ir::Compilation, wire::Report) {
         evidence: Some(&evidence),
         implementation: Some(&report),
         verified_families,
+        verified_storage_inventory: None,
         receipts_qualified,
         targets_input: wire::TargetsInput {
             state: wire::PinState::Pinned,
@@ -615,6 +616,7 @@ mod request_rules {
             evidence: None,
             implementation: None,
             verified_families: std::collections::BTreeSet::new(),
+            verified_storage_inventory: None,
             receipts_qualified: std::collections::BTreeSet::new(),
             targets_input: wire::TargetsInput {
                 state: wire::PinState::Pinned,
@@ -733,6 +735,7 @@ mod request_rules {
             evidence: None,
             implementation: None,
             verified_families: std::collections::BTreeSet::new(),
+            verified_storage_inventory: None,
             receipts_qualified: std::collections::BTreeSet::new(),
             targets_input: wire::TargetsInput {
                 state: wire::PinState::Derived,
@@ -803,6 +806,7 @@ mod evidence_gaps {
             evidence: None,
             implementation: None,
             verified_families: std::collections::BTreeSet::new(),
+            verified_storage_inventory: None,
             receipts_qualified: std::collections::BTreeSet::new(),
             targets_input: wire::TargetsInput {
                 state: wire::PinState::Pinned,
@@ -908,6 +912,7 @@ mod evidence_gaps {
             verified_families: std::collections::BTreeSet::from_iter([
                 wire::EvidenceFamily::Implementation,
             ]),
+            verified_storage_inventory: None,
             receipts_qualified: std::collections::BTreeSet::new(),
             targets_input: wire::TargetsInput {
                 state: wire::PinState::Pinned,

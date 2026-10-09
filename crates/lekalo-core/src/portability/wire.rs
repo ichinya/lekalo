@@ -871,6 +871,65 @@ pub enum EvidenceFamily {
     Trace,
 }
 
+/// One decoded declared-complete family artifact: the closed owner
+/// envelope with its exact project pin and, for the storage family, the
+/// complete declared inventory the assessment reconciles against the
+/// manifest. A content-free or contradicting object never certifies a
+/// complete inventory.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FamilyArtifact {
+    pub schema_version: String,
+    pub identity: String,
+    pub family: EvidenceFamily,
+    pub project_ref: ProjectRef,
+    #[serde(default)]
+    pub storage_required: Vec<StorageRequirement>,
+}
+
+/// Decode one declared-complete family artifact against its owner
+/// envelope contract: duplicate-key-safe, closed-shape, identity and
+/// family pinned, and — for the storage family — the required inventory
+/// inside the closed policy grammar with set semantics.
+pub fn decode_family_artifact(
+    bytes: &[u8],
+    expected: EvidenceFamily,
+) -> Result<FamilyArtifact, DiagnosticSet> {
+    let value = decode_dup_safe(bytes)?;
+    let object = value
+        .as_object()
+        .ok_or_else(|| diagnostic::invalid("family-shape"))?;
+    for member in ["schemaVersion", "identity", "family", "projectRef"] {
+        if !object.contains_key(member) {
+            return Err(diagnostic::invalid("family-shape"));
+        }
+    }
+    let wants_inventory = expected == EvidenceFamily::Storage;
+    if object.contains_key("storageRequired") != wants_inventory {
+        return Err(diagnostic::invalid("family-shape"));
+    }
+    let artifact: FamilyArtifact =
+        serde_json::from_value(value).map_err(|_| diagnostic::invalid("family-shape"))?;
+    if artifact.schema_version != version::FAMILY_SCHEMA_VERSION
+        || artifact.identity != version::FAMILY_IDENTITY
+        || artifact.family != expected
+    {
+        return Err(diagnostic::invalid("family-envelope"));
+    }
+    if wants_inventory {
+        let mut unique = std::collections::BTreeSet::new();
+        for requirement in &artifact.storage_required {
+            if !is_semantic_id(&requirement.subject)
+                || !valid_policy(&requirement.policy)
+                || !unique.insert((&requirement.subject, &requirement.policy))
+            {
+                return Err(diagnostic::invalid("family-inventory"));
+            }
+        }
+    }
+    Ok(artifact)
+}
+
 impl EvidenceFamily {
     /// The stable kebab-case wire spelling.
     pub const fn as_str(self) -> &'static str {

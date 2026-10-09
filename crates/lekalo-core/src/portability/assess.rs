@@ -48,6 +48,11 @@ pub struct Assessment<'a> {
     /// actually read, hash-verified, and decoded: declared completeness
     /// alone never proves an inventory exists.
     pub verified_families: BTreeSet<wire::EvidenceFamily>,
+    /// The decoded complete storage inventory of the verified storage
+    /// family artifact, when that family was verified: the assessment
+    /// reconciles it against the manifest's declared inventory, so a
+    /// content-free object never certifies completeness.
+    pub verified_storage_inventory: Option<Vec<wire::StorageRequirement>>,
     /// The (scenario, destination) joins whose claimed receipt the caller
     /// read, digest-verified, and scope-checked: an unqualified receipt
     /// never upgrades a join to executed or failed.
@@ -1049,11 +1054,27 @@ fn storage(
         // A definitive absence needs the storage inventory declared
         // complete AND its artifact actually verified: a declared
         // completeness without readable, digest-bound custody is an
-        // evidence gap, never a portable row.
+        // evidence gap, never a portable row. Even a verified artifact
+        // must reconcile its complete inventory against the manifest:
+        // the envelope and the manifest must describe the same
+        // inventory, or the completeness claim is unproven.
+        let manifest_inventory: BTreeSet<(&str, &wire::Policy)> = evidence
+            .storage_required
+            .iter()
+            .map(|requirement| (requirement.subject.as_str(), &requirement.policy))
+            .collect();
+        let verified_inventory: Option<BTreeSet<(&str, &wire::Policy)>> =
+            input.verified_storage_inventory.as_ref().map(|inventory| {
+                inventory
+                    .iter()
+                    .map(|requirement| (requirement.subject.as_str(), &requirement.policy))
+                    .collect()
+            });
         if matches!(family, Some(f) if f.complete)
             && input
                 .verified_families
                 .contains(&wire::EvidenceFamily::Storage)
+            && verified_inventory.as_ref() == Some(&manifest_inventory)
         {
             return vec![base(
                 Classification::Portable,

@@ -24,6 +24,12 @@ pub const EVIDENCE_SCHEMA_VERSION: &str = "lekalo/portability-evidence/v0.8.0";
 /// The exact evidence identity.
 pub const EVIDENCE_IDENTITY: &str = "dev.lekalo.portability-evidence@0.8.0";
 
+/// The exact wire discriminator of the family-artifact envelope.
+pub const FAMILY_SCHEMA_VERSION: &str = "lekalo/portability-family/v0.8.0";
+
+/// The exact family-artifact envelope identity.
+pub const FAMILY_IDENTITY: &str = "dev.lekalo.portability-family@0.8.0";
+
 /// The exact wire discriminator of the reviewed recipe contract.
 pub const RECIPE_SCHEMA_VERSION: &str = "lekalo/portability-recipe/v0.8.0";
 

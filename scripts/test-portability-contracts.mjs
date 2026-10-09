@@ -53,6 +53,7 @@ const schemas = {
   evidence: read("contracts/portability-evidence.schema.v0.8.0.json"),
   recipeSchema: read("contracts/portability-recipe.schema.v0.8.0.json"),
   report: read("contracts/portability-report.schema.v0.8.0.json"),
+  family: read("contracts/portability-family.schema.v0.8.0.json"),
   registry: read("contracts/diagnostic-registry.schema.v0.8.0.json"),
   diagnostic: read("contracts/diagnostic.schema.v0.2.16.json"),
 };
@@ -537,6 +538,109 @@ const withEvidence = (temp, mutate) => {
     if (denied.code !== 3) fail("f2-check-denied", String(denied.code));
   } finally {
     rmSync(temp, { recursive: true, force: true });
+  }
+}
+
+// F2b — a declared-complete family artifact is decoded through its
+// closed owner envelope: a digest-matching `{}` can never certify a
+// complete inventory, a foreign project pin refuses, the envelope's
+// complete inventory must equal the manifest's declared inventory, and
+// a reconciled envelope with no restricted policy yields honest
+// portable rows.
+{
+  const envelope = (projectId, inventory, irPinValue) => ({
+    schemaVersion: "lekalo/portability-family/v0.8.0",
+    identity: "dev.lekalo.portability-family@0.8.0",
+    family: "storage",
+    projectRef: {
+      projectId,
+      modelVersion: "0.2.16",
+      irDigest: irPinValue,
+    },
+    storageRequired: inventory,
+  });
+  const withStorageFamily = (temp, artifactDocument) => {
+    withEvidence(temp, (manifest) => {
+      const family = manifest.families.find((entry) => entry.family === "storage");
+      family.complete = true;
+      family.artifactRef = "reports/storage.json";
+      family.digest = `sha256:${sha256(Buffer.from(JSON.stringify(artifactDocument, null, 2) + "\n"))}`;
+    });
+    writeFileSync(join(temp, "reports/storage.json"), JSON.stringify(artifactDocument, null, 2) + "\n");
+  };
+  // 1. a digest-matching content-free object refuses as a family shape
+  {
+    const temp = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
+    try {
+      cpSync(project, temp, { recursive: true });
+      withEvidence(temp, (manifest) => {
+        manifest.storageRequired = [];
+      });
+      withStorageFamily(temp, {});
+      const refused = tryRun(["--json", "portability", "--to", "go-service", "--symbol", "planner.weight", "--evidence", "reports/portability-evidence.json"], temp);
+      if (refused.code !== 1) fail("f2b-empty-exit", String(refused.code));
+      if (!(refused.stderr + refused.stdout).includes('"family-shape"')) fail("f2b-empty-reason", refused.stderr);
+    } finally {
+      rmSync(temp, { recursive: true, force: true });
+    }
+  }
+  // 2. a foreign project pin inside the artifact refuses
+  {
+    const temp = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
+    try {
+      cpSync(project, temp, { recursive: true });
+      withEvidence(temp, (manifest) => {
+        manifest.storageRequired = [];
+      });
+      withStorageFamily(temp, envelope("foreign-project", [], evidence.projectRef.irDigest));
+      const refused = tryRun(["--json", "portability", "--to", "go-service", "--symbol", "planner.weight", "--evidence", "reports/portability-evidence.json"], temp);
+      if (refused.code !== 1) fail("f2b-project-exit", String(refused.code));
+      if (!(refused.stderr + refused.stdout).includes('"family-project-pin"')) fail("f2b-project-reason", refused.stderr);
+    } finally {
+      rmSync(temp, { recursive: true, force: true });
+    }
+  }
+  // 3. an inventory that contradicts the manifest refuses
+  {
+    const temp = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
+    try {
+      cpSync(project, temp, { recursive: true });
+      withEvidence(temp, (manifest) => {
+        manifest.storageRequired = [];
+      });
+      withStorageFamily(temp, envelope("planner", [{
+        subject: "scalar:planner.weight",
+        policy: { kind: "decimal", value: "exact", precision: 18, scale: 6 },
+      }], evidence.projectRef.irDigest));
+      const refused = tryRun(["--json", "portability", "--to", "go-service", "--symbol", "planner.weight", "--evidence", "reports/portability-evidence.json"], temp);
+      if (refused.code !== 1) fail("f2b-inventory-exit", String(refused.code));
+      if (!(refused.stderr + refused.stdout).includes('"family-inventory"')) fail("f2b-inventory-reason", refused.stderr);
+    } finally {
+      rmSync(temp, { recursive: true, force: true });
+    }
+  }
+  // 4. a reconciled envelope with the manifest's empty inventory yields
+  //    the honest no-restricted-policy portable row on go
+  {
+    const temp = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
+    try {
+      cpSync(project, temp, { recursive: true });
+      withEvidence(temp, (manifest) => {
+        manifest.storageRequired = [];
+      });
+      withStorageFamily(temp, envelope("planner", [], evidence.projectRef.irDigest));
+      const run = tryRun(["--json", "portability", "--to", "go-service", "--symbol", "planner.weight", "--evidence", "reports/portability-evidence.json"], temp);
+      if (run.code !== 0) fail("f2b-portable-exit", String(run.code));
+      const report = JSON.parse(run.stdout).portability;
+      const weight = report.subjects.find((s) => s.subject === "scalar:planner.weight");
+      const storageRow = weight.rows.find((r) => r.destination === "go-service" && r.dimension === "storage");
+      if (storageRow.classification !== "portable" || storageRow.reason !== "no-restricted-policy") {
+        fail("f2b-portable-row", JSON.stringify(storageRow));
+      }
+      if (!validate.family(envelope("planner", [], evidence.projectRef.irDigest))) fail("f2b-envelope-schema", validate.family.errors);
+    } finally {
+      rmSync(temp, { recursive: true, force: true });
+    }
   }
 }
 

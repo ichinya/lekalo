@@ -158,16 +158,36 @@ fn load_profile(
     Ok(Some(profile_pin(found)))
 }
 
+/// The verified family custody: the artifact bytes per admitted family
+/// plus the decoded storage inventory when the storage family verified.
+type VerifiedFamilies = (
+    BTreeMap<lekalo_core::portability::wire::EvidenceFamily, Vec<u8>>,
+    Option<Vec<lekalo_core::portability::wire::StorageRequirement>>,
+);
+
 /// Read, hash, and decode every admitted complete evidence family
 /// artifact. Declared completeness without readable, digest-matching,
 /// decodable custody stays unverified: the assessment reports the gap
 /// instead of granting portability from an authored enum. A digest
-/// mismatch is fabricated custody and refuses outright.
+/// mismatch is fabricated custody and refuses outright. Every non-
+/// implementation family decodes through its closed owner envelope: the
+/// exact project pin is verified against this compilation and the
+/// storage envelope's complete inventory is reconciled against the
+/// manifest, so a content-free or contradicting object never certifies
+/// a complete inventory.
 fn verify_families(
     fs: &ProjectFs,
     evidence: &lekalo_core::portability::EvidenceDocument,
-) -> Result<BTreeMap<lekalo_core::portability::wire::EvidenceFamily, Vec<u8>>, DiagnosticSet> {
+    compilation: &lekalo_core::ir::Compilation,
+) -> Result<VerifiedFamilies, DiagnosticSet> {
     let mut verified = BTreeMap::new();
+    let mut storage_inventory = None;
+    let project = &compilation.project;
+    let expected_project_id = project
+        .project
+        .as_ref()
+        .map(|p| p.id.as_str().to_owned())
+        .unwrap_or_default();
     for family in &evidence.families {
         if !family.complete {
             continue;
@@ -183,14 +203,57 @@ fn verify_families(
         if format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes)) != *digest {
             return Err(invalid("family-digest"));
         }
-        let value = lekalo_core::portability::wire::decode_dup_safe(&bytes)
-            .map_err(|_| invalid("family-shape"))?;
-        if !value.is_object() {
-            return Err(invalid("family-shape"));
+        if family.family == lekalo_core::portability::wire::EvidenceFamily::Implementation {
+            // The implementation family's owner contract is the
+            // implementation producer, which validates the artifact
+            // against this exact compilation in the join below.
+            let value = lekalo_core::portability::wire::decode_dup_safe(&bytes)
+                .map_err(|_| invalid("family-shape"))?;
+            if !value.is_object() {
+                return Err(invalid("family-shape"));
+            }
+            verified.insert(family.family, bytes);
+            continue;
+        }
+        let artifact =
+            lekalo_core::portability::wire::decode_family_artifact(&bytes, family.family)?;
+        // The envelope's project pin must be exactly this compilation's:
+        // an artifact minted for another project never certifies this
+        // one's inventory, whatever its digest pins.
+        if artifact.project_ref.project_id != expected_project_id
+            || artifact.project_ref.model_version != project.model_version.as_str()
+            || artifact.project_ref.ir_digest
+                != lekalo_core::implementation::ir_digest(project).as_str()
+        {
+            return Err(invalid("family-project-pin"));
+        }
+        if family.family == lekalo_core::portability::wire::EvidenceFamily::Storage {
+            // The envelope and the manifest must describe the same
+            // complete inventory; a contradiction is fabricated custody.
+            let manifest_inventory: std::collections::BTreeSet<(
+                &str,
+                &lekalo_core::portability::wire::Policy,
+            )> = evidence
+                .storage_required
+                .iter()
+                .map(|requirement| (requirement.subject.as_str(), &requirement.policy))
+                .collect();
+            let artifact_inventory: std::collections::BTreeSet<(
+                &str,
+                &lekalo_core::portability::wire::Policy,
+            )> = artifact
+                .storage_required
+                .iter()
+                .map(|requirement| (requirement.subject.as_str(), &requirement.policy))
+                .collect();
+            if artifact_inventory != manifest_inventory {
+                return Err(invalid("family-inventory"));
+            }
+            storage_inventory = Some(artifact.storage_required.clone());
         }
         verified.insert(family.family, bytes);
     }
-    Ok(verified)
+    Ok((verified, storage_inventory))
 }
 
 /// Join the qualified implementation projection: the evidence manifest
@@ -457,10 +520,11 @@ fn execute(args: Args) -> Result<DomainResult, DiagnosticSet> {
     };
 
     // The qualified evidence families: every admitted complete family
-    // artifact read, hash-verified, and decoded.
-    let verified_families = match &evidence {
-        Some(document) => verify_families(&fs, document)?,
-        None => BTreeMap::new(),
+    // artifact read, hash-verified, and decoded through its owner
+    // contract, with the storage inventory reconciled.
+    let (verified_family_artifacts, verified_storage_inventory) = match &evidence {
+        Some(document) => verify_families(&fs, document, &compilation)?,
+        None => (BTreeMap::new(), None),
     };
     let implementation = match &evidence {
         Some(document) => {
@@ -469,9 +533,10 @@ fn execute(args: Args) -> Result<DomainResult, DiagnosticSet> {
             });
             match family {
                 Some(family)
-                    if family.complete && verified_families.contains_key(&family.family) =>
+                    if family.complete
+                        && verified_family_artifacts.contains_key(&family.family) =>
                 {
-                    load_implementation(&verified_families[&family.family], &compilation)?
+                    load_implementation(&verified_family_artifacts[&family.family], &compilation)?
                 }
                 _ => None,
             }
@@ -493,7 +558,8 @@ fn execute(args: Args) -> Result<DomainResult, DiagnosticSet> {
         destinations: resolved.destinations.clone(),
         evidence: evidence.as_ref(),
         implementation: implementation.as_ref(),
-        verified_families: verified_families.into_keys().collect(),
+        verified_families: verified_family_artifacts.into_keys().collect(),
+        verified_storage_inventory,
         receipts_qualified,
         targets_input,
         lock_digest,
