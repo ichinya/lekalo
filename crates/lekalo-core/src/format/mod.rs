@@ -150,7 +150,26 @@ fn plan(request: &FormatRequest, stdin_bytes: Option<&[u8]>) -> Result<Planned, 
         None
     };
 
-    let load = crate::loader::load_with_snapshot(&selection)?;
+    // The load. Editor mode overlays the unsaved buffer onto its declared
+    // document BEFORE semantic loading (finding r4 9): the buffer is the
+    // authority for exactly that document, so a malformed saved copy —
+    // the very state an editor repair targets — must not fail the load
+    // before the buffer is formed. Every other document, the whole
+    // inventory, and every filesystem/version boundary validate exactly
+    // as in any other mode.
+    let stdin_document: Option<(&str, &[u8])> = match (&request.mode, &request.scope) {
+        (FormatMode::Stdin, FormatScope::Document(selector)) => Some((
+            selector.as_str(),
+            stdin_bytes.ok_or_else(|| failure_selection("document", "stdin-empty"))?,
+        )),
+        _ => None,
+    };
+    let load = match stdin_document {
+        Some((overlay_path, overlay_bytes)) => {
+            crate::loader::load_with_snapshot_and_overlay(&selection, overlay_path, overlay_bytes)?
+        }
+        None => crate::loader::load_with_snapshot(&selection)?,
+    };
     let model_version = load.model.model_version;
 
     // Resolve the scope against the closed inventory. Stdin mode is bound

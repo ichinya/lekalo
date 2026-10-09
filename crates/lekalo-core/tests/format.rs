@@ -1484,3 +1484,81 @@ fn json_blank_line_groups_stay_idempotent_across_applies() {
         );
     });
 }
+
+#[test]
+fn a_valid_unsaved_buffer_repairs_a_malformed_saved_document() {
+    // Finding r4 9 (P2): the saved copy is parsed before the editor's
+    // buffer is formed, so `format --stdin` refused with the saved
+    // document's parse error even when the buffer held the valid
+    // canonical bytes. The overlay now forms before semantic loading:
+    // the buffer is the authority for exactly its declared document,
+    // every other document still validates, and the disk stays intact.
+    in_sandbox("stdin-repair", "planner-canonical", |root| {
+        let path = root.join("lekalo/modules/scheduling/module.yaml");
+        let canonical = fs::read(&path).expect("canonical bytes");
+        // A malformed saved copy: the state an editor repair targets.
+        fs::write(&path, b"schema_version: [\n").expect("malformed saved bytes");
+        let result = lekalo_core::format::run(
+            &request(
+                FormatScope::Document("lekalo/modules/scheduling/module.yaml".to_owned()),
+                FormatMode::Stdin,
+            ),
+            Some(&canonical),
+        );
+        assert_eq!(result.status(), Status::Valid, "{result:?}");
+        // The report row carries the exact replacement bytes (the human
+        // channel normalizes the trailing newline, so the byte-exact
+        // assertion reads the payload).
+        let envelope: serde_json::Value =
+            serde_json::from_str(&result.to_json_string()).expect("envelope json");
+        let replacement = envelope
+            .pointer("/format/files/0/replacement")
+            .and_then(|text| text.as_str())
+            .expect("the editor row carries the replacement");
+        assert_eq!(
+            replacement.as_bytes(),
+            canonical.as_slice(),
+            "the byte-unchanged valid buffer round-trips exactly"
+        );
+        // The malformed saved bytes were never touched (never writes).
+        assert_eq!(fs::read(&path).expect("disk"), b"schema_version: [\n");
+    });
+}
+
+#[test]
+fn the_stdin_overlay_still_validates_everything_else() {
+    // Finding r4 9 controls: the overlay is exactly one document.
+    // (a) A malformed buffer still fails as a parse error.
+    // (b) A malformed OTHER document still fails the load.
+    in_sandbox("stdin-overlay-bounds", "planner-canonical", |root| {
+        let path = root.join("lekalo/modules/scheduling/module.yaml");
+        let canonical = fs::read(&path).expect("canonical bytes");
+        // (a) The buffer is the input: its own malformed bytes fail.
+        fs::write(&path, b"schema_version: [\n").expect("malformed saved bytes");
+        let bad_buffer = lekalo_core::format::run(
+            &request(
+                FormatScope::Document("lekalo/modules/scheduling/module.yaml".to_owned()),
+                FormatMode::Stdin,
+            ),
+            Some(&b"schema_version: [\n"[..]),
+        );
+        assert_eq!(bad_buffer.status(), Status::Invalid, "{bad_buffer:?}");
+        assert_eq!(first_reason(&bad_buffer), "loader.yaml-unsupported");
+        // (b) Restore the selected document, break a different one: the
+        // load still refuses — the overlay never widens.
+        fs::write(&path, &canonical).expect("restore canonical");
+        let other = root.join("lekalo/modules/planner/entities.yaml");
+        let other_bytes = fs::read(&other).expect("other bytes");
+        fs::write(&other, b"schema_version: [\n").expect("malformed other");
+        let result = lekalo_core::format::run(
+            &request(
+                FormatScope::Document("lekalo/modules/scheduling/module.yaml".to_owned()),
+                FormatMode::Stdin,
+            ),
+            Some(&canonical),
+        );
+        assert_eq!(result.status(), Status::Invalid, "{result:?}");
+        assert_eq!(fs::read(&other).expect("untouched"), b"schema_version: [\n");
+        fs::write(&other, &other_bytes).expect("restore other");
+    });
+}
