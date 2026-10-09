@@ -39,20 +39,12 @@ fn invalid(reason: &str) -> DomainResult {
     diagnostic::failure(INPUT_INVALID, &detail(reason))
 }
 
-/// The live project's canonical lock revision, derived through the
-/// accepted pipeline (read-only). `None` when the project's lock is
-/// missing or unreadable — the caller's compatibility check fails
-/// closed on any divergence.
+/// The live project's canonical lock revision — see
+/// [`super::authority::live_lock_digest`]. Kept as a thin local alias so
+/// the rollback compatibility check reads against the same definition the
+/// apply path rechecks under the mutation lock.
 fn live_lock_digest(root: &std::path::Path) -> Option<String> {
-    let lock = crate::lockfile::plan::LockService::read_state_at(root).ok()?;
-    match lock {
-        crate::lockfile::LockState::Present(lock) => Some(
-            crate::lockfile::canonical::lock_digest(&lock)
-                .as_str()
-                .to_owned(),
-        ),
-        crate::lockfile::LockState::Absent => None,
-    }
+    super::authority::live_lock_digest(root)
 }
 
 fn refused(reason: &str) -> DomainResult {

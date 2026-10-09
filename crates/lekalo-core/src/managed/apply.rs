@@ -258,6 +258,18 @@ pub fn apply(
     // a racer that moved a pin between preflight and lock cannot win.
     let result = (|| -> Result<String, DomainResult> {
         history::assert_reconciled(root)?;
+        // The derived authority is revalidated as far as the live
+        // filesystem allows without re-running the loader: the exact lock
+        // bytes must still derive the authority's lock revision, so a
+        // racer that swapped the lock between the CLI derivation and this
+        // lock cannot commit a generation pinned to a superseded revision
+        // (finding P). A missing or unreadable live lock never passes.
+        if let Some(authority) = authority {
+            let live = super::authority::live_lock_digest(root);
+            if live.as_deref() != Some(authority.lock_digest.as_str()) {
+                return Err(stale("lekalo.lock", "authority"));
+            }
+        }
         let inputs = inputs_actual(root, &plan.input_closure)?;
         let before = before_state(root, Some(&plan))?;
         let roots = super::plan::generated_roots(ownership);

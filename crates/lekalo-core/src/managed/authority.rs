@@ -82,6 +82,21 @@ fn stale(path: &str, reason: &str) -> DomainResult {
     super::diagnostic::failure(PLAN_STALE, &[("path", path), ("reason", reason)])
 }
 
+/// The live project's canonical lock revision, derived through the
+/// accepted lock reader (read-only). `None` when the project's lock is
+/// missing or unreadable — every consumer fails closed on divergence.
+pub fn live_lock_digest(root: &std::path::Path) -> Option<String> {
+    let lock = LockService::read_state_at(root).ok()?;
+    match lock {
+        crate::lockfile::LockState::Present(lock) => Some(
+            crate::lockfile::canonical::lock_digest(&lock)
+                .as_str()
+                .to_owned(),
+        ),
+        crate::lockfile::LockState::Absent => None,
+    }
+}
+
 /// Derive the generation authority of one project: load and compile the
 /// canonical Model through the accepted pipeline, verify the exact lock
 /// pins it, and collect the module's required renderable ledger.
