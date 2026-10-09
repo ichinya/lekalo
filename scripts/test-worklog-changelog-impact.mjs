@@ -247,9 +247,11 @@ try {
     if (!additiveProperties.has(camel(field))) fail("additive-schema-missing-field", field);
   }
 
-  // 5b. Breaking: the queries stop projecting the DTO. Both closures
-  //     lose exactly the oracle's expected delta — the four declared
-  //     consumers — and nothing else.
+  // 5b. Breaking: the queries stop projecting the DTO — the declared
+  //     breaking probe. Both closures lose exactly the oracle's
+  //     expected delta in both directions: every declared subject is
+  //     observed lost, no unexpected subject is lost, and each
+  //     surviving closure is the exact complement of its delta.
   const breakingDir = stage("breaking");
   const queriesPath = join(breakingDir, "model/lekalo/modules/changelog/queries.yaml");
   const queries = JSON.parse(readFileSync(queriesPath, "utf8"));
@@ -265,28 +267,32 @@ try {
   const breaking = compareClosures("breaking", breakingDir + "/model");
   const graphDelta = [...expectedGraph].filter((subject) => !breaking.graph.has(subject));
   const impactDelta = [...expectedImpact].filter((subject) => !breaking.impact.has(subject));
+  // The oracle declares the exact lost-subject set (kind-qualified),
+  // checked in both directions: an inflated delta that names a
+  // consumer never actually lost refuses, and so does an unobserved
+  // loss the oracle did not declare.
   const expectedDelta = new Set(
-    oracle.mutationProbes
-      .find((probe) => probe.breaking)
-      .expectedDelta.flatMap((consumer) => [
-        `operation:${consumer}`,
-        `endpoint:${consumer}`,
-        `scenario:${consumer}`,
-      ]),
+    oracle.mutationProbes.find((probe) => probe.breaking).expectedDelta,
   );
-  for (const subject of graphDelta) {
-    if (!expectedDelta.has(subject)) fail("breaking-graph-delta-unexpected", subject);
+  const lost = new Set([...graphDelta, ...impactDelta]);
+  for (const subject of lost) {
+    if (!expectedDelta.has(subject)) fail("breaking-delta-unexpected", subject);
   }
-  for (const subject of impactDelta) {
-    if (!expectedDelta.has(subject)) fail("breaking-impact-delta-unexpected", subject);
+  for (const subject of expectedDelta) {
+    if (!lost.has(subject)) fail("breaking-delta-unobserved", subject);
   }
-  if (graphDelta.length === 0 && impactDelta.length === 0) {
+  if (lost.size !== expectedDelta.size) {
+    fail("breaking-delta-drift", { expected: expectedDelta.size, actual: lost.size });
+  }
+  if (lost.size === 0) {
     fail("breaking-mutation-ineffective", oracle.subject);
   }
   // No unexpected consumer left behind: the surviving sets are the
-  // exact complements of the delta.
+  // exact complements of the observed deltas.
   const survivingGraph = new Set([...expectedGraph].filter((subject) => !graphDelta.includes(subject)));
   assertExact("breaking-graph-survivor", breaking.graph, survivingGraph);
+  const survivingImpact = new Set([...expectedImpact].filter((subject) => !impactDelta.includes(subject)));
+  assertExact("breaking-impact-survivor", breaking.impact, survivingImpact);
 } finally {
   rmSync(tempRoot, { recursive: true, force: true });
 }
