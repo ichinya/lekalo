@@ -55,6 +55,7 @@ const schemas = {
   report: read("contracts/portability-report.schema.v0.8.0.json"),
   family: read("contracts/portability-family.schema.v0.8.0.json"),
   receipt: read("contracts/portability-receipt.schema.v0.8.0.json"),
+  adapterSnapshot: read("contracts/portability-adapter-snapshot.schema.v0.8.0.json"),
   registry: read("contracts/diagnostic-registry.schema.v0.8.0.json"),
   diagnostic: read("contracts/diagnostic.schema.v0.2.16.json"),
 };
@@ -962,6 +963,120 @@ const withEvidence = (temp, mutate) => {
     if (!(refused.stderr + refused.stdout).includes('"lock-shape"')) fail("f12-lock-reason", refused.stderr);
   } finally {
     rmSync(temp, { recursive: true, force: true });
+  }
+}
+
+// F12b — recorded adapter provenance is constructed from a digest-bound
+// snapshot artifact, never echoed from manifest fields: a recorded
+// record without custody refuses, an arbitrary object refuses as a
+// shape, a contradicting snapshot refuses as provenance, and a
+// reconciled snapshot is admitted with its evidence digest.
+{
+  const withAdapterFixture = (temp, artifactDocument) => {
+    const config = JSON.parse(readFileSync(join(temp, "config/portability-targets.json"), "utf8"));
+    if (artifactDocument !== undefined) {
+      config.targets.find((t) => t.targetId === "php-laravel").adapterEvidenceRef = "reports/adapter.json";
+    }
+    writeFileSync(join(temp, "config/portability-targets.json"), JSON.stringify(config, null, 2) + "\n");
+    withEvidence(temp, (manifest) => {
+      manifest.adapters[1] = {
+        targetId: "php-laravel",
+        state: "recorded",
+        identity: "composer/lekalo-planner-adapter",
+        version: "1.4.2",
+        protocol: "http.json/1",
+        capabilityDigest: `sha256:${"7".repeat(64)}`,
+      };
+    });
+    if (artifactDocument !== undefined) {
+      writeFileSync(join(temp, "reports/adapter.json"), JSON.stringify(artifactDocument, null, 2) + "\n");
+    }
+  };
+  // 1. a recorded record with no snapshot custody refuses
+  {
+    const temp = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
+    try {
+      cpSync(project, temp, { recursive: true });
+      withAdapterFixture(temp, undefined);
+      const refused = tryRun(["--json", "portability", "--evidence", "reports/portability-evidence.json"], temp);
+      if (refused.code !== 1) fail("f12b-missing-exit", String(refused.code));
+      if (!(refused.stderr + refused.stdout).includes('"adapter-provenance"')) fail("f12b-missing-reason", refused.stderr);
+    } finally {
+      rmSync(temp, { recursive: true, force: true });
+    }
+  }
+  // 2. an arbitrary JSON object is not a snapshot
+  {
+    const temp = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
+    try {
+      cpSync(project, temp, { recursive: true });
+      withAdapterFixture(temp, {});
+      const refused = tryRun(["--json", "portability", "--evidence", "reports/portability-evidence.json"], temp);
+      if (refused.code !== 1) fail("f12b-shape-exit", String(refused.code));
+      if (!(refused.stderr + refused.stdout).includes('"adapter-shape"')) fail("f12b-shape-reason", refused.stderr);
+    } finally {
+      rmSync(temp, { recursive: true, force: true });
+    }
+  }
+  // 3. a snapshot naming another adapter or target refuses
+  {
+    const temp = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
+    try {
+      cpSync(project, temp, { recursive: true });
+      const manifest = JSON.parse(readFileSync(join(temp, "reports/portability-evidence.json"), "utf8"));
+      const targets = JSON.parse(readFileSync(join(temp, "config/portability-targets.json"), "utf8"));
+      const go = targets.targets.find((t) => t.targetId === "go-service").profileRef;
+      withAdapterFixture(temp, {
+        schemaVersion: "lekalo/portability-adapter-snapshot/v0.8.0",
+        identity: "dev.lekalo.portability-adapter-snapshot@0.8.0",
+        targetId: "php-laravel",
+        adapter: {
+          identity: "go-modules/other-adapter",
+          version: "9.9.9",
+          protocol: "grpc.proto/1",
+          capabilityDigest: `sha256:${"7".repeat(64)}`,
+        },
+        profileRef: { id: go.id, version: go.version, resolvedDigest: go.resolvedDigest },
+      });
+      const refused = tryRun(["--json", "portability", "--evidence", "reports/portability-evidence.json"], temp);
+      if (refused.code !== 1) fail("f12b-contradiction-exit", String(refused.code));
+      if (!(refused.stderr + refused.stdout).includes('"adapter-provenance"')) fail("f12b-contradiction-reason", refused.stderr);
+    } finally {
+      rmSync(temp, { recursive: true, force: true });
+    }
+  }
+  // 4. a reconciled snapshot with this destination's profile pin is
+  //    admitted and its evidence digest is published
+  {
+    const temp = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
+    try {
+      cpSync(project, temp, { recursive: true });
+      const targets = JSON.parse(readFileSync(join(temp, "config/portability-targets.json"), "utf8"));
+      const laravel = targets.targets.find((t) => t.targetId === "php-laravel").profileRef;
+      const snapshot = {
+        schemaVersion: "lekalo/portability-adapter-snapshot/v0.8.0",
+        identity: "dev.lekalo.portability-adapter-snapshot@0.8.0",
+        targetId: "php-laravel",
+        adapter: {
+          identity: "composer/lekalo-planner-adapter",
+          version: "1.4.2",
+          protocol: "http.json/1",
+          capabilityDigest: `sha256:${"7".repeat(64)}`,
+        },
+        profileRef: { id: laravel.id, version: laravel.version, resolvedDigest: laravel.resolvedDigest },
+      };
+      withAdapterFixture(temp, snapshot);
+      const run = tryRun(["--json", "portability", "--evidence", "reports/portability-evidence.json"], temp);
+      if (run.code !== 0) fail("f12b-happy-exit", String(run.code));
+      const report = JSON.parse(run.stdout).portability;
+      const destination = report.destinations.find((d) => d.targetId === "php-laravel");
+      if (!destination.adapter || destination.adapter.state !== "recorded") fail("f12b-happy-snapshot", JSON.stringify(destination.adapter));
+      if (destination.adapter.identity !== "composer/lekalo-planner-adapter" || destination.adapter.version !== "1.4.2") fail("f12b-happy-fields", JSON.stringify(destination.adapter));
+      if (!destination.adapter.evidenceDigest) fail("f12b-happy-digest", JSON.stringify(destination.adapter));
+      if (!validate.adapterSnapshot(snapshot)) fail("f12b-happy-schema", validate.adapterSnapshot.errors);
+    } finally {
+      rmSync(temp, { recursive: true, force: true });
+    }
   }
 }
 

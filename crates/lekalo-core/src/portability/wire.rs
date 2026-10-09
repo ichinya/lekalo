@@ -1094,6 +1094,61 @@ pub struct ReceiptProfileRef {
     pub resolved_digest: String,
 }
 
+/// The decoded, digest-verified adapter-snapshot custody artifact: the
+/// closed binding of target, adapter identity/version/protocol/
+/// capability digest, and the destination's verified profile pin.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AdapterSnapshotArtifact {
+    pub schema_version: String,
+    pub identity: String,
+    pub target_id: String,
+    pub adapter: AdapterSnapshotBody,
+    pub profile_ref: ReceiptProfileRef,
+}
+
+/// The exact adapter facts of one snapshot.
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AdapterSnapshotBody {
+    pub identity: String,
+    pub version: String,
+    pub protocol: String,
+    pub capability_digest: String,
+}
+
+/// Decode one adapter-snapshot custody artifact through its closed
+/// contract: duplicate-key-safe, identity-pinned, with every field
+/// inside the published grammar.
+pub fn decode_adapter_snapshot(bytes: &[u8]) -> Result<AdapterSnapshotArtifact, DiagnosticSet> {
+    let value = decode_dup_safe(bytes)?;
+    let object = value
+        .as_object()
+        .ok_or_else(|| diagnostic::invalid("adapter-shape"))?;
+    for member in [
+        "schemaVersion",
+        "identity",
+        "targetId",
+        "adapter",
+        "profileRef",
+    ] {
+        if !object.contains_key(member) {
+            return Err(diagnostic::invalid("adapter-shape"));
+        }
+    }
+    let artifact: AdapterSnapshotArtifact =
+        serde_json::from_value(value).map_err(|_| diagnostic::invalid("adapter-shape"))?;
+    if artifact.schema_version != version::ADAPTER_SNAPSHOT_SCHEMA_VERSION
+        || artifact.identity != version::ADAPTER_SNAPSHOT_IDENTITY
+    {
+        return Err(diagnostic::invalid("adapter-envelope"));
+    }
+    if !is_target_id(&artifact.target_id) {
+        return Err(diagnostic::invalid("adapter-shape"));
+    }
+    Ok(artifact)
+}
+
 /// Decode one execution-receipt custody artifact through its closed
 /// contract: duplicate-key-safe, identity- and kind-pinned, with every
 /// provenance member inside the published grammar.

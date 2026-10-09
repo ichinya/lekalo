@@ -497,9 +497,11 @@ fn execute(args: Args) -> Result<DomainResult, DiagnosticSet> {
     // confined filesystem, and unparseable artifacts refuse outright.
     let subjects = extract(&compilation.project, &recipe);
     let mut pins: BTreeMap<String, Option<lekalo_core::portability::ProfilePin>> = BTreeMap::new();
-    let mut adapters: BTreeMap<String, Option<lekalo_core::portability::wire::AdapterSnapshot>> =
-        BTreeMap::new();
     let mut storage_refs: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut adapter_artifacts: BTreeMap<
+        String,
+        lekalo_core::portability::wire::AdapterSnapshotArtifact,
+    > = BTreeMap::new();
     let mut adapter_evidence_digests: BTreeMap<String, String> = BTreeMap::new();
     if let Some(document) = &targets {
         for binding in &document.targets {
@@ -522,15 +524,17 @@ fn execute(args: Args) -> Result<DomainResult, DiagnosticSet> {
             }
             storage_refs.insert(binding.target_id.clone(), verified_refs);
             if let Some(adapter_ref) = &binding.adapter_evidence_ref {
-                // The adapter evidence reference is opened, decoded, and
-                // digest-pinned: its verified custody stays bound to the
-                // destination snapshot in the report.
+                // The adapter evidence reference is opened, decoded
+                // through its closed snapshot contract, and digest-
+                // pinned: its verified custody reconciles the recorded
+                // adapter record below, so manifest fields alone never
+                // fabricate recorded provenance.
                 let bytes = read_bounded(&fs, adapter_ref)?;
-                let value = lekalo_core::portability::wire::decode_dup_safe(&bytes)
-                    .map_err(|_| invalid("adapter-shape"))?;
-                if !value.is_object() {
-                    return Err(invalid("adapter-shape"));
+                let artifact = lekalo_core::portability::wire::decode_adapter_snapshot(&bytes)?;
+                if artifact.target_id != binding.target_id {
+                    return Err(invalid("adapter-provenance"));
                 }
+                adapter_artifacts.insert(binding.target_id.clone(), artifact);
                 adapter_evidence_digests.insert(
                     binding.target_id.clone(),
                     format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes)),
@@ -538,19 +542,58 @@ fn execute(args: Args) -> Result<DomainResult, DiagnosticSet> {
             }
         }
     }
+    // The adapter snapshots: a recorded record qualifies only when its
+    // target binding carried a digest-bound snapshot artifact that
+    // reconciles every field exactly and pins this destination's
+    // verified profile — recorded provenance is constructed from the
+    // admitted artifact, never echoed from the manifest.
+    let mut adapters: BTreeMap<String, Option<lekalo_core::portability::wire::AdapterSnapshot>> =
+        BTreeMap::new();
     if let Some(evidence) = &evidence {
         for adapter in &evidence.adapters {
-            adapters.insert(
-                adapter.target_id.clone(),
-                Some(lekalo_core::portability::wire::AdapterSnapshot {
-                    state: adapter.state,
-                    identity: adapter.identity.clone(),
-                    version: adapter.version.clone(),
-                    protocol: adapter.protocol.clone(),
-                    capability_digest: adapter.capability_digest.clone(),
-                    evidence_digest: adapter_evidence_digests.get(&adapter.target_id).cloned(),
-                }),
-            );
+            let snapshot = match adapter.state {
+                lekalo_core::portability::wire::AdapterState::Recorded => {
+                    let artifact = adapter_artifacts
+                        .get(&adapter.target_id)
+                        .ok_or_else(|| invalid("adapter-provenance"))?;
+                    let record_matches = adapter.identity.as_deref()
+                        == Some(artifact.adapter.identity.as_str())
+                        && adapter.version.as_deref() == Some(artifact.adapter.version.as_str())
+                        && adapter.protocol.as_deref() == Some(artifact.adapter.protocol.as_str())
+                        && adapter.capability_digest.as_deref()
+                            == Some(artifact.adapter.capability_digest.as_str());
+                    let profile_matches = match pins.get(&adapter.target_id) {
+                        Some(Some(pin)) => {
+                            artifact.profile_ref.id == pin.id
+                                && artifact.profile_ref.version == pin.version
+                                && artifact.profile_ref.resolved_digest == pin.resolved_digest
+                        }
+                        _ => false,
+                    };
+                    if !record_matches || !profile_matches {
+                        return Err(invalid("adapter-provenance"));
+                    }
+                    Some(lekalo_core::portability::wire::AdapterSnapshot {
+                        state: adapter.state,
+                        identity: adapter.identity.clone(),
+                        version: adapter.version.clone(),
+                        protocol: adapter.protocol.clone(),
+                        capability_digest: adapter.capability_digest.clone(),
+                        evidence_digest: adapter_evidence_digests.get(&adapter.target_id).cloned(),
+                    })
+                }
+                lekalo_core::portability::wire::AdapterState::Absent => {
+                    Some(lekalo_core::portability::wire::AdapterSnapshot {
+                        state: adapter.state,
+                        identity: None,
+                        version: None,
+                        protocol: None,
+                        capability_digest: None,
+                        evidence_digest: adapter_evidence_digests.get(&adapter.target_id).cloned(),
+                    })
+                }
+            };
+            adapters.insert(adapter.target_id.clone(), snapshot);
         }
     }
     let resolved = resolve_targets(

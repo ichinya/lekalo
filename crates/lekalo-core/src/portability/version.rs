@@ -36,6 +36,12 @@ pub const RECEIPT_SCHEMA_VERSION: &str = "lekalo/portability-receipt/v0.8.0";
 /// The exact execution-receipt identity.
 pub const RECEIPT_IDENTITY: &str = "dev.lekalo.portability-receipt@0.8.0";
 
+/// The exact wire discriminator of the adapter-snapshot custody artifact.
+pub const ADAPTER_SNAPSHOT_SCHEMA_VERSION: &str = "lekalo/portability-adapter-snapshot/v0.8.0";
+
+/// The exact adapter-snapshot identity.
+pub const ADAPTER_SNAPSHOT_IDENTITY: &str = "dev.lekalo.portability-adapter-snapshot@0.8.0";
+
 /// The exact wire discriminator of the reviewed recipe contract.
 pub const RECIPE_SCHEMA_VERSION: &str = "lekalo/portability-recipe/v0.8.0";
 
