@@ -1288,3 +1288,87 @@ fn a_journal_in_the_temp_home_never_blocks_readers() {
         assert_eq!(first_reason(&blocked), "format.recovery-required");
     });
 }
+
+#[test]
+fn legacy_cleanup_never_touches_unrelated_user_files() {
+    // Finding r4 4 (P1): the legacy sweep treated any dotfile ending in
+    // `.lekalo-format-new` as deletion authority. Cleanup is confined to
+    // the exact emitted-Model temps: an unrelated user file with the
+    // suffix stays byte-identical, while the genuinely owned temps (for
+    // the emitted documents of the tree) are still reclaimed.
+    in_sandbox("unowned-legacy", "seeds/noncanonical", |root| {
+        let user_one = root.join("lekalo/.private-notes.lekalo-format-new");
+        let user_two = root.join("lekalo/modules/planner/.unrelated.txt.lekalo-format-new");
+        let user_three = root.join("lekalo/modules/planner/.invented.yaml.lekalo-format-new");
+        fs::write(&user_one, b"USER FILE - NEVER A FORMATTER TEMP\n").expect("user file");
+        fs::write(&user_two, b"USER FILE - NEVER A FORMATTER TEMP\n").expect("user file");
+        fs::write(&user_three, b"USER FILE - NEVER A FORMATTER TEMP\n").expect("user file");
+        // The owned legacy temps for the emitted documents of the tree.
+        let owned_root = root.join("lekalo/.project.yaml.lekalo-format-new");
+        let owned_module =
+            root.join("lekalo/modules/planner/.module.yaml.lekalo-format-new");
+        let owned_kind =
+            root.join("lekalo/modules/planner/.scenarios.yaml.lekalo-format-new");
+        fs::write(&owned_root, b"orphaned: root temp\n").expect("owned temp");
+        fs::write(&owned_module, b"orphaned: module temp\n").expect("owned temp");
+        fs::write(&owned_kind, b"orphaned: kind temp\n").expect("owned temp");
+        let user_bytes = b"USER FILE - NEVER A FORMATTER TEMP\n";
+        let result = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
+        // The user dotfiles are not Model source: the governed scan keeps
+        // refusing the tree, and the run must not delete them to
+        // legitimate it — the refusal, not deletion, is the answer.
+        assert_ne!(result.status(), Status::Valid, "{result:?}");
+        assert_eq!(
+            fs::read(&user_one).expect("user file kept"),
+            user_bytes,
+            "the user file at the root is never deleted"
+        );
+        assert_eq!(
+            fs::read(&user_two).expect("user file kept"),
+            user_bytes,
+            "the user file in a module directory is never deleted"
+        );
+        assert_eq!(
+            fs::read(&user_three).expect("user file kept"),
+            user_bytes,
+            "an invented model-shaped name is still a user file"
+        );
+        assert!(!owned_root.exists(), "the owned root temp is reclaimed");
+        assert!(!owned_module.exists(), "the owned module temp is reclaimed");
+        assert!(!owned_kind.exists(), "the owned kind temp is reclaimed");
+        // A tree carrying ONLY owned temps (the real stranded-crash
+        // shape) formats cleanly: the sweep legitimately reclaims them.
+        for user in [&user_one, &user_two, &user_three] {
+            fs::remove_file(user).expect("remove user file");
+        }
+        let clean = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
+        assert_eq!(clean.status(), Status::Valid, "{clean:?}");
+    });
+}
+
+#[test]
+fn an_unowned_suffixed_file_is_answered_by_the_structure_scan_not_the_sweep() {
+    // Finding r4 4 control: a tree whose only anomaly is an unrelated
+    // suffixed dotfile stays refused by the governed scan (the dotfile
+    // is not Model source) — cleanup neither deletes it nor legitimates
+    // the tree; the loader's own refusal answers it.
+    in_sandbox("unowned-blocks", "planner-canonical", |root| {
+        let user = root.join("lekalo/modules/scheduling/.notes.txt.lekalo-format-new");
+        fs::write(&user, b"USER FILE\n").expect("user file");
+        let blocked = lekalo_core::loader::run(
+            &lekalo_core::loader::LoadSelection {
+                project: Some(".".to_owned()),
+            },
+            false,
+        );
+        assert_ne!(blocked.status(), Status::Valid, "the governed scan refuses");
+        assert!(user.exists(), "the user file survives the refusal");
+        // The mutating run leaves it exactly where it was — even though
+        // it could format the rest of the tree — because the sweep has
+        // no authority over it and a partial legitimation is never the
+        // formatter's answer.
+        let result = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
+        assert_ne!(result.status(), Status::Valid, "{result:?}");
+        assert_eq!(fs::read(&user).expect("user file"), b"USER FILE\n");
+    });
+}
