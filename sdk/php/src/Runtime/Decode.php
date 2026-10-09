@@ -921,7 +921,12 @@ final class Decode {
             if (!self::lintSpan($span)) {
                 return self::refuse('decode', 'bounds');
             }
-            $key = json_encode($span);
+            // The uniqueness key is the CANONICAL serialization (recursively
+            // sorted member names), not member order (issue #106 review r3
+            // #10): json_encode preserves insertion order, so two deep-equal
+            // spans with permuted members used to hash differently and a
+            // permuted duplicate passed the uniqueItems check.
+            $key = Json::canonicalJson($span);
             if (isset($spanKeys[$key])) {
                 return self::refuse('decode', 'bounds');
             }

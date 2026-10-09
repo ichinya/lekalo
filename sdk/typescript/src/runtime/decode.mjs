@@ -7,7 +7,7 @@
  * refusal carries one closed safe reason token — never payload content.
  */
 import { WIRE_TOKEN, SUPPORTED_PROTOCOL_VERSIONS, LATEST_OPERATIONS, BOUNDS, ENUMS } from "../generated/protocol.mjs";
-import { JsonFloat, readSingleObject } from "./json.mjs";
+import { JsonFloat, canonicalJson, readSingleObject } from "./json.mjs";
 import { isPlanId, isRequestId, isSha256Digest } from "./ids.mjs";
 import { isCapabilityId, isContractVersion, isLogicalPath, isToken } from "./paths.mjs";
 
@@ -548,21 +548,15 @@ function decodeLintEvidence(value) {
   return { ok: true, value };
 }
 
-/** Stable structural key for array-of-object uniqueness checks. */
-const canonicalKey = (value) => JSON.stringify(value, Object.keys(flattenMembers(value)));
-
-/** Deterministic deep member order for the canonical key above. */
-function flattenMembers(value) {
-  const out = [];
-  const walk = (member) => {
-    out.push(member);
-    if (member !== null && typeof member === "object") {
-      for (const key of Object.keys(member)) walk(member[key]);
-    }
-  };
-  walk(value);
-  return out;
-}
+/** Stable structural key for array-of-object uniqueness checks (issue
+ * #106 review r3 #7): the canonical serializer (recursively sorted
+ * member names), so deep-equal spans hash equally regardless of member
+ * order and ≥2 distinct locations never collide. The old key fed
+ * flattenMembers VALUES to JSON.stringify as a PropertyList — which
+ * kept only the numeric indices — so every span serialized as "{}" and
+ * any evidence object with two or more distinct locations was falsely
+ * refused as `bounds`. */
+const canonicalKey = (value) => canonicalJson(value);
 
 function decodeScanEntry(value) {
   const closed = closeObject(value, ["detail", "evidence", "kind", "path"]);
