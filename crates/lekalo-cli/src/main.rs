@@ -6485,7 +6485,8 @@ impl PilotProfileArg {
 fn validate_consumed_attachments(
     composition: &lekalo_core::worklog_changelog::Composition,
     compilation: &lekalo_core::ir::Compilation,
-    project_selector: &str,
+    raw_selection: &LoadSelection,
+    project_root: &std::path::Path,
     composition_dir: &std::path::Path,
 ) -> Result<(), DomainResult> {
     let custody = |detail: &'static str| {
@@ -6505,9 +6506,7 @@ fn validate_consumed_attachments(
     }
     for consumed in composition.consumed() {
         let path = match consumed.family() {
-            "authorization" => std::path::Path::new(project_selector)
-                .join("lekalo")
-                .join("authorization.yaml"),
+            "authorization" => project_root.join("lekalo").join("authorization.yaml"),
             // The error-contract family's committed document is the
             // error registry.
             "error-contract" => composition_dir.join("error-registry.json"),
@@ -6527,18 +6526,23 @@ fn validate_consumed_attachments(
                 // The authorization attachment rides the Model; the
                 // strict review is the full semantic join (reference
                 // integrity, coverage, mapping, and the exact pin).
-                let selection = LoadSelection {
-                    project: Some(project_selector.to_owned()),
+                // The already-resolved project root is read directly:
+                // re-running the selector grammar on an absolute path
+                // would refuse the very project the loader accepted.
+                let document = match lekalo_core::authorization::parse::read_document(project_root)
+                {
+                    Ok(document) => document,
+                    Err(set) => return Err(DomainResult::invalid(set)),
                 };
-                match lekalo_core::authorization::review_selection(&selection, compilation, true) {
-                    Err(result) => return Err(result),
-                    Ok(lekalo_core::authorization::Review::Invalid(set)) => {
+                match lekalo_core::authorization::review::review(compilation, document.as_ref(), true)
+                {
+                    lekalo_core::authorization::Review::Invalid(set) => {
                         return Err(DomainResult::invalid(set));
                     }
-                    Ok(lekalo_core::authorization::Review::Denied(set)) => {
+                    lekalo_core::authorization::Review::Denied(set) => {
                         return Err(DomainResult::denied(set));
                     }
-                    Ok(lekalo_core::authorization::Review::Ok) => {}
+                    lekalo_core::authorization::Review::Ok => {}
                 }
             }
             "transaction-concurrency" => {
@@ -6602,9 +6606,12 @@ fn validate_consumed_attachments(
                         .map_err(DomainResult::invalid)?;
                 // Resolve is the requirements join: stale Model pins,
                 // missing or conflicted references deny. It reads the
-                // declared openspec provider at the shell boundary.
-                let selection = selection_for(&Some(project_selector.to_owned()));
-                attachment.resolve(&selection).map(|_| ())?;
+                // declared openspec provider at the shell boundary,
+                // at the already-resolved project root; the raw
+                // selection stays invocation-relative for the loader.
+                attachment
+                    .resolve_at(raw_selection, project_root)
+                    .map(|_| ())?;
             }
             other => {
                 let _ = other;
@@ -6647,10 +6654,9 @@ fn check_model_custody(
     no_cache: bool,
 ) -> Result<(), DomainResult> {
     // The model envelope the engine itself renders is the canonical
-    // digest input: the exact bytes the requirements custody join
-    // compares against (the loader's terminal JSON plus its trailing
-    // newline), so the pilot pin and every attachment pin name the
-    // same Model state.
+    // digest input: the exact terminal JSON bytes of the load result,
+    // the same bytes the engine-pin verification hashes, so the pilot
+    // pin and every attachment pin name the same Model state.
     let model_envelope = match lekalo_core::loader::run(selection, false) {
         DomainResult::Valid {
             payload: lekalo_core::result::SuccessPayload::Model { json, .. },
@@ -6661,9 +6667,10 @@ fn check_model_custody(
             return Err(other);
         }
     };
-    let mut envelope_bytes = model_envelope.into_bytes();
-    envelope_bytes.push(b'\n');
-    let digest = format!("sha256:{}", lekalo_core::digest::sha256_hex(&envelope_bytes));
+    let digest = format!(
+        "sha256:{}",
+        lekalo_core::digest::sha256_hex(model_envelope.as_bytes())
+    );
     if composition.model_digest() != digest {
         return Err(DomainResult::invalid(
             lekalo_core::worklog_changelog::diagnostic::input_invalid("model-custody"),
@@ -6675,33 +6682,39 @@ fn check_model_custody(
 
 /// The engine backend provenance receipt: for each target the engine
 /// shell declares for this compilation, the exact backend identity and
-/// the `sha256:` digest of the canonical Model bytes the engine would
-/// execute against. Reports claiming a bound backend must match this
-/// receipt byte for byte; identities the engine never declared are
-/// forged provenance. The go target stays undeclared here (its
-/// committed refusal record is the honest absence), so any `bound`
-/// go row is provenance-forged under the receipt rule.
+/// the `sha256:` digest of the native lane bytes the engine executes
+/// for this composition. Reports claiming a bound backend must match
+/// this receipt byte for byte; identities the engine never declared,
+/// or digests naming bytes the lane does not carry, are forged
+/// provenance. The go target stays undeclared here (its committed
+/// refusal record is the honest absence), so any `bound` go row is
+/// provenance-forged under the receipt rule.
 fn engine_backend_provenance(
     selection: &LoadSelection,
-    no_cache: bool,
+    composition_dir: &std::path::Path,
 ) -> BTreeMap<String, lekalo_core::worklog_changelog::BackendProvenance> {
     let mut provenance = BTreeMap::new();
-    let Ok((model, compilation)) = lekalo_core::cache::load_compiled(selection, no_cache) else {
+    let Ok((_, compilation)) = lekalo_core::cache::load_compiled(selection, false) else {
         return provenance;
     };
-    let canonical = lekalo_core::loader::canonical_model_bytes(&model);
-    let digest = format!("sha256:{}", lekalo_core::digest::sha256_hex(canonical.as_bytes()));
-    // The php target binding the compiled Model declares is the exact
-    // provenance subject: the backend identity is the pinned target
-    // binding's id, the digest is the canonical bytes the lane runs.
+    // The native lane rides the fixture root beside the composition's
+    // attachments directory: `<root>/<lane>/run.php`. A composition
+    // laid out differently declares no executable lane, so no
+    // provenance exists and any bound backend refuses.
+    let fixture_root = composition_dir.parent().unwrap_or(composition_dir);
     for definition in &compilation.project.definitions {
         if let lekalo_core::ir::Definition::TargetBinding(binding) = definition {
             if let Some((lane, identity)) = native_lane_for(binding.target.as_str()) {
+                let lane_path = fixture_root.join(lane).join("run.php");
+                let Some(bytes) = std::fs::read(&lane_path).ok() else {
+                    continue;
+                };
+                let digest = format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes));
                 provenance.insert(
                     lane.to_owned(),
                     lekalo_core::worklog_changelog::BackendProvenance {
                         identity: identity.to_owned(),
-                        digest: digest.clone(),
+                        digest,
                     },
                 );
             }
@@ -6761,8 +6774,8 @@ fn run_pilot(command: PilotCommands, no_cache: bool) -> DomainResult {
     // off the resolved selection, never the raw CLI argument, so the
     // same project validates identically however it was named.
     let selection = selection_for(&project);
-    let resolved_selector = match lekalo_core::orchestration::project_root(&selection) {
-        Ok(root) => Some(root.to_string_lossy().into_owned()),
+    let resolved_root = match lekalo_core::orchestration::project_root(&selection) {
+        Ok(root) => root,
         Err(result) => return result,
     };
     let compilation = match lekalo_core::cache::load_compiled(&selection, no_cache) {
@@ -6791,14 +6804,17 @@ fn run_pilot(command: PilotCommands, no_cache: bool) -> DomainResult {
             // never stay valid while a consumed guarantee was removed
             // or replaced. The composition directory carries the JSON
             // families; the authorization attachment rides the Model.
-            let selector = resolved_selector.as_deref().unwrap_or_default();
             let composition_dir = std::path::Path::new(&path)
                 .parent()
                 .map(std::path::Path::to_path_buf)
                 .unwrap_or_default();
-            if let Err(result) =
-                validate_consumed_attachments(&composition, &compilation, selector, &composition_dir)
-            {
+            if let Err(result) = validate_consumed_attachments(
+                &composition,
+                &compilation,
+                &selection,
+                &resolved_root,
+                &composition_dir,
+            ) {
                 return result;
             }
             DomainResult::receipt(
@@ -6859,20 +6875,23 @@ fn run_pilot(command: PilotCommands, no_cache: bool) -> DomainResult {
             {
                 return result;
             }
-            let selector = resolved_selector.as_deref().unwrap_or_default();
             let composition_dir = std::path::Path::new(composition_path.as_deref().unwrap_or(""))
                 .parent()
                 .map(std::path::Path::to_path_buf)
                 .unwrap_or_default();
-            if let Err(result) =
-                validate_consumed_attachments(&composition, &compilation, selector, &composition_dir)
-            {
+            if let Err(result) = validate_consumed_attachments(
+                &composition,
+                &compilation,
+                &selection,
+                &resolved_root,
+                &composition_dir,
+            ) {
                 return result;
             }
             // Backend provenance: the engine's own rendering of the
-            // canonical Model bytes is the provenance receipt every
-            // bound backend identity/digest must equal.
-            let declared_backends = engine_backend_provenance(&selection, no_cache);
+            // native lane bytes is the provenance receipt every bound
+            // backend identity/digest must equal.
+            let declared_backends = engine_backend_provenance(&selection, &composition_dir);
             match lekalo_core::worklog_changelog::admit(
                 &bytes,
                 &composition_bytes,

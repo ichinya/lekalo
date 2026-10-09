@@ -817,23 +817,63 @@ pub fn admit(
         scenario_status.insert(scenario.scenario.as_str(), scenario.status);
     }
 
-    // The declared consumer inventory of the pinned compilation: one
-    // subject per declared query, endpoint, and scenario. The report's
-    // consumer witnesses join this set in both directions — a missing
-    // witness and an unknown non-file consumer are both refusals — so
-    // clearing `consumers[]` cannot erase the closure obligation.
+    // The declared consumer inventory of the pinned compilation: the
+    // closure of the composition's public DTO subject. One subject per
+    // query that returns the DTO, one per endpoint invoking such a
+    // query, and one per scenario covering either — exactly the graph
+    // consumers the consumer oracle declares. The report's consumer
+    // witnesses join this set in both directions — a missing witness
+    // and an unknown non-file consumer are both refusals — so clearing
+    // `consumers[]` cannot erase the closure obligation.
+    let dto_subject = composition.public_allowlist().dto().to_owned();
+    // Whether a `returns` type names the DTO at some (possibly nested
+    // list/optional) position.
+    fn names_dto(type_ref: &crate::ir::TypeRef, dto: &str) -> bool {
+        match type_ref {
+            crate::ir::TypeRef::Ref(symbol) => symbol.as_str() == dto,
+            crate::ir::TypeRef::List(inner) | crate::ir::TypeRef::Optional(inner) => {
+                names_dto(inner, dto)
+            }
+        }
+    }
     let mut declared_consumers = std::collections::BTreeSet::new();
+    let mut covered_operations = std::collections::BTreeSet::new();
     let mut derived_consumer_blockers: Vec<String> = Vec::new();
     for definition in &project.definitions {
         match definition {
             Definition::Query(query) => {
-                declared_consumers.insert(format!("operation:{}", query.id.as_str()));
+                let returns_dto = query
+                    .returns
+                    .as_ref()
+                    .is_some_and(|type_ref| names_dto(type_ref, &dto_subject));
+                if returns_dto {
+                    declared_consumers.insert(format!("operation:{}", query.id.as_str()));
+                    covered_operations.insert(query.id.as_str().to_owned());
+                }
             }
+            _ => {}
+        }
+    }
+    let mut covered_endpoints = std::collections::BTreeSet::new();
+    for definition in &project.definitions {
+        match definition {
             Definition::Endpoint(endpoint) => {
-                declared_consumers.insert(format!("endpoint:{}", endpoint.id.as_str()));
+                if covered_operations.contains(endpoint.invokes.as_str()) {
+                    declared_consumers.insert(format!("endpoint:{}", endpoint.id.as_str()));
+                    covered_endpoints.insert(endpoint.id.as_str().to_owned());
+                }
             }
             Definition::Scenario(scenario) => {
-                declared_consumers.insert(format!("scenario:{}", scenario.id.as_str()));
+                let covers = scenario
+                    .covers
+                    .iter()
+                    .any(|covered| {
+                        covered_operations.contains(covered.as_str())
+                            || covered_endpoints.contains(covered.as_str())
+                    });
+                if covers {
+                    declared_consumers.insert(format!("scenario:{}", scenario.id.as_str()));
+                }
             }
             _ => {}
         }
