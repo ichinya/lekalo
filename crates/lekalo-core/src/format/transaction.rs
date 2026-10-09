@@ -1735,7 +1735,7 @@ impl FormatWrite {
                 continue;
             };
             let name = format!(".{stem}.{TEMP_SUFFIX}");
-            let metadata = match std::fs::symlink_metadata(&dir_path.join(&name)) {
+            let metadata = match std::fs::symlink_metadata(dir_path.join(&name)) {
                 Ok(metadata) => metadata,
                 Err(_) => continue,
             };
