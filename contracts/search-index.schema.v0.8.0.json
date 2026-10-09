@@ -115,6 +115,13 @@
         "digest": {
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "identity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9.@/-]*$",
+          "description": "The exact contract identity the producing manifest pinned, when it did; a freshness re-admission replays the identical admission semantics."
         }
       }
     },

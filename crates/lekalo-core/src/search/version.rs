@@ -43,6 +43,9 @@ pub const MAX_CARDS: usize = 100_000;
 pub const MAX_POSTINGS: usize = 1_000_000;
 /// Maximum canonical index payload bytes.
 pub const MAX_INDEX_BYTES: usize = 32 * 1024 * 1024;
+/// Maximum admitted input bytes (manifest and each producer document):
+/// the read is bounded before the buffer is allocated.
+pub const MAX_INPUT_BYTES: usize = 32 * 1024 * 1024;
 /// Maximum serialized response bytes.
 pub const MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 /// Maximum cursor token bytes (before/after encoding).
@@ -53,6 +56,11 @@ pub const MAX_DESCRIPTION: usize = 512;
 pub const MAX_PREVIEWS: usize = 8;
 /// Maximum bounded byte length of one echoed input path/name string.
 pub const MAX_PATH_BYTES: usize = 512;
+/// Internal typed-fact cap per card list: the complete query facts are
+/// kept for filtering/ranking (bounded against hostility, generous
+/// against real models); only the response projection is capped at the
+/// published preview bounds, with omissions disclosed.
+pub const MAX_FACTS: usize = 4096;
 /// Bounded edit distance for opt-in fuzzy mode (inclusive).
 pub const MAX_FUZZY_EDITS: u32 = 2;
 /// Maximum candidate keys fuzzy mode may expand before scoring.

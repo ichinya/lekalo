@@ -39,13 +39,17 @@ pub use index::{
 pub use input::{InputEntry, ProducerKind, SearchInputs};
 pub use projection::{
     add_card, add_qualified_id, attach_effects, bounded_push, effect_posting_terms, post_term,
-    project_ir, Card, CardKind, Completeness, Confidence, Freshness, NativeBinding, Projection,
-    RelationWitness, SignatureRef, Trust,
+    project_ir, push_fact, Card, CardKind, Completeness, Confidence, Freshness, NativeBinding,
+    Projection, RelationWitness, SignatureRef, Trust,
 };
 pub use query::{
-    execute, CoverageRow, EffectScope, FilterSet, QueryRequest, SearchOutcome, SearchResult,
+    domain_needed, execute, CoverageRow, EffectScope, FilterSet, QueryRequest, SearchOutcome,
+    SearchResult,
 };
-pub use version::{DEFAULT_LIMIT, INDEX_IDENTITY, INDEX_SCHEMA_VERSION, MAX_POSTINGS, RECIPE};
+pub use version::{
+    DEFAULT_LIMIT, INDEX_IDENTITY, INDEX_SCHEMA_VERSION, INPUTS_IDENTITY, INPUTS_SCHEMA_VERSION,
+    MAX_INPUT_BYTES, MAX_POSTINGS, RECIPE,
+};
 
 /// `search.input-invalid` rejection with a bounded reason (and producer).
 pub fn diagnostic_input_invalid(

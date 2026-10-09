@@ -123,9 +123,9 @@ pub struct InputEntry {
 }
 
 impl InputEntry {
-    fn validate(&self) -> Result<(), DiagnosticSet> {
+    fn validate(&self) -> Result<(), ManifestError> {
         if self.path.is_empty() || self.path.len() > MAX_PATH_BYTES {
-            return Err(input_invalid("path-bounds", None));
+            return Err(ManifestError::Invalid(input_invalid("path-bounds", None)));
         }
         // The path is a logical project-relative POSIX spelling under the
         // frozen privacy path policy: absolute forms (leading separator,
@@ -135,7 +135,10 @@ impl InputEntry {
         // so the closed textual grammar is the authority; the typed
         // component check below is the second, platform-native barrier.
         if crate::project_fs::path_violation(&self.path).is_some() {
-            return Err(input_invalid("path-traversal", None));
+            return Err(ManifestError::Invalid(input_invalid(
+                "path-traversal",
+                None,
+            )));
         }
         let logical = std::path::Path::new(&self.path);
         if logical.is_absolute()
@@ -148,26 +151,25 @@ impl InputEntry {
                 )
             })
         {
-            return Err(input_invalid("path-traversal", None));
+            return Err(ManifestError::Invalid(input_invalid(
+                "path-traversal",
+                None,
+            )));
         }
         if let Some(identity) = &self.identity {
             if identity != self.kind.identity() {
-                return Err(
-                    match one(VERSION_UNSUPPORTED, None, {
-                        let mut data = DataObject::new();
-                        data.insert("detail".to_owned(), token_value("identity-pin"));
-                        data.insert("contract".to_owned(), token_value(&bound_token(identity)));
-                        data
-                    }) {
-                        Ok(diagnostic) => invalid_set(vec![diagnostic]),
-                        Err(_) => crate::result::singleton_set("diagnostics.registry-invalid"),
-                    },
-                );
+                return Err(ManifestError::Version(version_failure_with(
+                    "identity-pin",
+                    identity,
+                )));
             }
         }
         if let Some(digest) = &self.digest {
             if !is_sha256(digest) {
-                return Err(input_invalid("digest-grammar", None));
+                return Err(ManifestError::Invalid(input_invalid(
+                    "digest-grammar",
+                    None,
+                )));
             }
         }
         Ok(())
@@ -185,8 +187,10 @@ pub struct SearchInputs {
 
 impl SearchInputs {
     /// Parse manifest bytes (exact UTF-8 JSON) into the validated typed
-    /// manifest, or return the terminal rejection set.
-    pub fn parse(bytes: &[u8]) -> Result<Self, DiagnosticSet> {
+    /// manifest, or return the terminal typed rejection. An unsupported
+    /// schema/identity version is `ManifestError::Version` so callers
+    /// keep the typed `unsupported-version` status and exit code.
+    pub fn parse(bytes: &[u8]) -> Result<Self, ManifestError> {
         #[derive(Deserialize)]
         #[serde(deny_unknown_fields)]
         struct Wire {
@@ -220,29 +224,38 @@ impl SearchInputs {
             max_postings: Option<u64>,
         }
         // Duplicate JSON keys are rejected before decoding.
-        let text =
-            std::str::from_utf8(bytes).map_err(|_| input_invalid("invalid-encoding", None))?;
+        let text = std::str::from_utf8(bytes)
+            .map_err(|_| ManifestError::Invalid(input_invalid("invalid-encoding", None)))?;
         crate::search::wire::reject_duplicate_keys(text)
-            .map_err(|_| input_invalid("duplicate-key", None))?;
-        let wire: Wire =
-            serde_json::from_str(text).map_err(|_| input_invalid("malformed", None))?;
+            .map_err(|_| ManifestError::Invalid(input_invalid("duplicate-key", None)))?;
+        let wire: Wire = serde_json::from_str(text)
+            .map_err(|_| ManifestError::Invalid(input_invalid("malformed", None)))?;
         if wire.schema_version != INPUTS_SCHEMA_VERSION {
-            return Err(version_failure("inputs-schema"));
+            return Err(ManifestError::Version(version_failure_with(
+                "inputs-schema",
+                &wire.schema_version,
+            )));
         }
         if wire.identity != INPUTS_IDENTITY {
-            return Err(version_failure("inputs-identity"));
+            return Err(ManifestError::Version(version_failure_with(
+                "inputs-identity",
+                &wire.identity,
+            )));
         }
         if wire.project_id.is_empty() || wire.project_id.len() > 192 {
-            return Err(input_invalid("project-id-bounds", None));
+            return Err(ManifestError::Invalid(input_invalid(
+                "project-id-bounds",
+                None,
+            )));
         }
         if wire.inputs.len() > 64 {
-            return Err(input_invalid("input-count", None));
+            return Err(ManifestError::Invalid(input_invalid("input-count", None)));
         }
         let mut entries: Vec<InputEntry> = Vec::with_capacity(wire.inputs.len());
         let mut seen: Vec<(ProducerKind, String)> = Vec::new();
         for input in wire.inputs {
             let kind = ProducerKind::parse(&input.kind)
-                .ok_or_else(|| input_invalid("producer-unknown", None))?;
+                .ok_or_else(|| ManifestError::Invalid(input_invalid("producer-unknown", None)))?;
             let entry = InputEntry {
                 kind,
                 path: input.path,
@@ -252,7 +265,10 @@ impl SearchInputs {
             entry.validate()?;
             let key = (kind, entry.path.clone());
             if seen.contains(&key) {
-                return Err(input_invalid("duplicate-input", None));
+                return Err(ManifestError::Invalid(input_invalid(
+                    "duplicate-input",
+                    None,
+                )));
             }
             seen.push(key);
             entries.push(entry);
@@ -262,7 +278,7 @@ impl SearchInputs {
             .and_then(|limits| limits.max_postings)
             .unwrap_or(MAX_POSTINGS as u64);
         if max_postings == 0 || max_postings > MAX_POSTINGS as u64 {
-            return Err(input_invalid("limit-bounds", None));
+            return Err(ManifestError::Invalid(input_invalid("limit-bounds", None)));
         }
         entries.sort_by(|left, right| {
             (left.kind.key(), left.path.as_bytes()).cmp(&(right.kind.key(), right.path.as_bytes()))
@@ -332,14 +348,36 @@ impl SearchInputs {
     }
 }
 
-/// The `search.version-unsupported` invalid failure for an unsupported
-/// embedded contract spelling.
-pub(crate) fn version_failure(detail: &'static str) -> DiagnosticSet {
+/// The `search.version-unsupported` failure carrying the declared
+/// contract spelling (bounded, never a full echo of hostile bytes).
+pub(crate) fn version_failure_with(detail: &'static str, contract: &str) -> DiagnosticSet {
     let mut data = DataObject::new();
     data.insert("detail".to_owned(), token_value(detail));
+    data.insert("contract".to_owned(), token_value(&bound_token(contract)));
     match one(VERSION_UNSUPPORTED, None, data) {
-        Ok(diagnostic) => invalid_set(vec![diagnostic]),
+        Ok(diagnostic) => {
+            DiagnosticSet::try_from_unsorted(vec![diagnostic], Status::UnsupportedVersion)
+                .unwrap_or_else(|_| crate::result::singleton_set("diagnostics.registry-invalid"))
+        }
         Err(_) => crate::result::singleton_set("diagnostics.registry-invalid"),
+    }
+}
+
+/// The typed parse failure of one manifest: a closed-grammar refusal
+/// (`invalid`, exit 1) or an unsupported contract version
+/// (`unsupported-version`, exit 5) — never collapsed together.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ManifestError {
+    Invalid(DiagnosticSet),
+    Version(DiagnosticSet),
+}
+
+impl ManifestError {
+    /// The diagnostic set of this refusal.
+    pub fn set(&self) -> &DiagnosticSet {
+        match self {
+            Self::Invalid(set) | Self::Version(set) => set,
+        }
     }
 }
 

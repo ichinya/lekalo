@@ -63,7 +63,7 @@ pub enum CardKind {
 
 impl CardKind {
     /// The closed kinds in canonical byte order.
-    pub const KEYS: [Self; 17] = [
+    pub const KEYS: [Self; 18] = [
         Self::Binding,
         Self::Command,
         Self::Diagnostic,
@@ -81,6 +81,7 @@ impl CardKind {
         Self::Scenario,
         Self::TargetBinding,
         Self::ValueObject,
+        Self::Waiver,
     ];
 
     /// The exact wire spelling.
@@ -415,6 +416,17 @@ pub fn bounded_push(list: &mut Vec<String>, omitted: &mut u32, item: String) {
     }
 }
 
+/// Push one typed fact into a card's internal fact list: complete for
+/// filtering and ranking, capped against hostility at [`MAX_FACTS`]
+/// with the omissions counted (never silent).
+pub fn push_fact(list: &mut Vec<String>, omitted: &mut u32, item: String) {
+    if list.len() < crate::search::version::MAX_FACTS {
+        list.push(item);
+    } else {
+        *omitted += 1;
+    }
+}
+
 /// The whole typed projection of one project plus its attached evidence.
 #[derive(Clone, Debug, Default)]
 pub struct Projection {
@@ -637,9 +649,14 @@ fn add_definition_card(projection: &mut Projection, definition: &Definition, cap
     for derived in &common.derived_from {
         // Requirement identity is namespaced by its provider only when
         // an explicit producer supplies one; the IR carries the bare id.
-        bounded_push(&mut requirements, &mut omitted, derived.as_str().to_owned());
+        // The internal fact list stays complete: a ninth requirement is
+        // a filterable fact, not a truncation casualty.
+        push_fact(&mut requirements, &mut omitted, derived.as_str().to_owned());
     }
-    signatures.truncate(MAX_PREVIEWS);
+    if signatures.len() > crate::search::version::MAX_FACTS {
+        omitted += (signatures.len() - crate::search::version::MAX_FACTS) as u32;
+        signatures.truncate(crate::search::version::MAX_FACTS);
+    }
     let description = common
         .description
         .as_ref()

@@ -48,6 +48,10 @@ pub struct IndexStatus {
     pub cards: Option<u64>,
     /// The posting/relation entry count, when readable.
     pub postings: Option<u64>,
+    /// The validated current generation document, when readable. The
+    /// freshness oracle re-verifies the recorded input pins against
+    /// this, never a re-guessed manifest location.
+    pub document: Option<IndexDocument>,
 }
 
 /// The typed in-memory index: cards plus postings plus exact qualified
@@ -98,11 +102,18 @@ pub struct InputPin {
     pub path: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub digest: Option<String>,
+    /// The exact contract identity the producing manifest pinned (when
+    /// it did); a freshness re-admission replays the identical
+    /// admission semantics, not a loosened guess.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity: Option<String>,
 }
 
 impl SearchIndex {
     /// Assemble from a finished projection (bounded); postings beyond
-    /// the admitted cap are refused, never silently truncated.
+    /// the admitted cap are refused, never silently truncated. The cap
+    /// counts actual posting entries (term -> key pairs), not distinct
+    /// terms, so the budget is the real work bound.
     pub fn from_projection(
         projection: &Projection,
         _inputs: &[InputPin],
@@ -113,7 +124,8 @@ impl SearchIndex {
         if projection.cards.len() > MAX_CARDS {
             return Err(crate::search::diagnostic::result_limit("cards", true));
         }
-        if projection.postings.len() > max_postings.min(MAX_POSTINGS) {
+        let entries: usize = projection.postings.values().map(Vec::len).sum();
+        if entries > max_postings.min(MAX_POSTINGS) {
             return Err(crate::search::diagnostic::result_limit("postings", true));
         }
         let mut postings: BTreeMap<String, Vec<String>> = BTreeMap::new();
@@ -176,11 +188,22 @@ pub struct SearchStore {
 impl SearchStore {
     /// Resolve the store home for one project root (path validation is
     /// the cache custody's own; this never creates the directory).
+    ///
+    /// Custody: when the store home already exists, it must resolve
+    /// (junctions and symlinks included) inside the canonical project
+    /// root. A relocated or junctioned cache home is `Denied`, never
+    /// silently followed — otherwise a status read would happily serve
+    /// generations stored outside the project.
     pub fn resolve(project_root: &Path) -> Result<Self, StoreError> {
         // Mirror the cache path policy: refuse absolute/aliased project
         // roots by resolving first; deny symlinked cache homes.
         let canonical = std::fs::canonicalize(project_root).map_err(|_| StoreError::Io)?;
         let home = canonical.join(".lekalo").join("cache").join("search");
+        if let Ok(resolved) = std::fs::canonicalize(&home) {
+            if !resolved.starts_with(&canonical) {
+                return Err(StoreError::Denied);
+            }
+        }
         Ok(Self { root: home })
     }
 
@@ -223,6 +246,14 @@ impl SearchStore {
     }
 
     /// Read one generation snapshot.
+    ///
+    /// Custody: the requested 64-hex name, the document's own recorded
+    /// digest, and the canonical-bytes digest of exactly the stored
+    /// payload must all agree, and the payload must satisfy the closed
+    /// structural invariants (every posting and qualified identity
+    /// resolves to a carried card). An aliased copy under a foreign
+    /// digest name, a forged posting, or a re-hashed payload is
+    /// `Corrupt`, never served.
     pub fn load(&self, digest: &str) -> Result<Option<IndexDocument>, StoreError> {
         // The generation name is exactly 64 lowercase hex characters.
         if digest.len() != 64
@@ -245,7 +276,7 @@ impl SearchStore {
         let mut document: IndexDocument =
             serde_json::from_str(text).map_err(|_| StoreError::Corrupt)?;
         // Canonical-bytes custody: the stored digest must equal the
-        // digest of exactly these canonical bytes.
+        // digest of exactly these canonical bytes...
         let Some(recorded) = document.digest.strip_prefix("sha256:") else {
             return Err(StoreError::Corrupt);
         };
@@ -257,18 +288,30 @@ impl SearchStore {
             return Err(StoreError::Corrupt);
         }
         document.digest = format!("sha256:{recorded}");
+        // ...and the recorded digest must be the name it was stored
+        // under: a valid payload copied beneath a foreign digest name is
+        // an alias, not a generation.
+        if recorded != digest {
+            return Err(StoreError::Corrupt);
+        }
         if document.schema_version != INDEX_SCHEMA_VERSION
             || document.identity != INDEX_IDENTITY
             || document.recipe != RECIPE
         {
             return Err(StoreError::Corrupt);
         }
+        validate_document(&document).map_err(|_| StoreError::Corrupt)?;
         Ok(Some(document))
     }
 
     /// Atomically publish one snapshot: write the digest-named payload
     /// and then atomically move the current pointer. A crash before the
     /// pointer move leaves the previous generation serving.
+    ///
+    /// An existing payload under the target name is served only when it
+    /// validates as exactly this generation; poisoned or aliased bytes
+    /// are atomically replaced (a rebuild repairs corrupt custody, it
+    /// never reports success over it).
     pub fn publish(&self, document: &IndexDocument) -> Result<(), StoreError> {
         let mut record = document.clone();
         // The content digest covers exactly the canonical bytes of the
@@ -283,7 +326,8 @@ impl SearchStore {
         record.digest = format!("sha256:{digest}");
         let payload = canonical_json(&serde_json::to_value(&record).map_err(|_| StoreError::Io)?);
         let final_path = self.generation_path(&digest);
-        if !final_path.exists() {
+        let existing_ok = self.load(&digest).is_ok_and(|loaded| loaded.is_some());
+        if !existing_ok {
             let temp = self.root.join(format!(
                 "tmp-{}-{}",
                 std::process::id(),
@@ -301,7 +345,9 @@ impl SearchStore {
         Ok(())
     }
 
-    /// The bounded read-only status of the store.
+    /// The bounded read-only status of the store. A generation is
+    /// `ready` only when its full payload validates; the current
+    /// generation document rides along for the freshness oracle.
     pub fn status(&self) -> IndexStatus {
         match self.current() {
             Err(StoreError::Corrupt) => IndexStatus {
@@ -309,35 +355,91 @@ impl SearchStore {
                 generation: None,
                 cards: None,
                 postings: None,
+                document: None,
             },
             Err(StoreError::Denied) => IndexStatus {
                 state: "denied",
                 generation: None,
                 cards: None,
                 postings: None,
+                document: None,
             },
             Err(StoreError::Io) | Ok(None) => IndexStatus {
                 state: "missing",
                 generation: None,
                 cards: None,
                 postings: None,
+                document: None,
             },
             Ok(Some(digest)) => match self.load(&digest) {
                 Ok(Some(document)) => IndexStatus {
                     state: "ready",
-                    generation: Some(digest),
                     cards: Some(document.cards.len() as u64),
                     postings: Some(document.postings.len() as u64),
+                    document: Some(document),
+                    generation: Some(digest),
                 },
                 _ => IndexStatus {
                     state: "corrupt",
                     generation: Some(digest),
                     cards: None,
                     postings: None,
+                    document: None,
                 },
             },
         }
     }
+}
+
+/// The closed structural invariants of one generation document: every
+/// posting entry and qualified identity must resolve to a carried
+/// card, posting lists stay byte-sorted and duplicate-free, and the
+/// bounded card count holds. A forged posting that names no card is
+/// corrupt custody, never silently served content.
+fn validate_document(document: &IndexDocument) -> Result<(), &'static str> {
+    if document.cards.len() > MAX_CARDS {
+        return Err("cards");
+    }
+    let mut keys: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+    for card in &document.cards {
+        if card.key.is_empty() || card.key.len() > 256 {
+            return Err("card-key");
+        }
+        if !keys.insert(card.key.as_str()) {
+            return Err("duplicate-card");
+        }
+    }
+    let mut entries = 0usize;
+    for (term, list) in &document.postings {
+        if term.is_empty() {
+            return Err("posting-term");
+        }
+        entries += list.len();
+        if list.iter().any(|key| !keys.contains(key.as_str())) {
+            return Err("posting-key");
+        }
+        let mut sorted = list.clone();
+        sorted.sort();
+        sorted.dedup();
+        if &sorted != list {
+            return Err("posting-order");
+        }
+    }
+    if entries > MAX_POSTINGS {
+        return Err("posting-entries");
+    }
+    for (key, list) in &document.qualified_ids {
+        if !keys.contains(key.as_str()) {
+            return Err("qualified-key");
+        }
+        let mut sorted = list.clone();
+        sorted.sort();
+        sorted.dedup();
+        if &sorted != list {
+            return Err("qualified-order");
+        }
+    }
+    Ok(())
 }
 
 /// Derive the snapshot's input pins from a parsed manifest (without
@@ -350,6 +452,7 @@ pub fn pins_of(manifest: &SearchInputs) -> Vec<InputPin> {
             kind: entry.kind.key().to_owned(),
             path: entry.path.clone(),
             digest: entry.digest.clone(),
+            identity: entry.identity.clone(),
         })
         .collect()
 }

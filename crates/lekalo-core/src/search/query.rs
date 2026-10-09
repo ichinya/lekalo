@@ -80,6 +80,11 @@ pub struct FilterSet {
     pub waivers: Vec<String>,
     pub include_stale: bool,
     pub effect_scope: EffectScope,
+    /// Whether the caller explicitly passed `--effect-scope`: the
+    /// documented grammar makes the flag legal with reads/writes only,
+    /// and presence (not just value) decides — the default value must
+    /// never launder an illegal explicit argument.
+    pub effect_scope_present: bool,
 }
 
 impl FilterSet {
@@ -201,7 +206,7 @@ impl QueryRequest {
         if filters.relations.is_empty() != filters.related_to.is_empty() {
             return Err(emit::query_invalid("related-to", "relation-pair"));
         }
-        if filters.effect_scope != EffectScope::Exact
+        if (filters.effect_scope_present || filters.effect_scope != EffectScope::Exact)
             && filters.reads.is_empty()
             && filters.writes.is_empty()
         {
@@ -407,6 +412,64 @@ fn is_pattern_value(value: &str, max_bytes: usize, first: impl Fn(char) -> bool)
     value.len() <= max_bytes
 }
 
+/// Whether one producer/domain is needed by this request: a needed
+/// domain that is not complete is warned about, so absence is never
+/// read as proof, while domains the request does not touch stay quiet.
+/// Every request needs the canonical assembly (`ir`, `effects`); the
+/// exact filters and kinds name the producer domains they join.
+pub fn domain_needed(domain: &str, request: &QueryRequest) -> bool {
+    let filters = &request.filters;
+    match domain {
+        "ir" | "effects" => true,
+        "trace" => {
+            !filters.requirements.is_empty()
+                || !filters.requirement_sources.is_empty()
+                || !filters.relations.is_empty()
+                || filters
+                    .kinds
+                    .iter()
+                    .any(|kind| matches!(kind.as_str(), "requirement" | "gate" | "scenario"))
+        }
+        "requirements" => {
+            !filters.requirements.is_empty()
+                || !filters.requirement_sources.is_empty()
+                || filters.kinds.iter().any(|kind| kind == "requirement")
+        }
+        "bindings" => {
+            !filters.binding_paths.is_empty()
+                || !filters.native_symbols.is_empty()
+                || !filters.targets.is_empty()
+                || filters.kinds.iter().any(|kind| kind == "binding")
+        }
+        "diagnostics" => {
+            !filters.diagnostics.is_empty() || filters.kinds.iter().any(|kind| kind == "diagnostic")
+        }
+        "waivers" => {
+            !filters.waivers.is_empty() || filters.kinds.iter().any(|kind| kind == "waiver")
+        }
+        _ => false,
+    }
+}
+
+/// Whether the request's relevant producer coverage can establish the
+/// `unique` verdict: every domain the request actually needs must be
+/// admitted complete. A selector over a partial or unknown domain can
+/// never claim a singleton answer — absence of admitted evidence is
+/// not proof of absence.
+fn coverage_establishes_unique(request: &QueryRequest, coverage: &[CoverageRow]) -> bool {
+    let mut needed = false;
+    for row in coverage {
+        if domain_needed(&row.domain, request) {
+            needed = true;
+            if row.state != "complete" {
+                return false;
+            }
+        }
+    }
+    let _ = needed;
+    true
+}
+
 /// One result item: the bounded selection card plus its match/explanation.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -522,11 +585,17 @@ pub fn execute(
         normalize_text(query_text)
     };
     let terms = tokenize(&normalized);
-    // The cursor binding: recipe + query/filter digest + policy + index.
+    // The cursor binding: recipe + mode + fuzzy + query (normalized AND
+    // raw — the raw bytes decide the exact-identity tiers) + every
+    // filter member. Any semantic change rebinds the page: a cursor
+    // never straddles a mode toggle, a fuzzy toggle, or an edit that
+    // would change the candidate set or its ranks.
     let query_digest_input = format!(
-        "recipe={};query={};filters={}",
+        "recipe={};fuzzy={};query={};raw={};filters={}",
         RECIPE,
+        request.fuzzy,
         normalized,
+        query_text,
         request.filters.canonical_members()
     );
     let query_digest = format!("sha256:{}", sha256_digest(query_digest_input.as_bytes()));
@@ -547,11 +616,17 @@ pub fn execute(
     };
     // 1. Exact filters first.
     let admitted = filter_cards(index, &request.filters)?;
-    // 2. Rank: facts per admitted card.
+    // 2. Rank: facts per admitted card. The fuzzy work budget is
+    // reserved BEFORE any scoring: an exhausted budget refuses further
+    // fuzzy expansion instead of paying for scores it cannot admit.
     let mut ranked: Vec<(&Card, RankFacts)> = Vec::with_capacity(admitted.len());
     let mut fuzzy_budget = FuzzyBudget::new();
     let mut fuzzy_exhausted = false;
     for card in &admitted {
+        if request.fuzzy && !fuzzy_budget.take() {
+            fuzzy_exhausted = true;
+            continue;
+        }
         let facts = if query_text.is_empty() {
             RankFacts {
                 tier: Tier::AllTerms,
@@ -583,10 +658,6 @@ pub fn execute(
                 None => continue,
             }
         };
-        if facts.tier == Tier::Fuzzy && !fuzzy_budget.take() {
-            fuzzy_exhausted = true;
-            continue;
-        }
         ranked.push((card, facts));
     }
     ranked.sort_by(|left, right| {
@@ -627,11 +698,21 @@ pub fn execute(
         "none"
     } else if top_tied || requirement_ambiguous {
         "ambiguous"
-    } else if ranked.len() == 1 {
+    } else if ranked.len() == 1 && coverage_establishes_unique(request, &coverage) {
         "unique"
+    } else if ranked.len() == 1 {
+        // One hit over coverage that cannot establish uniqueness is an
+        // interpretation the admitted evidence cannot confirm: reported
+        // ambiguous (with the coverage diagnostics), never unique.
+        "ambiguous"
     } else {
         "multiple"
     };
+    if selection == "ambiguous" && !ranked.is_empty() && !top_tied && !requirement_ambiguous {
+        // The single-candidate coverage downgrade carries the ambiguity
+        // explanation too: one candidate, incomplete supporting cover.
+        diagnostics.extend(set_items(emit::ambiguous(1)));
+    }
     if selection == "ambiguous" {
         let tied = if requirement_ambiguous {
             ranked
@@ -671,7 +752,12 @@ pub fn execute(
         .skip(start)
         .take(request.limit)
         .map(|(card, facts)| Item {
-            card: (*card).clone(),
+            // The wire card is the bounded response projection: every
+            // preview is capped at its published bound with the omitted
+            // count disclosed, while the matching/ranking above ran over
+            // the complete typed facts. Filtering never sees a
+            // truncated fact; the wire never carries an uncapped list.
+            card: bounded_response_card(card),
             r#match: MatchFacts {
                 tier: facts.tier.as_str().to_owned(),
                 field: facts.field.as_str().to_owned(),
@@ -735,6 +821,37 @@ pub fn execute(
 /// Flatten one non-invalidating set into the valid envelope items.
 fn set_items(set: crate::diagnostics::DiagnosticSet) -> Vec<crate::diagnostics::Diagnostic> {
     set.as_slice().to_vec()
+}
+
+/// The bounded response projection of one card: every preview list is
+/// capped at its published wire bound and the omissions are added to
+/// the card's disclosed omitted count. The internal card keeps the
+/// complete typed facts for filtering and ranking; only the wire is
+/// capped, so a 65th effect or a ninth input can never produce a
+/// schema-invalid response or a silent loss.
+fn bounded_response_card(card: &Card) -> Card {
+    const WIRE_PREVIEWS: usize = 8;
+    const WIRE_RELATIONS: usize = 64;
+    let mut bounded = card.clone();
+    let mut omitted = bounded.omitted as usize;
+    omitted += bounded.signatures.len().saturating_sub(WIRE_PREVIEWS);
+    bounded.signatures.truncate(WIRE_PREVIEWS);
+    omitted += bounded.bindings.len().saturating_sub(WIRE_PREVIEWS);
+    bounded.bindings.truncate(WIRE_PREVIEWS);
+    omitted += bounded.locations.len().saturating_sub(WIRE_PREVIEWS);
+    bounded.locations.truncate(WIRE_PREVIEWS);
+    omitted += bounded.requirements.len().saturating_sub(WIRE_PREVIEWS);
+    bounded.requirements.truncate(WIRE_PREVIEWS);
+    omitted += bounded.scenarios.len().saturating_sub(WIRE_PREVIEWS);
+    bounded.scenarios.truncate(WIRE_PREVIEWS);
+    omitted += bounded.gates.len().saturating_sub(WIRE_PREVIEWS);
+    bounded.gates.truncate(WIRE_PREVIEWS);
+    omitted += bounded.relations.len().saturating_sub(WIRE_RELATIONS);
+    bounded.relations.truncate(WIRE_RELATIONS);
+    omitted += bounded.effects.len().saturating_sub(WIRE_RELATIONS);
+    bounded.effects.truncate(WIRE_RELATIONS);
+    bounded.omitted = omitted.min(u32::MAX as usize) as u32;
+    bounded
 }
 
 /// Serialize the exact compact response bytes (bounded): the stable
@@ -857,9 +974,19 @@ fn admits(index: &SearchIndex, card: &Card, filters: &FilterSet) -> bool {
         return false;
     }
     if !any_of(&filters.native_symbols, |symbol| {
-        card.bindings
-            .iter()
-            .any(|binding| binding.symbol.as_deref() == Some(symbol))
+        card.bindings.iter().any(|binding| {
+            // The exact native spelling, the stable binding key, and
+            // the bare symbol half of a `path#symbol` spelling all
+            // answer: validating path and symbol separately must not
+            // lose either lookup.
+            binding.symbol.as_deref() == Some(symbol)
+                || binding.key == symbol
+                || binding
+                    .symbol
+                    .as_deref()
+                    .and_then(|spelling| spelling.rsplit_once('#'))
+                    .is_some_and(|(_, bare)| bare == symbol)
+        })
     }) {
         return false;
     }
