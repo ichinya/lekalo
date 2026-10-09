@@ -292,6 +292,303 @@ if (!parse(rbAgain).diagnostics.some((item) => item.code === "LEK-ADOPT-009")) {
   fail("rb-conflict-diagnostic", parse(rbAgain).diagnostics);
 }
 
+// ---------------------------------------------------------------------------
+// R2 adversarial probes: forged executions with recomputed custody (X1),
+// consumed-input drift (X3), unenforceable confinement (X2), wrong-version
+// exit classes (X9), receipt obstruction with journal-driven recovery
+// (X5), whole-rollback snapshot preflight (X6), and the bounded temp
+// hygiene (F7).
+// ---------------------------------------------------------------------------
+const canonicalJson = (value) => {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+};
+const custodyOf = (document) =>
+  `sha256:${createHash("sha256").update(`lekalo.adoption-verification-run.v0.8.0\n${canonicalJson(document)}`).digest("hex")}`;
+const patchDigestOf = (document) =>
+  `sha256:${createHash("sha256").update(`lekalo.adoption-patch.v0.8.0\n${canonicalJson(document)}`).digest("hex")}`;
+
+// A fresh plan and a genuine preserved execution for the probes.
+const probeRefactor = run([
+  "--no-cache", "--json", "adoption", "refactor",
+  "--use-case", "complete_case", "--target", "node-typescript", "--profile", "default",
+  "--verification", spec, "--candidate", candidate, "--project", ".",
+]);
+if (probeRefactor.status !== 0) fail("probe-refactor-exit", probeRefactor.stderr);
+const probePlan = parse(probeRefactor);
+const probePlanPath = save("probe-plan.json", probeRefactor);
+const probeVerify = run([
+  "--json", "adoption", "verify", "--plan", probePlanPath, "--verification", spec,
+  "--candidate", candidate, "--project", ".",
+]);
+if (probeVerify.status !== 0) fail("probe-verify-exit", probeVerify.stderr);
+if (parse(probeVerify).conclusion !== "preserved") fail("probe-verify", parse(probeVerify).conclusion);
+const probeExecutionPath = save("probe-execution.json", probeVerify);
+
+// The forgery recipe is public: strip custody, mutate, re-sign. X1
+// demands the classes that MUST refuse actually refuse.
+const forge = (mutate) => {
+  const doc = JSON.parse(readFileSync(probeExecutionPath, "utf8"));
+  delete doc.custody;
+  mutate(doc);
+  doc.custody = { run: custodyOf(doc), measured_ms: 1 };
+  return doc;
+};
+const forgedApply = (name, doc) => {
+  const path = join(sandboxBase, name);
+  writeFileSync(path, JSON.stringify(doc, null, 2));
+  const result = run([
+    "--json", "adoption", "apply", "--plan", probePlanPath, "--verification", path,
+    "--candidate", candidate, "--confirm", probePlan.plan, "--project", ".",
+  ]);
+  return { result, json: parse(result) };
+};
+// Empty measurement sets never pass an exact 1:1 coverage demand.
+const emptyForged = forgedApply("forged-empty.json", forge((doc) => {
+  doc.baseline = { checks: [] };
+  doc.candidate = { checks: [] };
+}));
+if (emptyForged.result.status !== 1 || !emptyForged.json.diagnostics.some((item) => item.code === "LEK-ADOPT-007")) {
+  fail("forged-empty", { status: emptyForged.result.status, diagnostics: emptyForged.json.diagnostics });
+}
+if (Buffer.compare(originalBytes, readFileSync(join(project, "src/tasks.mjs"))) !== 0) fail("forged-empty-wrote");
+// An asserted oracle beside a failed oracle measurement is re-derived
+// and refused.
+const oracleId = "complete-task.behavior-oracle";
+const oracleInvented = forgedApply("forged-oracle.json", forge((doc) => {
+  for (const side of [doc.baseline, doc.candidate]) {
+    for (const check of side.checks) {
+      if (check.id === oracleId) check.status = "failed";
+    }
+  }
+  doc.oracle = { status: "passed", detail: "invented" };
+}));
+if (oracleInvented.result.status !== 1 || !oracleInvented.json.diagnostics.some((item) => item.code === "LEK-ADOPT-007")) {
+  fail("forged-oracle", { status: oracleInvented.result.status, diagnostics: oracleInvented.json.diagnostics });
+}
+// The documented residual: a hand-forgery that recomputes every public
+// member over a self-consistent envelope is a consistency pass, not an
+// authenticity proof — apply completes, and the exact rollback owns the
+// restoration. The tutorial and the module docs state this honestly.
+const consistentForgery = forgedApply("forged-consistent.json", forge((doc) => {
+  for (const side of [doc.baseline, doc.candidate]) {
+    for (const check of side.checks) check.detail = "forged-but-consistent";
+  }
+}));
+if (consistentForgery.result.status !== 0 || parse(consistentForgery.result).outcome !== "completed") {
+  fail("forged-consistent", { status: consistentForgery.result.status });
+}
+const consistentReceipt = parse(consistentForgery.result);
+const consistentReceiptPath = save("forged-consistent-receipt.json", consistentForgery.result);
+const forgedRollback = run([
+  "--json", "adoption", "rollback", "--receipt", consistentReceiptPath,
+  "--confirm", consistentReceipt.receipt, "--project", ".",
+]);
+if (forgedRollback.status !== 0) fail("forged-rollback-exit", forgedRollback.stderr);
+if (Buffer.compare(originalBytes, readFileSync(join(project, "src/tasks.mjs"))) !== 0) fail("forged-rollback-bytes");
+
+// X3: a swapped runner or oracle after the run refuses at admission —
+// the consumed argv bytes are re-derived from the live tree.
+const oracleBytes = readFileSync(join(project, "tools/oracle.mjs"));
+writeFileSync(join(project, "tools/oracle.mjs"), "// trivialized oracle\n");
+const oracleDrift = forgedApply("probe-execution-reused.json", JSON.parse(readFileSync(probeExecutionPath, "utf8")));
+if (oracleDrift.result.status !== 1 || !oracleDrift.json.diagnostics.some((item) => item.id === "adoption.input-invalid" && item.data && item.data.reason === "consumed-drift")) {
+  fail("oracle-drift", { status: oracleDrift.result.status, diagnostics: oracleDrift.json.diagnostics });
+}
+writeFileSync(join(project, "tools/oracle.mjs"), oracleBytes);
+const runnerBytes = readFileSync(join(project, "tools/verify.mjs"));
+writeFileSync(join(project, "tools/verify.mjs"), `${runnerBytes.toString("utf8")}\n// drifted runner\n`);
+const runnerDrift = forgedApply("probe-execution-reused.json", JSON.parse(readFileSync(probeExecutionPath, "utf8")));
+if (runnerDrift.result.status !== 1 || !runnerDrift.json.diagnostics.some((item) => item.id === "adoption.input-invalid" && item.data && item.data.reason === "consumed-drift")) {
+  fail("runner-drift", { status: runnerDrift.result.status, diagnostics: runnerDrift.json.diagnostics });
+}
+writeFileSync(join(project, "tools/verify.mjs"), runnerBytes);
+
+// X2: a requested no-network confinement is refused as unenforceable —
+// never silently dropped while the run proceeds unconfined.
+const nnSpecValue = JSON.parse(readFileSync(spec, "utf8"));
+nnSpecValue.confinement.push("no-network");
+const nnSpecPath = join(sandboxBase, "nn-spec.json");
+writeFileSync(nnSpecPath, JSON.stringify(nnSpecValue, null, 2));
+const nnRefactor = run([
+  "--no-cache", "--json", "adoption", "refactor",
+  "--use-case", "complete_case", "--target", "node-typescript", "--profile", "default",
+  "--verification", nnSpecPath, "--project", ".",
+]);
+if (nnRefactor.status !== 0) fail("nn-refactor-exit", nnRefactor.stderr);
+const nnPlanPath = save("nn-plan.json", nnRefactor);
+const nnVerify = run([
+  "--json", "adoption", "verify", "--plan", nnPlanPath, "--verification", nnSpecPath,
+  "--project", ".",
+]);
+if (nnVerify.status !== 3 || !parse(nnVerify).diagnostics.some((item) => item.code === "LEK-ADOPT-003")) {
+  fail("nn-verify", { status: nnVerify.status, diagnostics: parse(nnVerify).diagnostics });
+}
+
+// X9: a wrong-version plan keeps its exit-5 class through the apply,
+// verify, and recovery consumers; a wrong-version patch too.
+const bumpVersion = (bytes, version) => {
+  const doc = JSON.parse(bytes.toString("utf8"));
+  doc.schema_version = version;
+  return Buffer.from(JSON.stringify(doc, null, 2));
+};
+const bumpedPlanPath = join(sandboxBase, "bumped-plan.json");
+writeFileSync(bumpedPlanPath, bumpVersion(readFileSync(probePlanPath), "lekalo/adoption-refactor-plan/v9.9.9"));
+const bumpedExecutionPath = join(sandboxBase, "bumped-execution.json");
+writeFileSync(bumpedExecutionPath, bumpVersion(readFileSync(probeExecutionPath), "lekalo/adoption-verification/v9.9.9"));
+const bumpedPatchPath = join(sandboxBase, "bumped-patch.json");
+writeFileSync(bumpedPatchPath, bumpVersion(readFileSync(candidate), "lekalo/adoption-patch/v9.9.9"));
+for (const [name, args, expectedCode] of [
+  ["apply-plan", ["--json", "adoption", "apply", "--plan", bumpedPlanPath, "--verification", probeExecutionPath, "--candidate", candidate, "--confirm", probePlan.plan, "--project", "."], "LEK-ADOPT-002"],
+  ["verify-plan", ["--json", "adoption", "verify", "--plan", bumpedPlanPath, "--verification", spec, "--candidate", candidate, "--project", "."], "LEK-ADOPT-002"],
+  ["recovery-plan", ["--json", "adoption", "recovery", "--plan", bumpedPlanPath, "--project", "."], "LEK-ADOPT-002"],
+  ["apply-verification", ["--json", "adoption", "apply", "--plan", probePlanPath, "--verification", bumpedExecutionPath, "--candidate", candidate, "--confirm", probePlan.plan, "--project", "."], "LEK-ADOPT-002"],
+  ["apply-patch", ["--json", "adoption", "apply", "--plan", probePlanPath, "--verification", probeExecutionPath, "--candidate", bumpedPatchPath, "--confirm", probePlan.plan, "--project", "."], "LEK-ADOPT-002"],
+]) {
+  const result = run(args);
+  if (result.status !== 5 || !parse(result).diagnostics.some((item) => item.code === expectedCode)) {
+    fail(`x9-${name}`, { status: result.status, diagnostics: parse(result).diagnostics });
+  }
+}
+
+// X5: an obstructed receipt destination strands nothing — the refusal
+// is the typed recovery contract and the journal-driven restore
+// completes the transaction without the receipt.
+const probePatched = JSON.parse(readFileSync(candidate, "utf8")).files[0].content;
+const receiptHead = probePlan.plan.slice(7, 39);
+const receiptTail = probePlan.plan.slice(39, 71);
+const receiptObstruction = join(project, ".lekalo/import/adoption/receipts", receiptHead, `${receiptTail}.json`);
+// The rolled-back probe receipt occupies the path; the rollback already
+// consumed it, so the file gives way to the obstruction directory.
+rmSync(receiptObstruction, { force: true });
+mkdirSync(receiptObstruction, { recursive: true });
+const obstructApply = run([
+  "--json", "adoption", "apply", "--plan", probePlanPath, "--verification", probeExecutionPath,
+  "--candidate", candidate, "--confirm", probePlan.plan, "--project", ".",
+]);
+if (obstructApply.status !== 1 || !parse(obstructApply).diagnostics.some((item) => item.code === "LEK-ADOPT-008")) {
+  fail("obstruct-apply", { status: obstructApply.status, diagnostics: parse(obstructApply).diagnostics });
+}
+if (readFileSync(join(project, "src/tasks.mjs"), "utf8") !== probePatched) fail("obstruct-apply-bytes");
+const obstructView = run(["--json", "adoption", "recovery", "--digest", probePlan.plan, "--project", "."]);
+if (obstructView.status !== 0) fail("obstruct-view-exit", obstructView.stderr);
+const obstructJson = parse(obstructView);
+if (obstructJson.intact !== true || !obstructJson.steps.some((step) => step.state === "written")) {
+  fail("obstruct-view", obstructJson);
+}
+const obstructRestore = run(["--json", "adoption", "recovery", "--digest", probePlan.plan, "--restore", "--project", "."]);
+if (obstructRestore.status !== 0 || parse(obstructRestore).outcome !== "restored") {
+  fail("obstruct-restore", { status: obstructRestore.status, detail: obstructRestore.stdout || obstructRestore.stderr });
+}
+if (Buffer.compare(originalBytes, readFileSync(join(project, "src/tasks.mjs"))) !== 0) fail("obstruct-restore-bytes");
+const receiptsHome = join(project, ".lekalo/import/adoption/receipts");
+for (const head of readdirSync(receiptsHome)) {
+  for (const name of readdirSync(join(receiptsHome, head))) {
+    if (name.endsWith(".tmp")) fail("orphan-tmp", name);
+  }
+}
+rmSync(receiptObstruction, { recursive: true, force: true });
+
+// X6: a corrupt later snapshot refuses the ENTIRE rollback — the first
+// file is never restored ahead of the failure.
+const limitsOriginal = readFileSync(join(project, "src/limits.mjs"), "utf8");
+const limitsPatched = `${limitsOriginal}\n// reviewed: no behavior change\n`;
+const twoPatch = {
+  schema_version: "lekalo/adoption-patch/v0.8.0",
+  identity: "dev.lekalo.adoption-patch@0.8.0",
+  patch: "",
+  origin: { kind: "supplied-reviewed", identity: "issue-136-two-file-probe" },
+  scope: { symbol: "taskboard.complete_task", target: "node-typescript", profile: "default" },
+  files: [
+    {
+      path: "src/limits.mjs",
+      action: "replace",
+      before: sha256(Buffer.from(limitsOriginal, "utf8")),
+      after: sha256(Buffer.from(limitsPatched, "utf8")),
+      content: limitsPatched,
+    },
+    JSON.parse(readFileSync(candidate, "utf8")).files[0],
+  ],
+};
+const { patch: _twoPatchDigest, ...twoPatchRest } = twoPatch;
+twoPatch.patch = patchDigestOf(twoPatchRest);
+const twoPatchPath = join(sandboxBase, "two-patch.json");
+writeFileSync(twoPatchPath, JSON.stringify(twoPatch, null, 2));
+const twoRefactor = run([
+  "--no-cache", "--json", "adoption", "refactor",
+  "--use-case", "complete_case", "--target", "node-typescript", "--profile", "default",
+  "--verification", spec, "--candidate", twoPatchPath, "--project", ".",
+]);
+if (twoRefactor.status !== 0) fail("two-refactor-exit", twoRefactor.stderr);
+const twoPlan = parse(twoRefactor);
+const twoPlanPath = save("two-plan.json", twoRefactor);
+const twoVerify = run([
+  "--json", "adoption", "verify", "--plan", twoPlanPath, "--verification", spec,
+  "--candidate", twoPatchPath, "--project", ".",
+]);
+if (twoVerify.status !== 0 || parse(twoVerify).conclusion !== "preserved") fail("two-verify", twoVerify.stderr);
+const twoApply = run([
+  "--json", "adoption", "apply", "--plan", twoPlanPath, "--verification", save("two-execution.json", twoVerify),
+  "--candidate", twoPatchPath, "--confirm", twoPlan.plan, "--project", ".",
+]);
+if (twoApply.status !== 0) fail("two-apply-exit", twoApply.stderr);
+if (readFileSync(join(project, "src/limits.mjs"), "utf8") !== limitsPatched) fail("two-apply-limits");
+// Corrupt the second-processed write's snapshot (the writes restore in
+// patch order: limits first, tasks second).
+const tasksSnapshotName = `${createHash("sha256").update("src/tasks.mjs").digest("hex").slice(0, 32)}.bin`;
+const tasksSnapshot = join(
+  project, ".lekalo/import/adoption/recovery",
+  twoPlan.plan.slice(7, 39), twoPlan.plan.slice(39, 71), "snapshots", tasksSnapshotName,
+);
+const snapshotBytes = readFileSync(tasksSnapshot);
+writeFileSync(tasksSnapshot, "corrupted-snapshot");
+const twoReceipt = parse(twoApply);
+const twoReceiptPath = save("two-receipt.json", twoApply);
+const corruptRollback = run([
+  "--json", "adoption", "rollback", "--receipt", twoReceiptPath,
+  "--confirm", twoReceipt.receipt, "--project", ".",
+]);
+if (corruptRollback.status !== 1 || !parse(corruptRollback).diagnostics.some((item) => item.code === "LEK-ADOPT-008")) {
+  fail("corrupt-rollback", { status: corruptRollback.status, diagnostics: parse(corruptRollback).diagnostics });
+}
+if (readFileSync(join(project, "src/limits.mjs"), "utf8") !== limitsPatched) fail("corrupt-rollback-partial-limits");
+if (readFileSync(join(project, "src/tasks.mjs"), "utf8") !== probePatched) fail("corrupt-rollback-partial-tasks");
+// An intact snapshot set restores both files exactly.
+writeFileSync(tasksSnapshot, snapshotBytes);
+const cleanRollback = run([
+  "--json", "adoption", "rollback", "--receipt", twoReceiptPath,
+  "--confirm", twoReceipt.receipt, "--project", ".",
+]);
+if (cleanRollback.status !== 0) fail("clean-rollback-exit", cleanRollback.stderr);
+if (readFileSync(join(project, "src/limits.mjs"), "utf8") !== limitsOriginal) fail("clean-rollback-limits");
+if (Buffer.compare(originalBytes, readFileSync(join(project, "src/tasks.mjs"))) !== 0) fail("clean-rollback-tasks");
+
+// F7: disposable-copy preparation never leaks into the host temp area —
+// not on an over-limit refusal and not as empty parents on success.
+const tempScratch = join(sandboxBase, "temp-scratch");
+mkdirSync(tempScratch, { recursive: true });
+const tempEnv = { ...process.env, TEMP: tempScratch, TMP: tempScratch, TMPDIR: tempScratch };
+const bigPath = join(project, "src/big-generated.mjs");
+writeFileSync(bigPath, "// oversized generated blob\n".repeat(2_600_000));
+const overVerify = spawnSync(BINARY, [
+  "--json", "adoption", "verify", "--plan", probePlanPath, "--verification", spec,
+  "--candidate", candidate, "--project", ".",
+], { cwd: project, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, env: tempEnv });
+if (overVerify.status !== 1 || !JSON.parse(overVerify.stderr).diagnostics.some((item) => item.id === "adoption.input-invalid" && item.data && item.data.reason === "over-limit")) {
+  fail("over-limit", { status: overVerify.status, detail: (overVerify.stderr || "").slice(0, 300) });
+}
+if (readdirSync(tempScratch).length !== 0) fail("temp-leak-on-failure", readdirSync(tempScratch));
+rmSync(bigPath, { force: true });
+const okVerify = spawnSync(BINARY, [
+  "--json", "adoption", "verify", "--plan", probePlanPath, "--verification", spec,
+  "--candidate", candidate, "--project", ".",
+], { cwd: project, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, env: tempEnv });
+if (okVerify.status !== 0) fail("temp-ok-verify", (okVerify.stderr || "").slice(0, 300));
+if (readdirSync(tempScratch).length !== 0) fail("temp-litter-on-success", readdirSync(tempScratch));
+
 rmSync(sandboxBase, { recursive: true, force: true });
 process.stdout.write(`${JSON.stringify({ ok: true, gate: "adoption-refactor" })}\n`);
 
