@@ -402,18 +402,21 @@ jobs:
       - name: Run the issue-136 adoption gates against the real binary
         # The contracts gate (schemas + registry + live read-only
         # flows), the selective-refactor gate (verified apply with
-        # real baseline/candidate runs, negatives, exact rollback), and
-        # the hybrid gate (create/rollback, binding write entries,
-        # delete CAS, non-evidence mutations, --project wrappers,
-        # drained pipes, execution custody, freshness, recovery). All
-        # three need the binary built above.
+        # real baseline/candidate runs, negatives, exact rollback,
+        # forged-custody/drift/confinement/version probes, receipt
+        # obstruction recovery, rollback preflight, temp hygiene), the
+        # hybrid gate (three-mode conformed fixture, live conformance
+        # freshness, executed provenance joins, recovery deferral), and
+        # the tutorial replay (the documented walkthrough runs
+        # verbatim). All need the binary built above.
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
-        timeout-minutes: 15
+        timeout-minutes: 20
         run: |
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-adoption-contracts.mjs
           node scripts/test-adoption-refactor.mjs
           node scripts/test-adoption-hybrid.mjs
+          node scripts/test-adoption-tutorial.mjs
       - name: Replay portable documentation commands in disposable copies (issue #105)
         timeout-minutes: 15
         env:

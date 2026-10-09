@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "productVersion": "0.8.0",
-  "cliSourceDigest": "sha256:51b38049af970650a751ae133e29289436f39666b5fc16746a9d0358f65d78df",
+  "cliSourceDigest": "sha256:63227bf76b23871c2a28dee3ecfc0b7e3b171799aed7663334d50d8beecabba4",
   "p0Pages": [
     {
       "page": "README.md",
@@ -216,7 +216,7 @@
       "kind": "command",
       "command": "adoption",
       "usage": "lekalo adoption [OPTIONS] <COMMAND>",
-      "helpDigest": "sha256:790abe8db449b2e016e41f018ee666ac3179d575442611bb86da8ac9fbc37fb8",
+      "helpDigest": "sha256:d514acd2e62021f608b28b9fc8656add306908bc2961b259f6cef74ef9afb276",
       "summary": "Scoped brownfield adoption, selective refactoring, and hybrid mode (issue #136): read-only analysis, selective confirmation, exact refactor plans, verified apply with rollback, and the hybrid coverage join",
       "leaf": false,
       "owner": "docs/adoption.md",
@@ -271,8 +271,8 @@
       "kind": "command",
       "command": "adoption recovery",
       "usage": "lekalo adoption recovery [OPTIONS]",
-      "helpDigest": "sha256:ccb030168af19c2c19fb67638d2c4701e74136ec9c50211bd5899cf058de480c",
-      "summary": "The durable recovery view of one plan: the interrupted apply or confirmation phase's journal with every snapshot's integrity classified, so a partial mutation is discoverable instead of invisible",
+      "helpDigest": "sha256:a450d8a87b0fc8ef43737af0c90191a4280d9efd80007be5fe026ab497e319da",
+      "summary": "The durable recovery surface of one plan: the interrupted apply or confirmation phase's journal with every snapshot's integrity classified, so a partial mutation is discoverable instead of invisible. With `--restore`, a stranded installation is actually restored from the journal's snapshots and pre-states — the executable path for a receipt failure after committed writes (no completed receipt required)",
       "leaf": true,
       "owner": "docs/adoption.md",
       "status": "implemented"
@@ -2139,7 +2139,7 @@
       "id": "contract:contracts/adoption-impact-report.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/adoption-impact-report.schema.v0.8.0.json",
-      "sourceDigest": "sha256:4d62cc93b18b3d49571a08df7d717af20719d35be8a13ac10e5f5ff4e8938b0a",
+      "sourceDigest": "sha256:f0f24161af15883a4f0ffe65932d47868ba8d336b4454843569f1206ba0c449a",
       "owner": "docs/adoption.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2193,7 +2193,7 @@
       "id": "contract:contracts/adoption-verification.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/adoption-verification.schema.v0.8.0.json",
-      "sourceDigest": "sha256:56163e75e4c9dfda7e0a2bf9d4581106aaf03e901cb23a71069e59e9b78731ba",
+      "sourceDigest": "sha256:c4dfcd84b6e022c62fd6b4b301e34cded12547d1e8d1c7586c5e24f1a5f1fe9a",
       "owner": "docs/adoption.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
