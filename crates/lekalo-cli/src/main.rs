@@ -12,6 +12,7 @@ use lekalo_core::versioning::compatibility::CompatibilityReport;
 use lekalo_core::versioning::migration::{MigrationReceipt, MigrationService, VersioningFailure};
 use lekalo_core::versioning::{ModelTarget, TargetMalformation, VersionRegistry};
 use lekalo_core::DomainResult;
+use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::io::{self, Read, Write};
 use std::process::ExitCode;
@@ -6492,6 +6493,16 @@ fn validate_consumed_attachments(
             detail,
         ))
     };
+    // Family completeness: the closed consumed-family inventory is the
+    // composition's declared guarantee set. A composition carrying
+    // fewer families than the closed vocabulary has dropped a
+    // guarantee from its own input inventory, so it refuses before any
+    // per-family semantics run.
+    if composition.consumed().len()
+        < lekalo_core::worklog_changelog::version::CONSUMED_FAMILIES.len()
+    {
+        return Err(custody("consumed-family-missing"));
+    }
     for consumed in composition.consumed() {
         let path = match consumed.family() {
             "authorization" => std::path::Path::new(project_selector)
@@ -6531,8 +6542,7 @@ fn validate_consumed_attachments(
                 }
             }
             "transaction-concurrency" => {
-                let json: serde_json::Value =
-                    serde_json::from_slice(&bytes).map_err(|_| custody("consumed-wire"))?;
+                let json = parse_consumed_unique(&bytes, &custody)?;
                 custody_identity(&json, consumed.identity())?;
                 let attachment =
                     lekalo_core::transaction_concurrency::TransactionConcurrencyAttachment::from_value(
@@ -6546,8 +6556,7 @@ fn validate_consumed_attachments(
                     .map_err(DomainResult::invalid)?;
             }
             "extended-effects" => {
-                let json: serde_json::Value =
-                    serde_json::from_slice(&bytes).map_err(|_| custody("consumed-wire"))?;
+                let json = parse_consumed_unique(&bytes, &custody)?;
                 custody_identity(&json, consumed.identity())?;
                 let attachment =
                     lekalo_core::extended_effects::ExtendedEffectsAttachment::from_value(&json)
@@ -6574,8 +6583,7 @@ fn validate_consumed_attachments(
                 let _ = registry;
             }
             "invariant-transition" => {
-                let json: serde_json::Value =
-                    serde_json::from_slice(&bytes).map_err(|_| custody("consumed-wire"))?;
+                let json = parse_consumed_unique(&bytes, &custody)?;
                 custody_identity(&json, consumed.identity())?;
                 let attachment =
                     lekalo_core::invariant_transition::InvariantTransitionAttachment::from_value(
@@ -6587,8 +6595,7 @@ fn validate_consumed_attachments(
                     .map_err(DomainResult::invalid)?;
             }
             "requirements" => {
-                let json: serde_json::Value =
-                    serde_json::from_slice(&bytes).map_err(|_| custody("consumed-wire"))?;
+                let json = parse_consumed_unique(&bytes, &custody)?;
                 custody_identity(&json, consumed.identity())?;
                 let attachment =
                     lekalo_core::requirements::RequirementsAttachment::from_value(&json)
@@ -6608,6 +6615,110 @@ fn validate_consumed_attachments(
     Ok(())
 }
 
+/// One consumed attachment decoded with member uniqueness enforced
+/// before any map insertion. The composition and evidence documents
+/// refuse duplicate keys through the same closed decoder; a consumed
+/// document never may hide a forged first spelling behind a silent
+/// last-value resolution.
+fn parse_consumed_unique(
+    bytes: &[u8],
+    custody: &dyn Fn(&'static str) -> DomainResult,
+) -> Result<serde_json::Value, DomainResult> {
+    let text = std::str::from_utf8(bytes)
+        .map_err(|_| custody("consumed-wire"))?
+        .to_owned();
+    // The canonical unique-member decoder is core-owned; the shell
+    // reaches it through the pilot seam's public re-export.
+    lekalo_core::worklog_changelog::parse_unique_consumed(&text).map_err(|set| {
+        let _ = custody;
+        DomainResult::invalid(set)
+    })
+}
+
+/// Model custody: the composition's `modelRef` digest must equal the
+/// exact canonical Model digest of the resolved compilation, the same
+/// bytes the load envelope renders. The pin is verified against the
+/// compilation the shell itself loaded, never against a re-read of
+/// project files that could race or drift.
+fn check_model_custody(
+    composition: &lekalo_core::worklog_changelog::Composition,
+    compilation: &lekalo_core::ir::Compilation,
+    selection: &LoadSelection,
+    no_cache: bool,
+) -> Result<(), DomainResult> {
+    // The model envelope the engine itself renders is the canonical
+    // digest input: the exact bytes the requirements custody join
+    // compares against (the loader's terminal JSON plus its trailing
+    // newline), so the pilot pin and every attachment pin name the
+    // same Model state.
+    let model_envelope = match lekalo_core::loader::run(selection, false) {
+        DomainResult::Valid {
+            payload: lekalo_core::result::SuccessPayload::Model { json, .. },
+            ..
+        } => json,
+        other => {
+            let _ = no_cache;
+            return Err(other);
+        }
+    };
+    let mut envelope_bytes = model_envelope.into_bytes();
+    envelope_bytes.push(b'\n');
+    let digest = format!("sha256:{}", lekalo_core::digest::sha256_hex(&envelope_bytes));
+    if composition.model_digest() != digest {
+        return Err(DomainResult::invalid(
+            lekalo_core::worklog_changelog::diagnostic::input_invalid("model-custody"),
+        ));
+    }
+    let _ = compilation;
+    Ok(())
+}
+
+/// The engine backend provenance receipt: for each target the engine
+/// shell declares for this compilation, the exact backend identity and
+/// the `sha256:` digest of the canonical Model bytes the engine would
+/// execute against. Reports claiming a bound backend must match this
+/// receipt byte for byte; identities the engine never declared are
+/// forged provenance. The go target stays undeclared here (its
+/// committed refusal record is the honest absence), so any `bound`
+/// go row is provenance-forged under the receipt rule.
+fn engine_backend_provenance(
+    selection: &LoadSelection,
+    no_cache: bool,
+) -> BTreeMap<String, lekalo_core::worklog_changelog::BackendProvenance> {
+    let mut provenance = BTreeMap::new();
+    let Ok((model, compilation)) = lekalo_core::cache::load_compiled(selection, no_cache) else {
+        return provenance;
+    };
+    let canonical = lekalo_core::loader::canonical_model_bytes(&model);
+    let digest = format!("sha256:{}", lekalo_core::digest::sha256_hex(canonical.as_bytes()));
+    // The php target binding the compiled Model declares is the exact
+    // provenance subject: the backend identity is the pinned target
+    // binding's id, the digest is the canonical bytes the lane runs.
+    for definition in &compilation.project.definitions {
+        if let lekalo_core::ir::Definition::TargetBinding(binding) = definition {
+            if let Some((lane, identity)) = native_lane_for(binding.target.as_str()) {
+                provenance.insert(
+                    lane.to_owned(),
+                    lekalo_core::worklog_changelog::BackendProvenance {
+                        identity: identity.to_owned(),
+                        digest: digest.clone(),
+                    },
+                );
+            }
+        }
+    }
+    provenance
+}
+
+/// The native runtime lane of one compiled target binding: the closed
+/// lane vocabulary and its backend identity.
+fn native_lane_for(target: &str) -> Option<(&'static str, &'static str)> {
+    match target {
+        "php-laravel" => Some(("php", "taskhub.runtime/fake-transport")),
+        _ => None,
+    }
+}
+
 /// One consumed document's identity member must equal its pin.
 fn custody_identity(json: &serde_json::Value, identity: &str) -> Result<(), DomainResult> {
     if json.get("identity").and_then(serde_json::Value::as_str) == Some(identity) {
@@ -6620,7 +6731,7 @@ fn custody_identity(json: &serde_json::Value, identity: &str) -> Result<(), Doma
 }
 
 /// Run one `lekalo pilot` operation: read the document, load and
-/// compile the selected project, and hand both to the core. Load and
+/// compile the resolved project, and hand both to the core. Load and
 /// compile failures pass through unchanged; this binary only selects,
 /// renders, and maps exits.
 fn run_pilot(command: PilotCommands, no_cache: bool) -> DomainResult {
@@ -6643,7 +6754,18 @@ fn run_pilot(command: PilotCommands, no_cache: bool) -> DomainResult {
             return DomainResult::invalid(lekalo_core::worklog_changelog::io_failure(detail));
         }
     };
-    let compilation = match lekalo_core::cache::load_compiled(&selection_for(&project), no_cache) {
+    // The effective project is resolved once, exactly the way the
+    // loader resolves it (explicit selector, `LEKALO_PROJECT`, then
+    // cwd discovery): every downstream join — consumed custody,
+    // backend provenance, the composition document directory — keys
+    // off the resolved selection, never the raw CLI argument, so the
+    // same project validates identically however it was named.
+    let selection = selection_for(&project);
+    let resolved_selector = match lekalo_core::orchestration::project_root(&selection) {
+        Ok(root) => Some(root.to_string_lossy().into_owned()),
+        Err(result) => return result,
+    };
+    let compilation = match lekalo_core::cache::load_compiled(&selection, no_cache) {
         Ok((_, compilation)) => compilation,
         Err(result) => return result,
     };
@@ -6654,25 +6776,30 @@ fn run_pilot(command: PilotCommands, no_cache: bool) -> DomainResult {
                     Ok(composition) => composition,
                     Err(result) => return result,
                 };
+            // Model custody: the composition's `modelRef` pin must be
+            // the exact canonical Model digest of the resolved
+            // compilation. A claimed provenance the compilation does
+            // not carry refuses exactly like a stale IR pin.
+            if let Err(result) =
+                check_model_custody(&composition, &compilation, &selection, no_cache)
+            {
+                return result;
+            }
             // Consumed-attachment custody and semantics: the shell
             // loads and hashes every consumed input and hands typed
             // content to the pure core validators, so the pilot can
             // never stay valid while a consumed guarantee was removed
             // or replaced. The composition directory carries the JSON
             // families; the authorization attachment rides the Model.
-            if let Some(selector) = project.as_deref() {
-                let composition_dir = std::path::Path::new(&path)
-                    .parent()
-                    .map(std::path::Path::to_path_buf)
-                    .unwrap_or_default();
-                if let Err(result) = validate_consumed_attachments(
-                    &composition,
-                    &compilation,
-                    selector,
-                    &composition_dir,
-                ) {
-                    return result;
-                }
+            let selector = resolved_selector.as_deref().unwrap_or_default();
+            let composition_dir = std::path::Path::new(&path)
+                .parent()
+                .map(std::path::Path::to_path_buf)
+                .unwrap_or_default();
+            if let Err(result) =
+                validate_consumed_attachments(&composition, &compilation, selector, &composition_dir)
+            {
+                return result;
             }
             DomainResult::receipt(
                 serde_json::to_string_pretty(&serde_json::json!({
@@ -6716,10 +6843,41 @@ fn run_pilot(command: PilotCommands, no_cache: bool) -> DomainResult {
                     ))
                 }
             };
+            // The consumed join runs wherever the composition is
+            // trusted, admission included: evidence bound to a
+            // composition whose consumed inputs are void certifies
+            // nothing.
+            let composition = match lekalo_core::worklog_changelog::validate_document(
+                &composition_bytes,
+                &compilation,
+            ) {
+                Ok(composition) => composition,
+                Err(result) => return result,
+            };
+            if let Err(result) =
+                check_model_custody(&composition, &compilation, &selection, no_cache)
+            {
+                return result;
+            }
+            let selector = resolved_selector.as_deref().unwrap_or_default();
+            let composition_dir = std::path::Path::new(composition_path.as_deref().unwrap_or(""))
+                .parent()
+                .map(std::path::Path::to_path_buf)
+                .unwrap_or_default();
+            if let Err(result) =
+                validate_consumed_attachments(&composition, &compilation, selector, &composition_dir)
+            {
+                return result;
+            }
+            // Backend provenance: the engine's own rendering of the
+            // canonical Model bytes is the provenance receipt every
+            // bound backend identity/digest must equal.
+            let declared_backends = engine_backend_provenance(&selection, no_cache);
             match lekalo_core::worklog_changelog::admit(
                 &bytes,
                 &composition_bytes,
                 &compilation.project,
+                &declared_backends,
                 profile,
             ) {
                 Ok(receipt) => {

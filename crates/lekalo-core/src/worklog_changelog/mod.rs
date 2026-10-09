@@ -41,11 +41,23 @@ pub mod validate;
 pub mod version;
 pub mod wire;
 
-pub use evidence::{admit, io_failure, AdmissionProfile, AdmissionReceipt, TargetVerdict};
+pub use evidence::{
+    admit, io_failure, AdmissionProfile, AdmissionReceipt, BackendProvenance, TargetVerdict,
+};
 pub use types::Composition;
 pub use wire::parse;
 
 use crate::result::DomainResult;
+
+/// Decode one consumed-attachment document with member uniqueness
+/// enforced before any map insertion. The shell hashes the exact bytes
+/// and hands them here so the same duplicate-key refusal the
+/// composition and evidence documents enforce closes the last wire
+/// seam; the core stays the single owner of the closed decode.
+pub fn parse_unique_consumed(text: &str) -> Result<serde_json::Value, crate::diagnostics::DiagnosticSet>
+{
+    canonical::canonical_parse_unique(text)
+}
 
 /// Validate one composition document against its pinned compilation:
 /// the full pure pipeline from exact bytes to the resolved attachment.

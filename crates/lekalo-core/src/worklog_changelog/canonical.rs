@@ -30,6 +30,15 @@ use crate::diagnostics::DiagnosticSet;
 #[cfg_attr(not(test), allow(dead_code))]
 const DOMAIN_PREFIX: &str = "lekalo/worklog-changelog-pilot";
 
+/// The module-external unique-member JSON decode: the same closed
+/// duplicate-key-refusing decoder `parse` uses, exposed to the module
+/// root for the consumed-attachment seam.
+pub(crate) fn canonical_parse_unique(
+    text: &str,
+) -> Result<serde_json::Value, crate::diagnostics::DiagnosticSet> {
+    parse_unique(text)
+}
+
 /// The canonical digest of one composition document: the domain
 /// prefix, one slash, then the SHA-256 of the exact canonical bytes.
 #[cfg_attr(not(test), allow(dead_code))]

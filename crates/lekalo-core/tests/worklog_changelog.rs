@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use lekalo_core::loader::LoadSelection;
-use lekalo_core::worklog_changelog::{self, Composition};
+use lekalo_core::worklog_changelog::{self, BackendProvenance, Composition};
 
 const PILOT_JSON: &str = "tests/fixtures/pilot/worklog-changelog/attachments/pilot.json";
 const MODEL_PROJECT: &str = "tests/fixtures/pilot/worklog-changelog/model";
@@ -407,9 +407,26 @@ fn evidence_admission_target(
             &report_bytes,
             &composition_bytes,
             &compilation.project,
+            &admitted_backends(),
             lekalo_core::worklog_changelog::AdmissionProfile::Strict,
         )
     })
+}
+
+/// The engine provenance receipt the shell resolves for the fixture:
+/// the compiled target binding names the php lane, so its bound
+/// backend must equal this receipt.
+fn admitted_backends() -> std::collections::BTreeMap<String, BackendProvenance> {
+    let mut provenance = std::collections::BTreeMap::new();
+    provenance.insert(
+        "php".to_owned(),
+        BackendProvenance {
+            identity: "taskhub.runtime/fake-transport".to_owned(),
+            digest: "sha256:895ff99de892811b60bbe95eeb6484d960e0ff5e39de4db932b762a12e73b2bc"
+                .to_owned(),
+        },
+    );
+    provenance
 }
 
 #[test]
@@ -427,6 +444,7 @@ fn evidence_admission_is_honest_for_both_profiles() {
             &bytes,
             &composition_bytes,
             &compilation.project,
+            &admitted_backends(),
             lekalo_core::worklog_changelog::AdmissionProfile::Strict,
         )
         .expect("strict admission produces a receipt");
@@ -438,6 +456,7 @@ fn evidence_admission_is_honest_for_both_profiles() {
             &bytes,
             &composition_bytes,
             &compilation.project,
+            &admitted_backends(),
             lekalo_core::worklog_changelog::AdmissionProfile::Permissive,
         )
         .expect("permissive admission produces a receipt");

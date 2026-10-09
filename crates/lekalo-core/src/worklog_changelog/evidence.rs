@@ -20,6 +20,17 @@
 //! inventory. A report author cannot remove a required guarantee by
 //! clearing a flag or deleting a row: the required inventory comes
 //! from the composition and the compilation, not from the report.
+//!
+//! Under the strict profile the obligations are derived, not
+//! self-claimed: every required target must claim real execution
+//! with a bound backend whose identity and digest equal the engine
+//! shell's own provenance receipt for the same compilation, every
+//! required scenario must carry a passing per-target assertion and a
+//! non-failing aggregate row, a `partial` row satisfies its minimum
+//! only behind an explicit review approval, and the consumer witness
+//! set is joined both directions against the compilation's declared
+//! consumer inventory. Evidence contradicting the derived truth
+//! refuses regardless of what the report claims.
 
 use serde::Serialize;
 use serde_json::Value as Json;
@@ -90,6 +101,20 @@ pub struct TargetVerdict {
 /// The stable IO failure set for an unreadable document.
 pub fn io_failure(detail: &str) -> DiagnosticSet {
     diagnostic::input_invalid(detail)
+}
+
+/// One target backend's engine-side provenance, resolved by the shell
+/// from the same compilation the composition pins. The report's
+/// backend identity and digest must equal this receipt exactly: a
+/// backend bound to bytes the engine did not produce is forged
+/// provenance, not evidence.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BackendProvenance {
+    /// The exact backend identity the engine rendered.
+    pub identity: String,
+    /// The exact `sha256:<64 hex>` digest of the backend bytes the
+    /// engine executed.
+    pub digest: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -187,16 +212,20 @@ fn id_text(raw: &str) -> Result<(), DiagnosticSet> {
                 })
         }
     };
-    // Either one segment, or dotted segments with optional
-    // slash-separated trailing segments.
+    // The exact schema grammar: a bare segment, or a dotted head —
+    // at least one dot — with optional slash-separated trailing
+    // segments of at least two characters. A slash tail never stands
+    // in for the dot the published pattern requires.
     let dotted: Vec<&str> = raw.split('/').collect();
     let head = dotted[0];
     let head_ok = {
         let parts: Vec<&str> = head.split('.').collect();
         !parts.is_empty() && parts.iter().all(|part| segment_ok(part))
     };
-    let tail_ok = dotted[1..].iter().all(|part| segment_ok(part));
-    let dotted_ok = head.contains('.') || dotted.len() > 1;
+    let tail_ok = dotted[1..]
+        .iter()
+        .all(|part| segment_ok(part) && part.len() >= 2);
+    let dotted_ok = head.contains('.');
     if !raw.is_empty() && raw.len() <= 256 && head_ok && tail_ok && (dotted_ok || dotted.len() == 1)
     {
         Ok(())
@@ -275,6 +304,7 @@ struct EvidenceReport {
     composition_digest: String,
     targets: Vec<DecodedTarget>,
     scenarios: Vec<DecodedScenario>,
+    consumers: Vec<String>,
     closure_complete: bool,
     strict_claim: &'static str,
     permissive_claim: &'static str,
@@ -296,6 +326,7 @@ struct DecodedTarget {
 struct DecodedCapability {
     capability: String,
     support: &'static str,
+    approval: Option<&'static str>,
     blocking: bool,
 }
 
@@ -460,6 +491,7 @@ fn decode(text: &str) -> Result<EvidenceReport, DomainResult> {
             "consumers-bound",
         )));
     }
+    let mut consumers = Vec::with_capacity(consumers_json.len());
     let mut consumer_seen = std::collections::BTreeSet::new();
     for consumer_json in consumers_json {
         let consumer_object = consumer_json
@@ -478,6 +510,7 @@ fn decode(text: &str) -> Result<EvidenceReport, DomainResult> {
             .map_err(DomainResult::invalid)?;
         pin_text(text_member(consumer_object, "relation").map_err(DomainResult::invalid)?)
             .map_err(DomainResult::invalid)?;
+        consumers.push(consumer.to_owned());
     }
 
     let completeness = object
@@ -529,10 +562,18 @@ fn decode(text: &str) -> Result<EvidenceReport, DomainResult> {
         composition_digest,
         targets,
         scenarios,
+        consumers,
         closure_complete,
         strict_claim,
         permissive_claim,
     })
+}
+
+impl EvidenceReport {
+    /// The declared consumer subject ids.
+    fn consumers(&self) -> &[String] {
+        &self.consumers
+    }
 }
 
 fn decode_target(
@@ -637,15 +678,22 @@ fn decode_target(
         let blocking = capability_object["blocking"] == Json::Bool(true);
         note_text(text_member(capability_object, "note").map_err(DomainResult::invalid)?)
             .map_err(DomainResult::invalid)?;
-        if let Some(approval) = capability_object.get("approval") {
-            let approval = approval.as_str().ok_or_else(|| {
-                DomainResult::invalid(diagnostic::input_invalid("capability-approval"))
-            })?;
-            closed(approval, APPROVAL).map_err(DomainResult::invalid)?;
-        }
+        let approval = match capability_object.get("approval") {
+            Some(Json::Null) | None => None,
+            Some(raw) => Some(
+                closed(
+                    raw.as_str().ok_or_else(|| {
+                        DomainResult::invalid(diagnostic::input_invalid("capability-approval"))
+                    })?,
+                    APPROVAL,
+                )
+                .map_err(DomainResult::invalid)?,
+            ),
+        };
         capabilities.push(DecodedCapability {
             capability: capability_text.to_owned(),
             support,
+            approval,
             blocking,
         });
     }
@@ -726,6 +774,7 @@ pub fn admit(
     report_bytes: &[u8],
     composition_bytes: &[u8],
     project: &CompiledProject,
+    declared_backends: &std::collections::BTreeMap<String, BackendProvenance>,
     profile: AdmissionProfile,
 ) -> Result<AdmissionReceipt, DomainResult> {
     if report_bytes.len() > version::MAX_DOC_BYTES
@@ -768,7 +817,58 @@ pub fn admit(
         scenario_status.insert(scenario.scenario.as_str(), scenario.status);
     }
 
+    // The declared consumer inventory of the pinned compilation: one
+    // subject per declared query, endpoint, and scenario. The report's
+    // consumer witnesses join this set in both directions — a missing
+    // witness and an unknown non-file consumer are both refusals — so
+    // clearing `consumers[]` cannot erase the closure obligation.
+    let mut declared_consumers = std::collections::BTreeSet::new();
+    let mut derived_consumer_blockers: Vec<String> = Vec::new();
+    for definition in &project.definitions {
+        match definition {
+            Definition::Query(query) => {
+                declared_consumers.insert(format!("operation:{}", query.id.as_str()));
+            }
+            Definition::Endpoint(endpoint) => {
+                declared_consumers.insert(format!("endpoint:{}", endpoint.id.as_str()));
+            }
+            Definition::Scenario(scenario) => {
+                declared_consumers.insert(format!("scenario:{}", scenario.id.as_str()));
+            }
+            _ => {}
+        }
+    }
+    let mut covered_consumers = std::collections::BTreeSet::new();
+    for row_consumer in report.consumers() {
+        let resolved = ["operation", "endpoint", "scenario"]
+            .iter()
+            .find_map(|kind| {
+                let subject = format!("{kind}:{row_consumer}");
+                declared_consumers.contains(&subject).then_some(subject)
+            });
+        match resolved {
+            Some(subject) => {
+                covered_consumers.insert(subject);
+            }
+            // A consumer outside the compilation inventory is a file
+            // witness only when its id is namespaced (`head/tail`); a
+            // bare operation-shaped id the compilation does not declare
+            // is invented evidence, refused outright.
+            None => {
+                if !row_consumer.contains('/') {
+                    derived_consumer_blockers.push(format!("consumers:{row_consumer}:unknown"));
+                }
+            }
+        }
+    }
+    for subject in &declared_consumers {
+        if !covered_consumers.contains(subject) {
+            derived_consumer_blockers.push(format!("consumers:{subject}:missing"));
+        }
+    }
+
     let mut blockers: Vec<String> = Vec::new();
+    blockers.extend(derived_consumer_blockers);
     let mut receipt_targets = Vec::with_capacity(report.targets.len());
     for target in &report.targets {
         let mut target_blockers: Vec<String> = Vec::new();
@@ -792,9 +892,16 @@ pub fn admit(
                 continue;
             }
             for row in rows {
+                // A `partial` row satisfies only a partial minimum and
+                // only behind an explicit review approval: an unapproved
+                // partial is an unsatisfied guarantee, whatever it
+                // claims.
                 let satisfied = match requirement.minimum() {
                     "full" => row.support == "supported",
-                    _ => matches!(row.support, "supported" | "partial"),
+                    _ => {
+                        matches!(row.support, "supported" | "partial")
+                            && (row.support == "supported" || row.approval == Some("reviewed"))
+                    }
                 };
                 if !satisfied {
                     target_blockers.push(format!(
@@ -829,15 +936,55 @@ pub fn admit(
                 }
             }
         }
+        // Execution is required, never self-claimed: under strict a
+        // required target that did not run refuses, whatever its rows
+        // assert.
+        if profile == AdmissionProfile::Strict && target.execution != "executed" {
+            target_blockers.push(format!("{}:execution:{}", target.target, target.execution));
+        }
         // Backend binding: a claimed execution requires a bound
         // backend with identity and digest; an absent backend can
-        // never be executed.
+        // never be executed. A bound backend must additionally equal
+        // the engine shell's provenance receipt for this compilation:
+        // an identity or digest the engine did not produce is forged
+        // provenance, refused under both profiles.
         if target.execution == "executed"
             && (target.backend_state != "bound"
                 || target.backend_identity.is_none()
                 || target.backend_digest.is_none())
         {
             target_blockers.push(format!("{}:backend:unbound", target.target));
+        }
+        if target.backend_state == "bound" {
+            let forged = match declared_backends.get(target.target.as_str()) {
+                Some(provenance) => {
+                    Some(provenance.identity.as_str()) != target.backend_identity.as_deref()
+                        || Some(provenance.digest.as_str()) != target.backend_digest.as_deref()
+                }
+                None => target.backend_identity.is_some() || target.backend_digest.is_some(),
+            };
+            if forged {
+                target_blockers.push(format!("{}:backend:provenance", target.target));
+            }
+        }
+        // Assertion coverage: every required scenario of the pinned
+        // compilation must carry a per-target assertion, and a target
+        // that claims execution must carry it as passed. Deleting a
+        // row cannot delete the obligation.
+        if target.execution == "executed" {
+            let asserted: std::collections::BTreeSet<&str> = target
+                .assertions
+                .iter()
+                .map(|(scenario, _)| scenario.as_str())
+                .collect();
+            for scenario in &required_scenarios {
+                if !asserted.contains(scenario.as_str()) {
+                    target_blockers.push(format!(
+                        "{}:{}:assertion-missing",
+                        target.target, scenario
+                    ));
+                }
+            }
         }
         let mut passed = 0usize;
         for (scenario, status) in &target.assertions {
@@ -879,12 +1026,31 @@ pub fn admit(
     receipt_targets.sort_by(|left, right| left.target.cmp(&right.target));
 
     // Scenario coverage: every declared scenario of the pinned
-    // compilation is covered exactly once, never failing, and never
-    // contradicted by a passing per-target assertion.
+    // compilation is covered exactly once, and its aggregate status is
+    // honest: `fail`, `unsupported`, and a `not_executed` row beneath a
+    // passing execution all refuse; the compilation inventory decides,
+    // never the report.
     for scenario in &required_scenarios {
         match scenario_status.get(scenario.as_str()) {
             None => blockers.push(format!("scenarios:{scenario}:missing")),
             Some(&"fail") => blockers.push(format!("scenarios:{scenario}:fail")),
+            Some(&"unsupported") => {
+                blockers.push(format!("scenarios:{scenario}:unsupported"))
+            }
+            Some(&"not_executed") => {
+                let executed = report.targets.iter().any(|target| {
+                    target.execution == "executed"
+                        && target
+                            .assertions
+                            .iter()
+                            .any(|(name, status)| name == scenario.as_str() && *status == "pass")
+                });
+                if executed {
+                    blockers.push(format!("scenarios:{}:conflict", scenario.as_str()));
+                } else if profile == AdmissionProfile::Strict {
+                    blockers.push(format!("scenarios:{scenario}:not_executed"));
+                }
+            }
             Some(_) => {}
         }
     }
@@ -1003,6 +1169,12 @@ mod tests {
         assert!(id_text("taskhub.dto/public-entry").is_ok());
         assert!(id_text("Uppercase").is_err());
         assert!(id_text(".dotted").is_err());
+        // The exact published grammar: a slash tail requires a dotted
+        // head, and every tail segment carries at least two characters.
+        assert!(id_text("plain/nodot").is_err());
+        assert!(id_text("a/b").is_err());
+        assert!(id_text("head.two/tail").is_ok());
+        assert!(id_text("head.two/t").is_err());
         assert!(digest_text(
             "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         )
