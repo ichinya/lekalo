@@ -474,11 +474,22 @@ impl<'a> Renderer<'a> {
         }
         let ordered = self.ordered_entries(entries);
         self.out.push_str("{\n");
+        let mut previous_group: Option<usize> = None;
         for (position, ordered_entry) in ordered.iter().enumerate() {
             let entry = &entries[ordered_entry.index];
             if position > 0 {
                 self.out.push_str(",\n");
+                // The retained blank-line group partition applies to JSON
+                // documents too (finding r4 6): without the separator the
+                // next parse sees one merged group and the ordering
+                // changes — F(F(x)) != F(x). Blank lines are legal JSON
+                // whitespace, so the partition round-trips exactly like
+                // the YAML block style.
+                if previous_group != Some(ordered_entry.group) {
+                    self.out.push('\n');
+                }
             }
+            previous_group = Some(ordered_entry.group);
             self.push_indent(indent + 2);
             self.out.push_str(&quote_json(&entry.key));
             self.out.push_str(": ");
@@ -497,11 +508,16 @@ impl<'a> Renderer<'a> {
         }
         let ordered = self.ordered_items(items, owner_key);
         self.out.push_str("[\n");
+        let mut previous_group: Option<usize> = None;
         for (position, ordered_item) in ordered.iter().enumerate() {
             let item = &items[ordered_item.index];
             if position > 0 {
                 self.out.push_str(",\n");
+                if previous_group != Some(ordered_item.group) {
+                    self.out.push('\n');
+                }
             }
+            previous_group = Some(ordered_item.group);
             self.push_indent(indent + 2);
             self.write_json_value(item, indent + 2, None);
         }
@@ -913,5 +929,33 @@ definitions:
             "{\"schema_version\":\"0.2.16\",\"definitions\":[{\"id\":\"z\"},{\"id\":\"a\"}]}\n";
         let out = render_with(text, Syntax::Json).text;
         assert!(out.find("\"id\": \"a\"").unwrap() < out.find("\"id\": \"z\"").unwrap());
+    }
+
+    #[test]
+    fn json_blank_line_groups_round_trip_and_stay_idempotent() {
+        // Finding r4 6: the JSON emitters used to discard the blank-line
+        // group separators that drive the ordering, so the second run
+        // saw one merged group and re-sorted — F(F(x)) != F(x). The
+        // partition now round-trips exactly like the YAML block style.
+        let text = "{\"schema_version\":\"0.2.16\",\n\n\"definitions\":[{\"id\":\"z\"},{\"id\":\"a\"}]}\n";
+        let once = render_with(text, Syntax::Json);
+        assert!(once.losses.is_empty(), "no losses: {:?}", once.losses);
+        assert_eq!(
+            once.text,
+            "{\n  \"schema_version\": \"0.2.16\",\n\n  \"definitions\": [\n    {\n      \"id\": \"a\"\n    },\n    {\n      \"id\": \"z\"\n    }\n  ]\n}\n"
+        );
+        let twice = render_with(&once.text, Syntax::Json);
+        assert_eq!(twice.text, once.text, "F(F(x)) == F(x)");
+        // A sequence under a set-like key keeps its groups too.
+        let seq = "{\"imports\":[\"scheduling\",\n\n\"planner\"]}\n";
+        let seq_once = render_with(seq, Syntax::Json);
+        assert_eq!(
+            seq_once.text,
+            "{\n  \"imports\": [\n    \"scheduling\",\n\n    \"planner\"\n  ]\n}\n"
+        );
+        assert_eq!(render_with(&seq_once.text, Syntax::Json).text, seq_once.text);
+        // No groups: unchanged canonical output (no stray separators).
+        let flat = render_with("{\"b\":1,\"a\":2}\n", Syntax::Json);
+        assert_eq!(flat.text, "{\n  \"a\": 2,\n  \"b\": 1\n}\n");
     }
 }

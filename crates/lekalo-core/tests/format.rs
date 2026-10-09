@@ -1452,3 +1452,35 @@ fn an_unsupported_policy_pin_refuses_recovery() {
         assert_eq!(fs::read(&module_path).expect("source"), before);
     });
 }
+
+#[test]
+fn json_blank_line_groups_stay_idempotent_across_applies() {
+    // Finding r4 6 (P1): the JSON emitters discarded the blank-line
+    // group separators that drive the ordering — the first apply merged
+    // the groups, the second apply re-sorted, and an immediate check
+    // failed with format.diff. The partition now round-trips: F(F(x))
+    // == F(x) and the immediate check is clean.
+    in_sandbox("json-groups", "planner-canonical", |root| {
+        let path = root.join("lekalo/modules/scheduling/module.yaml");
+        let seeded = b"{\"schema_version\":\"0.2.16\",\n\n\"definitions\":[{\"id\":\"scheduling\",\"kind\":\"module\",\"version\":1}]}\n";
+        fs::write(&path, seeded).expect("seed");
+        let first = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
+        assert_eq!(first.status(), Status::Valid, "{first:?}");
+        let once = fs::read_to_string(&path).expect("formatted");
+        assert!(
+            once.contains("\"schema_version\": \"0.2.16\",\n\n"),
+            "the group separator is retained: {once}"
+        );
+        // The immediate check is already clean (exit 0 — no format.diff).
+        let check = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Check), None);
+        assert_eq!(check.status(), Status::Valid, "{check:?}");
+        // And the second apply is a byte-identical no-op.
+        let second = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
+        assert_eq!(second.status(), Status::Valid, "{second:?}");
+        assert_eq!(
+            fs::read_to_string(&path).expect("twice"),
+            once,
+            "F(F(x)) == F(x)"
+        );
+    });
+}
