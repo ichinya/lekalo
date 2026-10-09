@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "dev.lekalo.format-report-schema@0.8.0",
   "title": "Lekalo format-report 0.8.0",
-  "description": "Issue #94: the closed command payload of one formatter plan. File rows are byte-sorted by path; check and disk rows omit replacement text, stdin editor rows require it.",
+  "description": "Issue #94: the closed command payload of one formatter plan. File rows are byte-sorted by path; check and disk rows omit replacement text, stdin editor rows require it. Result contract (finding r4 7): a stdin report is emitted only on the valid envelope — every editor row carries the authorized replacement text. The stdin-loss refusal (format.stdin-loss) emits no report payload at all; it is answered by its registered diagnostic and the human channel, so the replacement is always withheld exactly when the report is absent.",
   "type": "object",
   "properties": {
     "schema_version": {

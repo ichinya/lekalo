@@ -503,11 +503,13 @@ fn dispatch(request: &FormatRequest, planned: Planned) -> DomainResult {
                 let mut diagnostics: Vec<Wire> = Vec::new();
                 push_stdin_loss_diagnostic(&mut diagnostics, &planned.losses);
                 let set = DomainResult::from_wire_set(Status::Denied, diagnostics);
-                return DomainResult::denied_json(
-                    planned.report_json.clone(),
-                    human_stdin_lossy(&planned),
-                    set,
-                );
+                // The refusal carries no report payload (finding r4 7):
+                // the stdin report schema requires the row's replacement
+                // text, which a loss refusal must withhold — so the only
+                // schema-valid stdin report is the success one. The
+                // refusal is answered by the registered diagnostic (exact
+                // loss span and count) and the human projection.
+                return DomainResult::denied(set);
             }
             // The single row carries the authorized replacement text; the
             // normal envelope owns status/diagnostics, and nothing is
@@ -938,23 +940,4 @@ fn human_lossy(planned: &Planned) -> String {
         ));
     }
     lines.join("\n")
-}
-
-/// The editor-mode loss refusal projection: there is no lossy opt-in on
-/// the buffer path — the consumer must keep the comment in the buffer.
-fn human_stdin_lossy(planned: &Planned) -> String {
-    let mut lines = vec![format!(
-        "comment loss refuses the editor replacement: {} loss row(s); every comment must stay in the buffer",
-        planned.losses.len()
-    )];
-    for loss in &planned.losses {
-        lines.push(format!(
-            "comment loss {}:{} ({})",
-            loss.path, loss.line, loss.reason
-        ));
-    }
-    lines.join(
-        "
-",
-    )
 }

@@ -279,6 +279,30 @@ try {
     assert.ok(typeof row.replacement === "string", "the editor row carries replacement text");
     assert.match(row.replacement, /^"definitions":/, "canonical document text");
     assert.ok(before.equals(readFileSync(modulePath)), "stdin mode never writes the project");
+    // The stdin-loss refusal carries NO report payload (finding r4 7):
+    // the schema requires the row's replacement text, which a loss
+    // refusal must withhold, so the only schema-valid stdin report is
+    // the success one. The refusal is answered by format.stdin-loss on
+    // the diagnostics channel alone.
+    const lossyBuffer =
+      "schema_version: \"0.2.16\"\ndefinitions:\n- id: scheduling\n  kind: module\n  version: 1\n  description: Slot scheduling\n    module # this trailing comment has no owner line\n";
+    const refused = run(
+      project,
+      ["--json", "format", "--stdin", "--stdin-filepath", "lekalo/modules/scheduling/module.yaml"],
+      lossyBuffer,
+    );
+    assert.equal(refused.status, 3, refused.stdout + refused.stderr);
+    const refusedEnvelope = refused.json();
+    assert.equal(refusedEnvelope.status, "denied", "the refusal envelope is denied");
+    assert.ok(
+      refusedEnvelope.format === undefined,
+      "the refusal carries no report payload",
+    );
+    assert.ok(
+      (refusedEnvelope.diagnostics ?? []).some((entry) => entry.id === "format.stdin-loss"),
+      "the registered editor-mode loss identity rides the diagnostics",
+    );
+    assert.ok(before.equals(readFileSync(modulePath)), "the refusal never writes");
     rmSync(project, { recursive: true, force: true });
     passed += 1;
   }
