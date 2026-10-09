@@ -235,11 +235,22 @@ const qualified = run([
   "--project", ".", "--inputs", inputsRelative,
 ]);
 const qualifiedDoc = qualified.json();
-ok("ac3-qualified-unique", qualifiedDoc.selection === "unique", qualifiedDoc.selection);
+// AC3: the requirement selector resolves the whole recorded chain —
+// the provider-qualified requirement card and every card joined to it
+// (definitions, scenario, gate) — with the trace's admitted partial
+// coverage disclosed.
+const qualifiedKeys = qualifiedDoc.items.map((item) => item.card.key);
 ok(
-  "ac3-qualified-member",
-  qualifiedDoc.items[0]?.card.key === "req:openspec:PLANNER-REQ-001",
-  qualifiedDoc.items[0]?.card.key,
+  "ac3-qualified-chain",
+  qualifiedKeys.includes("req:openspec:PLANNER-REQ-001") &&
+    qualifiedKeys.includes("def:planner.focus_task") &&
+    qualifiedKeys.includes("def:planner.focus_flow"),
+  qualifiedKeys,
+);
+ok(
+  "ac3-qualified-selection",
+  qualifiedDoc.selection === "multiple",
+  qualifiedDoc.selection,
 );
 ok("ac3-qualified-trace-partial", qualifiedDoc.coverage.some((row) => row.domain === "trace" && row.state === "partial"), qualifiedDoc.coverage);
 
@@ -299,10 +310,16 @@ const nativeSymbol = run([
   "--project", ".", "--inputs", inputsRelative,
 ]);
 const nativeDoc = nativeSymbol.json();
+// The second candidate answers the exact native-symbol filter on BOTH
+// its cards (the binding card and the definition card), each carrying
+// the complete admitted candidate set.
+const nativeKeys = nativeDoc.items.map((item) => item.card.key);
 ok(
   "ac4-native-symbol",
-  nativeDoc.selection === "unique" && nativeDoc.items[0].card.key === "def:planner.focus_task",
-  nativeDoc.items[0]?.card.key,
+  nativeDoc.selection === "multiple" &&
+    nativeKeys.includes("bind:planner.focus_task") &&
+    nativeKeys.includes("def:planner.focus_task"),
+  nativeKeys,
 );
 
 // ---------------------------------------------------------------------------

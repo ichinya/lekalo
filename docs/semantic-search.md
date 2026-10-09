@@ -65,21 +65,38 @@ Filters (repeatable values of one flag OR, different flags AND):
 `--waiver`, `--include-stale`, and `--effect-scope exact|overlapping`.
 `find` requires at least one filter; `search` requires exactly one
 nonempty query. `--no-cache` bypasses every cache read/write; a build
-under the bypass is a usage error.
+or a `search-index status` under the bypass is a usage error.
 
 ## Index custody
 
 Generations live under the governed cache custody
 (`.lekalo/cache/search/**` of the accepted `lekalo.cache` authority
 kind) as immutable bare-64-hex digest files with one atomically
-published `current.json` pointer. `cache clear --yes` clears them and
-keeps `.lekalo/cache/migrations/**` exactly as before. Cursors bind
-the normalized query, the policy digest, and the immutable generation
-digest; a mismatch is `search.cursor-invalid`, never a page into
-another answer. No raw source text, file bodies, prompt/tool output,
-or hidden lexical tokens is ever persisted.
+published `current.json` pointer. A generation payload serves only
+when its name, its recorded digest, and the canonical-bytes digest of
+exactly the stored payload all agree, and its postings and qualified
+identities resolve to carried cards; `cache clear --yes` clears them
+and keeps `.lekalo/cache/migrations/**` exactly as before. Cursors
+bind the raw query, its normalization, the fuzzy mode, every filter
+member, the policy digest, and the immutable generation digest; a
+cursor page serves the validated durable generation, a missing or
+drifted generation is `search.cursor-invalid`, and a cold cache-enabled
+query publishes its generation so an issued page token always has one
+to bind. No raw source text, file bodies, prompt/tool output, or
+hidden lexical tokens is ever persisted.
 
 ## Status
+
+`search-index status` is the durable freshness oracle: the published
+generation carries its own input pins (producer kind, path, bytes
+digest, contract identity), and the verdict re-verifies exactly those
+pins under the canonical project root and recomputes the snapshot
+digest a fresh build would publish. The verdict never depends on the
+caller's working directory or on where the manifest happened to live:
+a drifted or missing pin file is `stale` (`search.index-stale`), a
+model or policy change is `stale`, an admission failure surfaces as
+its own diagnostic, and `ready` means every pin re-verified and the
+recomputed snapshot is byte-identical.
 
 Implemented: the pure core (`lekalo_core::search`), the CLI surface,
 the durable generation store, the diagnostic family, the four wire

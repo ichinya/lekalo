@@ -1,11 +1,12 @@
 {
   "benchmarkId": "dev.lekalo.search-benchmark",
-  "version": "1.0.0",
-  "status": "accepted",
-  "rule": "questions and relevant-answer sets are authored before either tool runs; rg line hits are not semantic answers, so each rg leg records the file opens its hits force",
+  "recipe": "semantic-search/1",
+  "fixture": "tests/fixtures/search/planner",
+  "note": "Task-oriented consumer questions with independently authored expectations: every task declares the relevant answer keys, the exact selection verdict, the top-ranked key where one must lead, the precision the page must meet, and the rg answer files its plain-text pattern must surface. Negative tasks declare an empty answer and expect a valid none from lekalo (and, for no-hit negatives, zero rg hits). Expectations are committed before either tool runs and both legs are scored against them.",
   "tasks": [
     {
       "id": "field-writers",
+      "family": "field-writers-readers",
       "question": "Which operations write planner.user_task_planning.focused_at?",
       "command": "find",
       "flags": [
@@ -15,12 +16,19 @@
         "def:planner.focus_task",
         "def:planner.refocus_task"
       ],
-      "ambiguous": false,
-      "rgPattern": "focused_at"
+      "expectedSelection": "multiple",
+      "expectedTop": "def:planner.focus_task",
+      "expectedPrecision": 1,
+      "rgPattern": "focused_at",
+      "rgRelevantFiles": [
+        "lekalo/modules/planner/entities.yaml",
+        "evidence/effects.detected.json"
+      ]
     },
     {
       "id": "field-readers",
-      "question": "Which operation reads planner.user_task_planning.focused_at?",
+      "family": "field-writers-readers",
+      "question": "Which operations read planner.user_task_planning.focused_at?",
       "command": "find",
       "flags": [
         "--reads planner.user_task_planning.focused_at"
@@ -28,40 +36,80 @@
       "relevant": [
         "def:planner.get_focused_task"
       ],
-      "ambiguous": false,
-      "rgPattern": "focused_at"
+      "expectedSelection": "unique",
+      "expectedTop": "def:planner.get_focused_task",
+      "expectedPrecision": 1,
+      "rgPattern": "focused_at",
+      "rgRelevantFiles": [
+        "lekalo/modules/planner/entities.yaml",
+        "evidence/effects.detected.json"
+      ]
     },
     {
       "id": "exact-operation",
-      "question": "Find the focus_task operation of the planner module.",
+      "family": "exact-operation",
+      "question": "Find the planner.focus_task operation and its native binding.",
       "command": "search",
       "query": "planner.focus_task",
       "relevant": [
         "def:planner.focus_task",
         "bind:planner.focus_task"
       ],
-      "ambiguous": true,
-      "rgPattern": "planner.focus_task"
+      "expectedSelection": "ambiguous",
+      "expectedTop": "bind:planner.focus_task",
+      "rgPattern": "planner.focus_task",
+      "rgRelevantFiles": [
+        "lekalo/modules/planner/commands.yaml",
+        "evidence/observed.index.json"
+      ]
     },
     {
       "id": "requirement-chain",
-      "question": "What implements PLANNER-REQ-001 across providers?",
+      "family": "requirement-scenario-gate",
+      "question": "What implements requirement PLANNER-REQ-001, and how is it covered?",
       "command": "find",
       "flags": [
         "--requirement PLANNER-REQ-001"
       ],
       "relevant": [
+        "def:planner.focus_flow",
         "def:planner.focus_task",
         "def:planner.refocus_task",
-        "req:openspec:PLANNER-REQ-001",
-        "req:aifhub:PLANNER-REQ-001"
+        "req:aifhub:PLANNER-REQ-001",
+        "req:openspec:PLANNER-REQ-001"
       ],
-      "ambiguous": true,
-      "rgPattern": "PLANNER-REQ-001"
+      "expectedSelection": "ambiguous",
+      "expectedTop": "def:planner.focus_flow",
+      "rgPattern": "PLANNER-REQ-001",
+      "rgRelevantFiles": [
+        "evidence/trace.openspec.json",
+        "evidence/trace.aifhub.json",
+        "lekalo/modules/planner/commands.yaml"
+      ]
+    },
+    {
+      "id": "gate-chain",
+      "family": "requirement-scenario-gate",
+      "question": "Which recorded gates does the planner carry evidence for?",
+      "command": "find",
+      "flags": [
+        "--kind gate"
+      ],
+      "relevant": [
+        "gate:hlv.gate.focus"
+      ],
+      "expectedSelection": "ambiguous",
+      "expectedTop": "gate:hlv.gate.focus",
+      "expectedPrecision": 1,
+      "rgPattern": "hlv.gate.focus",
+      "rgRelevantFiles": [
+        "evidence/trace.openspec.json"
+      ]
     },
     {
       "id": "binding-prefix",
-      "question": "Which native bindings live under apps/api/src/planner?",
+      "family": "binding-prefix",
+      "question": "What native bindings live under apps/api/src/planner?",
       "command": "find",
       "flags": [
         "--binding-path apps/api/src/planner"
@@ -70,52 +118,111 @@
         "bind:planner.focus_task",
         "bind:planner.get_status",
         "bind:planner.user_task_planning",
-        "def:planner.focus_task"
+        "def:planner.focus_task",
+        "def:planner.get_status",
+        "def:planner.user_task_planning"
       ],
-      "ambiguous": false,
-      "rgPattern": "apps/api/src/planner"
+      "expectedSelection": "multiple",
+      "expectedTop": "bind:planner.focus_task",
+      "expectedPrecision": 1,
+      "rgPattern": "apps/api/src/planner",
+      "rgRelevantFiles": [
+        "evidence/observed.index.json"
+      ]
     },
     {
       "id": "input-type",
-      "question": "Which operations take planner.task_id as input?",
+      "family": "input-error-type",
+      "question": "Which commands take a planner.task_id input?",
       "command": "find",
       "flags": [
         "--input-type planner.task_id"
       ],
       "relevant": [
-        "def:planner.focus_task",
-        "def:planner.refocus_task",
         "def:planner.archive_task_cmd",
-        "def:planner.import_planning_cmd"
+        "def:planner.focus_task",
+        "def:planner.import_planning_cmd",
+        "def:planner.refocus_task"
       ],
-      "ambiguous": false,
-      "rgPattern": "planner.task_id"
+      "expectedSelection": "multiple",
+      "expectedTop": "def:planner.archive_task_cmd",
+      "expectedPrecision": 1,
+      "rgPattern": "planner.task_id",
+      "rgRelevantFiles": [
+        "lekalo/modules/planner/commands.yaml",
+        "lekalo/modules/planner/entities.yaml"
+      ]
     },
     {
-      "id": "ambiguous-name",
-      "question": "Find get_status.",
+      "id": "input-type-negative",
+      "family": "input-error-type",
+      "negative": true,
+      "question": "Which commands take an undeclared input type?",
+      "command": "find",
+      "flags": [
+        "--input-type planner.nonexistent_type"
+      ],
+      "relevant": [],
+      "expectedSelection": "none",
+      "expectedReturned": 0,
+      "rgPattern": "planner.nonexistent_type",
+      "rgNoHitNegative": true,
+      "rgRelevantFiles": []
+    },
+    {
+      "id": "cross-module-ambiguous-name",
+      "family": "cross-module-ambiguous-name",
+      "question": "What does get_status mean across modules?",
       "command": "search",
       "query": "get_status",
       "relevant": [
         "def:notify.get_status",
         "def:planner.get_status"
       ],
-      "ambiguous": true,
-      "rgPattern": "get_status"
+      "expectedSelection": "ambiguous",
+      "expectedTop": "def:notify.get_status",
+      "rgPattern": "get_status",
+      "rgRelevantFiles": [
+        "lekalo/modules/notify/queries.yaml",
+        "lekalo/modules/planner/queries.yaml"
+      ]
     },
     {
       "id": "waiver-lookup",
-      "question": "Which waiver covers lint-focus-debt?",
+      "family": "diagnostic-waiver",
+      "question": "Which waiver covers the focus-task lint debt?",
       "command": "find",
       "flags": [
         "--waiver lint-focus-debt"
       ],
       "relevant": [
-        "waiv:lint-focus-debt",
-        "def:planner.focus_task"
+        "def:planner.focus_task",
+        "waiv:lint-focus-debt"
       ],
-      "ambiguous": false,
-      "rgPattern": "lint-focus-debt"
+      "expectedSelection": "multiple",
+      "expectedTop": "def:planner.focus_task",
+      "expectedPrecision": 1,
+      "rgPattern": "lint-focus-debt",
+      "rgRelevantFiles": [
+        "evidence/waivers.json"
+      ]
+    },
+    {
+      "id": "diagnostic-negative",
+      "family": "diagnostic-waiver",
+      "negative": true,
+      "question": "Which admitted diagnostic findings exist for this project?",
+      "command": "find",
+      "flags": [
+        "--kind diagnostic"
+      ],
+      "relevant": [],
+      "expectedSelection": "none",
+      "expectedReturned": 0,
+      "expectCoverageWarning": "diagnostics",
+      "rgPattern": "lekako-no-such-diagnostic-canary",
+      "rgNoHitNegative": true,
+      "rgRelevantFiles": []
     }
   ]
 }
