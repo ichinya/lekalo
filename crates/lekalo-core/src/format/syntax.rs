@@ -53,23 +53,84 @@ impl Trivia {
 }
 
 /// Collect the byte spans of every scalar token (values and mapping keys).
-fn scalar_spans(root: &Node, out: &mut Vec<(usize, usize)>) {
+///
+/// Each quoted-scalar span is clamped to its true token extent (finding
+/// r4 1): `saphyr-parser` 0.0.8 extends a quoted scalar's token span
+/// through the trailing whitespace *and the end-of-line comment* after
+/// the closing quote (`scanner.rs` runs `skip_ws_to_eol` after the right
+/// quote is eaten, before the span's end mark is taken). Trusting that
+/// span verbatim masked every trailing `#` comment behind
+/// `inside_spans`, so the comment was silently destroyed in every mode —
+/// neither preserved nor reported, violating the comment-preservation
+/// AC. The clamp recovers the exact quoted-token extent (through the
+/// closing quote), so comments after it tokenize again while hashes
+/// inside the quotes stay string data.
+fn scalar_spans(text: &str, root: &Node, out: &mut Vec<(usize, usize)>) {
     match &root.value {
-        Value::Scalar(_) => out.push((root.span.start.byte, root.span.end.byte)),
+        Value::Scalar(_) => out.push(clamped_scalar_span(text, root.span.start.byte, root.span.end.byte)),
         Value::Seq(items) => {
             for item in items {
-                scalar_spans(item, out);
+                scalar_spans(text, item, out);
             }
         }
         Value::Map(entries) => {
             for entry in entries {
-                out.push((entry.key_span.start.byte, entry.key_span.end.byte));
-                scalar_spans(&entry.value, out);
+                out.push(clamped_scalar_span(
+                    text,
+                    entry.key_span.start.byte,
+                    entry.key_span.end.byte,
+                ));
+                scalar_spans(text, &entry.value, out);
             }
         }
     }
     // Degenerate spans (parser EOF artifacts) own nothing.
     out.retain(|(start, end)| end > start);
+}
+
+/// The true token extent of one scalar token span. Only a span opening
+/// with a quote character is clamped: a quoted scalar's parser span is
+/// the only one the scanner extends past the token (through trailing
+/// whitespace and the EOL comment). Plain scalars already stop before a
+/// ` #` comment, and block-scalar content owns its whole lines, so both
+/// keep the parser span verbatim. Clamping a quoted span to the position
+/// after its closing quote can never cut string data: the excluded
+/// region is, by construction, only whitespace and the comment the
+/// scanner folded in.
+fn clamped_scalar_span(text: &str, start: usize, end: usize) -> (usize, usize) {
+    let bytes = text.as_bytes();
+    let start = start.min(bytes.len());
+    let end = end.min(bytes.len()).max(start);
+    match bytes.get(start) {
+        Some(quote @ (b'"' | b'\'')) => match quoted_token_end(bytes, start, end, *quote) {
+            Some(token_end) => (start, token_end),
+            None => (start, end),
+        },
+        _ => (start, end),
+    }
+}
+
+/// The byte offset one past the closing quote of the quoted token that
+/// starts at `start`, honoring `\\` escapes in double-quoted and `''`
+/// doubling in single-quoted content. The scan never runs past `bound`
+/// (the parser's own end mark covers the whole token); `None` keeps the
+/// parser span.
+fn quoted_token_end(bytes: &[u8], start: usize, bound: usize, quote: u8) -> Option<usize> {
+    let mut position = start + 1;
+    while position < bound {
+        match bytes[position] {
+            b'\\' if quote == b'"' => position += 2,
+            byte if byte == quote => {
+                if quote == b'\'' && bytes.get(position + 1) == Some(&b'\'') {
+                    position += 2;
+                } else {
+                    return Some(position + 1);
+                }
+            }
+            _ => position += 1,
+        }
+    }
+    None
 }
 
 fn inside_spans(spans: &[(usize, usize)], position: usize) -> bool {
@@ -89,7 +150,7 @@ fn inside_spans(spans: &[(usize, usize)], position: usize) -> bool {
 /// Extract comments and blank-line facts from the original text.
 pub(super) fn extract(text: &str, root: &Node) -> Trivia {
     let mut spans: Vec<(usize, usize)> = Vec::new();
-    scalar_spans(root, &mut spans);
+    scalar_spans(text, root, &mut spans);
     spans.sort_unstable();
     spans.dedup();
 
@@ -205,6 +266,29 @@ mod tests {
         assert!(comment_texts("a: |\n  # not a comment\n  text\n").is_empty());
         // Quoted key hash.
         assert!(comment_texts("\"k#y\": 1\n").is_empty());
+    }
+
+    #[test]
+    fn trailing_comments_after_quoted_scalars_are_tokens() {
+        // Finding r4 1: the parser extends a quoted scalar's token span
+        // through the EOL comment after the closing quote. The clamp
+        // recovers the comment so it tokenizes in every scalar style.
+        assert_eq!(comment_texts("a: \"x\" # c\n"), ["c"]);
+        assert_eq!(comment_texts("a: 'x' # c\n"), ["c"]);
+        assert_eq!(comment_texts("\"a\": \"x\" # c\n"), ["c"]);
+        // Hashes inside the quotes stay string data.
+        assert!(comment_texts("a: \"x # not c\"\n").is_empty());
+        assert!(comment_texts("a: 'x # not c'\n").is_empty());
+        // Empty and doubled-quote spellings still clamp exactly.
+        assert_eq!(comment_texts("a: \"\" # c\n"), ["c"]);
+        assert_eq!(comment_texts("a: 'it''s' # c\n"), ["c"]);
+        // Escaped quote then comment.
+        assert_eq!(comment_texts("a: \"x\\\"y\" # c\n"), ["c"]);
+        // Nested maps and sequence items.
+        assert_eq!(comment_texts("outer:\n  inner: \"v\" # c\n"), ["c"]);
+        assert_eq!(comment_texts("list:\n  - \"one\" # c\n"), ["c"]);
+        // No trailing comment: span keeps the parser extent.
+        assert!(comment_texts("a: \"x\"\n").is_empty());
     }
 
     #[test]

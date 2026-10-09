@@ -822,6 +822,39 @@ b: 2
     }
 
     #[test]
+    fn trailing_comments_after_quoted_scalars_move_with_their_owners() {
+        // Finding r4 1: a trailing comment after a quoted scalar rides
+        // its owner's inline slot in every nesting position, and after
+        // canonical re-quoting it stays a plain-scalar comment, so the
+        // second render is a fixed point.
+        assert_eq!(
+            rendered_ok("zeta: \"1\" # stays
+alpha: '2'
+"),
+            "\"alpha\": \"2\"
+\"zeta\": \"1\" # stays
+"
+        );
+        assert_eq!(
+            rendered_ok("outer:
+  inner: \"v\" # c
+list:
+  - \"one\" # d
+"),
+            "\"list\":
+  - \"one\" # d
+\"outer\":
+  \"inner\": \"v\" # c
+"
+        );
+        let once = rendered_ok("a: \"1\" # c
+");
+        assert_eq!(once, "\"a\": \"1\" # c
+");
+        assert_eq!(rendered_ok(&once), once, "the formatted form is a fixed point");
+    }
+
+    #[test]
     fn rendering_is_idempotent_on_a_mixed_document() {
         let text = "# model
 schema_version: '0.2.16'

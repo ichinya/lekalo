@@ -1210,3 +1210,45 @@ fn a_module_temp_is_swept_when_the_runtime_temp_home_is_absent() {
         assert!(!home.exists(), "the record-less plan home was reclaimed");
     });
 }
+
+#[test]
+fn quoted_scalar_trailing_comments_are_preserved_everywhere() {
+    // Finding r4 1 (critical): a `#` comment after a quoted scalar fell
+    // inside the parser's over-extended token span and was silently
+    // destroyed in every mode. Every trailing comment now tokenizes and
+    // rides its owner line through formatting.
+    in_sandbox("quoted-comment", "planner-canonical", |root| {
+        let path = root.join("lekalo/modules/scheduling/module.yaml");
+        let seeded = b"\"definitions\":\n  - \"id\": \"scheduling\" # trailing on the map item\n    \"kind\": \"module\" # trailing on a nested entry\n    \"version\": 1\n    \"description\": \"Slot scheduling module\" # trailing on a quoted value\n\"schema_version\": \"0.2.16\" # trailing at the root\n";
+        fs::write(&path, seeded).expect("seed");
+        // Apply: no loss diagnostic, every comment preserved on its owner.
+        let result = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
+        assert_eq!(result.status(), Status::Valid, "{result:?}");
+        let formatted = fs::read_to_string(&path).expect("formatted");
+        for marker in [
+            "# trailing on the map item",
+            "# trailing on a nested entry",
+            "# trailing on a quoted value",
+            "# trailing at the root",
+        ] {
+            assert!(formatted.contains(marker), "{marker}: {formatted}");
+        }
+        // The formatted form is a fixed point (check is clean).
+        let check = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Check), None);
+        assert_eq!(check.status(), Status::Valid, "{check:?}");
+        // Editor mode: the replacement keeps the comment too.
+        let buffer = seeded.to_vec();
+        let stdin = lekalo_core::format::run(
+            &request(
+                FormatScope::Document("lekalo/modules/scheduling/module.yaml".to_owned()),
+                FormatMode::Stdin,
+            ),
+            Some(&buffer),
+        );
+        assert_eq!(stdin.status(), Status::Valid, "{stdin:?}");
+        assert!(
+            stdin.to_human_string("lekalo").contains("# trailing at the root"),
+            "editor replacement keeps the trailing comment"
+        );
+    });
+}
