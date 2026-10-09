@@ -309,15 +309,16 @@ pub(crate) fn run(command: ChangeCommands) -> DomainResult {
         } => match change::recover_transaction(project.as_deref(), &transaction) {
             Ok(outcome) => {
                 // The flat receipt document at the root, exactly like
-                // `apply`/`receipt` (review finding 6): a restore/rollback
-                // is reported `rolled-back` — never `committed` — and the
-                // document validates against the change-receipt contract
-                // (no wrapper, no duplicate `status`).
+                // `apply`/`receipt` (review finding 6): the durable
+                // resolution is reported `rolled-back` or `committed` —
+                // never a fabricated opposite — and the document validates
+                // against the change-receipt contract (no wrapper, no
+                // duplicate `status`).
                 let receipt = serde_json::json!({
                     "status": "valid",
                     "schemaVersion": "lekalo/change-receipt/v0.8.0",
                     "identity": "dev.lekalo.change-receipt@0.8.0",
-                    "state": "rolled-back",
+                    "state": outcome.state,
                     "planId": Json::Null,
                     "requestDigest": Json::Null,
                     "keyDigest": Json::Null,
@@ -326,14 +327,21 @@ pub(crate) fn run(command: ChangeCommands) -> DomainResult {
                     "history": Json::Null,
                     "transaction": {
                         "id": transaction,
-                        "state": "rolled-back"
+                        "state": outcome.state,
                     },
                     "diagnosticIds": [],
                     "replayed": false,
                 });
+                let human = if outcome.state == "committed" {
+                    format!(
+                        "recovered transaction {transaction}: durably committed, cleanup finished"
+                    )
+                } else {
+                    format!("recovered transaction {transaction}: originals restored")
+                };
                 DomainResult::receipt(
                     serde_json::to_string_pretty(&receipt).unwrap_or_default(),
-                    format!("recovered transaction {transaction}: originals restored"),
+                    human,
                 )
             }
             Err(error) => error.into(),

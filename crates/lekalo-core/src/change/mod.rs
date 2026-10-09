@@ -814,7 +814,15 @@ pub fn apply_prepared(
             return Err(error);
         }
     }
+    transaction.mark_state(transaction::STATE_REPLACING)?;
     if let Err(error) = transaction.replace_all() {
+        if matches!(error, ChangeError::RecoveryRequired { .. }) {
+            // The rollback itself failed: the journal and every backup stay
+            // and readers stay blocked until explicit recovery succeeds
+            // (round 2, finding 5) — recovery material is never deleted
+            // after an incomplete restoration.
+            return Err(error);
+        }
         transaction.cleanup_after_restore();
         return Err(error);
     }
@@ -828,6 +836,19 @@ pub fn lookup_receipt(
     idempotency_key: &str,
 ) -> Result<Option<Receipt>, ChangeError> {
     let root = resolve_root(project)?;
+    // A pending transaction gates the ledger (round 2, finding 9): the
+    // history becomes readable while the transaction is durably committed
+    // (recovery then only finishes the cleanup), but a staging or
+    // replacing journal may still roll the recorded operation back.
+    if let Some(transaction) = transaction::pending_transactions(&root).first() {
+        if transaction::journal_state(&root, transaction).as_deref()
+            != Some(transaction::STATE_COMMITTED)
+        {
+            return Err(ChangeError::RecoveryRequired {
+                transaction: transaction.clone(),
+            });
+        }
+    }
     let history_file =
         root.join(version::HISTORY_LOGICAL_PATH.replace('/', std::path::MAIN_SEPARATOR_STR));
     // Absent reads as "no record"; an existing zero-byte (or
@@ -842,33 +863,40 @@ pub fn lookup_receipt(
     history.by_key(&key).map(stored_receipt).transpose()
 }
 
-/// The outcome of one successful recovery: the flat receipt document of
-/// the rollback (review finding 6 — a restore is `rolled-back`, never
-/// `committed`, and the envelope validates against the change-receipt
-/// contract at the root).
+/// The outcome of one successful recovery: the flat receipt facts of the
+/// resolution. `state` is `committed` when the transaction was found
+/// durably committed (recovery only finished the cleanup) and
+/// `rolled-back` when the originals were restored or an untouched staging
+/// transaction was aborted (round 2, findings 4 and 5).
 #[derive(Clone, Debug)]
 pub struct RecoveryOutcome {
     /// The transaction id that was recovered.
     pub transaction: String,
-    /// The bounded per-file outcomes of the restoration (sorted).
+    /// The durable resolution state (`committed` or `rolled-back`).
+    pub state: String,
+    /// The bounded per-file outcomes (journal order).
     pub files: Vec<FileOutcome>,
 }
 
 /// Recover one interrupted transaction explicitly; readers stay blocked
-/// until this succeeds and the journal is gone.
+/// until this succeeds and the journal is gone. A live writer's lock is
+/// never stolen: the OS-held lock proves liveness, and only a provably
+/// dead owner's artifact is reclaimed (round 2, finding 1).
 pub fn recover_transaction(
     project: Option<&str>,
     transaction: &str,
 ) -> Result<RecoveryOutcome, ChangeError> {
     let root = resolve_root(project)?;
-    // Recovery is definitionally the lock-holder's successor: a stale lock
-    // (dead owner) is reclaimed instead of bricking recovery, while a live
-    // holder still denies (review finding 3).
-    let _lock = transaction::WriterLock::reclaim_stale(&root)?;
-    let files = transaction::recover(&root, transaction)?;
+    let _lock = transaction::WriterLock::acquire(&root)?;
+    let result = transaction::recover(&root, transaction)?;
     Ok(RecoveryOutcome {
         transaction: transaction.to_owned(),
-        files,
+        state: if result.committed {
+            "committed".to_owned()
+        } else {
+            "rolled-back".to_owned()
+        },
+        files: result.files,
     })
 }
 
@@ -876,6 +904,25 @@ pub fn recover_transaction(
 pub fn pending_transactions(project: Option<&str>) -> Result<Vec<String>, ChangeError> {
     let root = resolve_root(project)?;
     Ok(transaction::pending_transactions(&root))
+}
+
+/// Test-only live-writer handle: holds the project's change writer lock so
+/// tests can prove a live holder denies recovery and mutation (round 2,
+/// finding 1). Never used outside `cfg(test)` integration suites.
+#[doc(hidden)]
+pub struct TestWriterGuard {
+    _inner: transaction::WriterLock,
+}
+
+/// Test-only: acquire the change writer lock for the selected project.
+#[doc(hidden)]
+pub fn test_only_acquire_writer_lock(
+    project: Option<&str>,
+) -> Result<TestWriterGuard, ChangeError> {
+    let root = resolve_root(project)?;
+    Ok(TestWriterGuard {
+        _inner: transaction::WriterLock::acquire(&root)?,
+    })
 }
 
 /// Rebuild the replayed receipt from its stored record.

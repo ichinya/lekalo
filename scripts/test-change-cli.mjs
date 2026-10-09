@@ -317,6 +317,7 @@ writeFileSync(
   `${JSON.stringify({
     transaction: "change-gatecafe-1",
     planId: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    state: "staging",
     files: [],
     history: false,
   })}\n`,

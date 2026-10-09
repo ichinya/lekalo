@@ -4,39 +4,65 @@
 //! project-scoped writer lock it rechecks the idempotency ledger and every
 //! before digest, stages a durable journal plus verified backups, applies
 //! same-directory replacements, verifies every after digest, finalizes the
-//! canonical history in the same transaction, and then removes the journal
-//! as the commit marker. Ordinary failure restores all originals in reverse
-//! order; a crash leaves a recoverable journal that blocks every project
-//! reader until explicit `change recover` succeeds.
+//! canonical history in the same transaction, and then publishes the commit
+//! marker before removing the journal. Ordinary failure restores all
+//! originals in reverse order; a crash leaves a recoverable journal that
+//! blocks every project reader until explicit `change recover` succeeds.
 //!
-//! Recovery safety (review round 1): every journaled path is validated
-//! against the confined project root component-wise with no-follow checks
-//! before any write (finding 1); each backup is digest-verified against the
-//! `beforeDigest` pinned in the journal before restoration (finding 4); the
-//! journal decodes into a closed typed structure that fails on malformed
-//! members (finding 11); and a stale writer lock (dead owner) is reclaimed
-//! by recovery, while a live lock still denies (finding 3).
+//! Recovery safety (review rounds 1 and 2): every journaled path is
+//! validated against the confined project root component-wise with no-follow
+//! checks before any write; each backup is digest-verified against the
+//! `beforeDigest` pinned in the journal before restoration; the journal
+//! decodes into a closed typed structure that fails on malformed members;
+//! the cache home itself is validated no-follow so a link planted after
+//! preparation cannot redirect transaction or recovery writes; temp files
+//! carry unpredictable names and are created exclusively; and the whole
+//! journal models three durable states (`staging`, `replacing`, `committed`)
+//! so every real crash window recovers idempotently (round 2, findings 2-5).
+//!
+//! Writer serialization (round 2, finding 1) is an OS-held lock: the holder
+//! keeps an open exclusive handle for the whole critical section, so a live
+//! writer is always detectable without inferring liveness from process
+//! metadata — a dead owner's handle is closed by the OS and the lock is
+//! provably free. Unknown ownership always denies; recovery never steals a
+//! lock it cannot prove free.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::Deserialize;
 use serde_json::Value as Json;
 
 use super::diagnostic::ChangeError;
 use super::edit::ByteEdit;
-use crate::project_fs::Fs;
+use crate::project_fs::{EntryType, Fs, FsErrorKind};
 
 /// The journal file name inside one transaction directory.
 const JOURNAL_NAME: &str = "journal.json";
 
-/// The lock-holder metadata file name inside the change cache.
-const LOCK_META_NAME: &str = "writer.lock.json";
+/// The writer lock file name inside the change cache.
+const LOCK_NAME: &str = "writer.lock";
+
+/// The backups directory name inside one transaction directory.
+const BACKUPS_NAME: &str = "backups";
 
 /// Maximum journal bytes accepted before decoding.
 const MAX_JOURNAL_BYTES: usize = 64 * 1024;
 
 /// Maximum journaled file entries per transaction.
 const MAX_JOURNAL_FILES: usize = 1024;
+
+/// The journal state before any backup has been staged: no source byte has
+/// been touched, so recovery aborts the transaction without restoring.
+pub(crate) const STATE_STAGING: &str = "staging";
+
+/// The journal state once every backup exists: replacements may have
+/// started, so recovery restores from the verified backups.
+pub(crate) const STATE_REPLACING: &str = "replacing";
+
+/// The journal state after the canonical history was durably written: the
+/// transaction is committed; recovery only verifies and cleans up.
+pub(crate) const STATE_COMMITTED: &str = "committed";
 
 /// One staged replacement: the target logical path, its verified backup,
 /// and the exact prospective bytes.
@@ -52,174 +78,152 @@ pub(crate) struct Transaction {
     root: PathBuf,
     id: String,
     journal_dir: PathBuf,
+    journal: Json,
     staged: Vec<StagedFile>,
 }
 
-/// The project-scoped writer lock; exclusive creation, removed on drop.
+/// The project-scoped writer lock: exclusive creation plus an OS-held
+/// handle, removed on drop.
 pub(crate) struct WriterLock {
-    path: Option<PathBuf>,
-    meta: Option<PathBuf>,
+    path: PathBuf,
+    file: Option<std::fs::File>,
 }
 
 impl WriterLock {
-    /// Acquire the change writer lock or report the contention. The lock
-    /// token records the holder's process identity and a monotonic-ish
-    /// timestamp so a later recovery can tell a dead holder from a live
-    /// one (review finding 3).
+    /// Acquire the change writer lock, taking over a provably dead owner's
+    /// artifact when the operating system has released it (review round 2,
+    /// finding 1). The lock is an exclusive-create file PLUS an OS-held
+    /// handle (`share_mode(0)` on Windows, `flock` on Unix) kept open for
+    /// the whole critical section:
+    ///
+    /// - no lock file: created and held;
+    /// - lock file with a live holder: the shared-open or flock fails and
+    ///   the caller is denied — a live writer is never misclassified dead;
+    /// - lock file of a dead owner: the OS closed the handle, so the open
+    ///   or flock succeeds and recovery takes the artifact over — a crash
+    ///   can never brick recovery behind its own lock artifact;
+    /// - any other error (including a planted link at the lock path): fail
+    ///   closed, never reclaim on unknown ownership.
     pub(crate) fn acquire(root: &Path) -> Result<Self, ChangeError> {
-        let cache = root.join(".lekalo/cache/change");
+        let cache = validated_cache_dir(root)?;
         std::fs::create_dir_all(&cache).map_err(|_| ChangeError::WriteBoundaryDenied)?;
-        let path = cache.join("writer.lock");
-        match std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&path)
-        {
-            Ok(_) => {
-                let meta = cache.join(LOCK_META_NAME);
-                let record = serde_json::json!({
-                    "pid": std::process::id(),
-                    "boot": boot_token(),
-                    "started": unix_time(),
+        let path = cache.join(LOCK_NAME);
+        if let Ok(metadata) = std::fs::symlink_metadata(&path) {
+            if path_is_link(&metadata) {
+                // A link at the lock path is an escape attempt, never a
+                // lock: refuse instead of following it.
+                return Err(ChangeError::PreconditionFailed {
+                    subject: "writer-lock".to_owned(),
+                    detail: "held",
                 });
-                let _ = std::fs::write(&meta, record.to_string().as_bytes());
-                Ok(Self {
-                    path: Some(path),
-                    meta: Some(meta),
-                })
             }
-            Err(_) => Err(ChangeError::PreconditionFailed {
-                subject: "writer-lock".to_owned(),
-                detail: "held",
-            }),
         }
-    }
-
-    /// Reclaim the lock of a crashed owner: only when the recorded holder
-    /// process is provably dead on this boot. A live holder (including an
-    /// unrecordable PID reuse on another boot) still denies.
-    pub(crate) fn reclaim_stale(root: &Path) -> Result<Self, ChangeError> {
-        let cache = root.join(".lekalo/cache/change");
-        let path = cache.join("writer.lock");
-        if !path.is_file() {
-            // No lock artifact: acquire normally.
-            return Self::acquire(root);
-        }
-        let holder_alive = std::fs::read(cache.join(LOCK_META_NAME))
-            .ok()
-            .and_then(|bytes| serde_json::from_slice::<LockMeta>(&bytes).ok())
-            .map(|meta| process_alive(meta.pid, &meta.boot))
-            .unwrap_or(false);
-        if holder_alive {
-            return Err(ChangeError::PreconditionFailed {
-                subject: "writer-lock".to_owned(),
-                detail: "held",
-            });
-        }
-        // Dead (or unidentifiable) holder: take over the artifact.
-        let _ = std::fs::remove_file(&path);
-        let _ = std::fs::remove_file(cache.join(LOCK_META_NAME));
-        Self::acquire(root)
+        let file = open_held(&path).map_err(|_| ChangeError::PreconditionFailed {
+            subject: "writer-lock".to_owned(),
+            detail: "held",
+        })?;
+        // Holder identity is informational only; the OS handle is the
+        // ownership oracle.
+        let _ = record_holder(&file);
+        Ok(Self {
+            path,
+            file: Some(file),
+        })
     }
 }
 
 impl Drop for WriterLock {
     fn drop(&mut self) {
-        if let Some(path) = self.path.take() {
-            let _ = std::fs::remove_file(path);
-        }
-        if let Some(meta) = self.meta.take() {
-            let _ = std::fs::remove_file(meta);
-        }
+        // Close the OS handle first so Windows allows the removal.
+        drop(self.file.take());
+        let _ = std::fs::remove_file(&self.path);
     }
 }
 
-#[derive(serde::Deserialize)]
-struct LockMeta {
-    pid: u32,
-    boot: String,
-}
-
-/// A process-liveness token that distinguishes the current boot (PID reuse
-/// across reboots must never read as liveness). Best effort: an
-/// unavailable token collapses to a boot-unique sentinel.
-fn boot_token() -> String {
-    #[cfg(target_os = "linux")]
-    {
-        if let Ok(token) = std::fs::read_to_string("/proc/sys/kernel/random/boot_id") {
-            return token.trim().to_owned();
-        }
-    }
+/// Windows: open with no sharing so any second open fails while a live
+/// holder exists; Unix: open then take a non-blocking exclusive `flock`.
+fn open_held(path: &Path) -> std::io::Result<std::fs::File> {
     #[cfg(windows)]
     {
-        // The volume serial number of the system drive is a stable per-boot
-        // witness (it changes on reformat, not on reboot) combined with the
-        // boot tick count; together they never collide across boots in any
-        // realistic recovery window.
-        use windows_sys::Win32::System::SystemInformation::GetTickCount64;
-        // SAFETY: GetTickCount64 takes no arguments and cannot fail.
-        return format!("tick-{}", unsafe { GetTickCount64() });
-    }
-    #[allow(unreachable_code)]
-    {
-        format!("fallback-{}", std::process::id())
-    }
-}
-
-/// The process exists right now (signal 0 probe on Unix; a query handle
-/// with exit-code inspection on Windows). Only meaningful within one boot.
-fn process_alive(pid: u32, boot: &str) -> bool {
-    if boot != boot_token() {
-        return false;
-    }
-    if pid == std::process::id() {
-        return true;
+        use std::os::windows::fs::OpenOptionsExt;
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .share_mode(0)
+            .open(path)?;
+        Ok(file)
     }
     #[cfg(unix)]
     {
-        use rustix::process::{kill_process, Pid, Signal};
-        match Pid::from_raw(pid as i32) {
-            Some(pid) => kill_process(pid, Signal::None).is_ok(),
-            None => false,
-        }
-    }
-    #[cfg(windows)]
-    {
-        use windows_sys::Win32::Foundation::{CloseHandle, GetLastError};
-        use windows_sys::Win32::System::Threading::{
-            GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
-        };
-        // STILL_ACTIVE is a plain 32-bit exit-code constant on Windows.
-        const STILL_ACTIVE: u32 = 0x0000_0103;
-        const ERROR_INVALID_PARAMETER: u32 = 87;
-        const ERROR_ACCESS_DENIED: u32 = 5;
-        unsafe {
-            let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
-            if handle.is_null() {
-                let error = GetLastError();
-                // A vanished PID is dead. An inaccessible-but-existing PID
-                // (protected process) stays live: reclaiming its lock could
-                // interleave with a real writer.
-                return error == ERROR_ACCESS_DENIED;
-            }
-            let mut code: u32 = 0;
-            let queried = GetExitCodeProcess(handle, &mut code) != 0;
-            let invalid = GetLastError() == ERROR_INVALID_PARAMETER;
-            CloseHandle(handle);
-            if !queried || invalid {
-                return false;
-            }
-            code != STILL_ACTIVE
-        }
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(path)?;
+        rustix::fs::flock(&file, rustix::fs::FlockOperation::NonBlockingLockExclusive)?;
+        Ok(file)
     }
 }
 
-/// Seconds since the Unix epoch; informational only.
+/// Best-effort holder record inside the lock file (informational only).
+fn record_holder(file: &std::fs::File) -> Option<()> {
+    let mut file = file;
+    use std::io::Write;
+    file.set_len(0).ok()?;
+    let record = serde_json::json!({
+        "pid": std::process::id(),
+        "started": unix_time(),
+    });
+    file.write_all(record.to_string().as_bytes()).ok()?;
+    file.sync_all().ok()
+}
+
 fn unix_time() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_secs())
         .unwrap_or(0)
+}
+
+/// Whether one metadata describes a symlink/junction/reparse point (the
+/// authoritative link signal on both platforms).
+fn path_is_link(metadata: &std::fs::Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        metadata.file_attributes() & 0x400 != 0
+    }
+    #[cfg(unix)]
+    {
+        metadata.file_type().is_symlink()
+    }
+}
+
+/// Validate the change cache home component-wise with no-follow checks and
+/// return its on-disk path (round 2, finding 2). Every existing component
+/// of `.lekalo/cache/change` must be a real directory; a link or special
+/// entry planted after preparation refuses every transaction write that
+/// would pass through it. Missing components are created by the caller.
+fn validated_cache_dir(root: &Path) -> Result<PathBuf, ChangeError> {
+    let fs = Fs::open(root).map_err(|_| ChangeError::WriteBoundaryDenied)?;
+    let mut walked = String::new();
+    for segment in [".lekalo", "cache", "change"] {
+        match fs.entry_type(&walked, segment) {
+            Ok(EntryType::Directory) => {}
+            Ok(_) => return Err(ChangeError::WriteBoundaryDenied),
+            Err(FsErrorKind::NotFound) => {}
+            Err(_) => return Err(ChangeError::WriteBoundaryDenied),
+        }
+        walked = if walked.is_empty() {
+            segment.to_owned()
+        } else {
+            format!("{walked}/{segment}")
+        };
+    }
+    Ok(root.join(".lekalo").join("cache").join("change"))
 }
 
 /// The durable reader barrier: `Some("change.recovery-required")` while any
@@ -261,19 +265,44 @@ pub(crate) fn pending_transactions(root: &Path) -> Vec<String> {
     pending
 }
 
+/// The durable state of one pending transaction's journal, or `None` when
+/// the journal cannot be read or decoded (fail closed: callers must treat
+/// an unknown state as not committed).
+pub(crate) fn journal_state(root: &Path, transaction: &str) -> Option<String> {
+    let path = root
+        .join(super::version::TRANSACTION_CACHE_ROOT)
+        .join(transaction)
+        .join(JOURNAL_NAME);
+    let bytes = std::fs::read(&path).ok()?;
+    if bytes.len() > MAX_JOURNAL_BYTES {
+        return None;
+    }
+    let value: Json = serde_json::from_slice(&bytes).ok()?;
+    value.get("state")?.as_str().map(str::to_owned)
+}
+
 impl Transaction {
-    /// Begin one transaction: create the journal directory and write the
-    /// durable journal before any source byte changes. The journal pins
+    /// Begin one transaction: create the journal directory behind
+    /// validated cache-home components and write the durable journal —
+    /// state `staging`, before any source byte changes. The journal pins
     /// every replacement's before/after digests so recovery can verify the
-    /// backups it restores (review finding 4).
+    /// backups it restores.
     pub(crate) fn begin(
         root: &Path,
         id: &str,
         plan_id: &str,
         replacements: &[ReplacementPlan],
     ) -> Result<Self, ChangeError> {
-        let journal_dir = root.join(super::version::TRANSACTION_CACHE_ROOT).join(id);
-        std::fs::create_dir_all(journal_dir.join("backups")).map_err(|_| {
+        let cache = validated_cache_dir(root)?;
+        std::fs::create_dir_all(&cache).map_err(|_| ChangeError::WriteBoundaryDenied)?;
+        let journal_dir = cache.join(id);
+        match std::fs::symlink_metadata(&journal_dir) {
+            Ok(metadata) if !metadata.is_dir() || path_is_link(&metadata) => {
+                return Err(ChangeError::WriteBoundaryDenied)
+            }
+            _ => {}
+        }
+        std::fs::create_dir_all(journal_dir.join(BACKUPS_NAME)).map_err(|_| {
             ChangeError::CommitFailed {
                 transaction: id.to_owned(),
                 detail: "journal-create",
@@ -293,10 +322,11 @@ impl Transaction {
         let journal = serde_json::json!({
             "transaction": id,
             "planId": plan_id,
+            "state": STATE_STAGING,
             "files": files,
             "history": replacements.iter().any(|replacement| replacement.logical == super::version::HISTORY_LOGICAL_PATH),
         });
-        write_durable(
+        write_same_dir(
             &journal_dir.join(JOURNAL_NAME),
             journal.to_string().as_bytes(),
         )
@@ -308,7 +338,25 @@ impl Transaction {
             root: root.to_path_buf(),
             id: id.to_owned(),
             journal_dir,
+            journal,
             staged: Vec::new(),
+        })
+    }
+
+    /// Publish a durable journal state transition (`staging` ->
+    /// `replacing` -> `committed`). Recovery keys every crash window off
+    /// these states (round 2, finding 4).
+    pub(crate) fn mark_state(&mut self, state: &str) -> Result<(), ChangeError> {
+        if let Some(map) = self.journal.as_object_mut() {
+            map.insert("state".to_owned(), Json::String(state.to_owned()));
+        }
+        write_same_dir(
+            &self.journal_dir.join(JOURNAL_NAME),
+            self.journal.to_string().as_bytes(),
+        )
+        .map_err(|_| ChangeError::CommitFailed {
+            transaction: self.id.clone(),
+            detail: "journal-state",
         })
     }
 
@@ -322,7 +370,9 @@ impl Transaction {
         let target = validated_target(&self.root, &plan.logical)?;
         let current = match std::fs::read(&target) {
             Ok(bytes) => bytes,
-            Err(_) if plan.creation => Vec::new(),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound && plan.creation => {
+                Vec::new()
+            }
             Err(_) => {
                 return Err(ChangeError::CommitFailed {
                     transaction: self.id.clone(),
@@ -348,8 +398,8 @@ impl Transaction {
         let backup = if plan.creation {
             None
         } else {
-            let path = self.journal_dir.join("backups").join(index.to_string());
-            write_durable(&path, &current).map_err(|_| ChangeError::CommitFailed {
+            let path = self.journal_dir.join(BACKUPS_NAME).join(index.to_string());
+            write_same_dir(&path, &current).map_err(|_| ChangeError::CommitFailed {
                 transaction: self.id.clone(),
                 detail: "backup-write",
             })?;
@@ -365,42 +415,59 @@ impl Transaction {
     }
 
     /// Apply every staged replacement in order and verify each after
-    /// digest. On any failure the originals are restored in reverse order.
+    /// digest. On any failure the originals are restored in reverse order;
+    /// a restoration that itself fails reports `RecoveryRequired` so the
+    /// caller retains the journal and the reader barrier (round 2,
+    /// finding 5) instead of deleting the recovery material.
     pub(crate) fn replace_all(&mut self) -> Result<(), ChangeError> {
         let mut replaced = 0usize;
         for staged in &self.staged {
             if write_same_dir(&staged.target, &staged.after_bytes).is_err() {
-                self.restore_prefix(replaced);
-                return Err(ChangeError::CommitFailed {
-                    transaction: self.id.clone(),
-                    detail: "replace",
-                });
+                return if self.restore_prefix(replaced) {
+                    Err(ChangeError::CommitFailed {
+                        transaction: self.id.clone(),
+                        detail: "replace",
+                    })
+                } else {
+                    Err(ChangeError::RecoveryRequired {
+                        transaction: self.id.clone(),
+                    })
+                };
             }
             replaced += 1;
         }
         for staged in &self.staged {
-            let actual = std::fs::read(&staged.target).map_err(|_| {
-                self.restore_prefix(replaced);
-                ChangeError::CommitFailed {
-                    transaction: self.id.clone(),
-                    detail: "verify-read",
+            let verified = std::fs::read(&staged.target).map(|bytes| {
+                format!("sha256:{}", crate::digest::sha256_hex(&bytes)) == staged.after_digest
+            });
+            match verified {
+                Ok(true) => {}
+                _ => {
+                    return if self.restore_prefix(replaced) {
+                        Err(ChangeError::CommitFailed {
+                            transaction: self.id.clone(),
+                            detail: if verified.is_err() {
+                                "verify-read"
+                            } else {
+                                "verify-digest"
+                            },
+                        })
+                    } else {
+                        Err(ChangeError::RecoveryRequired {
+                            transaction: self.id.clone(),
+                        })
+                    };
                 }
-            })?;
-            let digest = format!("sha256:{}", crate::digest::sha256_hex(&actual));
-            if digest != staged.after_digest {
-                self.restore_prefix(replaced);
-                return Err(ChangeError::CommitFailed {
-                    transaction: self.id.clone(),
-                    detail: "verify-digest",
-                });
             }
         }
         Ok(())
     }
 
-    /// Restore the first `count` replacements in reverse order. A failed
-    /// restoration leaves the journal in place: readers stay blocked.
-    fn restore_prefix(&self, count: usize) {
+    /// Restore the first `count` replacements in reverse order. Returns
+    /// whether every restoration completed; a failed restoration leaves
+    /// the journal in place so readers stay blocked and recovery remains
+    /// possible (round 2, finding 5).
+    fn restore_prefix(&self, count: usize) -> bool {
         for staged in self.staged[..count].iter().rev() {
             let restored = match &staged.backup {
                 Some(backup) => {
@@ -409,33 +476,46 @@ impl Transaction {
                 None => std::fs::remove_file(&staged.target).map(|_| ()),
             };
             if restored.is_err() {
-                // The journal stays; recovery remains required.
-                return;
+                return false;
             }
         }
+        true
     }
 
-    /// Finalize the canonical history inside the same transaction and
-    /// publish the commit by removing the journal.
-    pub(crate) fn finalize(self, history_bytes: &[u8]) -> Result<(), ChangeError> {
+    /// Finalize the canonical history inside the same transaction, publish
+    /// the durable `committed` marker, and only then remove the recovery
+    /// material (round 2, finding 4: the commit is durably established
+    /// before cleanup, so a crash in between recovers as committed).
+    pub(crate) fn finalize(&mut self, history_bytes: &[u8]) -> Result<(), ChangeError> {
         let history_target = validated_target(&self.root, super::version::HISTORY_LOGICAL_PATH)?;
-        write_same_dir(&history_target, history_bytes).map_err(|_| {
+        if write_same_dir(&history_target, history_bytes).is_err() {
             // History finalization failed after replacements: restore.
-            self.restore_prefix(self.staged.len());
-            ChangeError::CommitFailed {
+            return if self.restore_prefix(self.staged.len()) {
+                self.cleanup_after_restore();
+                Err(ChangeError::CommitFailed {
+                    transaction: self.id.clone(),
+                    detail: "history-finalize",
+                })
+            } else {
+                Err(ChangeError::RecoveryRequired {
+                    transaction: self.id.clone(),
+                })
+            };
+        }
+        self.mark_state(STATE_COMMITTED)?;
+        if std::fs::remove_dir_all(&self.journal_dir).is_err() {
+            // Committed is durable; only the cleanup is outstanding, and
+            // recovery finishes it (and reports committed).
+            return Err(ChangeError::RecoveryRequired {
                 transaction: self.id.clone(),
-                detail: "history-finalize",
-            }
-        })?;
-        // The commit point: the durable history exists; the journal goes.
-        std::fs::remove_dir_all(&self.journal_dir).map_err(|_| ChangeError::CommitFailed {
-            transaction: self.id.clone(),
-            detail: "journal-remove",
-        })?;
+            });
+        }
         Ok(())
     }
 
-    /// Abandon the transaction after restoration: remove the journal.
+    /// Abandon the transaction after full restoration or a staging abort:
+    /// remove the journal and every backup. Only ever called when no
+    /// restoration is outstanding.
     pub(crate) fn cleanup_after_restore(&self) {
         let _ = std::fs::remove_dir_all(&self.journal_dir);
     }
@@ -452,9 +532,10 @@ pub(crate) struct ReplacementPlan {
     pub creation: bool,
 }
 
-/// The closed typed journal wire (review finding 11): every member is
-/// required, strictly typed, and bounded; unknown members and malformed
-/// entries fail closed instead of being skipped.
+/// The closed typed journal wire: every member is required, strictly typed,
+/// and bounded; unknown members and malformed entries fail closed instead
+/// of being skipped. The durable `state` member models the three crash
+/// windows recovery must distinguish (round 2, finding 4).
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct JournalFile {
@@ -472,6 +553,7 @@ struct Journal {
     transaction: String,
     #[serde(rename = "planId")]
     plan_id: String,
+    state: String,
     files: Vec<JournalFile>,
     history: bool,
 }
@@ -484,19 +566,30 @@ impl Journal {
                 detail: "journal-over-limit",
             });
         }
-        serde_json::from_slice(bytes).map_err(|_| ChangeError::CommitFailed {
-            transaction: String::new(),
-            detail: "journal-shape",
-        })
+        let journal: Journal =
+            serde_json::from_slice(bytes).map_err(|_| ChangeError::CommitFailed {
+                transaction: String::new(),
+                detail: "journal-shape",
+            })?;
+        if !matches!(
+            journal.state.as_str(),
+            STATE_STAGING | STATE_REPLACING | STATE_COMMITTED
+        ) {
+            return Err(ChangeError::CommitFailed {
+                transaction: String::new(),
+                detail: "journal-state",
+            });
+        }
+        Ok(journal)
     }
 }
 
 /// Validate one journaled logical path component-wise against the confined
-/// project root and return the write target (review finding 1). The same
-/// closed logical-path grammar as the loader applies (no traversal, no
-/// absolute or drive forms, portable segments), and every existing
-/// component is checked no-follow so symlinks, junctions, and reparse
-/// points can never redirect a recovery write outside the root.
+/// project root and return the write target. The same closed logical-path
+/// grammar as the loader applies (no traversal, no absolute or drive
+/// forms, portable segments), and every existing component is checked
+/// no-follow so symlinks, junctions, and reparse points can never redirect
+/// a transaction or recovery write outside the root.
 fn validated_target(root: &Path, logical: &str) -> Result<PathBuf, ChangeError> {
     if crate::project_fs::path_violation(logical).is_some() {
         return Err(ChangeError::WriteBoundaryDenied);
@@ -507,7 +600,7 @@ fn validated_target(root: &Path, logical: &str) -> Result<PathBuf, ChangeError> 
     let mut walked = String::new();
     for segment in directories {
         match fs.entry_type(&walked, segment) {
-            Ok(crate::project_fs::EntryType::Directory) => {}
+            Ok(EntryType::Directory) => {}
             _ => return Err(ChangeError::WriteBoundaryDenied),
         }
         if walked.is_empty() {
@@ -519,12 +612,12 @@ fn validated_target(root: &Path, logical: &str) -> Result<PathBuf, ChangeError> 
     match fs.entry_type(&walked, file[0]) {
         // The file exists: it must be a regular file (a directory in the
         // way is an escape attempt, not a restorable target).
-        Ok(crate::project_fs::EntryType::File) => {}
+        Ok(EntryType::File) => {}
         // Missing is acceptable only for the history sidecar creation.
-        Ok(crate::project_fs::EntryType::Symlink) | Ok(crate::project_fs::EntryType::Special) => {
+        Ok(EntryType::Symlink) | Ok(EntryType::Special) => {
             return Err(ChangeError::WriteBoundaryDenied)
         }
-        Err(crate::project_fs::FsErrorKind::NotFound) => {}
+        Err(FsErrorKind::NotFound) => {}
         Err(_) => return Err(ChangeError::WriteBoundaryDenied),
         Ok(_) => return Err(ChangeError::WriteBoundaryDenied),
     }
@@ -536,16 +629,33 @@ fn validated_target(root: &Path, logical: &str) -> Result<PathBuf, ChangeError> 
     Ok(target)
 }
 
-/// Recover one interrupted transaction: validate every journaled path,
-/// digest-verify every backup against the journal pin, restore, then
-/// remove the journal. History files created by the transaction are
-/// removed again. Verification failures keep the journal (and the reader
-/// barrier) in place. Returns the bounded per-file outcomes of the
-/// rollback in journal order.
-pub(crate) fn recover(
-    root: &Path,
-    transaction: &str,
-) -> Result<Vec<super::receipt::FileOutcome>, ChangeError> {
+/// The outcome of one successful recovery pass: the durable journal state
+/// the transaction was found in, and the bounded per-file outcomes of the
+/// rollback (or of the committed verification).
+pub(crate) struct RecoveryResult {
+    /// Whether the transaction was found (and verified) durably committed.
+    pub committed: bool,
+    /// The per-file outcomes in journal order.
+    pub files: Vec<super::receipt::FileOutcome>,
+}
+
+/// Recover one interrupted transaction by its durable journal state
+/// (round 2, findings 3-5):
+///
+/// - `staging`: no replacement started; the transaction aborts without
+///   touching a single source byte (a real interruption during staging
+///   recovers cleanly instead of bricking the project);
+/// - `replacing`: every backup is digest-verified, replaced files are
+///   restored (idempotently — already-restored files are skipped), and
+///   creations are removed again only when the current bytes provably are
+///   the bytes this transaction created and the destination is the
+///   admitted history home (round 2, finding 3);
+/// - `committed`: the commit is durable; recovery verifies every target
+///   against its pinned after digest and finishes the cleanup.
+///
+/// Verification failures, drifted files, and forged entries keep the
+/// journal (and the reader barrier) in place and fail closed.
+pub(crate) fn recover(root: &Path, transaction: &str) -> Result<RecoveryResult, ChangeError> {
     if !transaction
         .bytes()
         .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
@@ -554,6 +664,9 @@ pub(crate) fn recover(
     {
         return Err(ChangeError::WriteBoundaryDenied);
     }
+    // The cache home is re-validated no-follow: a link planted at any
+    // component after preparation refuses every recovery write.
+    validated_cache_dir(root)?;
     let journal_dir = root
         .join(super::version::TRANSACTION_CACHE_ROOT)
         .join(transaction);
@@ -583,18 +696,26 @@ pub(crate) fn recover(
             detail: "journal-files-over-bound",
         });
     }
-    let _ = journal.history;
-    // Validate every journaled path BEFORE any write (finding 1) and pin
-    // each backup's expected digest (finding 4). The backup index is the
-    // entry's position in `files[]`, matching `Transaction::stage`.
     let mut restorations: Vec<Restoration> = Vec::new();
     for (index, file) in journal.files.iter().enumerate() {
         let target = validated_target(root, &file.path)?;
         if file.creation {
+            // A creation destination is restricted to the admitted history
+            // home (round 2, finding 3): any other journaled creation is a
+            // forged deletion authority and fails closed.
+            if file.path != super::version::HISTORY_LOGICAL_PATH {
+                return Err(ChangeError::WriteBoundaryDenied);
+            }
+            super::expect_digest(&file.after_digest).ok_or(ChangeError::CommitFailed {
+                transaction: transaction.to_owned(),
+                detail: "journal-after-digest",
+            })?;
             restorations.push(Restoration {
+                path: file.path.clone(),
                 target,
                 backup: None,
                 before_digest: String::new(),
+                after_digest: file.after_digest.clone(),
             });
             continue;
         }
@@ -607,15 +728,82 @@ pub(crate) fn recover(
             detail: "journal-after-digest",
         })?;
         restorations.push(Restoration {
+            path: file.path.clone(),
             target,
-            backup: Some(journal_dir.join("backups").join(index.to_string())),
+            backup: Some(journal_dir.join(BACKUPS_NAME).join(index.to_string())),
             before_digest: file.before_digest.clone(),
+            after_digest: file.after_digest.clone(),
         });
     }
-    // Verify every backup's bytes against its journal pin before any
-    // restore write; a single corrupt member fails the whole recovery with
-    // the journal intact (the reader barrier stays up).
-    for restoration in &restorations {
+    // The journal's durable history flag must agree with the file set: a
+    // forged combination fails closed before any restoration.
+    if journal.history
+        != restorations
+            .iter()
+            .any(|restoration| restoration.path == super::version::HISTORY_LOGICAL_PATH)
+    {
+        return Err(ChangeError::CommitFailed {
+            transaction: transaction.to_owned(),
+            detail: "journal-history-flag",
+        });
+    }
+
+    match journal.state.as_str() {
+        STATE_STAGING => recover_staging(root, transaction, &restorations),
+        STATE_REPLACING => recover_replacing(transaction, &journal_dir, &restorations),
+        STATE_COMMITTED => recover_committed(transaction, &restorations),
+        _ => Err(ChangeError::CommitFailed {
+            transaction: transaction.to_owned(),
+            detail: "journal-state",
+        }),
+    }
+}
+
+/// `staging`: nothing was replaced; verify no source byte carries a
+/// transaction after-digest (a contradicting journal fails closed), then
+/// remove the recovery material. No restoration is needed.
+fn recover_staging(
+    root: &Path,
+    transaction: &str,
+    restorations: &[Restoration],
+) -> Result<RecoveryResult, ChangeError> {
+    for restoration in restorations {
+        let Some(digest) = target_digest(restoration) else {
+            continue; // absent target: never replaced
+        };
+        if digest == restoration.after_digest {
+            return Err(ChangeError::CommitFailed {
+                transaction: transaction.to_owned(),
+                detail: "staging-state-contradiction",
+            });
+        }
+    }
+    let journal_dir = root
+        .join(super::version::TRANSACTION_CACHE_ROOT)
+        .join(transaction);
+    std::fs::remove_dir_all(&journal_dir).map_err(|_| ChangeError::RecoveryRequired {
+        transaction: transaction.to_owned(),
+    })?;
+    Ok(RecoveryResult {
+        committed: false,
+        files: Vec::new(),
+    })
+}
+
+/// `replacing`: restoration material exists and replacements may have
+/// started. Every backup is digest-verified before any write; each target
+/// is restored unless it already carries its verified original bytes
+/// (idempotent re-recovery); creations are removed only while the current
+/// bytes match exactly what this transaction created.
+fn recover_replacing(
+    transaction: &str,
+    journal_dir: &Path,
+    restorations: &[Restoration],
+) -> Result<RecoveryResult, ChangeError> {
+    // Verify every backup against its journal pin before any restore
+    // write; a single corrupt member fails the whole recovery with the
+    // journal intact (the reader barrier stays up).
+    for restoration in restorations {
         let Some(backup) = &restoration.backup else {
             continue;
         };
@@ -631,12 +819,43 @@ pub(crate) fn recover(
         }
     }
     let mut failures = 0usize;
-    for restoration in &restorations {
-        let outcome = match &restoration.backup {
-            None => std::fs::remove_file(&restoration.target),
-            Some(backup) => {
-                std::fs::read(backup).and_then(|bytes| write_same_dir(&restoration.target, &bytes))
-            }
+    for restoration in restorations {
+        let outcome: std::io::Result<()> = match &restoration.backup {
+            None => match std::fs::read(&restoration.target) {
+                // Already removed by an earlier recovery attempt: nothing
+                // to do (idempotent, round 2 finding 4).
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(error) => Err(error),
+                Ok(bytes) => {
+                    // Delete only the exact bytes this transaction created
+                    // (round 2, finding 3): a drifted or unrelated file
+                    // stays untouched with the barrier retained.
+                    let digest = format!("sha256:{}", crate::digest::sha256_hex(&bytes));
+                    if digest == restoration.after_digest {
+                        std::fs::remove_file(&restoration.target)
+                    } else {
+                        Err(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            "creation-drifted",
+                        ))
+                    }
+                }
+            },
+            Some(backup) => match std::fs::read(&restoration.target) {
+                // Already restored by an earlier recovery attempt: the
+                // verified original is in place, nothing to do.
+                Ok(bytes) => {
+                    let digest = format!("sha256:{}", crate::digest::sha256_hex(&bytes));
+                    if digest == restoration.before_digest {
+                        Ok(())
+                    } else {
+                        std::fs::read(backup)
+                            .and_then(|original| write_same_dir(&restoration.target, &original))
+                    }
+                }
+                Err(_) => std::fs::read(backup)
+                    .and_then(|original| write_same_dir(&restoration.target, &original)),
+            },
         };
         if outcome.is_err() {
             failures += 1;
@@ -647,28 +866,75 @@ pub(crate) fn recover(
             transaction: transaction.to_owned(),
         });
     }
-    std::fs::remove_dir_all(&journal_dir).map_err(|_| ChangeError::RecoveryRequired {
+    std::fs::remove_dir_all(journal_dir).map_err(|_| ChangeError::RecoveryRequired {
         transaction: transaction.to_owned(),
     })?;
-    // The rollback receipt's file outcomes, journal order. A restoration
+    // The rollback receipt's file outcomes, journal order: a restoration
     // replaced the transaction's prospective bytes with the verified
     // originals; a creation removal replaced the created bytes with the
     // absent-file sentinel digest.
-    let outcomes = journal
-        .files
+    let files = restorations
         .iter()
-        .map(|file| super::receipt::FileOutcome {
-            path: file.path.clone(),
-            before_digest: file.after_digest.clone(),
-            after_digest: if file.creation {
+        .map(|restoration| super::receipt::FileOutcome {
+            path: restoration.path.clone(),
+            before_digest: restoration.after_digest.clone(),
+            after_digest: if restoration.backup.is_none() {
                 super::absent_digest()
             } else {
-                file.before_digest.clone()
+                restoration.before_digest.clone()
             },
             outcome: "replaced".to_owned(),
         })
         .collect();
-    Ok(outcomes)
+    Ok(RecoveryResult {
+        committed: false,
+        files,
+    })
+}
+
+/// `committed`: the canonical history was durably written before the
+/// journal was removed. Recovery verifies every target still carries its
+/// pinned after bytes, then finishes the outstanding cleanup and reports
+/// the transaction committed — never rolled back.
+fn recover_committed(
+    transaction: &str,
+    restorations: &[Restoration],
+) -> Result<RecoveryResult, ChangeError> {
+    for restoration in restorations {
+        // A committed transaction's every target must still carry the
+        // exact committed bytes; a missing or drifted target is an
+        // unknown state and fails closed with the barrier retained.
+        let Some(digest) = target_digest(restoration) else {
+            return Err(ChangeError::RecoveryRequired {
+                transaction: transaction.to_owned(),
+            });
+        };
+        if digest != restoration.after_digest {
+            return Err(ChangeError::RecoveryRequired {
+                transaction: transaction.to_owned(),
+            });
+        }
+    }
+    let files = restorations
+        .iter()
+        .map(|restoration| super::receipt::FileOutcome {
+            path: restoration.path.clone(),
+            before_digest: restoration.before_digest.clone(),
+            after_digest: restoration.after_digest.clone(),
+            outcome: "replaced".to_owned(),
+        })
+        .collect();
+    Ok(RecoveryResult {
+        committed: true,
+        files,
+    })
+}
+
+/// The digest of one restoration target's current bytes, or `None` when
+/// absent.
+fn target_digest(restoration: &Restoration) -> Option<String> {
+    let bytes = std::fs::read(&restoration.target).ok()?;
+    Some(format!("sha256:{}", crate::digest::sha256_hex(&bytes)))
 }
 
 impl ChangeError {
@@ -686,26 +952,39 @@ impl ChangeError {
 
 /// One validated restoration plan of the recovery pass.
 struct Restoration {
+    /// The journaled logical path (receipt evidence only).
+    path: String,
     target: PathBuf,
     /// The digest-verified backup file, or `None` for a creation (the
     /// file is removed again instead of restored).
     backup: Option<PathBuf>,
     /// The exact `sha256:` digest the backup bytes must carry.
     before_digest: String,
+    /// The exact `sha256:` digest the transaction's prospective bytes had.
+    after_digest: String,
 }
 
-/// Write bytes durably (create parents, sync the file).
-fn write_durable(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let mut file = std::fs::File::create(path)?;
-    std::io::Write::write_all(&mut file, bytes)?;
-    file.sync_all()
+/// A process-unique, unpredictable temp suffix so no concurrent or
+/// hostile observer can pre-link a predictable temp path (round 2,
+/// finding 2).
+fn temp_suffix() -> String {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+    let mixed = format!(
+        "{}-{nanos}-{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    );
+    crate::digest::sha256_hex(mixed.as_bytes())[..24].to_owned()
 }
 
-/// Replace one file in its own directory: temp file plus rename, so the
-/// replacement is same-volume and the temp name never collides.
+/// Replace one file in its own directory: an exclusively created temp file
+/// with an unpredictable name plus rename, so the replacement is
+/// same-volume, never truncates a pre-existing linked entry, and cannot be
+/// predicted and hard-linked before creation (round 2, finding 2).
 fn write_same_dir(target: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let file_name = target
         .file_name()
@@ -713,14 +992,146 @@ fn write_same_dir(target: &Path, bytes: &[u8]) -> std::io::Result<()> {
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "no-file-name"))?;
     let parent = target
         .parent()
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "no-parent"))?;
-    let temp = parent.join(format!(".{}.lekalo-tmp", file_name.to_string_lossy()));
-    write_durable(&temp, bytes)?;
-    match std::fs::rename(&temp, target) {
-        Ok(()) => Ok(()),
-        Err(error) => {
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "no-parent"))?
+        .to_path_buf();
+    let mut last_error = std::io::Error::new(std::io::ErrorKind::AlreadyExists, "temp-exists");
+    for attempt in 0..4 {
+        let temp = parent.join(format!(
+            ".{}.{}-{}.lekalo-tmp",
+            file_name.to_string_lossy(),
+            temp_suffix(),
+            attempt
+        ));
+        let file = match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp)
+        {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                last_error = error;
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
+        let mut file = file;
+        if let Err(error) = std::io::Write::write_all(&mut file, bytes) {
             let _ = std::fs::remove_file(&temp);
-            Err(error)
+            return Err(error);
         }
+        if let Err(error) = file.sync_all() {
+            let _ = std::fs::remove_file(&temp);
+            return Err(error);
+        }
+        drop(file);
+        return match std::fs::rename(&temp, target) {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                let _ = std::fs::remove_file(&temp);
+                Err(error)
+            }
+        };
+    }
+    Err(last_error)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The writer lock denies a second holder while the first is alive.
+    #[test]
+    fn live_writer_lock_denies_a_second_holder() {
+        let root = std::env::temp_dir().join(format!("lekalo-tx-lock-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join(".lekalo/cache/change")).expect("cache");
+        let first = WriterLock::acquire(&root).expect("first holder");
+        let second = WriterLock::acquire(&root);
+        assert!(
+            matches!(
+                second,
+                Err(ChangeError::PreconditionFailed { detail: "held", .. })
+            ),
+            "a live holder must deny"
+        );
+        drop(first);
+        let third = WriterLock::acquire(&root);
+        assert!(third.is_ok(), "a released lock must be acquirable");
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// A stale lock artifact of a dead owner is taken over — recovery is
+    /// never bricked behind its own crash artifact.
+    #[test]
+    fn stale_lock_artifact_is_reclaimed() {
+        let root = std::env::temp_dir().join(format!("lekalo-tx-stale-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let cache = root.join(".lekalo/cache/change");
+        std::fs::create_dir_all(&cache).expect("cache");
+        std::fs::write(cache.join(LOCK_NAME), b"held-by-a-dead-process\n").expect("plant");
+        let lock = WriterLock::acquire(&root);
+        assert!(lock.is_ok(), "a dead owner's artifact must be reclaimable");
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// A link planted at the lock path fails closed instead of being
+    /// followed or replaced.
+    #[cfg(unix)]
+    #[test]
+    fn lock_path_link_fails_closed() {
+        let root = std::env::temp_dir().join(format!("lekalo-tx-link-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let cache = root.join(".lekalo/cache/change");
+        std::fs::create_dir_all(&cache).expect("cache");
+        std::os::unix::fs::symlink("/lekalo-elsewhere", cache.join(LOCK_NAME)).expect("link");
+        let lock = WriterLock::acquire(&root);
+        assert!(lock.is_err(), "a linked lock path must refuse");
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// The cache-home validation refuses a link planted at `.lekalo`.
+    #[cfg(unix)]
+    #[test]
+    fn cache_home_link_refuses() {
+        let root = std::env::temp_dir().join(format!("lekalo-tx-home-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("root");
+        std::os::unix::fs::symlink("/lekalo-elsewhere", root.join(".lekalo")).expect("link");
+        assert!(validated_cache_dir(&root).is_err());
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// The journal decoder refuses unknown states and malformed members.
+    #[test]
+    fn journal_decode_fails_closed() {
+        let valid = br#"{"transaction":"change-abcdef01","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","state":"staging","files":[],"history":false}"#;
+        assert!(Journal::decode(valid).is_ok());
+        let bad_state = br#"{"transaction":"change-abcdef01","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","state":" vanished","files":[],"history":false}"#;
+        assert!(Journal::decode(bad_state).is_err());
+        let unknown_member = br#"{"transaction":"change-abcdef01","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","state":"staging","files":[],"history":false,"extra":1}"#;
+        assert!(Journal::decode(unknown_member).is_err());
+        let missing_member = br#"{"transaction":"change-abcdef01","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","state":"staging","files":[]}"#;
+        assert!(Journal::decode(missing_member).is_err());
+    }
+
+    /// Temp replacement files carry unpredictable names and exclusively
+    /// created entries, so a pre-linked predictable temp path can never be
+    /// truncated into an external write.
+    #[test]
+    fn temp_names_are_unpredictable_and_exclusive() {
+        let dir = std::env::temp_dir().join(format!("lekalo-tx-temp-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        let target = dir.join("doc.yaml");
+        std::fs::write(&target, b"before\n").expect("target");
+        write_same_dir(&target, b"after\n").expect("replace");
+        assert_eq!(std::fs::read(&target).expect("read"), b"after\n");
+        let leftovers: Vec<_> = std::fs::read_dir(&dir)
+            .expect("dir")
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.file_name().to_string_lossy().contains("lekalo-tmp"))
+            .collect();
+        assert!(leftovers.is_empty(), "no temp leftovers");
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

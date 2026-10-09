@@ -448,7 +448,7 @@ fn recovery_blocks_the_project_until_recover_runs() {
     std::fs::create_dir_all(&journal).expect("journal dir");
     std::fs::write(
         journal.join("journal.json"),
-        br#"{"transaction":"change-ab12cd34-1","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","files":[],"history":false}"#,
+        br#"{"transaction":"change-ab12cd34-1","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","state":"staging","files":[],"history":false}"#,
     )
     .expect("journal");
     let selection = sandbox.selection();

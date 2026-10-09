@@ -119,6 +119,7 @@ const writeJournal = (id, files, extras = {}) => {
   const journal = {
     transaction: id,
     planId: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    state: "replacing",
     files,
     history: false,
     ...extras,
@@ -192,7 +193,9 @@ if (!readFileSync(join(sandbox, "lekalo/modules/tasks/entities.yaml")).equals(en
   fail("corrupt-target-mutated");
 }
 
-// 4. A stale writer lock does not brick recovery (finding 3).
+// 4. A stale writer lock does not brick recovery (round 1 finding 3):
+//    the OS-held lock proves the owner is dead and the artifact is taken
+//    over; a planted metadata file never substitutes for liveness.
 freshSandbox("stale");
 const staleCache = join(sandbox, ".lekalo/cache/change");
 mkdirSync(staleCache, { recursive: true });
@@ -210,6 +213,52 @@ if (existsSync(join(sandbox, ".lekalo/cache/change/change-gatest01/journal.json"
 }
 const unblocked = run(["load", "--project", ".", "--json"]);
 if (unblocked.code !== 0) fail("stale-barrier-remains", unblocked.json);
+
+// 4b. An untouched staging transaction (a real interruption during
+//     staging, round 2 finding 4) recovers without touching any source
+//     byte: the transaction aborts and the barrier lifts.
+freshSandbox("staging");
+const stagingEntities = join(sandbox, "lekalo/modules/tasks/entities.yaml");
+const stagingBefore = readFileSync(stagingEntities);
+writeJournal("change-gatestg1", [
+  {
+    path: "lekalo/modules/tasks/entities.yaml",
+    beforeDigest: zeros,
+    afterDigest:
+      "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    creation: false,
+  },
+], { state: "staging" });
+const staging = run(["change", "recover", "--project", ".", "--transaction", "change-gatestg1", "--json"]);
+if (staging.code !== 0) fail("staging-recovery-failed", { code: staging.code, json: staging.json });
+if (staging.json?.state !== "rolled-back") fail("staging-state", staging.json);
+if (staging.json?.files?.length !== 0) fail("staging-files", staging.json);
+if (!readFileSync(stagingEntities).equals(stagingBefore)) fail("staging-target-touched");
+if (existsSync(join(sandbox, ".lekalo/cache/change/change-gatestg1"))) {
+  fail("staging-journal-kept");
+}
+
+// 4c. A forged creation entry for an unrelated file is refused (round 2
+//     finding 3): deletion authority stays with the admitted history
+//     home, and the barrier is retained.
+freshSandbox("forged-creation");
+const sentinel = join(sandbox, "UNRELATED-SENTINEL.txt");
+writeFileSync(sentinel, "UNRELATED\n");
+writeJournal("change-gateforg1", [
+  {
+    path: "UNRELATED-SENTINEL.txt",
+    beforeDigest: zeros,
+    afterDigest:
+      "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    creation: true,
+  },
+]);
+const forgedCreation = run(["change", "recover", "--project", ".", "--transaction", "change-gateforg1", "--json"]);
+if (forgedCreation.code === 0) fail("forged-creation-accepted", forgedCreation.json);
+if (!existsSync(sentinel)) fail("forged-creation-deleted", sentinel);
+if (!existsSync(join(sandbox, ".lekalo/cache/change/change-gateforg1/journal.json"))) {
+  fail("forged-creation-barrier-lifted");
+}
 
 // 5. A forged history record never mints a replayed receipt (finding 5);
 //    every emitted document is duplicate-key-free JSON (finding 8).
@@ -316,8 +365,9 @@ const flowHistory = assertDupFree(
 );
 if (!historyValidate(flowHistory)) fail("flow-history-schema", historyValidate.errors);
 
-// 7. An interrupted transaction (real journal with a verified backup)
-//    recovers to originals and reports rolled-back — never committed.
+// 7. An interrupted transaction (real journal with a verified backup,
+//    durable `replacing` state) recovers to originals and reports
+//    rolled-back — never committed (round 2 findings 4 and 5).
 const interruptedDir = join(sandbox, ".lekalo/cache/change/change-gateflow1");
 mkdirSync(join(interruptedDir, "backups"), { recursive: true });
 const entitiesNow = readFileSync(join(sandbox, "lekalo/modules/tasks/entities.yaml"));
@@ -327,6 +377,7 @@ writeFileSync(
   `${JSON.stringify({
     transaction: "change-gateflow1",
     planId: apply.json.planId,
+    state: "replacing",
     files: [
       {
         path: "lekalo/modules/tasks/entities.yaml",
@@ -340,6 +391,21 @@ writeFileSync(
 );
 const blocked = run(["load", "--project", ".", "--json"]);
 if (blocked.code !== 3) fail("flow-barrier-exit", blocked.json);
+// While the replacing journal is pending, the ledger is gated: a recorded
+// receipt must not read as committed (round 2 finding 9).
+const gatedReceipt = run([
+  "change",
+  "receipt",
+  "--project",
+  ".",
+  "--idempotency-key",
+  "gate-flow-v1",
+  "--json",
+]);
+if (gatedReceipt.code !== 3) fail("receipt-not-gated", gatedReceipt.json);
+if (!gatedReceipt.json?.reasonCodes?.includes("change.recovery-required")) {
+  fail("receipt-gate-rule", gatedReceipt.json?.reasonCodes);
+}
 const recovered = run([
   "change",
   "recover",
@@ -375,8 +441,11 @@ process.stdout.write(`${JSON.stringify({
     "journal-absolute-refused",
     "corrupt-backup-refused-barrier-kept",
     "stale-lock-reclaimed",
+    "staging-interrupt-aborts-cleanly",
+    "forged-creation-refused-barrier-kept",
     "forged-ledger-refused",
     "dup-free-receipts",
+    "pending-receipt-gated",
     "rollback-recovery-schema-valid",
   ],
 }, null, 2)}\n`);

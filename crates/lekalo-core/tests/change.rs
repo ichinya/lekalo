@@ -441,7 +441,7 @@ fn recovery_barrier_blocks_readers_until_recover_succeeds() {
     std::fs::create_dir_all(&journal_dir).expect("journal dir");
     std::fs::write(
         journal_dir.join("journal.json"),
-        br#"{"transaction":"change-ab12cd34-1","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","files":[],"history":false}"#,
+        br#"{"transaction":"change-ab12cd34-1","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","state":"staging","files":[],"history":false}"#,
     )
     .expect("journal");
     // Readers fail closed while the journal exists.
@@ -473,7 +473,7 @@ fn recovery_refuses_a_journal_path_that_escapes_the_project_root() {
     std::fs::create_dir_all(&journal_dir).expect("journal dir");
     std::fs::write(
         journal_dir.join("journal.json"),
-        br#"{"transaction":"change-escape01","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","files":[{"path":"../le73-ESCAPE.txt","beforeDigest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","afterDigest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","creation":false}],"history":false}"#,
+        br#"{"transaction":"change-escape01","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","state":"replacing","files":[{"path":"../le73-ESCAPE.txt","beforeDigest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","afterDigest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","creation":false}],"history":false}"#,
     )
     .expect("journal");
     let error = change::recover_transaction(Some(&sandbox.selection_str()), "change-escape01")
@@ -501,7 +501,7 @@ fn recovery_refuses_an_absolute_and_absolute_windows_journal_path() {
     std::fs::create_dir_all(&journal_dir).expect("journal dir");
     std::fs::write(
         journal_dir.join("journal.json"),
-        br#"{"transaction":"change-absol001","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","files":[{"path":"lekalo/modules/tasks/entities.yaml","beforeDigest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","afterDigest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","creation":false},{"path":"/etc/lekalo-pwn","beforeDigest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","afterDigest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","creation":false}],"history":false}"#,
+        br#"{"transaction":"change-absol001","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","state":"replacing","files":[{"path":"lekalo/modules/tasks/entities.yaml","beforeDigest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","afterDigest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","creation":false},{"path":"/etc/lekalo-pwn","beforeDigest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","afterDigest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","creation":false}],"history":false}"#,
     )
     .expect("journal");
     let error = change::recover_transaction(Some(&sandbox.selection_str()), "change-absol001")
@@ -527,7 +527,7 @@ fn recovery_refuses_a_corrupted_backup_and_keeps_the_barrier() {
     std::fs::write(journal_dir.join("backups/0"), &entities).expect("backup");
     let wrong_digest = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
     let journal = format!(
-        r#"{{"transaction":"change-corrupt01","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","files":[{{"path":"lekalo/modules/tasks/entities.yaml","beforeDigest":"{wrong_digest}","afterDigest":"sha256:2222222222222222222222222222222222222222222222222222222222222222","creation":false}}],"history":false}}"#
+        r#"{{"transaction":"change-corrupt01","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","state":"replacing","files":[{{"path":"lekalo/modules/tasks/entities.yaml","beforeDigest":"{wrong_digest}","afterDigest":"sha256:2222222222222222222222222222222222222222222222222222222222222222","creation":false}}],"history":false}}"#
     );
     std::fs::write(journal_dir.join("journal.json"), journal).expect("journal");
     let before = sandbox.entities_bytes();
@@ -566,7 +566,7 @@ fn recovery_restores_verified_backups_and_reports_the_rollback() {
     std::fs::write(journal_dir.join("backups/0"), &original).expect("backup");
     let digest = |bytes: &[u8]| format!("sha256:{}", lekalo_core::digest::sha256_hex(bytes));
     let journal = format!(
-        r#"{{"transaction":"change-restore01","planId":"sha256:3333333333333333333333333333333333333333333333333333333333333333","files":[{{"path":"lekalo/modules/tasks/entities.yaml","beforeDigest":"{0}","afterDigest":"sha256:4444444444444444444444444444444444444444444444444444444444444444","creation":false}}],"history":false}}"#,
+        r#"{{"transaction":"change-restore01","planId":"sha256:3333333333333333333333333333333333333333333333333333333333333333","state":"replacing","files":[{{"path":"lekalo/modules/tasks/entities.yaml","beforeDigest":"{0}","afterDigest":"sha256:4444444444444444444444444444444444444444444444444444444444444444","creation":false}}],"history":false}}"#,
         digest(&original)
     );
     std::fs::write(journal_dir.join("journal.json"), journal).expect("journal");
@@ -585,33 +585,40 @@ fn recovery_restores_verified_backups_and_reports_the_rollback() {
 
 #[test]
 fn recovery_reclaims_a_stale_writer_lock_but_honors_a_live_one() {
-    // Review finding 3 (HIGH): the most common crash artifact is a stale
-    // `writer.lock`; recovery must reclaim it instead of failing forever.
+    // Review round 1 finding 3 / round 2 finding 1: a stale `writer.lock`
+    // artifact of a dead owner is reclaimed (the OS released its handle),
+    // while a live holder is proven by the OS-held lock and denies.
     let sandbox = Sandbox::new("stale");
     let cache = sandbox.root.join(".lekalo/cache/change");
     std::fs::create_dir_all(&cache).expect("cache");
     let journal_dir = cache.join("change-stale0001");
     std::fs::create_dir_all(&journal_dir).expect("journal dir");
-    std::fs::write(
-        journal_dir.join("journal.json"),
-        br#"{"transaction":"change-stale0001","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","files":[],"history":false}"#,
-    )
-    .expect("journal");
-    // A stale lock whose recorded owner is dead (this test process is
-    // alive, so the metadata must point elsewhere to be stale).
+    const STALE_JOURNAL: &[u8] = br#"{"transaction":"change-stale0001","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","state":"staging","files":[],"history":false}"#;
+    std::fs::write(journal_dir.join("journal.json"), STALE_JOURNAL).expect("journal");
+    // A stale lock artifact: no process holds it, so recovery takes over.
     std::fs::write(cache.join("writer.lock"), b"").expect("stale lock");
-    std::fs::write(
-        cache.join("writer.lock.json"),
-        format!(
-            "{{\"pid\":999999999,\"boot\":\"{}\"}}",
-            "definitely-not-this-boot"
-        ),
-    )
-    .expect("stale lock meta");
     change::recover_transaction(Some(&sandbox.selection_str()), "change-stale0001")
         .expect("stale lock reclaimed");
     assert!(!cache.join("writer.lock").exists(), "lock released");
     assert!(!journal_dir.exists(), "journal consumed");
+    // A live writer (this process holds the OS-held lock) denies recovery.
+    std::fs::create_dir_all(&journal_dir).expect("journal dir again");
+    std::fs::write(journal_dir.join("journal.json"), STALE_JOURNAL).expect("journal again");
+    let holder = lekalo_core::change::test_only_acquire_writer_lock(Some(&sandbox.selection_str()))
+        .expect("test holder");
+    let error = change::recover_transaction(Some(&sandbox.selection_str()), "change-stale0001")
+        .expect_err("live holder denies");
+    assert!(
+        matches!(
+            error,
+            ChangeError::PreconditionFailed { detail: "held", .. }
+        ),
+        "got {error:?}"
+    );
+    assert!(journal_dir.join("journal.json").is_file(), "journal kept");
+    drop(holder);
+    change::recover_transaction(Some(&sandbox.selection_str()), "change-stale0001")
+        .expect("recovers after the holder releases");
 }
 
 #[test]
