@@ -609,40 +609,50 @@ fn execute(args: Args) -> Result<DomainResult, DiagnosticSet> {
     // project root, read through the confined filesystem, decoded
     // through the strict lock parser, and reconciled against the exact
     // profile pins of the selected targets. Garbage bytes or a lock
-    // that contradicts a selected pin refuse; hashing alone never
-    // establishes provenance.
+    // that contradicts a selected pin refuse; a lock that corroborates
+    // nothing selectable reports unreconciled custody, never known.
     let selected_for_lock: Vec<&lekalo_core::portability::TargetInput> =
         std::iter::once(&resolved.source)
             .chain(resolved.destinations.iter())
             .collect();
-    let lock_digest = match read_bounded_opt(&fs, LOCK_PATH)? {
-        Some(bytes) => {
-            let lock = lekalo_core::lockfile::Lockfile::parse_canonical(&bytes)
-                .map_err(|_| invalid("lock-shape"))?;
-            for target in &selected_for_lock {
-                let Some(pin) = &target.profile else {
-                    continue;
-                };
-                if let Some(entry) = lock
-                    .profiles()
-                    .iter()
-                    .find(|profile| profile.id().as_str() == pin.id)
-                {
+    let mut lock_state = lekalo_core::portability::wire::LockPresence::Absent;
+    let mut lock_digest: Option<String> = None;
+    if let Some(bytes) = read_bounded_opt(&fs, LOCK_PATH)? {
+        let lock = lekalo_core::lockfile::Lockfile::parse_canonical(&bytes)
+            .map_err(|_| invalid("lock-shape"))?;
+        let mut corroborated = 0usize;
+        let mut complete = true;
+        for target in &selected_for_lock {
+            let Some(pin) = &target.profile else {
+                continue;
+            };
+            match lock
+                .profiles()
+                .iter()
+                .find(|profile| profile.id().as_str() == pin.id)
+            {
+                Some(entry) => {
                     let matches = entry.version().as_str() == pin.version
                         && entry.source_digest().as_str() == pin.source_digest
                         && entry.digest().as_str() == pin.resolved_digest;
                     if !matches {
                         return Err(invalid("lock-profile"));
                     }
+                    corroborated += 1;
                 }
+                None => complete = false,
             }
-            Some(format!(
-                "sha256:{}",
-                lekalo_core::digest::sha256_hex(&bytes)
-            ))
         }
-        None => None,
-    };
+        lock_state = if complete && corroborated > 0 {
+            lekalo_core::portability::wire::LockPresence::Known
+        } else {
+            lekalo_core::portability::wire::LockPresence::Unreconciled
+        };
+        lock_digest = Some(format!(
+            "sha256:{}",
+            lekalo_core::digest::sha256_hex(&bytes)
+        ));
+    }
 
     // The qualified evidence families: every admitted complete family
     // artifact read, hash-verified, and decoded through its owner
@@ -691,6 +701,7 @@ fn execute(args: Args) -> Result<DomainResult, DiagnosticSet> {
         gates_qualified,
         targets_input,
         lock_digest,
+        lock_state,
         evidence_digest,
     };
     let report = assess(&assessment)?;

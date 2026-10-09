@@ -64,6 +64,10 @@ pub struct Assessment<'a> {
     pub gates_qualified: BTreeMap<String, bool>,
     pub targets_input: TargetsInput,
     pub lock_digest: Option<String>,
+    /// The reconciled lock presence: `known` only when the canonical
+    /// lock corroborated every selected pinned profile; a lock that
+    /// corroborates nothing selectable is `unreconciled`, never known.
+    pub lock_state: wire::LockPresence,
     /// The exact manifest digest pin, supplied by the caller.
     pub evidence_digest: Option<String>,
 }
@@ -352,12 +356,16 @@ pub fn assess(input: &Assessment) -> Result<Report, DiagnosticSet> {
                 },
                 digest: input.evidence_digest.clone(),
             },
-            lock_digest: match &input.lock_digest {
-                Some(value) => LockInput {
+            lock_digest: match input.lock_state {
+                LockPresence::Known => LockInput {
                     state: LockPresence::Known,
-                    value: Some(value.clone()),
+                    value: input.lock_digest.clone(),
                 },
-                None => LockInput {
+                LockPresence::Unreconciled => LockInput {
+                    state: LockPresence::Unreconciled,
+                    value: input.lock_digest.clone(),
+                },
+                LockPresence::Absent => LockInput {
                     state: LockPresence::Absent,
                     value: None,
                 },

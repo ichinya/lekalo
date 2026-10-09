@@ -246,6 +246,7 @@ fn fixture_assessment() -> (lekalo_core::ir::Compilation, wire::Report) {
             )),
         },
         lock_digest: None,
+        lock_state: lekalo_core::portability::wire::LockPresence::Absent,
         evidence_digest: None,
     };
     let report = assess(&assessment).expect("the fixture assessment succeeds");
@@ -652,6 +653,7 @@ mod request_rules {
                 digest: None,
             },
             lock_digest: None,
+            lock_state: lekalo_core::portability::wire::LockPresence::Absent,
             evidence_digest: None,
         };
         let report = assess(&assessment).unwrap();
@@ -772,6 +774,7 @@ mod request_rules {
                 digest: None,
             },
             lock_digest: None,
+            lock_state: lekalo_core::portability::wire::LockPresence::Absent,
             evidence_digest: None,
         };
         let report = assess(&assessment).expect("the inventory assessment succeeds");
@@ -844,6 +847,7 @@ mod evidence_gaps {
                 digest: None,
             },
             lock_digest: None,
+            lock_state: lekalo_core::portability::wire::LockPresence::Absent,
             evidence_digest: None,
         };
         let report = assess(&assessment).unwrap();
@@ -951,6 +955,7 @@ mod evidence_gaps {
                 digest: None,
             },
             lock_digest: None,
+            lock_state: lekalo_core::portability::wire::LockPresence::Absent,
             evidence_digest: None,
         };
         let report = assess(&assessment).unwrap();

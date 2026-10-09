@@ -1080,6 +1080,26 @@ const withEvidence = (temp, mutate) => {
   }
 }
 
+// F12c — lock reconciliation is honest: a canonical lock that
+// corroborates nothing selectable reports `unreconciled`, never `known`
+// — a lock minted on this very fixture pins no selected profile.
+{
+  const temp = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
+  try {
+    cpSync(project, temp, { recursive: true });
+    execFileSync(binary, ["lock"], { cwd: temp, encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] });
+    const run = tryRun(["--json", "portability", "--evidence", "reports/portability-evidence.json"], temp);
+    if (run.code !== 0) fail("f12c-exit", String(run.code));
+    const report = JSON.parse(run.stdout).portability;
+    if (report.inputs.lockDigest.state !== "unreconciled") {
+      fail("f12c-vacuous-known", JSON.stringify(report.inputs.lockDigest));
+    }
+    if (!report.inputs.lockDigest.value) fail("f12c-digest", JSON.stringify(report.inputs.lockDigest));
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
+}
+
 // F14 — a sole declared Model target outside the configuration universe
 // is refused instead of reporting pinned provenance with no pin.
 {

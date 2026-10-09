@@ -561,6 +561,23 @@
               "additionalProperties": false,
               "properties": {
                 "state": {
+                  "const": "unreconciled"
+                },
+                "value": {
+                  "$ref": "#/$defs/digest"
+                }
+              },
+              "required": [
+                "state",
+                "value"
+              ],
+              "unevaluatedProperties": false
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "state": {
                   "const": "absent"
                 }
               },

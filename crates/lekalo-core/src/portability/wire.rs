@@ -586,7 +586,14 @@ pub struct LockInput {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LockPresence {
+    /// The lock parsed and corroborated every selected profile pin.
     Known,
+    /// The lock exists but does not corroborate the selection: a
+    /// selected pinned profile has no lock entry, or nothing selected
+    /// is pinned at all. Custody that never happened is never reported
+    /// as known.
+    Unreconciled,
+    /// No lock file exists at the resolved project root.
     Absent,
 }
 
