@@ -699,12 +699,26 @@ fn run_rollback(args: RollbackArgs) -> Outcome {
     }
     // The confirmed apply consumes the exact saved plan bytes.
     let plan = core::rollback::build(&project_root, &args.to)?;
+    // The live generation authority (finding 8): the destination is
+    // compatible only while the project still derives the exact canonical
+    // Model/IR/lock the destination generation was admitted under. The
+    // derivation goes through the accepted loader pipeline and fails
+    // closed on a broken or missing authority; the core then refuses a
+    // destination whose derived custody pins diverge from it.
+    let record = core::history::record(&project_root, plan.destination_generation_digest.as_str())?;
+    let module = record
+        .outputs
+        .first()
+        .map(|output| output.owner_module.clone())
+        .ok_or_else(|| invalid("generation-record"))?;
+    let authority = core::authority::derive(&selection(&args.project.project), &module)?;
     let bytes = serde_json::to_vec(&plan).expect("typed rollback plan");
     Err(core::rollback::apply(
         &project_root,
         &bytes,
         args.confirm.as_deref(),
         false,
+        Some(&authority),
     ))
 }
 

@@ -514,12 +514,18 @@ pub fn verify_plan(bytes: &[u8]) -> Result<GenerationPlan, DomainResult> {
     Ok(document)
 }
 
+/// The reserved closure prefix of the derived authority pins (finding 8):
+/// the canonical Model, typed IR, and lock revision custody evidence every
+/// committed generation carries. Derived pins name no project file; they
+/// are revalidated against the live derived authority at every consume.
+pub const AUTHORITY_PIN_PREFIX: &str = ".lekalo/managed-authority/";
+
 /// Whether `text` is a valid committed input-closure pin path: either a
 /// project-relative coordinate or a reserved derived authority pin under
-/// `.lekalo/managed-authority/` (the canonical Model/IR/lock custody
-/// evidence; derived, never read as a project file — finding 8).
+/// [`AUTHORITY_PIN_PREFIX`] (the canonical Model/IR/lock custody evidence;
+/// derived, never read as a project file — finding 8).
 fn input_pin_path(text: &str) -> bool {
-    if let Some(rest) = text.strip_prefix(".lekalo/managed-authority/") {
+    if let Some(rest) = text.strip_prefix(AUTHORITY_PIN_PREFIX) {
         return matches!(rest, "model" | "ir" | "lock");
     }
     rel_path(text)

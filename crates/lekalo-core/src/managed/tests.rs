@@ -14,6 +14,7 @@ use std::path::PathBuf;
 
 const PIN_A: &str = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
 const PIN_B: &str = "sha256:2222222222222222222222222222222222222222222222222222222222222222";
+const PIN_C: &str = "sha256:3333333333333333333333333333333333333333333333333333333333333333";
 
 fn reference() -> Reference {
     Reference {
@@ -772,12 +773,18 @@ fn rollback_restores_the_exact_previous_generation() {
     let preview = rollback::build(&root, &first_generation).expect("rollback plan");
     assert!(!preview.restore.is_empty());
     let bytes = serde_json::to_vec(&preview).expect("wire");
-    let refused = rollback::apply(&root, &bytes, None, false);
+    let refused = rollback::apply(&root, &bytes, None, false, Some(&test_authority()));
     assert_eq!(refused.status(), Status::Invalid);
     // The destination input closure is checked against the live inputs:
     // the model moved between generations, so the destination is refused
     // until the pinned input bytes are back (finding G).
-    let stale = rollback::apply(&root, &bytes, Some(preview.plan_digest.as_str()), false);
+    let stale = rollback::apply(
+        &root,
+        &bytes,
+        Some(preview.plan_digest.as_str()),
+        false,
+        Some(&test_authority()),
+    );
     assert_eq!(stale.status(), Status::Invalid, "{stale:?}");
     assert_eq!(
         stale.reason_codes().first().map(|code| code.as_str()),
@@ -785,7 +792,13 @@ fn rollback_restores_the_exact_previous_generation() {
     );
     // With the destination's pinned inputs restored, the rollback runs.
     write_input(&root, "model/planner.model.json", model);
-    let restored = rollback::apply(&root, &bytes, Some(preview.plan_digest.as_str()), false);
+    let restored = rollback::apply(
+        &root,
+        &bytes,
+        Some(preview.plan_digest.as_str()),
+        false,
+        Some(&test_authority()),
+    );
     assert_eq!(restored.status(), Status::Valid, "{restored:?}");
     assert_eq!(
         history::current(&root)
@@ -1504,9 +1517,12 @@ fn rendered_implementations_invoke_resolved_bindings() {
 }
 
 #[test]
-fn broken_or_missing_live_locks_refuse_rollback() {
-    // The destination compatibility check fails closed: a live lock that
-    // no longer parses, or is missing, refuses the rollback (finding 8).
+fn broken_or_missing_live_authority_refuses_rollback() {
+    // Destination compatibility fails closed (finding 8): a live lock
+    // that no longer parses, or is missing, refuses the rollback, and so
+    // does a live canonical Model that moved — even under unchanged lock
+    // bytes — because the live derived authority no longer matches the
+    // destination's derived custody pins.
     let root = project_root("rollback-lock");
     let ownership = ownership_doc();
     let coverage = coverage_doc();
@@ -1540,11 +1556,127 @@ fn broken_or_missing_live_locks_refuse_rollback() {
         Some(&test_authority()),
     );
     assert_eq!(applied.status(), Status::Valid, "{applied:?}");
-    let generation = history::current(&root).expect("custody").expect("gen");
+    let destination = history::current(&root).expect("custody").expect("gen");
+    // A second generation so the destination differs from the current one.
+    let model_v2 = b"{ \"planner\": true, \"v\": 2 }\n";
+    write_input(&root, "model/planner.model.json", model_v2);
+    let second = plan::build(
+        PlanAction::Regeneration,
+        &admitted,
+        &coverage,
+        vec![InputPin {
+            path: "model/planner.model.json".to_owned(),
+            digest: digest(model_v2),
+        }],
+        &{
+            let record = history::record(&root, &destination).expect("record");
+            let mut before = empty_before();
+            for output in &record.outputs {
+                let bytes = std::fs::read(root.join(&output.path)).expect("generated");
+                before.recorded.insert(
+                    output.path.clone(),
+                    Recorded {
+                        digest: output.digest.clone(),
+                        role: output.role,
+                        owner_module: output.owner_module.clone(),
+                        owner_target: output.owner_target.clone(),
+                        object_ref: output.after_ref.value().cloned(),
+                    },
+                );
+                before.actual.insert(output.path.clone(), digest(&bytes));
+            }
+            before
+        },
+        Some(destination.clone()),
+        None,
+        hash(&coverage),
+    )
+    .expect("plan");
+    let applied = apply::apply(
+        &root,
+        &serde_json::to_vec(&second).expect("wire"),
+        &coverage_bytes,
+        &ownership,
+        Some(second.plan_digest.as_str()),
+        false,
+        Some(&test_authority()),
+    );
+    assert_eq!(applied.status(), Status::Valid, "{applied:?}");
+    let destination_inputs_restored = || {
+        let preview = rollback::build(&root, &destination).expect("rollback plan");
+        let bytes = serde_json::to_vec(&preview).expect("wire");
+        // The destination's explicit inputs are the first model revision;
+        // put them back so only the authority under test can be the
+        // reason for a refusal.
+        write_input(&root, "model/planner.model.json", model);
+        (preview.plan_digest, bytes)
+    };
+    // A live lock that no longer parses: the destination lock revision
+    // cannot be confirmed, so the rollback is refused before any byte
+    // moves.
     write_input(&root, "lekalo.lock", b"broken lock");
-    assert!(rollback::build(&root, &generation).is_err());
+    let (digest_value, bytes) = destination_inputs_restored();
+    let refused = rollback::apply(
+        &root,
+        &bytes,
+        Some(digest_value.as_str()),
+        false,
+        Some(&test_authority()),
+    );
+    assert_eq!(refused.status(), Status::Invalid, "{refused:?}");
+    assert_eq!(
+        refused.reason_codes().first().map(|code| code.as_str()),
+        Some("managed.plan-stale")
+    );
+    // A missing lock fails closed the same way.
     let _ = std::fs::remove_file(root.join("lekalo.lock"));
-    assert!(rollback::build(&root, &generation).is_err());
+    let (digest_value, bytes) = destination_inputs_restored();
+    let refused = rollback::apply(
+        &root,
+        &bytes,
+        Some(digest_value.as_str()),
+        false,
+        Some(&test_authority()),
+    );
+    assert_eq!(refused.status(), Status::Invalid, "{refused:?}");
+    // A moved canonical Model under unchanged lock bytes: the live derived
+    // authority (exactly what the CLI presents) no longer matches the
+    // destination's derived custody pins.
+    write_test_lock(&root);
+    let mut moved = test_authority();
+    moved.model_digest = PIN_C.to_owned();
+    let (digest_value, bytes) = destination_inputs_restored();
+    let refused = rollback::apply(
+        &root,
+        &bytes,
+        Some(digest_value.as_str()),
+        false,
+        Some(&moved),
+    );
+    assert_eq!(refused.status(), Status::Invalid, "{refused:?}");
+    assert_eq!(
+        refused.reason_codes().first().map(|code| code.as_str()),
+        Some("managed.plan-stale")
+    );
+    // Without any live authority the refusal is unconditional.
+    let (digest_value, bytes) = destination_inputs_restored();
+    let refused = rollback::apply(&root, &bytes, Some(digest_value.as_str()), false, None);
+    assert_eq!(refused.status(), Status::Invalid, "{refused:?}");
+    // With the exact destination authority back, the rollback runs and
+    // restores the recorded bytes.
+    let (digest_value, bytes) = destination_inputs_restored();
+    let restored = rollback::apply(
+        &root,
+        &bytes,
+        Some(digest_value.as_str()),
+        false,
+        Some(&test_authority()),
+    );
+    assert_eq!(restored.status(), Status::Valid, "{restored:?}");
+    assert_eq!(
+        history::current(&root).expect("custody").expect("gen"),
+        destination
+    );
     let _ = std::fs::remove_dir_all(&root);
 }
 

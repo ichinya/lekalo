@@ -410,7 +410,7 @@ fn staged_apply(
     let mut closure: BTreeMap<String, InputPin> = BTreeMap::new();
     if let Some(record) = &previous_record {
         for pin in &record.input_closure {
-            if pin.path.starts_with(".lekalo/managed-authority/") {
+            if pin.path.starts_with(super::AUTHORITY_PIN_PREFIX) {
                 continue;
             }
             closure.insert(pin.path.clone(), pin.clone());
@@ -426,7 +426,7 @@ fn staged_apply(
             ("lock", &authority.lock_digest),
         ] {
             closure.insert(
-                format!(".lekalo/managed-authority/{name}"),
+                format!("{}{name}", super::AUTHORITY_PIN_PREFIX),
                 InputPin {
                     path: format!(".lekalo/managed-authority/{name}"),
                     digest: digest_value.clone(),

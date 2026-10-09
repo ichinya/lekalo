@@ -15,8 +15,8 @@ use super::fs;
 use super::history;
 use super::plan::require_confirmation;
 use super::wire::{
-    DeleteOp, GenerationDigest, Pending, PendingOp, RestoreOp, RollbackPlan, State, Transaction,
-    TransactionAction, TransactionState,
+    DeleteOp, GenerationDigest, GenerationRecord, Pending, PendingOp, RestoreOp, RollbackPlan,
+    State, Transaction, TransactionAction, TransactionState,
 };
 use super::{
     detail, plan_digest, verify_rollback_plan, DomainResult, GENERATED_DRIFT, INPUT_INVALID,
@@ -61,6 +61,73 @@ fn refused(reason: &str) -> DomainResult {
 
 fn drift(path: &str, reason: &str) -> DomainResult {
     diagnostic::failure(GENERATED_DRIFT, &[("path", path), ("reason", reason)])
+}
+
+/// Destination compatibility (finding 8): the destination generation was
+/// admitted under an exact canonical Model/IR/lock authority, and the live
+/// project must still derive exactly that authority before its bytes may
+/// be restored. The lock revision rides the authenticated record identity,
+/// so the destination pins are custody evidence, not caller claims; the
+/// derived authority pins additionally bind the stable generation identity
+/// to the Model and IR it was rendered from, so a moved canonical Model —
+/// even under unchanged lock bytes — makes the destination incompatible
+/// until the caller restores the retained inputs. Every check runs before
+/// any mutation and again under the mutation lock; a caller that cannot
+/// derive the live authority fails closed.
+fn check_destination_compatibility(
+    root: &std::path::Path,
+    destination_record: &GenerationRecord,
+    current_record: &GenerationRecord,
+    authority: Option<&super::authority::Authority>,
+) -> Result<(), DomainResult> {
+    if let (Some(destination_lock), Some(current_lock)) = (
+        destination_record.lock_pin.value(),
+        current_record.lock_pin.value(),
+    ) {
+        // The destination's pinned lock must be exactly the live project
+        // lock: a replaced or broken lock file makes the destination
+        // incompatible until the caller restores the retained inputs.
+        let live = live_lock_digest(root);
+        if live.as_deref() != Some(destination_lock.as_str()) {
+            return Err(diagnostic::failure(PLAN_STALE, &detail("destination-lock")));
+        }
+        let _ = current_lock;
+    } else if destination_record.lock_pin.value().is_some() {
+        return Err(refused("lock"));
+    }
+    // The derived authority pins bind the committed closure to the exact
+    // Model/IR/lock the generation was admitted under. A caller that does
+    // not present the live derived authority can never prove compatibility.
+    if destination_record
+        .input_closure
+        .iter()
+        .any(|pin| pin.path.starts_with(super::AUTHORITY_PIN_PREFIX))
+    {
+        let Some(live) = authority else {
+            return Err(refused("authority"));
+        };
+        for (name, live_digest) in [
+            ("model", &live.model_digest),
+            ("ir", &live.ir_digest),
+            ("lock", &live.lock_digest),
+        ] {
+            let pinned = format!("{}{name}", super::AUTHORITY_PIN_PREFIX);
+            match destination_record
+                .input_closure
+                .iter()
+                .find(|pin| pin.path == pinned)
+            {
+                Some(pin) if &pin.digest == live_digest => {}
+                _ => {
+                    return Err(diagnostic::failure(
+                        PLAN_STALE,
+                        &detail("destination-authority"),
+                    ))
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Build the exact rollback plan for the retained destination generation.
@@ -177,11 +244,17 @@ fn check_baseline(
 }
 
 /// Execute (or preview) one confirmed rollback.
+///
+/// `authority` is the live generation authority the caller derived from the
+/// current project (the CLI derives it through the accepted loader
+/// pipeline); the destination is compatible only while it still matches
+/// the destination's derived custody pins (finding 8).
 pub fn apply(
     root: &std::path::Path,
     plan_bytes: &[u8],
     confirm: Option<&str>,
     dry_run: bool,
+    authority: Option<&super::authority::Authority>,
 ) -> DomainResult {
     let plan = match verify_rollback_plan(plan_bytes) {
         Ok(plan) => plan,
@@ -226,36 +299,21 @@ pub fn apply(
         return refused("ownership");
     }
     // Canonical Model/IR/lock compatibility (finding 8): the destination
-    // record pins the exact lock revision its generation was admitted
-    // under. The live project must still carry that exact lock revision —
-    // a moved canonical query or a replaced/broken lock file makes the
-    // destination incompatible until the caller restores the retained
-    // inputs. The lock pin rides the authenticated record identity, so
-    // the destination pin is custody evidence, not a caller claim.
-    if let (Some(destination_lock), Some(current_lock)) = (
-        destination_record.lock_pin.value(),
-        current_record.lock_pin.value(),
-    ) {
-        // The destination's pinned lock must be exactly the live project
-        // lock: a moved canonical query or a replaced/broken lock file
-        // makes the destination incompatible until the caller restores
-        // the retained inputs (finding 8).
-        let live = live_lock_digest(root);
-        if live.as_deref() != Some(destination_lock.as_str()) {
-            return diagnostic::failure(PLAN_STALE, &detail("destination-lock"));
-        }
-        let _ = current_lock;
-    } else if destination_record.lock_pin.value().is_some() {
-        return refused("lock");
+    // generation is restorable only while the live project still derives
+    // the exact authority it was admitted under.
+    if let Err(error) =
+        check_destination_compatibility(root, &destination_record, &current_record, authority)
+    {
+        return error;
     }
     // Destination input closure: every pinned input of the destination
     // generation must still exist with its exact recorded bytes — the
     // current Model and attachments are still the ones the destination was
     // generated from. Derived authority pins (`.lekalo/managed-authority/*`)
     // are the committed Model/IR/lock custody evidence, not project files:
-    // they are revalidated against the live lock digest below instead.
+    // they are revalidated against the live authority above.
     for pin in &destination_record.input_closure {
-        if pin.path.starts_with(".lekalo/managed-authority/") {
+        if pin.path.starts_with(super::AUTHORITY_PIN_PREFIX) {
             continue;
         }
         match fs::read_file(root, &pin.path) {
@@ -329,6 +387,10 @@ pub fn apply(
     };
     let result = (|| {
         history::assert_reconciled(root)?;
+        // Destination compatibility is revalidated under the mutation
+        // lock: a racer that moved the lock, the canonical Model, or the
+        // IR after the preflight cannot win (finding P).
+        check_destination_compatibility(root, &destination_record, &current_record, authority)?;
         // The baseline is revalidated under the mutation lock: a racer
         // that edited a touched file after the preflight cannot win.
         let baseline = current_baseline(root)?;
