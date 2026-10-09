@@ -87,10 +87,7 @@ fn executed_receipts(ctx: &AdoptionContext) -> Vec<ExecutedReceipt> {
 /// whose writes touched a path the row actually consumes — its observed
 /// location, candidates, linked tests, or (for rows joined from the
 /// conformed registry alone) the recorded source path (X11).
-fn row_verification(
-    row_paths: &BTreeSet<String>,
-    receipts: &[ExecutedReceipt],
-) -> Option<String> {
+fn row_verification(row_paths: &BTreeSet<String>, receipts: &[ExecutedReceipt]) -> Option<String> {
     let mut joined: BTreeSet<String> = BTreeSet::new();
     for receipt in receipts {
         if receipt.paths.iter().any(|path| row_paths.contains(path)) {
