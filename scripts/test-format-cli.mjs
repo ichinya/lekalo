@@ -307,6 +307,27 @@ try {
     passed += 1;
   }
 
+  // 6b. Producer/schema parity for the admitted module-directory grammar
+  //     (finding r4 8): the loader admits portable segments that start
+  //     with a digit and contain dots; the report pattern must accept
+  //     exactly what the formatter emits for such a project.
+  {
+    const project = seed("digit-module", "planner-canonical");
+    const renamed = join(project, "lekalo/modules/1scheduling");
+    cpSync(join(project, "lekalo/modules/scheduling"), renamed, { recursive: true });
+    rmSync(join(project, "lekalo/modules/scheduling"), { recursive: true, force: true });
+    const output = run(project, ["format", "--check", "--json"]);
+    assert.equal(output.status, 0, output.stdout + output.stderr);
+    const report = output.json().format;
+    assert.ok(
+      report.files.some((entry) => entry.path === "lekalo/modules/1scheduling/module.yaml"),
+      `the admitted digit-leading path is emitted: ${JSON.stringify(report.files.map((entry) => entry.path))}`,
+    );
+    assertReport(report, "digit-leading module directory report validates");
+    rmSync(project, { recursive: true, force: true });
+    passed += 1;
+  }
+
   // 7. The committed planner fixture is stable on this platform.
   {
     const project = seed("planner-golden", "planner-canonical");
