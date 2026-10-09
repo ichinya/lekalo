@@ -183,7 +183,10 @@ for (const name of list("security")) {
 
 for (const name of list("upgrade")) {
   const vector = JSON.parse(read(`upgrade/${name}`));
-  const decoded = sdk.decodeRequest(JSON.stringify(vector.request));
+  // Raw-byte lexical rows (issue #106 review r3 #3) replay the exact
+  // fixture bytes — no re-serialization that would normalize the number
+  // spelling away.
+  const decoded = sdk.decodeRequest(vector.rawRequest ?? JSON.stringify(vector.request));
   let accepted = decoded.ok;
   let reason = decoded.ok ? null : decoded.reason;
   if (decoded.ok) {

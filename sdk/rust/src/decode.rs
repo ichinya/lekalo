@@ -1681,6 +1681,7 @@ pub fn validate_request(value: &Value) -> Result<(), Refusal> {
             .and_then(Value::as_array)
             .unwrap_or(&[])
         {
+            let path = binding.get("path").and_then(Value::as_str).unwrap_or("");
             let native_id = binding
                 .get("nativeId")
                 .and_then(Value::as_str)

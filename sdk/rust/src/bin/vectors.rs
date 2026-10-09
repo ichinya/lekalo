@@ -480,7 +480,13 @@ fn main() {
                 continue;
             }
         };
-        let request_text = sdk::canonical(&vector.get("request").cloned().unwrap_or(Value::Null));
+        // Raw-byte lexical rows (issue #106 review r3 #3) replay the
+        // exact fixture bytes — no canonical re-serialization that would
+        // normalize the number spelling away.
+        let request_text = match vector.get("rawRequest").and_then(Value::as_str) {
+            Some(raw) => raw.to_owned(),
+            None => sdk::canonical(&vector.get("request").cloned().unwrap_or(Value::Null)),
+        };
         let accepted = match sdk::decode_request(&request_text) {
             Err(refusal) => (false, refusal.reason),
             Ok(request) => match sdk::validate_request(&request) {

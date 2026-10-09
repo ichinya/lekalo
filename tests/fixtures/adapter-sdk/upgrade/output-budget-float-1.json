@@ -1,5 +1,9 @@
 {
-  "accept": true,
+  "accept": false,
+  "lexical": [
+    "\"max_output_bytes\":1",
+    "\"max_output_bytes\":1e6"
+  ],
   "limits": {
     "max_output_bytes": 1,
     "timeout_ms": 600000
@@ -7,15 +11,6 @@
   "name": "output-budget-float-1",
   "operation": "describe",
   "protocolVersion": "0.3.2",
-  "request": {
-    "operation": "describe",
-    "project_root": ".",
-    "protocol": "lekalo.target/v1",
-    "protocol_version": "0.3.2",
-    "request_id": "req-a4ab66d5f715888fa8d16943888543eee665553ef8838303739bbc009f091985",
-    "limits": {
-      "max_output_bytes": 1,
-      "timeout_ms": 600000
-    }
-  }
+  "reason": "shape",
+  "rawRequest": "{\"limits\":{\"max_output_bytes\":1e6,\"timeout_ms\":600000},\"operation\":\"describe\",\"project_root\":\".\",\"protocol\":\"lekalo.target/v1\",\"protocol_version\":\"0.3.2\",\"request_id\":\"req-a4ab66d5f715888fa8d16943888543eee665553ef8838303739bbc009f091985\"}"
 }

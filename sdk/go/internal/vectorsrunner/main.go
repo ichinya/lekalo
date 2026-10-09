@@ -400,7 +400,13 @@ func runUpgrade(corpus string) {
 			record("upgrade/"+name, false, "unparseable")
 			continue
 		}
+		// Raw-byte lexical rows (issue #106 review r3 #3) replay the exact
+		// fixture bytes — no canonical re-serialization that would
+		// normalize the number spelling away.
 		requestText := sdk.Canonical(vector["request"])
+		if raw, ok := vector["rawRequest"].(string); ok {
+			requestText = raw
+		}
 		accepted := false
 		reason := ""
 		if _, refusal := sdk.AdmitRequest(requestText); refusal != nil {

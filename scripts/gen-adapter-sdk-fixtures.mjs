@@ -541,7 +541,19 @@ const invalidVectors = [
   ["request-bad-request-id", { ...describeRequest, request_id: "req-deadbeef" }, "decode", "request-id"],
   ["request-unknown-operation", { ...describeRequest, operation: "transpile" }, "decode", "operation"],
   ["request-root-absolute", { ...describeRequest, project_root: "/tmp" }, "decode", "grammar"],
-  ["limits-zero-timeout", { ...describeRequest, limits: { timeout_ms: 0 } }, "decode", "bounds"],
+  ["limits-zero-timeout", { ...describeRequest, limits: { max_output_bytes: 10000, timeout_ms: 0 } }, "decode", "bounds"],
+  // Production requires BOTH limits members whenever `limits` is present
+  // and refuses float lexemes with `shape` (issue #106 review r3 #3):
+  // the SDKs used to admit partial objects and integral floats.
+  ["limits-missing-max-output", { ...describeRequest, limits: { timeout_ms: 600000 } }, "decode", "shape"],
+  ["limits-missing-timeout", { ...describeRequest, limits: { max_output_bytes: 10000 } }, "decode", "shape"],
+  ["limits-empty-object", { ...describeRequest, limits: {} }, "decode", "shape"],
+  // Production gates the lint-request identifier members with the strict
+  // ai-lint token grammar (issue #106 review r3 #5): charset violations
+  // refuse with the same per-member vocabulary as the SDKs.
+  ["lint-request-bad-scope-token", { ...lintRequest, lint_request: { ...lintRequest.lint_request, scope: ["src", "sr世c"] } }, "validate", "lint-request"],
+  ["lint-binding-bad-native-id", { ...lintRequest, lint_request: { ...lintRequest.lint_request, bindings: [{ ...lintRequest.lint_request.bindings[0], nativeId: "has spaces and unicode" }, lintRequest.lint_request.bindings[1]] } }, "validate", "lint-binding"],
+  ["lint-pin-bad-revision", { ...lintRequest, lint_request: { ...lintRequest.lint_request, pins: { ...lintRequest.lint_request.pins, revision: { state: "known", value: "hello world!! not-a-token" } } } }, "validate", "lint-pin"],
   ["request-trailing-document", `${canonicalJson(describeRequest)}${canonicalJson(describeRequest)}`, "decode", "trailing-document"],
   ["identity-bad-digest", { ...describeResponse, evidence: { adapter: { ...ADAPTER, digest: "sha256:deadbeef" } } }, "decode", "bounds"],
   ["identity-bad-version", { ...describeResponse, evidence: { adapter: { ...ADAPTER, version: "1.0" } } }, "decode", "bounds"],
@@ -571,6 +583,29 @@ const invalidVectors = [
 ];
 for (const [name, envelope, stage, reason] of invalidVectors) {
   writeWire("invalid", name, envelope);
+  writeExpect(name, { reason, stage });
+}
+
+// Raw-text lexical negatives (issue #106 review r3 #3/#4): the exact
+// byte spellings must survive corpus authoring, so these rows are
+// authored as strings — a JS number field would normalize `1.0` to `1`
+// at write time and the float class would be exercised nowhere.
+const floatLexemeBase = {
+  ...describeRequest,
+  limits: { max_output_bytes: 10000, timeout_ms: 600000 },
+  request_id: R("limits-lexeme"),
+};
+const rawInvalidVectors = [
+  ["limits-float-fraction", canonicalJson(floatLexemeBase).replace('"max_output_bytes":10000', '"max_output_bytes":1.0'), "decode", "shape"],
+  ["limits-float-exponent", canonicalJson(floatLexemeBase).replace('"max_output_bytes":10000', '"max_output_bytes":1e2'), "decode", "shape"],
+  ["limits-number-leading-zero", canonicalJson(floatLexemeBase).replace('"timeout_ms":600000', '"timeout_ms":010000'), "decode", "not-json"],
+  ["limits-number-trailing-point", canonicalJson(floatLexemeBase).replace('"max_output_bytes":10000', '"max_output_bytes":10000.'), "decode", "not-json"],
+  // A raw control byte inside a string member: every strict parser
+  // refuses the document (production's serde refuses the same bytes).
+  ["request-raw-newline", canonicalJson(describeRequest).replace(/"request_id":"req-/, '"request_id":"req-\n'), "decode", "not-json"],
+];
+for (const [name, text, stage, reason] of rawInvalidVectors) {
+  writeWire("invalid", name, text);
   writeExpect(name, { reason, stage });
 }
 
@@ -738,6 +773,60 @@ const semanticVectors = [
     name: "semantic-scenario-result-unknown-status",
     result: { findings: [], status: "green" },
   },
+  // Multi-span lint evidence (issue #106 review r3 #7/#10): uniqueItems
+  // is deep value equality, so two DISTINCT spans must be admitted and
+  // two deep-equal spans refused regardless of member order. The old
+  // TypeScript dedup key collapsed every span to "{}" and refused all
+  // multi-location evidence; PHP's order-sensitive json_encode key let
+  // permuted duplicates pass.
+  {
+    expect: "accept",
+    kind: "validate-before-write",
+    name: "semantic-lint-evidence-two-distinct-spans",
+    request: lintRequest,
+    response: {
+      ...lintResponse,
+      result: {
+        lint_evidence: {
+          ...lintResponse.result.lint_evidence,
+          locations: [lintResponse.result.lint_evidence.locations[0], { ...lintResponse.result.lint_evidence.locations[0], end: 22, id: "span-user-model-2", start: 10 }],
+        },
+      },
+    },
+  },
+  {
+    expect: "reject:bounds",
+    kind: "validate-before-write",
+    name: "semantic-lint-evidence-identical-spans",
+    request: lintRequest,
+    response: {
+      ...lintResponse,
+      result: {
+        lint_evidence: {
+          ...lintResponse.result.lint_evidence,
+          locations: [lintResponse.result.lint_evidence.locations[0], lintResponse.result.lint_evidence.locations[0]],
+        },
+      },
+    },
+  },
+  {
+    expect: "reject:bounds",
+    kind: "validate-before-write",
+    name: "semantic-lint-evidence-permuted-span-duplicate",
+    request: lintRequest,
+    response: {
+      ...lintResponse,
+      result: {
+        lint_evidence: {
+          ...lintResponse.result.lint_evidence,
+          locations: [
+            { ...lintResponse.result.lint_evidence.locations[0], end: 22, id: "span-user-model-2", start: 10 },
+            { column: 1, end: 22, endColumn: 3, endLine: 2, id: "span-user-model-2", line: 1, source: "src/domain/user.php", start: 10 },
+          ],
+        },
+      },
+    },
+  },
 ];
 for (const vector of semanticVectors) {
   writeDoc("semantic", vector.name, vector);
@@ -884,12 +973,16 @@ const upgradeRows = [
   { accept: false, name: "lint-pin-ir-unknown", lintPins: { ir: { state: "unknown" } }, operation: "lint", protocolVersion: "0.6.4", reason: "lint-pin" },
   { accept: false, name: "lint-pin-ir-bad-digest", lintPins: { ir: { state: "known", value: "sha256:zzz" } }, operation: "lint", protocolVersion: "0.6.4", reason: "lint-pin" },
   { accept: false, name: "lint-pin-observed-bad-digest", lintPins: { observed: { state: "known", value: "not-a-digest" } }, operation: "lint", protocolVersion: "0.6.4", reason: "lint-pin" },
-  // Tighter output budgets (issue #106 review r2 #4/#5/#17): both the
-  // integer and integral-float spellings of limits.max_output_bytes are
-  // admitted requests; the emitted-envelope ceiling they declare is
-  // serve-loop behavior proven in the four-language serve lanes.
+  // Tighter output budgets (issue #106 review r2 #4/#5/#17): the
+  // integer spelling of a tiny limit is an admitted request whose
+  // emitted-envelope ceiling is serve-loop behavior proven in the
+  // four-language serve lanes. The FLOAT spelling row carries the exact
+  // raw request bytes (issue #106 review r3 #3): a JS number field
+  // would normalize `1e6` to `1` at write time, so the lexical negative
+  // is authored as text and every codec must refuse it with `shape`,
+  // exactly like the production oracle over the same bytes.
   { accept: true, limits: { max_output_bytes: 1, timeout_ms: 600000 }, name: "output-budget-int-1", operation: "describe", protocolVersion: "0.3.2" },
-  { accept: true, limits: { max_output_bytes: 1.0, timeout_ms: 600000 }, name: "output-budget-float-1", operation: "describe", protocolVersion: "0.3.2" },
+  { accept: false, lexical: ["\"max_output_bytes\":1", "\"max_output_bytes\":1e6"], limits: { max_output_bytes: 1, timeout_ms: 600000 }, name: "output-budget-float-1", operation: "describe", protocolVersion: "0.3.2", reason: "shape" },
 ];
 /** Apply the row's pin mutations over the base lint request. */
 function applyLintPins(base, pins) {
@@ -914,6 +1007,15 @@ for (const row of upgradeRows) {
     // The row pins the exact version under test: the lint seam only
     // negotiates on 0.6.4, so a 0.3.2 lint row must keep its version.
     envelope.protocol_version = row.protocolVersion;
+  }
+  if (row.lexical) {
+    // Raw-byte lexical rows: the canonical request text with the exact
+    // number spelling spliced in, stored as a string so no JSON
+    // round-trip normalizes the lexeme away. Runners and the oracle
+    // replay THESE bytes.
+    const requestText = canonicalJson(envelope).replace(row.lexical[0], row.lexical[1]);
+    writeDoc("upgrade", row.name, { ...row, rawRequest: requestText });
+    continue;
   }
   writeDoc("upgrade", row.name, { ...row, request: envelope });
 }

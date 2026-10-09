@@ -285,7 +285,12 @@ foreach ($list('security') as $name) {
 // ---- upgrade/ ----
 foreach ($list('upgrade') as $name) {
     $vector = json_decode($read("upgrade/{$name}"), true);
-    $requestText = Json::canonicalJson($vector['request']);
+    // Raw-byte lexical rows (issue #106 review r3 #3) replay the exact
+    // fixture bytes — no canonical re-serialization that would normalize
+    // the number spelling away.
+    $requestText = isset($vector['rawRequest']) && is_string($vector['rawRequest'])
+        ? $vector['rawRequest']
+        : Json::canonicalJson($vector['request']);
     $accepted = false;
     $reason = '';
     $decoded = Decode::admitRequest($requestText);
