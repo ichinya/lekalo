@@ -55,6 +55,11 @@ const MANIFEST: &str = "manifest.json";
 /// The rename-temp home inside the formatter runtime (finding r2 3):
 /// temps live here, never as siblings inside the governed source tree.
 const TEMP_HOME: &str = ".lekalo/cache/format/temps";
+/// The final segment of [`TEMP_HOME`]: the single reserved name inside
+/// the formatter home that is runtime custody, never a plan home. The
+/// reader gate and the recovery enumeration share this exact constant
+/// (finding r4 3).
+const TEMP_HOME_NAME: &str = "temps";
 
 /// The producer-accepted runtime temp spelling: a name ending in
 /// `.` + [`TEMP_SUFFIX`] (e.g.
@@ -304,6 +309,15 @@ pub(crate) fn recovery_code(fs: &crate::project_fs::Fs) -> Option<&'static str> 
         if entry_type != crate::project_fs::EntryType::Directory {
             continue;
         }
+        // The rename-temp home is runtime custody, never a plan home
+        // (finding r4 3): a `journal.json` planted inside `temps/` would
+        // otherwise block every reader forever, while the mutating run —
+        // which deliberately filters `temps` out of the plan-home set —
+        // could never recover or clear it. The plan-home reader gate and
+        // the recovery set now agree on the same closed enumeration.
+        if name == TEMP_HOME_NAME {
+            continue;
+        }
         if matches!(
             fs.entry_type(&format!("{FORMAT_HOME}/{name}"), JOURNAL),
             Ok(crate::project_fs::EntryType::File)
@@ -432,7 +446,7 @@ fn plan_directories_from(write: &FormatWrite) -> Vec<String> {
                 .map(|metadata| metadata.is_dir() && !metadata.file_type().is_symlink())
                 .unwrap_or(false)
         })
-        .filter(|entry| entry.file_name() != "temps")
+        .filter(|entry| entry.file_name() != TEMP_HOME_NAME)
         .filter_map(|entry| entry.file_name().to_str().map(str::to_owned))
         .collect();
     names.sort();

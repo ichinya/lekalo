@@ -1252,3 +1252,39 @@ fn quoted_scalar_trailing_comments_are_preserved_everywhere() {
         );
     });
 }
+
+#[test]
+fn a_journal_in_the_temp_home_never_blocks_readers() {
+    // Finding r4 3 (low): the reader gate treated any directory under
+    // the formatter home — including the rename-temp home `temps` — as
+    // a plan home, so a planted `temps/journal.json` blocked every
+    // reader forever while `format` (which excludes `temps` from the
+    // plan-home set) could never remediate it. The gate now skips the
+    // runtime temp home exactly like recovery does.
+    in_sandbox("temps-journal", "planner-canonical", |root| {
+        let temps = root.join(".lekalo/cache/format/temps");
+        fs::create_dir_all(&temps).expect("temp home");
+        fs::write(temps.join("journal.json"), b"{\"planted\":true}\n").expect("planted record");
+        let load = lekalo_core::loader::run(
+            &lekalo_core::loader::LoadSelection {
+                project: Some(".".to_owned()),
+            },
+            false,
+        );
+        assert_eq!(load.status(), Status::Valid, "readers are not blocked by temps custody");
+        let check = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Check), None);
+        assert_eq!(check.status(), Status::Valid, "check is not blocked either");
+        // And a genuine plan home still blocks: the gate keeps its teeth.
+        let real = root.join(".lekalo/cache/format/abc123");
+        fs::create_dir_all(&real).expect("plan home");
+        fs::write(real.join("journal.json"), b"{\"schema_version\":\"lekalo/format-transaction/v0.8.0\"}\n").expect("real journal");
+        let blocked = lekalo_core::loader::run(
+            &lekalo_core::loader::LoadSelection {
+                project: Some(".".to_owned()),
+            },
+            false,
+        );
+        assert_eq!(blocked.status(), Status::Invalid);
+        assert_eq!(first_reason(&blocked), "format.recovery-required");
+    });
+}
