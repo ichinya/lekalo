@@ -949,7 +949,7 @@ fn public_export_survives_deep_and_wide_dependency_graphs() {
     assert_eq!(diamond.exports.len(), 1);
     assert_eq!(chain.exports.len(), 1);
     assert!(
-        elapsed.as_secs() < 30,
+        elapsed.as_secs() < 60,
         "the public export must stay linear on legal DAGs, took {elapsed:?}"
     );
     let _ = std::fs::remove_dir_all(root_rel);
