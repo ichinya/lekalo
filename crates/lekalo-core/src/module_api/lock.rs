@@ -120,23 +120,38 @@ pub fn check_lock(current: &ConsumerLock, supplied: &ConsumerLock) -> Vec<Eviden
         .map(|dependency| (dependency.module_id.as_str(), dependency.digest.as_str()))
         .collect();
     for dependency in &current.public_dependencies {
-        if supplied_deps
-            .get(dependency.module_id.as_str())
-            .is_some_and(|digest| *digest != dependency.digest)
-        {
-            let mut finding = Evidence::new(
-                "module-api.lock-stale",
-                &supplied.consumer,
-                "lock-dependency-digest",
-            );
-            finding.consumer = Some(supplied.consumer.clone());
-            finding.producer = Some(current.producer.module.clone());
-            finding.path = vec![dependency.module_id.clone()];
-            finding.expected = Some(dependency.digest.clone());
-            finding.actual = supplied_deps
-                .get(dependency.module_id.as_str())
-                .map(|digest| (*digest).to_owned());
-            evidence.push(finding);
+        match supplied_deps.get(dependency.module_id.as_str()) {
+            Some(digest) if *digest == dependency.digest => {}
+            Some(_) => {
+                let mut finding = Evidence::new(
+                    "module-api.lock-stale",
+                    &supplied.consumer,
+                    "lock-dependency-digest",
+                );
+                finding.consumer = Some(supplied.consumer.clone());
+                finding.producer = Some(current.producer.module.clone());
+                finding.path = vec![dependency.module_id.clone()];
+                finding.expected = Some(dependency.digest.clone());
+                finding.actual = supplied_deps
+                    .get(dependency.module_id.as_str())
+                    .map(|digest| (*digest).to_owned());
+                evidence.push(finding);
+            }
+            None => {
+                // A required pin absent from the supplied lock is as stale
+                // as a changed digest (finding 15: symmetric dep diff).
+                let mut finding = Evidence::new(
+                    "module-api.lock-stale",
+                    &supplied.consumer,
+                    "lock-dependency-missing",
+                );
+                finding.consumer = Some(supplied.consumer.clone());
+                finding.producer = Some(current.producer.module.clone());
+                finding.path = vec![dependency.module_id.clone()];
+                finding.expected = Some(dependency.digest.clone());
+                finding.actual = Some("absent".to_owned());
+                evidence.push(finding);
+            }
         }
     }
     // The selected public ids: a changed selection is a resolution change.

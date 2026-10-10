@@ -548,6 +548,19 @@ fn seal_bundle(value: &mut serde_json::Value) {
     value["digest"] = serde_json::Value::String(String::new());
     for export in value["exports"].as_array_mut().unwrap().iter_mut() {
         export["version"] = serde_json::Value::from(0);
+        // The wire projection skips empty arrays and nulls; the digest
+        // domain is computed over the decoded projection, so the sealed
+        // spelling must drop them too.
+        let empty_keys: Vec<String> = export
+            .as_object()
+            .expect("export object")
+            .iter()
+            .filter(|(_, v)| v.as_array().is_some_and(Vec::is_empty) || v.is_null())
+            .map(|(k, _)| k.clone())
+            .collect();
+        for key in empty_keys {
+            export.as_object_mut().unwrap().remove(&key);
+        }
     }
     let canonical = lekalo_core::module_api::wire::canonical(&*value);
     let digest = format!(
@@ -961,4 +974,280 @@ fn error_exports_carry_registry_facts() {
     assert_eq!(error_export.export, "planner.task_not_found");
     assert_eq!(error_export.code.as_deref(), Some("LEK-ERR-005"));
     assert_eq!(error_export.retryable, Some(false));
+}
+
+#[test]
+fn every_public_field_flip_is_visible_to_the_diff() {
+    // Finding 6: a fixture that flips every public semantic field
+    // independently must report a change with the documented class.
+    let base = serde_json::json!({
+        "schemaVersion": "lekalo/module-public-contract/v0.8.0",
+        "identity": "dev.lekalo.module-public-contract@0.8.0",
+        "producer": { "project": "flow", "module": "tasks" },
+        "apiVersion": "2.0.0",
+        "digest": "",
+        "pins": {
+            "modelVersion": "0.2.16",
+            "irDigest": format!("sha256:{}", "a".repeat(64)),
+            "sourceRevision": { "state": "unknown" }
+        },
+        "exports": [
+            { "export": "tasks.level", "kind": "scalar", "version": 0,
+              "base": "uuid" },
+            { "export": "tasks.state", "kind": "enum", "version": 0,
+              "values": ["open"] },
+            { "export": "tasks.record", "kind": "entity", "version": 0,
+              "fields": [{ "name": "id", "required": true,
+                           "type": { "ref": "tasks.level" } }],
+              "identity": ["id"] },
+            { "export": "tasks.pick", "kind": "command", "version": 0,
+              "input": [{ "name": "id", "required": true,
+                          "type": { "ref": "tasks.level" } }],
+              "effects": [{ "entity": "tasks.record",
+                            "operation": "update", "emits": [] }] },
+            { "export": "tasks.read", "kind": "query", "version": 0,
+              "reads": ["tasks.record"],
+              "returns": { "ref": "tasks.record" } },
+            { "export": "tasks.made", "kind": "event", "version": 0,
+              "payload": [{ "name": "id", "required": true,
+                            "type": { "ref": "tasks.level" } }] },
+            { "export": "tasks.call", "kind": "endpoint", "version": 0,
+              "invokes": "tasks.pick", "method": "post", "path": "/pick" },
+            { "export": "tasks.guard", "kind": "policy", "version": 0,
+              "operations": ["tasks.pick"], "decision": "allow" }
+        ],
+        "publicDependencies": [],
+        "ports": [{ "port": "tasks.api",
+                    "operations": ["tasks.pick", "tasks.read"] }],
+        "capabilities": [{ "capability": "http", "obligation": "required",
+                           "owner": null, "version": null }],
+        "deprecations": []
+    });
+    let mut base_sealed = base.clone();
+    seal_bundle(&mut base_sealed);
+    let base_bytes = serde_json::to_vec(&base_sealed).expect("serializes");
+    let flip = |mutate: &dyn Fn(&mut serde_json::Value)| -> Vec<String> {
+        let mut after = base.clone();
+        mutate(&mut after);
+        seal_bundle(&mut after);
+        let (report, _) = lekalo_core::module_api::compare_public(
+            &base_bytes,
+            &serde_json::to_vec(&after).expect("serializes"),
+            None,
+            None,
+        )
+        .expect("diff runs");
+        report
+            .changes
+            .iter()
+            .map(|change| change.reason.to_owned())
+            .collect()
+    };
+    // Scalar base.
+    let reasons = flip(&|value| value["exports"][0]["base"] = "string".into());
+    assert!(reasons.contains(&"base-changed".to_owned()), "{reasons:?}");
+    // Enum values: added and removed.
+    let reasons = flip(&|value| {
+        value["exports"][1]["values"] = serde_json::json!(["open", "done"]);
+    });
+    assert!(
+        reasons.contains(&"enum-value-added".to_owned()),
+        "{reasons:?}"
+    );
+    let reasons = flip(&|value| {
+        value["exports"][1]["values"] = serde_json::json!([]);
+    });
+    assert!(
+        reasons.contains(&"enum-value-removed".to_owned()),
+        "{reasons:?}"
+    );
+    // Entity identity and fields.
+    let reasons = flip(&|value| {
+        value["exports"][2]["identity"] = serde_json::json!([]);
+    });
+    assert!(
+        reasons.contains(&"identity-changed".to_owned()),
+        "{reasons:?}"
+    );
+    let reasons = flip(&|value| {
+        value["exports"][2]["fields"] = serde_json::json!([]);
+    });
+    assert!(reasons.contains(&"field-removed".to_owned()), "{reasons:?}");
+    // Command input and effect obligations.
+    let reasons = flip(&|value| {
+        value["exports"][3]["input"] = serde_json::json!([]);
+    });
+    assert!(reasons.contains(&"field-removed".to_owned()), "{reasons:?}");
+    let reasons = flip(&|value| {
+        value["exports"][3]["effects"] = serde_json::json!([]);
+    });
+    assert!(
+        reasons.contains(&"effect-removed".to_owned()),
+        "{reasons:?}"
+    );
+    let reasons = flip(&|value| {
+        value["exports"][3]["effects"][0]["emits"] = serde_json::json!(["tasks.made"]);
+    });
+    assert!(
+        reasons.contains(&"effect-emits-changed".to_owned()),
+        "{reasons:?}"
+    );
+    // Query reads and result.
+    let reasons = flip(&|value| {
+        value["exports"][4]["reads"] = serde_json::json!([]);
+    });
+    assert!(reasons.contains(&"reads-changed".to_owned()), "{reasons:?}");
+    let reasons = flip(&|value| {
+        value["exports"][4]["returns"] = serde_json::json!({ "ref": "tasks.level" });
+    });
+    assert!(
+        reasons.contains(&"result-type-changed".to_owned()),
+        "{reasons:?}"
+    );
+    // Event payload.
+    let reasons = flip(&|value| {
+        value["exports"][5]["payload"] = serde_json::json!([]);
+    });
+    assert!(reasons.contains(&"field-removed".to_owned()), "{reasons:?}");
+    // Endpoint route and operation.
+    let reasons = flip(&|value| {
+        value["exports"][6]["method"] = "get".into();
+        value["exports"][6]["path"] = "/picks".into();
+    });
+    assert!(reasons.contains(&"route-changed".to_owned()), "{reasons:?}");
+    let reasons = flip(&|value| {
+        value["exports"][6]["invokes"] = "tasks.read".into();
+    });
+    assert!(
+        reasons.contains(&"operation-changed".to_owned()),
+        "{reasons:?}"
+    );
+    // Policy decision and governed operations.
+    let reasons = flip(&|value| {
+        value["exports"][7]["decision"] = "deny".into();
+    });
+    assert!(
+        reasons.contains(&"decision-changed".to_owned()),
+        "{reasons:?}"
+    );
+    let reasons = flip(&|value| {
+        value["exports"][7]["operations"] = serde_json::json!([]);
+    });
+    assert!(
+        reasons.contains(&"operations-changed".to_owned()),
+        "{reasons:?}"
+    );
+    // Bundle-level ports and capabilities.
+    let reasons = flip(&|value| value["ports"] = serde_json::json!([]));
+    assert!(reasons.contains(&"port-removed".to_owned()), "{reasons:?}");
+    let reasons = flip(&|value| value["capabilities"] = serde_json::json!([]));
+    assert!(
+        reasons.contains(&"capability-removed".to_owned()),
+        "{reasons:?}"
+    );
+}
+
+#[test]
+fn locks_flag_policy_api_version_and_extra_pins() {
+    // Finding 15: one freshness comparison — policy, selection, api
+    // version, and symmetric dependency pins.
+    use lekalo_core::module_api::{check_lock, ConsumerLock};
+    let lock = serde_json::json!({
+        "schemaVersion": "lekalo/module-api-lock/v0.8.0",
+        "identity": "dev.lekalo.module-api-lock@0.8.0",
+        "consumer": "watcher",
+        "producer": { "project": "flow", "module": "tasks" },
+        "apiVersion": "1.0.0",
+        "digest": format!("sha256:{}", "a".repeat(64)),
+        "policy": { "type": "version-range", "lower": "1.0.0",
+                    "lowerInclusive": true, "upper": "2.0.0",
+                    "upperInclusive": false },
+        "publicDependencies": [
+            { "moduleId": "dep",
+              "digest": format!("sha256:{}", "b".repeat(64)),
+              "apiVersion": null, "exports": [] }
+        ],
+        "selected": ["tasks.read"]
+    });
+    let parse = |value: &serde_json::Value| -> ConsumerLock {
+        serde_json::from_value(value.clone()).expect("lock shape")
+    };
+    let current = parse(&lock);
+    assert!(check_lock(&current, &current).is_empty());
+    // A changed policy is a resolution change.
+    let mut changed = lock.clone();
+    changed["policy"] = serde_json::json!({ "type": "exact-version", "version": "1.0.0" });
+    let evidence = check_lock(&current, &parse(&changed));
+    assert!(evidence
+        .iter()
+        .any(|finding| finding.detail == "lock-policy"));
+    // A changed independent API version is a resolution change.
+    let mut changed = lock.clone();
+    changed["apiVersion"] = "1.1.0".into();
+    let evidence = check_lock(&current, &parse(&changed));
+    assert!(
+        evidence
+            .iter()
+            .any(|finding| finding.detail == "lock-api-version"),
+        "{:?}",
+        evidence
+            .iter()
+            .map(|f| f.detail.as_str())
+            .collect::<Vec<_>>()
+    );
+    // Symmetric dependency pins: an extra supplied pin and a missing pin
+    // are both flagged.
+    let mut changed = lock.clone();
+    changed["publicDependencies"][0]["moduleId"] = "other".into();
+    let evidence = check_lock(&current, &parse(&changed));
+    assert!(
+        evidence
+            .iter()
+            .any(|finding| finding.detail == "lock-dependency-missing"),
+        "{:?}",
+        evidence
+            .iter()
+            .map(|f| f.detail.as_str())
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        evidence
+            .iter()
+            .any(|finding| finding.detail == "lock-dependency-extra"),
+        "{:?}",
+        evidence
+            .iter()
+            .map(|f| f.detail.as_str())
+            .collect::<Vec<_>>()
+    );
+    let mut changed = lock.clone();
+    changed["publicDependencies"] = serde_json::json!([]);
+    let evidence = check_lock(&current, &parse(&changed));
+    assert!(
+        evidence
+            .iter()
+            .any(|finding| finding.detail == "lock-dependency-missing"),
+        "{:?}",
+        evidence
+            .iter()
+            .map(|f| f.detail.as_str())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn revision_bumps_preserve_public_identity() {
+    // Finding 21: the digest domain excludes the integer definition
+    // revision, so a private revision bump pins no consumer.
+    let bundle = serde_json::from_slice::<serde_json::Value>(
+        &std::fs::read("tests/fixtures/module-api/standalone/golden-bundle.json").expect("bundle"),
+    )
+    .expect("json");
+    let original_digest = bundle["digest"].clone();
+    let mut bumped = bundle;
+    for export in bumped["exports"].as_array_mut().unwrap().iter_mut() {
+        export["version"] = serde_json::Value::from(export["version"].as_u64().unwrap_or(0) + 7);
+    }
+    seal_bundle(&mut bumped);
+    assert_eq!(bumped["digest"], original_digest);
 }

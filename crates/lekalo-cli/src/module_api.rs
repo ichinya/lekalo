@@ -162,34 +162,28 @@ fn certified(
     module: &str,
 ) -> Result<(), Failure> {
     let resolved = resolve(attachment, compilation)?;
+    // The unfiltered boundary check owns the whole project; the certified
+    // set refuses when the module or any transitive public dependency of
+    // its closure owns a boundary violation, with the exact findings.
+    let verdict = check(attachment, compilation, false, None).map_err(Failure::from)?;
     let mut session = lekalo_core::module_api::public::ExportSession::new(&resolved, compilation);
-    if let Err(failure) = session.bundle_checked(module) {
-        return match failure {
-            lekalo_core::module_api::public::ExportFailure::Invalid(set) => Err(Failure::Set(set)),
-            lekalo_core::module_api::public::ExportFailure::Cycle(_) => {
-                Err(Failure::Set(invalid("public-dependency-cycle")))
-            }
-        };
-    }
-    // The certified closure: every transitive public dependency pin.
+    // The certified closure: every transitive public dependency pin, from
+    // the edges the session records even when a dep bundle itself fails.
     let mut scope: BTreeSet<String> = BTreeSet::new();
     scope.insert(module.to_owned());
     let mut work: Vec<String> = vec![module.to_owned()];
     let mut seen: BTreeSet<String> = work.iter().cloned().collect();
     while let Some(current) = work.pop() {
-        let Ok(bundle) = session.bundle(&current) else {
-            continue;
-        };
-        for dependency in &bundle.public_dependencies {
-            scope.insert(dependency.module_id.clone());
-            if seen.insert(dependency.module_id.clone()) {
-                work.push(dependency.module_id.clone());
+        // Best-effort build: it records the module's dependency edges even
+        // when the bundle ultimately refuses.
+        let _ = session.bundle(&current);
+        for dependency in session.deps_of(&current) {
+            if seen.insert(dependency.clone()) {
+                scope.insert(dependency.clone());
+                work.push(dependency);
             }
         }
     }
-    // The unfiltered boundary check owns the whole project; the certified
-    // set refuses when any scoped member owns a boundary violation.
-    let verdict = check(attachment, compilation, false, None).map_err(Failure::from)?;
     let scoped: Vec<_> = verdict
         .evidence
         .iter()
@@ -207,6 +201,16 @@ fn certified(
         let set = lekalo_core::module_api::diagnostic::set(&scoped, Status::Invalid)
             .map_err(Failure::from)?;
         return Err(Failure::Set(set));
+    }
+    // A structurally illegal closure the boundary walk cannot express
+    // (cycle, unattached pin, private shape) still refuses certification.
+    if let Err(failure) = session.bundle_checked(module) {
+        return match failure {
+            lekalo_core::module_api::public::ExportFailure::Invalid(set) => Err(Failure::Set(set)),
+            lekalo_core::module_api::public::ExportFailure::Cycle(_) => {
+                Err(Failure::Set(invalid("public-dependency-cycle")))
+            }
+        };
     }
     Ok(())
 }

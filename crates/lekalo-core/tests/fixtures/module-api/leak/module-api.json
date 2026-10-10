@@ -19,7 +19,9 @@
     {
       "moduleId": "planner",
       "apiVersion": null,
-      "exports": [],
+      "exports": [
+        { "export": "planner.focus", "kind": "command", "since": null, "aliasOf": null }
+      ],
       "consumers": [],
       "ports": [],
       "capabilities": [],

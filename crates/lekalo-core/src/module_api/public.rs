@@ -57,6 +57,9 @@ pub struct ExportSession<'a> {
     /// The active dependency path: a real cycle witness, not a memo hit.
     active: Vec<String>,
     ir_digest: String,
+    /// Dependency edges recorded even for modules whose own bundle later
+    /// fails, so certified-closure scope walks stay complete.
+    deps_seen: BTreeMap<String, Vec<String>>,
 }
 
 impl<'a> ExportSession<'a> {
@@ -71,7 +74,14 @@ impl<'a> ExportSession<'a> {
             bundles: BTreeMap::new(),
             active: Vec::new(),
             ir_digest,
+            deps_seen: BTreeMap::new(),
         }
+    }
+
+    /// The recorded public dependency edges of one module (present even
+    /// when the module's bundle ultimately refuses).
+    pub fn deps_of(&self, module: &str) -> Vec<String> {
+        self.deps_seen.get(module).cloned().unwrap_or_default()
     }
 
     /// The certified bundle of one module, memoized across the session.
@@ -174,6 +184,15 @@ impl<'a> ExportSession<'a> {
                 exports: symbols,
             });
         }
+        // Record the edges before any digest resolution so a failure deep
+        // in the closure still exposes the dependency graph to scope walks.
+        self.deps_seen.insert(
+            module.to_owned(),
+            public_dependencies
+                .iter()
+                .map(|dependency| dependency.module_id.clone())
+                .collect(),
+        );
         // The producer's own digest: canonical public semantics.
         let api_version = policy.api_version.clone();
         let pins = PublicPins {
