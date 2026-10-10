@@ -406,6 +406,12 @@ const controls = [
   ["invalid/requirement-grammar.evidence.json", "operational-requirement", 1, false],
   ["invalid/gate-fabricated-executed.evidence.json", "gate-custody", 1, false],
   ["invalid/receipt-result-contradiction.evidence.json", "receipt-result", 1, true],
+  ["invalid/gate-authored-failed.evidence.json", "gate-state", 1, false],
+  ["invalid/gate-omitted-nullables.evidence.json", "closed-shape", 1, false],
+  ["invalid/gate-bad-custody-grammar.evidence.json", "gate-identity", 1, false],
+  ["invalid/policy-null-precision.evidence.json", "policy-shape", 1, false],
+  ["invalid/duplicate-hooks.evidence.json", "duplicate-hook", 1, false],
+  ["invalid/absent-adapter-bad-version.evidence.json", "adapter-snapshot", 1, false],
 ];
 for (const [relative, reason, expectedExit, schemaValid] of controls) {
   const temp = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
@@ -1295,6 +1301,407 @@ const withEvidence = (temp, mutate) => {
   const refused = tryRun(["--json", "portability", "--to", "node-typescript", "--evidence", "reports/portability-evidence.json"]);
   if (refused.code !== 1) fail("self-assessment-exit", String(refused.code));
   if (!(refused.stderr + refused.stdout).includes('"destination-source"')) fail("self-assessment-reason", refused.stderr);
+}
+
+// 10d. Round-4 fix probes: destination-exact bridge admission, proved
+//      preconditions, target-scoped gate custody, gate-coverage denial,
+//      and emit-side schema conformance on adversarial-but-legal inputs.
+//      Every emitted report — valid or denied — must validate against
+//      the shipped report schema (the post-emission assertion).
+{
+  const foreignOn = (symbol, target, alias) => ({ target, kind: "foreign", symbol: alias });
+  const withForeignBinding = (temp, symbol, target, alias) => {
+    const implPath = join(temp, "reports/implementation.json");
+    const impl = JSON.parse(readFileSync(implPath, "utf8"));
+    impl.contracts.find((c) => c.symbol === symbol).targets.push(foreignOn(symbol, target, alias));
+    writeFileSync(implPath, JSON.stringify(impl, null, 2) + "\n");
+    withEvidence(temp, (manifest) => {
+      manifest.families.find((f) => f.family === "implementation").digest = `sha256:${sha256(readFileSync(implPath))}`;
+    });
+  };
+  const behavioralRow = (report, subject, destination) => report.subjects
+    .find((s) => s.subject === subject)
+    .rows.find((r) => r.destination === destination && r.dimension === "behavioral");
+
+  // R4-1a — the full PHP precondition list never credits a Go mapping:
+  // `go-service` is unkeyed on the `runtime.async` bridge, and a
+  // destination without a keyed set can never carry the bridge's credit.
+  {
+    const temp = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
+    try {
+      cpSync(project, temp, { recursive: true });
+      withForeignBinding(temp, "planner.schedule_calculate", "go-service", "planner.ScheduleCalculate");
+      withEvidence(temp, (manifest) => {
+        manifest.mappings.push({
+          id: "map.go-php-preconditions",
+          requirement: "behavior.hook",
+          capability: "runtime.async",
+          targetId: "go-service",
+          subject: "planner.schedule_calculate",
+          coverage: "full",
+          conditions: ["replacement-binding-declared", "php-84", "laravel-11"],
+          definitionPins: [{ id: "runtime.async", version: "0.2.16" }],
+        });
+      });
+      const run = tryRun(["--json", "portability", "--to", "go-service", "--symbol", "planner.schedule_calculate", "--evidence", "reports/portability-evidence.json"], temp);
+      if (run.code !== 0) fail("r4-1a-exit", String(run.code));
+      const report = JSON.parse(run.stdout).portability;
+      if (!validate.report(report)) fail("r4-1a-schema", validate.report.errors);
+      const row = behavioralRow(report, "command:planner.schedule_calculate", "go-service");
+      if (row.classification !== "unknown" || row.reason !== "mapping-unqualified" || !row.blocking) {
+        fail("r4-1a-fabricated-green", JSON.stringify(row));
+      }
+      const denied = tryRun(["--json", "portability", "--to", "go-service", "--symbol", "planner.schedule_calculate", "--evidence", "reports/portability-evidence.json", "--check"], temp);
+      if (denied.code !== 3) fail("r4-1a-check", String(denied.code));
+      if (!validate.report(JSON.parse(denied.stdout).payload.portability)) fail("r4-1a-denied-schema", "denied payload");
+    } finally {
+      rmSync(temp, { recursive: true, force: true });
+    }
+  }
+
+  // R4-1b — the mirror direction: the Go vocabulary never credits a PHP
+  // mapping through the go-keyed `storage.returning` bridge.
+  {
+    const temp = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
+    try {
+      cpSync(project, temp, { recursive: true });
+      withEvidence(temp, (manifest) => {
+        manifest.mappings.push({
+          id: "map.php-go-preconditions",
+          requirement: "behavior.hook",
+          capability: "storage.returning",
+          targetId: "php-laravel",
+          subject: "planner.schedule_calculate",
+          coverage: "full",
+          conditions: ["replacement-binding-declared", "go-122"],
+          definitionPins: [{ id: "storage.returning", version: "0.2.16" }],
+        });
+      });
+      const run = tryRun(["--json", "portability", "--to", "php-laravel", "--symbol", "planner.schedule_calculate", "--evidence", "reports/portability-evidence.json"], temp);
+      if (run.code !== 0) fail("r4-1b-exit", String(run.code));
+      const report = JSON.parse(run.stdout).portability;
+      if (!validate.report(report)) fail("r4-1b-schema", validate.report.errors);
+      const row = behavioralRow(report, "command:planner.schedule_calculate", "php-laravel");
+      if (row.classification === "supported-with-mapping" || !row.blocking) {
+        fail("r4-1b-mirror-credit", JSON.stringify(row));
+      }
+      if (row.reason !== "mapping-unqualified") fail("r4-1b-reason", row.reason);
+    } finally {
+      rmSync(temp, { recursive: true, force: true });
+    }
+  }
+
+  // R4-1c — a destination keyed nowhere in any bridge never carries
+  // mapping credit: a fourth configured target (reusing the laravel
+  // profile pins under its own id) is unkeyed on every bridge.
+  {
+    const temp = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
+    try {
+      cpSync(project, temp, { recursive: true });
+      const config = JSON.parse(readFileSync(join(temp, "config/portability-targets.json"), "utf8"));
+      const fourth = structuredClone(config.targets.find((t) => t.targetId === "php-laravel"));
+      fourth.targetId = "ruby-rails";
+      config.targets.push(fourth);
+      writeFileSync(join(temp, "config/portability-targets.json"), JSON.stringify(config, null, 2) + "\n");
+      withForeignBinding(temp, "planner.count_focused", "ruby-rails", "planner.CountFocusedRuby");
+      withEvidence(temp, (manifest) => {
+        manifest.mappings.push({
+          id: "map.ruby-nowhere-keyed",
+          requirement: "behavior.hook",
+          capability: "runtime.async",
+          targetId: "ruby-rails",
+          subject: "planner.count_focused",
+          coverage: "full",
+          conditions: ["replacement-binding-declared", "php-84", "laravel-11"],
+          definitionPins: [{ id: "runtime.async", version: "0.2.16" }],
+        });
+      });
+      const run = tryRun(["--json", "portability", "--to", "ruby-rails", "--symbol", "planner.count_focused", "--evidence", "reports/portability-evidence.json"], temp);
+      if (run.code !== 0) fail("r4-1c-exit", String(run.code));
+      const report = JSON.parse(run.stdout).portability;
+      if (!validate.report(report)) fail("r4-1c-schema", validate.report.errors);
+      const row = behavioralRow(report, "query:planner.count_focused", "ruby-rails");
+      if (row.classification !== "unknown" || row.reason !== "mapping-unqualified" || !row.blocking) {
+        fail("r4-1c-nowhere-keyed-credit", JSON.stringify(row));
+      }
+    } finally {
+      rmSync(temp, { recursive: true, force: true });
+    }
+  }
+
+  // R4-1d — declared-but-unproved operational conditions never upgrade a
+  // row: the reviewed transaction vocabulary without a corroboring
+  // isolation offering stays an explicit unknown; the corroborated
+  // control reads the declared capability.
+  {
+    const transactionRequirement = {
+      subject: "command:planner.focus_task",
+      requirement: "storage.transactions",
+      conditions: ["same-database-engine-family", "declared-isolation-level-at-least-required"],
+      definitionPins: [{ id: "storage.transactions", version: "0.4.0" }],
+    };
+    const isolationRequirement = {
+      subject: "command:planner.focus_task",
+      policy: { kind: "isolation", value: "repeatable-read" },
+    };
+    const operationalRows = (report) => report.subjects
+      .find((s) => s.subject === "command:planner.focus_task")
+      .rows.filter((r) => r.dimension === "operational");
+    const unproved = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
+    try {
+      cpSync(project, unproved, { recursive: true });
+      withEvidence(unproved, (manifest) => {
+        manifest.operationalRequirements.push(structuredClone(transactionRequirement));
+        manifest.storageRequired.push(structuredClone(isolationRequirement));
+      });
+      const run = tryRun(["--json", "portability", "--to", "php-laravel", "--symbol", "planner.focus_task", "--evidence", "reports/portability-evidence.json"], unproved);
+      if (run.code !== 0) fail("r4-1d-exit", String(run.code));
+      const report = JSON.parse(run.stdout).portability;
+      if (!validate.report(report)) fail("r4-1d-schema", validate.report.errors);
+      const rows = operationalRows(report);
+      const gap = rows.find((r) => r.evidenceRefs.includes("storage.transactions"));
+      if (!gap || gap.classification !== "unknown" || gap.reason !== "precondition-unproved" || !gap.blocking) {
+        fail("r4-1d-unproved-portable", JSON.stringify(rows));
+      }
+      const denied = tryRun(["--json", "portability", "--to", "php-laravel", "--symbol", "planner.focus_task", "--evidence", "reports/portability-evidence.json", "--check"], unproved);
+      if (denied.code !== 3) fail("r4-1d-check", String(denied.code));
+    } finally {
+      rmSync(unproved, { recursive: true, force: true });
+    }
+    const proved = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
+    try {
+      cpSync(project, proved, { recursive: true });
+      withEvidence(proved, (manifest) => {
+        manifest.operationalRequirements.push(structuredClone(transactionRequirement));
+        manifest.storageRequired.push(structuredClone(isolationRequirement));
+        manifest.storageOffered.push({ targetId: "php-laravel", policy: { kind: "isolation", value: "repeatable-read" } });
+      });
+      const run = tryRun(["--json", "portability", "--to", "php-laravel", "--symbol", "planner.focus_task", "--evidence", "reports/portability-evidence.json"], proved);
+      if (run.code !== 0) fail("r4-1d-proof-exit", String(run.code));
+      const report = JSON.parse(run.stdout).portability;
+      if (!validate.report(report)) fail("r4-1d-proof-schema", validate.report.errors);
+      const rows = operationalRows(report);
+      const credited = rows.find((r) => r.evidenceRefs.includes("storage.transactions"));
+      if (!credited || credited.classification !== "portable" || credited.reason !== "capability-declared") {
+        fail("r4-1d-proof-row", JSON.stringify(rows));
+      }
+    } finally {
+      rmSync(proved, { recursive: true, force: true });
+    }
+  }
+
+  // R4-2 — gate custody is (gate, destination) scoped: a qualified php
+  // receipt never executes a gate in a go-only assessment, while the
+  // same-shape go receipt does.
+  {
+    const gateCustody = (temp, target) => {
+      const manifest = JSON.parse(readFileSync(join(temp, "reports/portability-evidence.json"), "utf8"));
+      const targets = JSON.parse(readFileSync(join(temp, "config/portability-targets.json"), "utf8"));
+      const pin = targets.targets.find((t) => t.targetId === target).profileRef;
+      const receipt = {
+        schemaVersion: "lekalo/portability-receipt/v0.8.0",
+        identity: "dev.lekalo.portability-receipt@0.8.0",
+        kind: "gate",
+        subject: "planner.native-scenario-gate",
+        targetId: target,
+        result: "pass",
+        projectRef: manifest.projectRef,
+        profileRef: { id: pin.id, version: pin.version, resolvedDigest: pin.resolvedDigest },
+      };
+      const bytes = Buffer.from(JSON.stringify(receipt, null, 2) + "\n");
+      writeFileSync(join(temp, "reports/receipts/gate.json"), bytes);
+      manifest.gates[0].state = "executed";
+      manifest.gates[0].targetId = target;
+      manifest.gates[0].receiptRef = "reports/receipts/gate.json";
+      manifest.gates[0].receiptDigest = `sha256:${sha256(bytes)}`;
+      writeFileSync(join(temp, "reports/portability-evidence.json"), JSON.stringify(manifest, null, 2) + "\n");
+    };
+    const foreign = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
+    try {
+      cpSync(project, foreign, { recursive: true });
+      gateCustody(foreign, "php-laravel");
+      const run = tryRun(["--json", "portability", "--to", "go-service", "--symbol", "planner.focus_task", "--evidence", "reports/portability-evidence.json"], foreign);
+      if (run.code !== 0) fail("r4-2-exit", String(run.code));
+      const report = JSON.parse(run.stdout).portability;
+      if (!validate.report(report)) fail("r4-2-schema", validate.report.errors);
+      const gate = report.affectedGates.find((g) => g.gate === "planner.native-scenario-gate");
+      if (!gate) fail("r4-2-gate-missing", JSON.stringify(report.affectedGates));
+      if (gate.state !== "declared") fail("r4-2-cross-target-upgrade", JSON.stringify(gate));
+    } finally {
+      rmSync(foreign, { recursive: true, force: true });
+    }
+    const own = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
+    try {
+      cpSync(project, own, { recursive: true });
+      gateCustody(own, "go-service");
+      const run = tryRun(["--json", "portability", "--to", "go-service", "--symbol", "planner.focus_task", "--evidence", "reports/portability-evidence.json"], own);
+      if (run.code !== 0) fail("r4-2-own-exit", String(run.code));
+      const report = JSON.parse(run.stdout).portability;
+      const gate = report.affectedGates.find((g) => g.gate === "planner.native-scenario-gate");
+      if (!gate || gate.state !== "executed") fail("r4-2-own-executed", JSON.stringify(gate));
+    } finally {
+      rmSync(own, { recursive: true, force: true });
+    }
+  }
+
+  // R4-3 — missing gate coverage is derived from the scoped affected
+  // set: it diagnostics, plans collect-evidence work, marks the surface
+  // incomplete, and denies the strict gate.
+  {
+    const temp = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
+    try {
+      cpSync(project, temp, { recursive: true });
+      withEvidence(temp, (manifest) => {
+        manifest.gates = [];
+      });
+      const run = tryRun(["--json", "portability", "--to", "php-laravel", "--symbol", "planner.focus_task", "--evidence", "reports/portability-evidence.json"], temp);
+      if (run.code !== 0) fail("r4-3-exit", String(run.code));
+      const report = JSON.parse(run.stdout).portability;
+      if (!validate.report(report)) fail("r4-3-schema", validate.report.errors);
+      if (!report.diagnostics.some((d) => d.detail === "gate-coverage-unknown")) {
+        fail("r4-3-silent", JSON.stringify(report.diagnostics));
+      }
+      const coverageRow = report.migrationSurface.rows.find((row) => row.reason === "gate-coverage-unknown");
+      if (!coverageRow || coverageRow.action !== "collect-evidence" || !coverageRow.evidenceNeeded.includes("gate-record")) {
+        fail("r4-3-planning", JSON.stringify(report.migrationSurface.rows));
+      }
+      if (report.migrationSurface.complete) fail("r4-3-complete", "coverage gap must mark the surface incomplete");
+      const denied = tryRun(["--json", "portability", "--to", "php-laravel", "--symbol", "planner.focus_task", "--evidence", "reports/portability-evidence.json", "--check"], temp);
+      if (denied.code !== 3) fail("r4-3-check", String(denied.code));
+    } finally {
+      rmSync(temp, { recursive: true, force: true });
+    }
+  }
+
+  // R4-4 — emit-side bounds on adversarial-but-legal inputs: every
+  // emitted list is capped at its schema maximum with a named clipping
+  // diagnostic, planning ids stay inside the published semanticId
+  // bound, and the typed-id budget refuses over-budget identities
+  // instead of emitting them.
+  {
+    // 34 admissible mappings on one obligation -> evidenceRefs clipped
+    // to 32 with the named diagnostic.
+    const temp = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
+    try {
+      cpSync(project, temp, { recursive: true });
+      withEvidence(temp, (manifest) => {
+        for (let i = 0; i < 33; i += 1) {
+          manifest.mappings.push({
+            id: `map.reading-go-${i}`,
+            requirement: "behavior.hook",
+            capability: "storage.returning",
+            targetId: "go-service",
+            subject: "planner.count_focused",
+            coverage: "full",
+            conditions: ["replacement-binding-declared", "go-122"],
+            definitionPins: [{ id: "storage.returning", version: "0.2.16" }],
+          });
+        }
+      });
+      const run = tryRun(["--json", "portability", "--to", "go-service", "--symbol", "planner.count_focused", "--evidence", "reports/portability-evidence.json"], temp);
+      if (run.code !== 0) fail("r4-4-refs-exit", String(run.code));
+      const report = JSON.parse(run.stdout).portability;
+      if (!validate.report(report)) fail("r4-4-refs-schema", validate.report.errors);
+      const row = behavioralRow(report, "query:planner.count_focused", "go-service");
+      if (row.evidenceRefs.length > 32) fail("r4-4-refs-bound", String(row.evidenceRefs.length));
+      if (!report.diagnostics.some((d) => d.detail === "evidence-refs-clipped")) {
+        fail("r4-4-refs-silent", JSON.stringify(report.diagnostics));
+      }
+    } finally {
+      rmSync(temp, { recursive: true, force: true });
+    }
+  }
+  {
+    // A legal 128-character target id and a legal 122-character
+    // operational requirement keep every planning id inside the bound.
+    const temp = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
+    try {
+      cpSync(project, temp, { recursive: true });
+      const config = JSON.parse(readFileSync(join(temp, "config/portability-targets.json"), "utf8"));
+      const alias = structuredClone(config.targets.find((t) => t.targetId === "go-service"));
+      alias.targetId = "t".repeat(127) + "x";
+      config.targets.push(alias);
+      writeFileSync(join(temp, "config/portability-targets.json"), JSON.stringify(config, null, 2) + "\n");
+      withEvidence(temp, (manifest) => {
+        manifest.operationalRequirements.push({
+          subject: "command:planner.focus_task",
+          requirement: `${"a".repeat(120)}.b`,
+          conditions: [],
+          definitionPins: [],
+        });
+      });
+      const run = tryRun(["--json", "portability", "--to", "t".repeat(127) + "x", "--symbol", "planner.focus_task", "--evidence", "reports/portability-evidence.json", "--check"], temp);
+      if (run.code !== 3) fail("r4-4-ids-exit", String(run.code));
+      const report = JSON.parse(run.stdout).payload.portability;
+      if (!validate.report(report)) fail("r4-4-ids-schema", validate.report.errors);
+      for (const row of report.migrationSurface.rows) {
+        if (row.id.length > 192) fail("r4-4-ids-bound", `${row.id.length}: ${row.id}`);
+      }
+    } finally {
+      rmSync(temp, { recursive: true, force: true });
+    }
+  }
+  {
+    // A 70-dependency subject clips requirements to 64 with the named
+    // diagnostic (the model change invalidates the evidence pins, so
+    // this probe runs without a manifest).
+    const temp = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
+    try {
+      cpSync(project, temp, { recursive: true });
+      const entities = join(temp, "lekalo/modules/planner/entities.yaml");
+      const scalars = [];
+      const fields = [];
+      for (let i = 0; i < 70; i += 1) {
+        const name = `r4dep${String(i).padStart(2, "0")}`;
+        scalars.push(`  - id: planner.${name}\n    kind: scalar\n    version: 1\n    description: "R4 dependency ${i}"\n    base: string`);
+        fields.push(`      - name: f${i}\n        type: "planner.${name}"\n        required: true`);
+      }
+      writeFileSync(entities, readFileSync(entities, "utf8") + "\n" + scalars.join("\n") + "\n");
+      const commands = join(temp, "lekalo/modules/planner/commands.yaml");
+      writeFileSync(commands, readFileSync(commands, "utf8") + `\n  - id: planner.r4_bulk_dependent\n    kind: command\n    version: 1\n    description: "Wide dependency command"\n    input:\n${fields.join("\n")}\n    effects:\n      - "planner.create_task"\n`);
+      const run = tryRun(["--json", "portability", "--to", "go-service", "--symbol", "planner.r4_bulk_dependent"], temp);
+      if (run.code !== 0) fail("r4-4-deps-exit", `${run.code}: ${run.stderr.slice(0, 200)}`);
+      const report = JSON.parse(run.stdout).portability;
+      if (!validate.report(report)) fail("r4-4-deps-schema", validate.report.errors);
+      const subject = report.subjects.find((s) => s.subject === "command:planner.r4_bulk_dependent");
+      if (!subject) fail("r4-4-deps-subject", "missing");
+      if (subject.requirements.length > 64) fail("r4-4-deps-bound", String(subject.requirements.length));
+      if (!report.diagnostics.some((d) => d.detail === "requirements-clipped")) {
+        fail("r4-4-deps-silent", JSON.stringify(report.diagnostics));
+      }
+    } finally {
+      rmSync(temp, { recursive: true, force: true });
+    }
+  }
+  {
+    // A legal-but-over-budget 191-character model id (typed id 198) is
+    // an explicit refusal, never a schema-invalid emission; a 127-char
+    // id still assesses.
+    const segment = "a".repeat(63);
+    for (const [label, id, expectRefusal] of [
+      ["over-budget", `${segment}.${segment}.${segment}`, true],
+      ["in-budget", `${segment}.${"b".repeat(63)}`, false],
+    ]) {
+      const temp = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
+      try {
+        cpSync(project, temp, { recursive: true });
+        const entities = join(temp, "lekalo/modules/planner/entities.yaml");
+        writeFileSync(entities, readFileSync(entities, "utf8") + `\n  - id: ${id}\n    kind: scalar\n    version: 1\n    description: "R4 long identity"\n    base: string\n`);
+        const run = tryRun(["--json", "portability", "--to", "go-service", "--symbol", id], temp);
+        if (expectRefusal) {
+          if (run.code !== 1) fail("r4-4-id-refusal-exit", `${label}: ${run.code}`);
+          if (!(run.stderr + run.stdout).includes('"subject-id-bound"')) fail("r4-4-id-refusal-reason", run.stderr.slice(0, 200));
+        } else {
+          if (run.code !== 0) fail("r4-4-id-ok-exit", `${label}: ${run.code}`);
+          const report = JSON.parse(run.stdout).portability;
+          if (!validate.report(report)) fail("r4-4-id-ok-schema", validate.report.errors);
+          if (!report.subjects.some((s) => s.subject === `scalar:${id}`)) fail("r4-4-id-ok-subject", label);
+        }
+      } finally {
+        rmSync(temp, { recursive: true, force: true });
+      }
+    }
+  }
 }
 
 // 11. The strict --check denial: exit 3, status denied, report preserved

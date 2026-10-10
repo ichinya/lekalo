@@ -169,6 +169,8 @@ fn typed_id_for<'a>(selected: &'a [&'a Subject]) -> impl Fn(&String) -> String +
 }
 
 /// Build the reconciled migration surface with the closed planning rows.
+/// Every clipped list is reported through the assessment sink so the
+/// report names its own clipping.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn migration_surface(
     input: &Assessment,
@@ -177,6 +179,7 @@ pub(super) fn migration_surface(
     subjects: &[super::wire::SubjectRow],
     affected: &AffectedJoins,
     truncated: bool,
+    sink: &mut super::assess::Sink,
 ) -> MigrationSurface {
     // One missing implementation per distinct (destination, hook):
     // an effect that joins its trigger's already-counted outcome never
@@ -340,6 +343,43 @@ pub(super) fn migration_surface(
             evidence_needed: vec!["gate-record".into()],
         });
     }
+    // The published planning-row bounds: every list the row carries is
+    // capped at its schema maximum with a named clipping diagnostic,
+    // and every id is bounded to the published semanticId length — an
+    // overlong obligation identity keeps a readable prefix plus a
+    // collision-free digest of its full tuple, so legal input maxima
+    // can never produce an id a conforming consumer must reject.
+    let mut clip_prerequisites = false;
+    let mut clip_join_lists = false;
+    for row in rows.iter_mut() {
+        if row.prerequisites.len() > super::assess::EMIT_BOUNDS.prerequisites {
+            row.prerequisites
+                .truncate(super::assess::EMIT_BOUNDS.prerequisites);
+            clip_prerequisites = true;
+        }
+        if row.scenarios.len() > super::assess::EMIT_BOUNDS.join_list {
+            row.scenarios.truncate(super::assess::EMIT_BOUNDS.join_list);
+            clip_join_lists = true;
+        }
+        if row.gates.len() > super::assess::EMIT_BOUNDS.join_list {
+            row.gates.truncate(super::assess::EMIT_BOUNDS.join_list);
+            clip_join_lists = true;
+        }
+        if row.id.len() > MAX_SEMANTIC_ID {
+            row.id = bound_planning_id(row);
+        }
+    }
+    if clip_prerequisites {
+        sink.push(
+            codes::ANALYSIS_INCOMPLETE,
+            None,
+            None,
+            "prerequisites-clipped",
+        );
+    }
+    if clip_join_lists {
+        sink.push(codes::ANALYSIS_INCOMPLETE, None, None, "join-list-clipped");
+    }
     rows.sort_by(|left, right| left.id.cmp(&right.id));
     // Only genuinely identical rows merge; distinct obligations always
     // keep distinct stable ids, and any residual base-id collision gets
@@ -363,6 +403,65 @@ pub(super) fn migration_surface(
         complete: !truncated && !coverage_gaps,
         rows,
     }
+}
+
+/// The published `semanticId` length bound of the report contract.
+const MAX_SEMANTIC_ID: usize = 192;
+
+/// The bounded spelling of one planning-row id. Short identities keep
+/// their readable spelling verbatim; an overlong one keeps a bounded
+/// readable prefix plus a 16-hex digest of the full obligation tuple
+/// (action, destination, dimension, subject, requirement, required
+/// policy), so the id is stable, injective in practice, and always
+/// inside the published bound — never a length-dependent truncation
+/// collision.
+fn bound_planning_id(row: &PlanningRow) -> String {
+    let requirement_part = row
+        .requirement
+        .as_ref()
+        .map(|requirement| format!(".{}", requirement.replace(':', ".")))
+        .unwrap_or_default();
+    let policy_part = row
+        .required
+        .as_ref()
+        .map(|policy| {
+            let mut parts = vec![policy.kind.clone(), policy.value.clone()];
+            if let Some(precision) = policy.precision {
+                parts.push(precision.to_string());
+            }
+            if let Some(scale) = policy.scale {
+                parts.push(scale.to_string());
+            }
+            format!(".{}", parts.join("."))
+        })
+        .unwrap_or_default();
+    let destination = row.destination.as_deref().unwrap_or("-");
+    let core = format!(
+        "{}.{}.{}.{}{}{}",
+        row.action.as_str(),
+        destination,
+        row.dimension.as_str(),
+        row.subject.replace(':', "."),
+        requirement_part,
+        policy_part
+    );
+    let tuple = format!(
+        "{}\u{1f}{}\u{1f}{}\u{1f}{}\u{1f}{}\u{1f}{}",
+        row.action.as_str(),
+        destination,
+        row.dimension.as_str(),
+        row.subject,
+        row.requirement.as_deref().unwrap_or(""),
+        policy_part
+    );
+    let digest = crate::digest::sha256_hex(tuple.as_bytes());
+    // "plan." + head + "." + 16 digest hex, within 192.
+    let budget = MAX_SEMANTIC_ID - 5 - 17;
+    let mut head: String = core.chars().take(budget).collect();
+    while head.ends_with('.') {
+        head.pop();
+    }
+    format!("plan.{head}.{}", &digest[..16])
 }
 
 fn covering_scenarios(input: &Assessment, subject: &Subject) -> Vec<String> {

@@ -129,9 +129,12 @@ pub mod codes {
     pub const CHECK_DENIED: &str = "portability.check-denied";
 }
 
-struct Sink {
+pub(super) struct Sink {
     diagnostics: Vec<ReportDiagnostic>,
     seen: BTreeSet<(String, Option<String>, Option<Dimension>, &'static str)>,
+    /// Whether the published diagnostics bound was reached: the final
+    /// marker names the clipping instead of silently dropping findings.
+    capped: bool,
 }
 
 impl Sink {
@@ -139,15 +142,23 @@ impl Sink {
         Self {
             diagnostics: Vec::new(),
             seen: BTreeSet::new(),
+            capped: false,
         }
     }
-    fn push(
+    pub(super) fn push(
         &mut self,
         code: &str,
         subject: Option<String>,
         dimension: Option<Dimension>,
         detail: &'static str,
     ) {
+        // The report contract bounds the diagnostics array; reaching
+        // the bound is an explicit analysis-incomplete marker, never a
+        // silent drop.
+        if self.diagnostics.len() >= EMIT_BOUNDS.diagnostics {
+            self.capped = true;
+            return;
+        }
         let key = (code.to_owned(), subject.clone(), dimension, detail);
         if self.seen.insert(key) {
             self.diagnostics.push(ReportDiagnostic {
@@ -158,6 +169,67 @@ impl Sink {
             });
         }
     }
+    /// The bounded diagnostics list with its explicit terminal marker.
+    fn finish(mut self) -> Vec<ReportDiagnostic> {
+        if self.capped && self.diagnostics.len() < EMIT_BOUNDS.diagnostics {
+            self.diagnostics.push(ReportDiagnostic {
+                code: codes::ANALYSIS_INCOMPLETE.to_owned(),
+                subject: None,
+                dimension: None,
+                detail: "diagnostics-bound".to_owned(),
+            });
+        }
+        self.diagnostics
+    }
+}
+
+/// The published emit-side bounds of `portability-report/v0.8.0` the
+/// emission path enforces at construction: every list the report
+/// carries is capped at its schema maximum with an explicit named
+/// diagnostic when clipped — never a silent truncation, never an
+/// overflow a conforming consumer must reject.
+pub(crate) struct EmitBounds {
+    pub requirements: usize,
+    pub witnesses: usize,
+    pub evidence_refs: usize,
+    pub prerequisites: usize,
+    pub join_list: usize,
+    pub subjects: usize,
+    pub subject_rows: usize,
+    pub diagnostics: usize,
+    pub affected_subjects: usize,
+    pub gate_scenarios: usize,
+    pub affected_joins: usize,
+    pub planning_rows: usize,
+    /// The typed-id budget: a typed id also flows into diagnostic
+    /// subjects (a `semanticId`, bounded at 192), so the longest kind
+    /// prefix is reserved against that bound.
+    pub typed_id: usize,
+}
+
+pub(crate) const EMIT_BOUNDS: EmitBounds = EmitBounds {
+    requirements: 64,
+    witnesses: 64,
+    evidence_refs: 32,
+    prerequisites: 32,
+    join_list: 64,
+    subjects: 50_000,
+    subject_rows: 4096,
+    diagnostics: 4096,
+    affected_subjects: 1024,
+    gate_scenarios: 256,
+    affected_joins: 10_000,
+    planning_rows: 100_000,
+    typed_id: 192,
+};
+
+/// Clip one emitted list to its published maximum, reporting the clip.
+fn clip_list(list: &[String], max: usize, on_clip: impl FnOnce()) -> Vec<String> {
+    if list.len() <= max {
+        return list.to_vec();
+    }
+    on_clip();
+    list.iter().take(max).cloned().collect()
 }
 
 /// The measured work bounds of one assessment run. Counters are derived
@@ -201,6 +273,22 @@ pub fn assess(input: &Assessment) -> Result<Report, DiagnosticSet> {
     // dependencies stay visible as witnesses without entering the
     // selected denominator.
     let selected = select_subjects(&input.subjects, input.request)?;
+
+    // The typed-id budget of the report contract: a typed id also
+    // flows into semanticId-bounded members (diagnostic subjects), so
+    // the longest kind prefix is reserved against that bound. A subject
+    // or emitted witness outside the budget is an explicit refusal —
+    // never a silently truncated or schema-invalid emission.
+    for subject in &selected {
+        if subject.typed_id.len() > EMIT_BOUNDS.typed_id
+            || subject
+                .witnesses
+                .iter()
+                .any(|witness| witness.len() > EMIT_BOUNDS.typed_id)
+        {
+            return Err(diagnostic::invalid("subject-id-bound"));
+        }
+    }
 
     let mut bounds = Bounds {
         limits: recipe.document.limits,
@@ -277,12 +365,33 @@ pub fn assess(input: &Assessment) -> Result<Report, DiagnosticSet> {
                 }
             }
         }
+        if rows.len() > EMIT_BOUNDS.subject_rows {
+            // The per-subject row bound of the report contract: an
+            // explicit truncation with the analysis-incomplete marker,
+            // never an over-bound emission.
+            rows.truncate(EMIT_BOUNDS.subject_rows);
+            bounds.exhausted = true;
+        }
         subject_rows.push(SubjectRow {
             subject: subject.typed_id.clone(),
             member: None,
-            requirements: subject.deps.clone(),
+            requirements: clip_list(&subject.deps, EMIT_BOUNDS.requirements, || {
+                sink.push(
+                    codes::ANALYSIS_INCOMPLETE,
+                    Some(subject.typed_id.clone()),
+                    None,
+                    "requirements-clipped",
+                );
+            }),
             rows,
         });
+        if subject_rows.len() >= EMIT_BOUNDS.subjects && subject_rows.len() < selected.len() {
+            // The published subjects bound: the remaining subjects stay
+            // counted through the exhausted marker, never emitted over
+            // the bound.
+            bounds.exhausted = true;
+            break;
+        }
     }
     if bounds.exhausted {
         sink.push(
@@ -312,14 +421,72 @@ pub fn assess(input: &Assessment) -> Result<Report, DiagnosticSet> {
     }
 
     let summaries = summarize(destinations, &subject_rows);
-    let migration = planning::migration_surface(
+    // The published affected-join bounds: every clipped list and every
+    // dropped join is an explicit analysis-incomplete marker, never a
+    // silent truncation.
+    let mut affected = affected;
+    for scenario in affected.0.iter_mut() {
+        if scenario.subjects.len() > EMIT_BOUNDS.affected_subjects {
+            scenario.subjects.truncate(EMIT_BOUNDS.affected_subjects);
+            sink.push(
+                codes::ANALYSIS_INCOMPLETE,
+                Some(scenario.scenario.clone()),
+                None,
+                "affected-subjects-clipped",
+            );
+        }
+    }
+    for gate in affected.1.iter_mut() {
+        if gate.scenarios.len() > EMIT_BOUNDS.gate_scenarios {
+            gate.scenarios.truncate(EMIT_BOUNDS.gate_scenarios);
+            sink.push(
+                codes::ANALYSIS_INCOMPLETE,
+                Some(gate.gate.clone()),
+                None,
+                "gate-scenarios-clipped",
+            );
+        }
+    }
+    if affected.0.len() > EMIT_BOUNDS.affected_joins {
+        affected.0.truncate(EMIT_BOUNDS.affected_joins);
+        sink.push(
+            codes::ANALYSIS_INCOMPLETE,
+            None,
+            None,
+            "affected-joins-clipped",
+        );
+    }
+    if affected.1.len() > EMIT_BOUNDS.affected_joins {
+        affected.1.truncate(EMIT_BOUNDS.affected_joins);
+        sink.push(
+            codes::ANALYSIS_INCOMPLETE,
+            None,
+            None,
+            "affected-joins-clipped",
+        );
+    }
+    let mut migration = planning::migration_surface(
         input,
         evidence,
         &selected,
         &subject_rows,
         &affected,
         bounds.exhausted,
+        &mut sink,
     );
+    if migration.rows.len() > EMIT_BOUNDS.planning_rows {
+        // The published planning-row bound: the surface keeps its
+        // stable sorted prefix, marks itself incomplete, and names the
+        // clipping — the strict gate denies the truncated surface.
+        migration.rows.truncate(EMIT_BOUNDS.planning_rows);
+        migration.complete = false;
+        sink.push(
+            codes::ANALYSIS_INCOMPLETE,
+            None,
+            None,
+            "planning-rows-clipped",
+        );
+    }
 
     let eligible = selected.len() as u64;
     Ok(Report {
@@ -394,7 +561,7 @@ pub fn assess(input: &Assessment) -> Result<Report, DiagnosticSet> {
         migration_surface: migration,
         affected_scenarios: affected.0,
         affected_gates: affected.1,
-        diagnostics: sink.diagnostics,
+        diagnostics: sink.finish(),
     })
 }
 
@@ -632,6 +799,8 @@ fn classify(
         Dimension::Storage => storage(input, evidence, sink, subject, destination),
         Dimension::Operational => operational(input, evidence, sink, subject, destination),
     };
+    let mut clip_witnesses = false;
+    let mut clip_refs = false;
     for row in rows.iter_mut() {
         row.verification = if row.classification == Classification::NonApplicable {
             Verification::NotApplicable
@@ -639,6 +808,30 @@ fn classify(
             verification_for(input, evidence, subject, destination)
         };
         row.witnesses = subject.witnesses.clone();
+        if row.witnesses.len() > EMIT_BOUNDS.witnesses {
+            row.witnesses.truncate(EMIT_BOUNDS.witnesses);
+            clip_witnesses = true;
+        }
+        if row.evidence_refs.len() > EMIT_BOUNDS.evidence_refs {
+            row.evidence_refs.truncate(EMIT_BOUNDS.evidence_refs);
+            clip_refs = true;
+        }
+    }
+    if clip_witnesses {
+        sink.push(
+            codes::ANALYSIS_INCOMPLETE,
+            Some(subject.typed_id.clone()),
+            None,
+            "witnesses-clipped",
+        );
+    }
+    if clip_refs {
+        sink.push(
+            codes::ANALYSIS_INCOMPLETE,
+            Some(subject.typed_id.clone()),
+            None,
+            "evidence-refs-clipped",
+        );
     }
     rows
 }
