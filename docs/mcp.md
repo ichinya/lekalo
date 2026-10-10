@@ -128,9 +128,11 @@ separators before matching, so `PASSWORD`, `db_password`,
 spelling each — and matches only high-confidence shapes (private-key
 blocks, credential headers, assigned credential assignments), never
 prose, field names, or identifiers. The private-absolute-path needles
-are deliberately broader than a leading-slash match: the POSIX `/home/`
-and `/root/` needles match any `home`/`root` path segment (so benign
-relative content like `app/home/page.tsx` also refuses) — the accepted
+are deliberately broader than a leading-slash match: the POSIX `/home/`,
+`/root/`, and `/users/` needles match any `home`/`root`/`users` path
+segment (so benign relative content like `app/home/page.tsx` also
+refuses), and the colon-less `/users/` needle is what catches the
+macOS absolute profile spelling (`/Users/alice/...`) — the accepted
 fail-closed trade-off, recorded here and pinned by test.
 
 ## Bounds, deadlines, cancellation

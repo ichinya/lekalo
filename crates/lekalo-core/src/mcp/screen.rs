@@ -54,17 +54,21 @@ const ASSIGNED_TOKEN_MIN: usize = 1;
 /// spelling), and cover the Windows drive and user-profile spellings
 /// plus the POSIX home roots; the JSON transport escapes a backslash as
 /// `\\`, which the raw envelope scan still matches through the
-/// single- and doubled-separator needles. The POSIX needles `/home/`
-/// and `/root/` deliberately match ANY `home`/`root` path segment, not
+/// single- and doubled-separator needles, and the colon-less POSIX
+/// users-root needle catches the macOS absolute profile spelling
+/// (`/Users/alice/...`) that carries no drive colon. The POSIX needles
+/// `/home/`, `/root/`, and `/users/` deliberately match ANY matching
+/// path segment, not
 /// only a leading absolute one (review r3 F9): `app/home/page.tsx`
 /// refuses too. That availability collateral is the accepted trade-off —
 /// the screen fails closed, and a relative segment spelling can never
 /// be proven harmless from bytes alone.
-const PRIVATE_PATH_NEEDLES: [&str; 5] = [
+const PRIVATE_PATH_NEEDLES: [&str; 6] = [
     ":\\users\\",
     ":/users/",
     "/home/",
     "/root/",
+    "/users/",
     // The JSON-escaped backslash spelling (`C:\\Users\\alice` on the
     // wire) carries doubled separators; the raw envelope scan matches it
     // through this doubled-separator needle.
@@ -410,7 +414,8 @@ mod tests {
 
     #[test]
     fn the_posix_home_needle_over_matches_by_design() {
-        // r3 F9, recorded: the bare `/home/` (and `/root/`) needle
+        // r3 F9, recorded: the bare `/home/` (and `/root/`, `/users/`)
+        // needle
         // matches ANY path segment, so benign relative content like
         // `app/home/page.tsx` refuses as `private-absolute-path`. The
         // over-match is the accepted fail-closed trade-off — a relative
@@ -422,6 +427,17 @@ mod tests {
         );
         assert_eq!(
             screen_envelope("{\"note\":\"see /root/setup.log\"}"),
+            Err("private-absolute-path")
+        );
+        // The macOS absolute profile spelling carries no drive colon, so
+        // the colon-less users-root needle is what catches it (the r3
+        // live probe's `/Users/alice/private.pem` leak class).
+        assert_eq!(
+            screen_envelope("{\"note\":\"/Users/alice/private.pem\"}"),
+            Err("private-absolute-path")
+        );
+        assert_eq!(
+            screen_envelope("{\"note\":\"app/users/page.tsx\"}"),
             Err("private-absolute-path")
         );
         // Ordinary relative project paths without those segments ship.
