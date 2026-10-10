@@ -440,12 +440,11 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
     // Impact projection from the typed diff seeds on the matching graphs.
     let impact = project_impact(&base_compiled, &candidate_compiled, &diff);
 
-    // Generation projection: declared targets, never executed here.
-    let generation = plan::GenerationProjection {
-        executed: false,
-        targets: declared_targets(&root)?,
-        note: "plan-only; run `lekalo generate --locked` to execute".to_owned(),
-    };
+    // Generation projection: a real plan (round 2, finding 13) — every
+    // declared target pinned by its exact document bytes, the project
+    // lock pinned when present, and explicit unknown states. Generation
+    // itself is never executed here.
+    let generation = build_generation_plan(&root)?;
 
     // Complete input inventory with exact byte pins. The history sidecar
     // distinguishes absent from empty (round 2, finding 8): a present but
@@ -2578,26 +2577,133 @@ struct ClosureOutcome {
     complete: bool,
 }
 
-/// The declared target stems of the project (generation projection input).
-fn declared_targets(root: &Path) -> Result<Vec<String>, ChangeError> {
-    let home = root.join("lekalo").join("targets");
-    let Ok(entries) = std::fs::read_dir(&home) else {
-        return Ok(Vec::new());
-    };
-    let mut targets = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|extension| extension.to_str()) == Some("yaml") {
-            if let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) {
-                if targets.len() >= 64 {
-                    break;
-                }
-                targets.push(stem.to_owned());
+/// The generation plan of one project (round 2, finding 13): enumerate
+/// the declared target documents under `lekalo/targets` (sorted, bounded),
+/// pin each document's exact bytes by digest, decode the closed target
+/// identity (`{"target": ...}`), pin the committed project lock when one
+/// exists, and mark unknown/incomplete states explicitly. Nothing is
+/// executed and no artifact is written; execution stays with the
+/// separately authorized generation service.
+fn build_generation_plan(root: &Path) -> Result<plan::GenerationProjection, ChangeError> {
+    let fs = crate::project_fs::Fs::open(root).map_err(|_| ChangeError::WriteBoundaryDenied)?;
+    const TARGETS_HOME: &str = "lekalo/targets";
+    let mut files: Vec<String> = Vec::new();
+    if let Ok(entries) = fs.entries(TARGETS_HOME) {
+        for (name, entry_type) in entries {
+            let decodable = matches!(entry_type, crate::project_fs::EntryType::File)
+                && (name.ends_with(".yaml") || name.ends_with(".json"));
+            if decodable {
+                files.push(name);
             }
         }
     }
-    targets.sort();
-    Ok(targets)
+    // Deterministic order before the bound (the round-1 review noted the
+    // cap applied to an unsorted enumeration).
+    files.sort();
+    files.truncate(64);
+
+    let mut targets = Vec::with_capacity(files.len());
+    let mut complete = true;
+    for name in &files {
+        let logical = format!("{TARGETS_HOME}/{name}");
+        let bytes = match fs.read_file_opt(TARGETS_HOME, name, 1024 * 1024) {
+            Ok(Some(bytes)) => bytes,
+            _ => {
+                complete = false;
+                targets.push(plan::TargetPlan {
+                    target: name
+                        .strip_suffix(".yaml")
+                        .or_else(|| name.strip_suffix(".json"))
+                        .unwrap_or(name)
+                        .to_owned(),
+                    file: logical,
+                    digest: absent_digest(),
+                    status: "unreadable",
+                    action: "generation planning is incomplete: target document unreadable"
+                        .to_owned(),
+                });
+                continue;
+            }
+        };
+        let digest = format!("sha256:{}", crate::digest::sha256_hex(&bytes));
+        // The closed target declaration is flow-JSON in every checked-in
+        // fixture; decode what is decodable and pin the rest as opaque
+        // (the exact bytes are pinned either way).
+        let decoded = serde_json::from_slice::<Json>(&bytes)
+            .ok()
+            .or_else(|| serde_yaml_ok(&bytes))
+            .and_then(|value| {
+                value
+                    .get("target")
+                    .and_then(Json::as_str)
+                    .map(str::to_owned)
+            });
+        match decoded {
+            Some(target) => {
+                targets.push(plan::TargetPlan {
+                    action: format!(
+                        "generate via `lekalo generate --locked --target {target}` (separately authorized)"
+                    ),
+                    target,
+                    file: logical,
+                    digest,
+                    status: "planned",
+                });
+            }
+            None => {
+                complete = false;
+                targets.push(plan::TargetPlan {
+                    target: name
+                        .strip_suffix(".yaml")
+                        .or_else(|| name.strip_suffix(".json"))
+                        .unwrap_or(name)
+                        .to_owned(),
+                    file: logical,
+                    digest,
+                    status: "opaque",
+                    action: "generation planning is incomplete: target declaration not decodable"
+                        .to_owned(),
+                });
+            }
+        }
+    }
+    // The committed project lock pins the generation inputs' custody;
+    // its absence is an explicit incomplete state, never a silent zero.
+    let lock = match fs.read_file_opt("", "lekalo.lock", 4 * 1024 * 1024) {
+        Ok(Some(bytes)) => Some(plan::LockPin {
+            file: "lekalo.lock".to_owned(),
+            digest: format!("sha256:{}", crate::digest::sha256_hex(&bytes)),
+        }),
+        _ => {
+            complete = false;
+            None
+        }
+    };
+    Ok(plan::GenerationProjection {
+        executed: false,
+        targets,
+        lock,
+        complete,
+        note: "plan-only; generation is separately authorized (`lekalo generate --locked`)"
+            .to_owned(),
+    })
+}
+
+/// Best-effort flow-YAML scalar-map decode for target documents that are
+/// not flow-JSON. Only the closed `{target: <scalar>}` shape is read.
+fn serde_yaml_ok(bytes: &[u8]) -> Option<Json> {
+    let text = std::str::from_utf8(bytes).ok()?;
+    let mut target = None;
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("target:") {
+            let value = rest.trim().trim_matches('"');
+            if !value.is_empty() {
+                target = Some(value.to_owned());
+            }
+        }
+    }
+    target.map(|target| serde_json::json!({ "target": target }))
 }
 
 /// Resolve the project root through the shared selection rules.

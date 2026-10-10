@@ -1361,3 +1361,46 @@ fn command_effect_emit_and_wrong_kinds_stay_explicitly_refused() {
         "got {error:?}"
     );
 }
+
+#[test]
+fn generation_plan_pins_targets_and_the_lock_with_explicit_unknowns() {
+    // Round 2, finding 13: the generation projection is a real plan --
+    // every declared target pinned by its exact document digest, the
+    // committed lock pinned when present, and unknown states explicit
+    // (never a filename listing presented as complete).
+    let sandbox = Sandbox::new("generation");
+    std::fs::create_dir_all(sandbox.root.join("lekalo/targets")).expect("targets home");
+    std::fs::write(
+        sandbox.root.join("lekalo/targets/node-typescript.yaml"),
+        "{\"target\":\"node-typescript\",\"note\":\"opaque target configuration\"}\n",
+    )
+    .expect("target written");
+    std::fs::write(sandbox.root.join("lekalo.lock"), b"lock: 1\n").expect("lock written");
+    let prepared = prepare(&sandbox, &add_priority_request()).expect("prepares");
+    let plan: serde_json::Value =
+        serde_json::from_str(&prepared.to_json_string()).expect("plan json");
+    let generation = &plan["generation"];
+    assert_eq!(generation["executed"], false, "generation never executes");
+    let targets = generation["targets"].as_array().expect("targets");
+    assert_eq!(targets.len(), 1);
+    assert_eq!(targets[0]["target"], "node-typescript");
+    assert_eq!(targets[0]["status"], "planned");
+    let digest = targets[0]["digest"].as_str().expect("digest");
+    let expected = format!(
+        "sha256:{}",
+        lekalo_core::digest::sha256_hex(
+            &std::fs::read(sandbox.root.join("lekalo/targets/node-typescript.yaml"))
+                .expect("target bytes")
+        )
+    );
+    assert_eq!(digest, expected, "the target document is pinned by digest");
+    assert_eq!(generation["lock"]["file"], "lekalo.lock");
+    assert_eq!(generation["complete"], true);
+    // Without the lock the plan states the incompleteness explicitly.
+    std::fs::remove_file(sandbox.root.join("lekalo.lock")).expect("lock removed");
+    let prepared = prepare(&sandbox, &add_priority_request()).expect("prepares");
+    let plan: serde_json::Value =
+        serde_json::from_str(&prepared.to_json_string()).expect("plan json");
+    assert_eq!(plan["generation"]["lock"], serde_json::Value::Null);
+    assert_eq!(plan["generation"]["complete"], false);
+}

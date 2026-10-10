@@ -546,11 +546,14 @@
       }
     },
     "generationProjection": {
+      "description": "The generation plan of the change: every declared target pinned by its exact document digest, the project lock pinned when present, and explicit unknown states. Generation itself is never executed by the change service; execution stays separately authorized.",
       "type": "object",
       "additionalProperties": false,
       "required": [
         "executed",
         "targets",
+        "lock",
+        "complete",
         "note"
       ],
       "properties": {
@@ -561,13 +564,79 @@
           "type": "array",
           "maxItems": 64,
           "items": {
-            "$ref": "#/$defs/token"
+            "$ref": "#/$defs/targetPlan"
           }
+        },
+        "lock": {
+          "description": "The pinned project lockfile when one exists; null means the lock is absent and generation planning is incomplete until `lekalo lock` runs.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/lockPin"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "complete": {
+          "type": "boolean"
         },
         "note": {
           "type": "string",
           "minLength": 1,
           "maxLength": 256
+        }
+      }
+    },
+    "targetPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "file",
+        "digest",
+        "status",
+        "action"
+      ],
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/token"
+        },
+        "file": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "status": {
+          "enum": [
+            "planned",
+            "opaque",
+            "unreadable"
+          ]
+        },
+        "action": {
+          "$ref": "#/$defs/token"
+        }
+      }
+    },
+    "lockPin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "file",
+        "digest"
+      ],
+      "properties": {
+        "file": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
         }
       }
     }

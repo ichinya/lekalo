@@ -134,11 +134,34 @@ pub struct ImpactProjection {
     pub complete: bool,
 }
 
-/// The generation projection of the plan (never executed by `change`).
+/// One pinned generation target of the generation plan (round 2,
+/// finding 13): the decoded target identity, its exact document digest,
+/// and the intended (never executed) action.
+#[derive(Clone, Debug, Serialize, Eq, PartialEq)]
+pub struct TargetPlan {
+    pub target: String,
+    pub file: String,
+    pub digest: String,
+    pub status: &'static str,
+    pub action: String,
+}
+
+/// The pinned project lock of the generation plan.
+#[derive(Clone, Debug, Serialize, Eq, PartialEq)]
+pub struct LockPin {
+    pub file: String,
+    pub digest: String,
+}
+
+/// The generation projection of the plan (never executed by `change`):
+/// every declared target pinned by its exact document bytes, the project
+/// lock pinned when present, and explicit unknown/incomplete states.
 #[derive(Clone, Debug, Serialize, Eq, PartialEq)]
 pub struct GenerationProjection {
     pub executed: bool,
-    pub targets: Vec<String>,
+    pub targets: Vec<TargetPlan>,
+    pub lock: Option<LockPin>,
+    pub complete: bool,
     pub note: String,
 }
 
