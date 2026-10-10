@@ -93,22 +93,64 @@ fabricated, and the strict gate denies the empty join.
   refuses outright. An authored `executed` gate state without qualifying
   custody demotes to `declared` with a named gap; an affected scenario
   no gate record covers is an explicit `gate-coverage-unknown`
-  indication, never a silently complete surface. A semantic mapping or
-  bridged operational requirement is admitted only when it pins the
-  bridge's reviewed definition version with every pin for the capability
-  in agreement and declares exactly the bridge's reviewed precondition
-  set for its own destination (an empty list is never a vacuous credit,
-  and another target's vocabulary never admits this one). Contradictory
+  indication, never a silently complete surface. Gate custody is
+  scoped to the exact `(gate, destination)` the receipt names: a
+  qualified receipt for one destination never executes or fails another
+  destination's gate, and an authored `executed` claim demotes to
+  `declared` unless custody for an assessed destination qualifies it
+  (the multi-destination aggregate is conservative — any qualified
+  failure dominates). Gate coverage is derived from the model-driven
+  affected set of the exact scope, never from the manifest's own
+  scenario records: every affected scenario without a gate record is an
+  explicit `gate-coverage-unknown` gap, carries `collect-evidence`
+  planning work with `gate-record`, marks the migration surface
+  incomplete, and denies the strict gate. A semantic mapping or
+  bridged operational requirement is admitted only when the recipe
+  keys its destination at all, pins the bridge's reviewed definition
+  version with every pin for the capability in agreement, and declares
+  exactly the bridge's reviewed precondition set for its own
+  destination — a destination the recipe never keyed carries no
+  bridge credit (there is no global fallback; the global list is
+  another destination's vocabulary), an empty list is never a vacuous
+  credit, and another target's vocabulary never admits this one.
+  Beyond admission, every precondition token with an observable fact
+  source must be corroborated on the exact (symbol, destination) join:
+  `replacement-binding-declared` (a verified custom/foreign/external
+  binding), `recorded-scenario-receipt` (qualified receipt custody for
+  a covering scenario), `same-database-engine-family` (the verified
+  source and destination profile pins resolve to the same storage
+  component), `declared-isolation-level-at-least-required` (an offered
+  isolation policy at least as strong as the subject's required one,
+  on the closed strength order), and `identical-precision` /
+  `identical-scale` / `identical-rounding` (the offered decimal or
+  rounding policy matches the subject's required policy on that axis).
+  An uncorroborated checkable token keeps the row an explicit
+  `precondition-unproved` unknown; a token with no observable fact
+  source (a runtime version, for example) stays declaration-only —
+  the destination-exact admission is its whole review. Contradictory
   same-(target, kind) storage offerings refuse at decode regardless of
   order. A family declared complete must present its artifact through
   its owner envelope (`lekalo/portability-family/v0.8.0`): readable,
   digest-matching, project-pinned custody whose complete storage
   inventory equals the manifest's declared inventory — a content-free
-  or contradicting object never certifies completeness. A recorded
+  or contradicting object never certifies completeness, and the
+  extended-effects, scenario, and trace families are custody-only
+  (their verified artifact proves production of the exact pinned
+  bytes, nothing more). A recorded
   adapter snapshot qualifies only through the closed
   `lekalo/portability-adapter-snapshot/v0.8.0` artifact it references:
   every field must reconcile exactly, so recorded provenance is never
-  fabricated from manifest fields. The manifest pins the exact project
+  fabricated from manifest fields, and a referenced snapshot with
+  malformed members refuses at decode whether or not any record claims
+  it. The manifest's `recordedContext` is recorded provenance — the
+  contract defines no freshness or expiry judgment, and custody always
+  binds the exact digest-pinned bytes regardless of the recorded
+  revision. The decoder mirrors the schemas in both directions: an
+  authored `failed` gate state (excluded from the schema's enum), an
+  omitted required-but-nullable member, a duplicated hook observation,
+  an explicit `null` policy precision or scale, a malformed adapter
+  member under any state, and a malformed gate custody member under
+  any state are all decode refusals. The manifest pins the exact project
   IR revision and the exact reviewed recipe; anything stale is refused
   before assessment.
 - **Profile documents**: resolved through the existing target-profile
@@ -139,10 +181,29 @@ lekalo portability --check
 `--check` denies (exit 3, report preserved in the envelope) when any required
 obligation is unresolved: unsupported or missing hooks, lossy, partial, or
 explicitly unsupported storage policies, unresolved target-specific
-replacement work, unknown evidence, a truncated extraction, or an empty
-assessment. A pass means the assessed scope has no known unresolved
+replacement work, unknown evidence, an unproved reviewed precondition, a
+truncated extraction, an empty assessment, or an affected scenario with no
+gate coverage. A pass means the assessed scope has no known unresolved
 obligation — it is never a claim that two native implementations behave
 equivalently.
+
+## Emit-side conformance
+
+Every emitted report validates against its own published schema on every
+reachable input. The emission path enforces the report contract's bounds at
+construction: `requirements`, `witnesses`, `evidenceRefs`, `prerequisites`,
+`scenarios`, `gates`, the affected-subject and gate-scenario joins, the
+subjects and per-subject row lists, the diagnostics list, and the planning
+rows are each capped at their schema maxima with an explicit named
+diagnostic (`*-clipped`, `diagnostics-bound`) — never a silent truncation,
+never an overflow a conforming consumer must reject. Planning-row ids that
+would exceed the published `semanticId` bound (192) keep a bounded readable
+prefix plus a 16-hex digest of the full obligation tuple, so legal input
+maxima — a 128-character target id, a 122-character requirement — can never
+collide or overflow. Typed subject ids reserve the longest kind prefix
+against the same bound: a legal Model id whose typed id would exceed it is
+an explicit `subject-id-bound` refusal, never a truncated or schema-invalid
+emission.
 
 ## Contracts
 
