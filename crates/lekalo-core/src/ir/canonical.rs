@@ -322,7 +322,16 @@ impl RelationDef {
             "localFields",
             array(self.local_fields.iter().map(|name| string(name.as_str()))),
         ));
-        fields.extend(optional("max", self.max.map(number)));
+        // `max` is a required IR member: `null` is the explicit unbounded
+        // spelling, so an unbounded relation serializes `"max":null` and
+        // every emitted document satisfies the published schema.
+        fields.push(pair(
+            "max",
+            match self.max {
+                Some(max) => number(max),
+                None => String::from("null"),
+            },
+        ));
         fields.push(pair("min", number(self.min)));
         fields.push(pair("onDetach", literal(self.on_detach.as_str())));
         fields.push(pair("onDelete", literal(self.on_delete.as_str())));

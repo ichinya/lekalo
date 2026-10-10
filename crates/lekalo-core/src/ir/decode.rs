@@ -40,6 +40,10 @@ use crate::loader::{
 /// The maximum Unicode scalars of one bounded human-readable text value.
 const MAX_TEXT_CHARS: usize = 2000;
 
+/// The exact inclusive upper bound of every declared cardinality member:
+/// the published Model schema's `maximum`, mirrored by the decoder.
+const MAX_CARDINALITY: u64 = 1_000_000;
+
 /// Decode one whole model; any diagnostic fails the entire compilation.
 pub(super) fn compile(model: &NormalizedModel) -> Result<Compilation, IrFailure> {
     let mut cx = Context {
@@ -93,7 +97,7 @@ pub(super) fn compile(model: &NormalizedModel) -> Result<Compilation, IrFailure>
             .cmp(right.id().as_str().as_bytes())
     });
 
-    Ok(Compilation {
+    let compilation = Compilation {
         project: CompiledProject {
             model_version: model.model_version,
             project,
@@ -101,7 +105,17 @@ pub(super) fn compile(model: &NormalizedModel) -> Result<Compilation, IrFailure>
             definitions,
         },
         source_map: SourceMap::new(cx.entries),
-    })
+    };
+    // Semantic ownership: typed relations and secondary uniqueness are
+    // validated by their semantic owners once every definition exists,
+    // so a ghost target/field/normalization fails the whole compilation
+    // instead of silently shaping generated output.
+    let mut diagnostics = super::semantics::validate(&compilation);
+    if !diagnostics.is_empty() {
+        cx.diagnostics.append(&mut diagnostics);
+        return Err(IrFailure::new(cx.diagnostics));
+    }
+    Ok(compilation)
 }
 
 /// The document home of one definition, derived from its logical path.
@@ -298,20 +312,15 @@ impl Context {
 
     /// Decode a positive integer value.
     /// One non-negative cardinality value (0 allowed: relations may
-    /// declare optional or unbounded targets).
+    /// declare optional or unbounded targets). The upper bound matches
+    /// the published Model schema's cardinality `maximum` exactly.
     fn cardinality_integer(&mut self, node: &Node, detail: &'static str) -> Option<u64> {
         match &node.value {
-            Value::Scalar(Scalar::Int(value)) if *value >= 0 => match u64::try_from(*value) {
-                Ok(value) => Some(value),
-                Err(_) => {
-                    self.push(
-                        VALUE_INVALID,
-                        node.span,
-                        serde_json::json!({ "detail": detail }),
-                    );
-                    None
-                }
-            },
+            Value::Scalar(Scalar::Int(value))
+                if *value >= 0 && *value <= i128::from(MAX_CARDINALITY) =>
+            {
+                Some(*value as u64)
+            }
             _ => {
                 self.push(
                     VALUE_INVALID,
@@ -1046,6 +1055,29 @@ impl MemberEntry {
     }
 }
 
+/// One required member of a relation/constraint declaration: a missing
+/// one is a source-bound `missing-field` diagnostic, never a silent
+/// `None`. A silent drop would remove the whole owning definition from
+/// the compilation as unremarked semantic data loss.
+fn required_member<'a>(
+    members: &'a std::collections::BTreeMap<&'a str, MemberEntry>,
+    key: &str,
+    owner: &Node,
+    cx: &mut Context,
+) -> Option<&'a MemberEntry> {
+    match members.get(key) {
+        Some(entry) => Some(entry),
+        None => {
+            cx.push(
+                MISSING_FIELD,
+                owner.span,
+                serde_json::json!({ "field": key }),
+            );
+            None
+        }
+    }
+}
+
 fn relation_members<'a>(
     node: &'a Node,
     keys: &[&str],
@@ -1108,8 +1140,7 @@ fn decode_relation(node: &Node, pointer: &str, cx: &mut Context) -> Option<Relat
         "description",
     ];
     let members = relation_members(node, &keys, cx)?;
-    let member = |key: &str| members.get(key);
-    let id_node = member("id")?.node();
+    let id_node = required_member(&members, "id", node, cx)?.node();
     let id_text = cx.string(id_node, "relation-id")?;
     if !is_relation_id(&id_text) {
         cx.push(
@@ -1122,10 +1153,14 @@ fn decode_relation(node: &Node, pointer: &str, cx: &mut Context) -> Option<Relat
         );
         return None;
     }
-    let target = decode_reference(member("target")?.node(), &format!("{pointer}/target"), cx)?;
-    let local_node = member("localFields")?.node();
+    let target = decode_reference(
+        required_member(&members, "target", node, cx)?.node(),
+        &format!("{pointer}/target"),
+        cx,
+    )?;
+    let local_node = required_member(&members, "localFields", node, cx)?.node();
     let local_fields = field_array(local_node, &format!("{pointer}/localFields"), cx)?;
-    let target_fields_node = member("targetFields")?.node();
+    let target_fields_node = required_member(&members, "targetFields", node, cx)?.node();
     let target_fields = field_array(target_fields_node, &format!("{pointer}/targetFields"), cx)?;
     if local_fields.len() != target_fields.len() {
         cx.push(
@@ -1135,12 +1170,13 @@ fn decode_relation(node: &Node, pointer: &str, cx: &mut Context) -> Option<Relat
         );
         return None;
     }
-    let min = cx.cardinality_integer(member("min")?.node(), "relation-min")?;
-    let max = match member("max") {
+    let min_node = required_member(&members, "min", node, cx)?.node();
+    let min = cx.cardinality_integer(min_node, "relation-min")?;
+    let max = match members.get("max") {
         None => {
             cx.push(
                 MISSING_FIELD,
-                Span::EMPTY_EOF,
+                node.span,
                 serde_json::json!({ "field": "max" }),
             );
             return None;
@@ -1154,14 +1190,18 @@ fn decode_relation(node: &Node, pointer: &str, cx: &mut Context) -> Option<Relat
         if max < min {
             cx.push(
                 VALUE_INVALID,
-                member("max")?.node().span,
+                members
+                    .get("max")
+                    .map(|entry| entry.node().span)
+                    .unwrap_or(node.span),
                 serde_json::json!({ "detail": "relation-cardinality" }),
             );
             return None;
         }
     }
+    let ownership_node = required_member(&members, "ownership", node, cx)?.node();
     let ownership = cx.literal(
-        member("ownership")?.node(),
+        ownership_node,
         "ownership-unknown",
         [
             ("local", RelationOwnership::Local),
@@ -1169,23 +1209,25 @@ fn decode_relation(node: &Node, pointer: &str, cx: &mut Context) -> Option<Relat
             ("shared", RelationOwnership::Shared),
         ],
     )?;
+    let on_detach_node = required_member(&members, "onDetach", node, cx)?.node();
     let on_detach = cx.literal(
-        member("onDetach")?.node(),
+        on_detach_node,
         "on-detach-unknown",
         [
             ("retain-history", DetachPolicy::RetainHistory),
             ("forbid", DetachPolicy::Forbid),
         ],
     )?;
+    let on_delete_node = required_member(&members, "onDelete", node, cx)?.node();
     let on_delete = cx.literal(
-        member("onDelete")?.node(),
+        on_delete_node,
         "on-delete-unknown",
         [
             ("restrict", DeletePolicy::Restrict),
             ("detach", DeletePolicy::Detach),
         ],
     )?;
-    let description = match member("description") {
+    let description = match members.get("description") {
         None => None,
         Some(entry) => Some(cx.text(entry.node(), "relation-description")?),
     };
@@ -1212,6 +1254,16 @@ fn field_array(node: &Node, pointer: &str, cx: &mut Context) -> Option<Vec<Field
         true,
         "fields",
     )?;
+    // The published schema caps every relation/constraint field list at
+    // eight members; the decoder mirrors the bound exactly.
+    if names.len() > 8 {
+        cx.push(
+            VALUE_INVALID,
+            node.span,
+            serde_json::json!({ "detail": "relation-fields-count" }),
+        );
+        return None;
+    }
     if names.is_empty() {
         cx.push(
             VALUE_INVALID,
@@ -1278,8 +1330,7 @@ fn decode_unique_constraint(
         "description",
     ];
     let members = relation_members(node, &keys, cx)?;
-    let member = |key: &str| members.get(key);
-    let id_node = member("id")?.node();
+    let id_node = required_member(&members, "id", node, cx)?.node();
     let id_text = cx.string(id_node, "constraint-id")?;
     if !is_relation_id(&id_text) {
         cx.push(
@@ -1292,9 +1343,14 @@ fn decode_unique_constraint(
         );
         return None;
     }
-    let fields = field_array(member("fields")?.node(), &format!("{pointer}/fields"), cx)?;
+    let fields = field_array(
+        required_member(&members, "fields", node, cx)?.node(),
+        &format!("{pointer}/fields"),
+        cx,
+    )?;
+    let comparison_node = required_member(&members, "comparison", node, cx)?.node();
     let comparison = cx.literal(
-        member("comparison")?.node(),
+        comparison_node,
         "comparison-unknown",
         [
             ("exact-text", ConstraintComparison::ExactText),
@@ -1304,7 +1360,7 @@ fn decode_unique_constraint(
             ),
         ],
     )?;
-    let normalization_ref = match member("normalizationRef") {
+    let normalization_ref = match members.get("normalizationRef") {
         None => None,
         Some(entry) => match &entry.value.value {
             Value::Scalar(Scalar::Null) => None,
@@ -1318,12 +1374,15 @@ fn decode_unique_constraint(
     if (comparison == ConstraintComparison::DeclaredNormalization) != normalization_ref.is_some() {
         cx.push(
             VALUE_INVALID,
-            member("comparison")?.node().span,
+            members
+                .get("comparison")
+                .map(|entry| entry.node().span)
+                .unwrap_or(node.span),
             serde_json::json!({ "detail": "constraint-normalization" }),
         );
         return None;
     }
-    let scope_node = member("scope")?.node();
+    let scope_node = required_member(&members, "scope", node, cx)?.node();
     let scope_text = cx.string(scope_node, "constraint-scope")?;
     if scope_text.is_empty() || scope_text.len() > 128 {
         cx.push(
@@ -1333,7 +1392,7 @@ fn decode_unique_constraint(
         );
         return None;
     }
-    let description = match member("description") {
+    let description = match members.get("description") {
         None => None,
         Some(entry) => Some(cx.text(entry.node(), "constraint-description")?),
     };

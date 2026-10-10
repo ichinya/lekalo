@@ -1207,11 +1207,15 @@
       "properties": {
         "id": {
           "type": "string",
-          "pattern": "^[a-z][a-z0-9_]*(.[a-z][a-z0-9_]*){1,3}$"
+          "pattern": "^[a-z][a-z0-9_]{0,62}(.[a-z][a-z0-9_]{0,62}){1,3}$",
+          "minLength": 3,
+          "maxLength": 255
         },
         "target": {
           "type": "string",
-          "pattern": "^[a-z][a-z0-9_]*(.[a-z][a-z0-9_]*)$"
+          "pattern": "^[a-z][a-z0-9_]{0,62}(.[a-z][a-z0-9_]{0,62}){1,2}$",
+          "minLength": 3,
+          "maxLength": 191
         },
         "localFields": {
           "type": "array",
@@ -1282,7 +1286,9 @@
       "properties": {
         "id": {
           "type": "string",
-          "pattern": "^[a-z][a-z0-9_]*(.[a-z][a-z0-9_]*){1,3}$"
+          "pattern": "^[a-z][a-z0-9_]{0,62}(.[a-z][a-z0-9_]{0,62}){1,3}$",
+          "minLength": 3,
+          "maxLength": 255
         },
         "fields": {
           "type": "array",
@@ -1301,7 +1307,9 @@
         },
         "normalizationRef": {
           "type": "string",
-          "pattern": "^[a-z][a-z0-9_]*(.[a-z][a-z0-9_]*)$"
+          "pattern": "^[a-z][a-z0-9_]{0,62}(.[a-z][a-z0-9_]{0,62}){1,2}$",
+          "minLength": 3,
+          "maxLength": 191
         },
         "scope": {
           "type": "string",
@@ -1313,7 +1321,41 @@
           "maxLength": 2000
         }
       },
-      "description": "normalizationRef is required exactly when comparison is declared-normalization."
+      "description": "normalizationRef is required exactly when comparison is declared-normalization.",
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "comparison": {
+                "const": "declared-normalization"
+              }
+            },
+            "required": [
+              "comparison"
+            ]
+          },
+          "then": {
+            "properties": {
+              "normalizationRef": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,62}(.[a-z][a-z0-9_]{0,62}){1,2}$",
+                "minLength": 3,
+                "maxLength": 191
+              }
+            },
+            "required": [
+              "normalizationRef"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "normalizationRef"
+              ]
+            }
+          }
+        }
+      ]
     }
   }
 }

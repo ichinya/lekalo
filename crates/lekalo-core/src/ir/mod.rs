@@ -40,6 +40,7 @@ pub mod canonical;
 pub mod decode;
 pub mod diagnostic;
 pub mod grammar;
+pub(crate) mod semantics;
 pub mod version;
 
 use crate::loader::{ModelVersion, NormalizedModel, SourceMapEntry};
