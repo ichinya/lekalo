@@ -925,6 +925,86 @@ const validateToolOutput = (responses, id, slug) => {
   check(replies[0]?.result?.structuredContent?.status === "valid", "retry-after-cancel-succeeds");
 }
 
+// r2 F4/codex 3 (the flagship regression): a domain failure carrying
+// MULTIPLE reason codes must reach the wire intact — the old splice
+// corrupted the failure JSON and shipped structuredContent:null. The
+// fixture is poisoned with two semantic violations (identity field
+// missing + unresolved query read), the same pair the review probed.
+{
+  const entitiesPath = join(tempRoot, "planner", "lekalo", "modules", "planner", "entities.yaml");
+  const queriesPath = join(tempRoot, "planner", "lekalo", "modules", "planner", "queries.yaml");
+  const originalEntities = readFileSync(entitiesPath, "utf8");
+  const originalQueries = readFileSync(queriesPath, "utf8");
+  writeFileSync(
+    entitiesPath,
+    originalEntities.replace("    identity:\n      - task_id", "    identity:\n      - missing_field"),
+  );
+  writeFileSync(
+    queriesPath,
+    originalQueries.replace(
+      "  - id: planner.count_focused",
+      "  - id: planner.broken_probe\n    kind: query\n    version: 1\n    description: Probe\n    reads:\n      - planner.no_such_thing\n    returns:\n      list:\n        ref: planner.task\n  - id: planner.count_focused",
+    ),
+  );
+  const { responses } = await serve(
+    [...lifecycle(), call(190, "lekalo_validate", { projectId: "planner" })],
+    [],
+    "mcp.local.json",
+  );
+  writeFileSync(entitiesPath, originalEntities);
+  writeFileSync(queriesPath, originalQueries);
+  const output = validateToolOutput(responses, 190, "validate");
+  check(output.status === "invalid", "multi-diagnostic-invalid", output.failure);
+  const detail = output.failure?.detail ?? "";
+  check(
+    detail.includes("semantic.entity-identity-field-missing") &&
+      detail.includes("semantic.query-read-unresolved"),
+    "multi-diagnostic-detail-preserves-every-code",
+    detail,
+  );
+  const envelopeDiagnostics = output.diagnostics ?? [];
+  check(
+    envelopeDiagnostics.length >= 2 &&
+      envelopeDiagnostics.every((item) => typeof item.id === "string" && item.registry_version),
+    "multi-diagnostic-preserved-in-diagnostics",
+    envelopeDiagnostics.length,
+  );
+}
+
+// r2 F15 wire canaries: a spaced assignment and a private absolute path
+// in disclosed model text refuse the whole output (negative control: the
+// clean fixture still serves).
+{
+  const commandsPath = join(tempRoot, "planner", "lekalo", "modules", "planner", "commands.yaml");
+  const original = readFileSync(commandsPath, "utf8");
+  const canaries = [
+    ["GATE_SPACED_33 password = 0123456789abcdef0123456789", "spaced-assignment-refused"],
+    ["GATE_PATH_33 see C:/Users/PrivateReview/private.txt", "private-path-refused"],
+  ];
+  for (const [canary, name] of canaries) {
+    writeFileSync(commandsPath, original.replace("Focus one task", canary));
+    const { responses } = await serve(
+      [...lifecycle(), call(191, "lekalo_inspect", { projectId: "planner", symbol: "planner.focus_task" })],
+      [],
+      "mcp.local.json",
+    );
+    const output = toolOutput(responses, 191);
+    check(
+      output.status === "denied" && output.failure?.failureClass === "sensitive-output",
+      name,
+      output.failure,
+    );
+    check(!JSON.stringify(responses).includes("0123456789abcdef"), name + "-no-echo");
+  }
+  writeFileSync(commandsPath, original);
+  const { responses: clean } = await serve(
+    [...lifecycle(), call(192, "lekalo_inspect", { projectId: "planner", symbol: "planner.focus_task" })],
+    [],
+    "mcp.local.json",
+  );
+  check(toolOutput(clean, 192).status === "valid", "screen-clean-control-serves");
+}
+
 rmSync(tempRoot, { recursive: true, force: true });
 process.stdout.write(`${JSON.stringify({
   ok: true,

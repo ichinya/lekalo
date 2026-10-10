@@ -1318,3 +1318,75 @@ fn run_trace_export(
         is_error: false,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lekalo_core::mcp::diagnostic;
+
+    #[test]
+    fn the_diagnostics_bound_refuses_instead_of_shipping_schema_invalid_output() {
+        // Review r2 F20: the contract-declared cap is enforced — a
+        // domain result carrying more than 64 diagnostics refuses as the
+        // typed result-invalid fault instead of an invalid envelope.
+        let mut items: Vec<Value> = (0..MAX_TOOL_DIAGNOSTICS)
+            .map(|index| json!({"id": "mcp.input-invalid", "ordinal": index}))
+            .collect();
+        assert_eq!(
+            bounded_diagnostics(Some(items.clone())).unwrap(),
+            json!(items)
+        );
+        items.push(json!({"id": "mcp.input-invalid", "ordinal": 64}));
+        let fault = bounded_diagnostics(Some(items)).unwrap_err();
+        assert!(fault.contains("diagnostics-bound"), "{fault}");
+    }
+
+    #[test]
+    fn the_failure_detail_joins_every_reason_code_through_the_writer() {
+        // Review r2 F4/codex 3: the multi-code detail is a plain joined
+        // string serialized by serde — the old quote-splice corruption
+        // (`a","b`) cannot recur, and single-code details are unchanged.
+        assert_eq!(
+            failure_detail(Some(vec![
+                "semantic.entity-identity-field-missing".to_owned(),
+                "semantic.query-read-unresolved".to_owned(),
+            ])),
+            "semantic.entity-identity-field-missing, semantic.query-read-unresolved"
+        );
+        assert_eq!(failure_detail(Some(Vec::new())), "domain-failure");
+        assert_eq!(failure_detail(None), "domain-failure");
+        // The tail is built by serde: quotes in a code are escaped, and
+        // the branch always parses as JSON.
+        let tail = refusal_tail("domain-invalid", "codes: \"a\" and \"b\"");
+        let parsed: Value = serde_json::from_str(&tail.to_string()).expect("serde-built tail");
+        assert_eq!(parsed["failure"]["detail"], json!("codes: \"a\" and \"b\""));
+    }
+
+    #[test]
+    fn every_refusal_envelope_parses_and_carries_the_registered_diagnostic() {
+        // The refusal builder is the single refusal form: whatever the
+        // class or detail, the envelope parses closed and the bound
+        // holds (r2 F12's wire-check, at the unit level).
+        for (class, detail) in [
+            ("scope-denied", "mcp.scope-denied"),
+            ("invalid-input", "mcp.input-invalid"),
+            ("sensitive-output", "mcp.sensitive-output"),
+            ("result-invalid", "mcp.result-invalid"),
+        ] {
+            let envelope = refusal_envelope(
+                "lekalo_inspect",
+                Some("planner"),
+                None,
+                diagnostic::scope_denied_set("project", "unregistered"),
+                "denied",
+                class,
+                detail,
+            );
+            let value: Value =
+                serde_json::from_str(&envelope).expect("the refusal envelope always parses");
+            assert_eq!(value["failure"]["failureClass"], json!(class));
+            assert_eq!(value["status"], "denied");
+            assert_eq!(value["diagnostics"][0]["registry_version"], "0.8.0");
+        }
+    }
+}
