@@ -57,7 +57,7 @@ pub(crate) fn token(text: &str) -> DataValue {
 }
 
 /// The fatal set for a single detail-tagged construction violation.
-pub(crate) fn input_invalid_detail(detail: &str) -> DiagnosticSet {
+pub fn input_invalid_detail(detail: &str) -> DiagnosticSet {
     let mut data = DataObject::new();
     data.insert("detail".to_owned(), token(detail));
     match one(INPUT_INVALID, None, data) {

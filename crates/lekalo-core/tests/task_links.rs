@@ -1825,6 +1825,63 @@ fn extended_effects_declare_the_external_write_and_partial_failure() {
             format!("{case:?}").contains("tasklinks.scenario.partial_delivery"),
             "the case is keyed to the partial-delivery scenario"
         );
+
+        // The committed detected-evidence envelope joins the same
+        // compilation and the public graph then carries the external
+        // provider write, the durable worker job, the receipt event,
+        // the partial-failure reconciliation path, and the explicit
+        // transaction groups — the public boundary facts of AC3.
+        let envelope_bytes =
+            std::fs::read("tests/fixtures/task-external-links/contracts/detected-effects.json")
+                .map_err(|e| format!("envelope read: {e}"))?;
+        let envelope = lekalo_core::effects::envelope::from_json(&envelope_bytes)
+            .map_err(|set| format!("envelope decode: {set:?}"))?;
+        assert_eq!(
+            envelope.source_revision,
+            format!(
+                "sha256:{}",
+                lekalo_core::digest::sha256_hex(compilation.project.to_canonical_json().as_bytes())
+            ),
+            "the envelope source revision is the live compilation's IR digest"
+        );
+        let joined = graph
+            .with_detected_evidence(&envelope)
+            .map_err(|set| format!("envelope join: {set:?}"))?;
+        let external: Vec<_> = joined
+            .detected()
+            .iter()
+            .filter(|edge| edge.key().kind() == lekalo_core::effects::EffectKind::ExternalCall)
+            .collect();
+        assert_eq!(
+            external.len(),
+            2,
+            "the provider write and the partial-failure reconcile call"
+        );
+        let grouped: Vec<_> = joined
+            .detected()
+            .iter()
+            .filter(|edge| {
+                edge.transaction_group()
+                    .is_some_and(|group| group.as_str() == "tasklinks/tx-intent-local")
+            })
+            .map(|edge| {
+                (
+                    edge.key().kind(),
+                    edge.key().subject().resource().as_str().to_owned(),
+                )
+            })
+            .collect();
+        assert_eq!(grouped.len(), 2, "the atomic local pair carries the group");
+        assert!(
+            grouped.contains(&(
+                lekalo_core::effects::EffectKind::Update,
+                "planner.task".to_owned()
+            )) && grouped.contains(&(
+                lekalo_core::effects::EffectKind::Create,
+                "tasklinks.outbox_item".to_owned()
+            )),
+            "the canonical local write and the durable outbox commit share one group"
+        );
         Ok(())
     })();
     std::env::set_current_dir(original).expect("restore cwd");

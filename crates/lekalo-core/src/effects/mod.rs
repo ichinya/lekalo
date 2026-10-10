@@ -28,8 +28,10 @@ pub mod compare;
 pub mod conflict;
 pub mod diagnostic;
 pub mod edge;
+pub mod envelope;
 pub mod identity;
 pub mod index;
+pub(crate) mod json;
 pub mod kind;
 pub mod provenance;
 pub mod summary;
@@ -154,6 +156,19 @@ impl EffectGraph {
     /// The number of distinct operations in the graph.
     pub fn operation_count(&self) -> usize {
         self.operations().len()
+    }
+
+    /// Join one validated detected-evidence envelope to this graph:
+    /// the returned graph shares the exact declared edges and appends
+    /// the validated evidence records, so external calls, worker jobs,
+    /// receipt events, partial-failure paths, and explicit transaction
+    /// groups are visible to every public consumer. The canonical model
+    /// is never mutated.
+    pub fn with_detected_evidence(
+        &self,
+        envelope: &EvidenceEnvelope,
+    ) -> Result<Self, DiagnosticSet> {
+        build::attach(self, envelope)
     }
 
     /// Every operation the graph carries, in canonical order.

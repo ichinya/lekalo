@@ -302,10 +302,12 @@ pub(crate) fn validate_envelope(
     Ok(())
 }
 
-/// A bounded source revision: a node-safe semantic id or a namespaced
-/// digest-like token, at most 128 bytes.
+/// A bounded source revision: a node-safe semantic id, a namespaced
+/// token, or an exact `sha256:<64 hex>` digest — the compilation pin a
+/// detected-evidence envelope carries is a digest, so the pin grammar
+/// accepts exactly that spelling.
 fn is_bounded_revision(text: &str) -> bool {
-    text.len() <= 128 && (is_semantic_id(text) || is_namespaced_id(text))
+    text.len() <= 128 && (is_semantic_id(text) || is_namespaced_id(text) || is_sha256_digest(text))
 }
 
 /// A quoted JSON string (the writer adds the surrounding quotes).

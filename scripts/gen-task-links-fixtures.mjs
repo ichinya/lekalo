@@ -163,7 +163,17 @@ const walk = (current) => {
     if (!document || typeof document !== "object") continue;
     const schemaVersion = document.schemaVersion;
     let touched = false;
-    if (
+    if (relativePath === "contracts/detected-effects.json") {
+      // The detected-evidence envelope joins THIS compilation: its
+      // source revision is always the live canonical IR digest. The
+      // evidence digest stays the pinned extended-effects document's
+      // exact bytes (the declaration the envelope witnesses).
+      const sourceRevision = `sha256:${createHash("sha256").update(canonicalBytes(irObject)).digest("hex")}`;
+      if (document.sourceRevision !== sourceRevision) {
+        document.sourceRevision = sourceRevision;
+        touched = true;
+      }
+    } else if (
       typeof schemaVersion === "string"
       && schemaVersion.startsWith("lekalo/task-links-integration/")
       && relativePath !== baseRel

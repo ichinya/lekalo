@@ -119,6 +119,92 @@ if (rust.error) {
   intentGroup("tasklinks.request_action", ["create:tasklinks.outbox_item", "update:planner.task"]);
   intentGroup("tasklinks.dispatch_outbox", ["create:tasklinks.outbox_item"]);
   intentGroup("tasklinks.ack_delivery", ["create:tasklinks.outbox_item"]);
+
+  // The public effect graph carries the extended surface: the committed
+  // detected-evidence envelope joins THIS compilation (its source
+  // revision is the live IR digest, recomputed by the owning regen
+  // script) and the external provider write, the durable outbox worker
+  // job, the receipt event, and the explicit local transaction groups
+  // become visible public edges. The network call stays outside the
+  // transaction: the group ids are declared facts, not simulations.
+  const detectedEnvelope = "tests/fixtures/task-external-links/contracts/detected-effects.json";
+  const detected = (operation) => {
+    const run = spawnSync(
+      resolvedBinary,
+      ["--no-cache", "--json", "effects", "show", operation,
+       "--project", "tests/fixtures/task-external-links/project",
+       "--evidence", detectedEnvelope],
+      { cwd: root, encoding: "utf8", timeout: 120000 },
+    );
+    if (run.error || run.status !== 0) {
+      fail("detected-show", operation + ": " + String(run.error ?? run.stderr).slice(0, 200));
+      return null;
+    }
+    return JSON.parse(run.stdout).effects;
+  };
+  {
+    const effects = detected("tasklinks.dispatch_outbox");
+    if (effects) {
+      const byKind = (kind) => effects.edges.filter((edge) => edge.kind === kind);
+      if (!byKind("external-call").some((edge) => edge.resource.id === "tasklinks.provider/github-issues")) {
+        fail("detected-external-write", "dispatch_outbox external provider write missing");
+      }
+      if (!byKind("enqueue-job").some((edge) => edge.resource.id === "tasklinks.queue/outbox")) {
+        fail("detected-worker-job", "dispatch_outbox durable outbox worker job missing");
+      }
+      const groups = new Set(
+        effects.edges.filter((edge) => edge.transactionGroup !== null).map((edge) => edge.transactionGroup),
+      );
+      if (!groups.has("tasklinks/tx-intent-dispatch")) {
+        fail("detected-atomic-group", "the dispatch atomic intent group is not declared");
+      }
+    }
+  }
+  {
+    const effects = detected("tasklinks.request_action");
+    if (effects) {
+      // The canonical local write and the durable outbox commit are one
+      // atomic local unit: both carry the SAME explicit group.
+      const grouped = effects.edges.filter((edge) => edge.transactionGroup === "tasklinks/tx-intent-local");
+      const groupedKinds = grouped.map((edge) => edge.kind + ":" + edge.resource.id).sort();
+      if (
+        JSON.stringify(groupedKinds)
+        !== JSON.stringify(["create:tasklinks.outbox_item", "update:planner.task"])
+      ) {
+        fail("detected-local-group", "the request_action atomic pair must share one group: " + JSON.stringify(groupedKinds));
+      }
+    }
+  }
+  {
+    const effects = detected("tasklinks.ack_delivery");
+    if (effects) {
+      // The partial-failure path is a public edge: the receipt
+      // reconciliation call exists and is grouped distinctly from the
+      // local ack group.
+      const reconcile = effects.edges.find(
+        (edge) => edge.kind === "external-call"
+          && edge.transactionGroup === "tasklinks/tx-partial-failure-reconcile",
+      );
+      if (!reconcile) fail("detected-partial-failure", "the partial-failure reconciliation edge is missing");
+      if (!effects.edges.some((edge) => edge.kind === "emit-event" && edge.resource.id === "tasklinks.delivery_recorded")) {
+        fail("detected-receipt-event", "the durable delivery receipt event is missing");
+      }
+    }
+  }
+  // A stale envelope (source revision not the live IR digest) refuses
+  // closed: the join is pin-checked, never projected blindly.
+  {
+    const run = spawnSync(
+      resolvedBinary,
+      ["--no-cache", "--json", "effects", "show", "tasklinks.dispatch_outbox",
+       "--project", "tests/fixtures/task-external-links/project",
+       "--evidence", "tests/fixtures/task-external-links/invalid/detected-effects-stale.json"],
+      { cwd: root, encoding: "utf8", timeout: 120000 },
+    );
+    if (run.error || run.status === 0 || !(run.stdout + run.stderr).includes("effects-stale-pin")) {
+      fail("detected-stale-pin", "a stale envelope must refuse with effects-stale-pin");
+    }
+  }
   // The extended-effects declaration joins the same compilation: the
   // external write, the outbox worker job, the durable receipt event,
   // and the partial-failure case are declared and admitted.
