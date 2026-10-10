@@ -6,8 +6,10 @@
 //! Every assertion runs against the production core seam with the same
 //! fixture files the CLI gate reads; no test launches a process.
 
+use lekalo_core::diagnostics::DiagnosticSet;
 use lekalo_core::implementation::{self, ImplementationDocument};
 use lekalo_core::loader::{normalize_model, LoadSelection};
+use lekalo_core::portability::requirements::Subjects;
 use lekalo_core::portability::{
     assess, embedded_recipe, extract, parse_evidence, parse_targets, profile_pin, request,
     verify_profile_pin, wire, Assessment, Request, Scope,
@@ -70,13 +72,36 @@ fn profile_pin_for(name: &str, id: &str) -> lekalo_core::portability::ProfilePin
 /// The full qualified fixture assessment: pinned targets, complete
 /// implementation inventory, and complete evidence.
 fn fixture_assessment() -> (lekalo_core::ir::Compilation, wire::Report) {
+    let (compilation, report) = fixture_assessment_with(None, None, BTreeMap::new(), None)
+        .expect("the fixture assessment succeeds");
+    (compilation, report)
+}
+
+/// The fixture assessment with hooks: an optional evidence mutation
+/// (applied to the raw JSON before decoding), an optional destination
+/// override, injected gate custody, and an optional subject mutation.
+/// The implementation join, pins, and receipt qualification mirror the
+/// CLI exactly, so the mutated controls exercise the real seams.
+#[allow(clippy::type_complexity)]
+fn fixture_assessment_with(
+    mutate_evidence: Option<&mut dyn FnMut(&mut serde_json::Value)>,
+    destinations_override: Option<Vec<lekalo_core::portability::TargetInput>>,
+    gates_qualified: BTreeMap<(String, String), bool>,
+    mutate_subjects: Option<&mut dyn FnMut(&mut Subjects)>,
+) -> Result<(lekalo_core::ir::Compilation, wire::Report), DiagnosticSet> {
     // The caller holds CWD_LOCK and has entered the workspace root.
     let compilation = compilation();
     let recipe = embedded_recipe().expect("embedded recipe");
     let targets = parse_targets(&read(&format!("{FIXTURE}/config/portability-targets.json")))
         .expect("targets decode");
+    let mut evidence_value: serde_json::Value =
+        serde_json::from_slice(&read(EVIDENCE)).expect("evidence JSON");
+    if let Some(mutate) = mutate_evidence {
+        mutate(&mut evidence_value);
+    }
+    let evidence_bytes = serde_json::to_vec(&evidence_value).expect("serialize evidence");
     let evidence =
-        parse_evidence(&read(EVIDENCE), &compilation, &recipe).expect("evidence decodes");
+        parse_evidence(&evidence_bytes, &compilation, &recipe).expect("mutated evidence decodes");
 
     // The implementation join, exactly like the CLI: digest, decode,
     // producer validation.
@@ -146,7 +171,10 @@ fn fixture_assessment() -> (lekalo_core::ir::Compilation, wire::Report) {
         source: Some("node-typescript".to_owned()),
         destinations: vec!["php-laravel".to_owned(), "go-service".to_owned()],
     };
-    let subjects = extract(&compilation.project, &recipe);
+    let mut subjects = extract(&compilation.project, &recipe);
+    if let Some(mutate) = mutate_subjects {
+        mutate(&mut subjects);
+    }
     let resolved_targets = lekalo_core::portability::resolve_targets(
         &request,
         Some(&targets),
@@ -228,13 +256,14 @@ fn fixture_assessment() -> (lekalo_core::ir::Compilation, wire::Report) {
         subjects,
         request: &request,
         source: resolved_targets.source.clone(),
-        destinations: resolved_targets.destinations.clone(),
+        destinations: destinations_override
+            .unwrap_or_else(|| resolved_targets.destinations.clone()),
         evidence: Some(&evidence),
         implementation: Some(&report),
         verified_families,
         verified_storage_inventory: None,
         receipts_qualified,
-        gates_qualified: std::collections::BTreeMap::new(),
+        gates_qualified,
         targets_input: wire::TargetsInput {
             state: wire::PinState::Pinned,
             path: Some("config/portability-targets.json".to_owned()),
@@ -249,8 +278,8 @@ fn fixture_assessment() -> (lekalo_core::ir::Compilation, wire::Report) {
         lock_state: lekalo_core::portability::wire::LockPresence::Absent,
         evidence_digest: None,
     };
-    let report = assess(&assessment).expect("the fixture assessment succeeds");
-    (compilation, report)
+    let report = assess(&assessment)?;
+    Ok((compilation, report))
 }
 
 fn row<'a>(
@@ -1159,7 +1188,7 @@ mod decoder_parity {
         serde_json::from_slice(&fixture_targets()).expect("fixture targets JSON")
     }
 
-    fn expect_refusal(bytes: &[u8], detail: &str, targets: bool) {
+    pub(super) fn expect_refusal(bytes: &[u8], detail: &str, targets: bool) {
         let _guard = CWD_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let compilation = compilation();
         let recipe = embedded_recipe().expect("embedded recipe");
@@ -1182,7 +1211,7 @@ mod decoder_parity {
         );
     }
 
-    fn mutated_evidence(mutate: impl FnOnce(&mut serde_json::Value)) -> Vec<u8> {
+    pub(super) fn mutated_evidence(mutate: impl FnOnce(&mut serde_json::Value)) -> Vec<u8> {
         let mut value = evidence_document();
         mutate(&mut value);
         serde_json::to_vec(&value).expect("serialize")
@@ -1360,5 +1389,519 @@ mod decoder_parity {
         // The named diagnostic constructor stays reachable for the
         // refusal vocabulary.
         let _ = diagnostic::invalid("closed-shape");
+    }
+}
+
+mod decoder_parity_r4 {
+    use super::decoder_parity::*;
+
+    #[test]
+    fn authored_failed_gate_state_is_refused() {
+        // `failed` is excluded from the authored vocabulary: a gate only
+        // becomes failed through a qualified failing receipt.
+        let bytes = mutated_evidence(|value| {
+            value["gates"][0]["state"] = "failed".into();
+        });
+        expect_refusal(&bytes, "gate-state", false);
+    }
+
+    #[test]
+    fn gate_omitted_nullable_members_are_refused() {
+        let bytes = mutated_evidence(|value| {
+            value["gates"][0]
+                .as_object_mut()
+                .unwrap()
+                .remove("targetId");
+            value["gates"][0]
+                .as_object_mut()
+                .unwrap()
+                .remove("receiptRef");
+            value["gates"][0]
+                .as_object_mut()
+                .unwrap()
+                .remove("receiptDigest");
+        });
+        expect_refusal(&bytes, "closed-shape", false);
+    }
+
+    #[test]
+    fn declared_gate_malformed_custody_members_are_refused() {
+        // The target id grammar.
+        let bytes = mutated_evidence(|value| {
+            value["gates"][0]["targetId"] = "INVALID TARGET".into();
+        });
+        expect_refusal(&bytes, "gate-identity", false);
+        // The safe receipt-reference grammar.
+        let bytes = mutated_evidence(|value| {
+            value["gates"][0]["receiptRef"] = "../out".into();
+        });
+        expect_refusal(&bytes, "artifact-ref", false);
+        // The digest spelling.
+        let bytes = mutated_evidence(|value| {
+            value["gates"][0]["receiptDigest"] = "bad".into();
+        });
+        expect_refusal(&bytes, "gate-custody", false);
+    }
+
+    #[test]
+    fn null_policy_precision_is_refused() {
+        // precision/scale are integers-or-absent, never explicit nulls.
+        let bytes = mutated_evidence(|value| {
+            value["storageRequired"][0]["policy"]["precision"] = serde_json::Value::Null;
+        });
+        expect_refusal(&bytes, "policy-shape", false);
+        let bytes = mutated_evidence(|value| {
+            value["storageOffered"][0]["policy"]["scale"] = serde_json::Value::Null;
+        });
+        expect_refusal(&bytes, "policy-shape", false);
+    }
+
+    #[test]
+    fn duplicate_hook_observation_is_refused() {
+        // The hook observations are a set (uniqueItems).
+        let bytes = mutated_evidence(|value| {
+            let first = value["hooks"][0].clone();
+            value["hooks"].as_array_mut().unwrap().push(first);
+        });
+        expect_refusal(&bytes, "duplicate-hook", false);
+    }
+
+    #[test]
+    fn absent_adapter_with_malformed_version_is_refused() {
+        // Present members obey their grammar in any state.
+        let bytes = mutated_evidence(|value| {
+            value["adapters"][0]["version"] = "bad".into();
+        });
+        expect_refusal(&bytes, "adapter-snapshot", false);
+    }
+
+    #[test]
+    fn adapter_snapshot_artifact_grammar_is_refused() {
+        // A referenced snapshot with malformed members never publishes
+        // provenance, claimed or not: every field of the closed artifact
+        // contract is validated at decode.
+        let base = serde_json::json!({
+            "schemaVersion": "lekalo/portability-adapter-snapshot/v0.8.0",
+            "identity": "dev.lekalo.portability-adapter-snapshot@0.8.0",
+            "targetId": "php-laravel",
+            "adapter": {
+                "identity": "composer/lekalo-planner-adapter",
+                "version": "1.4.2",
+                "protocol": "http.json/1",
+                "capabilityDigest": format!("sha256:{}", "7".repeat(64)),
+            },
+            "profileRef": {
+                "id": "laravel-postgres-http",
+                "version": "0.2.16",
+                "resolvedDigest": format!("sha256:{}", "5".repeat(64)),
+            }
+        });
+        for member in ["identity", "version", "protocol"] {
+            let mut malformed = base.clone();
+            malformed["adapter"][member] = "".into();
+            assert!(
+                lekalo_core::portability::wire::decode_adapter_snapshot(
+                    &serde_json::to_vec(&malformed).unwrap()
+                )
+                .is_err(),
+                "malformed adapter member {member} must refuse"
+            );
+        }
+        let mut malformed = base.clone();
+        malformed["adapter"]["capabilityDigest"] = "bad".into();
+        assert!(lekalo_core::portability::wire::decode_adapter_snapshot(
+            &serde_json::to_vec(&malformed).unwrap()
+        )
+        .is_err());
+        let mut malformed = base.clone();
+        malformed["profileRef"]["resolvedDigest"] = "bad".into();
+        assert!(lekalo_core::portability::wire::decode_adapter_snapshot(
+            &serde_json::to_vec(&malformed).unwrap()
+        )
+        .is_err());
+        // The well-formed spelling decodes.
+        assert!(lekalo_core::portability::wire::decode_adapter_snapshot(
+            &serde_json::to_vec(&base).unwrap()
+        )
+        .is_ok());
+    }
+}
+
+/// Round-4 semantics: destination-exact bridge admission with proved
+/// preconditions, (gate, destination) custody, affected-set gate
+/// coverage, and the emit-side bounds of the report contract.
+mod round4_semantics {
+    use super::*;
+    use lekalo_core::portability::wire::{Classification, Dimension};
+
+    /// One bare destination input for custody-scoping controls.
+    fn destination_input(target: &str) -> lekalo_core::portability::TargetInput {
+        lekalo_core::portability::TargetInput {
+            target_id: target.to_owned(),
+            state: wire::PinState::Pinned,
+            profile: None,
+            adapter: None,
+            storage_profile_refs: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn unkeyed_destination_never_carries_the_bridges_credit() {
+        let _guard = CWD_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        // The full PHP precondition list on a Go mapping through the
+        // php-keyed `runtime.async` bridge: go-service is unkeyed there,
+        // so the record is unqualified — never a supported-with-mapping
+        // credit under a green --check.
+        let (_, report) = fixture_assessment_with(
+            Some(&mut |value: &mut serde_json::Value| {
+                value["mappings"][1] = serde_json::json!({
+                    "id": "map.reading-go",
+                    "requirement": "behavior.hook",
+                    "capability": "runtime.async",
+                    "targetId": "go-service",
+                    "subject": "planner.count_focused",
+                    "coverage": "full",
+                    "conditions": ["replacement-binding-declared", "php-84", "laravel-11"],
+                    "definitionPins": [{ "id": "runtime.async", "version": "0.2.16" }],
+                });
+            }),
+            None,
+            BTreeMap::new(),
+            None,
+        )
+        .expect("assessment succeeds");
+        let reading = row(
+            &report,
+            "query:planner.count_focused",
+            "go-service",
+            Dimension::Behavioral,
+        );
+        assert_eq!(reading.classification, Classification::Unknown);
+        assert_eq!(reading.reason, "mapping-unqualified");
+        assert!(reading.blocking);
+        assert!(lekalo_core::portability::planning::denial(&report));
+    }
+
+    #[test]
+    fn mirror_direction_go_vocabulary_never_credits_php() {
+        let _guard = CWD_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        // The Go precondition list on a PHP mapping through the
+        // go-keyed `storage.returning` bridge: php-laravel is unkeyed
+        // there, so the record is unqualified.
+        let (_, report) = fixture_assessment_with(
+            Some(&mut |value: &mut serde_json::Value| {
+                value["mappings"][0] = serde_json::json!({
+                    "id": "map.schedule-php",
+                    "requirement": "behavior.hook",
+                    "capability": "storage.returning",
+                    "targetId": "php-laravel",
+                    "subject": "planner.schedule_calculate",
+                    "coverage": "full",
+                    "conditions": ["replacement-binding-declared", "go-122"],
+                    "definitionPins": [{ "id": "storage.returning", "version": "0.2.16" }],
+                });
+            }),
+            None,
+            BTreeMap::new(),
+            None,
+        )
+        .expect("assessment succeeds");
+        let schedule = row(
+            &report,
+            "command:planner.schedule_calculate",
+            "php-laravel",
+            Dimension::Behavioral,
+        );
+        assert_eq!(schedule.classification, Classification::Unknown);
+        assert_eq!(schedule.reason, "mapping-unqualified");
+        assert!(schedule.blocking);
+    }
+
+    #[test]
+    fn declared_but_unproved_preconditions_stay_unknown() {
+        let _guard = CWD_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        // The reviewed transaction vocabulary is declared exactly, but
+        // the destination offers no isolation policy at least as strong
+        // as the required one: the credit stays an explicit unknown.
+        let requirement = serde_json::json!({
+            "subject": "command:planner.focus_task",
+            "requirement": "storage.transactions",
+            "conditions": [
+                "same-database-engine-family",
+                "declared-isolation-level-at-least-required"
+            ],
+            "definitionPins": [{ "id": "storage.transactions", "version": "0.4.0" }],
+        });
+        let isolation_requirement = serde_json::json!({
+            "subject": "command:planner.focus_task",
+            "policy": { "kind": "isolation", "value": "repeatable-read" },
+        });
+        let (_, report) = fixture_assessment_with(
+            Some(&mut |value: &mut serde_json::Value| {
+                value["operationalRequirements"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(requirement.clone());
+                value["storageRequired"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(isolation_requirement.clone());
+            }),
+            None,
+            BTreeMap::new(),
+            None,
+        )
+        .expect("assessment succeeds");
+        let focus = row(
+            &report,
+            "command:planner.focus_task",
+            "php-laravel",
+            Dimension::Operational,
+        );
+        assert_eq!(focus.classification, Classification::Unknown);
+        assert_eq!(focus.reason, "precondition-unproved");
+        assert!(focus.blocking);
+        // The corroborated control: with a strong-enough isolation
+        // offering every checkable token is proved and the declared
+        // capability credits the row.
+        let (_, report) = fixture_assessment_with(
+            Some(&mut |value: &mut serde_json::Value| {
+                value["operationalRequirements"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(requirement.clone());
+                value["storageRequired"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(isolation_requirement.clone());
+                value["storageOffered"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(serde_json::json!({
+                        "targetId": "php-laravel",
+                        "policy": { "kind": "isolation", "value": "repeatable-read" },
+                    }));
+            }),
+            None,
+            BTreeMap::new(),
+            None,
+        )
+        .expect("assessment succeeds");
+        let focus = row(
+            &report,
+            "command:planner.focus_task",
+            "php-laravel",
+            Dimension::Operational,
+        );
+        assert_eq!(focus.classification, Classification::Portable);
+        assert_eq!(focus.reason, "capability-declared");
+    }
+
+    #[test]
+    fn cross_target_gate_custody_never_upgrades_this_destination() {
+        let _guard = CWD_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let gate = "planner.native-scenario-gate".to_owned();
+        // A qualified php receipt during a go-only assessment: the gate
+        // stays declared, because custody binds to its destination.
+        let php_custody: BTreeMap<(String, String), bool> =
+            BTreeMap::from([((gate.clone(), "php-laravel".to_owned()), true)]);
+        let (_, report) = fixture_assessment_with(
+            Some(&mut |value: &mut serde_json::Value| {
+                value["gates"][0]["state"] = "executed".into();
+                value["gates"][0]["receiptRef"] = "reports/receipts/focus-flow.json".into();
+                value["gates"][0]["receiptDigest"] = format!("sha256:{}", "0".repeat(64)).into();
+                value["gates"][0]["targetId"] = "php-laravel".into();
+            }),
+            Some(vec![destination_input("go-service")]),
+            php_custody,
+            None,
+        )
+        .expect("assessment succeeds");
+        let joined = report
+            .affected_gates
+            .iter()
+            .find(|g| g.gate == gate)
+            .expect("gate joins");
+        assert_eq!(joined.state, wire::JoinState::Declared);
+        // The same-shape go custody executes the gate in the go
+        // assessment, and a failing one fails it.
+        let go_pass: BTreeMap<(String, String), bool> =
+            BTreeMap::from([((gate.clone(), "go-service".to_owned()), true)]);
+        let (_, report) = fixture_assessment_with(
+            Some(&mut |value: &mut serde_json::Value| {
+                value["gates"][0]["state"] = "executed".into();
+                value["gates"][0]["receiptRef"] = "reports/receipts/focus-flow.json".into();
+                value["gates"][0]["receiptDigest"] = format!("sha256:{}", "0".repeat(64)).into();
+                value["gates"][0]["targetId"] = "go-service".into();
+            }),
+            Some(vec![destination_input("go-service")]),
+            go_pass,
+            None,
+        )
+        .expect("assessment succeeds");
+        let joined = report
+            .affected_gates
+            .iter()
+            .find(|g| g.gate == gate)
+            .expect("gate joins");
+        assert_eq!(joined.state, wire::JoinState::Executed);
+        let go_fail: BTreeMap<(String, String), bool> =
+            BTreeMap::from([((gate.clone(), "go-service".to_owned()), false)]);
+        let (_, report) = fixture_assessment_with(
+            Some(&mut |value: &mut serde_json::Value| {
+                value["gates"][0]["state"] = "executed".into();
+                value["gates"][0]["receiptRef"] = "reports/receipts/focus-flow.json".into();
+                value["gates"][0]["receiptDigest"] = format!("sha256:{}", "0".repeat(64)).into();
+                value["gates"][0]["targetId"] = "go-service".into();
+            }),
+            Some(vec![destination_input("go-service")]),
+            go_fail,
+            None,
+        )
+        .expect("assessment succeeds");
+        let joined = report
+            .affected_gates
+            .iter()
+            .find(|g| g.gate == gate)
+            .expect("gate joins");
+        assert_eq!(joined.state, wire::JoinState::Failed);
+    }
+
+    #[test]
+    fn gate_coverage_gaps_derive_from_the_affected_set_and_deny() {
+        let _guard = CWD_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        // No gate records at all: the affected scenarios of the scoped
+        // selection still surface their missing coverage, plan
+        // collect-evidence work, mark the surface incomplete, and deny
+        // the strict gate.
+        let (_, report) = fixture_assessment_with(
+            Some(&mut |value: &mut serde_json::Value| {
+                value["gates"] = serde_json::json!([]);
+            }),
+            None,
+            BTreeMap::new(),
+            None,
+        )
+        .expect("assessment succeeds");
+        let gaps: Vec<&str> = report
+            .diagnostics
+            .iter()
+            .filter(|d| d.detail == "gate-coverage-unknown")
+            .filter_map(|d| d.subject.as_deref())
+            .collect();
+        assert!(gaps.contains(&"planner.focus_flow"));
+        assert!(gaps.contains(&"planner.schedule_flow"));
+        let coverage_rows: Vec<_> = report
+            .migration_surface
+            .rows
+            .iter()
+            .filter(|row| row.reason == "gate-coverage-unknown")
+            .collect();
+        assert!(!coverage_rows.is_empty());
+        for row in &coverage_rows {
+            assert_eq!(row.action, wire::Action::CollectEvidence);
+            assert!(row.evidence_needed.iter().any(|e| e == "gate-record"));
+            assert!(row.destination.is_none());
+        }
+        assert!(!report.migration_surface.complete);
+        assert!(lekalo_core::portability::planning::denial(&report));
+    }
+
+    #[test]
+    fn planning_ids_stay_within_the_published_bound() {
+        let _guard = CWD_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        // A legal 128-character destination id cannot push any planning
+        // id past the published semanticId bound: overlong identities
+        // keep a readable prefix plus a collision-free digest.
+        let long = format!("{}x", "t".repeat(127));
+        let (_, report) = fixture_assessment_with(
+            None,
+            Some(vec![destination_input(&long)]),
+            BTreeMap::new(),
+            None,
+        )
+        .expect("assessment succeeds");
+        assert!(!report.migration_surface.rows.is_empty());
+        let mut ids: Vec<&String> = report
+            .migration_surface
+            .rows
+            .iter()
+            .map(|row| &row.id)
+            .collect();
+        for id in &ids {
+            assert!(id.len() <= 192, "overlong planning id: {id}");
+            assert!(id.starts_with("plan."));
+        }
+        ids.sort();
+        ids.dedup();
+        assert_eq!(ids.len(), report.migration_surface.rows.len());
+    }
+
+    #[test]
+    fn over_budget_typed_ids_are_refused() {
+        let _guard = CWD_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        // A legal 191-character model id types past the report's id
+        // budget: the assessment refuses explicitly instead of emitting
+        // a schema-invalid subject.
+        let error = fixture_assessment_with(
+            None,
+            None,
+            BTreeMap::new(),
+            Some(&mut |subjects: &mut Subjects| {
+                subjects.rows[0].typed_id = format!("scalar:{}", "a".repeat(190));
+            }),
+        )
+        .expect_err("over-budget typed id refuses");
+        assert!(error.as_slice().iter().any(|d| {
+            d.id() == "portability.input-invalid"
+                && d.data()
+                    .get("detail")
+                    .map(|value| {
+                        matches!(value, lekalo_core::diagnostics::DataValue::Token(token) if token == "subject-id-bound")
+                    })
+                    .unwrap_or(false)
+        }));
+    }
+
+    #[test]
+    fn requirements_and_witnesses_clip_at_the_published_bounds() {
+        let _guard = CWD_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        // A 70-dependency subject with a 70-member witness closure: the
+        // emitted lists clip at the schema maxima with named
+        // diagnostics, never silently and never over the bound.
+        let (_, report) = fixture_assessment_with(
+            None,
+            None,
+            BTreeMap::new(),
+            Some(&mut |subjects: &mut Subjects| {
+                let bulk = subjects
+                    .rows
+                    .iter_mut()
+                    .find(|s| s.id == "planner.focus_task")
+                    .expect("focus subject");
+                bulk.deps = (0..70).map(|i| format!("planner.dep{i}")).collect();
+                bulk.witnesses = (0..70)
+                    .map(|i| format!("scalar:planner.witness{i}"))
+                    .collect();
+            }),
+        )
+        .expect("assessment succeeds");
+        let focus = report
+            .subjects
+            .iter()
+            .find(|s| s.subject == "command:planner.focus_task")
+            .expect("focus subject");
+        assert_eq!(focus.requirements.len(), 64);
+        for obligation in &focus.rows {
+            assert!(obligation.witnesses.len() <= 64);
+        }
+        assert!(report
+            .diagnostics
+            .iter()
+            .any(|d| d.detail == "requirements-clipped"));
+        assert!(report
+            .diagnostics
+            .iter()
+            .any(|d| d.detail == "witnesses-clipped"));
     }
 }
