@@ -106,6 +106,7 @@ pub mod reasons {
     pub const IMPLICIT_HOOK_UNSUPPORTED: &str = "implicit-hook-unsupported";
     pub const MAPPING_UNQUALIFIED: &str = "mapping-unqualified";
     pub const REQUIREMENT_UNQUALIFIED: &str = "requirement-unqualified";
+    pub const PRECONDITION_UNPROVED: &str = "precondition-unproved";
     pub const GATE_UNQUALIFIED: &str = "gate-unqualified";
     pub const GATE_COVERAGE_UNKNOWN: &str = "gate-coverage-unknown";
     pub const NO_OPERATIONAL_OBLIGATION: &str = "no-operational-obligation";
@@ -893,10 +894,22 @@ fn admissible_mapping(input: &Assessment, record: &wire::MappingRecord) -> bool 
     )
 }
 
+/// The reviewed bridge of one (requirement, capability) obligation, when
+/// the recipe defines one.
+fn bridge_for<'a>(
+    bridges: &'a [wire::RecipeMapping],
+    requirement: &str,
+    capability: &str,
+) -> Option<&'a wire::RecipeMapping> {
+    bridges
+        .iter()
+        .find(|m| m.requirement == requirement && m.capability == capability)
+}
+
 /// The shared bridge admission of behavioral mappings and operational
-/// requirements: a reviewed bridge, an agreeing exact definition pin for
-/// the mapped capability, and exactly the destination's reviewed
-/// precondition set as declared conditions.
+/// requirements: a reviewed bridge that keys this exact destination, an
+/// agreeing exact definition pin for the mapped capability, and exactly
+/// the destination's reviewed precondition set as declared conditions.
 fn admissible_bridge_record(
     bridges: &[wire::RecipeMapping],
     requirement: &str,
@@ -905,10 +918,7 @@ fn admissible_bridge_record(
     conditions: &[String],
     pins: &[wire::DefinitionPin],
 ) -> bool {
-    let Some(bridge) = bridges
-        .iter()
-        .find(|m| m.requirement == requirement && m.capability == capability)
-    else {
+    let Some(bridge) = bridge_for(bridges, requirement, capability) else {
         return false;
     };
     // Exactly one agreeing definition pin per capability: every pin
@@ -926,19 +936,233 @@ fn admissible_bridge_record(
         return false;
     }
     // The declared conditions must be non-empty and equal, as a set, the
-    // reviewed precondition set of this exact destination: an empty list
-    // is vacuously true and never reviewed, a subset is cherry-picked,
-    // and another target's vocabulary never admits this destination.
+    // reviewed precondition set of this exact destination — and the
+    // recipe must key this destination at all. A destination without a
+    // keyed set carries no credit: the global list is another
+    // destination's vocabulary, never a fallback. An empty list is
+    // vacuously true and never reviewed, and a subset is cherry-picked.
+    let Some(reviewed) = bridge.preconditions_for(destination) else {
+        return false;
+    };
     if conditions.is_empty() {
         return false;
     }
     let declared: BTreeSet<&str> = conditions.iter().map(String::as_str).collect();
-    let required: BTreeSet<&str> = bridge
-        .preconditions_for(destination)
-        .iter()
-        .map(String::as_str)
-        .collect();
+    let required: BTreeSet<&str> = reviewed.iter().map(String::as_str).collect();
     declared == required
+}
+
+/// The isolation strength order of the closed policy vocabulary:
+/// `read-uncommitted < read-committed < repeatable-read < serializable`.
+/// Any other value has no order the assessment can verify.
+fn isolation_rank(value: &str) -> Option<u8> {
+    match value {
+        "read-uncommitted" => Some(1),
+        "read-committed" => Some(2),
+        "repeatable-read" => Some(3),
+        "serializable" => Some(4),
+        _ => None,
+    }
+}
+
+/// The policy of one kind the manifest requires for this exact subject.
+fn required_policy<'a>(
+    evidence: Option<&'a EvidenceDocument>,
+    subject: &str,
+    kind: &str,
+) -> Option<&'a Policy> {
+    evidence?
+        .storage_required
+        .iter()
+        .find(|r| r.subject == subject && r.policy.kind == kind)
+        .map(|r| &r.policy)
+}
+
+/// The policy of one kind the manifest offers for this exact destination.
+fn offered_policy<'a>(
+    evidence: Option<&'a EvidenceDocument>,
+    destination: &str,
+    kind: &str,
+) -> Option<&'a Policy> {
+    evidence?
+        .storage_offered
+        .iter()
+        .find(|o| o.target_id == destination && o.policy.kind == kind)
+        .map(|o| &o.policy)
+}
+
+/// The storage-axis component id of one verified profile pin: the
+/// database engine family the resolved profile composes.
+fn storage_component(pin: Option<&ProfilePin>) -> Option<&str> {
+    let pin = pin?;
+    pin.component_versions
+        .iter()
+        .find(|c| c.axis == "storage")
+        .map(|c| c.component.as_str())
+}
+
+/// Whether one reviewed precondition token is corroborated by a fact
+/// this assessment can actually verify for the (symbol, destination)
+/// join.
+///
+/// The closed corroboration table mirrors the shipped recipe's
+/// vocabulary — every token names a fact with an observable source
+/// (the verified implementation projection, qualified receipt custody,
+/// the verified source/destination profile pins, or the manifest's
+/// required/offered policies), and a token whose fact is checkable but
+/// absent is *unproved*: the credit it guards stays an explicit unknown,
+/// never a portable row on a parroted vocabulary. A token outside the
+/// table is declaration-only: the recipe's destination-exact admission
+/// is its whole review, because the token names an environmental fact
+/// (a runtime version, for example) the assessment cannot observe.
+fn condition_verification(
+    input: &Assessment,
+    evidence: Option<&EvidenceDocument>,
+    symbol: &str,
+    destination: &str,
+    token: &str,
+) -> Option<bool> {
+    // The extracted subject behind the obligation symbol, when the
+    // symbol is one (hook carriers always are).
+    let subject = input.subjects.rows.iter().find(|s| s.id == symbol);
+    match token {
+        // The verified implementation projection carries a replacement
+        // binding (custom, foreign, or external) for this symbol on
+        // this destination.
+        "replacement-binding-declared" => Some(matches!(
+            implementation_status(input, symbol, destination),
+            Some(
+                crate::implementation::PortStatus::Custom
+                    | crate::implementation::PortStatus::Foreign
+                    | crate::implementation::PortStatus::External
+            )
+        )),
+        // A covering scenario of this symbol carries qualified,
+        // digest-bound receipt custody on this destination (the symbol
+        // itself when it is the scenario).
+        "recorded-scenario-receipt" => {
+            let covering: Vec<&str> = if subject.is_some_and(|s| s.kind == "scenario") {
+                vec![symbol]
+            } else {
+                input
+                    .subjects
+                    .covered_by
+                    .iter()
+                    .filter(|(_, covered)| covered.iter().any(|c| c == symbol))
+                    .map(|(scenario, _)| scenario.as_str())
+                    .collect()
+            };
+            Some(covering.iter().any(|scenario| {
+                input
+                    .receipts_qualified
+                    .contains(&((*scenario).to_owned(), destination.to_owned()))
+            }))
+        }
+        // The verified source and destination profile pins resolve to
+        // the same storage-axis component: one database engine family.
+        "same-database-engine-family" => {
+            let destination_pin = input
+                .destinations
+                .iter()
+                .find(|d| d.target_id == destination)
+                .and_then(|d| d.profile.as_ref());
+            Some(
+                match (
+                    storage_component(input.source.profile.as_ref()),
+                    storage_component(destination_pin),
+                ) {
+                    (Some(source), Some(target)) => source == target,
+                    _ => false,
+                },
+            )
+        }
+        // The destination offers an isolation policy at least as strong
+        // as the one this subject requires, on the closed strength order.
+        "declared-isolation-level-at-least-required" => Some({
+            let typed_id = subject.map(|s| s.typed_id.as_str());
+            match (
+                typed_id.and_then(|t| required_policy(evidence, t, "isolation")),
+                offered_policy(evidence, destination, "isolation"),
+            ) {
+                (Some(required), Some(offered)) => match (
+                    isolation_rank(&required.value),
+                    isolation_rank(&offered.value),
+                ) {
+                    (Some(required), Some(offered)) => offered >= required,
+                    _ => false,
+                },
+                _ => false,
+            }
+        }),
+        // The destination's offered decimal policy matches this
+        // subject's required decimal policy on the named axis (the
+        // storage inventory keys requirements by typed id).
+        "identical-precision" => Some({
+            let typed_id = subject.map(|s| s.typed_id.as_str());
+            match (
+                typed_id.and_then(|t| required_policy(evidence, t, "decimal")),
+                offered_policy(evidence, destination, "decimal"),
+            ) {
+                (Some(required), Some(offered)) => required.precision == offered.precision,
+                _ => false,
+            }
+        }),
+        "identical-scale" => Some({
+            let typed_id = subject.map(|s| s.typed_id.as_str());
+            match (
+                typed_id.and_then(|t| required_policy(evidence, t, "decimal")),
+                offered_policy(evidence, destination, "decimal"),
+            ) {
+                (Some(required), Some(offered)) => required.scale == offered.scale,
+                _ => false,
+            }
+        }),
+        // The destination's offered rounding policy equals the required
+        // one verbatim.
+        "identical-rounding" => Some({
+            let typed_id = subject.map(|s| s.typed_id.as_str());
+            match (
+                typed_id.and_then(|t| required_policy(evidence, t, "rounding")),
+                offered_policy(evidence, destination, "rounding"),
+            ) {
+                (Some(required), Some(offered)) => required.value == offered.value,
+                _ => false,
+            }
+        }),
+        // Any other reviewed token names an environmental fact the
+        // assessment cannot observe (a runtime version, for example):
+        // the destination-exact admission above is its whole review.
+        _ => None,
+    }
+}
+
+/// Whether every checkable precondition of the reviewed set is proved
+/// for the (symbol, destination) join. `None` means no token in the
+/// set has an observable fact source, so the reviewed admission alone
+/// decides; `Some(false)` means at least one checkable token's fact is
+/// absent, so the credit it guards stays unknown.
+fn preconditions_proved(
+    input: &Assessment,
+    evidence: Option<&EvidenceDocument>,
+    symbol: &str,
+    destination: &str,
+    reviewed: &[String],
+) -> Option<bool> {
+    let mut decided = false;
+    for token in reviewed {
+        match condition_verification(input, evidence, symbol, destination, token) {
+            Some(false) => {
+                return Some(false);
+            }
+            Some(true) => decided = true,
+            None => {}
+        }
+    }
+    if decided {
+        Some(true)
+    } else {
+        None
+    }
 }
 
 fn mapping_outcome(
@@ -1008,6 +1232,33 @@ fn mapping_outcome(
             binding: Some(binding),
             blocking: true,
             reason: reasons::MAPPING_UNQUALIFIED,
+            evidence_refs: mappings.iter().map(|m| m.id.clone()).collect(),
+        };
+    }
+    // Precondition corroboration: the admitted record declared the
+    // destination's reviewed set exactly, but a token whose fact this
+    // assessment can observe must actually be proved on this join — a
+    // parroted vocabulary never upgrades an unproved condition.
+    let reviewed = bridge_for(
+        &input.recipe.document.semantic_mappings,
+        HOOK_REQUIREMENT,
+        &mappings[0].capability,
+    )
+    .and_then(|bridge| bridge.preconditions_for(destination));
+    if reviewed.is_some_and(|reviewed| {
+        preconditions_proved(input, evidence, symbol, destination, reviewed) == Some(false)
+    }) {
+        sink.push(
+            codes::EVIDENCE_INCOMPLETE,
+            Some(symbol.to_owned()),
+            Some(Dimension::Behavioral),
+            reasons::PRECONDITION_UNPROVED,
+        );
+        return HookOutcome {
+            classification: Classification::Unknown,
+            binding: Some(binding),
+            blocking: true,
+            reason: reasons::PRECONDITION_UNPROVED,
             evidence_refs: mappings.iter().map(|m| m.id.clone()).collect(),
         };
     }
@@ -1356,6 +1607,10 @@ fn operational(
         identity: String,
         capability: String,
         admitted: bool,
+        /// The destination's reviewed precondition set, when a bridge
+        /// admitted the record: the corroboration pass checks every
+        /// token with an observable fact source.
+        reviewed: Vec<String>,
     }
     let mut obligations: Vec<OperationalObligation> = Vec::new();
     if has_publication {
@@ -1363,6 +1618,7 @@ fn operational(
             identity: "events.publication".to_owned(),
             capability: "events.publication".to_owned(),
             admitted: true,
+            reviewed: Vec::new(),
         });
     }
     let recipe = input.recipe;
@@ -1386,12 +1642,17 @@ fn operational(
                     identity: requirement.requirement.clone(),
                     capability: bridge.capability.clone(),
                     admitted,
+                    reviewed: bridge
+                        .preconditions_for(destination)
+                        .map(|set| set.to_vec())
+                        .unwrap_or_default(),
                 }
             }
             None => OperationalObligation {
                 identity: requirement.requirement.clone(),
                 capability: requirement.requirement.clone(),
                 admitted: true,
+                reviewed: Vec::new(),
             },
         };
         obligations.push(obligation);
@@ -1437,6 +1698,34 @@ fn operational(
                 Classification::Unknown,
                 true,
                 reasons::REQUIREMENT_UNQUALIFIED,
+                vec![obligation.identity.clone()],
+            ));
+            continue;
+        }
+        // Precondition corroboration: the admitted record declared the
+        // destination's reviewed set exactly, but a token whose fact
+        // this assessment can observe must actually be proved on this
+        // join — a parroted vocabulary never upgrades an unproved
+        // condition to a portable capability credit.
+        if preconditions_proved(
+            input,
+            evidence,
+            &subject.id,
+            destination,
+            &obligation.reviewed,
+        ) == Some(false)
+        {
+            sink.push(
+                codes::EVIDENCE_INCOMPLETE,
+                Some(subject.typed_id.clone()),
+                Some(Dimension::Operational),
+                reasons::PRECONDITION_UNPROVED,
+            );
+            rows.push(finish(
+                base(true, reasons::PRECONDITION_UNPROVED),
+                Classification::Unknown,
+                true,
+                reasons::PRECONDITION_UNPROVED,
                 vec![obligation.identity.clone()],
             ));
             continue;

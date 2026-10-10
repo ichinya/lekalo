@@ -1278,11 +1278,12 @@ pub struct RatioBasis {
     pub formula: String,
 }
 
-/// One reviewed semantic mapping definition of the recipe. The optional
-/// `destinationPreconditions` map scopes the reviewed precondition set
-/// per destination target: a mapping record on a keyed destination must
-/// declare exactly that set, so a precondition that names another
-/// target's runtime can never admit a mapping here.
+/// One reviewed semantic mapping definition of the recipe. The
+/// `destinationPreconditions` map is the only admission surface: a
+/// mapping record credits exactly a destination the recipe keys, and it
+/// must declare that keyed set exactly — a destination without a keyed
+/// set can never carry the bridge's credit, so a precondition naming
+/// another target's runtime never admits a mapping here.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RecipeMapping {
@@ -1295,13 +1296,16 @@ pub struct RecipeMapping {
 }
 
 impl RecipeMapping {
-    /// The exact reviewed precondition set of one destination: the
-    /// destination-scoped list when keyed, the global list otherwise.
-    pub fn preconditions_for(&self, destination: &str) -> &[String] {
-        match self.destination_preconditions.get(destination) {
-            Some(conditions) => conditions,
-            None => &self.preconditions,
-        }
+    /// The exact reviewed precondition set of one destination, when the
+    /// recipe keys that destination. A destination the recipe never
+    /// reviewed carries no credit here: there is no global fallback,
+    /// because the global list is another destination's vocabulary —
+    /// "a destination without a keyed set can never carry the bridge's
+    /// credit" (the recipe contract).
+    pub fn preconditions_for(&self, destination: &str) -> Option<&[String]> {
+        self.destination_preconditions
+            .get(destination)
+            .map(Vec::as_slice)
     }
 }
 
