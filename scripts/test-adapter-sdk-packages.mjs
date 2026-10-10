@@ -59,6 +59,22 @@ const languageFilter = only !== -1 ? args[only + 1] : "all";
 const languages = languageFilter === "all" ? LANGUAGES : [languageFilter];
 
 const sha256File = (path) => "sha256:" + createHash("sha256").update(readFileSync(path)).digest("hex");
+
+/** THE artifact-verification entry point for npm pack integrity (issue
+ * #106 review r3 #11): the positive leg asserts it accepts the packed
+ * candidate against its recorded metadata, and the tamper leg asserts it
+ * refuses the corrupted archive against the SAME retained metadata. One
+ * function, so the negative control exercises the real acceptance path. */
+const PACK_INTEGRITY_ALGORITHMS = new Set(["sha512", "sha384", "sha256", "sha1"]);
+const packIntegrityMatches = (tarball, integrity) => {
+  if (typeof integrity !== "string") return false;
+  const separator = integrity.indexOf("-");
+  if (separator === -1) return false;
+  const algorithm = integrity.slice(0, separator);
+  if (!PACK_INTEGRITY_ALGORITHMS.has(algorithm)) return false;
+  const expected = algorithm + "-" + createHash(algorithm).update(readFileSync(tarball)).digest("base64");
+  return expected === integrity;
+};
 const config = JSON.parse(readFileSync(join(ROOT, "sdk/schema-inputs.json"), "utf8"));
 const failures = [];
 const check = (condition, reason, detail) => {
@@ -98,9 +114,12 @@ try {
       packed.typescript = tarball;
       check(info.name === pkg.name && info.version === pkg.version, "pack-identity", `${info.name}@${info.version}`);
       // Integrity: the recorded shasum must equal the recomputed digest.
-      const [algorithm, digest] = info.integrity.split("-", 2);
-      const expected = algorithm + "-" + createHash(algorithm).update(readFileSync(tarball)).digest("base64");
-      check(expected === info.integrity, "pack-integrity", `${info.filename}: ${info.integrity}`);
+      // The comparison is THE shared artifact-verification entry point
+      // (issue #106 review r3 #11): the tamper leg below feeds the
+      // corrupted archive through this exact function and asserts
+      // refusal, instead of a separately written inequality that could
+      // disagree with the positive check.
+      check(packIntegrityMatches(tarball, info.integrity), "pack-integrity", `${info.filename}: ${info.integrity}`);
       // Determinism: a second pack produces identical bytes. The first
       // artifact's digest is RETAINED before the repack so a repack that
       // overwrote the path could never certify itself (issue #106 review:
@@ -316,57 +335,55 @@ try {
         }
       }
       // The four EMITTED bundles are release artifacts too (issue #106
-      // review r2 #16): each must parse and one bounded describe exchange
-      // through the reference bundle must emit a valid ok response — a
-      // bundler regression otherwise ships silently.
+      // review r2 #16, r3 #11): each must parse AND pass one bounded
+      // describe exchange — a bundler regression in any entry point
+      // ships silently otherwise.
       for (const template of ["generate", "reference", "scan", "verify"]) {
         const bundle = join(ROOT, "sdk/templates/php", template, "adapter.php");
         check(existsSync(bundle), "php-bundle-present", template);
         if (!existsSync(bundle)) continue;
         const lint = run("php", ["-l", bundle], ROOT);
         check(lint.status === 0, "php-bundle-lint", `${template}: ${(lint.stderr ?? "").slice(-160)}`);
+        const smoke = run("php", [bundle], ROOT, {
+          input: JSON.stringify({
+            operation: "describe",
+            project_root: ".",
+            protocol: "lekalo.target/v1",
+            protocol_version: "0.3.2",
+            request_id: `req-${"0".repeat(64)}`,
+          }),
+        });
+        let smokeOk = false;
+        try {
+          const response = JSON.parse(smoke.stdout ?? "");
+          smokeOk = response.status === "ok" && response.operation === "describe" && response.request_id === `req-${"0".repeat(64)}`;
+        } catch {
+          smokeOk = false;
+        }
+        check(smokeOk, "php-bundle-smoke", `${template}: status=${smoke.status}: ${(smoke.stdout ?? "").slice(0, 80)} ${(smoke.stderr ?? "").slice(-160)}`);
       }
-      const describe = run("php", [join(ROOT, "sdk/templates/php/reference/adapter.php")], ROOT, {
-        input: JSON.stringify({
-          operation: "describe",
-          project_root: ".",
-          protocol: "lekalo.target/v1",
-          protocol_version: "0.3.2",
-          request_id: `req-${"0".repeat(64)}`,
-        }),
-      });
-      let smokeOk = false;
-      try {
-        const response = JSON.parse(describe.stdout ?? "");
-        smokeOk = response.status === "ok" && response.operation === "describe" && response.request_id === `req-${"0".repeat(64)}`;
-      } catch {
-        smokeOk = false;
-      }
-      check(smokeOk, "php-bundle-smoke", `status=${describe.status}: ${(describe.stdout ?? "").slice(0, 80)} ${(describe.stderr ?? "").slice(-160)}`);
     }
   }
 
   // Tamper probe (issue #106 review: a negative control that is
   // arithmetically guaranteed to pass is not a control). The tampered
-  // bytes must differ from the retained original digest, AND feeding the
-  // tampered artifact back through the same integrity recomputation the
-  // positive leg uses must produce a MISMATCH — i.e. this gate's checks
-  // would have failed on a corrupted archive instead of normalizing it
-  // away.
+  // bytes must differ from the retained original digest, AND the
+  // tampered artifact fed through the SAME pack-integrity verification
+  // entry point the positive leg used — with the ORIGINAL retained
+  // metadata — must be REFUSED. A weakened or replaced verifier fails
+  // here instead of certifying itself.
   if (packed.typescript) {
     const originalDigest = sha256File(packed.typescript);
+    const originalIntegrity = "sha256-" + createHash("sha256").update(readFileSync(packed.typescript)).digest("base64");
+    check(packIntegrityMatches(packed.typescript, originalIntegrity), "tamper-verifier-positive", "the shared verifier accepts the intact artifact");
     const bytes = readFileSync(packed.typescript);
     bytes[bytes.length - 3] = (bytes[bytes.length - 3] + 1) % 256;
     const tampered = join(scratch, "tampered.tgz");
     writeFileSync(tampered, bytes);
-    const recomputed = "sha256-" + createHash("sha256").update(readFileSync(tampered)).digest("base64");
     check(originalDigest !== sha256File(tampered), "tamper-probe", "a tampered artifact must not match the retained original digest");
-    // Feed the tampered archive through the exact acceptance check the
-    // positive leg ran: it must reject.
-    const info2 = { integrity: recomputed };
-    const [algorithm2, digest2] = info2.integrity.split("-", 2);
-    const expected2 = algorithm2 + "-" + createHash(algorithm2).update(readFileSync(packed.typescript)).digest("base64");
-    check(expected2 !== info2.integrity, "tamper-probe-rejects", "the pack-integrity check must fail on the corrupted archive");
+    // The exact acceptance check the positive leg ran, against the
+    // tampered bytes and the retained original metadata: it must reject.
+    check(!packIntegrityMatches(tampered, originalIntegrity), "tamper-probe-rejects", "the shared pack-integrity check must fail on the corrupted archive");
   }
 } finally {
   rmSync(scratch, { recursive: true, force: true });
