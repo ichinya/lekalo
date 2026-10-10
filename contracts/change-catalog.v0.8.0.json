@@ -14,7 +14,7 @@
     },
     {
       "operation": "command-effect:add",
-      "status": "unsupported",
+      "status": "implemented",
       "title": "Add one effect or emission to a command",
       "mutationClass": "member-additive",
       "requiredEvidence": [
@@ -23,14 +23,14 @@
     },
     {
       "operation": "command-effect:remove",
-      "status": "unsupported",
+      "status": "implemented",
       "title": "Remove one effect or emission from a command",
       "mutationClass": "member-destructive",
       "requiredEvidence": []
     },
     {
       "operation": "definition:add",
-      "status": "unsupported",
+      "status": "implemented",
       "title": "Add one command, query, event, policy, or scenario definition",
       "mutationClass": "additive",
       "requiredEvidence": [
@@ -67,7 +67,7 @@
     },
     {
       "operation": "enum-case:change",
-      "status": "unsupported",
+      "status": "implemented",
       "title": "Rename, revalue, or redescribe one enum case",
       "mutationClass": "member-destructive",
       "requiredEvidence": [
@@ -101,7 +101,7 @@
     },
     {
       "operation": "operation-input:set",
-      "status": "unsupported",
+      "status": "implemented",
       "title": "Set the input surface of one operation",
       "mutationClass": "member-destructive",
       "requiredEvidence": [
@@ -110,7 +110,7 @@
     },
     {
       "operation": "operation-output:set",
-      "status": "unsupported",
+      "status": "implemented",
       "title": "Set the output surface of one operation",
       "mutationClass": "member-destructive",
       "requiredEvidence": [

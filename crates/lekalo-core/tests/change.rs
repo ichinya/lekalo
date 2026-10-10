@@ -438,17 +438,16 @@ fn unsupported_cataloged_operations_refuse_explicitly() {
     let request = serde_json::to_vec(&serde_json::json!({
         "schemaVersion": "lekalo/change-request/v0.8.0",
         "operations": [{
-            "operation": "definition:add",
-            "kind": "command",
-            "module": "tasks",
-            "definition": { "id": "tasks.complete" }
+            "operation": "binding:add",
+            "symbol": "tasks.task",
+            "definition": { "target": "node-typescript" }
         }]
     }))
     .expect("serializes");
     let error = prepare(&sandbox, &request).expect_err("unsupported");
     match error {
         ChangeError::OperationUnsupported { operation } => {
-            assert_eq!(operation, "definition:add");
+            assert_eq!(operation, "binding:add");
         }
         other => panic!("expected operation-unsupported, got {other:?}"),
     }
@@ -1096,4 +1095,269 @@ definitions:
     assert!(!String::from_utf8(sandbox.entities_bytes())
         .expect("utf8")
         .contains("- name: \"priority\""));
+}
+#[test]
+fn enum_case_change_renames_a_case_in_place() {
+    let sandbox = Sandbox::new("case-change");
+    // A case rename is member-destructive: the reviewed policy with
+    // migration evidence authorizes it.
+    let policy = evidence_policy();
+    let request = serde_json::to_vec(&serde_json::json!({
+        "schemaVersion": "lekalo/change-request/v0.8.0",
+        "operations": [{
+            "operation": "enum-case:change",
+            "enum": "tasks.priority",
+            "name": "high",
+            "definition": { "rename": "highest" }
+        }]
+    }))
+    .expect("serializes");
+    let receipt = apply_request_opts(&sandbox, &request, "case-change-v1", false, Some(policy))
+        .expect("commits");
+    assert_eq!(receipt.state(), ReceiptState::Committed);
+    let after = String::from_utf8(sandbox.entities_bytes()).expect("utf8");
+    // The rename rewrote the identity scalar in the original plain style.
+    assert!(after.contains("- value: highest"), "{after}");
+    assert!(!after.contains("- value: high\n") && !after.contains("- value: high\r"));
+    // Sibling cases and members keep their bytes.
+    assert!(after.contains("- value: low"));
+    assert!(after.contains("- value: normal"));
+    assert!(after.contains("- id: tasks.task"));
+}
+
+#[test]
+fn definition_add_appends_a_query_to_the_module_document() {
+    let sandbox = Sandbox::new("def-add");
+    // The kind's home document must exist; the loader refuses new files
+    // from the change service (creations are recovery-restricted).
+    std::fs::write(
+        sandbox.root.join("lekalo/modules/tasks/queries.yaml"),
+        "schema_version: \"0.2.16\"\ndefinitions:\n  - id: tasks.count\n    kind: query\n    version: 1\n    reads:\n      - \"tasks.task\"\n    returns:\n      ref: \"tasks.text\"\n",
+    )
+    .expect("queries home written");
+    let request = serde_json::to_vec(&serde_json::json!({
+        "schemaVersion": "lekalo/change-request/v0.8.0",
+        "operations": [{
+            "operation": "definition:add",
+            "kind": "query",
+            "module": "tasks",
+            "definition": {
+                "name": "open_tasks",
+                "description": "Lists open tasks",
+                "reads": ["tasks.task"],
+                "returns": { "list": { "ref": "tasks.task" } }
+            }
+        }]
+    }))
+    .expect("serializes");
+    let receipt = apply_request(&sandbox, &request, "def-add-v1", false).expect("commits");
+    assert_eq!(receipt.state(), ReceiptState::Committed);
+    let queries_path = sandbox.root.join("lekalo/modules/tasks/queries.yaml");
+    let queries = String::from_utf8(std::fs::read(queries_path).expect("queries")).expect("utf8");
+    assert!(queries.contains("- id: \"tasks.open_tasks\""), "{queries}");
+    assert!(queries.contains("kind: \"query\""));
+    assert!(queries.contains("reads:"));
+    assert!(queries.contains("- \"tasks.task\""));
+    assert!(queries.contains("returns:"));
+    assert!(queries.contains("list:"));
+    // The module document is untouched.
+    let module_path = sandbox.root.join("lekalo/modules/tasks/module.yaml");
+    let module = String::from_utf8(std::fs::read(module_path).expect("module")).expect("utf8");
+    assert!(!module.contains("open_tasks"));
+    // The candidate recompiled and validated: the project still loads.
+    let model = lekalo_core::loader::normalize_model(&sandbox.selection()).expect("loads");
+    assert!(model
+        .definitions
+        .iter()
+        .any(|definition| definition.id == "tasks.open_tasks"));
+}
+
+#[test]
+fn definition_add_and_command_effect_compose_sequentially() {
+    // definition:add creates a command whose effects list starts empty;
+    // command-effect:add in the SAME batch resolves against that candidate
+    // and appends the reference to an existing effect definition.
+    let sandbox = Sandbox::new("compose");
+    // The effect definition the command will reference (an admitted
+    // document edit outside the change service) lives in the kind's home
+    // document, which the definition will join.
+    std::fs::write(
+        sandbox.root.join("lekalo/modules/tasks/commands.yaml"),
+        "schema_version: \"0.2.16\"\ndefinitions:\n  - id: tasks.archive\n    kind: effect\n    version: 1\n    operation: update\n    entity: \"tasks.task\"\n",
+    )
+    .expect("commands home written");
+    let request = serde_json::to_vec(&serde_json::json!({
+        "schemaVersion": "lekalo/change-request/v0.8.0",
+        "operations": [
+            {
+                "operation": "definition:add",
+                "kind": "command",
+                "module": "tasks",
+                "definition": {
+                    "name": "archive_task",
+                    "input": [],
+                    "effects": []
+                }
+            },
+            {
+                "operation": "command-effect:add",
+                "command": "tasks.archive_task",
+                "effect": "tasks.archive"
+            }
+        ]
+    }))
+    .expect("serializes");
+    let prepared = prepare(&sandbox, &request).expect("prepares");
+    let receipt = change::apply_prepared(
+        &prepared,
+        &ApplyOptions {
+            idempotency_key: "compose-v1",
+            expect_plan: None,
+            allow_breaking: false,
+        },
+    )
+    .expect("commits");
+    assert_eq!(receipt.state(), ReceiptState::Committed);
+    let commands_path = sandbox.root.join("lekalo/modules/tasks/commands.yaml");
+    let commands =
+        String::from_utf8(std::fs::read(commands_path).expect("commands")).expect("utf8");
+    assert!(
+        commands.contains("- id: \"tasks.archive_task\""),
+        "{commands}"
+    );
+    assert!(commands.contains("effects:"));
+    assert!(commands.contains("- \"tasks.archive\""));
+}
+
+#[test]
+fn signature_sets_replace_command_input_and_query_output() {
+    let sandbox = Sandbox::new("signatures");
+    // A command with a non-empty input and a query with a return, each in
+    // its kind's home document.
+    std::fs::write(
+        sandbox.root.join("lekalo/modules/tasks/commands.yaml"),
+        "schema_version: \"0.2.16\"\ndefinitions:\n  - id: tasks.rename_task\n    kind: command\n    version: 1\n    input:\n      - name: old_name\n        type: \"tasks.text\"\n        required: true\n",
+    )
+    .expect("commands written");
+    std::fs::write(
+        sandbox.root.join("lekalo/modules/tasks/queries.yaml"),
+        "schema_version: \"0.2.16\"\ndefinitions:\n  - id: tasks.find_task\n    kind: query\n    version: 1\n    reads:\n      - \"tasks.task\"\n    returns:\n      ref: \"tasks.bool\"\n",
+    )
+    .expect("queries written");
+    let request = serde_json::to_vec(&serde_json::json!({
+        "schemaVersion": "lekalo/change-request/v0.8.0",
+        "operations": [
+            {
+                "operation": "operation-input:set",
+                "operationTarget": "tasks.rename_task",
+                "definition": {
+                    "input": [
+                        { "name": "task_id", "type": { "ref": "tasks.text" }, "required": true },
+                        { "name": "new_name", "type": { "ref": "tasks.text" } }
+                    ]
+                }
+            },
+            {
+                "operation": "operation-output:set",
+                "operationTarget": "tasks.find_task",
+                "type": { "optional": { "ref": "tasks.task" } }
+            }
+        ]
+    }))
+    .expect("serializes");
+    // Signature replacements are wire- and source-breaking with data-loss
+    // risk: the reviewed policy with migration evidence authorizes them.
+    // Wire-breaking is covered by the explicit acknowledgement; the
+    // data-loss and source classes need the reviewed evidence policy.
+    let receipt = apply_request_opts(
+        &sandbox,
+        &request,
+        "signatures-v1",
+        true,
+        Some(evidence_policy()),
+    )
+    .expect("commits");
+    assert_eq!(receipt.state(), ReceiptState::Committed);
+    let commands = String::from_utf8(
+        std::fs::read(sandbox.root.join("lekalo/modules/tasks/commands.yaml")).expect("commands"),
+    )
+    .expect("utf8");
+    assert!(commands.contains("- name: \"task_id\""), "{commands}");
+    assert!(commands.contains("- name: \"new_name\""));
+    assert!(!commands.contains("- name: \"old_name\""));
+    let queries = String::from_utf8(
+        std::fs::read(sandbox.root.join("lekalo/modules/tasks/queries.yaml")).expect("queries"),
+    )
+    .expect("utf8");
+    assert!(queries.contains("optional:"), "{queries}");
+    // The candidate compiled: the project still loads with the new
+    // signatures.
+    let model = lekalo_core::loader::normalize_model(&sandbox.selection()).expect("loads");
+    let command = model
+        .definitions
+        .iter()
+        .find(|definition| definition.id == "tasks.rename_task")
+        .expect("command");
+    let input = command
+        .node
+        .get("input")
+        .expect("input")
+        .as_seq()
+        .expect("seq");
+    assert_eq!(input.len(), 2);
+}
+
+#[test]
+fn command_effect_emit_and_wrong_kinds_stay_explicitly_refused() {
+    // The emission representation is the reviewed extended-effect
+    // successor: it decodes and refuses with the registered unsupported
+    // rule; wrong-kind targets are subject conflicts.
+    let sandbox = Sandbox::new("staged");
+    std::fs::write(
+        sandbox.root.join("lekalo/modules/tasks/commands.yaml"),
+        "schema_version: \"0.2.16\"\ndefinitions:\n  - id: tasks.archive\n    kind: effect\n    version: 1\n    operation: update\n    entity: \"tasks.task\"\n  - id: tasks.rename_task\n    kind: command\n    version: 1\n    effects:\n      - \"tasks.archive\"\n",
+    )
+    .expect("commands written");
+    let emit = serde_json::to_vec(&serde_json::json!({
+        "schemaVersion": "lekalo/change-request/v0.8.0",
+        "operations": [{
+            "operation": "command-effect:add",
+            "command": "tasks.rename_task",
+            "emit": "tasks.task_archived"
+        }]
+    }))
+    .expect("serializes");
+    let error = prepare(&sandbox, &emit).expect_err("emit refused");
+    assert!(
+        matches!(
+            error,
+            ChangeError::UnsupportedMember {
+                member: "emission-representation",
+                ..
+            }
+        ),
+        "got {error:?}"
+    );
+    let query_input = serde_json::to_vec(&serde_json::json!({
+        "schemaVersion": "lekalo/change-request/v0.8.0",
+        "operations": [{
+            "operation": "operation-input:set",
+            "operationTarget": "tasks.priority",
+            "definition": { "input": [] }
+        }]
+    }))
+    .expect("serializes");
+    // A wrong-kind target (an enum) is a subject conflict, not an
+    // unsupported member.
+    let error = prepare(&sandbox, &query_input).expect_err("wrong kind");
+    assert!(
+        matches!(
+            error,
+            ChangeError::SubjectConflict {
+                detail: "wrong-kind",
+                ..
+            }
+        ),
+        "got {error:?}"
+    );
 }

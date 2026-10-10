@@ -243,20 +243,26 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
                 detail: "subject-missing",
             })?
             .to_owned();
-        let path = documents
-            .iter()
-            .find(|document| {
-                document
-                    .document
-                    .definitions
-                    .iter()
-                    .any(|definition| definition.id == subject)
-            })
-            .map(|document| document.document.path.clone())
-            .ok_or(ChangeError::SubjectConflict {
-                subject: subject.clone(),
-                detail: "document-missing",
-            })?;
+        // A whole-definition addition joins its kind's home document, not
+        // a document named by the subject (the module).
+        let path = if let Operation::DefinitionAdd { kind, module, .. } = operation {
+            definition_home_path(module, kind)
+        } else {
+            documents
+                .iter()
+                .find(|document| {
+                    document
+                        .document
+                        .definitions
+                        .iter()
+                        .any(|definition| definition.id == subject)
+                })
+                .map(|document| document.document.path.clone())
+                .ok_or(ChangeError::SubjectConflict {
+                    subject: subject.clone(),
+                    detail: "document-missing",
+                })?
+        };
         let working = match prospective.iter().find(|(planned, _)| planned == &path) {
             Some((_, bytes)) => bytes.clone(),
             None => load
@@ -282,11 +288,26 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
             .definitions
             .iter()
             .find(|definition| definition.id == subject)
+            .or_else(|| {
+                // A whole-definition addition is planned against the home
+                // document itself, not one of its definitions.
+                if matches!(operation, Operation::DefinitionAdd { .. }) {
+                    decoded.definitions.last()
+                } else {
+                    None
+                }
+            })
             .ok_or(ChangeError::SubjectConflict {
                 subject: subject.clone(),
                 detail: "document-definition-missing",
             })?;
-        let edit = plan_source_edits(&working, tree_definition, &load.model, operation)?;
+        let edit = plan_source_edits(
+            &working,
+            &decoded.definitions,
+            tree_definition,
+            &load.model,
+            operation,
+        )?;
         if edit.is_empty() {
             continue;
         }
@@ -1170,6 +1191,182 @@ fn resolve_operation(
             }
             (enum_id.clone(), true)
         }
+        Operation::EnumCaseChange {
+            enum_id,
+            name,
+            change,
+        } => {
+            let definition = find_definition(documents, enum_id)?;
+            if definition_kind_of(definition) != "enum" {
+                return Err(ChangeError::SubjectConflict {
+                    subject: enum_id.clone(),
+                    detail: "wrong-kind",
+                });
+            }
+            if !definition_member_exists(&definition.node, "values", name) {
+                return Err(ChangeError::SubjectConflict {
+                    subject: name.clone(),
+                    detail: "member-missing",
+                });
+            }
+            if let Some(rename) = &change.rename {
+                if rename != name && definition_member_exists(&definition.node, "values", rename) {
+                    return Err(ChangeError::SubjectConflict {
+                        subject: rename.clone(),
+                        detail: "case-duplicate",
+                    });
+                }
+            }
+            (enum_id.clone(), true)
+        }
+        Operation::DefinitionAdd {
+            kind,
+            module,
+            definition,
+        } => {
+            let module_definition = find_definition(documents, module)?;
+            if definition_kind_of(module_definition) != "module" {
+                return Err(ChangeError::SubjectConflict {
+                    subject: module.clone(),
+                    detail: "wrong-kind",
+                });
+            }
+            definition_decl_members_fit_kind(kind, definition)?;
+            let id = format!("{module}.{}", definition.name);
+            if find_definition(documents, &id).is_ok() {
+                return Err(ChangeError::SubjectConflict {
+                    subject: id,
+                    detail: "definition-duplicate",
+                });
+            }
+            // Every declared reference must resolve exactly now (the
+            // validator refuses unresolved references anyway; this is the
+            // typed, subject-precise refusal).
+            for reference in definition
+                .effects
+                .iter()
+                .chain(definition.reads.iter())
+                .chain(definition.applies_to.iter())
+                .chain(definition.covers.iter())
+            {
+                if let Err(ChangeError::SubjectConflict { detail, .. }) =
+                    find_definition(documents, reference)
+                {
+                    let detail = if detail == "definition-missing" {
+                        "reference-missing"
+                    } else {
+                        detail
+                    };
+                    return Err(ChangeError::SubjectConflict {
+                        subject: reference.clone(),
+                        detail,
+                    });
+                }
+            }
+            (module.clone(), true)
+        }
+        Operation::CommandEffectAdd {
+            command,
+            effect,
+            emit,
+        }
+        | Operation::CommandEffectRemove {
+            command,
+            effect,
+            emit,
+        } => {
+            if emit.is_some() {
+                return Err(ChangeError::UnsupportedMember {
+                    operation: operation.operation().to_owned(),
+                    member: "emission-representation",
+                });
+            }
+            let definition = find_definition(documents, command)?;
+            if definition_kind_of(definition) != "command" {
+                return Err(ChangeError::SubjectConflict {
+                    subject: command.clone(),
+                    detail: "wrong-kind",
+                });
+            }
+            if matches!(operation, Operation::CommandEffectAdd { .. }) {
+                // The referenced effect must exist and be an effect.
+                let effect_definition = find_definition(documents, effect)?;
+                if definition_kind_of(effect_definition) != "effect" {
+                    return Err(ChangeError::SubjectConflict {
+                        subject: effect.clone(),
+                        detail: "wrong-kind",
+                    });
+                }
+                if definition_scalar_exists(&definition.node, "effects", effect) {
+                    return Err(ChangeError::SubjectConflict {
+                        subject: effect.clone(),
+                        detail: "effect-duplicate",
+                    });
+                }
+            } else if !definition_scalar_exists(&definition.node, "effects", effect) {
+                return Err(ChangeError::SubjectConflict {
+                    subject: effect.clone(),
+                    detail: "member-missing",
+                });
+            }
+            (command.clone(), true)
+        }
+        Operation::OperationInputSet { target, input } => {
+            let definition = find_definition(documents, target)?;
+            match definition_kind_of(definition).as_str() {
+                "command" => {}
+                // The query-input surface needs the reviewed IR successor;
+                // the branch stays an explicit unsupported member.
+                "query" => {
+                    return Err(ChangeError::UnsupportedMember {
+                        operation: operation.operation().to_owned(),
+                        member: "query-input",
+                    });
+                }
+                _ => {
+                    return Err(ChangeError::SubjectConflict {
+                        subject: target.clone(),
+                        detail: "wrong-kind",
+                    });
+                }
+            }
+            let mut seen = std::collections::BTreeSet::new();
+            for field in input {
+                if !seen.insert(field.name.clone()) {
+                    return Err(ChangeError::SubjectConflict {
+                        subject: field.name.clone(),
+                        detail: "field-duplicate",
+                    });
+                }
+            }
+            (target.clone(), true)
+        }
+        Operation::OperationOutputSet { target, r#type } => {
+            let definition = find_definition(documents, target)?;
+            match definition_kind_of(definition).as_str() {
+                "query" => {}
+                // Command results are unit in the accepted Model; the
+                // command-return surface is the reviewed successor.
+                "command" => {
+                    return Err(ChangeError::UnsupportedMember {
+                        operation: operation.operation().to_owned(),
+                        member: "command-return",
+                    });
+                }
+                _ => {
+                    return Err(ChangeError::SubjectConflict {
+                        subject: target.clone(),
+                        detail: "wrong-kind",
+                    });
+                }
+            }
+            if r#type.depth() > MAX_TYPE_LEVELS {
+                return Err(ChangeError::RequestInvalid {
+                    detail: "type-depth",
+                });
+            }
+            (target.clone(), true)
+        }
         Operation::Unsupported { subject, .. } => (subject.clone().unwrap_or_default(), false),
     };
     Ok(ResolvedOperation {
@@ -1183,6 +1380,105 @@ fn resolve_operation(
             Some("not-provided".to_owned())
         },
     })
+}
+
+/// Whether the definition declaration carries exactly the members its
+/// kind uses; anything else refuses (invalid, never silently dropped).
+fn definition_decl_members_fit_kind(
+    kind: &str,
+    definition: &request::DefinitionDecl,
+) -> Result<(), ChangeError> {
+    let unused = |present: bool, member: &str| -> Result<(), ChangeError> {
+        if present {
+            Err(ChangeError::SubjectConflict {
+                subject: member.to_owned(),
+                detail: "definition-member-mismatch",
+            })
+        } else {
+            Ok(())
+        }
+    };
+    let has = |slice: &[request::FieldDecl]| !slice.is_empty();
+    let has_ids = |slice: &[String]| !slice.is_empty();
+    match kind {
+        "command" => {
+            unused(has_ids(&definition.reads), "reads")?;
+            unused(definition.returns.is_some(), "returns")?;
+            unused(has(&definition.payload), "payload")?;
+            unused(has_ids(&definition.applies_to), "appliesTo")?;
+            unused(definition.decision.is_some(), "decision")?;
+            unused(definition.summary.is_some(), "summary")?;
+            unused(has_ids(&definition.covers), "covers")?;
+        }
+        "query" => {
+            unused(has(&definition.input), "input")?;
+            unused(has_ids(&definition.effects), "effects")?;
+            unused(has(&definition.payload), "payload")?;
+            unused(has_ids(&definition.applies_to), "appliesTo")?;
+            unused(definition.decision.is_some(), "decision")?;
+            unused(definition.summary.is_some(), "summary")?;
+            unused(has_ids(&definition.covers), "covers")?;
+        }
+        "event" => {
+            unused(has(&definition.input), "input")?;
+            unused(has_ids(&definition.effects), "effects")?;
+            unused(has_ids(&definition.reads), "reads")?;
+            unused(definition.returns.is_some(), "returns")?;
+            unused(has_ids(&definition.applies_to), "appliesTo")?;
+            unused(definition.decision.is_some(), "decision")?;
+            unused(definition.summary.is_some(), "summary")?;
+            unused(has_ids(&definition.covers), "covers")?;
+        }
+        "policy" => {
+            unused(has(&definition.input), "input")?;
+            unused(has_ids(&definition.effects), "effects")?;
+            unused(has_ids(&definition.reads), "reads")?;
+            unused(definition.returns.is_some(), "returns")?;
+            unused(has(&definition.payload), "payload")?;
+            unused(definition.summary.is_some(), "summary")?;
+            unused(has_ids(&definition.covers), "covers")?;
+        }
+        "scenario" => {
+            unused(has(&definition.input), "input")?;
+            unused(has_ids(&definition.effects), "effects")?;
+            unused(has_ids(&definition.reads), "reads")?;
+            unused(definition.returns.is_some(), "returns")?;
+            unused(has(&definition.payload), "payload")?;
+            unused(has_ids(&definition.applies_to), "appliesTo")?;
+            unused(definition.decision.is_some(), "decision")?;
+        }
+        _ => {
+            return Err(ChangeError::SubjectConflict {
+                subject: kind.to_owned(),
+                detail: "wrong-kind",
+            });
+        }
+    }
+    Ok(())
+}
+
+/// The kind's home document of one module (the loader's kind-placement
+/// rule): command/effect definitions live in commands.yaml, queries in
+/// queries.yaml, events in events.yaml, policies in policies.yaml, and
+/// scenarios in scenarios.yaml.
+fn definition_home_path(module: &str, kind: &str) -> String {
+    let file = match kind {
+        "command" | "effect" => "commands.yaml",
+        "query" => "queries.yaml",
+        "event" => "events.yaml",
+        "policy" => "policies.yaml",
+        "scenario" => "scenarios.yaml",
+        _ => "entities.yaml",
+    };
+    format!("lekalo/modules/{module}/{file}")
+}
+
+/// Whether one scalar sequence already carries the exact value.
+fn definition_scalar_exists(node: &Node, member: &str, value: &str) -> bool {
+    node.get(member)
+        .and_then(|sequence| sequence.as_seq())
+        .map(|items| items.iter().any(|item| item.as_str() == Some(value)))
+        .unwrap_or(false)
 }
 
 /// The wire family of the operation subject.
@@ -1262,6 +1558,38 @@ fn apply_tree_edit(
     documents: &mut [LoadedDocument],
     operation: &Operation,
 ) -> Result<(), ChangeError> {
+    // `definition:add` targets the declaring module's document and pushes
+    // a whole new definition; every other operation mutates one existing
+    // definition in place.
+    if let Operation::DefinitionAdd {
+        kind,
+        module,
+        definition: declaration,
+    } = operation
+    {
+        // The definition joins its kind's home document of the module
+        // (the loader's kind-placement rule), never the module document.
+        let home = definition_home_path(module, kind);
+        let document = documents
+            .iter_mut()
+            .find(|document| document.document.path == home)
+            .ok_or_else(|| ChangeError::SubjectConflict {
+                subject: home.clone(),
+                detail: "document-missing",
+            })?;
+        let id = format!("{module}.{}", declaration.name);
+        let node = synthesized_definition_node(&id, kind, declaration)?;
+        document
+            .document
+            .definitions
+            .push(crate::loader::project_docs::Definition {
+                id,
+                id_span: placeholder_span(),
+                node,
+                span: placeholder_span(),
+            });
+        return Ok(());
+    }
     let subject = match operation {
         Operation::Unsupported { .. } => return Ok(()),
         Operation::EntityFieldAdd { entity, .. }
@@ -1269,7 +1597,19 @@ fn apply_tree_edit(
         | Operation::EntityFieldRename { entity, .. }
         | Operation::EnumCaseAdd {
             enum_id: entity, ..
-        } => entity.clone(),
+        }
+        | Operation::EnumCaseChange {
+            enum_id: entity, ..
+        }
+        | Operation::CommandEffectAdd {
+            command: entity, ..
+        }
+        | Operation::CommandEffectRemove {
+            command: entity, ..
+        }
+        | Operation::OperationInputSet { target: entity, .. }
+        | Operation::OperationOutputSet { target: entity, .. } => entity.clone(),
+        Operation::DefinitionAdd { .. } => unreachable!(),
     };
     // The declaring document is located through the typed definition table.
     let document = documents
@@ -1305,8 +1645,360 @@ fn apply_tree_edit(
         Operation::EntityFieldRename { name, to, .. } => {
             rename_member_item(&mut definition.node, "fields", name, to)
         }
-        Operation::Unsupported { .. } => Ok(()),
+        Operation::EnumCaseChange { name, change, .. } => {
+            change_member_item(&mut definition.node, "values", name, change)
+        }
+        Operation::CommandEffectAdd { effect, .. } => {
+            push_scalar_item(&mut definition.node, "effects", effect)
+        }
+        Operation::CommandEffectRemove { effect, .. } => {
+            remove_scalar_item(&mut definition.node, "effects", effect)
+        }
+        Operation::OperationInputSet { input, .. } => {
+            replace_member_sequence(&mut definition.node, "input", input)
+        }
+        Operation::OperationOutputSet { r#type, .. } => {
+            replace_returns(&mut definition.node, r#type)
+        }
+        Operation::Unsupported { .. } | Operation::DefinitionAdd { .. } => Ok(()),
     }
+}
+
+/// Change the identity scalar and/or description of one member item.
+fn change_member_item(
+    node: &mut Node,
+    member: &str,
+    name: &str,
+    change: &request::CaseChangeDecl,
+) -> Result<(), ChangeError> {
+    let sequence = node.get_mut(member).ok_or(ChangeError::SubjectConflict {
+        subject: member.to_owned(),
+        detail: "member-missing",
+    })?;
+    let Value::Seq(items) = &mut sequence.value else {
+        return Err(ChangeError::SubjectConflict {
+            subject: member.to_owned(),
+            detail: "member-not-sequence",
+        });
+    };
+    let item = items
+        .iter_mut()
+        .find(|item| {
+            item.get("name").and_then(Node::as_str) == Some(name)
+                || item.get("value").and_then(Node::as_str) == Some(name)
+        })
+        .ok_or(ChangeError::SubjectConflict {
+            subject: name.to_owned(),
+            detail: "member-missing",
+        })?;
+    if let Some(rename) = &change.rename {
+        let identity = if item.get("name").is_some() {
+            item.get_mut("name")
+        } else {
+            item.get_mut("value")
+        }
+        .ok_or(ChangeError::SubjectConflict {
+            subject: name.to_owned(),
+            detail: "member-missing",
+        })?;
+        identity.value = Value::Scalar(Scalar::Str(rename.to_owned()));
+    }
+    if let Some(description) = &change.description {
+        let entry = item
+            .get_mut("description")
+            .ok_or(ChangeError::SourcePreservation {
+                subject: name.to_owned(),
+                detail: "description-member-absent",
+            })?;
+        entry.value = Value::Scalar(Scalar::Str(description.to_owned()));
+    }
+    Ok(())
+}
+
+/// Push one scalar item into the named member sequence, creating the
+/// sequence when the definition does not carry it yet (the byte side
+/// mirrors this with the member-append plan).
+fn push_scalar_item(node: &mut Node, member: &str, value: &str) -> Result<(), ChangeError> {
+    let span = placeholder_span();
+    if node.get(member).is_none() {
+        if let Value::Map(entries) = &mut node.value {
+            entries.push(MapEntry {
+                key: member.to_owned(),
+                key_span: span,
+                value: Node {
+                    span,
+                    value: Value::Seq(vec![Node {
+                        span,
+                        value: Value::Scalar(Scalar::Str(value.to_owned())),
+                    }]),
+                },
+            });
+            return Ok(());
+        }
+        return Err(ChangeError::SubjectConflict {
+            subject: member.to_owned(),
+            detail: "member-not-sequence",
+        });
+    }
+    let sequence = node.get_mut(member).ok_or(ChangeError::SubjectConflict {
+        subject: member.to_owned(),
+        detail: "member-missing",
+    })?;
+    match &mut sequence.value {
+        Value::Seq(items) => {
+            items.push(Node {
+                span,
+                value: Value::Scalar(Scalar::Str(value.to_owned())),
+            });
+            Ok(())
+        }
+        _ => Err(ChangeError::SubjectConflict {
+            subject: member.to_owned(),
+            detail: "member-not-sequence",
+        }),
+    }
+}
+
+/// Remove the scalar item with the exact value from the named sequence.
+fn remove_scalar_item(node: &mut Node, member: &str, value: &str) -> Result<(), ChangeError> {
+    let sequence = node.get_mut(member).ok_or(ChangeError::SubjectConflict {
+        subject: member.to_owned(),
+        detail: "member-missing",
+    })?;
+    let Value::Seq(items) = &mut sequence.value else {
+        return Err(ChangeError::SubjectConflict {
+            subject: member.to_owned(),
+            detail: "member-not-sequence",
+        });
+    };
+    let position = items
+        .iter()
+        .position(|item| item.as_str() == Some(value))
+        .ok_or(ChangeError::SubjectConflict {
+            subject: value.to_owned(),
+            detail: "member-missing",
+        })?;
+    items.remove(position);
+    Ok(())
+}
+
+/// Replace the named member sequence with the synthesized field items.
+fn replace_member_sequence(
+    node: &mut Node,
+    member: &str,
+    fields: &[request::FieldDecl],
+) -> Result<(), ChangeError> {
+    let span = placeholder_span();
+    let sequence = node.get_mut(member).ok_or(ChangeError::SubjectConflict {
+        subject: member.to_owned(),
+        detail: "member-missing",
+    })?;
+    let mut items = Vec::with_capacity(fields.len());
+    for field in fields {
+        let mut entries = vec![
+            MapEntry {
+                key: "name".to_owned(),
+                key_span: span,
+                value: Node::scalar(Scalar::Str(field.name.clone()), span),
+            },
+            MapEntry {
+                key: "type".to_owned(),
+                key_span: span,
+                value: Node::scalar(Scalar::Str(field.r#type.to_spelling()), span),
+            },
+        ];
+        if field.required {
+            entries.push(MapEntry {
+                key: "required".to_owned(),
+                key_span: span,
+                value: Node::scalar(Scalar::Bool(true), span),
+            });
+        }
+        if let Some(description) = &field.description {
+            entries.push(MapEntry {
+                key: "description".to_owned(),
+                key_span: span,
+                value: Node::scalar(Scalar::Str(description.clone()), span),
+            });
+        }
+        items.push(Node {
+            span,
+            value: Value::Map(entries),
+        });
+    }
+    sequence.value = Value::Seq(items);
+    Ok(())
+}
+
+/// Replace the `returns` mapping value with the synthesized type node.
+fn replace_returns(node: &mut Node, r#type: &request::TypeRef) -> Result<(), ChangeError> {
+    let span = placeholder_span();
+    let entry = node
+        .get_mut("returns")
+        .ok_or(ChangeError::SubjectConflict {
+            subject: "returns".to_owned(),
+            detail: "member-missing",
+        })?;
+    entry.value = type_node(r#type, span).value;
+    Ok(())
+}
+
+/// The synthesized mapping node of one closed type reference.
+fn type_node(r#type: &request::TypeRef, span: Span) -> Node {
+    let entry = |key: &str, value: Node| MapEntry {
+        key: key.to_owned(),
+        key_span: span,
+        value,
+    };
+    match r#type {
+        request::TypeRef::Ref(id) => Node {
+            span,
+            value: Value::Map(vec![entry(
+                "ref",
+                Node::scalar(Scalar::Str(id.clone()), span),
+            )]),
+        },
+        request::TypeRef::List(inner) => Node {
+            span,
+            value: Value::Map(vec![entry("list", type_node(inner, span))]),
+        },
+        request::TypeRef::Optional(inner) => Node {
+            span,
+            value: Value::Map(vec![entry("optional", type_node(inner, span))]),
+        },
+    }
+}
+
+/// The synthesized definition node of one `definition:add` declaration:
+/// exactly the closed members the declared kind writes.
+fn synthesized_definition_node(
+    id: &str,
+    kind: &str,
+    declaration: &request::DefinitionDecl,
+) -> Result<Node, ChangeError> {
+    let span = placeholder_span();
+    let entry = |key: &str, value: Node| MapEntry {
+        key: key.to_owned(),
+        key_span: span,
+        value,
+    };
+    let field_items = |fields: &[request::FieldDecl]| -> Vec<Node> {
+        fields
+            .iter()
+            .map(|field| {
+                let mut entries = vec![
+                    entry("name", Node::scalar(Scalar::Str(field.name.clone()), span)),
+                    entry(
+                        "type",
+                        Node::scalar(Scalar::Str(field.r#type.to_spelling()), span),
+                    ),
+                ];
+                if field.required {
+                    entries.push(entry("required", Node::scalar(Scalar::Bool(true), span)));
+                }
+                if let Some(description) = &field.description {
+                    entries.push(entry(
+                        "description",
+                        Node::scalar(Scalar::Str(description.clone()), span),
+                    ));
+                }
+                Node {
+                    span,
+                    value: Value::Map(entries),
+                }
+            })
+            .collect()
+    };
+    let id_items = |ids: &[String]| -> Vec<Node> {
+        ids.iter()
+            .map(|id| Node {
+                span,
+                value: Value::Scalar(Scalar::Str(id.clone())),
+            })
+            .collect()
+    };
+    let mut entries = vec![
+        entry("id", Node::scalar(Scalar::Str(id.to_owned()), span)),
+        entry("kind", Node::scalar(Scalar::Str(kind.to_owned()), span)),
+        entry("version", Node::scalar(Scalar::Int(1), span)),
+    ];
+    if let Some(description) = &declaration.description {
+        entries.push(entry(
+            "description",
+            Node::scalar(Scalar::Str(description.clone()), span),
+        ));
+    }
+    // Empty sequences are omitted, never written as flow-style `[]`
+    // (the closed YAML grammar refuses flow style; the IR decodes a
+    // missing member as empty).
+    let seq_entry = |key: &str, items: Vec<Node>| -> Option<MapEntry> {
+        (!items.is_empty()).then(|| {
+            entry(
+                key,
+                Node {
+                    span,
+                    value: Value::Seq(items),
+                },
+            )
+        })
+    };
+    match kind {
+        "command" => {
+            if let Some(input) = seq_entry("input", field_items(&declaration.input)) {
+                entries.push(input);
+            }
+            if let Some(effects) = seq_entry("effects", id_items(&declaration.effects)) {
+                entries.push(effects);
+            }
+        }
+        "query" => {
+            if let Some(reads) = seq_entry("reads", id_items(&declaration.reads)) {
+                entries.push(reads);
+            }
+            if let Some(returns) = &declaration.returns {
+                entries.push(entry("returns", type_node(returns, span)));
+            }
+        }
+        "event" => {
+            if let Some(payload) = seq_entry("payload", field_items(&declaration.payload)) {
+                entries.push(payload);
+            }
+        }
+        "policy" => {
+            if let Some(applies_to) = seq_entry("appliesTo", id_items(&declaration.applies_to)) {
+                entries.push(applies_to);
+            }
+            entries.push(entry(
+                "decision",
+                Node::scalar(
+                    Scalar::Str(declaration.decision.clone().unwrap_or_default()),
+                    span,
+                ),
+            ));
+        }
+        "scenario" => {
+            entries.push(entry(
+                "summary",
+                Node::scalar(
+                    Scalar::Str(declaration.summary.clone().unwrap_or_default()),
+                    span,
+                ),
+            ));
+            if let Some(covers) = seq_entry("covers", id_items(&declaration.covers)) {
+                entries.push(covers);
+            }
+        }
+        other => {
+            return Err(ChangeError::SubjectConflict {
+                subject: other.to_owned(),
+                detail: "wrong-kind",
+            });
+        }
+    }
+    Ok(Node {
+        span,
+        value: Value::Map(entries),
+    })
 }
 
 /// The placeholder span of synthesized tree nodes (spans are unused for the
@@ -1499,6 +2191,7 @@ fn build_candidate(
 /// Plan the exact byte edits of one operation over the declaring document.
 fn plan_source_edits(
     bytes: &[u8],
+    document_definitions: &[crate::loader::project_docs::Definition],
     definition: &crate::loader::project_docs::Definition,
     _model: &NormalizedModel,
     operation: &Operation,
@@ -1515,7 +2208,7 @@ fn plan_source_edits(
         });
     }
     let node = &definition.node;
-    let edit = match operation {
+    let edits: Vec<ByteEdit> = match operation {
         Operation::EntityFieldAdd { field, .. } => {
             let item = edit::field_item_block(
                 bytes,
@@ -1526,13 +2219,13 @@ fn plan_source_edits(
                 field.required,
                 field.description.as_deref(),
             )?;
-            edit::plan_seq_insert(bytes, node, "fields", &item)?
+            vec![edit::plan_seq_insert(bytes, node, "fields", &item)?]
         }
         Operation::EntityFieldRemove { name, .. } => {
-            edit::plan_seq_item_remove(bytes, node, "fields", name)?
+            vec![edit::plan_seq_item_remove(bytes, node, "fields", name)?]
         }
         Operation::EntityFieldRename { name, to, .. } => {
-            edit::plan_seq_item_rename(bytes, node, "fields", name, to)?
+            vec![edit::plan_seq_item_rename(bytes, node, "fields", name, to)?]
         }
         Operation::EnumCaseAdd { case, .. } => {
             let item = edit::case_item_block(
@@ -1542,11 +2235,242 @@ fn plan_source_edits(
                 &case.name,
                 case.description.as_deref(),
             )?;
-            edit::plan_seq_insert(bytes, node, "values", &item)?
+            vec![edit::plan_seq_insert(bytes, node, "values", &item)?]
+        }
+        Operation::EnumCaseChange { name, change, .. } => {
+            let mut edits = Vec::new();
+            if let Some(rename) = &change.rename {
+                edits.push(edit::plan_seq_item_rename(
+                    bytes, node, "values", name, rename,
+                )?);
+            }
+            if let Some(description) = &change.description {
+                edits.push(edit::plan_member_scalar_replace(
+                    bytes,
+                    node,
+                    "values",
+                    name,
+                    "description",
+                    description,
+                )?);
+            }
+            if edits.len() >= 2 && edits[0].start < edits[1].end && edits[1].start < edits[0].end {
+                return Err(ChangeError::SourcePreservation {
+                    subject: name.clone(),
+                    detail: "edit-overlap",
+                });
+            }
+            edits
+        }
+        Operation::DefinitionAdd {
+            kind,
+            module,
+            definition: declaration,
+        } => {
+            // The block joins the kind's home document; its LAST
+            // definition's dash column anchors the synthesized block. A
+            // dash not two columns before the key is a layout this
+            // planner refuses.
+            let anchor_column = document_definitions
+                .last()
+                .and_then(|candidate| {
+                    candidate
+                        .node
+                        .get_entry("id")
+                        .and_then(|entry| entry.key_span.start.column.checked_sub(3))
+                })
+                .ok_or(ChangeError::SourcePreservation {
+                    subject: module.clone(),
+                    detail: "item-layout",
+                })?;
+            let full_id = format!("{module}.{}", declaration.name);
+            let item = edit::yaml_definition_item(
+                bytes,
+                anchor_column,
+                &full_id,
+                kind,
+                declaration.description.as_deref(),
+                &definition_members_block(bytes, anchor_column, kind, declaration)?,
+            );
+            let nodes: Vec<&Node> = document_definitions
+                .iter()
+                .map(|candidate| &candidate.node)
+                .collect();
+            vec![edit::plan_document_definition_append(bytes, &nodes, &item)?]
+        }
+        Operation::CommandEffectAdd { effect, .. } => {
+            // A command synthesized without effects carries no sequence
+            // yet: its first effect reference appends the whole member.
+            if node.get("effects").is_none() {
+                vec![edit::plan_member_append(bytes, node, "effects", effect)?]
+            } else {
+                let item = edit::effect_item_block(bytes, node, "effects", effect)?;
+                vec![edit::plan_seq_scalar_insert(
+                    bytes, node, "effects", effect, &item,
+                )?]
+            }
+        }
+        Operation::CommandEffectRemove { effect, .. } => {
+            vec![edit::plan_seq_scalar_remove(
+                bytes, node, "effects", effect,
+            )?]
+        }
+        Operation::OperationInputSet { input, .. } => {
+            let fields: Vec<(&str, &str, bool)> = input
+                .iter()
+                .map(|field| {
+                    (
+                        field.name.as_str(),
+                        Box::leak(field.r#type.to_spelling().into_boxed_str()) as &str,
+                        field.required,
+                    )
+                })
+                .collect();
+            vec![edit::plan_member_sequence_replace(
+                bytes, node, "input", &fields,
+            )?]
+        }
+        Operation::OperationOutputSet { r#type, .. } => {
+            vec![edit::plan_returns_replace(
+                bytes,
+                node,
+                &r#type.to_spelling(),
+            )?]
         }
         Operation::Unsupported { .. } => return Ok(Vec::new()),
     };
-    Ok(vec![edit])
+    Ok(edits)
+}
+
+/// The members block (newline+indent prefixed lines) of one synthesized
+/// definition at the given anchor column.
+fn definition_members_block(
+    bytes: &[u8],
+    anchor_column: usize,
+    kind: &str,
+    declaration: &request::DefinitionDecl,
+) -> Result<String, ChangeError> {
+    fn field_tuples(list: &[request::FieldDecl]) -> Vec<(&str, &str, bool)> {
+        list.iter()
+            .map(|field| {
+                (
+                    field.name.as_str(),
+                    Box::leak(field.r#type.to_spelling().into_boxed_str()) as &str,
+                    field.required,
+                )
+            })
+            .collect()
+    }
+    fn ids(list: &[String]) -> Vec<&str> {
+        list.iter().map(|id| id.as_str()).collect()
+    }
+    Ok(match kind {
+        "command" => {
+            let mut block = String::new();
+            if !declaration.input.is_empty() {
+                block.push_str(&edit::yaml_field_list(
+                    bytes,
+                    anchor_column,
+                    "input",
+                    &field_tuples(&declaration.input),
+                ));
+            }
+            if !declaration.effects.is_empty() {
+                block.push_str(&edit::yaml_id_list(
+                    bytes,
+                    anchor_column,
+                    "effects",
+                    &ids(&declaration.effects),
+                ));
+            }
+            block
+        }
+        "query" => {
+            let mut block = String::new();
+            if !declaration.reads.is_empty() {
+                block.push_str(&edit::yaml_id_list(
+                    bytes,
+                    anchor_column,
+                    "reads",
+                    &ids(&declaration.reads),
+                ));
+            }
+            if let Some(returns) = &declaration.returns {
+                block.push_str(&edit::yaml_returns_block(
+                    bytes,
+                    anchor_column,
+                    &returns.to_spelling(),
+                ));
+            }
+            block
+        }
+        "event" => {
+            let mut block = String::new();
+            if !declaration.payload.is_empty() {
+                block.push_str(&edit::yaml_field_list(
+                    bytes,
+                    anchor_column,
+                    "payload",
+                    &field_tuples(&declaration.payload),
+                ));
+            }
+            block
+        }
+        "policy" => {
+            let mut block = String::new();
+            if !declaration.applies_to.is_empty() {
+                block.push_str(&edit::yaml_id_list(
+                    bytes,
+                    anchor_column,
+                    "appliesTo",
+                    &ids(&declaration.applies_to),
+                ));
+            }
+            if let Some(decision) = &declaration.decision {
+                let inner = " ".repeat(anchor_column + 2);
+                let newline = if bytes.ends_with(b"\r\n") {
+                    "\r\n"
+                } else {
+                    "\n"
+                };
+                block.push_str(newline);
+                block.push_str(&inner);
+                block.push_str("decision: ");
+                block.push_str(decision);
+            }
+            block
+        }
+        "scenario" => {
+            let mut block = String::new();
+            if !declaration.covers.is_empty() {
+                block.push_str(&edit::yaml_id_list(
+                    bytes,
+                    anchor_column,
+                    "covers",
+                    &ids(&declaration.covers),
+                ));
+            }
+            if let Some(summary) = &declaration.summary {
+                let inner = " ".repeat(anchor_column + 2);
+                let newline = if bytes.ends_with(b"\r\n") {
+                    "\r\n"
+                } else {
+                    "\n"
+                };
+                block.push_str(newline);
+                block.push_str(&inner);
+                block.push_str("summary: ");
+                block.push_str(summary);
+            }
+            block
+        }
+        _ => {
+            return Err(ChangeError::SubjectConflict {
+                subject: kind.to_owned(),
+                detail: "wrong-kind",
+            });
+        }
+    })
 }
 
 /// The typed impact projection: every diff seed analyzed on its own graph

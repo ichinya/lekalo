@@ -44,6 +44,41 @@ pub enum Operation {
     },
     /// `enum-case:add`: add one case to an enum.
     EnumCaseAdd { enum_id: String, case: CaseDecl },
+    /// `enum-case:change`: rename/redescribe one existing case (wire
+    /// values need the reviewed Model successor and stay refused).
+    EnumCaseChange {
+        enum_id: String,
+        name: String,
+        change: CaseChangeDecl,
+    },
+    /// `definition:add`: add one command, query, event, policy, or
+    /// scenario definition to a module.
+    DefinitionAdd {
+        kind: String,
+        module: String,
+        definition: DefinitionDecl,
+    },
+    /// `command-effect:add`: append one effect reference to a command.
+    /// A declared emission (`emit`) is decoded and refused with the
+    /// registered unsupported member until the emission successor lands.
+    CommandEffectAdd {
+        command: String,
+        effect: String,
+        emit: Option<String>,
+    },
+    /// `command-effect:remove`: remove one effect reference from a command.
+    CommandEffectRemove {
+        command: String,
+        effect: String,
+        emit: Option<String>,
+    },
+    /// `operation-input:set`: replace a command's input field list.
+    OperationInputSet {
+        target: String,
+        input: Vec<FieldDecl>,
+    },
+    /// `operation-output:set`: replace a query's return type.
+    OperationOutputSet { target: String, r#type: TypeRef },
     /// A cataloged operation this implementation does not provide. The
     /// payload decoded closed and bounded; preparation refuses later with
     /// the registered unsupported outcome and never mutates.
@@ -61,6 +96,12 @@ impl Operation {
             Self::EntityFieldRemove { .. } => "entity-field:remove",
             Self::EntityFieldRename { .. } => "entity-field:rename",
             Self::EnumCaseAdd { .. } => "enum-case:add",
+            Self::EnumCaseChange { .. } => "enum-case:change",
+            Self::DefinitionAdd { .. } => "definition:add",
+            Self::CommandEffectAdd { .. } => "command-effect:add",
+            Self::CommandEffectRemove { .. } => "command-effect:remove",
+            Self::OperationInputSet { .. } => "operation-input:set",
+            Self::OperationOutputSet { .. } => "operation-output:set",
             Self::Unsupported { operation, .. } => operation,
         }
     }
@@ -71,7 +112,16 @@ impl Operation {
             Self::EntityFieldAdd { entity, .. }
             | Self::EntityFieldRemove { entity, .. }
             | Self::EntityFieldRename { entity, .. } => Some(entity),
-            Self::EnumCaseAdd { enum_id, .. } => Some(enum_id),
+            Self::EnumCaseAdd { enum_id, .. } | Self::EnumCaseChange { enum_id, .. } => {
+                Some(enum_id)
+            }
+            Self::DefinitionAdd { module, .. } => Some(module),
+            Self::CommandEffectAdd { command, .. } | Self::CommandEffectRemove { command, .. } => {
+                Some(command)
+            }
+            Self::OperationInputSet { target, .. } | Self::OperationOutputSet { target, .. } => {
+                Some(target)
+            }
             Self::Unsupported { subject, .. } => subject.as_deref(),
         }
     }
@@ -100,6 +150,51 @@ impl Operation {
             Self::EnumCaseAdd { enum_id, case } => {
                 map.insert("enum".to_owned(), Json::String(enum_id.clone()));
                 map.insert("case".to_owned(), case.to_canonical_json());
+            }
+            Self::EnumCaseChange {
+                enum_id,
+                name,
+                change,
+            } => {
+                map.insert("enum".to_owned(), Json::String(enum_id.clone()));
+                map.insert("name".to_owned(), Json::String(name.clone()));
+                map.insert("definition".to_owned(), change.to_canonical_json());
+            }
+            Self::DefinitionAdd {
+                kind,
+                module,
+                definition,
+            } => {
+                map.insert("kind".to_owned(), Json::String(kind.clone()));
+                map.insert("module".to_owned(), Json::String(module.clone()));
+                map.insert("definition".to_owned(), definition.to_canonical_json());
+            }
+            Self::CommandEffectAdd {
+                command,
+                effect,
+                emit,
+            }
+            | Self::CommandEffectRemove {
+                command,
+                effect,
+                emit,
+            } => {
+                map.insert("command".to_owned(), Json::String(command.clone()));
+                map.insert("effect".to_owned(), Json::String(effect.clone()));
+                if let Some(emit) = emit {
+                    map.insert("emit".to_owned(), Json::String(emit.clone()));
+                }
+            }
+            Self::OperationInputSet { target, input } => {
+                map.insert("operationTarget".to_owned(), Json::String(target.clone()));
+                let fields: Vec<Json> = input.iter().map(FieldDecl::to_canonical_json).collect();
+                let mut payload = serde_json::Map::new();
+                payload.insert("input".to_owned(), Json::Array(fields));
+                map.insert("definition".to_owned(), Json::Object(payload));
+            }
+            Self::OperationOutputSet { target, r#type } => {
+                map.insert("operationTarget".to_owned(), Json::String(target.clone()));
+                map.insert("type".to_owned(), r#type.to_canonical_json());
             }
             Self::Unsupported { .. } => {
                 // Unsupported rows never carry canonical bytes: they are
@@ -202,6 +297,145 @@ impl TypeRef {
                 serde_json::json!({ "optional": inner.to_canonical_json() })
             }
         }
+    }
+}
+
+/// One closed enum-case change declaration of `enum-case:change`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CaseChangeDecl {
+    /// The new case name, when the change renames it.
+    pub rename: Option<String>,
+    /// The replaced description, when the change redescribes it.
+    pub description: Option<String>,
+}
+
+impl CaseChangeDecl {
+    /// The canonical closed JSON of this declaration (sorted keys).
+    pub(crate) fn to_canonical_json(&self) -> Json {
+        let mut map = serde_json::Map::new();
+        if let Some(rename) = &self.rename {
+            map.insert("rename".to_owned(), Json::String(rename.clone()));
+        }
+        if let Some(description) = &self.description {
+            map.insert("description".to_owned(), Json::String(description.clone()));
+        }
+        Json::Object(map)
+    }
+}
+
+/// One closed definition declaration of `definition:add`. Exactly the
+/// members of the declared kind are present; the others default empty.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DefinitionDecl {
+    /// The definition name inside its module (the full semantic id is
+    /// `module.name`).
+    pub name: String,
+    pub description: Option<String>,
+    /// `command`: the input field list.
+    pub input: Vec<FieldDecl>,
+    /// `command`: the referenced effect definitions.
+    pub effects: Vec<String>,
+    /// `query`: the read symbol ids.
+    pub reads: Vec<String>,
+    /// `query`: the returned type.
+    pub returns: Option<TypeRef>,
+    /// `event`: the payload field list.
+    pub payload: Vec<FieldDecl>,
+    /// `policy`: the scoped operation ids.
+    pub applies_to: Vec<String>,
+    /// `policy`: the closed decision (`allow` / `deny`).
+    pub decision: Option<String>,
+    /// `scenario`: the summary text.
+    pub summary: Option<String>,
+    /// `scenario`: the covered operation ids.
+    pub covers: Vec<String>,
+}
+
+impl DefinitionDecl {
+    /// The canonical closed JSON of this declaration: only the members
+    /// the declared kind uses are emitted.
+    pub(crate) fn to_canonical_json(&self) -> Json {
+        let mut map = serde_json::Map::new();
+        map.insert("name".to_owned(), Json::String(self.name.clone()));
+        if let Some(description) = &self.description {
+            map.insert("description".to_owned(), Json::String(description.clone()));
+        }
+        if !self.input.is_empty() {
+            map.insert(
+                "input".to_owned(),
+                Json::Array(
+                    self.input
+                        .iter()
+                        .map(FieldDecl::to_canonical_json)
+                        .collect(),
+                ),
+            );
+        }
+        if !self.effects.is_empty() {
+            map.insert(
+                "effects".to_owned(),
+                Json::Array(
+                    self.effects
+                        .iter()
+                        .map(|id| Json::String(id.clone()))
+                        .collect(),
+                ),
+            );
+        }
+        if !self.reads.is_empty() {
+            map.insert(
+                "reads".to_owned(),
+                Json::Array(
+                    self.reads
+                        .iter()
+                        .map(|id| Json::String(id.clone()))
+                        .collect(),
+                ),
+            );
+        }
+        if let Some(returns) = &self.returns {
+            map.insert("returns".to_owned(), returns.to_canonical_json());
+        }
+        if !self.payload.is_empty() {
+            map.insert(
+                "payload".to_owned(),
+                Json::Array(
+                    self.payload
+                        .iter()
+                        .map(FieldDecl::to_canonical_json)
+                        .collect(),
+                ),
+            );
+        }
+        if !self.applies_to.is_empty() {
+            map.insert(
+                "appliesTo".to_owned(),
+                Json::Array(
+                    self.applies_to
+                        .iter()
+                        .map(|id| Json::String(id.clone()))
+                        .collect(),
+                ),
+            );
+        }
+        if let Some(decision) = &self.decision {
+            map.insert("decision".to_owned(), Json::String(decision.clone()));
+        }
+        if let Some(summary) = &self.summary {
+            map.insert("summary".to_owned(), Json::String(summary.clone()));
+        }
+        if !self.covers.is_empty() {
+            map.insert(
+                "covers".to_owned(),
+                Json::Array(
+                    self.covers
+                        .iter()
+                        .map(|id| Json::String(id.clone()))
+                        .collect(),
+                ),
+            );
+        }
+        Json::Object(map)
     }
 }
 
@@ -447,6 +681,128 @@ fn decode_operation(catalog: &Catalog, value: &Json) -> Result<Operation, &'stat
             let case = case_decl(map.get("case").ok_or("missing-member")?)?;
             Ok(Operation::EnumCaseAdd { enum_id, case })
         }
+        "enum-case:change" => {
+            require_members(
+                map,
+                &["operation", "enum", "name", "definition"],
+                &["operation", "enum", "name", "definition"],
+            )?;
+            Ok(Operation::EnumCaseChange {
+                enum_id: member_string(map, "enum")?,
+                name: member_string(map, "name")?,
+                change: case_change_decl(map.get("definition").ok_or("missing-member")?)?,
+            })
+        }
+        "definition:add" => {
+            require_members(
+                map,
+                &["operation", "kind", "module", "definition"],
+                &["operation", "kind", "module", "definition"],
+            )?;
+            let kind = member_string(map, "kind")?;
+            if !matches!(
+                kind.as_str(),
+                "command" | "query" | "event" | "policy" | "scenario"
+            ) {
+                return Err("kind-unknown");
+            }
+            let module = member_string(map, "module")?;
+            if !super::field_name_valid(&module) {
+                return Err("module-grammar");
+            }
+            Ok(Operation::DefinitionAdd {
+                kind,
+                module,
+                definition: definition_decl(map.get("definition").ok_or("missing-member")?)?,
+            })
+        }
+        "command-effect:add" | "command-effect:remove" => {
+            require_members(
+                map,
+                &["operation", "command", "effect", "emit"],
+                &["operation", "command"],
+            )?;
+            let command = member_string(map, "command")?;
+            // Either the effect reference or the emission surface is
+            // required; both are decoded when present.
+            let effect = match map.get("effect") {
+                Some(value) => {
+                    let effect = value.as_str().ok_or("type-invalid")?;
+                    if !super::symbol_id_valid(effect) {
+                        return Err("symbol-grammar");
+                    }
+                    effect.to_owned()
+                }
+                None => String::new(),
+            };
+            if effect.is_empty() && !map.contains_key("emit") {
+                return Err("missing-member");
+            }
+            // The explicit emission representation decodes here and is
+            // refused at resolution with the registered unsupported member
+            // until the reviewed extended-effect successor lands.
+            let emit = match map.get("emit") {
+                None => None,
+                Some(value) => {
+                    let id = value.as_str().ok_or("type-invalid")?;
+                    if !super::symbol_id_valid(id) {
+                        return Err("symbol-grammar");
+                    }
+                    Some(id.to_owned())
+                }
+            };
+            if discriminator == "command-effect:add" {
+                Ok(Operation::CommandEffectAdd {
+                    command,
+                    effect,
+                    emit,
+                })
+            } else {
+                Ok(Operation::CommandEffectRemove {
+                    command,
+                    effect,
+                    emit,
+                })
+            }
+        }
+        "operation-input:set" => {
+            require_members(
+                map,
+                &["operation", "operationTarget", "definition"],
+                &["operation", "operationTarget", "definition"],
+            )?;
+            let target = member_string(map, "operationTarget")?;
+            let payload = map
+                .get("definition")
+                .ok_or("missing-member")?
+                .as_object()
+                .ok_or("payload-not-object")?;
+            require_members(payload, &["input"], &["input"])?;
+            let fields = payload
+                .get("input")
+                .ok_or("missing-member")?
+                .as_array()
+                .ok_or("input-not-array")?;
+            if fields.len() > 64 {
+                return Err("input-over-bound");
+            }
+            let input = fields
+                .iter()
+                .map(field_decl)
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Operation::OperationInputSet { target, input })
+        }
+        "operation-output:set" => {
+            require_members(
+                map,
+                &["operation", "operationTarget", "type"],
+                &["operation", "operationTarget", "type"],
+            )?;
+            Ok(Operation::OperationOutputSet {
+                target: member_string(map, "operationTarget")?,
+                r#type: type_ref(map.get("type").ok_or("missing-member")?, 1)?,
+            })
+        }
         _ => Err("implemented-without-executor"),
     }
 }
@@ -469,14 +825,7 @@ const SUBJECT_MEMBERS: [&str; 9] = [
 /// variants exactly (round 2, finding 17).
 fn unsupported_member_rules(discriminator: &str) -> Option<(Vec<&'static str>, Vec<&'static str>)> {
     let (required, optional): (&[&str], &[&str]) = match discriminator {
-        "enum-case:change" => (&["operation", "enum", "name", "definition"], &[]),
-        "definition:add" => (&["operation", "kind", "module", "definition"], &[]),
-        "operation-input:set" => (&["operation", "operationTarget", "definition"], &[]),
-        "operation-output:set" => (&["operation", "operationTarget", "type"], &[]),
         "operation-error:set" => (&["operation", "operationTarget", "definition"], &[]),
-        "command-effect:add" | "command-effect:remove" => {
-            (&["operation", "command"], &["effect", "emit"])
-        }
         "query-effect:add" | "query-effect:remove" => (&["operation", "query", "effect"], &[]),
         "binding:add" => (&["operation", "symbol", "definition"], &[]),
         "ownership:set" => (&["operation", "subject", "mode", "evidence"], &[]),
@@ -707,6 +1056,115 @@ fn case_decl(value: &Json) -> Result<CaseDecl, &'static str> {
     })
 }
 
+/// Decode one closed enum-case change declaration: at least one of
+/// rename/description; wire values stay outside the accepted Model.
+fn case_change_decl(value: &Json) -> Result<CaseChangeDecl, &'static str> {
+    let map = value.as_object().ok_or("type-invalid")?;
+    require_members(map, &["rename", "description"], &[])?;
+    if map.is_empty() {
+        return Err("empty-change");
+    }
+    let rename = match map.get("rename") {
+        None => None,
+        Some(_rename) => {
+            let name = member_string(map, "rename")?;
+            if !super::field_name_valid(&name) {
+                return Err("name-grammar");
+            }
+            Some(name)
+        }
+    };
+    Ok(CaseChangeDecl {
+        rename,
+        description: member_text(map, "description")?,
+    })
+}
+
+/// Decode one closed definition declaration; the members the declared
+/// kind does not use are refused by resolution.
+fn definition_decl(value: &Json) -> Result<DefinitionDecl, &'static str> {
+    let map = value.as_object().ok_or("type-invalid")?;
+    require_members(
+        map,
+        &[
+            "name",
+            "description",
+            "input",
+            "effects",
+            "reads",
+            "returns",
+            "payload",
+            "appliesTo",
+            "decision",
+            "summary",
+            "covers",
+        ],
+        &["name"],
+    )?;
+    let name = member_string(map, "name")?;
+    if !super::field_name_valid(&name) {
+        return Err("name-grammar");
+    }
+    let field_list = |key: &str| -> Result<Vec<FieldDecl>, &'static str> {
+        match map.get(key) {
+            None => Ok(Vec::new()),
+            Some(value) => {
+                let items = value.as_array().ok_or("list-not-array")?;
+                if items.len() > 64 {
+                    return Err("list-over-bound");
+                }
+                items.iter().map(field_decl).collect()
+            }
+        }
+    };
+    let id_list = |key: &str| -> Result<Vec<String>, &'static str> {
+        match map.get(key) {
+            None => Ok(Vec::new()),
+            Some(value) => {
+                let items = value.as_array().ok_or("list-not-array")?;
+                if items.len() > 64 {
+                    return Err("list-over-bound");
+                }
+                items
+                    .iter()
+                    .map(|item| {
+                        let id = item.as_str().ok_or("type-invalid")?;
+                        if !super::symbol_id_valid(id) {
+                            return Err("symbol-grammar");
+                        }
+                        Ok(id.to_owned())
+                    })
+                    .collect()
+            }
+        }
+    };
+    Ok(DefinitionDecl {
+        name,
+        description: member_text(map, "description")?,
+        input: field_list("input")?,
+        effects: id_list("effects")?,
+        reads: id_list("reads")?,
+        returns: match map.get("returns") {
+            None => None,
+            Some(value) => Some(type_ref(value, 1)?),
+        },
+        payload: field_list("payload")?,
+        applies_to: id_list("appliesTo")?,
+        decision: match map.get("decision") {
+            None => None,
+            Some(value) => {
+                let decision = value.as_str().ok_or("type-invalid")?;
+                if !matches!(decision, "allow" | "deny") {
+                    return Err("decision-unknown");
+                }
+                Some(decision.to_owned())
+            }
+        },
+        summary: member_text(map, "summary")?,
+        covers: id_list("covers")?,
+    })
+}
+
 /// Decode one closed bounded type reference.
 fn type_ref(value: &Json, depth: usize) -> Result<TypeRef, &'static str> {
     if depth > super::MAX_TYPE_LEVELS {
@@ -902,13 +1360,13 @@ mod tests {
     #[test]
     fn cataloged_unsupported_operation_decodes_and_carries_subject() {
         let text = request(
-            "{\"operation\":\"definition:add\",\"kind\":\"command\",\"module\":\"tasks\",             \"definition\":{\"id\":\"tasks.complete\"}}",
+            "{\"operation\":\"binding:add\",\"symbol\":\"tasks.task\",             \"definition\":{\"target\":\"node-typescript\"}}",
         );
         let req = decode_ok(&text);
         match &req.operations[0] {
             Operation::Unsupported { operation, subject } => {
-                assert_eq!(operation, "definition:add");
-                assert_eq!(subject.as_deref(), Some("tasks"));
+                assert_eq!(operation, "binding:add");
+                assert_eq!(subject.as_deref(), Some("tasks.task"));
             }
             other => panic!("unexpected operation: {other:?}"),
         }

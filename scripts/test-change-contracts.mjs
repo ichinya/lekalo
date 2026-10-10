@@ -137,10 +137,16 @@ const implemented = catalog.operations
   .map((entry) => entry.operation)
   .sort();
 const expectedImplemented = [
+  "command-effect:add",
+  "command-effect:remove",
+  "definition:add",
   "entity-field:add",
   "entity-field:remove",
   "entity-field:rename",
   "enum-case:add",
+  "enum-case:change",
+  "operation-input:set",
+  "operation-output:set",
 ];
 if (JSON.stringify(implemented) !== JSON.stringify(expectedImplemented)) {
   fail("catalog-implemented-set", { implemented, expectedImplemented });

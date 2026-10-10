@@ -320,6 +320,12 @@ mod tests {
             "entity-field:remove",
             "entity-field:rename",
             "enum-case:add",
+            "enum-case:change",
+            "definition:add",
+            "command-effect:add",
+            "command-effect:remove",
+            "operation-input:set",
+            "operation-output:set",
         ] {
             assert_eq!(
                 catalog.entry(operation).expect("entry").status(),
@@ -328,11 +334,18 @@ mod tests {
             );
         }
         assert_eq!(
-            catalog.entry("definition:add").expect("entry").status(),
+            catalog.entry("binding:add").expect("entry").status(),
             OperationStatus::Unsupported
         );
         assert_eq!(
             catalog.entry("migration:apply").expect("entry").status(),
+            OperationStatus::Unsupported
+        );
+        assert_eq!(
+            catalog
+                .entry("operation-error:set")
+                .expect("entry")
+                .status(),
             OperationStatus::Unsupported
         );
     }
