@@ -617,12 +617,15 @@ pub struct ResolutionAudit {
 /// The outcome of one explicit resolution attempt.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ResolveOutcome {
-    /// The precondition matched; the conflict closed and the audit
-    /// entry was appended.
+    /// The precondition matched and the resolver was authorized; the
+    /// conflict closed and the audit entry was appended.
     Resolved,
     /// The expected version did not match the observed revision: the
     /// stale resolver is refused with no state change and no audit.
     Stale,
+    /// The resolver carries no current scoped authorization: refused
+    /// before the record is even touched.
+    Denied,
     /// The conflict id is unknown.
     Unknown,
     /// The conflict was already resolved (a replay of the same
@@ -630,22 +633,65 @@ pub enum ResolveOutcome {
     Replayed,
 }
 
+/// The typed resolution authority of one resolver: the current,
+/// scoped authorization decision over the exact link and field scope.
+/// A resolver without an explicit allowed decision is never admitted,
+/// whatever revision it presents.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResolutionAuthority {
+    /// The resolving actor class (admitted, never free text).
+    pub actor: String,
+    /// The current authorization decision for this resolution.
+    pub authorization: AuthorizationOutcome,
+    /// The allowed field scope of the resolution (the exact fields the
+    /// admitted decision covers).
+    pub fields: Vec<String>,
+}
+
+impl ResolutionAuthority {
+    /// One checked authority: the actor is a bounded token and the
+    /// field scope is non-empty, so an unscoped "resolve everything"
+    /// authority cannot be constructed.
+    pub fn new(
+        actor: &str,
+        authorization: AuthorizationOutcome,
+        fields: Vec<String>,
+    ) -> Option<Self> {
+        let actor_ok = !actor.is_empty() && actor.len() <= 128;
+        let fields_ok = !fields.is_empty()
+            && fields
+                .iter()
+                .all(|field| !field.is_empty() && field.len() <= 128);
+        (actor_ok && fields_ok).then(|| Self {
+            actor: actor.to_owned(),
+            authorization,
+            fields,
+        })
+    }
+}
+
 /// Resolve one conflict under an explicit expected-version
-/// precondition, appending an immutable audit entry atomically with
-/// the resolution.
+/// precondition and a current scoped authority, appending an immutable
+/// audit entry atomically with the resolution.
 ///
-/// A resolver whose expected version does not equal the record's
-/// observed revision is stale: it is refused outright, leaving the
-/// conflict open and the audit log untouched. A fresh resolution
-/// closes the conflict and appends exactly one audit entry; resolving
-/// an already-resolved record replays without a duplicate entry.
+/// Admission order: an unauthorized resolver is refused outright
+/// (`Denied`, no state change, no audit) whatever revision it names; a
+/// resolver whose expected version does not equal the record's
+/// observed revision is stale and refused outright; a fresh admitted
+/// resolution closes the conflict and appends exactly one audit entry;
+/// resolving an already-resolved record replays without a duplicate.
 pub fn resolve_conflict(
     conflicts: &mut BTreeMap<String, ConflictRecord>,
     audit_log: &mut Vec<ResolutionAudit>,
     conflict_id: &str,
     expected_revision: &str,
-    actor: &str,
+    authority: &ResolutionAuthority,
 ) -> ResolveOutcome {
+    // Authority first: an unadmitted actor never reaches the record,
+    // and an empty expected revision is not a precondition at all.
+    if authority.authorization != AuthorizationOutcome::Allowed || expected_revision.is_empty() {
+        return ResolveOutcome::Denied;
+    }
     let Some(record) = conflicts.get_mut(conflict_id) else {
         return ResolveOutcome::Unknown;
     };
@@ -661,7 +707,7 @@ pub fn resolve_conflict(
         link_id: record.link_id.clone(),
         expected_revision: expected_revision.to_owned(),
         resolved_revision: record.observed_revision.clone(),
-        actor: actor.to_owned(),
+        actor: authority.actor.to_owned(),
     });
     ResolveOutcome::Resolved
 }
@@ -678,6 +724,12 @@ pub fn detach_link(link: &mut Link) {
 ///
 /// A denied/unsupported recipient never receives an intent; callers
 /// must only invoke this after [`decide`] returned [`DecisionOutcome::Allowed`].
+/// Replay identity is the full immutable request: the same link, the
+/// same idempotency key, the SAME action, and the SAME link generation
+/// replay the original intent; any other reuse of the key is an
+/// explicit [`PlanOutcome::ConflictingKey`] refusal — a different
+/// action or a reattached generation gets its own identity, never a
+/// borrowed one.
 pub fn plan_intent(
     intents: &mut BTreeMap<String, Intent>,
     link: &Link,
@@ -685,30 +737,34 @@ pub fn plan_intent(
     action: &str,
     idempotency_key: String,
     now_ms: u64,
-) -> Option<Intent> {
+) -> PlanOutcome {
     let key = idempotency_key;
     // A denied, unsupported, or indeterminate recipient has an explicit
     // decision row and never an intent: the refusal is structural.
     if outcome != DecisionOutcome::Allowed {
-        return None;
+        return PlanOutcome::NotAdmitted;
     }
     if link.state != LinkState::Active {
-        return None;
+        return PlanOutcome::NotAdmitted;
     }
-    // The key scope is the originating intent for one recipient link;
-    // retries replay it, a different link gets its own intent.
+    // Replay identity is the originating request tuple, not the bare
+    // key: a different action or a different generation is a conflicting
+    // reuse of the key and is refused explicitly, never aliased.
     if let Some(existing) = intents
         .values()
         .find(|intent| intent.link_id == link.link_id && intent.idempotency_key == key)
     {
-        return Some(existing.clone());
+        if existing.action == action && existing.link_generation == link.generation {
+            return PlanOutcome::Replayed(existing.clone());
+        }
+        return PlanOutcome::ConflictingKey;
     }
     // The intent id is injective: the link id and the key are joined in
     // fixed-width hex of their byte lengths, so `(a.b, c)` and `(a, b.c)`
     // can never collide. A collision is a caller bug and fails loudly.
     let intent_id = injective_intent_id(&link.link_id, &key);
     if intents.contains_key(&intent_id) {
-        return None;
+        return PlanOutcome::NotAdmitted;
     }
     let intent = Intent {
         intent_id: intent_id.clone(),
@@ -724,7 +780,32 @@ pub fn plan_intent(
         receipt_digest: None,
     };
     intents.insert(intent.intent_id.clone(), intent.clone());
-    Some(intent)
+    PlanOutcome::Planned(intent)
+}
+
+/// The typed outcome of one intent plan.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PlanOutcome {
+    /// A fresh intent was planned and recorded.
+    Planned(Intent),
+    /// The exact originating request (link, key, action, generation)
+    /// replayed its original intent.
+    Replayed(Intent),
+    /// The key is already bound to a different action or a different
+    /// link generation: a conflicting reuse, refused explicitly.
+    ConflictingKey,
+    /// The decision did not admit an intent.
+    NotAdmitted,
+}
+
+impl PlanOutcome {
+    /// The intent when one was planned or replayed.
+    pub fn into_intent(self) -> Option<Intent> {
+        match self {
+            Self::Planned(intent) | Self::Replayed(intent) => Some(intent),
+            _ => None,
+        }
+    }
 }
 
 /// Build one collision-free intent id: `<link-hexlen>:<link>:<key-hexlen>:<key>`.

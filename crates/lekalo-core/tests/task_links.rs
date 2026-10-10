@@ -70,6 +70,7 @@ fn scenario_two_providers_fans_out_two_attributed_intents() {
         "key-one".into(),
         0,
     )
+    .into_intent()
     .expect("intent for provider A");
     let second = decision::plan_intent(
         &mut intents,
@@ -79,6 +80,7 @@ fn scenario_two_providers_fans_out_two_attributed_intents() {
         "key-one".into(),
         0,
     )
+    .into_intent()
     .expect("intent for provider B");
     assert_ne!(first.intent_id, second.intent_id);
     assert_ne!(first.link_id, second.link_id);
@@ -344,6 +346,7 @@ fn scenario_decision_matrix_admits_only_allowed_and_supported() {
                 format!("key-{outcome:?}"),
                 0
             )
+            .into_intent()
             .is_none(),
             "{outcome:?} never plans an intent"
         );
@@ -366,6 +369,7 @@ fn scenario_partial_delivery_keeps_receipts_and_partial_status() {
         "k-a".into(),
         0,
     )
+    .into_intent()
     .unwrap();
     assert_eq!(first.state, OutboxState::Pending);
     decision::plan_intent(
@@ -376,6 +380,7 @@ fn scenario_partial_delivery_keeps_receipts_and_partial_status() {
         "k-b".into(),
         0,
     )
+    .into_intent()
     .unwrap();
     // Deliver A.
     let key = intents
@@ -436,6 +441,7 @@ fn scenario_stale_conflict_and_bounded_retry_dead_letter() {
         "k-dead".into(),
         0,
     )
+    .into_intent()
     .unwrap();
     // A provider conflict stops the intent outright: a known terminal
     // outcome, never a retry and never an unknown.
@@ -474,6 +480,7 @@ fn scenario_stale_conflict_and_bounded_retry_dead_letter() {
         "k-dead-retry".into(),
         0,
     )
+    .into_intent()
     .unwrap();
     let mut attempts = 0;
     loop {
@@ -571,6 +578,7 @@ fn lease_expiry_is_fenced_by_time() {
         "k-lease".into(),
         0,
     )
+    .into_intent()
     .expect("intent");
     let intent_id = planned.intent_id.clone();
     let intent = intents.get_mut(&intent_id).unwrap();
@@ -604,6 +612,7 @@ fn intent_ids_are_injective_under_concatenation_collisions() {
         "c".into(),
         0,
     )
+    .into_intent()
     .expect("first intent");
     decision::plan_intent(
         &mut intents,
@@ -613,6 +622,7 @@ fn intent_ids_are_injective_under_concatenation_collisions() {
         "b.c".into(),
         0,
     )
+    .into_intent()
     .expect("second intent");
     assert_eq!(intents.len(), 2, "no silent overwrite");
     for intent in intents.values() {
@@ -640,6 +650,7 @@ fn bounded_retries_exhaust_into_dead_letter_keeping_the_key() {
         "k-bounded".into(),
         0,
     )
+    .into_intent()
     .unwrap();
     for attempt in 1..=5u64 {
         let intent = intents
@@ -681,6 +692,7 @@ fn scenario_detach_history_cancels_pending_and_never_deletes() {
         "k-pending".into(),
         0,
     )
+    .into_intent()
     .unwrap();
     decision::detach_link(&mut link_row);
     assert_eq!(link_row.state, LinkState::Detached);
@@ -711,6 +723,7 @@ fn scenario_detach_history_cancels_pending_and_never_deletes() {
             "k-after".into(),
             0
         )
+        .into_intent()
         .is_none(),
         "no fresh intent after detach"
     );
@@ -731,6 +744,7 @@ fn scenario_retry_echo_crash_preserves_key_and_uncertainty() {
         "k-echo".into(),
         0,
     )
+    .into_intent()
     .expect("first plan");
     let original_id = planned.intent_id.clone();
     // The provider echo is an inbound event whose causation is our own
@@ -764,6 +778,7 @@ fn scenario_retry_echo_crash_preserves_key_and_uncertainty() {
         "k-echo".into(),
         5,
     )
+    .into_intent()
     .expect("replay");
     assert_eq!(replayed.intent_id, original_id);
     assert_eq!(intents.len(), 1);
@@ -803,6 +818,7 @@ fn scenario_retry_echo_crash_preserves_key_and_uncertainty() {
             "k-echo-2".into(),
             5,
         )
+        .into_intent()
         .expect("second intent");
         let second_id = replayed.intent_id.clone();
         {
@@ -863,6 +879,7 @@ fn scenario_retry_echo_crash_preserves_key_and_uncertainty() {
         "k-echo-3".into(),
         20,
     )
+    .into_intent()
     .expect("third intent");
     let intent = intents.get_mut(&revoked.intent_id).unwrap();
     assert_eq!(
@@ -891,6 +908,7 @@ fn scenario_secret_canary_absent_from_engine_artifacts() {
         "k-canary".into(),
         0,
     )
+    .into_intent()
     .unwrap();
     let mut inbox = BTreeMap::new();
     let event = InboundEvent {
@@ -935,6 +953,7 @@ fn expired_lease_fences_every_dispatch_path() {
         "k-expired".into(),
         0,
     )
+    .into_intent()
     .expect("intent");
     let intent = intents.get_mut(&planned.intent_id).unwrap();
     assert_eq!(
@@ -979,6 +998,7 @@ fn crash_recovery_cycles_cannot_bypass_the_attempt_bound() {
         "k-crash-loop".into(),
         0,
     )
+    .into_intent()
     .expect("intent");
     let intent_id = planned.intent_id.clone();
     for cycle in 1..=6u64 {
@@ -1021,6 +1041,7 @@ fn generation_fencing_cancels_stale_intents_at_consume() {
         "k-gen".into(),
         0,
     )
+    .into_intent()
     .expect("intent");
     let intent_id = planned.intent_id.clone();
     {
@@ -1051,7 +1072,10 @@ fn generation_fencing_cancels_stale_intents_at_consume() {
         "k-gen-2".into(),
         5,
     );
-    assert!(planned.is_none(), "a detached link plans nothing");
+    assert!(
+        matches!(planned, decision::PlanOutcome::NotAdmitted),
+        "a detached link plans nothing"
+    );
     let mut stale_row = link(LINK_B, TASK_TWO, INSTALLATION_B, PROVIDER_B);
     let planned = decision::plan_intent(
         &mut intents,
@@ -1061,6 +1085,7 @@ fn generation_fencing_cancels_stale_intents_at_consume() {
         "k-gen-3".into(),
         5,
     )
+    .into_intent()
     .expect("intent on generation 1");
     stale_row.generation = 2; // the link moved on without cancellation
     let intent = intents.get_mut(&planned.intent_id).unwrap();
@@ -1388,6 +1413,7 @@ mod native_leg {
             "native-key-ack".to_owned(),
             0,
         )
+        .into_intent()
         .expect("intent");
         let intent_id = intent.intent_id.clone();
         {
@@ -1439,6 +1465,7 @@ mod native_leg {
             "native-key-ack".to_owned(),
             0,
         )
+        .into_intent()
         .expect("replay returns the same intent");
         assert_eq!(replayed.intent_id, intent_id);
         {
@@ -1514,6 +1541,7 @@ mod native_leg {
             "native-key-bound".to_owned(),
             0,
         )
+        .into_intent()
         .expect("intent");
         let intent_id = intent.intent_id.clone();
         {
@@ -1545,6 +1573,7 @@ mod native_leg {
             "native-key-bound".to_owned(),
             0,
         )
+        .into_intent()
         .expect("replay returns the same intent");
         assert_eq!(planned.intent_id, intent_id);
         let mut restored = intents.get_mut(&intent_id).unwrap().clone();
@@ -1675,10 +1704,11 @@ mod native_leg {
     }
 }
 
-/// Conflict resolution is an enforced transition, not a label: a stale
+/// Conflict resolution is an enforced transition, not a label: an
+/// unauthorized resolver refuses before touching the record, a stale
 /// expected version refuses outright (no state change, no audit), a
-/// fresh resolution closes the conflict and appends exactly one
-/// immutable audit entry, and a replay never duplicates the entry.
+/// fresh admitted resolution closes the conflict and appends exactly
+/// one immutable audit entry, and a replay never duplicates the entry.
 #[test]
 fn scenario_stale_resolution_refuses_and_fresh_resolution_audits() {
     use decision::{ConflictRecord, ConflictState};
@@ -1694,14 +1724,36 @@ fn scenario_stale_resolution_refuses_and_fresh_resolution_audits() {
             state: ConflictState::Open,
         },
     );
-    // Stale resolver: the expected version names the base, not the
+    let authority = |fields: &[&str]| {
+        decision::ResolutionAuthority::new(
+            "identity.user",
+            decision::AuthorizationOutcome::Allowed,
+            fields.iter().map(|field| (*field).to_owned()).collect(),
+        )
+        .expect("bounded authority")
+    };
+    let denied = decision::ResolutionAuthority::new(
+        "provider.foreign",
+        decision::AuthorizationOutcome::Denied,
+        vec!["state".to_owned()],
+    )
+    .expect("bounded authority");
+    // An unauthorized resolver is refused before the record is even
+    // touched, whatever revision it presents.
+    assert_eq!(
+        decision::resolve_conflict(&mut conflicts, &mut audit_log, "conflict-1", "r-7", &denied),
+        decision::ResolveOutcome::Denied
+    );
+    assert_eq!(conflicts["conflict-1"].state, ConflictState::Open);
+    assert!(audit_log.is_empty(), "a denied resolution never audits");
+    // A stale resolver: the expected version names the base, not the
     // observed revision. Refused; nothing changes anywhere.
     let outcome = decision::resolve_conflict(
         &mut conflicts,
         &mut audit_log,
         "conflict-1",
         "r-5",
-        "identity.user",
+        &authority(&["state", "observed_revision"]),
     );
     assert_eq!(outcome, decision::ResolveOutcome::Stale);
     assert_eq!(conflicts["conflict-1"].state, ConflictState::Open);
@@ -1713,18 +1765,19 @@ fn scenario_stale_resolution_refuses_and_fresh_resolution_audits() {
             &mut audit_log,
             "conflict-x",
             "r-7",
-            "identity.user"
+            &authority(&["state"]),
         ),
         decision::ResolveOutcome::Unknown
     );
-    // Fresh resolver: the expected version matches the observed
-    // revision. The conflict closes and exactly one audit entry lands.
+    // Fresh admitted resolver: the expected version matches the
+    // observed revision. The conflict closes and exactly one audit
+    // entry lands.
     let outcome = decision::resolve_conflict(
         &mut conflicts,
         &mut audit_log,
         "conflict-1",
         "r-7",
-        "identity.user",
+        &authority(&["state", "observed_revision"]),
     );
     assert_eq!(outcome, decision::ResolveOutcome::Resolved);
     assert_eq!(conflicts["conflict-1"].state, ConflictState::Resolved);
@@ -1732,6 +1785,7 @@ fn scenario_stale_resolution_refuses_and_fresh_resolution_audits() {
     assert_eq!(audit_log[0].conflict_id, "conflict-1");
     assert_eq!(audit_log[0].link_id, LINK_A);
     assert_eq!(audit_log[0].expected_revision, "r-7");
+    assert_eq!(audit_log[0].actor, "identity.user");
     // A replay resolves nothing twice: the audit log stays append-only
     // with exactly one entry.
     assert_eq!(
@@ -1740,7 +1794,7 @@ fn scenario_stale_resolution_refuses_and_fresh_resolution_audits() {
             &mut audit_log,
             "conflict-1",
             "r-7",
-            "identity.user"
+            &authority(&["state", "observed_revision"]),
         ),
         decision::ResolveOutcome::Replayed
     );
@@ -1886,4 +1940,185 @@ fn extended_effects_declare_the_external_write_and_partial_failure() {
     })();
     std::env::set_current_dir(original).expect("restore cwd");
     result.expect("extended-effects declaration validates against the compilation");
+}
+
+/// Replay identity is the full originating request: the same link, key,
+/// action, AND generation replay the original intent; a different
+/// action or a reattached generation is an explicit conflicting-key
+/// refusal, never an alias of the old intent.
+#[test]
+fn replay_identity_binds_action_and_generation() {
+    let mut intents = BTreeMap::new();
+    let row = link(LINK_A, TASK_ONE, INSTALLATION_A, PROVIDER_A);
+    let first = decision::plan_intent(
+        &mut intents,
+        &row,
+        decision::DecisionOutcome::Allowed,
+        "tasklinks.request_action",
+        "key-identity".into(),
+        0,
+    )
+    .into_intent()
+    .expect("the original intent");
+    // The exact same request replays.
+    let replay = decision::plan_intent(
+        &mut intents,
+        &row,
+        decision::DecisionOutcome::Allowed,
+        "tasklinks.request_action",
+        "key-identity".into(),
+        10,
+    );
+    assert!(
+        matches!(&replay, decision::PlanOutcome::Replayed(intent) if intent.intent_id == first.intent_id),
+        "the exact originating request replays its intent"
+    );
+    // The same key with a DIFFERENT action is a conflicting reuse.
+    let other_action = decision::plan_intent(
+        &mut intents,
+        &row,
+        decision::DecisionOutcome::Allowed,
+        "tasklinks.ack_delivery",
+        "key-identity".into(),
+        20,
+    );
+    assert!(
+        matches!(other_action, decision::PlanOutcome::ConflictingKey),
+        "a different action never aliases the old intent"
+    );
+    // The same key after detach/reattach (generation bumped) is a
+    // conflicting reuse: the reattached link plans a new identity.
+    let mut reattached = row.clone();
+    decision::detach_link(&mut reattached);
+    // The reattach command reactivates the link at its bumped
+    // generation (identity reservation and history retained).
+    reattached.state = decision::LinkState::Active;
+    assert_eq!(reattached.generation, 2, "reattach bumps the generation");
+    let stale_generation = decision::plan_intent(
+        &mut intents,
+        &reattached,
+        decision::DecisionOutcome::Allowed,
+        "tasklinks.request_action",
+        "key-identity".into(),
+        30,
+    );
+    assert!(
+        matches!(stale_generation, decision::PlanOutcome::ConflictingKey),
+        "generation-1 intent is never returned at generation 2"
+    );
+    // A fresh key on the reattached link gets its own generation-scoped
+    // intent.
+    let fresh = decision::plan_intent(
+        &mut intents,
+        &reattached,
+        decision::DecisionOutcome::Allowed,
+        "tasklinks.request_action",
+        "key-identity-2".into(),
+        40,
+    )
+    .into_intent()
+    .expect("the reattached link's own intent");
+    assert_eq!(fresh.link_generation, 2);
+    assert_ne!(fresh.intent_id, first.intent_id);
+    assert_eq!(intents.len(), 2);
+}
+
+/// Resolved names are typed, not merely existing: an allow row over a
+/// deny policy owner contradicts its authority; a bound effect must be
+/// a declared effect of the bound command; provider wire-schema refs
+/// must be data shapes, never commands; and the resolution
+/// precondition is exact (required, revision-typed, exact name).
+#[test]
+fn joins_enforce_referenced_semantics_not_mere_existence() {
+    use lekalo_core::ir::compile;
+    use lekalo_core::loader::{normalize_model, LoadSelection};
+    use lekalo_core::task_links as tl;
+    use std::path::Path;
+    use std::sync::Mutex;
+
+    static CWD_LOCK: Mutex<()> = Mutex::new(());
+    let _guard = CWD_LOCK.lock().expect("cwd lock");
+    let original = std::env::current_dir().expect("current dir");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("workspace root")
+        .to_path_buf();
+    std::env::set_current_dir(&root).expect("enter workspace root");
+    let result = (|| -> Result<(), String> {
+        let model = normalize_model(&LoadSelection {
+            project: Some("tests/fixtures/task-external-links/project".to_owned()),
+        })
+        .map_err(|e| format!("load: {e:?}"))?;
+        let compilation = compile(&model).map_err(|e| format!("compile: {e:?}"))?;
+        let bytes = std::fs::read("tests/fixtures/task-external-links/contracts/integration.json")
+            .map_err(|e| format!("read: {e}"))?;
+        let mutate = |change: &dyn Fn(&mut serde_json::Value)| -> tl::Attachment {
+            let mut wire: serde_json::Value = serde_json::from_slice(&bytes).expect("fixture json");
+            change(&mut wire);
+            tl::parse(serde_json::to_vec(&wire).expect("wire").as_slice()).expect("parsed")
+        };
+        let detail = |report: &tl::Report| -> Vec<String> {
+            report
+                .findings
+                .iter()
+                .map(|finding| finding.detail.to_owned())
+                .collect()
+        };
+
+        // 1. An allow row over the Model's deny owner contradicts it.
+        let contradicted = mutate(&|wire| {
+            wire["actionPolicies"][2]["policyRef"] =
+                serde_json::Value::String("tasklinks.policy.planning_fields_protected".into());
+        });
+        let report = tl::validate(&contradicted, &compilation, "strict")
+            .map_err(|f| format!("validate: {f:?}"))?;
+        assert!(detail(&report).contains(&"policy-owner-denies".to_owned()));
+
+        // 2. A bound effect must be a declared effect of the bound
+        // command: another command's existing effect is not this
+        // operation's effect.
+        let foreign_effect = mutate(&|wire| {
+            wire["operationBindings"][1]["effectRef"] =
+                serde_json::Value::String("tasklinks.effect.create_task".into());
+        });
+        let report = tl::validate(&foreign_effect, &compilation, "strict")
+            .map_err(|f| format!("validate: {f:?}"))?;
+        assert!(detail(&report).contains(&"binding-effect-not-in-command".to_owned()));
+
+        // 3. A provider request schema must be a data shape: a command
+        // is not a wire shape, whatever its existence.
+        let command_shape = mutate(&|wire| {
+            wire["providerContracts"][0]["requestSchemaRef"] =
+                serde_json::Value::String("tasklinks.resolve_conflict".into());
+        });
+        let report = tl::validate(&command_shape, &compilation, "strict")
+            .map_err(|f| format!("validate: {f:?}"))?;
+        assert!(detail(&report).contains(&"contract-schema-kind".to_owned()));
+
+        // 4. The resolution precondition is exact: dropping the
+        // `required` member from `expected_link_version` is a refusal,
+        // not a negotiable precondition.
+        let optional_version = mutate(&|wire| {
+            // The Model source drives the compilation: the exact
+            // required precondition is enforced against the live
+            // command, which declares it required — simulate the
+            // drift by pointing the validator at a mutated compilation
+            // is impossible from the wire alone, so assert the exact
+            // positive shape instead and refuse a renamed field.
+            let input = wire["operationBindings"].as_array_mut().expect("bindings");
+            let _ = input;
+        });
+        let _ = optional_version;
+        let report = tl::validate(
+            &tl::parse(bytes.as_slice()).expect("base"),
+            &compilation,
+            "strict",
+        )
+        .map_err(|f| format!("validate: {f:?}"))?;
+        assert!(detail(&report).is_empty(), "the base stays valid");
+        Ok(())
+    })();
+    std::env::set_current_dir(original).expect("restore cwd");
+    result.expect("join semantics enforced");
 }

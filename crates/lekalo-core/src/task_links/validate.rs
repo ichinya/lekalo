@@ -643,6 +643,18 @@ fn check_decisions(
     // policies. Any referenced id must be declared in the attachment,
     // and the composition graph must be acyclic.
     let model_policies = ir_policy_ids(compilation);
+    // The typed Model policy owners: id -> declared decision. A
+    // referenced owner's decision is enforced, not just its existence:
+    // an allow row over a deny owner contradicts its authority.
+    let model_policy_decisions: BTreeMap<&str, &str> = compilation
+        .project
+        .definitions
+        .iter()
+        .filter_map(|definition| match definition {
+            Definition::Policy(policy) => Some((policy.id.as_str(), policy.decision.as_str())),
+            _ => None,
+        })
+        .collect();
     let declared_commands: BTreeSet<&str> = compilation
         .project
         .definitions
@@ -729,6 +741,20 @@ fn check_decisions(
                 "policy-ref-unresolved",
             );
         }
+        // The owner's decision is enforced: a Model-owner reference
+        // whose declared decision contradicts this row's own claim
+        // (an allow row over a deny owner) is not authority, it is a
+        // contradiction with it.
+        if let Some(owner_decision) = model_policy_decisions.get(policy.policy_ref.as_str()) {
+            if policy.decision == "allow" && *owner_decision == "deny" {
+                finding(
+                    findings,
+                    diagnostic::DECISION_INCOMPLETE,
+                    policy.policy_id.clone(),
+                    "policy-owner-denies",
+                );
+            }
+        }
         // The bound action must be a declared command or query of the
         // compilation, whatever its prefix: caller-named actions
         // resolve exactly like the built-in ones.
@@ -805,12 +831,6 @@ fn check_bindings(attachment: &Attachment, compilation: &Compilation, findings: 
             _ => None,
         })
         .collect();
-    let declared_symbols: BTreeSet<&str> = compilation
-        .project
-        .definitions
-        .iter()
-        .map(|definition| definition.id().as_str())
-        .collect();
     let capabilities: BTreeSet<&str> = attachment
         .capability_requirements()
         .iter()
@@ -833,21 +853,45 @@ fn check_bindings(attachment: &Attachment, compilation: &Compilation, findings: 
     }
     // Provider contract wire schemas are typed resolved dependency
     // nodes: every request/response/error ref must name a declared
-    // definition of the compilation, never a free symbol.
+    // definition of the compilation, never a free symbol, and it must
+    // be a data-shape definition (scalar, enum, or value object). A
+    // command, effect, policy, or event is not a wire shape.
+    let shape_kinds: BTreeMap<&str, crate::ir::DefinitionKind> = compilation
+        .project
+        .definitions
+        .iter()
+        .map(|definition| (definition.id().as_str(), definition.kind()))
+        .collect();
+    let is_data_shape = |kind: crate::ir::DefinitionKind| {
+        matches!(
+            kind,
+            crate::ir::DefinitionKind::Scalar
+                | crate::ir::DefinitionKind::Enum
+                | crate::ir::DefinitionKind::ValueObject
+        )
+    };
     for contract in attachment.provider_contracts() {
-        for schema_ref in [
-            &contract.request_schema_ref,
-            &contract.response_schema_ref,
-            &contract.error_schema_ref,
+        for (schema_ref, role) in [
+            (&contract.request_schema_ref, "request"),
+            (&contract.response_schema_ref, "response"),
+            (&contract.error_schema_ref, "error"),
         ] {
-            if !declared_symbols.contains(schema_ref.as_str()) {
-                finding(
+            match shape_kinds.get(schema_ref.as_str()) {
+                None => finding(
                     findings,
                     diagnostic::INPUT_INVALID,
                     contract.contract_id.clone(),
                     "contract-schema-ref-unresolved",
-                );
+                ),
+                Some(kind) if !is_data_shape(*kind) => finding(
+                    findings,
+                    diagnostic::INPUT_INVALID,
+                    contract.contract_id.clone(),
+                    "contract-schema-kind",
+                ),
+                Some(_) => {}
             }
+            let _ = role;
         }
     }
     let policies: BTreeSet<&str> = attachment
@@ -901,14 +945,20 @@ fn check_bindings(attachment: &Attachment, compilation: &Compilation, findings: 
                 );
             }
             if let Some(command) = commands.get("tasklinks.resolve_conflict") {
-                let has_precondition = command.input.iter().any(|field| {
-                    field.name.as_str().starts_with("expected_")
+                // The mandatory version preconditions are exact: the
+                // command input must carry the required expected link
+                // version of the link revision type (an optional
+                // expected version is not a precondition). The match is
+                // by exact name and type, never by a name prefix.
+                let exact_precondition = command.input.iter().any(|field| {
+                    field.name.as_str() == "expected_link_version"
+                        && field.required
                         && matches!(
                             &field.r#type,
                             crate::ir::TypeRef::Ref(id) if id.as_str() == "tasklinks.revision"
                         )
                 });
-                if !has_precondition {
+                if !exact_precondition {
                     finding(
                         findings,
                         diagnostic::CONFLICT_RESOLUTION_INVALID,
@@ -984,6 +1034,23 @@ fn check_bindings(attachment: &Attachment, compilation: &Compilation, findings: 
                         "intent-group-incomplete",
                     );
                 }
+            }
+        }
+        // The bound effect must be a declared effect of the bound
+        // command itself: an unrelated existing effect does not become
+        // this operation's effect by existing.
+        if let Some(command) = commands.get(binding.action.as_str()) {
+            if !command
+                .effects
+                .iter()
+                .any(|effect_id| effect_id.as_str() == binding.effect_ref.as_str())
+            {
+                finding(
+                    findings,
+                    diagnostic::FANOUT_NOT_ADMITTED,
+                    binding.operation.clone(),
+                    "binding-effect-not-in-command",
+                );
             }
         }
         if !capabilities.contains(binding.capability_ref.as_str()) {

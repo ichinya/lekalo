@@ -500,6 +500,21 @@ fn execute(command: Command) -> Result<DomainResult, DomainResult> {
             if attachment.project_id() != project_id {
                 return Err(invalid("project-mismatch"));
             }
+            // The contribution switches are read, not decorative: with
+            // the impact contribution disabled, the attachment declares
+            // no impact surface and the command refuses.
+            if !attachment.contributions().impact {
+                return Err(invalid("contribution-disabled"));
+            }
+            // Impact never bypasses semantic admission: the shared
+            // strict validation runs before any projection, so a
+            // malformed attachment never renders as an authoritative
+            // consumer list.
+            let validation = tl::validate(&attachment, &compilation, "strict")
+                .map_err(|failure| tl::into_result(&failure))?;
+            if tl::invalidates(&validation) {
+                return Ok(tl::render_invalid(&validation, &validation.findings));
+            }
             let Some(provider_contract) = attachment.provider_contract(&contract) else {
                 return Err(invalid("contract-unresolved"));
             };
@@ -561,13 +576,37 @@ fn execute(command: Command) -> Result<DomainResult, DomainResult> {
             consumers
                 .sort_by(|left, right| (left.0, left.1.as_str()).cmp(&(right.0, right.1.as_str())));
             consumers.dedup();
+            // The witnessed boundary is honest about its own coverage:
+            // the derived joins are real, but exact changed contract
+            // MEMBER paths (request/response/error fields), the outbox
+            // worker internals, the native target binding, and the
+            // target verification checks are not witnessed by this
+            // attachment, and the payload says so explicitly instead of
+            // claiming a complete reverse path.
+            let contract_members = serde_json::json!({
+                "request": provider_contract.request_schema_ref,
+                "response": provider_contract.response_schema_ref,
+                "error": provider_contract.error_schema_ref,
+            });
+            let coverage = serde_json::json!({
+                "complete": false,
+                "witnessed": ["capability", "binding", "action-policy", "command", "effect", "scenario"],
+                "gaps": [
+                    {"consumer": "contract-member-paths", "detail": "exact changed request/response/error field members are not witnessed"},
+                    {"consumer": "outbox-worker", "detail": "worker-internal consumption is not witnessed"},
+                    {"consumer": "native-binding", "detail": "target native binding is not witnessed"},
+                    {"consumer": "verification-check", "detail": "target verification checks are not witnessed"}
+                ]
+            });
             let payload = serde_json::json!({
                 "contract": provider_contract.contract_id,
                 "upstreamPin": provider_contract.upstream_pin,
+                "contractMembers": contract_members,
                 "consumers": consumers
                     .into_iter()
                     .map(|(role, symbol)| serde_json::json!({"role": role, "symbol": symbol}))
                     .collect::<Vec<_>>(),
+                "coverage": coverage,
             });
             Ok(tl::render(&payload))
         }
