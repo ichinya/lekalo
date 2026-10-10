@@ -1036,23 +1036,6 @@ fn check_bindings(attachment: &Attachment, compilation: &Compilation, findings: 
                 }
             }
         }
-        // The bound effect must be a declared effect of the bound
-        // command itself: an unrelated existing effect does not become
-        // this operation's effect by existing.
-        if let Some(command) = commands.get(binding.action.as_str()) {
-            if !command
-                .effects
-                .iter()
-                .any(|effect_id| effect_id.as_str() == binding.effect_ref.as_str())
-            {
-                finding(
-                    findings,
-                    diagnostic::FANOUT_NOT_ADMITTED,
-                    binding.operation.clone(),
-                    "binding-effect-not-in-command",
-                );
-            }
-        }
         if !capabilities.contains(binding.capability_ref.as_str()) {
             finding(
                 findings,
@@ -1084,6 +1067,28 @@ fn check_bindings(attachment: &Attachment, compilation: &Compilation, findings: 
                 binding.operation.clone(),
                 "retry-guarantee-missing",
             );
+        }
+        // The bound effect must be a declared effect of the bound
+        // command itself: an unrelated existing effect does not become
+        // this operation's effect by existing. The membership check
+        // runs last and stays silent when a more specific refusal for
+        // this subject already fired, so a ghost or a wrong-transition
+        // binding keeps its own detail.
+        if !has_finding_for(findings, binding.operation.as_str()) {
+            if let Some(command) = commands.get(binding.action.as_str()) {
+                if !command
+                    .effects
+                    .iter()
+                    .any(|effect_id| effect_id.as_str() == binding.effect_ref.as_str())
+                {
+                    finding(
+                        findings,
+                        diagnostic::FANOUT_NOT_ADMITTED,
+                        binding.operation.clone(),
+                        "binding-effect-not-in-command",
+                    );
+                }
+            }
         }
     }
 }

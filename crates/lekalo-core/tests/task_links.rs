@@ -2080,11 +2080,15 @@ fn joins_enforce_referenced_semantics_not_mere_existence() {
         // operation's effect.
         let foreign_effect = mutate(&|wire| {
             wire["operationBindings"][1]["effectRef"] =
-                serde_json::Value::String("tasklinks.effect.create_task".into());
+                serde_json::Value::String("planner.effect.create_task".into());
         });
         let report = tl::validate(&foreign_effect, &compilation, "strict")
             .map_err(|f| format!("validate: {f:?}"))?;
-        assert!(detail(&report).contains(&"binding-effect-not-in-command".to_owned()));
+        assert!(
+            detail(&report).contains(&"binding-effect-not-in-command".to_owned()),
+            "findings: {:?}",
+            detail(&report)
+        );
 
         // 3. A provider request schema must be a data shape: a command
         // is not a wire shape, whatever its existence.
