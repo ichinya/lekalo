@@ -71,15 +71,22 @@ a stale success.
 
 ## Resources
 
-`lekalo://PROJECT/project-summary`, `lekalo://PROJECT/modules`,
+`lekalo://PROJECT/summary`, `lekalo://PROJECT/modules`,
 `lekalo://PROJECT/symbol/{symbol}`, `lekalo://PROJECT/targets`,
 `lekalo://PROJECT/diagnostics` — plus group-qualified identities
 `lekalo://PROJECT/g/GROUP/...`. Resource content is `application/json`
 carrying the same closed versioned projections the tools emit, and every
 envelope's `kind` member uses the contract enum spelling
 (`project-summary`, `module-list`, `symbol-metadata`, `target-status`,
-`diagnostics`). Raw source, dotfiles, lock bytes, and absolute private
-roots are never resource content.
+`diagnostics`); the URI family keys are the served spellings above
+(`summary`, never the contract kind `project-summary` — the parser
+accepts the alias, but `resources/list` and every emitted `uri` use the
+canonical key). Raw source, dotfiles, lock bytes, and absolute private
+roots are never resource content. `resources/list` pages through an
+opaque snapshot-bound cursor: a cursor from a different enumeration
+snapshot is refused on the method's own error channel (`-32602
+mcp.snapshot-stale`), never answered from a mixed snapshot and never
+wrapped in a tool envelope.
 
 ## Authorization, scope and privacy
 
@@ -106,14 +113,25 @@ spellings, NUL/ADS, dot segments, and known secret locations before any
 open; the filesystem seam adds a component-wise link walk (ancestor
 symlinks/junctions/reparse points refuse at every depth, `O_NOFOLLOW` on
 the final Unix open) plus a re-verified chain after the read (TOCTOU
-guard), and bounded reads. `lekalo_target_status` spawns `git` only when
-the catalog admits `git.changedMode`; without admission it serves the
+guard), and bounded reads — and hardlink aliases refuse on both
+platforms through the link count (Unix `nlink`; Windows
+`GetFileInformationByHandle`'s `nNumberOfLinks`), so an in-root second
+name of out-of-root bytes is never served. `lekalo_target_status` spawns
+`git` only when the catalog admits `git.changedMode`; without admission
+it serves the
 no-git projection with typed unavailable Git facts. Secret-shaped tool
 or resource output refuses with `mcp.sensitive-output` rather than
-redacting contract members silently: the screening pass matches
-high-confidence spellings (private-key blocks, credential headers,
-assigned credential assignments), never prose, field names, or
-identifiers.
+redacting contract members silently: the screening pass is
+spelling-canonical — it folds ASCII case and admits `_`/`-` as pre-key
+separators before matching, so `PASSWORD`, `db_password`,
+`client_secret`, `aws_secret_access_key`, and `AUTHORIZATION:` are one
+spelling each — and matches only high-confidence shapes (private-key
+blocks, credential headers, assigned credential assignments), never
+prose, field names, or identifiers. The private-absolute-path needles
+are deliberately broader than a leading-slash match: the POSIX `/home/`
+and `/root/` needles match any `home`/`root` path segment (so benign
+relative content like `app/home/page.tsx` also refuses) — the accepted
+fail-closed trade-off, recorded here and pinned by test.
 
 ## Bounds, deadlines, cancellation
 
@@ -144,6 +162,8 @@ Duplicate JSON member names refuse the inbound frame before any map
 insertion (`mcp.duplicate-key`, last-key-wins is never an admission
 path), and a request other than `initialize`/`ping` before
 `notifications/initialized` is refused (`mcp.lifecycle-not-initialized`).
+`initialize` is single-shot: a second `initialize` after the handshake
+was answered is refused (`-32600 mcp.lifecycle-already-initialized`).
 Only implemented capabilities are advertised: the initialize answer
 reports `resources: {subscribe: false, listChanged: false}`.
 
