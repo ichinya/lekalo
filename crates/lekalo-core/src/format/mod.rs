@@ -122,7 +122,7 @@ fn plan(request: &FormatRequest, stdin_bytes: Option<&[u8]>) -> Result<Planned, 
     // Fail-closed recovery state: check and editor modes refuse; the
     // explicit mutating mode acquires the real ownership lock and
     // recovers to verified original bytes before its own load.
-    let guard = if request.mode == FormatMode::Apply {
+    let mut guard = if request.mode == FormatMode::Apply {
         match transaction::recover_pending(&selection) {
             Ok(guard) => guard,
             Err(transaction::RecoveryFailure::LiveWriter) => {
@@ -164,11 +164,42 @@ fn plan(request: &FormatRequest, stdin_bytes: Option<&[u8]>) -> Result<Planned, 
         )),
         _ => None,
     };
-    let load = match stdin_document {
+    let loaded = match stdin_document {
         Some((overlay_path, overlay_bytes)) => {
-            crate::loader::load_with_snapshot_and_overlay(&selection, overlay_path, overlay_bytes)?
+            crate::loader::load_with_snapshot_and_overlay(&selection, overlay_path, overlay_bytes)
         }
-        None => crate::loader::load_with_snapshot(&selection)?,
+        None => crate::loader::load_with_snapshot(&selection),
+    };
+    let load = match loaded {
+        Ok(load) => {
+            // The validated admitted inventory completes the legacy-temp
+            // ownership proof (finding r5 3): quarantined temps whose
+            // emitted documents are admitted are deleted; every other
+            // byte is restored to its exact original location. Settling
+            // happens before any planning decision, so no later refusal
+            // can leave custody behind.
+            if let Some(held) = guard.as_mut() {
+                let admitted: Vec<String> = load
+                    .documents
+                    .iter()
+                    .map(|document| document.document.path.clone())
+                    .collect();
+                if let Err(error) = transaction::settle_quarantine(held, &admitted) {
+                    return Err(failure_recovery(&error.plan_id, error.reason));
+                }
+            }
+            load
+        }
+        Err(failure) => {
+            // Every refusal restores the quarantine first (finding r5 3):
+            // a run that cannot prove admission never keeps user bytes
+            // in custody, and the loader's own refusal — not deletion —
+            // answers the tree.
+            if let Some(held) = guard.as_mut() {
+                transaction::restore_quarantine(held);
+            }
+            return Err(failure);
+        }
     };
     let model_version = load.model.model_version;
 

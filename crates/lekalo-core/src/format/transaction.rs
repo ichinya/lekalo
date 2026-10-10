@@ -12,7 +12,12 @@
 //!
 //! - every preflight failure happens before the first source write;
 //! - ordinary write failures restore the replaced files in reverse order
-//!   from verified backups and report `format.write-failed`;
+//!   from verified backups and report `format.write-failed`; a rollback
+//!   destination whose live bytes are neither the recorded before nor
+//!   after pin — a concurrent user edit or deletion — is preserved
+//!   untouched with the journal retained, and the run ends in the
+//!   explicit conflict decision instead of a declared restoration
+//!   (finding r5 1);
 //! - while a durable journal exists, every loader entry path fails closed
 //!   with `format.recovery-required`; the ownership lock alone is never
 //!   a reader signal;
@@ -61,6 +66,23 @@ const TEMP_HOME: &str = ".lekalo/cache/format/temps";
 /// reader gate and the recovery enumeration share this exact constant
 /// (finding r4 3).
 const TEMP_HOME_NAME: &str = "temps";
+/// The legacy-temp quarantine home inside the runtime temp home
+/// (finding r5 3): structurally proven legacy temps are MOVED here —
+/// never deleted — while the run proves admission through a full load.
+/// A move is committed (deleted) only against the validated admitted
+/// inventory; every refusal restores the exact bytes to their exact
+/// original locations.
+const CUSTODY_HOME: &str = ".lekalo/cache/format/temps/legacy";
+/// The durable quarantine record: written before the first move, the
+/// crash-safe authority for re-deciding an interrupted quarantine.
+const CUSTODY_RECORD: &str = "record.json";
+/// The custody location token of the `lekalo/` root: a governed
+/// grammar spelling (leading digit) that still reads as the reserved
+/// root namespace.
+const CUSTODY_ROOT_TOKEN: &str = "0lekalo-root";
+/// The internal, versioned quarantine-record identity (never a public
+/// contract; the quarantine owner validates this version).
+const CUSTODY_SCHEMA: &str = "lekalo/format-legacy-custody/v0.8.0";
 
 /// The producer-accepted runtime temp spelling: a name ending in
 /// `.` + [`TEMP_SUFFIX`] (e.g.
@@ -79,23 +101,133 @@ fn is_owned_temp_name(name: &str) -> bool {
 /// or a `module.yaml`/kind document inside an admitted module
 /// directory. Any other dotfile with the suffix is an unrelated user
 /// file; the sweep leaves it untouched (the governed scan's business
-/// to name it, never the sweep's to delete it). The exact
-/// directory-matches-name pairing is enforced by the sweep's closed
-/// [`FormatWrite::legacy_sweep_targets`] enumeration; this predicate
-/// pins the name grammar for tests.
+/// to name it, never the sweep's to delete it). The name grammar is
+/// one input of the ownership proof (finding r5 3): the directory and
+/// the source document must be provable too. The production proof is
+/// the location-aware [`CustodyMove::validate`]; this tree-spelling
+/// predicate pins the name grammar for tests.
 #[cfg(test)]
 fn is_legacy_temp_name(name: &str) -> bool {
-    let Some(stem) = name
-        .strip_prefix('.')
-        .and_then(|rest| rest.strip_suffix(TEMP_SUFFIX))
+    name.strip_prefix('.').is_some_and(is_legacy_custody_name)
+}
+
+/// The custody spelling of the same name (the leading dot dropped, so
+/// the quarantined file itself satisfies the governed path-segment
+/// grammar the `.lekalo` runtime tree is scanned under): the exact
+/// emitted-document temp spelling, e.g. `module.yaml.lekalo-format-new`.
+fn is_legacy_custody_name(name: &str) -> bool {
+    name.strip_suffix(TEMP_SUFFIX)
         .and_then(|stem| stem.strip_suffix('.'))
-    else {
-        return false;
-    };
-    stem == "project.yaml"
-        || crate::project_fs::MODULE_STEMS
-            .iter()
-            .any(|owned| stem == format!("{owned}.yaml"))
+        .is_some_and(|stem| {
+            stem == "project.yaml"
+                || crate::project_fs::MODULE_STEMS
+                    .iter()
+                    .any(|owned| stem == format!("{owned}.yaml"))
+        })
+}
+
+/// One quarantined legacy temp: the exact directory and file name it
+/// was moved from (finding r5 3). The record carries locations, never
+/// bytes — the move is a rename, so the bytes are the user's own.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CustodyMove {
+    /// The logical directory the temp was moved from: `lekalo` or an
+    /// admitted `lekalo/modules/<dir>`.
+    directory: String,
+    /// The exact legacy temp file name.
+    name: String,
+}
+
+impl CustodyMove {
+    /// The closed validation (finding A discipline): an emitted-document
+    /// temp name inside one of the two legal legacy locations, with the
+    /// module-directory spelling inside the governed segment grammar
+    /// (finding r5 3, devin 2). The name grammar is location-aware —
+    /// the `project.yaml` document spelling belongs to the `lekalo/`
+    /// root alone, module-stem spellings to module directories alone —
+    /// so no two valid moves can ever map to one custody file path.
+    fn validate(&self) -> Result<(), &'static str> {
+        if self.directory == "lekalo" {
+            if self.name != format!(".project.yaml.{TEMP_SUFFIX}") {
+                return Err("custody-name");
+            }
+            return Ok(());
+        }
+        let Some(directory) = self.directory.strip_prefix("lekalo/modules/") else {
+            return Err("custody-directory");
+        };
+        if directory.is_empty()
+            || directory.contains('/')
+            || crate::project_fs::path_violation(directory).is_some()
+        {
+            return Err("custody-directory");
+        }
+        let Some(stem) = self
+            .name
+            .strip_prefix('.')
+            .and_then(|rest| rest.strip_suffix(TEMP_SUFFIX))
+            .and_then(|stem| stem.strip_suffix('.'))
+        else {
+            return Err("custody-name");
+        };
+        if stem == "project.yaml"
+            || !crate::project_fs::MODULE_STEMS
+                .iter()
+                .any(|owned| stem == format!("{owned}.yaml"))
+        {
+            return Err("custody-name");
+        }
+        Ok(())
+    }
+
+    /// The emitted Model document this temp was the rename of.
+    fn document_path(&self) -> String {
+        let document = self
+            .name
+            .strip_prefix('.')
+            .and_then(|stem| stem.strip_suffix(TEMP_SUFFIX))
+            .and_then(|stem| stem.strip_suffix('.'))
+            .unwrap_or(&self.name);
+        format!("{}/{}", self.directory, document)
+    }
+
+    /// The physical source path of the temp file itself.
+    fn source_path(&self) -> String {
+        format!("{}/{}", self.directory, self.name)
+    }
+}
+
+/// The durable quarantine record (finding r5 3): every pending move,
+/// written before the first move and removed only after every move is
+/// committed or restored. Exact closed field set; fully validated on
+/// read.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CustodyRecord {
+    schema_version: String,
+    moves: Vec<CustodyMove>,
+}
+
+impl CustodyRecord {
+    fn validate(&self) -> Result<(), &'static str> {
+        if self.schema_version != CUSTODY_SCHEMA {
+            return Err("custody-identity");
+        }
+        if self.moves.is_empty() || self.moves.len() > RECORD_MAX_FILES {
+            return Err("custody-limit");
+        }
+        let mut moves = self.moves.clone();
+        moves.sort();
+        moves.dedup();
+        if moves.len() != self.moves.len() {
+            return Err("custody-duplicate");
+        }
+        for pending in &self.moves {
+            pending.validate()?;
+        }
+        Ok(())
+    }
 }
 /// The internal, versioned runtime-record identity (never a public
 /// contract; the reader owns this version).
@@ -168,6 +300,15 @@ pub(crate) struct FormatGuard {
     /// be a hostile link spelling, and its bytes are never this
     /// formatter's to mutate.
     fresh: bool,
+    /// The validated project root the guard's runtime home lives under:
+    /// the quarantine settle/restore paths derive their write capability
+    /// from it (finding r5 3).
+    root: PathBuf,
+    /// The legacy temps this run holds in quarantine custody (finding r5
+    /// 3): committed only against the validated admitted inventory,
+    /// restored byte-exact on every refusal. Empty when the guarded
+    /// window took no custody.
+    custody: Vec<CustodyMove>,
 }
 
 impl FormatGuard {
@@ -231,6 +372,7 @@ fn handle_link_count(file: &std::fs::File) -> Result<u32, ()> {
 }
 
 /// One write failure of the apply pipeline.
+#[derive(Debug)]
 pub(crate) enum ApplyFailure {
     /// Another mutating formatter holds the runtime lock.
     Locked,
@@ -252,6 +394,16 @@ pub(crate) enum ApplyFailure {
     WriteFailed {
         stage: &'static str,
         rollback: &'static str,
+    },
+    /// The serialized recoverable record set exceeds the bounded record
+    /// grammar its own recovery reader parses (finding r5 2): the plan
+    /// is refused whole — the registered bounded-plan failure — before
+    /// any runtime write, so an admitted plan can never emit a manifest
+    /// its recovery reader would refuse.
+    PlanLimit {
+        limit: &'static str,
+        measured: u64,
+        allowed: u64,
     },
     /// Recovery material disagrees with itself.
     /// The recovery material disagreed with itself mid-apply.
@@ -299,6 +451,35 @@ impl ApplyFailure {
                 DomainResult::invalid(set)
             }
             Self::RecoveryError(error) => super::failure_recovery(&error.plan_id, error.reason),
+            Self::PlanLimit {
+                limit,
+                measured,
+                allowed,
+            } => {
+                let mut data = crate::diagnostics::DataObject::new();
+                data.insert(
+                    "limit".to_owned(),
+                    crate::diagnostics::types::DataValue::Token(limit.to_owned()),
+                );
+                data.insert(
+                    "measured".to_owned(),
+                    crate::diagnostics::types::DataValue::Count(measured),
+                );
+                data.insert(
+                    "allowed".to_owned(),
+                    crate::diagnostics::types::DataValue::Count(allowed),
+                );
+                // The registered bounded-plan refusal (LEK-FORMAT-008):
+                // a formatter-specific bound was reached and the whole
+                // plan was refused — here the record bound the plan's own
+                // recovery reader enforces (finding r5 2).
+                let diagnostics =
+                    crate::diagnostics::normalize::build("format.limit-exceeded", None, None, data)
+                        .map(|diagnostic| vec![diagnostic])
+                        .unwrap_or_default();
+                let set = DomainResult::from_wire_set(Status::Invalid, diagnostics);
+                DomainResult::invalid(set)
+            }
         }
     }
 }
@@ -404,9 +585,14 @@ pub(crate) fn pending_plan(selection: &LoadSelection) -> Option<String> {
 /// Crashed pre-journal attempt homes and orphaned replacement temps are
 /// reclaimed in the same owned window whether or not a journal exists
 /// (finding r2 2): residue that survives recovery would otherwise
-/// poison every identical retry forever. Completed plan homes — journal
-/// removed at commit — are rollback material, never recovery targets.
-/// The guard is held by the caller across the load/plan/apply window.
+/// poison every identical retry forever. Legacy source-tree temps are
+/// quarantined into runtime custody under the same window (finding r5
+/// 3) — moved, never deleted — and the returned guard carries them so
+/// the caller settles them against the validated admitted inventory
+/// (commit) or restores them (every refusal). Completed plan homes —
+/// journal removed at commit — are rollback material, never recovery
+/// targets. The guard is held by the caller across the load/plan/apply
+/// window.
 pub(crate) fn recover_pending(
     selection: &LoadSelection,
 ) -> Result<Option<FormatGuard>, RecoveryFailure> {
@@ -431,7 +617,7 @@ pub(crate) fn recover_pending(
     }
     // The ownership lock precedes every runtime-home decision: only the
     // exclusive owner may recover, sweep, or create formatter state.
-    let guard = write
+    let mut guard = write
         .acquire_ownership()
         .map_err(|_| RecoveryFailure::LiveWriter)?;
     // Orphan reclaim precedes recovery (finding r3 3): a process death
@@ -439,15 +625,34 @@ pub(crate) fn recover_pending(
     // spelling, and the next recovery's exclusive create would collide
     // with that orphan and die in the same restore-failed state forever
     // — recovery used to run before the sweep, so retries never reached
-    // cleanup. The same pass reclaims legacy source-tree temps whether
-    // or not the optional runtime homes exist (finding r3 4).
-    let _ = write.sweep_stale_temps();
+    // cleanup.
+    let _ = write.sweep_home_temps();
+    // Legacy source-tree temps are QUARANTINED, never deleted (finding
+    // r5 3): every structurally provable legacy temp moves into runtime
+    // custody so the governed tree can be admitted at all, and the
+    // durable record makes an interrupted quarantine re-decidable. The
+    // bytes are committed only against the validated admitted inventory
+    // — by the caller, after its load succeeds — and restored on every
+    // refusal below.
+    let custody = write.quarantine_legacy_temps().map_err(|error| {
+        // Quarantine failed after moving nothing the run can trust:
+        // restore whatever is restorable before failing closed.
+        write.restore_legacy_custody_best_effort();
+        RecoveryFailure::Recovery(error)
+    })?;
+    guard.custody = custody;
     // Reader-gate state first: a journaled plan recovers, or fails the
-    // run, before anything else touches the home or the tree.
+    // run, before anything else touches the home or the tree. Every
+    // failure exit restores the quarantine first (finding r5 3): the
+    // run's refusal must never leave user bytes in custody.
     let plans = plan_directories_from(&write);
     for plan_id in &plans {
         if write.file_exists(&format!("{FORMAT_HOME}/{plan_id}/{JOURNAL}")) {
-            recover_plan(&write, plan_id)?;
+            if let Err(failure) = recover_plan(&write, plan_id) {
+                write.restore_legacy_custody(&guard.custody);
+                guard.custody.clear();
+                return Err(failure);
+            }
         }
     }
     // Residue sweep, unconditionally of journal presence (finding
@@ -464,6 +669,40 @@ pub(crate) fn recover_pending(
         }
     }
     Ok(Some(guard))
+}
+
+/// Settle the quarantine against the validated admitted inventory
+/// (finding r5 3): the apply pipeline calls this immediately after its
+/// load succeeded — the completed ownership proof. Every quarantined
+/// temp whose emitted document is admitted is deleted (proven
+/// formatter-owned); any other is restored byte-exact. The durable
+/// record is removed only after every move settled.
+pub(crate) fn settle_quarantine(
+    guard: &mut FormatGuard,
+    admitted: &[String],
+) -> Result<(), RecoveryError> {
+    if guard.custody.is_empty() {
+        return Ok(());
+    }
+    let write = FormatWrite::new(guard.root.clone());
+    let outcome = write.settle_legacy_custody(&guard.custody, admitted);
+    guard.custody.clear();
+    outcome.map_err(|reason| RecoveryError {
+        plan_id: "legacy-custody".to_owned(),
+        reason,
+    })
+}
+
+/// Restore every quarantined legacy temp to its exact original location
+/// (finding r5 3): the answer of every refusal path after the guarded
+/// window took custody. Bytes are preserved, never deleted unproven.
+pub(crate) fn restore_quarantine(guard: &mut FormatGuard) {
+    if guard.custody.is_empty() {
+        return;
+    }
+    let write = FormatWrite::new(guard.root.clone());
+    write.restore_legacy_custody(&guard.custody);
+    guard.custody.clear();
 }
 
 /// The plan directories beneath the formatter home (sorted). The rename
@@ -732,8 +971,30 @@ fn recover_plan(write: &FormatWrite, plan_id: &str) -> Result<(), RecoveryFailur
         }
     }
     // Verified restore: every manifest file back to its before digest,
-    // reverse order, from the preflight-verified backups.
+    // reverse order, from the preflight-verified backups. Custody is
+    // re-derived live immediately before every replacement (finding r5
+    // 1): the entry preflight proved each destination's bytes before the
+    // first restore, but the ownership lock serializes formatters —
+    // never editors — so a destination whose live bytes became neither
+    // pinned state mid-restore is preserved untouched and the run ends
+    // in the explicit conflict decision with the journal retained,
+    // exactly like the entry preflight.
     for file in manifest.files.iter().rev() {
+        match rollback_custody(write, file) {
+            RollbackCustody::OwnedAfter => {}
+            RollbackCustody::AlreadyBefore => continue,
+            RollbackCustody::Conflict {
+                path,
+                expected,
+                current,
+            } => {
+                return Err(RecoveryFailure::Conflict {
+                    path,
+                    expected,
+                    current,
+                })
+            }
+        }
         let backup_path = format!("{home}/before/{}", backup_logical(&file.path));
         let backup = write.read_file(&backup_path).map_err(|_| {
             RecoveryFailure::Recovery(RecoveryError {
@@ -893,6 +1154,94 @@ fn apply_locked(
     let home = format!("{FORMAT_HOME}/{plan_id}");
     let before_dir = format!("{home}/before");
 
+    // Phase 0 (finding r5 2): the producer and the bounded recovery
+    // reader agree on ONE record grammar, decided before any runtime
+    // write. The reader parses journal/manifest records only within
+    // RECORD_BOUND bytes and RECORD_MAX_FILES rows, so a plan whose
+    // serialized manifest exceeds that bound could otherwise be admitted,
+    // half-applied, crashed, and left blocking every reader with
+    // `manifest-unreadable` forever — an interrupted accepted plan no
+    // explicit format could ever recover. The whole recoverable record
+    // set is serialized here, size- and row-bounded, and round-tripped
+    // through the reader's exact decoder and validation: admission
+    // refuses what recovery cannot read.
+    let manifest = Manifest {
+        schema_version: RUNTIME_SCHEMA.to_owned(),
+        plan_id: plan_id.to_owned(),
+        policy_digest: policy_digest.to_owned(),
+        files: files
+            .iter()
+            .map(|(path, before, after)| PlanFile {
+                path: path.clone(),
+                before_sha256: before.clone(),
+                after_sha256: after.clone(),
+            })
+            .collect(),
+    };
+    let manifest_bytes = match serde_json::to_vec(&manifest) {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            return Err(ApplyFailure::WriteFailed {
+                stage: "manifest",
+                rollback: "not-started",
+            })
+        }
+    };
+    if manifest.files.len() > RECORD_MAX_FILES {
+        return Err(ApplyFailure::PlanLimit {
+            limit: "max-files",
+            measured: manifest.files.len() as u64,
+            allowed: RECORD_MAX_FILES as u64,
+        });
+    }
+    if manifest_bytes.len() as u64 > RECORD_BOUND {
+        return Err(ApplyFailure::PlanLimit {
+            limit: "max-record-bytes",
+            measured: manifest_bytes.len() as u64,
+            allowed: RECORD_BOUND,
+        });
+    }
+    // The reader's own decoder and validation must accept exactly these
+    // bytes (manifest round-trip through recovery's grammar): a record
+    // that cannot round-trip is never published.
+    if serde_json::from_slice::<Manifest>(&manifest_bytes)
+        .ok()
+        .and_then(|record| record.validate(plan_id).ok())
+        .is_none()
+    {
+        return Err(ApplyFailure::WriteFailed {
+            stage: "manifest",
+            rollback: "not-started",
+        });
+    }
+    let journal = Journal {
+        schema_version: RUNTIME_SCHEMA.to_owned(),
+        plan_id: plan_id.to_owned(),
+        manifest_sha256: manifest.digest(),
+    };
+    let journal_bytes = match serde_json::to_vec(&journal) {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            return Err(ApplyFailure::WriteFailed {
+                stage: "journal",
+                rollback: "not-started",
+            })
+        }
+    };
+    if journal_bytes.len() as u64 > RECORD_BOUND {
+        return Err(ApplyFailure::PlanLimit {
+            limit: "max-record-bytes",
+            measured: journal_bytes.len() as u64,
+            allowed: RECORD_BOUND,
+        });
+    }
+    if journal.validate(plan_id).is_err() {
+        return Err(ApplyFailure::WriteFailed {
+            stage: "journal",
+            rollback: "not-started",
+        });
+    }
+
     // Phase 2: immutable backups verified against the pinned preimages.
     for (index, (path, before, _)) in files.iter().enumerate() {
         let backup_path = format!("{before_dir}/{}", backup_logical(path));
@@ -931,41 +1280,18 @@ fn apply_locked(
         }
     }
 
-    // Phase 3: the backup manifest, then the durable journal.
-    let manifest = Manifest {
-        schema_version: RUNTIME_SCHEMA.to_owned(),
-        plan_id: plan_id.to_owned(),
-        policy_digest: policy_digest.to_owned(),
-        files: files
-            .iter()
-            .map(|(path, before, after)| PlanFile {
-                path: path.clone(),
-                before_sha256: before.clone(),
-                after_sha256: after.clone(),
-            })
-            .collect(),
-    };
-    let manifest_bytes = serde_json::to_vec(&manifest).map_err(|_| ApplyFailure::WriteFailed {
-        stage: "manifest",
-        rollback: "not-started",
-    })?;
+    // Phase 3: the backup manifest, then the durable journal — the
+    // exact Phase 0 bytes, already bounded and round-tripped through the
+    // recovery reader's grammar (finding r5 2).
     write
         .write_new(&format!("{home}/{MANIFEST}"), &manifest_bytes)
         .map_err(|_| ApplyFailure::WriteFailed {
             stage: "manifest",
             rollback: "not-started",
         })?;
-    let journal = Journal {
-        schema_version: RUNTIME_SCHEMA.to_owned(),
-        plan_id: plan_id.to_owned(),
-        manifest_sha256: manifest.digest(),
-    };
     let journal_path = format!("{home}/{JOURNAL}");
     write
-        .write_new(
-            &journal_path,
-            &serde_json::to_vec(&journal).unwrap_or_default(),
-        )
+        .write_new(&journal_path, &journal_bytes)
         .map_err(|_| ApplyFailure::WriteFailed {
             stage: "journal",
             rollback: "not-started",
@@ -991,48 +1317,20 @@ fn apply_locked(
             Err(_) => write.replace_file(path, &after_bytes[index], "apply"),
         };
         if replaced.is_err() {
-            return match restore_prefix(write, plan_id, &manifest, index) {
-                Ok(()) => {
-                    let _ = write.remove_file(&journal_path);
-                    Err(ApplyFailure::WriteFailed {
-                        stage: "replace",
-                        rollback: "restored",
-                    })
-                }
-                Err(error) => Err(ApplyFailure::RecoveryError(error)),
-            };
+            let outcome = restore_prefix(write, plan_id, &manifest, index);
+            return Err(rollback_failure(write, &journal_path, "replace", outcome));
         }
     }
 
     // Phase 5: post-apply verification through the same read path.
     for (index, (path, _, after)) in files.iter().enumerate() {
-        match write.read_file(path) {
-            Ok(bytes) => {
-                if crate::digest::sha256_hex(&bytes) != *after || bytes != after_bytes[index] {
-                    return match restore_prefix(write, plan_id, &manifest, files.len()) {
-                        Ok(()) => {
-                            let _ = write.remove_file(&journal_path);
-                            Err(ApplyFailure::WriteFailed {
-                                stage: "verify",
-                                rollback: "restored",
-                            })
-                        }
-                        Err(error) => Err(ApplyFailure::RecoveryError(error)),
-                    };
-                }
-            }
-            Err(_) => {
-                return match restore_prefix(write, plan_id, &manifest, files.len()) {
-                    Ok(()) => {
-                        let _ = write.remove_file(&journal_path);
-                        Err(ApplyFailure::WriteFailed {
-                            stage: "verify",
-                            rollback: "restored",
-                        })
-                    }
-                    Err(error) => Err(ApplyFailure::RecoveryError(error)),
-                };
-            }
+        let verified = match write.read_file(path) {
+            Ok(bytes) => crate::digest::sha256_hex(&bytes) == *after && bytes == after_bytes[index],
+            Err(_) => false,
+        };
+        if !verified {
+            let outcome = restore_prefix(write, plan_id, &manifest, files.len());
+            return Err(rollback_failure(write, &journal_path, "verify", outcome));
         }
     }
 
@@ -1048,38 +1346,179 @@ fn apply_locked(
     Ok(())
 }
 
+/// The terminal outcome of an ordinary rollback (finding r5 1): full
+/// verified restoration, a typed custody conflict that preserves every
+/// unowned byte and retains the journal, or the fail-closed recovery
+/// error. A rollback never declares success over bytes it cannot prove
+/// ownership of.
+enum Rollback {
+    /// Every destination was proven owned (or already restored) and
+    /// rewritten to its verified before digest; the journal may clear.
+    Restored,
+    /// A destination's live bytes are neither pinned state — a third
+    /// digest or a deletion. They are preserved untouched and the
+    /// journal stays armed for the explicit conflict decision.
+    Conflict {
+        path: String,
+        expected: String,
+        current: String,
+    },
+    /// The rollback material itself failed; fail closed through the
+    /// recovery refusal with the journal retained.
+    Failed(RecoveryError),
+}
+
+/// The live custody verdict of one rollback destination (finding r5 1):
+/// the bytes a restore would overwrite, recomputed now — never a stale
+/// journal claim. The formatter ownership lock serializes formatter
+/// instances; it does not prevent an editor from writing a source, so
+/// only bytes that are provably this transaction's own last write (the
+/// recorded after digest) — or the already-restored before state — may
+/// be overwritten. Any third digest, and any deletion, is preserved.
+enum RollbackCustody {
+    /// The destination still carries this transaction's own last write.
+    OwnedAfter,
+    /// The destination is already at its recorded before digest.
+    AlreadyBefore,
+    /// Third bytes or a deletion this transaction cannot prove ownership
+    /// of: preserve them and end in the explicit conflict decision.
+    Conflict {
+        path: String,
+        expected: String,
+        current: String,
+    },
+}
+
+fn rollback_custody(write: &FormatWrite, file: &PlanFile) -> RollbackCustody {
+    let Ok(current) = write.read_file(&file.path) else {
+        // The most severe divergence of the same class (finding r2 12):
+        // a deleted destination is a user decision, never a restore
+        // target — recreating it would destroy that decision.
+        return RollbackCustody::Conflict {
+            path: file.path.clone(),
+            expected: file.before_sha256.clone(),
+            current: DELETED_DIGEST.to_owned(),
+        };
+    };
+    let digest = crate::digest::sha256_hex(&current);
+    if digest == file.before_sha256 {
+        RollbackCustody::AlreadyBefore
+    } else if digest == file.after_sha256 {
+        RollbackCustody::OwnedAfter
+    } else {
+        RollbackCustody::Conflict {
+            path: file.path.clone(),
+            expected: file.before_sha256.clone(),
+            current: digest,
+        }
+    }
+}
+
 /// Restore the manifest's first `prefix` files (the completed set) in
-/// reverse order from verified backups.
+/// reverse order from verified backups. Every destination's live bytes
+/// are checked before the first restore and re-derived immediately
+/// before each replacement (finding r5 1): a concurrent user edit — or
+/// deletion — of an already replaced file is preserved untouched, the
+/// journal is retained, and the caller ends in the typed conflict
+/// decision instead of declaring a restoration that never happened.
 fn restore_prefix(
     write: &FormatWrite,
     plan_id: &str,
     manifest: &Manifest,
     prefix: usize,
-) -> Result<(), RecoveryError> {
+) -> Rollback {
     let home = format!("{FORMAT_HOME}/{plan_id}");
-    for file in manifest.files[..prefix.min(manifest.files.len())]
-        .iter()
-        .rev()
-    {
+    let files = &manifest.files[..prefix.min(manifest.files.len())];
+    // Preflight every destination's live custody before the first
+    // restore: a rollback that cannot prove ownership of one
+    // destination restores nothing, so a conflicted tree keeps every
+    // byte exactly where the failure left it.
+    for file in files {
+        if let RollbackCustody::Conflict {
+            path,
+            expected,
+            current,
+        } = rollback_custody(write, file)
+        {
+            return Rollback::Conflict {
+                path,
+                expected,
+                current,
+            };
+        }
+    }
+    for file in files.iter().rev() {
+        match rollback_custody(write, file) {
+            RollbackCustody::OwnedAfter => {}
+            RollbackCustody::AlreadyBefore => continue,
+            RollbackCustody::Conflict {
+                path,
+                expected,
+                current,
+            } => {
+                return Rollback::Conflict {
+                    path,
+                    expected,
+                    current,
+                }
+            }
+        }
         let backup_path = format!("{home}/before/{}", backup_logical(&file.path));
-        let backup = write.read_file(&backup_path).map_err(|_| RecoveryError {
-            plan_id: plan_id.to_owned(),
-            reason: "backup-unreadable",
-        })?;
+        let backup = match write.read_file(&backup_path) {
+            Ok(backup) => backup,
+            Err(_) => {
+                return Rollback::Failed(RecoveryError {
+                    plan_id: plan_id.to_owned(),
+                    reason: "backup-unreadable",
+                })
+            }
+        };
         if crate::digest::sha256_hex(&backup) != file.before_sha256 {
-            return Err(RecoveryError {
+            return Rollback::Failed(RecoveryError {
                 plan_id: plan_id.to_owned(),
                 reason: "backup-mismatch",
             });
         }
-        write
-            .replace_file(&file.path, &backup, "restore")
-            .map_err(|_| RecoveryError {
+        if write.replace_file(&file.path, &backup, "restore").is_err() {
+            return Rollback::Failed(RecoveryError {
                 plan_id: plan_id.to_owned(),
                 reason: "restore-failed",
-            })?;
+            });
+        }
     }
-    Ok(())
+    Rollback::Restored
+}
+
+/// The terminal apply failure of one rollback outcome (finding r5 1):
+/// only a fully verified restoration clears the journal and reports
+/// `rollback=restored`. A custody conflict preserves the concurrent
+/// bytes, keeps the journal armed, and surfaces as the registered
+/// source-changed denial; material failures stay the recovery refusal.
+fn rollback_failure(
+    write: &FormatWrite,
+    journal_path: &str,
+    stage: &'static str,
+    outcome: Rollback,
+) -> ApplyFailure {
+    match outcome {
+        Rollback::Restored => {
+            let _ = write.remove_file(journal_path);
+            ApplyFailure::WriteFailed {
+                stage,
+                rollback: "restored",
+            }
+        }
+        Rollback::Conflict {
+            path,
+            expected,
+            current,
+        } => ApplyFailure::SourceChanged {
+            path,
+            expected,
+            current,
+        },
+        Rollback::Failed(error) => ApplyFailure::RecoveryError(error),
+    }
 }
 
 /// The stable plan identity of one verified change set: policy digest
@@ -1341,7 +1780,12 @@ impl FormatWrite {
                     let fresh = false;
                     use rustix::fs::{flock, FlockOperation};
                     flock(&file, FlockOperation::NonBlockingLockExclusive).map_err(|_| ())?;
-                    return Ok(FormatGuard { file, fresh });
+                    return Ok(FormatGuard {
+                        file,
+                        fresh,
+                        root: self.root.clone(),
+                        custody: Vec::new(),
+                    });
                 }
                 Err(_) => return Err(()),
             };
@@ -1365,7 +1809,12 @@ impl FormatWrite {
             let fresh = true;
             use rustix::fs::{flock, FlockOperation};
             flock(&file, FlockOperation::NonBlockingLockExclusive).map_err(|_| ())?;
-            Ok(FormatGuard { file, fresh })
+            Ok(FormatGuard {
+                file,
+                fresh,
+                root: self.root.clone(),
+                custody: Vec::new(),
+            })
         }
         #[cfg(windows)]
         {
@@ -1400,7 +1849,12 @@ impl FormatWrite {
                         .map_err(|_| ())?;
                     Self::verify_adopted_lock(&file, &path, &self.root)?;
                     let fresh = false;
-                    return Ok(FormatGuard { file, fresh });
+                    return Ok(FormatGuard {
+                        file,
+                        fresh,
+                        root: self.root.clone(),
+                        custody: Vec::new(),
+                    });
                 }
                 Err(_) => return Err(()),
             };
@@ -1413,7 +1867,12 @@ impl FormatWrite {
                 return Err(());
             }
             let fresh = true;
-            Ok(FormatGuard { file, fresh })
+            Ok(FormatGuard {
+                file,
+                fresh,
+                root: self.root.clone(),
+                custody: Vec::new(),
+            })
         }
     }
 
@@ -1663,17 +2122,6 @@ impl FormatWrite {
             .unwrap_or_else(|| format!("recover.{}", std::process::id()))
     }
 
-    /// Reclaim crashed rename temps everywhere they can strand (finding
-    /// r2 3, r3 3): the runtime temp home first — its absence or a
-    /// hostile spelling never suppresses the legacy pass — then the
-    /// legacy source-tree spellings. The caller holds the exclusive
-    /// ownership lock, so no live writer's temps exist during this pass.
-    fn sweep_stale_temps(&self) -> Result<(), ()> {
-        let home = self.sweep_home_temps();
-        let legacy = self.sweep_legacy_source_temps();
-        home.and(legacy)
-    }
-
     /// Reclaim orphaned temps inside the runtime temp home (finding r2
     /// 3, r3 3): any plain file with the producer's exact temp suffix is
     /// a crashed rename temp — the exclusive owner (this caller) is the
@@ -1684,7 +2132,9 @@ impl FormatWrite {
     /// orphan survived every sweep and collided every retry of the next
     /// recovery. A missing temp home is simply empty; links, hostile
     /// home spellings, directories, and foreign names are left untouched
-    /// and never followed or removed.
+    /// and never followed or removed. The quarantine home
+    /// (`temps/legacy`) is a directory here and never matches the
+    /// producer suffix, so custody is never swept (finding r5 3).
     fn sweep_home_temps(&self) -> Result<(), ()> {
         let Ok(home) = self.physical(TEMP_HOME, false) else {
             return Ok(());
@@ -1716,80 +2166,378 @@ impl FormatWrite {
         Ok(())
     }
 
-    /// Reclaim legacy rename temps that an older binary stranded inside
-    /// the governed source tree: `.{name}.lekalo-format-new` siblings
-    /// at the `lekalo/` project root and in the admitted module
-    /// directories (finding r3 4: the former sweep covered only the
-    /// module directories — the `project.yaml` sibling survived every
-    /// sweep — and was skipped entirely whenever the optional runtime
-    /// temp home was absent). The governed scan rejects those dotfiles —
-    /// the project stays unloadable until this owned sweep reclaims
-    /// them — so the mutating run removes exactly the legacy fixed
-    /// spelling for an emitted Model document of the closed inventory
-    /// (finding r4 4), never any other source entry: an unrelated user
-    /// dotfile with the suffix is left byte-identical, and the loader's
-    /// own structure refusal — not deletion — answers it.
-    fn sweep_legacy_source_temps(&self) -> Result<(), ()> {
-        for (directory, stem) in self.legacy_sweep_targets() {
-            let Ok(dir_path) = self.physical(&directory, false) else {
-                continue;
-            };
-            let name = format!(".{stem}.{TEMP_SUFFIX}");
-            let metadata = match std::fs::symlink_metadata(dir_path.join(&name)) {
-                Ok(metadata) => metadata,
-                Err(_) => continue,
-            };
-            if metadata.file_type().is_symlink() || !metadata.is_file() {
-                continue;
+    /// Whether a regular reparse-free file with this exact name exists
+    /// directly inside one logical directory.
+    fn regular_file_in(&self, directory: &str, name: &str) -> bool {
+        let Ok(dir_path) = self.physical(directory, false) else {
+            return false;
+        };
+        match std::fs::symlink_metadata(dir_path.join(name)) {
+            Ok(metadata) => {
+                if metadata.file_type().is_symlink() || !metadata.is_file() {
+                    return false;
+                }
+                #[cfg(windows)]
+                {
+                    if reparse_point(&metadata) {
+                        return false;
+                    }
+                }
+                true
             }
-            #[cfg(windows)]
-            {
-                if reparse_point(&metadata) {
-                    continue;
+            Err(_) => false,
+        }
+    }
+
+    /// The closed set of legacy temps this run can PROVE structural
+    /// ownership of (findings r4 4, r5 3): the exact emitted-document
+    /// temp spelling, in a directory the governed grammar admits, whose
+    /// module marker and whose corresponding source document both
+    /// exist as real reparse-free files. Enumeration never widens: a
+    /// hidden or otherwise non-admitted directory name (devin 2), a
+    /// portable but marker-less directory, or an absent source document
+    /// (finding r5 3) contribute nothing — those files are not provably
+    /// formatter-owned, so they never move and never delete. The final
+    /// ownership decision still belongs to the validated admitted
+    /// inventory (`settle_legacy_custody`).
+    fn legacy_quarantine_candidates(&self) -> Vec<CustodyMove> {
+        let mut moves: Vec<CustodyMove> = Vec::new();
+        // The project document's sibling at the `lekalo/` root.
+        if self.physical("lekalo/project.yaml", true).is_ok()
+            && self.regular_file_in("lekalo", &format!(".project.yaml.{TEMP_SUFFIX}"))
+        {
+            moves.push(CustodyMove {
+                directory: "lekalo".to_owned(),
+                name: format!(".project.yaml.{TEMP_SUFFIX}"),
+            });
+        }
+        // The module directories: grammar-admitted names that carry the
+        // module marker (an admitted module), and only the kind stems
+        // whose source document actually exists in that directory.
+        if let Ok(modules) = self.physical("lekalo/modules", false) {
+            if let Ok(read) = std::fs::read_dir(&modules) {
+                for entry in read.flatten() {
+                    let Ok(metadata) = entry.metadata() else {
+                        continue;
+                    };
+                    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+                        continue;
+                    }
+                    #[cfg(windows)]
+                    {
+                        if reparse_point(&metadata) {
+                            continue;
+                        }
+                    }
+                    let Some(directory_name) = entry.file_name().to_str().map(str::to_owned) else {
+                        continue;
+                    };
+                    // The governed module-segment grammar (devin 2): the
+                    // same predicate `project_fs` admits module
+                    // directories under. Hidden and otherwise
+                    // non-portable spellings can never have emitted a
+                    // document, so they are never enumerated.
+                    if crate::project_fs::path_violation(&directory_name).is_some() {
+                        continue;
+                    }
+                    let directory = format!("lekalo/modules/{directory_name}");
+                    // The admitted-module marker: no marker, no module,
+                    // no ownership (finding r5 3).
+                    if self
+                        .physical(&format!("{directory}/module.yaml"), true)
+                        .is_err()
+                    {
+                        continue;
+                    }
+                    for stem in crate::project_fs::MODULE_STEMS {
+                        let document = format!("{stem}.yaml");
+                        // The source document the temp renamed: an absent
+                        // sibling is a user file the legacy emitter never
+                        // wrote (finding r5 3).
+                        if self
+                            .physical(&format!("{directory}/{document}"), true)
+                            .is_err()
+                        {
+                            continue;
+                        }
+                        let name = format!(".{document}.{TEMP_SUFFIX}");
+                        if self.regular_file_in(&directory, &name) {
+                            moves.push(CustodyMove {
+                                directory: directory.clone(),
+                                name,
+                            });
+                        }
+                    }
                 }
             }
-            let _ = std::fs::remove_file(dir_path.join(&name));
-            sync_dir(&dir_path);
         }
+        moves.sort();
+        moves.dedup();
+        moves
+    }
+
+    /// The custody location token of one move's directory: the reserved
+    /// root token at the `lekalo/` root, else the module directory name.
+    /// Both spellings satisfy the governed path-segment grammar (the
+    /// `.lekalo` runtime tree is scanned under it), and a root/module
+    /// token collision is harmless: root custody files are always the
+    /// `project.yaml` document spelling, module custody files always a
+    /// module-stem spelling.
+    fn custody_token(directory: &str) -> String {
+        if directory == "lekalo" {
+            CUSTODY_ROOT_TOKEN.to_owned()
+        } else {
+            directory
+                .rsplit_once('/')
+                .map(|(_, token)| token.to_owned())
+                .unwrap_or_else(|| CUSTODY_ROOT_TOKEN.to_owned())
+        }
+    }
+
+    /// The custody file-name spelling of one legacy temp: the original
+    /// name without its leading dot, so the quarantined file itself
+    /// satisfies the governed path-segment grammar the `.lekalo` runtime
+    /// tree is scanned under (finding r5 3).
+    fn custody_file_name(name: &str) -> String {
+        name.strip_prefix('.').unwrap_or(name).to_owned()
+    }
+
+    /// The logical custody path of one move's quarantined file.
+    fn custody_path(&self, pending: &CustodyMove) -> String {
+        format!(
+            "{CUSTODY_HOME}/{}/{}",
+            Self::custody_token(&pending.directory),
+            Self::custody_file_name(&pending.name)
+        )
+    }
+
+    /// Read and fully validate the durable custody record, if any. A
+    /// record that fails its closed validation is fail-closed custody
+    /// state: the caller refuses rather than guesses (finding A
+    /// discipline).
+    fn read_custody_record(&self) -> Result<Option<CustodyRecord>, &'static str> {
+        let Ok(bytes) =
+            self.read_file_bounded(&format!("{CUSTODY_HOME}/{CUSTODY_RECORD}"), RECORD_BOUND)
+        else {
+            return Ok(None);
+        };
+        let record: CustodyRecord =
+            serde_json::from_slice(&bytes).map_err(|_| "custody-malformed")?;
+        record.validate()?;
+        Ok(Some(record))
+    }
+
+    /// Durably replace the custody record: written to a fresh exclusive
+    /// temp name and renamed over the record, so a crash can never leave
+    /// a torn or missing authority while custody files exist (the old
+    /// record stays a valid superset until the rename lands).
+    fn write_custody_record(&self, record: &CustodyRecord) -> Result<(), ()> {
+        let bytes = serde_json::to_vec(record).map_err(|_| ())?;
+        self.ensure_dir(CUSTODY_HOME)?;
+        let staged = format!("{CUSTODY_HOME}/{CUSTODY_RECORD}.staged");
+        self.remove_file(&staged).ok();
+        self.write_new(&staged, &bytes)?;
+        let record_logical = format!("{CUSTODY_HOME}/{CUSTODY_RECORD}");
+        let (record_dir, _) = split_logical(&record_logical);
+        let Ok(dir_path) = self.physical(record_dir, false) else {
+            return Err(());
+        };
+        let staged_path = self.physical(&staged, true)?;
+        std::fs::rename(&staged_path, dir_path.join(CUSTODY_RECORD)).map_err(|_| ())?;
+        sync_dir(&dir_path);
         Ok(())
     }
 
-    /// The closed (directory, emitted-document-name) pairs a legacy
-    /// rename temp can possibly occupy (finding r4 4): the project
-    /// document at the `lekalo/` root, plus every emitted document name
-    /// in every admitted module directory. The sweep and the residue
-    /// probe enumerate exactly this set, so cleanup can never widen.
-    fn legacy_sweep_targets(&self) -> Vec<(String, String)> {
-        let mut targets = vec![("lekalo".to_owned(), "project.yaml".to_owned())];
-        if let Ok(home) = self.physical("lekalo/modules", false) {
+    /// Quarantine every structurally provable legacy temp (finding r5
+    /// 3): the durable record is written FIRST, then each temp is moved
+    /// (renamed, never copied or deleted) into runtime custody so the
+    /// governed tree can be structurally admitted. The caller holds the
+    /// exclusive ownership lock. Returns the pending moves; the caller
+    /// settles them against the validated admitted inventory. An
+    /// interrupted quarantine is re-decided from the record on the next
+    /// run: moves already in custody are kept, moves already committed
+    /// or gone are dropped, and a stale empty record is removed.
+    fn quarantine_legacy_temps(&self) -> Result<Vec<CustodyMove>, RecoveryError> {
+        let refuse = |reason: &'static str| RecoveryError {
+            plan_id: "legacy-custody".to_owned(),
+            reason,
+        };
+        let recorded = match self.read_custody_record() {
+            Ok(Some(record)) => record.moves,
+            Ok(None) => Vec::new(),
+            Err(reason) => return Err(refuse(reason)),
+        };
+        let mut pending: Vec<CustodyMove> = recorded;
+        pending.extend(self.legacy_quarantine_candidates());
+        pending.retain(|held| {
+            self.regular_file_in(&held.directory, &held.name)
+                || self.physical(&self.custody_path(held), true).is_ok()
+        });
+        pending.sort();
+        pending.dedup();
+        if pending.is_empty() {
+            // Nothing in custody and nothing provable in the tree: a
+            // stale record (every move committed or restored before its
+            // removal) is reclaimed, and the custody home is cleaned.
+            self.remove_file(&format!("{CUSTODY_HOME}/{CUSTODY_RECORD}"))
+                .ok();
+            self.clean_custody_homes();
+            return Ok(Vec::new());
+        }
+        let record = CustodyRecord {
+            schema_version: CUSTODY_SCHEMA.to_owned(),
+            moves: pending.clone(),
+        };
+        if let Err(reason) = record.validate() {
+            return Err(refuse(reason));
+        }
+        self.write_custody_record(&record)
+            .map_err(|_| refuse("custody-record"))?;
+        for held in &pending {
+            let in_tree = self.regular_file_in(&held.directory, &held.name);
+            let custody_logical = self.custody_path(held);
+            let in_custody = self.physical(&custody_logical, true).is_ok();
+            match (in_tree, in_custody) {
+                // Already moved by an interrupted earlier run.
+                (false, true) => continue,
+                // Committed or gone: nothing to move.
+                (false, false) => continue,
+                // A file re-appeared at the exact proven spelling while
+                // the original is still in custody: two live claims on
+                // one name. Fail closed — never delete either.
+                (true, true) => return Err(refuse("custody-conflict")),
+                (true, false) => {}
+            }
+            let token_dir = format!("{CUSTODY_HOME}/{}", Self::custody_token(&held.directory));
+            self.ensure_dir(&token_dir)
+                .map_err(|_| refuse("custody-move"))?;
+            let source = self
+                .physical(&held.source_path(), true)
+                .map_err(|_| refuse("custody-move"))?;
+            let target = self
+                .physical(&token_dir, false)
+                .map_err(|_| refuse("custody-move"))?;
+            std::fs::rename(&source, target.join(Self::custody_file_name(&held.name)))
+                .map_err(|_| refuse("custody-move"))?;
+            if let Ok(dir_path) = self.physical(&held.directory, false) {
+                sync_dir(&dir_path);
+            }
+        }
+        Ok(pending)
+    }
+
+    /// Settle the quarantine against the validated admitted inventory
+    /// (finding r5 3): a quarantined temp is DELETED only when its
+    /// emitted document is part of the load's admitted inventory — the
+    /// completed ownership proof — and restored byte-exact otherwise.
+    /// Called by the apply pipeline immediately after its load
+    /// succeeded; the caller holds the ownership lock.
+    fn settle_legacy_custody(
+        &self,
+        custody: &[CustodyMove],
+        admitted: &[String],
+    ) -> Result<(), &'static str> {
+        for pending in custody {
+            let custody_logical = self.custody_path(pending);
+            if admitted.contains(&pending.document_path()) {
+                // The completed proof: exact spelling, legal location,
+                // existing source, validated admission. Delete.
+                self.remove_file(&custody_logical)
+                    .map_err(|_| "custody-commit")?;
+            } else {
+                // Not admitted after all: restore the exact bytes to
+                // their exact original location.
+                self.restore_one_custody(pending)
+                    .map_err(|_| "custody-restore")?;
+            }
+        }
+        self.remove_file(&format!("{CUSTODY_HOME}/{CUSTODY_RECORD}"))
+            .map_err(|_| "custody-commit")?;
+        self.clean_custody_homes();
+        Ok(())
+    }
+
+    /// Restore every quarantined temp to its exact original location
+    /// (finding r5 3): the answer of every refusal path. A move whose
+    /// original location is occupied stays in custody with a rewritten
+    /// record naming exactly the un-restored moves — fail closed, never
+    /// overwrite, never orphan custody without its durable authority.
+    fn restore_legacy_custody(&self, custody: &[CustodyMove]) {
+        let mut unrestored: Vec<CustodyMove> = Vec::new();
+        for pending in custody {
+            if self.restore_one_custody(pending).is_err() {
+                unrestored.push(pending.clone());
+            }
+        }
+        if unrestored.is_empty() {
+            self.remove_file(&format!("{CUSTODY_HOME}/{CUSTODY_RECORD}"))
+                .ok();
+            self.clean_custody_homes();
+        } else {
+            let _ = self.write_custody_record(&CustodyRecord {
+                schema_version: CUSTODY_SCHEMA.to_owned(),
+                moves: unrestored,
+            });
+            // The occupied originals keep their custody files and their
+            // durable record; the next run re-decides them.
+        }
+    }
+
+    /// Best-effort restore of every recorded move (used when the
+    /// quarantine pass itself fails and no guard carries the moves).
+    fn restore_legacy_custody_best_effort(&self) {
+        if let Ok(Some(record)) = self.read_custody_record() {
+            self.restore_legacy_custody(&record.moves);
+        }
+    }
+
+    /// Restore one quarantined temp by rename to its original logical
+    /// path. Fails (leaving the bytes in custody) when the target is
+    /// occupied or any path check refuses.
+    fn restore_one_custody(&self, pending: &CustodyMove) -> Result<(), ()> {
+        let custody_logical = self.custody_path(pending);
+        let source = self.physical(&custody_logical, true)?;
+        let target_dir = self.physical(&pending.directory, false)?;
+        let target = target_dir.join(&pending.name);
+        if std::fs::symlink_metadata(&target).is_ok() {
+            return Err(());
+        }
+        std::fs::rename(&source, &target).map_err(|_| ())?;
+        sync_dir(&target_dir);
+        Ok(())
+    }
+
+    /// Best-effort removal of the empty custody directories after every
+    /// move was committed or restored. The runtime temp home itself is
+    /// removed too when the quarantine was its only occupant, so a
+    /// quarantining run leaves no empty runtime residue behind.
+    fn clean_custody_homes(&self) {
+        if let Ok(home) = self.physical(CUSTODY_HOME, false) {
             if let Ok(read) = std::fs::read_dir(&home) {
                 for entry in read.flatten() {
-                    let is_module_dir = entry
-                        .metadata()
-                        .map(|metadata| metadata.is_dir() && !metadata.file_type().is_symlink())
-                        .unwrap_or(false);
-                    if !is_module_dir {
-                        continue;
-                    }
-                    let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
-                        continue;
-                    };
-                    for stem in crate::project_fs::MODULE_STEMS {
-                        targets.push((format!("lekalo/modules/{name}"), format!("{stem}.yaml")));
+                    if entry.metadata().map(|m| m.is_dir()).unwrap_or(false) {
+                        let _ = std::fs::remove_dir(entry.path());
                     }
                 }
             }
         }
-        targets
+        let _ = self.remove_dir(CUSTODY_HOME);
+        let _ = std::fs::remove_dir(
+            self.physical(TEMP_HOME, false)
+                .unwrap_or_else(|_| PathBuf::new()),
+        );
     }
 
-    /// Whether reclaimable crash residue exists anywhere the sweeps look
-    /// (finding r3 4): an orphaned runtime temp or a legacy source-tree
-    /// temp. The read-only probe behind the recovery entry decision:
-    /// stranded residue keeps the project unloadable exactly as a
-    /// journal would, so a state-less tree carrying it must still reach
-    /// the owned sweep. Anomalies (links, hostile spellings) are skipped
-    /// here — the owned sweep refuses them instead.
+    /// Whether reclaimable crash residue exists anywhere the owned
+    /// window looks (findings r3 4, r5 3): an orphaned runtime temp, a
+    /// structurally provable legacy source-tree temp, or quarantine
+    /// custody state (a durable record or a custody file from an
+    /// interrupted quarantine). The read-only probe behind the recovery
+    /// entry decision: stranded residue keeps the project unloadable
+    /// exactly as a journal would, so a state-less tree carrying it must
+    /// still reach the owned window, and an interrupted quarantine must
+    /// always be re-decided. Anomalies (links, hostile spellings) are
+    /// skipped here — the owned window refuses them instead.
     fn has_reclaimable_residue(&self) -> bool {
         if let Ok(home) = self.physical(TEMP_HOME, false) {
             if let Ok(read) = std::fs::read_dir(&home) {
@@ -1814,26 +2562,51 @@ impl FormatWrite {
                 }
             }
         }
-        for (directory, stem) in self.legacy_sweep_targets() {
-            let name = format!(".{stem}.{TEMP_SUFFIX}");
-            let Ok(dir_path) = self.physical(&directory, false) else {
-                continue;
-            };
-            let Ok(metadata) = std::fs::symlink_metadata(dir_path.join(&name)) else {
-                continue;
-            };
-            if metadata.file_type().is_symlink() || !metadata.is_file() {
-                continue;
-            }
-            #[cfg(windows)]
-            {
-                if reparse_point(&metadata) {
-                    continue;
-                }
-            }
+        // Quarantine custody state: a durable record, or any custody
+        // file of an interrupted quarantine (finding r5 3).
+        if self
+            .physical(&format!("{CUSTODY_HOME}/{CUSTODY_RECORD}"), true)
+            .is_ok()
+        {
             return true;
         }
-        false
+        if let Ok(home) = self.physical(CUSTODY_HOME, false) {
+            if let Ok(read) = std::fs::read_dir(&home) {
+                for entry in read.flatten() {
+                    let Ok(metadata) = entry.metadata() else {
+                        continue;
+                    };
+                    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+                        continue;
+                    }
+                    #[cfg(windows)]
+                    {
+                        if reparse_point(&metadata) {
+                            continue;
+                        }
+                    }
+                    let Ok(tokens) = std::fs::read_dir(entry.path()) else {
+                        continue;
+                    };
+                    for token in tokens.flatten() {
+                        let Ok(metadata) = token.metadata() else {
+                            continue;
+                        };
+                        if !metadata.is_file() || metadata.file_type().is_symlink() {
+                            continue;
+                        }
+                        if let Some(name) = token.file_name().to_str() {
+                            if is_legacy_custody_name(name) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Structurally provable legacy temps still stranded in the
+        // governed tree.
+        !self.legacy_quarantine_candidates().is_empty()
     }
 
     /// Read one file's exact bytes with reparse checks.
@@ -1924,7 +2697,9 @@ mod legacy_name_tests {
     // The closed legacy temp-name grammar (finding r4 4): only the
     // emitted Model documents of the governed tree can ever be owned
     // legacy temps; anything else is a user file the sweep must leave
-    // untouched.
+    // untouched. The custody spelling (finding r5 3) is the same grammar
+    // minus the leading dot, so the quarantined file itself satisfies
+    // the governed path-segment grammar of the `.lekalo` runtime tree.
     #[test]
     fn legacy_temp_names_are_limited_to_emitted_documents() {
         assert!(super::is_legacy_temp_name(
@@ -1946,9 +2721,301 @@ mod legacy_name_tests {
         assert!(!super::is_legacy_temp_name(
             ".invented.yaml.lekalo-format-new"
         ));
+        // The custody spelling is the dot-less mirror of the same set.
+        assert!(super::is_legacy_custody_name(
+            "project.yaml.lekalo-format-new"
+        ));
+        assert!(super::is_legacy_custody_name(
+            "module.yaml.lekalo-format-new"
+        ));
+        assert!(!super::is_legacy_custody_name(
+            "private-notes.lekalo-format-new"
+        ));
         // The owned temp (non-legacy) family stays intact.
         assert!(super::is_owned_temp_name(
             "plan.pid.apply.module.yaml.lekalo-format-new"
         ));
+    }
+
+    // The custody record's closed validation (finding r5 3): only the
+    // two legal legacy locations, grammar-admitted module directories,
+    // and unique moves pass.
+    #[test]
+    fn custody_records_accept_only_proven_locations() {
+        let record = |moves: &[(&str, &str)]| super::CustodyRecord {
+            schema_version: super::CUSTODY_SCHEMA.to_owned(),
+            moves: moves
+                .iter()
+                .map(|(directory, name)| super::CustodyMove {
+                    directory: directory.to_string(),
+                    name: name.to_string(),
+                })
+                .collect(),
+        };
+        assert!(record(&[
+            ("lekalo", ".project.yaml.lekalo-format-new"),
+            (
+                "lekalo/modules/scheduling",
+                ".module.yaml.lekalo-format-new"
+            ),
+        ])
+        .validate()
+        .is_ok());
+        // Hidden and otherwise non-admitted directories are refused
+        // (devin 2), as are invented locations, unrelated names, wrong
+        // identities, duplicates, and empty records.
+        assert!(
+            record(&[("lekalo/modules/.evil", ".module.yaml.lekalo-format-new")])
+                .validate()
+                .is_err()
+        );
+        // The name grammar is location-aware: the `project.yaml`
+        // document spelling belongs to the root alone, module-stem
+        // spellings to module directories alone — no two valid moves
+        // can collide on one custody file path.
+        assert!(
+            record(&[(
+                "lekalo/modules/0lekalo-root",
+                ".project.yaml.lekalo-format-new",
+            )])
+            .validate()
+            .is_err(),
+            "a module directory never carries the root document spelling"
+        );
+        assert!(
+            record(&[("lekalo", ".module.yaml.lekalo-format-new")])
+                .validate()
+                .is_err(),
+            "the root never carries a module-stem spelling"
+        );
+        assert!(
+            record(&[("lekalo/targets", ".project.yaml.lekalo-format-new")])
+                .validate()
+                .is_err()
+        );
+        assert!(record(&[("lekalo", ".private-notes.lekalo-format-new")])
+            .validate()
+            .is_err());
+        assert!(record(&[
+            ("lekalo", ".project.yaml.lekalo-format-new"),
+            ("lekalo", ".project.yaml.lekalo-format-new")
+        ])
+        .validate()
+        .is_err());
+        assert!(record(&[]).validate().is_err());
+        let mut foreign = record(&[("lekalo", ".project.yaml.lekalo-format-new")]);
+        foreign.schema_version = "lekalo/format-legacy-custody/v0.9.0".to_owned();
+        assert!(foreign.validate().is_err());
+        // The document projection drives the admission settle.
+        let root = super::CustodyMove {
+            directory: "lekalo".to_string(),
+            name: ".project.yaml.lekalo-format-new".to_string(),
+        };
+        assert_eq!(root.document_path(), "lekalo/project.yaml");
+        let module = super::CustodyMove {
+            directory: "lekalo/modules/scheduling".to_string(),
+            name: ".entities.yaml.lekalo-format-new".to_string(),
+        };
+        assert_eq!(
+            module.document_path(),
+            "lekalo/modules/scheduling/entities.yaml"
+        );
+        assert_eq!(
+            module.source_path(),
+            "lekalo/modules/scheduling/.entities.yaml.lekalo-format-new"
+        );
+    }
+}
+
+#[cfg(test)]
+mod transaction_probes {
+    //! Direct probes of the confined transaction (findings r5 1, r5 2).
+    //! Sandboxes live under `target/` and are addressed through the
+    //! invocation-relative project selector, so no working-directory
+    //! mutation is needed.
+    use super::*;
+
+    fn sandbox(name: &str) -> (String, PathBuf) {
+        let selector = format!("target/lekalo-format-txn-{name}-{}", std::process::id());
+        let root = PathBuf::from(&selector);
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("lekalo/modules")).expect("sandbox tree");
+        std::fs::write(
+            root.join("lekalo/project.yaml"),
+            b"schema_version: '0.2.16'\n",
+        )
+        .expect("project document");
+        (selector, root)
+    }
+
+    fn plan_homes(root: &Path) -> Vec<String> {
+        let home = root.join(".lekalo/cache/format");
+        let Ok(read) = std::fs::read_dir(&home) else {
+            return Vec::new();
+        };
+        let mut names: Vec<String> = read
+            .flatten()
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .filter(|name| name != ACTIVE_LOCK && name != TEMP_HOME_NAME)
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn a_rollback_preserves_bytes_it_cannot_prove_ownership_of() {
+        // Finding r5 1 (the post-apply verification caller): a verify
+        // failure rolls back the full replaced prefix; a destination
+        // whose live bytes are neither pinned state — here the
+        // formatter's own phase-4 bytes under a mismatched after pin —
+        // must be preserved, the journal retained, and the run ended in
+        // the typed conflict denial instead of a declared restoration.
+        let (selector, root) = sandbox("rollback-custody");
+        let source = root.join("lekalo/modules/scheduling/module.yaml");
+        std::fs::create_dir_all(source.parent().expect("parent")).expect("module dir");
+        let original = b"original: bytes\n";
+        std::fs::write(&source, original).expect("seed");
+        let before = crate::digest::sha256_hex(original);
+        let candidate = b"replacement: bytes\n";
+        let live = crate::digest::sha256_hex(candidate);
+        // The constructed inconsistency: the plan's after pin names a
+        // third spelling, so phase 5's verification fails and rollback
+        // finds live bytes that are neither pin.
+        let forged_after = crate::digest::sha256_hex(b"neither pin");
+        let files = vec!["lekalo/modules/scheduling/module.yaml".to_owned()]
+            .into_iter()
+            .map(|path| (path, before.clone(), forged_after.clone()))
+            .collect::<Vec<_>>();
+        let policy_digest = supported_policy_digest().to_owned();
+        let failure = apply(
+            &Some(selector.clone()),
+            &policy_digest,
+            &files,
+            &[candidate.to_vec()],
+            None,
+        )
+        .expect_err("the verify stage fails");
+        match failure {
+            ApplyFailure::SourceChanged {
+                path,
+                expected,
+                current,
+            } => {
+                assert_eq!(path, "lekalo/modules/scheduling/module.yaml");
+                assert_eq!(expected, before, "the conflict names the before pin");
+                assert_eq!(current, live, "the conflict names the live third bytes");
+            }
+            other => panic!("the typed conflict denial, got {other:?}"),
+        }
+        let homes = plan_homes(&root);
+        assert_eq!(homes.len(), 1, "one plan home");
+        assert!(
+            root.join(".lekalo/cache/format")
+                .join(&homes[0])
+                .join(JOURNAL)
+                .exists(),
+            "the journal stays armed for the explicit conflict decision"
+        );
+        assert_eq!(
+            std::fs::read(&source).expect("source"),
+            candidate,
+            "the unowned live bytes are preserved untouched"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_oversized_plan_is_refused_before_any_runtime_write() {
+        // Finding r5 2: the producer and the bounded recovery reader
+        // agree on one record grammar. A plan whose serialized manifest
+        // exceeds the 256 KiB record bound — reachable far below the
+        // 4096-file policy limit, here with long valid 64-character
+        // module names — is refused whole with the registered
+        // bounded-plan failure, before any backup, journal, or
+        // replacement exists.
+        let (selector, root) = sandbox("record-bound");
+        let digest = crate::digest::sha256_hex(b"payload");
+        let files: Vec<(String, String, String)> = (0..1100)
+            .map(|index| {
+                let directory = format!("{index:04}{}", "n".repeat(60));
+                (
+                    format!("lekalo/modules/{directory}/module.yaml"),
+                    digest.clone(),
+                    digest.clone(),
+                )
+            })
+            .collect();
+        let policy_digest = supported_policy_digest().to_owned();
+        let failure = apply(&Some(selector), &policy_digest, &files, &[], None)
+            .expect_err("the oversized plan is refused");
+        match failure {
+            ApplyFailure::PlanLimit {
+                limit,
+                measured,
+                allowed,
+            } => {
+                assert_eq!(limit, "max-record-bytes");
+                assert_eq!(allowed, RECORD_BOUND);
+                assert!(measured > RECORD_BOUND, "the manifest exceeds the bound");
+            }
+            other => panic!("the bounded-plan refusal, got {other:?}"),
+        }
+        let result = failure.into_result();
+        assert_eq!(result.status(), crate::result::Status::Invalid);
+        assert!(
+            result
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.id() == "format.limit-exceeded"),
+            "the registered bounded-plan failure"
+        );
+        assert!(
+            plan_homes(&root).is_empty(),
+            "no plan home, journal, or backup was created"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_in_bound_plan_emits_a_manifest_the_recovery_reader_accepts() {
+        // Finding r5 2 boundary control: a near-bound plan (long valid
+        // module names, just under the record byte bound) applies, and
+        // its emitted manifest is within the bounded reader's grammar —
+        // size-bounded, decodable, and identity-valid — so an admitted
+        // plan can never crash into an unreadable recovery record.
+        let (selector, root) = sandbox("record-roundtrip");
+        let payload = b"payload: bytes\n";
+        let digest = crate::digest::sha256_hex(payload);
+        let files: Vec<(String, String, String)> = (0..900)
+            .map(|index| {
+                let directory = format!("{index:04}{}", "n".repeat(60));
+                let path = format!("lekalo/modules/{directory}/module.yaml");
+                let physical = root.join(&path);
+                std::fs::create_dir_all(physical.parent().expect("parent")).expect("dir");
+                std::fs::write(&physical, payload).expect("source");
+                (path, digest.clone(), digest.clone())
+            })
+            .collect();
+        let after_bytes: Vec<Vec<u8>> = files.iter().map(|_| payload.to_vec()).collect();
+        let policy_digest = supported_policy_digest().to_owned();
+        apply(&Some(selector), &policy_digest, &files, &after_bytes, None)
+            .expect("the in-bound plan applies");
+        let homes = plan_homes(&root);
+        assert_eq!(homes.len(), 1, "one committed plan home");
+        let home = root.join(".lekalo/cache/format").join(&homes[0]);
+        assert!(
+            !home.join(JOURNAL).exists(),
+            "the journal cleared at commit"
+        );
+        let bytes = std::fs::read(home.join(MANIFEST)).expect("manifest");
+        assert!(
+            bytes.len() as u64 <= RECORD_BOUND,
+            "the emitted manifest is within the recovery reader bound"
+        );
+        let manifest: Manifest = serde_json::from_slice(&bytes).expect("decodes");
+        manifest
+            .validate(&homes[0])
+            .expect("the reader's own validation accepts the emitted record");
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

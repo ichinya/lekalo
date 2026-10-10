@@ -1337,8 +1337,11 @@ fn legacy_cleanup_never_touches_unrelated_user_files() {
         let user_bytes = b"USER FILE - NEVER A FORMATTER TEMP\n";
         let result = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
         // The user dotfiles are not Model source: the governed scan keeps
-        // refusing the tree, and the run must not delete them to
-        // legitimate it — the refusal, not deletion, is the answer.
+        // refusing the tree, and the run must not delete anything to
+        // legitimate it — the refusal, not deletion, is the answer. The
+        // owned temps are quarantined for the load, and because admission
+        // failed they are RESTORED byte-exact (finding r5 3): a refused
+        // project never loses bytes, even provably-owned ones.
         assert_ne!(result.status(), Status::Valid, "{result:?}");
         assert_eq!(
             fs::read(&user_one).expect("user file kept"),
@@ -1355,16 +1358,34 @@ fn legacy_cleanup_never_touches_unrelated_user_files() {
             user_bytes,
             "an invented model-shaped name is still a user file"
         );
-        assert!(!owned_root.exists(), "the owned root temp is reclaimed");
-        assert!(!owned_module.exists(), "the owned module temp is reclaimed");
-        assert!(!owned_kind.exists(), "the owned kind temp is reclaimed");
+        assert_eq!(
+            fs::read(&owned_root).expect("owned temp restored"),
+            b"orphaned: root temp\n",
+            "the refused run restores the quarantined root temp"
+        );
+        assert_eq!(
+            fs::read(&owned_module).expect("owned temp restored"),
+            b"orphaned: module temp\n",
+            "the refused run restores the quarantined module temp"
+        );
+        assert_eq!(
+            fs::read(&owned_kind).expect("owned temp restored"),
+            b"orphaned: kind temp\n",
+            "the refused run restores the quarantined kind temp"
+        );
+        // No custody residue survives the restored refusal.
+        assert!(!root.join(".lekalo/cache/format/temps/legacy").exists());
         // A tree carrying ONLY owned temps (the real stranded-crash
-        // shape) formats cleanly: the sweep legitimately reclaims them.
+        // shape) formats cleanly: the sweep legitimately reclaims them
+        // against the validated admitted inventory.
         for user in [&user_one, &user_two, &user_three] {
             fs::remove_file(user).expect("remove user file");
         }
         let clean = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
         assert_eq!(clean.status(), Status::Valid, "{clean:?}");
+        assert!(!owned_root.exists(), "the owned root temp is reclaimed");
+        assert!(!owned_module.exists(), "the owned module temp is reclaimed");
+        assert!(!owned_kind.exists(), "the owned kind temp is reclaimed");
     });
 }
 
@@ -1392,6 +1413,165 @@ fn an_unowned_suffixed_file_is_answered_by_the_structure_scan_not_the_sweep() {
         let result = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
         assert_ne!(result.status(), Status::Valid, "{result:?}");
         assert_eq!(fs::read(&user).expect("user file"), b"USER FILE\n");
+    });
+}
+
+#[test]
+fn unproven_legacy_temps_are_preserved_and_answered_by_refusal() {
+    // Finding r5 3: exact spelling is not ownership. Four controls, each
+    // a `.lekalo-format-new` file the legacy emitter could never have
+    // written: a hidden module directory the governed grammar refuses
+    // (devin 2), a portable directory without the module marker, an
+    // absent source sibling inside an admitted module, and an otherwise
+    // refused tree carrying a root sentinel. Every one is preserved
+    // byte-exact and answered by the run's refusal — never by deletion.
+    // (a) A hidden directory under `lekalo/modules/`.
+    in_sandbox("sweep-hidden-dir", "planner-canonical", |root| {
+        let hidden = root.join("lekalo/modules/.evil");
+        fs::create_dir_all(&hidden).expect("hidden dir");
+        let victim = hidden.join(".module.yaml.lekalo-format-new");
+        fs::write(&victim, b"USER FILE\n").expect("victim");
+        let result = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
+        assert_ne!(result.status(), Status::Valid, "{result:?}");
+        assert_eq!(
+            fs::read(&victim).expect("victim preserved"),
+            b"USER FILE\n",
+            "a hidden directory is never enumerated"
+        );
+    });
+    // (b) A portable directory name without the module marker: not an
+    // admitted module, so nothing in it was ever a formatter temp.
+    in_sandbox("sweep-no-marker", "planner-canonical", |root| {
+        let stranger = root.join("lekalo/modules/not-a-module");
+        fs::create_dir_all(&stranger).expect("marker-less dir");
+        let victim = stranger.join(".module.yaml.lekalo-format-new");
+        fs::write(&victim, b"USER FILE\n").expect("victim");
+        let result = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
+        assert_ne!(result.status(), Status::Valid, "{result:?}");
+        assert_eq!(
+            fs::read(&victim).expect("victim preserved"),
+            b"USER FILE\n",
+            "a marker-less directory is never enumerated"
+        );
+    });
+    // (c) An admitted module directory whose `entities.yaml` does not
+    // exist: the temp names a document the emitter never wrote.
+    in_sandbox("sweep-absent-source", "planner-canonical", |root| {
+        assert!(!root
+            .join("lekalo/modules/scheduling/entities.yaml")
+            .exists());
+        let victim = root.join("lekalo/modules/scheduling/.entities.yaml.lekalo-format-new");
+        fs::write(&victim, b"USER FILE\n").expect("victim");
+        let result = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
+        assert_ne!(result.status(), Status::Valid, "{result:?}");
+        assert_eq!(
+            fs::read(&victim).expect("victim preserved"),
+            b"USER FILE\n",
+            "an absent source sibling is never swept"
+        );
+    });
+    // (d) A project-root sentinel on an otherwise refused tree: the
+    // sentinel is structurally provable, so it is quarantined for the
+    // load — and because the load fails (a malformed document), the
+    // quarantine is restored byte-exact before the refusal surfaces.
+    in_sandbox("sweep-malformed-tree", "seeds/comment-loss", |root| {
+        let broken = root.join("lekalo/modules/planner/module.yaml");
+        fs::write(&broken, b"definitions: [\n  broken\n").expect("malformed doc");
+        let sentinel = root.join("lekalo/.project.yaml.lekalo-format-new");
+        fs::write(&sentinel, b"USER FILE\n").expect("sentinel");
+        let result = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
+        assert_ne!(result.status(), Status::Valid, "{result:?}");
+        assert_eq!(
+            fs::read(&sentinel).expect("sentinel restored"),
+            b"USER FILE\n",
+            "a refused tree never loses even a provable temp"
+        );
+        assert!(
+            !root.join(".lekalo/cache/format/temps/legacy").exists(),
+            "no custody residue survives the refusal"
+        );
+    });
+}
+
+#[test]
+fn an_interrupted_quarantine_is_re_decided_from_the_durable_record() {
+    // Finding r5 3 crash window: the quarantine moved its temp and wrote
+    // its record, then died before the load decided. The next mutating
+    // run re-decides from the record alone: on an admissible tree the
+    // custody is committed (the admission proof completes) and the run
+    // proceeds; the custody home leaves no residue.
+    in_sandbox("custody-resume", "planner-canonical", |root| {
+        let custody = root.join(".lekalo/cache/format/temps/legacy/scheduling");
+        fs::create_dir_all(&custody).expect("custody home");
+        fs::write(
+            custody.join("module.yaml.lekalo-format-new"),
+            b"orphaned: partial bytes\n",
+        )
+        .expect("custody file");
+        fs::write(
+            root.join(".lekalo/cache/format/temps/legacy/record.json"),
+            b"{\"schema_version\":\"lekalo/format-legacy-custody/v0.8.0\",\"moves\":[{\"directory\":\"lekalo/modules/scheduling\",\"name\":\".module.yaml.lekalo-format-new\"}]}",
+        )
+        .expect("record");
+        let result = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
+        assert_eq!(result.status(), Status::Valid, "{result:?}");
+        assert!(!custody.exists(), "the custody file was committed");
+        assert!(
+            !root.join(".lekalo/cache/format/temps/legacy").exists(),
+            "the record and custody home are reclaimed"
+        );
+        let load = lekalo_core::loader::run(
+            &lekalo_core::loader::LoadSelection {
+                project: Some(".".to_owned()),
+            },
+            false,
+        );
+        assert_eq!(
+            load.status(),
+            Status::Valid,
+            "the committed tree loads clean"
+        );
+    });
+}
+
+#[test]
+fn a_refused_tree_restores_interrupted_custody_back_into_the_tree() {
+    // Finding r5 3 crash window on a tree that cannot be admitted: the
+    // record and custody file exist AND an unproven user dotfile keeps
+    // the governed scan refusing. The re-deciding run must restore the
+    // recorded temp to its exact original location — never delete it on
+    // a refusal — and leave the user dotfile untouched.
+    in_sandbox("custody-restore", "planner-canonical", |root| {
+        let custody = root.join(".lekalo/cache/format/temps/legacy/scheduling");
+        fs::create_dir_all(&custody).expect("custody home");
+        fs::write(
+            custody.join("module.yaml.lekalo-format-new"),
+            b"orphaned: partial bytes\n",
+        )
+        .expect("custody file");
+        fs::write(
+            root.join(".lekalo/cache/format/temps/legacy/record.json"),
+            b"{\"schema_version\":\"lekalo/format-legacy-custody/v0.8.0\",\"moves\":[{\"directory\":\"lekalo/modules/scheduling\",\"name\":\".module.yaml.lekalo-format-new\"}]}",
+        )
+        .expect("record");
+        let user = root.join("lekalo/.private-notes.lekalo-format-new");
+        fs::write(&user, b"USER FILE\n").expect("user file");
+        let result = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
+        assert_ne!(result.status(), Status::Valid, "{result:?}");
+        let restored = root.join("lekalo/modules/scheduling/.module.yaml.lekalo-format-new");
+        assert_eq!(
+            fs::read(&restored).expect("restored byte-exact"),
+            b"orphaned: partial bytes\n",
+            "the recorded temp returned to its exact original location"
+        );
+        assert_eq!(fs::read(&user).expect("user file"), b"USER FILE\n");
+        assert!(!custody.exists(), "the custody file left custody");
+        assert!(
+            !root
+                .join(".lekalo/cache/format/temps/legacy/record.json")
+                .exists(),
+            "the record is settled"
+        );
     });
 }
 
