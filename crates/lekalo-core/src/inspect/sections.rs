@@ -166,7 +166,11 @@ fn project_header(project: &CompiledProject) -> Option<ProjectHeader> {
     Some(ProjectHeader {
         id,
         model_ref: format!("dev.lekalo.model@{}", project.model_version.as_str()),
-        ir_identity: crate::ir::IDENTITY.to_owned(),
+        // The IR identity is derived from the exact compilation, never a
+        // constant: 0.8.0 sources compile to dev.lekalo.ir@0.8.0, so the
+        // published identity and the pinned digest always describe the
+        // same document.
+        ir_identity: crate::ir::version::identity_for(project.model_version).to_owned(),
         ir_digest: super::sections::ir_digest(project),
     })
 }

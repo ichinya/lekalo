@@ -36,17 +36,55 @@ if (ajvVersion !== "8.17.1") {
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf8"));
-
-const schema = read("contracts/graph.schema.v0.2.16.json");
-const goldenDir = "tests/fixtures/graph/golden";
-
 const ajv = new Ajv2020({ strict: true, allErrors: true });
-const validateGraph = ajv.compile(schema);
-
 const fail = (reason, detail) => {
   process.stderr.write(`${JSON.stringify({ ok: false, reason, detail }, null, 2)}\n`);
   process.exit(1);
 };
+
+// The graph contract is negotiated per source Model version: 0.2.16
+// sources stay on v0.2.16 bytes, 0.8.0 sources (the typed relation
+// successor) compile to the v0.8.0 contract with exactly one extra
+// provenance role.
+const schemas = {
+  "lekalo/graph/v0.2.16": read("contracts/graph.schema.v0.2.16.json"),
+  "lekalo/graph/v0.8.0": read("contracts/graph.schema.v0.8.0.json"),
+};
+const validators = Object.fromEntries(
+  Object.entries(schemas).map(([name, schema]) => [name, ajv.compile(schema)]),
+);
+const successorSchema = read("contracts/graph.schema.v0.8.0.json");
+const baseSchema = read("contracts/graph.schema.v0.2.16.json");
+{
+  // Collect every provenance role enum in a schema by walking it.
+  const roleEnums = (node, found = []) => {
+    if (Array.isArray(node)) {
+      node.forEach((item) => roleEnums(item, found));
+      return found;
+    }
+    if (node && typeof node === "object") {
+      if (Array.isArray(node.enum) && node.enum.includes("derived-from")) {
+        found.push(node.enum);
+      }
+      Object.values(node).forEach((value) => roleEnums(value, found));
+    }
+    return found;
+  };
+  const baseRoles = roleEnums(baseSchema).flat();
+  const successorRoles = roleEnums(successorSchema).flat();
+  if (!baseRoles.length) fail("base-role-enum", "the v0.2.16 role enum must be discoverable");
+  if (baseRoles.includes("entity-relation-target")) {
+    fail("base-schema-extended", "the frozen v0.2.16 graph schema must never gain successor roles");
+  }
+  for (const role of baseRoles) {
+    if (!successorRoles.includes(role)) fail("successor-dropped-role", role);
+  }
+  if (!successorRoles.includes("entity-relation-target")) {
+    fail("successor-missing-role", "entity-relation-target");
+  }
+}
+
+const goldenDir = "tests/fixtures/graph/golden";
 
 const CORE_NODE_KINDS = [
   "project", "module", "type", "entity", "operation", "policy",
@@ -80,8 +118,11 @@ for (const name of readdirSync(resolve(root, goldenDir)).sort()) {
   const graph = read(`${goldenDir}/${name}`);
   goldenCount += 1;
 
-  // 1. The golden instance must satisfy the closed wire schema.
-  if (!validateGraph(graph)) fail(`${name}-invalid`, validateGraph.errors);
+  // 1. The golden instance must satisfy its own negotiated closed wire
+  //    schema, and the negotiation must be exact (no version drift).
+  const validate = validators[graph.schemaVersion];
+  if (!validate) fail(`${name}-schema-version`, graph.schemaVersion);
+  else if (!validate(graph)) fail(`${name}-invalid`, validate.errors);
 
   // 2. Counts and identities must be coherent.
   if (graph.metadata.nodeCount !== graph.nodes.length) fail(`${name}-node-count`);
@@ -97,7 +138,14 @@ for (const name of readdirSync(resolve(root, goldenDir)).sort()) {
   if (JSON.stringify(nodeKeys) !== JSON.stringify(sortedNodeKeys)) fail(`${name}-node-order`);
 
   const edgeKeys = graph.edges.map(canonicalEdgeKey);
-  const sortedEdgeKeys = [...edgeKeys].sort((a, b) => JSON.stringify(a) < JSON.stringify(b) ? -1 : 1);
+  // Canonical edge order is (from, to, relation rank, occurrence) with
+  // the numeric members compared numerically: a stringified comparison
+  // would rank occurrence 10 before occurrence 9.
+  const compareEdgeKeys = (left, right) =>
+    left[0] < right[0] ? -1 : left[0] > right[0] ? 1 :
+    left[1] < right[1] ? -1 : left[1] > right[1] ? 1 :
+    left[2] - right[2] || left[3] - right[3];
+  const sortedEdgeKeys = [...edgeKeys].sort(compareEdgeKeys);
   if (JSON.stringify(edgeKeys) !== JSON.stringify(sortedEdgeKeys)) fail(`${name}-edge-order`);
 
   for (const node of graph.nodes) {
