@@ -121,7 +121,11 @@ fn before_state(
                     role: output.role,
                     owner_module: output.owner_module.clone(),
                     owner_target: output.owner_target.clone(),
-                    object_ref: output.before_ref.value().cloned(),
+                    // The bytes this generation actually replaced are the
+                    // previous record's *after* snapshot (finding 8): the
+                    // before snapshot of an older generation would freeze
+                    // every chained beforeRef at the oldest state.
+                    object_ref: output.after_ref.value().cloned(),
                 },
             )
         })
@@ -282,6 +286,7 @@ pub fn apply(
             &before,
             authority,
             &coverage,
+            coverage_bytes,
             &admission.generated_root,
         )
     })();
@@ -391,11 +396,26 @@ fn staged_apply(
     before: &BeforeState,
     authority: Option<&super::authority::Authority>,
     coverage: &super::wire::Coverage,
+    coverage_bytes: &[u8],
     generated_root: &str,
 ) -> Result<String, DomainResult> {
+    // Preflight the public manifest destination before any application
+    // byte moves (finding 10): a blocked coordinate refuses the run while
+    // the project is still exactly at its committed state, and the journal
+    // below covers the retry.
+    super::custody::preflight_destination(root)?;
     let previous = history::current(root)?;
+    // The committed record is consumed only after the public-manifest
+    // bijection proves it is the custody statement of the published
+    // manifest (finding 4): a caller-retargeted record never bijects.
     let previous_record = match &previous {
-        Some(digest) => Some(history::record(root, digest)?),
+        Some(digest) => {
+            let record = history::current_record(root)?;
+            if record.generation_digest != *digest {
+                return Err(invalid("generation-identity"));
+            }
+            Some(record)
+        }
         None => None,
     };
     // Preserved custody: outputs owned by any other module stay in the
@@ -448,6 +468,16 @@ fn staged_apply(
     }
     let closure: Vec<InputPin> = closure.into_values().collect();
     let transaction_id = history::transaction_id(root, &plan.plan_digest)?;
+    // The exact pre-transaction public manifest, pinned before anything
+    // moves (findings 10 and 11): its bytes are retained as a custody
+    // object so recovery restores them verbatim; absence means the
+    // transaction must converge the manifest coordinate to absence too.
+    let before_manifest = fs::read_file(root, super::custody::MANIFEST_LOGICAL)
+        .map_err(|_| invalid("manifest-read"))?;
+    let before_manifest_digest = match &before_manifest {
+        Some(bytes) => State::known(history::write_object(root, bytes)?),
+        None => State::Absent,
+    };
     let mut transaction = Transaction {
         schema_version: super::header("managed-transaction").0,
         identity: super::header("managed-transaction").1,
@@ -455,10 +485,12 @@ fn staged_apply(
         state: TransactionState::Prepared,
         action: TransactionAction::Apply,
         plan_digest: State::known(plan.plan_digest.clone()),
-        generation_digest: State::known(GenerationDigest {
-            generation_digest: String::new(),
-        }),
-        before_manifest_digest: State::Absent,
+        // The generation pin stays absent until the record exists: an
+        // empty digest is not a valid pin, so a first-publication crash
+        // journal stays schema-valid and recovery converges it to absence
+        // (finding 11).
+        generation_digest: State::Absent,
+        before_manifest_digest: before_manifest_digest.clone(),
         after_manifest_digest: State::Absent,
         pending: Vec::new(),
         affected_files: plan.outputs.iter().map(|o| o.path.clone()).collect(),
@@ -467,6 +499,13 @@ fn staged_apply(
     };
     transaction.affected_files.sort();
     history::write_transaction(root, &transaction)?;
+    // Retain the exact reviewed intent before anything is published
+    // (findings 5 and 11): the plan and coverage bytes are content-
+    // addressed custody objects, so recovery — and every later dependency
+    // re-qualification — anchors to the reviewed documents themselves,
+    // never to caller-supplied bytes.
+    history::write_object(root, &serde_json::to_vec_pretty(plan).expect("typed plan"))?;
+    history::write_object(root, coverage_bytes)?;
     // Content-addressed snapshots: exact before bytes of every replaced or
     // deleted file, exact after bytes of every published file.
     let bytes_of: BTreeMap<&str, &[u8]> = inventory
@@ -488,6 +527,12 @@ fn staged_apply(
             }
         }
     }
+    // The governed manifest move is part of the transaction (findings 10
+    // and 11): recovery converges it from the exact before/after evidence.
+    pending.push(Pending {
+        path: super::custody::MANIFEST_LOGICAL.to_owned(),
+        op: PendingOp::Publish,
+    });
     pending.sort_by(|left, right| (&left.path, &left.op).cmp(&(&right.path, &right.op)));
     transaction.pending = pending;
     transaction.state = TransactionState::Publishing;
@@ -581,11 +626,10 @@ fn staged_apply(
         return Err(invalid("generation-identity"));
     }
     record.record_digest = super::record_identity(&record);
-    let after_manifest = history::write_record(root, &record)?;
+    history::write_record(root, &record)?;
     transaction.generation_digest = State::known(GenerationDigest {
         generation_digest: generation.clone(),
     });
-    transaction.after_manifest_digest = State::known(after_manifest.clone());
     history::write_transaction(root, &transaction)?;
     // Publication: create/replace first, then deletions. Deletes are
     // custody-checked at the moment of consumption: the live bytes must
@@ -675,10 +719,15 @@ fn staged_apply(
     // Retain the exact published manifest of this generation (finding 9):
     // the rollback path restores the destination's own governed manifest
     // from this snapshot, so the public ownership statement always
-    // describes the restored bytes.
-    let manifest_bytes = match std::fs::read(root.join(super::custody::MANIFEST_LOGICAL)) {
+    // describes the restored bytes. The journal pins the exact published
+    // bytes (finding 10): recovery completes only when the public manifest
+    // carries them.
+    let manifest_bytes = match fs::read_file(root, super::custody::MANIFEST_LOGICAL) {
         Ok(bytes) => bytes,
         Err(_) => return Err(invalid("manifest-retain")),
+    };
+    let Some(manifest_bytes) = manifest_bytes else {
+        return Err(invalid("manifest-retain"));
     };
     if let Err(error) = super::custody::retain_manifest(root, &generation, &manifest_bytes) {
         transaction.conflict = State::known(super::wire::Conflict {
@@ -688,6 +737,8 @@ fn staged_apply(
         let _ = history::write_transaction(root, &transaction);
         return Err(error);
     }
+    transaction.after_manifest_digest = State::known(super::digest(&manifest_bytes));
+    history::write_transaction(root, &transaction)?;
     // Pointer commit completes the generation: the application bytes,
     // the governed manifest, and its retained snapshot are all
     // consistent, so recovery treats the transaction as complete.

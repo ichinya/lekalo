@@ -122,6 +122,60 @@ fn check_destination_compatibility(
     Ok(())
 }
 
+/// The mandatory dependency closure of the destination generation
+/// (finding 13): the retained plan and coverage of the destination pin the
+/// adapter entry and every validated custom binding the restored handlers
+/// depend on. Each dependency must still exist live with its exact pinned
+/// bytes; a missing or changed binding would restore handlers whose
+/// imports no longer resolve. Retained evidence is mandatory: a record
+/// without its retained plan/coverage objects has no provable dependency
+/// closure and refuses.
+fn check_dependency_closure(
+    root: &std::path::Path,
+    destination_record: &GenerationRecord,
+    authority: Option<&super::authority::Authority>,
+) -> Result<(), DomainResult> {
+    let plan = history::plan(root, &destination_record.plan_digest)?;
+    let coverage = history::coverage(root, &plan.coverage_digest)?;
+    for check in &coverage.extensions {
+        if !check.validated {
+            continue;
+        }
+        let Some(file) = super::bindings::binding_file(&check.binding) else {
+            return Err(stale(&check.binding, "binding"));
+        };
+        match fs::read_file(root, file) {
+            Ok(Some(bytes)) => {
+                if super::digest(&bytes) != check.contract_digest {
+                    return Err(stale(file, "binding-digest"));
+                }
+            }
+            Ok(None) => return Err(stale(file, "binding-missing")),
+            Err(_) => return Err(stale(file, "binding-unreadable")),
+        }
+    }
+    // The locked adapter entry is a mandatory dependency of the rendered
+    // generation: the live locked adapter is the same package the
+    // destination pinned (the lock revision is revalidated above), so its
+    // entry bytes must still exist and match the locked entry artifact.
+    if let Some(adapter) = authority.and_then(|authority| authority.adapter.as_ref()) {
+        match fs::read_file(root, &coverage.adapter.entry) {
+            Ok(Some(bytes)) => {
+                if super::digest(&bytes) != adapter.entry_digest {
+                    return Err(stale(&coverage.adapter.entry, "adapter-entry"));
+                }
+            }
+            Ok(None) => return Err(stale(&coverage.adapter.entry, "adapter-entry-missing")),
+            Err(_) => return Err(stale(&coverage.adapter.entry, "adapter-entry-unreadable")),
+        }
+    }
+    Ok(())
+}
+
+fn stale(path: &str, reason: &str) -> DomainResult {
+    diagnostic::failure(PLAN_STALE, &[("path", path), ("reason", reason)])
+}
+
 /// Build the exact rollback plan for the retained destination generation.
 pub fn build(root: &std::path::Path, destination: &str) -> Result<RollbackPlan, DomainResult> {
     // The barrier holds for every mutating surface, previews included: an
@@ -137,8 +191,14 @@ pub fn build(root: &std::path::Path, destination: &str) -> Result<RollbackPlan, 
     }
     // Both records pass the content-bound custody verification: a tampered
     // generation record is refused before any restore authority exists.
+    // The current record is additionally proven to biject with the
+    // published manifest (finding 4): a caller-retargeted current record
+    // is never restore authority.
     let (destination_record, _) = history::record_with_custody(root, destination)?;
-    let (current_record, _) = history::record_with_custody(root, &current)?;
+    let current_record = history::current_record(root)?;
+    if current_record.generation_digest != current {
+        return Err(refused("record-identity"));
+    }
     let mut restore = Vec::new();
     for output in &destination_record.outputs {
         let object_ref = match output.after_ref.value() {
@@ -190,11 +250,9 @@ pub fn build(root: &std::path::Path, destination: &str) -> Result<RollbackPlan, 
 fn current_baseline(
     root: &std::path::Path,
 ) -> Result<std::collections::BTreeMap<String, String>, DomainResult> {
-    let current = match history::current(root)? {
-        Some(current) => current,
-        None => return Err(refused("no-generation")),
-    };
-    let (record, _) = history::record_with_custody(root, &current)?;
+    // The current record is consumed only through the public-manifest
+    // bijection gate (finding 4).
+    let record = history::current_record(root)?;
     Ok(record
         .outputs
         .into_iter()
@@ -203,8 +261,11 @@ fn current_baseline(
 }
 
 /// Revalidate the live baseline of one mutation target: the live bytes
-/// must still be the committed bytes (a missing file is drift on a restore
-/// path and already-gone on a delete path).
+/// must still be the committed bytes. A path the current generation does
+/// not own is an unclaimed collision only when live bytes occupy it — an
+/// absent path is a legitimate rollback recreation of an output a later
+/// generation deleted (finding 3/14): the destination's retained bytes are
+/// digest-verified, and the refusal is reserved for foreign live bytes.
 fn check_baseline(
     root: &std::path::Path,
     baseline: &std::collections::BTreeMap<String, String>,
@@ -213,7 +274,17 @@ fn check_baseline(
 ) -> Result<(), DomainResult> {
     let recorded = match baseline.get(path) {
         Some(recorded) => recorded,
-        None => return Err(drift(path, "unclaimed")),
+        None => {
+            if !restore {
+                return Err(drift(path, "unclaimed"));
+            }
+            // Recreating a deleted output: refuse only foreign live bytes.
+            return match fs::read_file(root, path) {
+                Ok(None) => Ok(()),
+                Ok(Some(_)) => Err(drift(path, "unclaimed")),
+                Err(_) => Err(drift(path, "unreadable")),
+            };
+        }
     };
     match fs::read_file(root, path) {
         Ok(Some(live)) => {
@@ -283,8 +354,8 @@ pub fn apply(
     // Ownership compatibility: the destination generation was committed
     // under a different ownership configuration than the project's current
     // generation; restoration would resurrect stale owners.
-    let (current_record, _) = match history::record_with_custody(root, &current) {
-        Ok(result) => result,
+    let current_record = match history::current_record(root) {
+        Ok(record) => record,
         Err(error) => return error,
     };
     if current_record.ownership_digest != destination_record.ownership_digest {
@@ -330,6 +401,15 @@ pub fn apply(
                 )
             }
         }
+    }
+    // Mandatory dependency closure (finding 13): the restored handlers
+    // import the destination's qualified custom bindings and bind the
+    // locked adapter entry, so those dependencies must still exist with
+    // their exact pinned bytes before any restoration authority exists.
+    // The evidence comes from the retained plan/coverage objects, never
+    // from caller input.
+    if let Err(error) = check_dependency_closure(root, &destination_record, authority) {
+        return error;
     }
     // The baseline of every touched path is the committed current bytes:
     // restore and delete targets alike are revalidated before any plan
@@ -392,6 +472,10 @@ pub fn apply(
         for op in &plan.restore {
             check_baseline(root, &baseline, &op.path, true)?;
         }
+        // The dependency closure is revalidated under the mutation lock
+        // (finding 13): a racer that deleted or edited the adapter entry
+        // or a qualified binding after the preflight cannot win.
+        check_dependency_closure(root, &destination_record, authority)?;
         staged(root, &plan, &bytes)
     })();
     drop(guard);
@@ -414,6 +498,11 @@ fn staged(
     bytes: &[(&RestoreOp, Vec<u8>)],
 ) -> Result<(), DomainResult> {
     let transaction_id = history::transaction_id(root, &plan.plan_digest)?;
+    // The exact pre-transaction public manifest, pinned before anything
+    // moves (findings 10 and 11): recovery restores these bytes when the
+    // rollback journal is abandoned.
+    let before_manifest = fs::read_file(root, super::custody::MANIFEST_LOGICAL)
+        .map_err(|_| invalid("restore-manifest"))?;
     let mut transaction = Transaction {
         schema_version: super::header("managed-transaction").0,
         identity: super::header("managed-transaction").1,
@@ -424,7 +513,10 @@ fn staged(
         generation_digest: State::known(GenerationDigest {
             generation_digest: plan.destination_generation_digest.clone(),
         }),
-        before_manifest_digest: State::Absent,
+        before_manifest_digest: match &before_manifest {
+            Some(manifest) => State::known(history::write_object(root, manifest)?),
+            None => State::Absent,
+        },
         after_manifest_digest: State::known(plan.manifest_digest.clone()),
         pending: Vec::new(),
         affected_files: plan
@@ -437,6 +529,13 @@ fn staged(
         before_digest: State::Absent,
     };
     transaction.affected_files.sort();
+    // Retain the reviewed rollback intent before any mutation (finding 5):
+    // recovery anchors a rollback journal's pending moves to these exact
+    // reviewed restore/delete bounds.
+    history::write_object(
+        root,
+        &serde_json::to_vec_pretty(plan).expect("typed rollback plan"),
+    )?;
     let mut pending: Vec<Pending> = bytes
         .iter()
         .map(|(op, _)| Pending {
@@ -448,6 +547,12 @@ fn staged(
         path: op.path.clone(),
         op: PendingOp::Delete,
     }));
+    // The governed manifest move is part of the transaction (finding 11):
+    // recovery converges it from the pinned before/after evidence.
+    pending.push(Pending {
+        path: super::custody::MANIFEST_LOGICAL.to_owned(),
+        op: PendingOp::Publish,
+    });
     pending.sort_by(|left, right| (&left.path, &left.op).cmp(&(&right.path, &right.op)));
     transaction.pending = pending;
     transaction.state = TransactionState::Restoring;
@@ -475,16 +580,17 @@ fn staged(
             }
         }
     }
-    history::write_current(root, &plan.destination_generation_digest)?;
     // The retained governed manifest of the destination generation joins
-    // the restoration (finding 9): the public ownership statement must
-    // describe the restored bytes, not the superseded generation. The
-    // exact bytes come from the destination's retained snapshot, already
-    // digest-verified when the plan was built.
+    // the restoration BEFORE the custody pointer moves (finding 11): the
+    // public ownership statement must describe the restored bytes at every
+    // instant the committed pointer names them, and the retained bytes are
+    // re-verified against the plan's manifest pin at execution. A crash
+    // after the manifest restore but before the pointer commit is a
+    // completable journal; a crash before the manifest restore converges
+    // back to the committed state. The restore goes through the confined
+    // staging capability (finding 9), never a raw truncate-and-rename.
     let retained = super::custody::retained_manifest(root, &plan.destination_generation_digest)?;
-    let physical = root.join(super::custody::MANIFEST_LOGICAL);
-    let stage = physical.with_extension("json.tmp");
-    if std::fs::write(&stage, &retained).is_err() || std::fs::rename(&stage, &physical).is_err() {
+    if super::digest(&retained) != plan.manifest_digest {
         transaction.conflict = State::known(super::wire::Conflict {
             path: super::custody::MANIFEST_LOGICAL.to_owned(),
             reason: "manifest-restore".to_owned(),
@@ -492,6 +598,15 @@ fn staged(
         let _ = history::write_transaction(root, &transaction);
         return Err(invalid("restore-manifest"));
     }
+    if super::custody::restore_manifest_bytes(root, &retained).is_err() {
+        transaction.conflict = State::known(super::wire::Conflict {
+            path: super::custody::MANIFEST_LOGICAL.to_owned(),
+            reason: "manifest-restore".to_owned(),
+        });
+        let _ = history::write_transaction(root, &transaction);
+        return Err(invalid("restore-manifest"));
+    }
+    history::write_current(root, &plan.destination_generation_digest)?;
     transaction.state = TransactionState::Committed;
     match history::write_transaction(root, &transaction) {
         Ok(()) => Ok(()),
@@ -522,8 +637,9 @@ pub fn resolve(
         }
         Err(error) => return error,
     };
-    // The record is trusted only after the content-bound custody checks.
-    let record = match history::record(root, &current) {
+    // The record is trusted only after the content-bound custody checks
+    // and the public-manifest bijection (finding 4).
+    let record = match history::current_record(root) {
         Ok(record) => record,
         Err(error) => return error,
     };

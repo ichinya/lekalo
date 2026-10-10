@@ -37,14 +37,14 @@ fn requirement(id: &str, kind: RequirementKind, support: Support) -> Requirement
                 to: "id".to_owned(),
             },
             Projection {
-                from: "subject".to_owned(),
+                from: "title".to_owned(),
                 to: "title".to_owned(),
             },
         ],
         sample: State::known(Sample {
             input: BTreeMap::from([
                 ("id".to_owned(), Scalar::Text("t-1".to_owned())),
-                ("subject".to_owned(), Scalar::Text("Focus".to_owned())),
+                ("title".to_owned(), Scalar::Text("Focus".to_owned())),
             ]),
             output: BTreeMap::from([
                 ("id".to_owned(), Scalar::Text("t-1".to_owned())),
@@ -184,7 +184,7 @@ fn canonical_renderer_is_byte_stable_and_ordered() {
     assert!(!implementation.contains("20"), "no wall-clock data");
     assert!(implementation
         .contains("export function focusTask(input: FocusTaskInput): FocusTaskOutput"));
-    assert!(implementation.contains("title: input.subject"));
+    assert!(implementation.contains("title: input.title"));
 }
 
 #[test]
@@ -1420,17 +1420,19 @@ fn zero_hash_equivalence_scenarios_are_missing_evidence_never_match() {
         Some(&test_authority()),
     );
     assert_eq!(applied.status(), Status::Valid, "{applied:?}");
-    // The implementation pin is the real recorded inventory; the scenario
-    // and reference pins are zero hashes that resolve to no custody
+    // The implementation pin is the digest of the **live** generated
+    // bytes; the scenario and reference pins are zero hashes that neither
+    // name the retained executable scenario nor resolve to any custody
     // object: the verdict is incomplete evidence, never a match.
     let generation = history::current(&root).expect("custody").expect("gen");
     let record = history::record(&root, &generation).expect("record");
-    let implementation = super::equivalence::implementation_inventory_digest_for_test(
+    let implementation = super::equivalence::live_implementation_digest_for_test(
+        &root,
         &record,
         "planner",
         "node-typescript",
     )
-    .expect("inventory");
+    .expect("live inventory");
     let zero = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
     let evidence = Equivalence {
         schema_version: header("managed-equivalence").0,
