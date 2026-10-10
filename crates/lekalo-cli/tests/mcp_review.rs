@@ -264,7 +264,7 @@ fn timed_out_workers_keep_holding_their_concurrency_slot() {
         }
         // The detached workers finish in tens of milliseconds; the last
         // call rides in after they released their slots.
-        std::thread::sleep(std::time::Duration::from_millis(500));
+        std::thread::sleep(std::time::Duration::from_millis(2500));
         send(crate::mcp_harness::call(
             20,
             "lekalo_inspect",

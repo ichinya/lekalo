@@ -22,3 +22,6 @@ clap.workspace = true
 lekalo-core.workspace = true
 serde = { workspace = true }
 serde_json = { workspace = true, features = ["raw_value"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true
