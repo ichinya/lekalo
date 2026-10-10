@@ -795,11 +795,15 @@ pub(crate) fn disclosed_closure_refusal(
     }
 }
 
-/// The admitted-input digest of one project: the canonical model bytes
-/// plus the raw `lekalo.lock` bytes when present (review r2 F7 — the
-/// snapshot pins the admitted inputs, not only the canonical model, so a
-/// lock edit or a byte drift cannot hide behind an unchanged ref). A load
-/// failure is `None`; the caller fails closed.
+/// The admitted-input digest of one project: the canonical model bytes,
+/// the raw `lekalo.lock` bytes when present, and the derived-bindings
+/// home presence the status checks read (review r2 F7, r3 F6). The
+/// model leg is a *semantic* pin by design: it digests the canonical
+/// model bytes, so a comment-only edit normalizes away and leaves the
+/// ref unchanged while any semantic edit moves it; the lock leg and
+/// the bindings-home leg are admitted-input pins — a lock byte edit or
+/// a generated/removed bindings home cannot hide behind an unchanged
+/// ref. A load failure is `None`; the caller fails closed.
 pub(crate) fn admitted_inputs_for(entry: &super::catalog::ProjectEntry) -> Option<Inputs> {
     let selection = LoadSelection {
         project: Some(entry.selector.clone()),
@@ -824,6 +828,20 @@ pub(crate) fn admitted_inputs_for(entry: &super::catalog::ProjectEntry) -> Optio
         Err(_) => return None,
     };
     inputs.insert("lock:project".to_owned(), lock_digest);
+    // r3 F6: `lekalo_target_status` also reads derived `.lekalo` state —
+    // `bindings.freshness` observes the consumer bindings home — so the
+    // pin covers that presence too: a generated or removed bindings
+    // home between the before/after re-check is a stale snapshot, never
+    // a silently mixed projection. Any non-NotFound metadata failure
+    // fails closed exactly like the lock leg.
+    let bindings_home = entry.root.join(".lekalo").join("consumer").join("bindings");
+    let bindings_digest = match std::fs::symlink_metadata(&bindings_home) {
+        Ok(metadata) if metadata.is_dir() => "present".to_owned(),
+        Ok(_) => "absent".to_owned(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => "absent".to_owned(),
+        Err(_) => return None,
+    };
+    inputs.insert("bindings:consumer-home".to_owned(), bindings_digest);
     Some(inputs)
 }
 
@@ -1139,15 +1157,18 @@ fn project_doctor_panels(result: &DomainResult, selected: &[&str]) -> DomainResu
             .filter(|(name, _)| selected.contains(name))
             .any(|(_, ids)| ids.contains(&id))
     });
-    // The panel verdict follows the status rule: blocked when a check is
-    // blocked, degraded when any check reports, ready otherwise.
+    // The panel verdict follows the status rule the doctor itself uses
+    // for `status` reports (ADR-0032, `derive_verdict`): blocked ONLY on
+    // a blocked check; every other non-ok state — degraded or unknown —
+    // degrades (r3 F3: `unknown` is a degradation for a status
+    // projection, never a block, so a panel can never report a verdict
+    // the full status engine would not produce).
     let verdict = checks.iter().fold("ready", |current, check| {
         let state = check.get("state").and_then(Value::as_str).unwrap_or("ok");
         match (current, state) {
             (_, "blocked") => "blocked",
             ("blocked", _) => "blocked",
-            (_, "unknown") => "blocked",
-            (_, "degraded") => "degraded",
+            (_, "unknown") | (_, "degraded") => "degraded",
             (previous, _) => previous,
         }
     });
@@ -1225,11 +1246,16 @@ fn run_trace_export(
         }
         Err(refusal_kind) => {
             let (status, class, detail, set) = match refusal_kind {
+                // r3 F8: an alias/link refusal is a POLICY confinement
+                // denial, not a backend outage — the typed
+                // `mcp.scope-denied` class with the alias-confinement
+                // reason keeps the telemetry truthful (the backend is
+                // available; the read was refused).
                 read::ReadRefusal::Link => (
-                    "unavailable",
-                    "backend-unavailable",
-                    "mcp.backend-unavailable",
-                    lekalo_core::mcp::diagnostic::backend_unavailable_set("confinement.no-follow"),
+                    "denied",
+                    "scope-denied",
+                    "mcp.scope-denied",
+                    lekalo_core::mcp::diagnostic::scope_denied_set("manifest", "alias-confinement"),
                 ),
                 _ => (
                     "invalid",
@@ -1388,5 +1414,59 @@ mod tests {
             assert_eq!(value["status"], "denied");
             assert_eq!(value["diagnostics"][0]["registry_version"], "0.8.0");
         }
+    }
+
+    #[test]
+    fn panel_verdicts_follow_the_adr0032_status_rule_exactly() {
+        // r3 F3 probe: `unknown` is a DEGRADATION for a status
+        // projection, never a block — the panel verdict must be a value
+        // the full status engine (`derive_verdict` for `Status` reports)
+        // could produce for the same check set, never a contradicting
+        // one.
+        let status = |checks: Value| {
+            DomainResult::receipt(
+                serde_json::json!({"verdict": "degraded", "checks": checks}).to_string(),
+                "probe".to_owned(),
+            )
+        };
+        // The review's live divergence: [artifacts.drift:unknown,
+        // lock.freshness:degraded] — full status says degraded, the lock
+        // panel must agree.
+        let result = status(json!([
+            {"id": "artifacts.drift", "state": "unknown"},
+            {"id": "lock.freshness", "state": "degraded"}
+        ]));
+        let projected = project_doctor_panels(&result, &["lock"]);
+        let document: Value =
+            serde_json::from_str(&projected.to_json_string()).expect("projected panel");
+        assert_eq!(document["verdict"], json!("degraded"));
+        let ids: Vec<&str> = document["checks"]
+            .as_array()
+            .expect("checks")
+            .iter()
+            .map(|check| check["id"].as_str().expect("id"))
+            .collect();
+        assert_eq!(ids, vec!["artifacts.drift", "lock.freshness"]);
+
+        // A blocked check still blocks, unknown-only still degrades, and
+        // an all-ok panel is ready.
+        let blocked = status(json!([
+            {"id": "artifacts.drift", "state": "unknown"},
+            {"id": "lock.freshness", "state": "blocked"}
+        ]));
+        let projected: Value =
+            serde_json::from_str(&project_doctor_panels(&blocked, &["lock"]).to_json_string())
+                .expect("projected panel");
+        assert_eq!(projected["verdict"], json!("blocked"));
+        let unknown_only = status(json!([{"id": "lock.freshness", "state": "unknown"}]));
+        let projected: Value =
+            serde_json::from_str(&project_doctor_panels(&unknown_only, &["lock"]).to_json_string())
+                .expect("projected panel");
+        assert_eq!(projected["verdict"], json!("degraded"));
+        let ok = status(json!([{"id": "lock.freshness", "state": "ok"}]));
+        let projected: Value =
+            serde_json::from_str(&project_doctor_panels(&ok, &["lock"]).to_json_string())
+                .expect("projected panel");
+        assert_eq!(projected["verdict"], json!("ready"));
     }
 }
