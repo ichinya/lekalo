@@ -96,8 +96,10 @@ module closure leaves the allow-list refuses before reading
 (`mcp.scope-denied`), and full-scope operations (project summaries,
 module lists, graph export, validate, target status, changed impact,
 trace export) refuse under a group instead of fabricating a narrowed
-result. `resources/subscribe` runs the exact read-scope authorization
-before a URI can be watched.
+result. `resources/subscribe` and `resources/unsubscribe` refuse
+(`-32601 subscriptions-not-implemented`): no watcher ships, so an inert
+registration — one the server could never honor — is never acknowledged,
+whatever the identity (review r2 F3/codex 13).
 
 The pure policy refuses traversal, encoded traversal, drive/UNC/URL
 spellings, NUL/ADS, dot segments, and known secret locations before any
@@ -129,17 +131,35 @@ typed `mcp.timeout` tool error while the client is still waiting;
 abandoned workers cannot deliver a late success.
 `notifications/cancelled` identifies the request by `requestId` (the
 legacy `id` spelling is tolerated), suppresses the late result, and
-never gets a reply; the serve loop is sequential, so a cancel is applied
-at the next frame boundary — in-flight calls are not interrupted.
+never gets a reply. A reader thread feeds the dispatcher, so a
+cancellation arriving while a call runs is observed live and its reply
+is suppressed; the registration covers only outstanding ids, so a
+reused id is never poisoned (review r2 F6), and a timed-out or
+cancelled worker keeps holding its slot until it finishes (the bound
+counts real in-flight work, F14). Cooperative mid-run interruption of a
+pure core traversal is deferred (see the deferral record below); the
+deadline and the concurrency bound cap the abandoned work.
 
 Duplicate JSON member names refuse the inbound frame before any map
 insertion (`mcp.duplicate-key`, last-key-wins is never an admission
 path), and a request other than `initialize`/`ping` before
 `notifications/initialized` is refused (`mcp.lifecycle-not-initialized`).
 Only implemented capabilities are advertised: the initialize answer
-reports `resources: {subscribe: false, listChanged: false}` until a
-bounded watcher ships; `resources/subscribe` tracks authorized
-identities only.
+reports `resources: {subscribe: false, listChanged: false}`.
+
+### Deferred against the issue #33 requirement
+
+- **Change notifications** ("change notifications after model update"):
+  the bounded admitted-input watcher, invalidation, and coalesced
+  `notifications/resources/updated` / `list_changed` emissions are
+  deferred. The capability metadata is truthful (`subscribe: false`,
+  `listChanged: false`), `resources/subscribe` refuses instead of
+  acknowledging inert registrations, and the resource `revision` already
+  binds to the admitted-input identity so a later watcher can diff it.
+- **Cooperative mid-run cancellation**: a cancellation is observed live
+  and its reply suppressed, but a pure core traversal is not interrupted
+  mid-computation; the deadline and the concurrency bound cap the
+  abandoned work (the timed-out worker keeps its slot until completion).
 
 ## Diagnostics
 

@@ -2721,7 +2721,7 @@
       "id": "contract:contracts/mcp-resource.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/mcp-resource.schema.v0.8.0.json",
-      "sourceDigest": "sha256:016de2121aec778f05c0bda4bdc4bbf3ea7a3cf0b4c57cc3eefc45b753df5615",
+      "sourceDigest": "sha256:855d08ae2ab62a56f607e656be5ab055ef0315e90c33d4d45d1ceb99dbf40882",
       "owner": "docs/mcp.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2748,7 +2748,7 @@
       "id": "contract:contracts/mcp-tool-context-output.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/mcp-tool-context-output.schema.v0.8.0.json",
-      "sourceDigest": "sha256:3145e96f1c481510b55f2236363f62a2bfa9156f1d8df743f90f83437353fd21",
+      "sourceDigest": "sha256:ce8534d15adce509b8c8b77524cedac1d6239ed10bd0fcc81d3b95e0cc70e869",
       "owner": "docs/mcp.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2766,7 +2766,7 @@
       "id": "contract:contracts/mcp-tool-graph-output.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/mcp-tool-graph-output.schema.v0.8.0.json",
-      "sourceDigest": "sha256:f07088e7400e87509370a2d87e84a1cea48021249e5fe2c6839f54a113cce0ec",
+      "sourceDigest": "sha256:e495cf962b83fc08d344bc78ab1a524b140ae9935076a6e697779a397484422c",
       "owner": "docs/mcp.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2784,7 +2784,7 @@
       "id": "contract:contracts/mcp-tool-impact-output.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/mcp-tool-impact-output.schema.v0.8.0.json",
-      "sourceDigest": "sha256:889fa4044edd21e56ae18c19994c4a98af08ad45692734354e2b572c90340481",
+      "sourceDigest": "sha256:03db670bcf4e8bafa563bbcbf5bc5a9e2334a3284178b0915d9dd950cd338eee",
       "owner": "docs/mcp.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2802,7 +2802,7 @@
       "id": "contract:contracts/mcp-tool-inspect-output.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/mcp-tool-inspect-output.schema.v0.8.0.json",
-      "sourceDigest": "sha256:c8ccf9e06e6d6d3823f6c5773f2ebbad0465f6c207d468cae6bf4f757ac26e8f",
+      "sourceDigest": "sha256:f47397208b2fcf5ea509fb6478cd9b4f563676b726914c09cbb3bc9d2618133b",
       "owner": "docs/mcp.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2820,7 +2820,7 @@
       "id": "contract:contracts/mcp-tool-target-status-output.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/mcp-tool-target-status-output.schema.v0.8.0.json",
-      "sourceDigest": "sha256:0998d95230fdce5ff08b56996aea01c562d90270e72e673261e8f3cce13308cf",
+      "sourceDigest": "sha256:e2e5aa54b972103b2daed8361d50d495923555e82c91a4e6482adad52849f076",
       "owner": "docs/mcp.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2838,7 +2838,7 @@
       "id": "contract:contracts/mcp-tool-trace-export-output.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/mcp-tool-trace-export-output.schema.v0.8.0.json",
-      "sourceDigest": "sha256:c10e64fea8062cae893b659bef1853524861d8db7b65a28f05dd60c18747c32f",
+      "sourceDigest": "sha256:0fb35f7362bf79e49b5fbdcd48cf937cdbdcacba8260ce2db331675dadfc3ff8",
       "owner": "docs/mcp.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2856,7 +2856,7 @@
       "id": "contract:contracts/mcp-tool-validate-output.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/mcp-tool-validate-output.schema.v0.8.0.json",
-      "sourceDigest": "sha256:b3441c9d1cfd335e0d06d4f3b6e87a95c17399c3392681a91a26e2634075ce13",
+      "sourceDigest": "sha256:58ae2255604b91fa47513650052bb9bc9ab37050d4358679cb3df8e583f9ca98",
       "owner": "docs/mcp.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

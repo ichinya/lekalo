@@ -1,5 +1,5 @@
 {
-  "$comment": "Issue #33: registration template for a local read-only Lekalo MCP server in an AI Factory extension manifest. This file is a recipe the host operator copies into the extension's own extension.json (or equivalent registration seam); Lekalo never installs, edits, or negotiates with an extension on its own. The command must resolve to a built lekalo binary on the host running the extension runtime. The cwd is the workspace root and the project selector stays relative to it ('.' for a workspace-root project, a relative path for a nested one): the loader's selection policy refuses absolute selectors, so an absolute ${workspaceRoot} spelling in --project would fail the first tool call with structure.selection-absolute. The resource families below use the opaque served project id 'project' (single-project startup).",
+  "$comment": "Issue #33: registration template for a local read-only Lekalo MCP server in an AI Factory extension manifest. This file is a recipe the host operator copies into the extension's own extension.json (or equivalent registration seam); Lekalo never installs, edits, or negotiates with an extension on its own. The command must resolve to a built lekalo binary on the host running the extension runtime. The cwd is the workspace root and the project selector stays relative to it ('.' for a workspace-root project, a relative path for a nested one): the loader's selection policy refuses absolute selectors, so an absolute ${workspaceRoot} spelling in --project would fail the first tool call with structure.selection-absolute. The resource families below use the opaque served project id 'project' (single-project startup). The capabilities block is truthful: subscribe/listChanged are false — change notifications are deferred (recorded in docs/mcp.md against the issue requirement), and resources/subscribe refuses (-32601) instead of acknowledging an inert registration the server could never honor. The capabilities block is TRUTHFUL: subscribe/listChanged are false — change notifications are deferred (recorded in docs/mcp.md), and resources/subscribe refuses instead of acknowledging an inert registration.",
   "name": "lekalo-mcp",
   "version": "0.8.0",
   "description": "Read-only Lekalo semantic-layer access: inspect, impact, context, graph, validate, target status, and trace export over the pinned MCP stdio profile.",
@@ -31,8 +31,8 @@
     "capabilities": {
       "tools": true,
       "resources": {
-        "subscribe": true,
-        "listChanged": true
+        "subscribe": false,
+        "listChanged": false
       },
       "prompts": false,
       "sampling": false,
