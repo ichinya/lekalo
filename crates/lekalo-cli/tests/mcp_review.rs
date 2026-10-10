@@ -5,7 +5,7 @@
 
 use serde_json::json;
 
-use crate::mcp_harness::{call, frame, lifecycle, ServedRoot};
+use crate::mcp_harness::{call, frame, initialize, lifecycle, ServedRoot};
 
 #[path = "mcp_harness.rs"]
 mod mcp_harness;
@@ -178,9 +178,56 @@ fn an_ancestor_junction_read_refuses_before_any_byte() {
     ));
     let session = root.serve_with_catalog(Some("mcp.local.json"), &frames, &[]);
     let trace = session.tool(10);
-    assert_eq!(trace["status"], "unavailable");
-    assert_eq!(trace["failure"]["failureClass"], "backend-unavailable");
-    assert!(session.stdout.contains("confinement.no-follow"));
+    // r3 F8: a confinement refusal is a POLICY denial, not a backend
+    // outage — the typed scope-denied class with the alias-confinement
+    // reason keeps the telemetry truthful.
+    assert_eq!(trace["status"], "denied");
+    assert_eq!(trace["failure"]["failureClass"], "scope-denied");
+    assert!(session.stdout.contains("alias-confinement"));
+}
+
+#[test]
+fn a_stale_enumeration_cursor_refuses_on_the_methods_own_channel() {
+    // r3 F4 probe: the stale-cursor refusal of `resources/list` is a
+    // parameter this method cannot serve, so it answers with the
+    // protocol's own `-32602` error carrying the typed
+    // `mcp.snapshot-stale` token — never a tools/call-shaped envelope
+    // mislabeled with a tool identity (`lekalo_inspect`), a foreign
+    // schema discriminator, or an `unknown` project scope.
+    let root = ServedRoot::new();
+    let mut frames = lifecycle();
+    frames.push(frame(10, "resources/list", json!({"cursor": "deadbeef"})));
+    frames.push(frame(11, "resources/list", json!({})));
+    let session = root.serve(&frames, &[]);
+    let refusal = session.response(10);
+    assert_eq!(refusal["error"]["code"], json!(-32602));
+    assert_eq!(refusal["error"]["message"], json!("mcp.snapshot-stale"));
+    assert!(
+        refusal.get("result").is_none(),
+        "a method-level refusal never carries a tools/call result shape"
+    );
+    let raw = refusal.to_string();
+    assert!(!raw.contains("lekalo_inspect"), "{raw}");
+    assert!(!raw.contains("unknown"), "{raw}");
+    // A fresh enumeration on the same session still answers normally.
+    let list = session.response(11)["result"]["resources"].clone();
+    assert!(list.as_array().expect("resources").len() >= 4);
+}
+
+#[test]
+fn a_second_initialize_after_the_handshake_is_refused() {
+    // r3 F7 probe: `initialize` is single-shot — after the handshake was
+    // answered and the session unlocked, a second `initialize` gets the
+    // typed lifecycle refusal, never a fresh result.
+    let root = ServedRoot::new();
+    let mut frames = lifecycle();
+    frames.push(initialize(99));
+    frames.push(frame(100, "ping", json!({})));
+    let session = root.serve(&frames, &[]);
+    assert_eq!(session.error_code(99), Some(-32600));
+    assert!(session.stdout.contains("mcp.lifecycle-already-initialized"));
+    // The refused re-initialize does not disturb the live session.
+    assert_eq!(session.response(100)["result"], json!({}));
 }
 
 #[test]

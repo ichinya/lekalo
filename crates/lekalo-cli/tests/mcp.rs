@@ -847,7 +847,9 @@ fn ancestor_junction_reads_refuse_before_any_byte() {
     ));
     let session = root.serve_with_catalog(Some("mcp.local.json"), &frames, &[]);
     let trace = session.tool(10);
-    assert_eq!(trace["status"], "unavailable");
-    assert_eq!(trace["failure"]["failureClass"], "backend-unavailable");
-    assert!(session.stdout.contains("confinement.no-follow"));
+    // r3 F8: the confinement refusal is a policy denial (scope-denied,
+    // alias-confinement), never a mislabeled backend outage.
+    assert_eq!(trace["status"], "denied");
+    assert_eq!(trace["failure"]["failureClass"], "scope-denied");
+    assert!(session.stdout.contains("alias-confinement"));
 }

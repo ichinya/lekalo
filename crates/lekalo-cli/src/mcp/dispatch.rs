@@ -12,7 +12,10 @@
 //! the lifecycle is a real state machine (r2 F14/codex 12: the envelope
 //! must be valid JSON-RPC 2.0, requests and notifications are distinct,
 //! and `notifications/initialized` cannot unlock a session that never
-//! ran `initialize`). A timeout produces a typed bounded tool error while
+//! ran `initialize`). `initialize` itself is single-shot (r3 F7): a
+//! second `initialize` after the handshake was answered is the typed
+//! `-32600` lifecycle refusal, never a fresh result. A timeout produces
+//! a typed bounded tool error while
 //! the client is still waiting; the abandoned worker keeps holding its
 //! concurrency slot until it finishes (F14/F19). A cancellation
 //! notification suppresses the late result and never gets a reply; it is
@@ -359,8 +362,27 @@ fn route(
 ) -> bool {
     match incoming.method.as_str() {
         "initialize" => {
-            *session.handshake.lock().expect("flag") = true;
-            session.writer.send_result(&incoming.id, initialize());
+            // MCP treats `initialize` as single-shot (r3 F7): once the
+            // handshake was answered, a second `initialize` is the typed
+            // lifecycle violation — never a fresh result that resets the
+            // session state under an initialized client.
+            let already_answered = {
+                let mut handshake = session.handshake.lock().expect("flag");
+                let already = *handshake;
+                if !already {
+                    *handshake = true;
+                }
+                already
+            };
+            if already_answered {
+                session.writer.send_error(
+                    &incoming.id,
+                    INVALID_REQUEST,
+                    "mcp.lifecycle-already-initialized",
+                );
+            } else {
+                session.writer.send_result(&incoming.id, initialize());
+            }
         }
         "ping" => {
             session
@@ -374,8 +396,9 @@ fn route(
             session.writer.send_result(&incoming.id, templates_list());
         }
         "resources/list" => {
-            let response = resources_list(session, incoming);
-            session.writer.send_result(&incoming.id, response);
+            if let Some(response) = resources_list(session, incoming) {
+                session.writer.send_result(&incoming.id, response);
+            }
         }
         "tools/call" => {
             tools_call(session, incoming, frame_rx, pending);
@@ -912,7 +935,13 @@ fn enumerate(session: &Session) -> (Vec<String>, String) {
 /// resources/list with the bounded page and the snapshot-bound cursor; a
 /// stale cursor refuses instead of answering. Enumeration discloses only
 /// identities inside the effective launch-group scope (F4, r2 F3).
-fn resources_list(session: &Session, incoming: &Incoming) -> Value {
+/// The stale-cursor refusal is answered on the method's own error
+/// channel — `-32602` carrying the typed `mcp.snapshot-stale` token
+/// (r3 F4) — because it is a parameter of THIS method that cannot be
+/// served: the response never carries a tools/call-shaped envelope
+/// mislabeled with a tool identity, a foreign schema discriminator, or
+/// an `unknown` project scope.
+fn resources_list(session: &Session, incoming: &Incoming) -> Option<Value> {
     let (uris, snapshot) = enumerate(session);
     let requested_cursor = incoming
         .params
@@ -923,17 +952,10 @@ fn resources_list(session: &Session, incoming: &Incoming) -> Value {
         Some(text) => match Cursor::decode(text) {
             Some(cursor) if cursor.snapshot == snapshot => cursor.offset,
             _ => {
-                let set = lekalo_core::mcp::diagnostic::snapshot_stale_set("cursor");
-                let envelope = execution::refusal_envelope(
-                    "lekalo_inspect",
-                    None,
-                    None,
-                    set,
-                    "unavailable",
-                    "snapshot-stale",
-                    "mcp.snapshot-stale",
-                );
-                return tool_result(&incoming.id, &envelope, true);
+                session
+                    .writer
+                    .send_error(&incoming.id, INVALID_PARAMS, "mcp.snapshot-stale");
+                return None;
             }
         },
         None => 0,
@@ -963,7 +985,7 @@ fn resources_list(session: &Session, incoming: &Incoming) -> Value {
         .encode();
         response["nextCursor"] = Value::from(cursor);
     }
-    response
+    Some(response)
 }
 
 fn templates_list() -> Value {
