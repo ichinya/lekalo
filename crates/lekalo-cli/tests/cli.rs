@@ -335,11 +335,15 @@ fn workspace_and_dependency_metadata_preserve_the_two_crate_boundary() {
         .iter()
         .find(|package| package["name"] == "lekalo-cli")
         .expect("CLI package");
+    // Like the core list above, the cfg-gated target-scoped entries
+    // (the Windows `windows-sys` confinement/identity seam) carry a
+    // target and are excluded here — the boundary assertion covers the
+    // platform-independent normal dependency set.
     let mut cli_normal_dependencies = cli["dependencies"]
         .as_array()
         .expect("CLI dependencies")
         .iter()
-        .filter(|dependency| dependency["kind"].is_null())
+        .filter(|dependency| dependency["kind"].is_null() && dependency["target"].is_null())
         .map(|dependency| dependency["name"].as_str().expect("dependency name"))
         .collect::<Vec<_>>();
     cli_normal_dependencies.sort_unstable();
