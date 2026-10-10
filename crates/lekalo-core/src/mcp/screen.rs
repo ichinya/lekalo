@@ -4,7 +4,13 @@
 //! The MCP surface claims sensitive-output refusal, so an envelope that
 //! would disclose a secret-shaped token refuses with the registered
 //! `mcp.sensitive-output` diagnostic (`LEK-MCP-003`) instead of shipping
-//! the bytes. The pass is deliberately conservative in both directions:
+//! the bytes. The sweep is spelling-canonical (review r3 F1): every
+//! matcher runs over one ASCII-case-folded copy of the envelope, and the
+//! assignment scan admits `_` and `-` as pre-key separators, so
+//! `PASSWORD`, `Password:`, `db_password`, `client_secret`, and
+//! `aws_secret_access_key` are one spelling each — only alphanumeric
+//! adjacency suppresses a key match (`NotAPassword=x` stays safe). The
+//! pass is otherwise deliberately conservative in both directions:
 //! only closed high-confidence secret spellings match (assigned
 //! credential assignments, PEM private-key blocks, bearer schemes), and
 //! diagnostics are never truncated into nonsense — a match refuses the
@@ -18,17 +24,17 @@ use crate::classification::DataKind;
 /// the sweep itself is O(n) with a small closed constant.
 const SCREEN_CHUNK: usize = 64 * 1024;
 
-/// One closed secret-shape matcher: a byte-local needle plus its closed
-/// disclosure reason.
-const NEEDLES: [(&str, &str); 8] = [
-    ("-----BEGIN RSA PRIVATE KEY-----", "private-key-block"),
-    ("-----BEGIN EC PRIVATE KEY-----", "private-key-block"),
-    ("-----BEGIN OPENSSH PRIVATE KEY-----", "private-key-block"),
-    ("-----BEGIN PRIVATE KEY-----", "private-key-block"),
-    ("-----BEGIN PGP PRIVATE KEY BLOCK-----", "private-key-block"),
-    ("Authorization:", "credential-header"),
+/// One closed secret-shape matcher: a byte-local needle (spelled in
+/// lowercase — the sweep matches over the ASCII-folded envelope, r3 F1)
+/// plus its closed disclosure reason.
+const NEEDLES: [(&str, &str); 7] = [
+    ("-----begin rsa private key-----", "private-key-block"),
+    ("-----begin ec private key-----", "private-key-block"),
+    ("-----begin openssh private key-----", "private-key-block"),
+    ("-----begin private key-----", "private-key-block"),
+    ("-----begin pgp private key block-----", "private-key-block"),
     ("authorization:", "credential-header"),
-    ("Set-Cookie:", "credential-header"),
+    ("set-cookie:", "credential-header"),
 ];
 
 /// The minimum length of an assigned-token value in an assignment
@@ -43,21 +49,25 @@ const ASSIGNED_TOKEN_MIN: usize = 1;
 /// Absolute private-path spellings whose presence in an outgoing envelope
 /// is a disclosure of the host filesystem layout (review r2 F15: a
 /// description carrying `C:/Users/PrivateReview/private.txt` shipped
-/// unscreened). The needles are byte-local, closed, and cover the Windows
-/// drive and user-profile spellings plus the POSIX home roots; the JSON
-/// transport escapes a backslash as `\\`, which the raw envelope scan
-/// still matches through the `:\\` and `\\\\` needles.
-const PRIVATE_PATH_NEEDLES: [&str; 8] = [
-    ":\\Users\\",
-    ":/Users/",
+/// unscreened). The needles are byte-local, closed, lowercase (the sweep
+/// matches the folded envelope, so `C:/USERS/` and `c:\Users\` are one
+/// spelling), and cover the Windows drive and user-profile spellings
+/// plus the POSIX home roots; the JSON transport escapes a backslash as
+/// `\\`, which the raw envelope scan still matches through the
+/// single- and doubled-separator needles. The POSIX needles `/home/`
+/// and `/root/` deliberately match ANY `home`/`root` path segment, not
+/// only a leading absolute one (review r3 F9): `app/home/page.tsx`
+/// refuses too. That availability collateral is the accepted trade-off —
+/// the screen fails closed, and a relative segment spelling can never
+/// be proven harmless from bytes alone.
+const PRIVATE_PATH_NEEDLES: [&str; 5] = [
     ":\\users\\",
     ":/users/",
     "/home/",
     "/root/",
     // The JSON-escaped backslash spelling (`C:\\Users\\alice` on the
     // wire) carries doubled separators; the raw envelope scan matches it
-    // through these doubled-separator needles.
-    ":\\\\Users\\\\",
+    // through this doubled-separator needle.
     ":\\\\users\\\\",
 ];
 
@@ -83,17 +93,21 @@ pub fn screen_envelope(envelope: &str) -> Result<(), &'static str> {
 }
 
 fn screen_bytes(bytes: &[u8]) -> Result<(), &'static str> {
+    // One ASCII-folded copy carries every matcher (r3 F1): folding is a
+    // byte-local, length-preserving map, so the chunked sweep and the
+    // assignment scan stay byte-aligned with the original envelope.
+    let folded: Vec<u8> = bytes.iter().map(|byte| byte.to_ascii_lowercase()).collect();
     for (needle, reason) in NEEDLES {
-        if contains(bytes, needle.as_bytes()) {
+        if contains(&folded, needle.as_bytes()) {
             return Err(reason);
         }
     }
     for needle in PRIVATE_PATH_NEEDLES {
-        if contains(bytes, needle.as_bytes()) {
+        if contains(&folded, needle.as_bytes()) {
             return Err("private-absolute-path");
         }
     }
-    if contains_assigned_token(bytes) {
+    if contains_assigned_token(&folded) {
         return Err("assigned-credential");
     }
     Ok(())
@@ -110,20 +124,38 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
 
 /// The assignment spellings whose non-empty value of at least
 /// [`ASSIGNED_TOKEN_MIN`] characters counts as an assigned credential.
-const ASSIGNMENT_KEYS: [&str; 9] = [
+/// Spelled in lowercase: the scan runs over the folded envelope (r3 F1).
+/// The compound forms are listed explicitly where the separator does
+/// not directly follow the suffix key (`aws_secret_access_key`'s
+/// `secret` is followed by `_access_key`), and matched anyway through
+/// suffix keys where it does (`db_password`, `client_secret`,
+/// `api_token`) because `_` and `-` are admitted pre-key separators —
+/// only alphanumeric adjacency suppresses a match.
+const ASSIGNMENT_KEYS: [&str; 20] = [
     "password",
     "passwd",
+    "passphrase",
     "secret",
+    "secret_key",
     "token",
     "api_key",
     "apikey",
+    "api_token",
     "access_token",
     "refresh_token",
+    "id_token",
+    "session_token",
     "private_key",
+    "privatekey",
+    "credentials",
+    "access_key",
+    "client_secret",
+    "db_password",
+    "aws_secret_access_key",
 ];
 
-fn contains_assigned_token(bytes: &[u8]) -> bool {
-    let text = match std::str::from_utf8(bytes) {
+fn contains_assigned_token(folded: &[u8]) -> bool {
+    let text = match std::str::from_utf8(folded) {
         Ok(text) => text,
         Err(_) => return false,
     };
@@ -133,13 +165,17 @@ fn contains_assigned_token(bytes: &[u8]) -> bool {
             let key_start = from + position;
             let mut cursor = key_start + key.len();
             from = cursor;
-            // The match must start at a key boundary: the byte before is
-            // not an identifier character (so `NotAPasswordValue` never
-            // matches) and, in the JSON spelling, the key is quoted.
+            // The match must start at a key boundary (r3 F1): only
+            // alphanumeric adjacency suppresses the match — `_` and `-`
+            // are admitted pre-key separators, so `db_password`,
+            // `client_secret`, and `x-password` all match their key,
+            // while `NotAPasswordValue` never matches (`A` is
+            // alphanumeric). In the JSON spelling the byte before the
+            // key is the opening quote, which is not alphanumeric and
+            // therefore admits the match.
             if key_start > 0 {
-                let before = text.as_bytes()[key_start - 1] as char;
-                let quoted_key = before == '"';
-                if !quoted_key && (before.is_ascii_alphanumeric() || before == '_') {
+                let before = text.as_bytes()[key_start - 1];
+                if before.is_ascii_alphanumeric() {
                     continue;
                 }
             }
@@ -234,6 +270,11 @@ mod tests {
             screen_envelope("-----BEGIN OPENSSH PRIVATE KEY-----"),
             Err("private-key-block")
         );
+        // The folded sweep also catches mixed and lowercased markers.
+        assert_eq!(
+            screen_envelope("-----begin private key-----"),
+            Err("private-key-block")
+        );
     }
 
     #[test]
@@ -291,6 +332,13 @@ mod tests {
             screen_envelope("{\"note\":\"/home/alice/notes.txt\"}"),
             Err("private-absolute-path")
         );
+        // r3 F1: the private-path needles fold case, so the uppercase
+        // Windows profile spellings are one spelling with the lowercase
+        // ones.
+        assert_eq!(
+            screen_envelope("{\"note\":\"C:/USERS/PrivateReview/private.txt\"}"),
+            Err("private-absolute-path")
+        );
         // Relative project paths and prose never match.
         assert_eq!(
             screen_envelope("{\"path\":\"lekalo/modules/planner/commands.yaml\"}"),
@@ -307,6 +355,79 @@ mod tests {
         assert_eq!(
             screen_envelope("{\"header\":\"Authorization: Bearer xyz\"}"),
             Err("credential-header")
+        );
+        // r3 F1: the header needles fold case — every casing of the
+        // credential headers is one spelling.
+        assert_eq!(
+            screen_envelope("{\"header\":\"AUTHORIZATION: Bearer abc\"}"),
+            Err("credential-header")
+        );
+        assert_eq!(
+            screen_envelope("Authorization: Bearer abc"),
+            Err("credential-header")
+        );
+        assert_eq!(
+            screen_envelope("{\"cookie\":\"Set-Cookie: session=abc\"}"),
+            Err("credential-header")
+        );
+    }
+
+    #[test]
+    fn underscore_joined_and_case_variant_credential_keys_refuse() {
+        // r3 F1: the dominant real-world credential spellings —
+        // `_`-joined compound keys and any non-lowercase casing — are
+        // one spelling each under the folded, separator-canonical scan.
+        for envelope in [
+            "db_password=hunter2hunter2",
+            "client_secret=topsecretvalue",
+            "aws_secret_access_key=AKIAIOSFODNN7EXAMPLE",
+            "api_token=tok_live_12345",
+            "PASSWORD=hunter2hunter2",
+            "Password: hunter2hunter2",
+            "SECRET = hunter2hunter2",
+            "DATABASE_PASSWORD = hunter2hunter2",
+            "{\"AWS_SECRET_ACCESS_KEY\":\"AKIAIOSFODNN7EXAMPLE\"}",
+            "{\"CLIENT_SECRET\":\"topsecretvalue\"}",
+            "{\"db_password\":\"hunter2hunter2\"}",
+            "x-api-token: tok_live_12345",
+        ] {
+            assert_eq!(
+                screen_envelope(envelope),
+                Err("assigned-credential"),
+                "the credential spelling must refuse: {envelope}"
+            );
+        }
+        // The safe adjacency class stays safe: alphanumeric adjacency
+        // still suppresses the key match, whatever the casing.
+        assert_eq!(screen_envelope("NotAPassword=x"), Ok(()));
+        assert_eq!(screen_envelope("NOTAPASSWORD=x"), Ok(()));
+        assert_eq!(screen_envelope("{\"field\":\"NOTAPASSWORDVALUE\"}"), Ok(()));
+        assert_eq!(
+            screen_envelope("{\"field\":\"the Password field\"}"),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn the_posix_home_needle_over_matches_by_design() {
+        // r3 F9, recorded: the bare `/home/` (and `/root/`) needle
+        // matches ANY path segment, so benign relative content like
+        // `app/home/page.tsx` refuses as `private-absolute-path`. The
+        // over-match is the accepted fail-closed trade-off — a relative
+        // `home` segment cannot be proven harmless from bytes alone —
+        // and this test pins it as deliberate behavior, not an accident.
+        assert_eq!(
+            screen_envelope("{\"note\":\"files live under app/home/page.tsx\"}"),
+            Err("private-absolute-path")
+        );
+        assert_eq!(
+            screen_envelope("{\"note\":\"see /root/setup.log\"}"),
+            Err("private-absolute-path")
+        );
+        // Ordinary relative project paths without those segments ship.
+        assert_eq!(
+            screen_envelope("{\"path\":\"lekalo/modules/planner/commands.yaml\"}"),
+            Ok(())
         );
     }
 
