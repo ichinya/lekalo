@@ -2894,10 +2894,37 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/portability-adapter-snapshot.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/portability-adapter-snapshot.schema.v0.8.0.json",
+      "sourceDigest": "sha256:d2d98789ceae2ac181cf9cfd188a8a2c0aad54fdc72937b172d3b8976c5bad04",
+      "owner": "docs/portability.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/portability-evidence.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/portability-evidence.schema.v0.8.0.json",
-      "sourceDigest": "sha256:146705efa7b8aae7e9f9cf0ec03c737a2a4fde9380775bce24aad9cd9455ab33",
+      "sourceDigest": "sha256:f5a476052ed48137d2446d87f5e951e00bb0aa9bb8bee08fd5d802f99d55ca82",
+      "owner": "docs/portability.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/portability-family.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/portability-family.schema.v0.8.0.json",
+      "sourceDigest": "sha256:f9bdd70c657d34ca9243d642ac4309bf37195812457b8f923188a96ca5694603",
+      "owner": "docs/portability.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/portability-receipt.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/portability-receipt.schema.v0.8.0.json",
+      "sourceDigest": "sha256:7dbf83c63765b6e6bfc2650690634696c7c1412c1d3f7f4ebc3cbd755188bb8e",
       "owner": "docs/portability.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2906,7 +2933,7 @@
       "id": "contract:contracts/portability-recipe.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/portability-recipe.schema.v0.8.0.json",
-      "sourceDigest": "sha256:0ecb324ef84658009d843fb384ba3da280335fe8be0fefbd5f9e158952d924a5",
+      "sourceDigest": "sha256:332aa7a9975a90b772e25b8bc533560023d39a1b946695bee4ef0f32bc331ccf",
       "owner": "docs/portability.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2915,7 +2942,7 @@
       "id": "contract:contracts/portability-recipe.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/portability-recipe.v0.8.0.json",
-      "sourceDigest": "sha256:16cad8eb327daa241290f8b82adc9eb78e9b5fd71785c2d651025f23b0b81de0",
+      "sourceDigest": "sha256:d715766f8daf9410ff63fd31ddd6e9cc07403d5b1767911f2dec5d88bea5cb04",
       "owner": "docs/portability.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2924,7 +2951,7 @@
       "id": "contract:contracts/portability-report.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/portability-report.schema.v0.8.0.json",
-      "sourceDigest": "sha256:16ab49cf66fd9825122a480856756a2f898243469f7a8de5cbd746a511168e91",
+      "sourceDigest": "sha256:f4b25a4c0a84c170b0d7929b932a004b8293935465c80a12cd2f145fe08fabb3",
       "owner": "docs/portability.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
