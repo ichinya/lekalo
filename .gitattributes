@@ -1,3 +1,31 @@
+# Exact-byte contracts, documentation, scripts, and fixtures use LF in every checkout.
+.gitattributes text eol=lf
+*.json text eol=lf
+*.sha256 text eol=lf
+*.md text eol=lf
+*.mjs text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.txt text eol=lf
+# Byte-compared test fixtures must never re-encode on checkout: the
+# observed-mode staleness gate fingerprints the exact working-tree bytes
+# against scan-pinned digests, so any CRLF conversion fails the gate.
+*.ts text eol=lf
+*.php text eol=lf
+
+# The generated adapter artifact embeds vendored license text byte-for-byte
+# (trailing spaces inside the Apache header are upstream content, not errors).
+adapters/node-typescript/adapter.mjs -whitespace
+adapters/php-laravel/adapter.php -whitespace
+
+# Generated Go clients are byte-compared by the client-SDK drift gate:
+# gofmt requires LF, so CRLF checkout conversion would flag the fixture.
+*.go text eol=lf
+
+# Issue #41: the managed lock and every managed fixture are byte-compared
+# custody artifacts (digest pins, plan/record/fixtures), so they must never
+# re-encode on checkout either. Appended; the rules above are predecessor
+# protections and stay verbatim.
 *.lock text eol=lf
 tests/fixtures/managed/planner/lekalo.lock text eol=lf
 tests/fixtures/** text eol=lf
