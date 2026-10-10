@@ -1509,6 +1509,159 @@ fn manifest_posting_budget_is_honored() {
     assert!(codes.contains(&serde_json::Value::from("search.result-limit")));
 }
 
+/// The mandatory producer families (F11) answer with positive probes:
+/// error-contract signatures, diagnostic-set finding cards, and the
+/// artifact-ownership/profile snapshot joins.
+#[test]
+fn producer_families_answer_with_typed_facts() {
+    let (project, _guard) = disposable_project();
+    let run = |args: &[&str]| {
+        let output = lekalo_in(&project, args);
+        assert_eq!(exit_code(&output), 0, "{}", stderr_text(&output));
+        json(&output)
+    };
+    const INPUTS: [&str; 4] = ["--project", ".", "--inputs", "evidence/search-inputs.json"];
+    fn with_inputs<'a>(extra: &[&'a str]) -> Vec<&'a str> {
+        let mut all: Vec<&str> = extra.to_vec();
+        all.extend_from_slice(&INPUTS);
+        all
+    }
+    // Error signatures: the validated registry slice binds operation
+    // errors; `--error` resolves through the typed signatures.
+    let errors = run(&with_inputs(&[
+        "--json",
+        "find",
+        "--error",
+        "planner.store_unavailable",
+    ]));
+    let keys: Vec<&str> = errors["items"]
+        .as_array()
+        .expect("items")
+        .iter()
+        .map(|item| item["card"]["key"].as_str().expect("key"))
+        .collect();
+    assert!(
+        keys.contains(&"def:planner.focus_task"),
+        "error signatures resolve: {keys:?}"
+    );
+    // Error negative: an undeclared error is a valid none.
+    let error_none = run(&with_inputs(&[
+        "--json",
+        "find",
+        "--error",
+        "planner.nonexistent_error",
+    ]));
+    assert_eq!(error_none["status"], "valid");
+    assert_eq!(error_none["selection"], "none");
+    // Diagnostic set: finding cards with the rule identity and severity
+    // subkind, joined to their subjects.
+    let diagnostics = run(&with_inputs(&["--json", "find", "--kind", "diagnostic"]));
+    let items = diagnostics["items"].as_array().expect("items");
+    assert!(items.len() >= 2, "finding cards are projected");
+    assert!(items
+        .iter()
+        .all(|item| item["card"]["kind"] == "diagnostic"));
+    let by_rule = run(&with_inputs(&[
+        "--json",
+        "find",
+        "--diagnostic",
+        "planner.focus-concurrency",
+    ]));
+    assert_eq!(by_rule["selection"], "unique");
+    assert_eq!(
+        by_rule["items"][0]["card"]["id"],
+        "planner.focus-concurrency"
+    );
+    // Profile membership: a recorded fact, never a conformance claim.
+    let profile = run(&with_inputs(&[
+        "--json",
+        "find",
+        "--profile",
+        "focus-critical",
+    ]));
+    let keys: Vec<&str> = profile["items"]
+        .as_array()
+        .expect("items")
+        .iter()
+        .map(|item| item["card"]["key"].as_str().expect("key"))
+        .collect();
+    assert!(keys.contains(&"def:planner.focus_task"), "{keys:?}");
+    assert!(keys.contains(&"def:planner.refocus_task"), "{keys:?}");
+    let profile_none = run(&with_inputs(&[
+        "--json",
+        "find",
+        "--profile",
+        "no-such-profile",
+    ]));
+    assert_eq!(profile_none["status"], "valid");
+    assert_eq!(profile_none["selection"], "none");
+    // Artifact ownership: the artifact-owned definition answers the
+    // ownership filter through producer facts.
+    let ownership = run(&with_inputs(&["--json", "find", "--ownership", "project"]));
+    let keys: Vec<&str> = ownership["items"]
+        .as_array()
+        .expect("items")
+        .iter()
+        .map(|item| item["card"]["key"].as_str().expect("key"))
+        .collect();
+    assert!(keys.contains(&"def:planner.focus_task"), "{keys:?}");
+}
+
+/// The diagnostic-set wire decodes closed: an unknown member and a
+/// forged envelope count are typed refusals, never skipped findings.
+#[test]
+fn diagnostic_set_wire_decodes_closed() {
+    let (project, _guard) = disposable_project();
+    let original = std::fs::read_to_string(project.join("evidence/diagnostics.json"))
+        .expect("read diagnostics");
+    for tampered in [
+        original.replacen(
+            "\"severity\": \"warning\"",
+            "\"severity\": \"warning\",\n      \"unfamiliar\": true",
+            1,
+        ),
+        original.replacen("\"findingCount\": 2", "\"findingCount\": 99", 1),
+    ] {
+        std::fs::write(project.join("evidence/diagnostics.json"), &tampered)
+            .expect("write hostile diagnostics");
+        let output = lekalo_in(
+            &project,
+            &[
+                "--json",
+                "find",
+                "--kind",
+                "command",
+                "--project",
+                ".",
+                "--inputs",
+                "evidence/search-inputs.json",
+            ],
+        );
+        assert_eq!(exit_code(&output), 1);
+        assert_eq!(
+            json(&output)["diagnostics"][0]["id"],
+            "search.input-invalid"
+        );
+    }
+    // Restore and confirm the honest document admits again.
+    std::fs::write(project.join("evidence/diagnostics.json"), original)
+        .expect("restore diagnostics");
+    let output = lekalo_in(
+        &project,
+        &[
+            "--json",
+            "find",
+            "--kind",
+            "diagnostic",
+            "--project",
+            ".",
+            "--inputs",
+            "evidence/search-inputs.json",
+        ],
+    );
+    assert_eq!(exit_code(&output), 0, "{}", stderr_text(&output));
+}
+
 /// The tracked fixture never regains cache residue: this test reads it
 /// only under `--no-cache` and asserts the cache home stays absent.
 #[test]

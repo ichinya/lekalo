@@ -3177,7 +3177,7 @@
       "id": "contract:contracts/search-index.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/search-index.schema.v0.8.0.json",
-      "sourceDigest": "sha256:5375c75c2574a0d80c9d715c234c7acad9d3303745a99afc9193abe8765239bc",
+      "sourceDigest": "sha256:b677e1c21e2ec3592456347aa28083a05ca7e7ade945a50cd0de50eb8a868d3c",
       "owner": "docs/semantic-search.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3186,7 +3186,7 @@
       "id": "contract:contracts/search-inputs.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/search-inputs.schema.v0.8.0.json",
-      "sourceDigest": "sha256:bbc627b379186eb46d49f7eef9205b1a76f5aead4c6212d0d1645aeb3bcba8ac",
+      "sourceDigest": "sha256:1e898f357872071a3460445ef89cfc5f044a5ceaf3c300b762603f2aaafe8192",
       "owner": "docs/semantic-search.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

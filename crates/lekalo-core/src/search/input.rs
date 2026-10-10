@@ -68,13 +68,29 @@ pub enum ProducerKind {
     Effects,
     /// The AI-lint waiver set (`lekalo/ai-lint-waivers/v0.6.5`).
     Waivers,
+    /// The requirements attachment (`lekalo/requirements/v0.2.16`),
+    /// decoded by its own published typed constructor.
+    Requirements,
+    /// The error-contract registry slice (`lekalo/error-registry/v0.2.16`),
+    /// decoded and project-validated by the #62 owners' constructors.
+    ErrorContract,
+    /// The closed search diagnostic-set snapshot
+    /// (`lekalo/search-diagnostics/v0.8.0`).
+    Diagnostics,
+    /// The closed artifact-ownership/profile snapshot
+    /// (`lekalo/search-ownership-profile/v0.8.0`).
+    OwnershipProfile,
 }
 
 impl ProducerKind {
     /// The closed kinds in canonical byte order.
-    pub const KEYS: [Self; 4] = [
+    pub const KEYS: [Self; 8] = [
+        Self::Diagnostics,
+        Self::ErrorContract,
         Self::Effects,
         Self::ObservedIndex,
+        Self::OwnershipProfile,
+        Self::Requirements,
         Self::Trace,
         Self::Waivers,
     ];
@@ -86,6 +102,10 @@ impl ProducerKind {
             Self::ObservedIndex => "observed-index",
             Self::Effects => "effects",
             Self::Waivers => "waivers",
+            Self::Requirements => "requirements",
+            Self::ErrorContract => "error-contract",
+            Self::Diagnostics => "diagnostics",
+            Self::OwnershipProfile => "ownership-profile",
         }
     }
 
@@ -101,6 +121,10 @@ impl ProducerKind {
             Self::ObservedIndex => "dev.lekalo.observed-index@0.2.16",
             Self::Effects => "dev.lekalo.effects@0.2.16",
             Self::Waivers => "dev.lekalo.ai-lint-waivers@0.6.5",
+            Self::Requirements => "dev.lekalo.requirements@0.2.16",
+            Self::ErrorContract => "dev.lekalo.error-registry@0.2.16",
+            Self::Diagnostics => "dev.lekalo.search-diagnostics@0.8.0",
+            Self::OwnershipProfile => "dev.lekalo.search-ownership-profile@0.8.0",
         }
     }
 }

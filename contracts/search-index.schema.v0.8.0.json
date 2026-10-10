@@ -100,9 +100,13 @@
       "properties": {
         "kind": {
           "enum": [
-            "trace",
-            "observed-index",
+            "diagnostics",
+            "error-contract",
             "effects",
+            "observed-index",
+            "ownership-profile",
+            "requirements",
+            "trace",
             "waivers"
           ]
         },

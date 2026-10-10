@@ -45,6 +45,37 @@ are stale and visible only under `--include-stale`). Missing optional
 producers report `unknown` coverage — unknown is never zero, and
 absence of evidence is never proof of absence.
 
+## Producer families
+
+Eight closed typed producer kinds are admitted (the manifest pins each
+one's contract identity and optional bytes digest; every producer byte
+is read once, confined and bounded):
+
+- `trace` — the neutral trace manifest, joined through the nodes'
+  typed fields with transitive requirement/scenario/gate refs.
+- `observed-index` — recorded native bindings and candidate sets.
+- `effects` — the detected-effect evidence envelope, decoded through
+  the published closed `lekalo/effects/v0.2.16` grammar with canonical
+  subjects validated against the typed IR.
+- `waivers` — the governance waiver store.
+- `requirements` — the requirements attachment
+  (`lekalo/requirements/v0.2.16`), decoded by its own published typed
+  constructor; references land as provider-qualified requirement cards
+  plus typed refs and relation witnesses on the linked symbols.
+- `error-contract` — an error-registry slice
+  (`lekalo/error-registry/v0.2.16`, canonical bytes), decoded and
+  project-validated by the #62 constructors; operation bindings land
+  as typed error-role signatures so `--error` resolves.
+- `diagnostics` — the closed search diagnostic-set snapshot
+  (`lekalo/search-diagnostics/v0.8.0`): admitted findings project as
+  diagnostic cards (rule identity, severity subkind, `evidences`
+  relation onto the subject); resolved findings stay visibly stale.
+- `ownership-profile` — the closed artifact-ownership/profile snapshot
+  (`lekalo/search-ownership-profile/v0.8.0`): artifact ownership fills
+  the declared ownership of definitions bound under the artifact path
+  (Model declarations always win), and profile memberships land as
+  typed `profile-member` relations — membership, never conformance.
+
 ## Commands
 
 ```text

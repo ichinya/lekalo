@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "lekalo/search-ownership-profile/v0.8.0",
+  "identity": "dev.lekalo.search-ownership-profile@0.8.0",
+  "project": "planner",
+  "metadata": {
+    "artifactCount": 2,
+    "profileCount": 1
+  },
+  "artifacts": [
+    {
+      "path": "apps/api/src/planner/focus-task.ts",
+      "ownership": "project"
+    },
+    {
+      "path": "apps/api/src/planner/status.ts",
+      "ownership": "module"
+    }
+  ],
+  "profiles": [
+    {
+      "id": "focus-critical",
+      "members": [
+        "planner.focus_task",
+        "planner.refocus_task"
+      ]
+    }
+  ]
+}

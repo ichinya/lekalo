@@ -466,6 +466,117 @@ const pageOne = run([
 const next = pageOne.json().page.next ?? "";
 ok("privacy-cursor-opaque", next.length > 0 && !next.includes("planner") && !next.includes("focus"), "cursor carries no subjects");
 
+
+// ---------------------------------------------------------------------------
+// F11: the mandatory producer families answer with positive and negative
+// probes, and their closed decoders refuse hostile documents.
+// ---------------------------------------------------------------------------
+const errorBound = run([
+  "--json", "find", "--error", "planner.store_unavailable",
+  "--project", ".", "--inputs", inputsRelative,
+]);
+ok(
+  "f11-error-signatures",
+  errorBound.json().selection === "multiple" &&
+    errorBound.json().items.map((item) => item.card.key).includes("def:planner.focus_task"),
+  errorBound.json().items.map((item) => item.card.key),
+);
+const errorNegative = run([
+  "--json", "find", "--error", "planner.nonexistent_error",
+  "--project", ".", "--inputs", inputsRelative,
+]);
+ok(
+  "f11-error-negative",
+  errorNegative.json().status === "valid" && errorNegative.json().selection === "none",
+  errorNegative.json().selection,
+);
+const diagnostics = run([
+  "--json", "find", "--kind", "diagnostic", "--project", ".", "--inputs", inputsRelative,
+]);
+ok(
+  "f11-diagnostic-cards",
+  diagnostics.json().selection === "multiple" &&
+    diagnostics.json().items.every((item) => item.card.kind === "diagnostic") &&
+    diagnostics.json().items.length >= 2,
+  diagnostics.json().items.map((item) => item.card.key),
+);
+const diagnosticRule = run([
+  "--json", "find", "--diagnostic", "planner.focus-concurrency",
+  "--project", ".", "--inputs", inputsRelative,
+]);
+ok(
+  "f11-diagnostic-rule",
+  diagnosticRule.json().selection === "unique" &&
+    diagnosticRule.json().items[0].card.id === "planner.focus-concurrency",
+  diagnosticRule.json().selection,
+);
+const profile = run([
+  "--json", "find", "--profile", "focus-critical",
+  "--project", ".", "--inputs", inputsRelative,
+]);
+const profileKeys = profile.json().items.map((item) => item.card.key);
+ok(
+  "f11-profile-membership",
+  profile.json().selection === "multiple" &&
+    profileKeys.includes("def:planner.focus_task") &&
+    profileKeys.includes("def:planner.refocus_task"),
+  profileKeys,
+);
+const profileNegative = run([
+  "--json", "find", "--profile", "no-such-profile",
+  "--project", ".", "--inputs", inputsRelative,
+]);
+ok(
+  "f11-profile-negative",
+  profileNegative.json().status === "valid" && profileNegative.json().selection === "none",
+  profileNegative.json().selection,
+);
+const ownership = run([
+  "--json", "find", "--ownership", "project",
+  "--project", ".", "--inputs", inputsRelative,
+]);
+ok(
+  "f11-ownership-facts",
+  ownership.json().selection !== "none" &&
+    ownership.json().items.map((item) => item.card.key).includes("def:planner.focus_task"),
+  ownership.json().items.map((item) => item.card.key),
+);
+
+// Closed decoder refusals for the search-scoped diagnostic-set wire: an
+// unknown member and a forged count both refuse with registered rules.
+const baseManifest = JSON.parse(readFileSync(join(project, inputsRelative), "utf8"));
+const diagDoc = JSON.parse(readFileSync(join(project, "evidence/diagnostics.json"), "utf8"));
+const writeManifestFor = (doc, name) => {
+  writeFileSync(join(project, "evidence", name), JSON.stringify(doc));
+  const manifest = JSON.parse(JSON.stringify(baseManifest));
+  manifest.inputs = [{ kind: "diagnostics", path: `evidence/${name}`, identity: "dev.lekalo.search-diagnostics@0.8.0" }];
+  writeFileSync(join(project, "evidence/probe-manifest.json"), JSON.stringify(manifest));
+  return "evidence/probe-manifest.json";
+};
+const unknownMember = JSON.parse(JSON.stringify(diagDoc));
+unknownMember.findings[0].unfamiliar = true;
+let hostileManifest = writeManifestFor(unknownMember, "diag-hostile.json");
+const refusedUnknown = run([
+  "--json", "find", "--kind", "command", "--project", ".", "--inputs", hostileManifest,
+]);
+ok(
+  "f11-diagnostics-closed-decode",
+  refusedUnknown.code === 1 && refusedUnknown.json().diagnostics[0].id === "search.input-invalid",
+  refusedUnknown.json().diagnostics[0]?.data?.detail,
+);
+const forgedCount = JSON.parse(JSON.stringify(diagDoc));
+forgedCount.metadata.findingCount = 99;
+hostileManifest = writeManifestFor(forgedCount, "diag-hostile.json");
+const refusedForged = run([
+  "--json", "find", "--kind", "command", "--project", ".", "--inputs", hostileManifest,
+]);
+ok(
+  "f11-diagnostics-forged-count",
+  refusedForged.code === 1 && refusedForged.json().diagnostics[0].id === "search.input-invalid",
+  refusedForged.json().diagnostics[0]?.data?.detail,
+);
+rmSync(join(project, "evidence/probe-manifest.json"), { force: true });
+rmSync(join(project, "evidence/diag-hostile.json"), { force: true });
 process.stdout.write(
   `${JSON.stringify({ ok: true, checks, project: "disposable temp copy" }, null, 2)}\n`,
 );

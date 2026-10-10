@@ -211,15 +211,14 @@
       "id": "diagnostic-negative",
       "family": "diagnostic-waiver",
       "negative": true,
-      "question": "Which admitted diagnostic findings exist for this project?",
+      "question": "Which admitted findings exist for the rule planner.no-such-rule?",
       "command": "find",
       "flags": [
-        "--kind diagnostic"
+        "--diagnostic planner.no-such-rule"
       ],
       "relevant": [],
       "expectedSelection": "none",
       "expectedReturned": 0,
-      "expectCoverageWarning": "diagnostics",
       "rgPattern": "lekako-no-such-diagnostic-canary",
       "rgNoHitNegative": true,
       "rgRelevantFiles": []

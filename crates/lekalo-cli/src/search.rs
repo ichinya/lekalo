@@ -11,6 +11,7 @@ use clap::{Args, Subcommand};
 use lekalo_core::search::{
     add_card, attach_effects, project_ir, Card, CardKind, Completeness, Confidence, FilterSet,
     Freshness, NativeBinding, Projection, QueryRequest, SearchIndex, SearchInputs, SearchStore,
+    SignatureRef,
 };
 use lekalo_core::DomainResult;
 use std::io::Read as _;
@@ -1147,6 +1148,311 @@ fn decode_waivers_store(
     Ok(store)
 }
 
+/// The typed rows of the closed search diagnostic-set snapshot
+/// (`lekalo/search-diagnostics/v0.8.0`).
+struct DiagnosticsEnvelope {
+    project: String,
+    findings: Vec<DiagnosticFinding>,
+}
+
+/// One closed-decoded admitted diagnostic finding.
+struct DiagnosticFinding {
+    id: String,
+    rule: String,
+    subject: String,
+    severity: String,
+    disposition: String,
+}
+
+/// Decode one diagnostic-set snapshot through its closed grammar:
+/// required members, no unknown members, closed severities and
+/// dispositions, per-member bounds, and the envelope count cross-check.
+/// Any deviation is a typed refusal, never a skipped finding.
+fn decode_diagnostics_envelope(
+    value: &serde_json::Value,
+) -> Result<DiagnosticsEnvelope, DomainResult> {
+    const IDENTITY: &str = "dev.lekalo.search-diagnostics@0.8.0";
+    const SCHEMA: &str = "lekalo/search-diagnostics/v0.8.0";
+    let Some(map) = value.as_object() else {
+        return Err(producer_invalid("producer-malformed", "diagnostics"));
+    };
+    for key in map.keys() {
+        if !matches!(
+            key.as_str(),
+            "schemaVersion" | "identity" | "project" | "metadata" | "findings"
+        ) {
+            return Err(producer_invalid("producer-shape", "diagnostics"));
+        }
+    }
+    for required in [
+        "schemaVersion",
+        "identity",
+        "project",
+        "metadata",
+        "findings",
+    ] {
+        if !map.contains_key(required) {
+            return Err(producer_invalid("producer-shape", "diagnostics"));
+        }
+    }
+    if map["schemaVersion"].as_str() != Some(SCHEMA) || map["identity"].as_str() != Some(IDENTITY) {
+        return Err(DomainResult::invalid(
+            lekalo_core::search::diagnostic_input_invalid("identity-mismatch", Some("diagnostics")),
+        ));
+    }
+    let project = map["project"]
+        .as_str()
+        .ok_or_else(|| producer_invalid("producer-shape", "diagnostics"))?;
+    let metadata = map["metadata"]
+        .as_object()
+        .ok_or_else(|| producer_invalid("producer-shape", "diagnostics"))?;
+    if metadata.len() != 1
+        || metadata
+            .get("findingCount")
+            .and_then(|count| count.as_u64())
+            .is_none()
+    {
+        return Err(producer_invalid("producer-shape", "diagnostics"));
+    }
+    let rows = map["findings"]
+        .as_array()
+        .ok_or_else(|| producer_invalid("producer-shape", "diagnostics"))?;
+    let mut findings = Vec::with_capacity(rows.len());
+    for row in rows {
+        let Some(row) = row.as_object() else {
+            return Err(producer_invalid("producer-malformed", "diagnostics"));
+        };
+        for key in row.keys() {
+            if !matches!(
+                key.as_str(),
+                "id" | "rule" | "subject" | "severity" | "disposition"
+            ) {
+                return Err(producer_invalid("producer-malformed", "diagnostics"));
+            }
+        }
+        for required in ["id", "rule", "subject", "severity", "disposition"] {
+            if !row.contains_key(required) {
+                return Err(producer_invalid("producer-malformed", "diagnostics"));
+            }
+        }
+        let id = row["id"].as_str().unwrap_or_default();
+        let bounded_id = !id.is_empty()
+            && id.len() <= 64
+            && id.starts_with(|first: char| first.is_ascii_alphanumeric())
+            && id.chars().all(|character| {
+                character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-')
+            });
+        if !bounded_id {
+            return Err(producer_invalid("producer-malformed", "diagnostics"));
+        }
+        let rule = row["rule"].as_str().unwrap_or_default();
+        let bounded_rule = (3..=128).contains(&rule.len())
+            && rule.split('.').count() >= 2
+            && rule.split('.').all(|segment| {
+                segment.starts_with(|first: char| first.is_ascii_lowercase())
+                    && !segment.is_empty()
+                    && segment.len() <= 64
+                    && segment.chars().all(|character| {
+                        character.is_ascii_lowercase()
+                            || character.is_ascii_digit()
+                            || character == '-'
+                    })
+            });
+        if !bounded_rule {
+            return Err(producer_invalid("producer-malformed", "diagnostics"));
+        }
+        let subject = row["subject"].as_str().unwrap_or_default();
+        let bounded_subject = !subject.is_empty()
+            && subject.len() <= 192
+            && subject.starts_with(|first: char| first.is_ascii_lowercase())
+            && subject.chars().all(|character| {
+                character.is_ascii_lowercase()
+                    || character.is_ascii_digit()
+                    || matches!(character, '_' | '.')
+            });
+        if !bounded_subject {
+            return Err(producer_invalid("producer-malformed", "diagnostics"));
+        }
+        let severity = row["severity"].as_str().unwrap_or_default();
+        if !matches!(severity, "error" | "warning" | "info") {
+            return Err(producer_invalid("producer-malformed", "diagnostics"));
+        }
+        let disposition = row["disposition"].as_str().unwrap_or_default();
+        if !matches!(disposition, "active" | "waived" | "resolved") {
+            return Err(producer_invalid("producer-malformed", "diagnostics"));
+        }
+        findings.push(DiagnosticFinding {
+            id: id.to_owned(),
+            rule: rule.to_owned(),
+            subject: subject.to_owned(),
+            severity: severity.to_owned(),
+            disposition: disposition.to_owned(),
+        });
+    }
+    if metadata["findingCount"].as_u64() != Some(findings.len() as u64) {
+        return Err(producer_invalid("producer-shape", "diagnostics"));
+    }
+    Ok(DiagnosticsEnvelope {
+        project: project.to_owned(),
+        findings,
+    })
+}
+
+/// The typed rows of the closed artifact-ownership/profile snapshot
+/// (`lekalo/search-ownership-profile/v0.8.0`).
+struct OwnershipProfileEnvelope {
+    project: String,
+    artifacts: Vec<(String, String)>,
+    profiles: Vec<(String, Vec<String>)>,
+}
+
+/// Decode one ownership/profile snapshot through its closed grammar:
+/// required members, no unknown members, closed ownership vocabulary,
+/// per-member bounds, and the envelope count cross-checks.
+fn decode_ownership_profile_envelope(
+    value: &serde_json::Value,
+) -> Result<OwnershipProfileEnvelope, DomainResult> {
+    const IDENTITY: &str = "dev.lekalo.search-ownership-profile@0.8.0";
+    const SCHEMA: &str = "lekalo/search-ownership-profile/v0.8.0";
+    let Some(map) = value.as_object() else {
+        return Err(producer_invalid("producer-malformed", "ownership-profile"));
+    };
+    for key in map.keys() {
+        if !matches!(
+            key.as_str(),
+            "schemaVersion" | "identity" | "project" | "metadata" | "artifacts" | "profiles"
+        ) {
+            return Err(producer_invalid("producer-shape", "ownership-profile"));
+        }
+    }
+    for required in [
+        "schemaVersion",
+        "identity",
+        "project",
+        "metadata",
+        "artifacts",
+        "profiles",
+    ] {
+        if !map.contains_key(required) {
+            return Err(producer_invalid("producer-shape", "ownership-profile"));
+        }
+    }
+    if map["schemaVersion"].as_str() != Some(SCHEMA) || map["identity"].as_str() != Some(IDENTITY) {
+        return Err(DomainResult::invalid(
+            lekalo_core::search::diagnostic_input_invalid(
+                "identity-mismatch",
+                Some("ownership-profile"),
+            ),
+        ));
+    }
+    let project = map["project"]
+        .as_str()
+        .ok_or_else(|| producer_invalid("producer-shape", "ownership-profile"))?;
+    let metadata = map["metadata"]
+        .as_object()
+        .ok_or_else(|| producer_invalid("producer-shape", "ownership-profile"))?;
+    if metadata.len() != 2
+        || metadata
+            .get("artifactCount")
+            .and_then(|count| count.as_u64())
+            .is_none()
+        || metadata
+            .get("profileCount")
+            .and_then(|count| count.as_u64())
+            .is_none()
+    {
+        return Err(producer_invalid("producer-shape", "ownership-profile"));
+    }
+    let artifact_rows = map["artifacts"]
+        .as_array()
+        .ok_or_else(|| producer_invalid("producer-shape", "ownership-profile"))?;
+    let mut artifacts = Vec::with_capacity(artifact_rows.len());
+    for row in artifact_rows {
+        let Some(row) = row.as_object() else {
+            return Err(producer_invalid("producer-malformed", "ownership-profile"));
+        };
+        if row.len() != 2 || !row.contains_key("path") || !row.contains_key("ownership") {
+            return Err(producer_invalid("producer-malformed", "ownership-profile"));
+        }
+        let path = row["path"].as_str().unwrap_or_default();
+        let logical_path = !path.is_empty()
+            && path.len() <= 512
+            && path.split('/').all(|segment| {
+                !segment.is_empty()
+                    && segment.starts_with(|first: char| {
+                        first.is_ascii_lowercase() || first.is_ascii_digit()
+                    })
+                    && segment.chars().all(|character| {
+                        character.is_ascii_lowercase()
+                            || character.is_ascii_digit()
+                            || matches!(character, '.' | '_' | '-')
+                    })
+            });
+        if !logical_path {
+            return Err(producer_invalid("producer-malformed", "ownership-profile"));
+        }
+        let ownership = row["ownership"].as_str().unwrap_or_default();
+        if !matches!(ownership, "module" | "project") {
+            return Err(producer_invalid("producer-malformed", "ownership-profile"));
+        }
+        artifacts.push((path.to_owned(), ownership.to_owned()));
+    }
+    let profile_rows = map["profiles"]
+        .as_array()
+        .ok_or_else(|| producer_invalid("producer-shape", "ownership-profile"))?;
+    let mut profiles = Vec::with_capacity(profile_rows.len());
+    for row in profile_rows {
+        let Some(row) = row.as_object() else {
+            return Err(producer_invalid("producer-malformed", "ownership-profile"));
+        };
+        if row.len() != 2 || !row.contains_key("id") || !row.contains_key("members") {
+            return Err(producer_invalid("producer-malformed", "ownership-profile"));
+        }
+        let id = row["id"].as_str().unwrap_or_default();
+        let bounded_id = !id.is_empty()
+            && id.len() <= 192
+            && id.starts_with(|first: char| first.is_ascii_alphanumeric() || first == '_')
+            && id.chars().all(|character| {
+                character.is_ascii_alphanumeric() || matches!(character, '_' | '.' | ':' | '-')
+            });
+        if !bounded_id {
+            return Err(producer_invalid("producer-malformed", "ownership-profile"));
+        }
+        let members = row["members"]
+            .as_array()
+            .ok_or_else(|| producer_invalid("producer-malformed", "ownership-profile"))?;
+        let mut member_ids = Vec::with_capacity(members.len());
+        for member in members {
+            let Some(member) = member.as_str() else {
+                return Err(producer_invalid("producer-malformed", "ownership-profile"));
+            };
+            let bounded_member = !member.is_empty()
+                && member.len() <= 192
+                && member.starts_with(|first: char| first.is_ascii_lowercase())
+                && member.chars().all(|character| {
+                    character.is_ascii_lowercase()
+                        || character.is_ascii_digit()
+                        || matches!(character, '_' | '.')
+                });
+            if !bounded_member {
+                return Err(producer_invalid("producer-malformed", "ownership-profile"));
+            }
+            member_ids.push(member.to_owned());
+        }
+        profiles.push((id.to_owned(), member_ids));
+    }
+    if metadata["artifactCount"].as_u64() != Some(artifacts.len() as u64)
+        || metadata["profileCount"].as_u64() != Some(profiles.len() as u64)
+    {
+        return Err(producer_invalid("producer-shape", "ownership-profile"));
+    }
+    Ok(OwnershipProfileEnvelope {
+        project: project.to_owned(),
+        artifacts,
+        profiles,
+    })
+}
+
 /// One producer-custody refusal with a bounded producer reason.
 fn producer_invalid(detail: &'static str, producer: &'static str) -> DomainResult {
     DomainResult::invalid(lekalo_core::search::diagnostic_input_invalid(
@@ -1280,6 +1586,45 @@ fn admit_producers(
                 }
                 project_waivers(projection, &store, cap)?;
                 states.push(("waivers", "complete"));
+            }
+            lekalo_core::search::ProducerKind::Requirements => {
+                let attachment = lekalo_core::requirements::RequirementsAttachment::parse(&bytes)
+                    .map_err(DomainResult::invalid)?;
+                if let Some(project) = project_id {
+                    check_producer_project(attachment.project_id().as_str(), project)?;
+                }
+                project_requirements(projection, &attachment, cap);
+                states.push(("requirements", "complete"));
+            }
+            lekalo_core::search::ProducerKind::ErrorContract => {
+                let registry = lekalo_core::error_contract::ErrorRegistry::from_bytes(&bytes)
+                    .map_err(DomainResult::invalid)?;
+                // Project custody: the #62 owners' own validator confirms
+                // the registry's bindings agree with THIS compiled project
+                // (operations exist, kinds match, unions resolve); a
+                // foreign or stale registry refuses here.
+                let findings = lekalo_core::error_contract::validate(&registry, project);
+                if !findings.as_slice().is_empty() {
+                    return Err(producer_invalid("subject-unknown", "error-contract"));
+                }
+                project_error_contract(projection, &registry, cap);
+            }
+            lekalo_core::search::ProducerKind::Diagnostics => {
+                let value = producer_json(&bytes, "diagnostics")?;
+                let envelope = decode_diagnostics_envelope(&value)?;
+                if let Some(project) = project_id {
+                    check_producer_project(&envelope.project, project)?;
+                }
+                project_diagnostics(projection, &envelope, cap);
+                states.push(("diagnostics", "complete"));
+            }
+            lekalo_core::search::ProducerKind::OwnershipProfile => {
+                let value = producer_json(&bytes, "ownership-profile")?;
+                let envelope = decode_ownership_profile_envelope(&value)?;
+                if let Some(project) = project_id {
+                    check_producer_project(&envelope.project, project)?;
+                }
+                project_ownership_profile(projection, &envelope, cap);
             }
         }
     }
@@ -1951,6 +2296,258 @@ fn project_effects_document(
 /// store. Active entries are current; revoked/superseded entries stay
 /// visibly stale and are excluded unless the request explicitly
 /// includes stale rows.
+/// Project one requirements attachment: provider-qualified requirement
+/// cards plus typed refs and relation witnesses on every linked symbol.
+/// The attachment's own published decoder already validated the closed
+/// wire; this join never widens it.
+fn project_requirements(
+    projection: &mut Projection,
+    attachment: &lekalo_core::requirements::RequirementsAttachment,
+    cap: usize,
+) {
+    for reference in attachment.references() {
+        let key = format!("req:{}:{}", reference.source, reference.requirement);
+        if !projection.cards.contains_key(&key) {
+            let card = Card {
+                key: key.clone(),
+                kind: CardKind::Requirement,
+                subkind: None,
+                module: None,
+                id: Some(reference.requirement.clone()),
+                name: Some(
+                    reference
+                        .requirement
+                        .rsplit([':', '/'])
+                        .next()
+                        .unwrap_or(&reference.requirement)
+                        .to_owned(),
+                ),
+                description: None,
+                signatures: Vec::new(),
+                relations: Vec::new(),
+                effects: Vec::new(),
+                bindings: Vec::new(),
+                locations: Vec::new(),
+                requirements: Vec::new(),
+                scenarios: Vec::new(),
+                gates: Vec::new(),
+                portability: None,
+                visibility: None,
+                confidence: Confidence::Extracted,
+                freshness: Freshness::AsRecorded,
+                completeness: Completeness::Complete,
+                omitted: 0,
+                provenance: "requirements".to_owned(),
+            };
+            add_card(projection, card, cap);
+            // The bare external requirement ID is an exact qualified
+            // identity of its provider-qualified card.
+            lekalo_core::search::add_qualified_id(
+                projection,
+                &key,
+                reference.requirement.clone(),
+                cap,
+            );
+        }
+        // The typed ref and the relation witness land on the symbol's
+        // card: the attachment's relation is the recorded provenance.
+        let symbol_key = format!("def:{}", reference.symbol);
+        if let Some(card) = projection.cards.get_mut(&symbol_key) {
+            if !card.requirements.contains(&reference.requirement) {
+                let mut omitted = card.omitted;
+                lekalo_core::search::push_fact(
+                    &mut card.requirements,
+                    &mut omitted,
+                    reference.requirement.clone(),
+                );
+                card.omitted = omitted;
+            }
+            let witness = lekalo_core::search::RelationWitness {
+                relation: match reference.relation {
+                    lekalo_core::requirements::Relation::DerivedFrom => "derived-from".to_owned(),
+                    lekalo_core::requirements::Relation::Implements => "implements".to_owned(),
+                },
+                other: key.clone(),
+                direction: "outgoing".to_owned(),
+                trust: lekalo_core::search::Trust::Detected,
+                confidence: Confidence::Verified,
+            };
+            if !card.relations.contains(&witness) {
+                card.relations.push(witness);
+                card.relations.sort_by(|left, right| {
+                    (
+                        left.relation.as_bytes(),
+                        left.other.as_bytes(),
+                        left.direction.as_bytes(),
+                    )
+                        .cmp(&(
+                            right.relation.as_bytes(),
+                            right.other.as_bytes(),
+                            right.direction.as_bytes(),
+                        ))
+                });
+            }
+        }
+    }
+}
+
+/// Project one error-contract registry slice: every operation binding
+/// lands as typed error-role signatures on the operation's card, so
+/// `--error` resolves through the #62 owners' validated facts.
+fn project_error_contract(
+    projection: &mut Projection,
+    registry: &lekalo_core::error_contract::ErrorRegistry,
+    cap: usize,
+) {
+    let _ = cap;
+    for binding in registry.bindings() {
+        let card_key = format!("def:{}", binding.operation().as_str());
+        let Some(card) = projection.cards.get_mut(&card_key) else {
+            continue;
+        };
+        for error in binding.errors().members() {
+            let signature = SignatureRef {
+                role: "error".to_owned(),
+                id: error.id().as_str().to_owned(),
+            };
+            if !card.signatures.contains(&signature) {
+                card.signatures.push(signature);
+            }
+        }
+        card.signatures.sort_by(|left, right| {
+            (&left.role[..], &left.id[..]).cmp(&(&right.role[..], &right.id[..]))
+        });
+    }
+}
+
+/// Project one diagnostic-set snapshot: admitted diagnostic finding
+/// cards keyed by finding id, rule identity, severity subkind, and a
+/// typed `evidences` relation onto the subject card. Resolved findings
+/// stay visibly stale (excluded by default, never erased).
+fn project_diagnostics(projection: &mut Projection, envelope: &DiagnosticsEnvelope, cap: usize) {
+    for finding in &envelope.findings {
+        let key = format!("diag:{}", finding.id);
+        let freshness = if finding.disposition == "resolved" {
+            Freshness::Stale
+        } else {
+            Freshness::AsRecorded
+        };
+        let mut card = Card {
+            key: key.clone(),
+            kind: CardKind::Diagnostic,
+            subkind: Some(finding.severity.clone()),
+            module: finding
+                .subject
+                .split_once('.')
+                .map(|(module, _)| module.to_owned()),
+            id: Some(finding.rule.clone()),
+            name: Some(finding.rule.clone()),
+            description: None,
+            signatures: Vec::new(),
+            relations: Vec::new(),
+            effects: Vec::new(),
+            bindings: Vec::new(),
+            locations: Vec::new(),
+            requirements: Vec::new(),
+            scenarios: Vec::new(),
+            gates: Vec::new(),
+            portability: None,
+            visibility: None,
+            confidence: Confidence::Extracted,
+            freshness,
+            completeness: Completeness::Complete,
+            omitted: 0,
+            provenance: "diagnostics".to_owned(),
+        };
+        card.relations.push(lekalo_core::search::RelationWitness {
+            relation: "evidences".to_owned(),
+            other: format!("def:{}", finding.subject),
+            direction: "outgoing".to_owned(),
+            trust: lekalo_core::search::Trust::Detected,
+            confidence: Confidence::Extracted,
+        });
+        card.relations.sort_by(|left, right| {
+            (
+                left.relation.as_bytes(),
+                left.other.as_bytes(),
+                left.direction.as_bytes(),
+            )
+                .cmp(&(
+                    right.relation.as_bytes(),
+                    right.other.as_bytes(),
+                    right.direction.as_bytes(),
+                ))
+        });
+        add_card(projection, card, cap);
+    }
+}
+
+/// Project one artifact-ownership/profile snapshot: artifact ownership
+/// facts fill the declared ownership of definitions whose native
+/// bindings live under the artifact path (the Model's own declared
+/// visibility always wins), and profile memberships land as typed
+/// `profile-member` relations so `--profile` resolves without ever
+/// claiming conformance.
+fn project_ownership_profile(
+    projection: &mut Projection,
+    envelope: &OwnershipProfileEnvelope,
+    cap: usize,
+) {
+    let _ = cap;
+    // Ownership: the definitions whose recorded native bindings live
+    // under an owned artifact path inherit that artifact's ownership
+    // when the Model itself did not declare one.
+    let keys: Vec<String> = projection.cards.keys().cloned().collect();
+    for (path, ownership) in &envelope.artifacts {
+        for key in &keys {
+            let Some(card) = projection.cards.get_mut(key) else {
+                continue;
+            };
+            let under_artifact = card.bindings.iter().any(|binding| {
+                binding.path == *path
+                    || binding
+                        .path
+                        .strip_prefix(path.as_str())
+                        .is_some_and(|rest| rest.starts_with('/'))
+            });
+            if under_artifact && card.visibility.is_none() {
+                card.visibility = Some(ownership.clone());
+            }
+        }
+    }
+    // Profiles: membership is a recorded fact, never a conformance
+    // claim; the typed relation carries exactly the membership.
+    for (profile, members) in &envelope.profiles {
+        for member in members {
+            let key = format!("def:{member}");
+            if let Some(card) = projection.cards.get_mut(&key) {
+                let witness = lekalo_core::search::RelationWitness {
+                    relation: "profile-member".to_owned(),
+                    other: format!("profile:{profile}"),
+                    direction: "outgoing".to_owned(),
+                    trust: lekalo_core::search::Trust::Detected,
+                    confidence: Confidence::Extracted,
+                };
+                if !card.relations.contains(&witness) {
+                    card.relations.push(witness);
+                    card.relations.sort_by(|left, right| {
+                        (
+                            left.relation.as_bytes(),
+                            left.other.as_bytes(),
+                            left.direction.as_bytes(),
+                        )
+                            .cmp(&(
+                                right.relation.as_bytes(),
+                                right.other.as_bytes(),
+                                right.direction.as_bytes(),
+                            ))
+                    });
+                }
+            }
+        }
+    }
+}
+
 fn project_waivers(
     projection: &mut Projection,
     store: &lekalo_core::waivers::Store,
@@ -2376,7 +2973,11 @@ fn assemble_with_manifest(
     manifest: &SearchInputs,
 ) -> Result<Service, DomainResult> {
     let root = lekalo_core::doctor::project_root(selection)?;
-    let (_model, compilation) = lekalo_core::cache::load_compiled(selection, false)?;
+    // The freshness oracle is read-only: the bypass compile path never
+    // touches the general compiler cache (the search store is only ever
+    // read here), while the compilation itself stays deterministic, so
+    // the recomputed digest is the one a build would publish.
+    let (_model, compilation) = lekalo_core::cache::load_compiled(selection, true)?;
     let graph = lekalo_core::effects::build(&compilation.project).map_err(DomainResult::invalid)?;
     let cap = lekalo_core::search::MAX_POSTINGS;
     let mut projection = project_ir(&compilation.project, cap);
