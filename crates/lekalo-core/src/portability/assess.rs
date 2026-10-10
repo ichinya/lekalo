@@ -58,10 +58,12 @@ pub struct Assessment<'a> {
     /// never upgrades a join to executed or failed.
     pub receipts_qualified: BTreeSet<(String, String)>,
     /// The gates whose authored `executed` claim the caller qualified
-    /// through digest-bound, provenance-pinned receipt custody, mapping
-    /// the gate id to its reconciled result (true = pass, false = fail).
-    /// An unqualified authored execution demotes to declared.
-    pub gates_qualified: BTreeMap<String, bool>,
+    /// through digest-bound, provenance-pinned receipt custody, keyed by
+    /// the exact (gate, destination) the custody names and mapping to
+    /// its reconciled result (true = pass, false = fail). An unqualified
+    /// authored execution demotes to declared, and custody for a
+    /// destination this assessment does not assess never joins.
+    pub gates_qualified: BTreeMap<(String, String), bool>,
     pub targets_input: TargetsInput,
     pub lock_digest: Option<String>,
     /// The reconciled lock presence: `known` only when the canonical
@@ -227,6 +229,14 @@ pub fn assess(input: &Assessment) -> Result<Report, DiagnosticSet> {
     report_unqualified_receipts(input, evidence, &mut sink);
     report_unqualified_gates(input, evidence, &mut sink);
 
+    // The affected joins come from the model-driven coverage of this
+    // exact scope, before any obligation row exists: the gate-coverage
+    // gaps are derived from this set (never from the manifest's own
+    // scenario records) so a scoped or evidence-light report cannot
+    // silently lose its gate coverage.
+    let affected = planning::affected_joins(input, evidence, &selected);
+    report_gate_coverage_gaps(evidence, &affected.0, &mut sink);
+
     // Per-subject, per-destination, per-dimension obligation rows.
     let mut subject_rows: Vec<SubjectRow> = Vec::new();
     for subject in &selected {
@@ -302,7 +312,6 @@ pub fn assess(input: &Assessment) -> Result<Report, DiagnosticSet> {
     }
 
     let summaries = summarize(destinations, &subject_rows);
-    let affected = planning::affected_joins(input, evidence, &selected, &subject_rows);
     let migration = planning::migration_surface(
         input,
         evidence,
@@ -545,11 +554,11 @@ fn report_unqualified_receipts(
     }
 }
 
-/// Surface every authored-but-unqualified gate execution and every
-/// affected scenario no gate record covers: an authored `executed` enum
-/// with zero custody demotes to declared (visible as a named gap), and
-/// an affected scenario without any gate coverage is an explicit
-/// unknown gate-coverage indication, never a silent complete surface.
+/// Surface every authored-but-unqualified gate execution: an authored
+/// `executed` enum with zero custody for the destination it names
+/// demotes to declared (visible as a named gap). Custody for another
+/// destination is out of scope for this assessment and simply never
+/// joins, exactly like a scenario receipt.
 fn report_unqualified_gates(
     input: &Assessment,
     evidence: Option<&EvidenceDocument>,
@@ -559,9 +568,12 @@ fn report_unqualified_gates(
         return;
     };
     for gate in &evidence.gates {
-        if gate.state == wire::JoinState::Executed
-            && !input.gates_qualified.contains_key(&gate.gate)
-        {
+        let qualified = gate.target_id.as_ref().is_some_and(|target| {
+            input
+                .gates_qualified
+                .contains_key(&(gate.gate.clone(), target.clone()))
+        });
+        if gate.state == wire::GateAuthorState::Executed && !qualified {
             sink.push(
                 codes::EVIDENCE_INCOMPLETE,
                 Some(gate.gate.clone()),
@@ -570,22 +582,33 @@ fn report_unqualified_gates(
             );
         }
     }
+}
+
+/// Surface every *affected* scenario no gate record covers. The gap is
+/// derived from the model-driven affected set of this exact scope —
+/// never from the manifest's own scenario records — so a scoped or
+/// evidence-light report cannot silently lose its gate coverage: each
+/// uncovered affected scenario is an explicit `gate-coverage-unknown`
+/// indication, carries collect-evidence planning work, and denies the
+/// strict gate.
+fn report_gate_coverage_gaps(
+    evidence: Option<&EvidenceDocument>,
+    affected: &[wire::AffectedScenario],
+    sink: &mut Sink,
+) {
     let covered: BTreeSet<&str> = evidence
-        .gates
-        .iter()
-        .flat_map(|gate| gate.scenarios.iter().map(String::as_str))
-        .collect();
-    for record in &evidence.scenarios {
-        let affected = input.destinations.iter().any(|destination| {
-            input
-                .receipts_qualified
-                .contains(&(record.scenario.clone(), destination.target_id.clone()))
-                || record.target_id.as_deref() == Some(destination.target_id.as_str())
-        });
-        if affected && !covered.contains(record.scenario.as_str()) {
+        .map(|e| {
+            e.gates
+                .iter()
+                .flat_map(|gate| gate.scenarios.iter().map(String::as_str))
+                .collect()
+        })
+        .unwrap_or_default();
+    for scenario in affected {
+        if !covered.contains(scenario.scenario.as_str()) {
             sink.push(
                 codes::EVIDENCE_INCOMPLETE,
-                Some(record.scenario.clone()),
+                Some(scenario.scenario.clone()),
                 None,
                 reasons::GATE_COVERAGE_UNKNOWN,
             );

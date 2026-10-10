@@ -308,11 +308,11 @@ fn custody_provenance_matches(
 }
 
 /// The qualified execution custody: the (scenario, destination) joins
-/// with verified receipt custody, and the gate ids qualified through
-/// receipt custody with their reconciled results.
+/// with verified receipt custody, and the (gate, destination) joins
+/// qualified through receipt custody with their reconciled results.
 type QualifiedCustody = (
     std::collections::BTreeSet<(String, String)>,
-    BTreeMap<String, bool>,
+    BTreeMap<(String, String), bool>,
 );
 
 /// Qualify the claimed execution custody: every claimed scenario or gate
@@ -370,7 +370,7 @@ fn qualify_custody(
         scenarios.insert((record.scenario.clone(), target.clone()));
     }
     for gate in &evidence.gates {
-        if gate.state != lekalo_core::portability::wire::JoinState::Executed {
+        if gate.state != lekalo_core::portability::wire::GateAuthorState::Executed {
             continue;
         }
         let (Some(reference), Some(digest)) = (&gate.receipt_ref, &gate.receipt_digest) else {
@@ -395,8 +395,11 @@ fn qualify_custody(
         if !custody_provenance_matches(&receipt, compilation, pins, target) {
             continue;
         }
+        // Gate custody is keyed by the exact (gate, destination) the
+        // receipt names: a receipt for one destination never qualifies
+        // another destination's gate.
         gates.insert(
-            gate.gate.clone(),
+            (gate.gate.clone(), target.clone()),
             receipt.result == lekalo_core::portability::wire::ReceiptResult::Pass,
         );
     }

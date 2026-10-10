@@ -300,6 +300,12 @@ const invalidControls = [
   ["invalid/requirement-grammar.evidence.json", "operational-requirement"],
   ["invalid/gate-fabricated-executed.evidence.json", "gate-custody"],
   ["invalid/receipt-result-contradiction.evidence.json", "receipt-result"],
+  ["invalid/gate-authored-failed.evidence.json", "gate-state"],
+  ["invalid/gate-omitted-nullables.evidence.json", "closed-shape"],
+  ["invalid/gate-bad-custody-grammar.evidence.json", "gate-identity"],
+  ["invalid/policy-null-precision.evidence.json", "policy-shape"],
+  ["invalid/duplicate-hooks.evidence.json", "duplicate-hook"],
+  ["invalid/absent-adapter-bad-version.evidence.json", "adapter-snapshot"],
 ];
 
 // The invalid controls are authored here, exactly like the manifests:
@@ -421,6 +427,38 @@ const controlAuthors = [
   }],
   ["invalid/gate-fabricated-executed.evidence.json", "evidence", (m) => { m.gates[0].state = "executed"; }],
   ["invalid/receipt-result-contradiction.evidence.json", "evidence", (m) => { m.scenarios[0].state = "recorded-fail"; }],
+  // An authored `failed` gate is schema-invalid: a gate may only become
+  // failed through a qualified failing receipt, never an authored token.
+  ["invalid/gate-authored-failed.evidence.json", "evidence", (m) => { m.gates[0].state = "failed"; }],
+  // The gate custody members are required-but-nullable: omitting them
+  // entirely is a closed-shape refusal, not a silent `None`.
+  ["invalid/gate-omitted-nullables.evidence.json", "evidence", (m) => {
+    delete m.gates[0].targetId;
+    delete m.gates[0].receiptRef;
+    delete m.gates[0].receiptDigest;
+  }],
+  // Present custody members obey their closed grammar in any authored
+  // state: a declared gate may carry no malformed target id, traversal
+  // receipt reference, or fabricated digest spelling.
+  ["invalid/gate-bad-custody-grammar.evidence.json", "evidence", (m) => {
+    m.gates[0].targetId = "INVALID TARGET";
+    m.gates[0].receiptRef = "../out";
+    m.gates[0].receiptDigest = "bad";
+  }],
+  // Policy precision/scale are integers-or-absent, never explicit nulls.
+  ["invalid/policy-null-precision.evidence.json", "evidence", (m) => {
+    m.storageRequired[0].policy.precision = null;
+  }],
+  // The hook observations are a set: a fully duplicated observation is
+  // a decode refusal (the schema's uniqueItems).
+  ["invalid/duplicate-hooks.evidence.json", "evidence", (m) => {
+    m.hooks.push(structuredClone(m.hooks[0]));
+  }],
+  // Present adapter members obey their closed grammar in any state —
+  // an `absent` record may not carry a malformed version either.
+  ["invalid/absent-adapter-bad-version.evidence.json", "evidence", (m) => {
+    m.adapters[0].version = "bad";
+  }],
 ];
 
 // ---------------------------------------------------------------------------

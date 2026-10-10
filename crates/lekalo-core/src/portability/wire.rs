@@ -922,7 +922,7 @@ pub fn decode_family_artifact(
         return Err(diagnostic::invalid("family-shape"));
     }
     let artifact: FamilyArtifact =
-        serde_json::from_value(value).map_err(|_| diagnostic::invalid("family-shape"))?;
+        serde_json::from_value(value.clone()).map_err(|_| diagnostic::invalid("family-shape"))?;
     if artifact.schema_version != version::FAMILY_SCHEMA_VERSION
         || artifact.identity != version::FAMILY_IDENTITY
         || artifact.family != expected
@@ -930,6 +930,17 @@ pub fn decode_family_artifact(
         return Err(diagnostic::invalid("family-envelope"));
     }
     if wants_inventory {
+        // The published policy members are integers-or-absent, never
+        // explicit nulls: an authored `null` precision inside the
+        // inventory is a closed-shape refusal, not a silent `None`.
+        if let Some(entries) = object.get("storageRequired").and_then(|v| v.as_array()) {
+            for entry in entries {
+                if let Some(policy) = entry.get("policy") {
+                    refuse_null_member(policy, "precision")?;
+                    refuse_null_member(policy, "scale")?;
+                }
+            }
+        }
         let mut unique = std::collections::BTreeSet::new();
         for requirement in &artifact.storage_required {
             if !is_semantic_id(&requirement.subject)
@@ -1051,16 +1062,45 @@ pub enum ScenarioReceipt {
     RecordedFail,
 }
 
+/// The closed authored gate-state vocabulary of the evidence manifest.
+/// `failed` is deliberately absent, exactly as in the published schema:
+/// a gate may only *become* `failed` through a qualified failing
+/// receipt, never through an authored token — the decoder refuses the
+/// schema-invalid spelling instead of letting a fabricated failure
+/// reach the report with zero custody.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GateAuthorState {
+    Declared,
+    Planned,
+    Executed,
+    Unknown,
+}
+
+impl GateAuthorState {
+    /// The join state this authored claim contributes before custody
+    /// qualification.
+    pub const fn as_join(self) -> JoinState {
+        match self {
+            Self::Declared => JoinState::Declared,
+            Self::Planned => JoinState::Planned,
+            Self::Executed => JoinState::Executed,
+            Self::Unknown => JoinState::Unknown,
+        }
+    }
+}
+
 /// One declared or recorded gate of the manifest. An authored `executed`
 /// state is a claim, never evidence: it qualifies only through the same
 /// digest-bound receipt custody as scenario joins, and an unqualified
-/// claim demotes to `declared` with an explicit diagnostic.
+/// claim demotes to `declared` with an explicit diagnostic. An authored
+/// `failed` state is schema-invalid and never decodes.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GateRecord {
     pub gate: String,
     pub scenarios: Vec<String>,
-    pub state: JoinState,
+    pub state: GateAuthorState,
     pub target_id: Option<String>,
     pub receipt_ref: Option<String>,
     pub receipt_digest: Option<String>,
@@ -1132,7 +1172,10 @@ pub struct AdapterSnapshotBody {
 
 /// Decode one adapter-snapshot custody artifact through its closed
 /// contract: duplicate-key-safe, identity-pinned, with every field
-/// inside the published grammar.
+/// inside the published grammar — the adapter identity/protocol
+/// pattern, the semver version, the digest spellings, and the profile
+/// pin — so a referenced snapshot with empty or malformed members
+/// never publishes provenance, claimed or not.
 pub fn decode_adapter_snapshot(bytes: &[u8]) -> Result<AdapterSnapshotArtifact, DiagnosticSet> {
     let value = decode_dup_safe(bytes)?;
     let object = value
@@ -1156,7 +1199,15 @@ pub fn decode_adapter_snapshot(bytes: &[u8]) -> Result<AdapterSnapshotArtifact, 
     {
         return Err(diagnostic::invalid("adapter-envelope"));
     }
-    if !is_target_id(&artifact.target_id) {
+    if !is_target_id(&artifact.target_id)
+        || !is_adapter_identity(&artifact.adapter.identity)
+        || !is_semver(&artifact.adapter.version)
+        || !is_adapter_identity(&artifact.adapter.protocol)
+        || !is_digest(&artifact.adapter.capability_digest)
+        || !is_target_id(&artifact.profile_ref.id)
+        || !is_semver(&artifact.profile_ref.version)
+        || !is_digest(&artifact.profile_ref.resolved_digest)
+    {
         return Err(diagnostic::invalid("adapter-shape"));
     }
     Ok(artifact)

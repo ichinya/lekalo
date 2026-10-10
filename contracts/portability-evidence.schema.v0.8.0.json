@@ -188,7 +188,7 @@
     "recordedContext": {
       "type": "object",
       "additionalProperties": false,
-      "description": "The explicit recorded evaluation context freshness is judged against; evidence carrying expiry without this context is unqualified.",
+      "description": "The recorded provenance context of the manifest's assertions. This context is provenance, not an expiry clock: the contract defines no freshness or expiry judgment, and custody always binds the exact digest-pinned bytes regardless of the recorded revision.",
       "properties": {
         "state": {
           "enum": [
@@ -254,6 +254,7 @@
     "family": {
       "type": "object",
       "additionalProperties": false,
+      "description": "One declared evidence family with its completeness statement. Declared completeness is admission-only: a complete family must present its artifact through the closed owner envelope, and only the implementation and storage families carry inventories the assessment reconciles — the extended-effects, scenario, and trace families are custody-only, their verified artifact proving production of the exact pinned bytes and nothing more.",
       "properties": {
         "family": {
           "enum": [

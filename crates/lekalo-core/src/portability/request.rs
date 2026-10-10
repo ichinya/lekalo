@@ -243,6 +243,66 @@ pub fn parse_evidence(
     {
         wire::require_members(scenario, &["targetId", "receiptRef", "receiptDigest"])?;
     }
+    for gate in value
+        .get("gates")
+        .and_then(|g| g.as_array())
+        .into_iter()
+        .flatten()
+    {
+        wire::require_members(gate, &["targetId", "receiptRef", "receiptDigest"])?;
+        // The authored state vocabulary excludes `failed` exactly like
+        // the schema: a fabricated failure is refused at decode, never
+        // carried into the report with zero custody.
+        if !gate
+            .get("state")
+            .and_then(|s| s.as_str())
+            .is_some_and(|state| matches!(state, "declared" | "planned" | "executed" | "unknown"))
+        {
+            return Err(diagnostic::invalid("gate-state"));
+        }
+        // Every present custody member obeys its closed grammar in any
+        // state — a declared gate may carry no malformed target id,
+        // traversal-shaped receipt reference, or fabricated digest
+        // spelling just because nothing consumes them yet.
+        if gate
+            .get("targetId")
+            .and_then(|t| t.as_str())
+            .is_some_and(|target| !wire::is_target_id(target))
+        {
+            return Err(diagnostic::invalid("gate-identity"));
+        }
+        if let Some(reference) = gate.get("receiptRef").and_then(|r| r.as_str()) {
+            if reference.len() > 256 || crate::project_fs::path_violation(reference).is_some() {
+                return Err(diagnostic::invalid("artifact-ref"));
+            }
+        }
+        if gate
+            .get("receiptDigest")
+            .and_then(|d| d.as_str())
+            .is_some_and(|digest| !wire::is_digest(digest))
+        {
+            return Err(diagnostic::invalid("gate-custody"));
+        }
+    }
+    // The published policy members are integers-or-absent, never
+    // explicit nulls: serde's `Option` would silently accept `null` as
+    // `None`, diverging from the schema in both directions.
+    for policy_list in ["storageRequired", "storageOffered"] {
+        for requirement in value
+            .get(policy_list)
+            .and_then(|l| l.as_array())
+            .into_iter()
+            .flatten()
+        {
+            if let Some(policy) = requirement.get("policy") {
+                for member in ["precision", "scale"] {
+                    if policy.get(member).map(|v| v.is_null()) == Some(true) {
+                        return Err(diagnostic::invalid("policy-shape"));
+                    }
+                }
+            }
+        }
+    }
     // Mirror the evidence schema's recorded-context grammar: the
     // revision is 40 or 64 lowercase hex and the note is bounded prose.
     if let Some(context) = value.get("recordedContext") {
@@ -334,6 +394,26 @@ pub fn parse_evidence(
         }
         if !wire::is_target_id(&adapter.target_id) {
             return Err(diagnostic::invalid("adapter-target"));
+        }
+        // Every present member obeys its closed grammar in any state:
+        // the schema's `oneOf [pattern, null]` members refuse malformed
+        // strings even under an `absent` state, so a parroted record
+        // never smuggles a malformed version past decode.
+        let grammar = adapter
+            .identity
+            .as_deref()
+            .map_or(true, wire::is_adapter_identity)
+            && adapter.version.as_deref().map_or(true, wire::is_semver)
+            && adapter
+                .protocol
+                .as_deref()
+                .map_or(true, wire::is_adapter_identity)
+            && adapter
+                .capability_digest
+                .as_deref()
+                .map_or(true, wire::is_digest);
+        if !grammar {
+            return Err(diagnostic::invalid("adapter-snapshot"));
         }
         // A recorded snapshot is exact provenance: identity, version,
         // protocol, and the digest-pinned capability must all be present
@@ -492,7 +572,7 @@ pub fn parse_evidence(
         // An authored executed state is a claim that must present the
         // same digest-bound receipt custody as a scenario join: a
         // target-qualified receipt reference and its exact digest.
-        if gate.state == wire::JoinState::Executed {
+        if gate.state == wire::GateAuthorState::Executed {
             let qualified = gate.target_id.is_some()
                 && gate.receipt_ref.is_some()
                 && gate.receipt_digest.as_deref().is_some_and(wire::is_digest);
@@ -522,6 +602,22 @@ pub fn parse_evidence(
             || !wire::is_target_id(&hook.target_id)
         {
             return Err(diagnostic::invalid("hook-identity"));
+        }
+    }
+    // The contract's `uniqueItems` on the hook observations: a fully
+    // duplicated observation is a decode refusal, never a silently
+    // doubled observation.
+    {
+        let mut observations = std::collections::BTreeSet::new();
+        for hook in &document.hooks {
+            if !observations.insert((
+                hook.subject.as_str(),
+                hook.hook.as_str(),
+                hook.state,
+                hook.target_id.as_str(),
+            )) {
+                return Err(diagnostic::invalid("duplicate-hook"));
+            }
         }
     }
     let mut receipts = std::collections::BTreeSet::new();

@@ -26,9 +26,7 @@ pub(super) fn affected_joins(
     input: &Assessment,
     evidence: Option<&EvidenceDocument>,
     selected: &[&Subject],
-    subjects: &[super::wire::SubjectRow],
 ) -> AffectedJoins {
-    let _ = subjects;
     let selected_ids: BTreeSet<&str> = selected.iter().map(|s| s.id.as_str()).collect();
     // The typed dependency/effect witnesses of the selected subjects:
     // a scenario covering a (reverse) dependent is an affected witness
@@ -122,18 +120,34 @@ pub(super) fn affected_joins(
             if joined.is_empty() {
                 continue;
             }
-            // An authored executed state is a claim, never evidence: it
-            // joins only through qualified receipt custody, reconciled
-            // with the custody's result; an unqualified claim demotes to
-            // declared, and a qualified failure stays failed.
-            let state = match gate.state {
-                JoinState::Executed => match input.gates_qualified.get(&gate.gate) {
-                    Some(true) => JoinState::Executed,
-                    Some(false) => JoinState::Failed,
-                    None => JoinState::Declared,
-                },
+            // An authored executed state is a claim, never evidence:
+            // it starts demoted to declared and joins as executed or
+            // failed only through qualified receipt custody for a
+            // destination this assessment actually assesses, reconciled
+            // with that custody's result. Custody naming another
+            // destination never upgrades or fails this gate, and the
+            // multi-destination aggregate is conservative: any
+            // qualified failure dominates and an execution never erases
+            // an earlier failure.
+            let mut state = match gate.state.as_join() {
+                JoinState::Executed => JoinState::Declared,
                 other => other,
             };
+            for destination in &assessed_destinations {
+                if let Some(result) = input
+                    .gates_qualified
+                    .get(&(gate.gate.clone(), (*destination).to_owned()))
+                {
+                    state = if *result {
+                        JoinState::Executed
+                    } else {
+                        JoinState::Failed
+                    };
+                    if state == JoinState::Failed {
+                        break;
+                    }
+                }
+            }
             gates.push(AffectedGate {
                 gate: gate.gate.clone(),
                 state,
@@ -288,6 +302,44 @@ pub(super) fn migration_surface(
             }
         }
     }
+    // The gate-coverage gaps of this exact scope: every affected
+    // scenario no gate record covers becomes explicit collect-evidence
+    // planning work — the missing coverage never disappears from the
+    // surface, and it marks the surface incomplete.
+    let covered: BTreeSet<&str> = evidence
+        .map(|e| {
+            e.gates
+                .iter()
+                .flat_map(|gate| gate.scenarios.iter().map(String::as_str))
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut coverage_gaps = false;
+    for scenario in &affected.0 {
+        if covered.contains(scenario.scenario.as_str()) {
+            continue;
+        }
+        coverage_gaps = true;
+        rows.push(PlanningRow {
+            id: format!(
+                "plan.collect-evidence.gate-coverage.{}",
+                scenario.scenario.replace(':', ".")
+            ),
+            subject: format!("scenario:{}", scenario.scenario),
+            member: None,
+            dimension: Dimension::Operational,
+            destination: None,
+            action: Action::CollectEvidence,
+            reason: reasons::GATE_COVERAGE_UNKNOWN.to_owned(),
+            requirement: None,
+            required: None,
+            offered: None,
+            prerequisites: Vec::new(),
+            scenarios: vec![scenario.scenario.clone()],
+            gates: Vec::new(),
+            evidence_needed: vec!["gate-record".into()],
+        });
+    }
     rows.sort_by(|left, right| left.id.cmp(&right.id));
     // Only genuinely identical rows merge; distinct obligations always
     // keep distinct stable ids, and any residual base-id collision gets
@@ -308,7 +360,7 @@ pub(super) fn migration_surface(
         affected_scenarios: affected.0.len() as u64,
         affected_gates: affected.1.len() as u64,
         unresolved_obligations: unresolved,
-        complete: !truncated,
+        complete: !truncated && !coverage_gaps,
         rows,
     }
 }
@@ -342,7 +394,7 @@ fn gate_index(evidence: Option<&EvidenceDocument>) -> BTreeMap<String, Vec<(Stri
                 index
                     .entry(scenario.clone())
                     .or_default()
-                    .push((gate.gate.clone(), gate.state));
+                    .push((gate.gate.clone(), gate.state.as_join()));
             }
         }
     }
@@ -445,8 +497,9 @@ fn planning_row(
 
 /// Whether the strict `--check` gate must deny this report: any blocking
 /// obligation (unsupported, partial/lossy, or unknown) denies, and so do
-/// coverage gaps — a truncated extraction or an empty assessment is a
-/// false green, never a pass.
+/// coverage gaps — a truncated extraction, an empty assessment, or an
+/// affected scenario with no gate coverage is a false green, never a
+/// pass.
 pub fn denial(report: &super::wire::Report) -> bool {
     if report.coverage.truncated || !report.coverage.complete {
         return true;
@@ -459,6 +512,16 @@ pub fn denial(report: &super::wire::Report) -> bool {
         .iter()
         .any(|subject| !subject.rows.is_empty());
     if !any_rows {
+        return true;
+    }
+    // Missing gate coverage is required work, not a presentation gap:
+    // the assessment cannot claim a complete surface while an affected
+    // scenario has no gate record at all.
+    if report
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.detail == "gate-coverage-unknown")
+    {
         return true;
     }
     report
