@@ -8,6 +8,10 @@
   },
   "inputClosure": [
     {
+      "path": ".lekalo/managed-authority/lock",
+      "digest": "sha256:d61d05e2c8b2436e2eb1bebe52afcd0808cc882c85f694259ba1cc988e1a04fa"
+    },
+    {
       "path": "config/ownership.json",
       "digest": "sha256:d73385cf6de44256f9bbf42da24236f8e026fdd7cd8e9455e315bdf75626b6a6"
     },
@@ -77,5 +81,6 @@
   "ownershipDigest": "sha256:5fd1b94099ffc5aafd5c071b0deb05e9974afb720625fc4092e210b908d152c5",
   "lockPin": {
     "state": "absent"
-  }
+  },
+  "recordDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
 }

@@ -66,10 +66,22 @@
         "type": "object",
         "properties": {
           "path": {
-            "type": "string",
-            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.@-]*(/[A-Za-z0-9][A-Za-z0-9_.@-]*)*$",
-            "minLength": 1,
-            "maxLength": 512
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.@-]*(/[A-Za-z0-9][A-Za-z0-9_.@-]*)*$",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              {
+                "type": "string",
+                "enum": [
+                  ".lekalo/managed-authority/model",
+                  ".lekalo/managed-authority/ir",
+                  ".lekalo/managed-authority/lock"
+                ]
+              }
+            ]
           },
           "digest": {
             "type": "string",
@@ -129,6 +141,10 @@
           "additionalProperties": false
         }
       ]
+    },
+    "recordDigest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
     }
   },
   "required": [
@@ -140,7 +156,8 @@
     "inputClosure",
     "outputs",
     "ownershipDigest",
-    "lockPin"
+    "lockPin",
+    "recordDigest"
   ],
   "additionalProperties": false,
   "$defs": {

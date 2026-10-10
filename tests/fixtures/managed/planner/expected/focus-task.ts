@@ -5,7 +5,7 @@
 
 export interface FocusTaskInput {
   id: string;
-  subject: string;
+  title: string;
 }
 
 export interface FocusTaskOutput {
@@ -16,6 +16,6 @@ export interface FocusTaskOutput {
 export function focusTask(input: FocusTaskInput): FocusTaskOutput {
   return {
     id: input.id,
-    title: input.subject,
+    title: input.title,
   };
 }

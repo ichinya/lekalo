@@ -205,10 +205,18 @@
               "type": "object",
               "properties": {
                 "path": {
-                  "type": "string",
-                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_.@-]*(/[A-Za-z0-9][A-Za-z0-9_.@-]*)*$",
-                  "minLength": 1,
-                  "maxLength": 512
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.@-]*(/[A-Za-z0-9][A-Za-z0-9_.@-]*)*$",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    {
+                      "type": "string",
+                      "const": ".lekalo/generated/manifests/ownership.json"
+                    }
+                  ]
                 },
                 "reason": {
                   "type": "string",
@@ -299,10 +307,18 @@
       "type": "object",
       "properties": {
         "path": {
-          "type": "string",
-          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.@-]*(/[A-Za-z0-9][A-Za-z0-9_.@-]*)*$",
-          "minLength": 1,
-          "maxLength": 512
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.@-]*(/[A-Za-z0-9][A-Za-z0-9_.@-]*)*$",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            {
+              "type": "string",
+              "const": ".lekalo/generated/manifests/ownership.json"
+            }
+          ]
         },
         "op": {
           "enum": [

@@ -9,6 +9,6 @@ import assert from "node:assert/strict";
 import { focusTask } from "../src/focus-task.ts";
 
 assert.deepStrictEqual(
-  focusTask({ id: "t-1", subject: "Focus" }),
+  focusTask({ id: "t-1", title: "Focus" }),
   { id: "t-1", title: "Focus" },
 );

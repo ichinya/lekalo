@@ -38,7 +38,19 @@ const state = (value, states = ['absent']) => ({ oneOf: [obj({ state: { const: '
 const scalar = { anyOf: [{ type: 'string' }, { type: 'number' }, { type: 'boolean' }, { type: 'null' }] };
 const knownPin = state(pin);
 const knownDigest = state(obj({ generationDigest: pin }));
-const knownConflict = state(obj({ path: relPath, reason: token }));
+// The reserved derived authority pins the committed closure carries: the
+// canonical Model/IR/lock custody evidence (finding 8) is not a project
+// file, so the record closure grammar admits exactly these coordinates.
+const authorityPinPath = { type: 'string', enum: ['.lekalo/managed-authority/model', '.lekalo/managed-authority/ir', '.lekalo/managed-authority/lock'] };
+// The governed public manifest coordinate a transaction journal moves.
+const manifestPath = { type: 'string', const: '.lekalo/generated/manifests/ownership.json' };
+// A committed closure path: a project-relative coordinate or a derived
+// authority pin.
+const closurePath = { anyOf: [relPath, authorityPinPath] };
+// A pending/conflict path: a project-relative coordinate or the governed
+// manifest.
+const transactionPath = { anyOf: [relPath, manifestPath] };
+const knownConflict = state(obj({ path: transactionPath, reason: token }));
 
 const requirementKinds = ['assertion', 'command', 'effect', 'entity', 'event', 'expression', 'invariant', 'job', 'policy', 'port', 'query', 'scenario', 'transaction'];
 const supportLevels = ['full', 'partial', 'unsupported', 'unknown'];
@@ -60,12 +72,12 @@ const defs = {
     projection: arr(obj({ from: token, to: token }), 64),
     sample: state(obj({ input: { type: 'object', additionalProperties: scalar, maxProperties: 32 }, output: { type: 'object', additionalProperties: scalar, maxProperties: 32 } })),
   }, ['detail']),
-  adapter: obj({ entry: token, packageDigest: pin, protocol: token }),
+  adapter: obj({ entry: relPath, packageDigest: pin, protocol: token }),
   outputAction: en('create', 'replace', 'delete', 'unchanged'),
   artifactRole: en('custody', 'implementation', 'manifest', 'map', 'test'),
   planOutput: obj({ path: relPath, action: ref('outputAction'), role: ref('artifactRole'), ownerModule: ref('moduleRef'), ownerTarget: ref('targetRef'), beforeDigest: knownPin, afterDigest: knownPin }),
   recordOutput: obj({ path: relPath, role: ref('artifactRole'), ownerModule: ref('moduleRef'), ownerTarget: ref('targetRef'), digest: pin, beforeRef: knownPin, afterRef: knownPin }),
-  pendingOp: obj({ path: relPath, op: en('publish', 'delete', 'restore') }),
+  pendingOp: obj({ path: transactionPath, op: en('publish', 'delete', 'restore') }),
   restoreOp: obj({ path: relPath, digest: pin, ref: pin }),
   deleteOp: obj({ path: relPath, digest: pin }),
   scenarioVerdict: obj({ scenario: token, digest: pin, verdict: en('match', 'mismatch', 'unsupported') }),
@@ -91,10 +103,11 @@ export const shapes = {
     planDigest: pin,
     generationDigest: pin,
     previousGeneration: knownDigest,
-    inputClosure: arr(obj({ path: relPath, digest: pin }), 4096),
+    inputClosure: arr(obj({ path: closurePath, digest: pin }), 4096),
     outputs: arr(ref('recordOutput'), 8192, 1),
     ownershipDigest: pin,
     lockPin: knownPin,
+    recordDigest: pin,
   },
   'managed-transaction': {
     transactionId: token,
