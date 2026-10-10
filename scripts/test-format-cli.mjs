@@ -354,6 +354,39 @@ try {
     passed += 1;
   }
 
+  // 8. Legacy-temp cleanup is ownership-gated at the binary surface
+  //    (finding r5 3): exact spelling alone is never deletion authority.
+  //    A hidden module directory and an absent source sibling are both
+  //    preserved byte-exact and answered by the structure refusal.
+  {
+    const hidden = seed("sweep-hidden", "planner-canonical");
+    mkdirSync(join(hidden, "lekalo/modules/.evil"), { recursive: true });
+    const hiddenVictim = join(hidden, "lekalo/modules/.evil/.module.yaml.lekalo-format-new");
+    writeFileSync(hiddenVictim, Buffer.from("USER FILE\n"));
+    const hiddenRun = run(hidden, ["format"]);
+    assert.equal(hiddenRun.status, 1, "the governed scan refuses the tree");
+    assert.ok(
+      readFileSync(hiddenVictim).equals(Buffer.from("USER FILE\n")),
+      "a hidden directory is never swept"
+    );
+    rmSync(hidden, { recursive: true, force: true });
+
+    const absent = seed("sweep-absent", "planner-canonical");
+    const absentVictim = join(
+      absent,
+      "lekalo/modules/scheduling/.entities.yaml.lekalo-format-new"
+    );
+    writeFileSync(absentVictim, Buffer.from("USER FILE\n"));
+    const absentRun = run(absent, ["format"]);
+    assert.equal(absentRun.status, 1, "the absent sibling keeps the tree refused");
+    assert.ok(
+      readFileSync(absentVictim).equals(Buffer.from("USER FILE\n")),
+      "a temp whose source document never existed is never swept"
+    );
+    rmSync(absent, { recursive: true, force: true });
+    passed += 1;
+  }
+
   rmSync(workspace, { recursive: true, force: true });
   process.stdout.write(`${JSON.stringify({ ok: true, gate: "format-cli", passed }, null, 2)}\n`);
 } catch (error) {

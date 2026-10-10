@@ -449,6 +449,164 @@ try {
       rmSync(project, { recursive: true, force: true });
       passed += 1;
     }
+
+    // 6c. A CONCURRENT USER EDIT of an already replaced file is never
+    //     erased by the ordinary rollback (finding r5 1): the rollback
+    //     preflights every destination's live custody and re-derives it
+    //     before each restore. The race is real: the changed candidates
+    //     include ~200 q-modules sorting between planner and the
+    //     read-only scheduling directory, so once planner/module.yaml is
+    //     replaced the run keeps working for hundreds of replacements
+    //     before the failure lands — the probe edits the file inside
+    //     that window. The rollback must refuse: the typed source-changed
+    //     conflict (exit 3), the edit preserved byte-exact, the journal
+    //     retained, and readers fail closed.
+    {
+      const project = seed("race-edit", "seeds/noncanonical");
+      // Widen the window: q-modules sort after planner and before
+      // scheduling, each a changed candidate the run must replace
+      // before it reaches the read-only failure.
+      for (let index = 0; index < 200; index += 1) {
+        const directory = `q${String(index).padStart(3, "0")}`;
+        const module = join(project, "lekalo/modules", directory);
+        mkdirSync(module, { recursive: true });
+        writeFileSync(
+          join(module, "module.yaml"),
+          Buffer.from(`schema_version: '0.2.16'\ndefinitions:\n  - id: ${directory}\n    kind: module\n    version: 1\n    description: window module ${directory}\n`)
+        );
+      }
+      const plannerModule = join(project, "lekalo/modules/planner/module.yaml");
+      const original = readFileSync(plannerModule);
+      const userEdit = Buffer.from("USER EDIT DURING TRANSACTION\n");
+      chmodSync(join(project, "lekalo/modules/scheduling"), 0o555);
+      let conflict;
+      try {
+        const child = spawn(binary, ["format"], {
+          cwd: project,
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+        let output = "";
+        child.stdout.on("data", (chunk) => { output += chunk; });
+        child.stderr.on("data", (chunk) => { output += chunk; });
+        const exited = new Promise((resolveExit) =>
+          child.once("exit", (code, signal) => resolveExit({ code, signal }))
+        );
+        // Inject the edit the moment the formatter's own replacement of
+        // planner/module.yaml is on disk (index 1 of the changed set).
+        const deadline = Date.now() + 120000;
+        let injected = false;
+        while (Date.now() < deadline) {
+          if (!readFileSync(plannerModule).equals(original)) {
+            writeFileSync(plannerModule, userEdit);
+            injected = true;
+            break;
+          }
+          if (child.exitCode !== null || child.signalCode !== null) break;
+          await new Promise((resolveTick) => setTimeout(resolveTick, 1));
+        }
+        assert.ok(injected, "the probe observed the replaced prefix");
+        conflict = await exited;
+        assert.equal(conflict.code, 3, `the typed conflict denial: ${conflict.code} ${conflict.signal} ${output}`);
+        assert.match(output, /format\.source-changed/, "the registered conflict identity");
+        assert.ok(readFileSync(plannerModule).equals(userEdit), "the concurrent edit is preserved byte-exact");
+        // The journal is retained (fail closed), never cleared by a
+        // rollback that did not restore.
+        const plans = readdirSync(formatHome(project)).filter(
+          (name) => name !== "active.lock" && name !== "temps"
+        );
+        assert.equal(plans.length, 1, "one plan home");
+        assert.ok(existsSync(join(formatHome(project), plans[0], "journal.json")), "the journal stays armed");
+        assert.equal(run(project, ["load"]).status, 1, "readers fail closed on the retained journal");
+      } finally {
+        chmodSync(join(project, "lekalo/modules/scheduling"), 0o755);
+      }
+      rmSync(project, { recursive: true, force: true });
+      passed += 1;
+    }
+  }
+
+  // 7. Boundary-size real crash and recovery (finding r5 2): an
+  //    admitted plan just under the 256 KiB recovery-record bound —
+  //    955 changed files with long valid 64-character module names — is
+  //    SIGKILLed mid-replacement. Before the fix its own emitted
+  //    manifest exceeded the bounded reader and every recovery refused
+  //    with `manifest-unreadable` forever. Now producer and reader
+  //    agree on the record grammar: the journal is readable, the next
+  //    explicit format recovers and reapplies, the tree reaches the
+  //    canonical fixed point, and every emitted manifest is within the
+  //    bound.
+  {
+    const project = seed("boundary-crash", "seeds/noncanonical");
+    // Long valid path names: 64-character module directories (the
+    // governed path-segment maximum). The module IDs stay short and
+    // grammar-valid (`^[a-z][a-z0-9_]{0,62}$`, ≤ 63 characters) — the
+    // path grammar and the Model's ID grammar are distinct.
+    const longName = (index) =>
+      (`g${String(index).padStart(3, "0")}` + "x".repeat(60)).slice(0, 64);
+    const firstDirectory = longName(0);
+    for (let index = 0; index < 950; index += 1) {
+      const directory = longName(index);
+      const moduleId = `m${String(index).padStart(4, "0")}`;
+      const module = join(project, "lekalo/modules", directory);
+      mkdirSync(module, { recursive: true });
+      writeFileSync(
+        join(module, "module.yaml"),
+        Buffer.from(`schema_version: '0.2.16'\ndefinitions:\n  - id: ${moduleId}\n    kind: module\n    version: 1\n    description: boundary module\n`)
+      );
+    }
+    const checkFirst = run(project, ["format", "--check", "--json"]);
+    assert.equal(checkFirst.status, 3, `the boundary plan is admitted: ${checkFirst.stdout}`);
+    const firstModule = join(project, "lekalo/modules", firstDirectory, "module.yaml");
+    const seedBytes = readFileSync(firstModule);
+    const journalHome = (project) => {
+      const home = formatHome(project);
+      if (!existsSync(home)) return undefined;
+      return readdirSync(home)
+        .filter((name) => name !== "active.lock" && name !== "temps")
+        .find((name) => existsSync(join(home, name, "journal.json")));
+    };
+    const child = spawn(binary, ["format"], { cwd: project, stdio: "ignore" });
+    try {
+      // Wait until replacements are durable in flight (the journal plus
+      // the first long-named module actually replaced), then kill hard.
+      const crashDeadline = Date.now() + 120000;
+      while (Date.now() < crashDeadline) {
+        if (journalHome(project) && !readFileSync(firstModule).equals(seedBytes)) break;
+        await new Promise((resolveTick) => setTimeout(resolveTick, 5));
+      }
+      assert.ok(journalHome(project), "the durable journal exists before the kill");
+      child.kill("SIGKILL");
+      await new Promise((resolveExit) => child.once("exit", resolveExit));
+      const interrupted = journalHome(project);
+      assert.ok(interrupted, "the crash left a mid-transaction journal");
+      assert.equal(run(project, ["load"]).status, 1, "readers fail closed mid-transaction");
+      // The recovery the bounded record grammar must admit: restore every
+      // pinned preimage, then apply the plan again.
+      const recovered = run(project, ["format"]);
+      assert.equal(recovered.status, 0, `recovery completes: ${recovered.stdout} ${recovered.stderr}`);
+      assert.ok(!journalHome(project), "no journal survives the recovery");
+      assert.equal(run(project, ["format", "--check"]).status, 0, "the canonical fixed point");
+      for (const name of readdirSync(formatHome(project))) {
+        if (name === "active.lock" || name === "temps") continue;
+        const manifest = join(formatHome(project), name, "manifest.json");
+        if (!existsSync(manifest)) continue;
+        assert.ok(
+          readFileSync(manifest).length <= 256 * 1024,
+          `every emitted manifest is within the recovery record bound (${name})`
+        );
+      }
+    } finally {
+      // Never leave a live formatter holding the workspace.
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill("SIGKILL");
+        await new Promise((resolveExit) => {
+          child.once("exit", resolveExit);
+          child.once("error", resolveExit);
+        });
+      }
+    }
+    rmSync(project, { recursive: true, force: true });
+    passed += 1;
   }
 
   rmSync(workspace, { recursive: true, force: true });
