@@ -308,16 +308,20 @@ const OUTBOX_STATES: [&str; 9] = [
     "unknown_delivery",
 ];
 
-/// One bounded `token` per the evidence schema: 1..=256 bytes.
+/// One bounded `token` per the evidence schema: 1..=256 Unicode
+/// scalars. JSON Schema string lengths count characters, never bytes,
+/// so the runtime bound is char-based and schema-valid Unicode input
+/// is never refused for its UTF-8 size.
 fn is_evidence_token(text: &str) -> bool {
-    !text.is_empty() && text.len() <= 256
+    let chars = text.chars().count();
+    (1..=256).contains(&chars)
 }
 
 /// One qualified symbol per the evidence schema (the same closed shape
 /// the public portability rows use). Everything the summary may echo is
 /// constrained to this grammar first: free text never reaches stdout.
 fn is_evidence_symbol(text: &str) -> bool {
-    text.len() <= 191 && wire::is_qualified_symbol(text)
+    text.chars().count() <= 191 && wire::is_qualified_symbol(text)
 }
 
 /// One `sha256:` digest per the evidence schema.
@@ -359,6 +363,14 @@ pub fn admit_evidence(
     }
     let value: serde_json::Value =
         json::parse(bytes).map_err(|_| evidence_invalid("evidence-json", None))?;
+    // The closed evidence schema has no nullable member anywhere: every
+    // present member is a typed string, number, array, or object. An
+    // explicit `null` is therefore schema-invalid in every position —
+    // an absent member stays the only way to omit one, and the runtime
+    // never conflates the two the way a bare serde `Option` would.
+    if value_fills_null(&value) {
+        return Err(evidence_invalid("evidence-shape", None));
+    }
     let evidence: Evidence =
         serde_json::from_value(value).map_err(|_| evidence_invalid("evidence-shape", None))?;
     if evidence.schema_version != version::EVIDENCE_SCHEMA_VERSION
@@ -427,16 +439,24 @@ pub fn admit_evidence(
     }
     // The scenario must be declared by the compilation: evidence can
     // never witness an invented scenario.
-    let declared_scenarios: std::collections::BTreeSet<String> = compilation
-        .project
-        .definitions
-        .iter()
-        .filter_map(|definition| match definition {
-            crate::ir::Definition::Scenario(scenario) => Some(scenario.id.as_str().to_owned()),
-            _ => None,
-        })
-        .collect();
-    if !declared_scenarios.contains(&evidence.scenario_id) {
+    let declared_scenarios: std::collections::BTreeMap<String, std::collections::BTreeSet<String>> =
+        compilation
+            .project
+            .definitions
+            .iter()
+            .filter_map(|definition| match definition {
+                crate::ir::Definition::Scenario(scenario) => Some((
+                    scenario.id.as_str().to_owned(),
+                    scenario
+                        .covers
+                        .iter()
+                        .map(|symbol| symbol.as_str().to_owned())
+                        .collect::<std::collections::BTreeSet<String>>(),
+                )),
+                _ => None,
+            })
+            .collect();
+    if !declared_scenarios.contains_key(&evidence.scenario_id) {
         return Err(evidence_invalid("evidence-scenario-unresolved", None));
     }
     if evidence.steps.is_empty() || evidence.steps.len() > version::MAX_STEPS {
@@ -482,6 +502,15 @@ pub fn admit_evidence(
             }
         }
         if let Some(intent) = &step.intent {
+            // A refused or uncertain step produced no delivery: a
+            // delivered state or a receipt digest on a step whose
+            // outcome is neither applied nor replayed is an invented
+            // receipt, and this admission refuses it.
+            if (intent.state.as_str() == "delivered" || intent.receipt_digest.is_some())
+                && !matches!(step.outcome.as_str(), "applied" | "replayed")
+            {
+                return Err(evidence_invalid("evidence-receipt-invented", None));
+            }
             if !OUTBOX_STATES.contains(&intent.state.as_str())
                 || !is_evidence_token(&intent.intent_id)
                 || intent.attempt.is_some_and(|attempt| attempt > 64)
@@ -507,6 +536,24 @@ pub fn admit_evidence(
             }
         }
         if let Some(decision) = &step.decision {
+            // The decided action is a qualified symbol per the schema,
+            // never free text.
+            if let Some(action) = &decision.action {
+                if !is_evidence_symbol(action) {
+                    return Err(evidence_invalid("evidence-step-token", None));
+                }
+            }
+            // An allowed decision is a WITNESSED decision: it must
+            // carry both independent observations (capability and
+            // authorization), because a self-declared allow without
+            // observations is exactly the fabricated authority this
+            // admission refuses.
+            if decision.outcome == "allowed"
+                && (decision.capability_outcome.is_none()
+                    || decision.authorization_outcome.is_none())
+            {
+                return Err(evidence_invalid("evidence-observation-missing", None));
+            }
             if !is_decision_consistent(decision)
                 || decision
                     .fields
@@ -538,9 +585,10 @@ pub fn admit_evidence(
             }
         }
         // The recorded detail is bounded free text; it is never echoed
-        // into any public surface.
+        // into any public surface. The bound is schema-correct: 512
+        // Unicode scalars, not bytes.
         if let Some(detail) = &step.detail {
-            if detail.len() > 512 {
+            if detail.chars().count() > 512 {
                 return Err(evidence_invalid("evidence-step-token", None));
             }
         }
@@ -573,11 +621,35 @@ pub fn admit_evidence(
             }
         }
     }
+    // The run witnesses the scenario it names: at least one successful
+    // (applied or replayed) step must execute a symbol the declared
+    // scenario covers. A run of refused or unrelated steps proves
+    // nothing about its scenario, whatever id it borrows.
+    let covers = &declared_scenarios[&evidence.scenario_id];
+    let executed: std::collections::BTreeSet<String> = evidence
+        .steps
+        .iter()
+        .filter(|step| matches!(step.outcome.as_str(), "applied" | "replayed"))
+        .map(|step| step.command.clone())
+        .collect();
+    if !executed.iter().any(|command| covers.contains(command)) {
+        return Err(evidence_invalid("evidence-scenario-unwitnessed", None));
+    }
     Ok(EvidenceSummary {
-        evidence_id: evidence.evidence_id,
+        // The producer-supplied id never reaches a public surface: the
+        // admitted projection carries an opaque synthetic reference
+        // derived from the exact admitted bytes, so even a
+        // grammar-valid confidential marker cannot ride through inspect
+        // or portability output. The id is still grammar-checked above
+        // (garbage refuses); admission and echo are separate powers.
+        evidence_id: format!(
+            "tasklinks.evidence.admitted.{}",
+            &crate::digest::sha256_hex(bytes)[..16]
+        ),
         origin: evidence.origin,
         scenario_id: evidence.scenario_id,
         steps: evidence.steps.len() as u64,
+        executed,
         pins_match: true,
     })
 }
@@ -626,6 +698,18 @@ fn is_decision_consistent(decision: &EvidenceDecisionRef) -> bool {
 
 fn evidence_invalid(detail: &'static str, subject: Option<&str>) -> Failure {
     diagnostic::rule_invalid(diagnostic::EVIDENCE_INVALID, detail, subject)
+}
+
+/// Whether any JSON member anywhere in one document carries an explicit
+/// `null`: the closed evidence schema admits no nullable member, so one
+/// explicit null is a schema-invalid document.
+fn value_fills_null(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::Null => true,
+        serde_json::Value::Array(items) => items.iter().any(value_fills_null),
+        serde_json::Value::Object(map) => map.values().any(value_fills_null),
+        _ => false,
+    }
 }
 
 /// Build one bounded diagnostic set for a failure under `status`.
@@ -759,5 +843,25 @@ mod tests {
         assert!(!is_evidence_symbol(&long), "over the 191-byte bound");
         assert!(!is_evidence_digest("sha256:zz"));
         assert!(is_evidence_digest(&format!("sha256:{}", "a".repeat(64))));
+    }
+
+    #[test]
+    fn schema_and_runtime_bounds_count_characters_not_bytes() {
+        // JSON Schema maxLength counts characters: a 256-character
+        // token of two-byte scalars is schema-valid, so the runtime
+        // must admit it too (256 chars = 512 UTF-8 bytes).
+        let two_byte = "é".repeat(256);
+        assert_eq!(two_byte.len(), 512);
+        assert!(is_evidence_token(&two_byte));
+        // One character over the bound refuses, byte length regardless.
+        assert!(!is_evidence_token(&"é".repeat(257)));
+        assert!(!is_evidence_token(&"a".repeat(257)));
+        // The 512-character detail bound behaves the same way.
+        assert!("é".repeat(512).chars().count() <= 512);
+        // A schema-valid confidential marker is symbol-legal: that is
+        // exactly why admission must not double as an echo license.
+        assert!(is_evidence_symbol(
+            "private_consumer_name.synthetic_secret_52"
+        ));
     }
 }

@@ -211,6 +211,14 @@ fn accepted_owner_pins() -> Vec<tl::OwnerPin> {
     pins
 }
 
+/// The verified native qualification: the executed legs and the exact
+/// receipt digest, bound to the provisioned database that still exists.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct NativeQualification {
+    legs: std::collections::BTreeSet<String>,
+    receipt_digest: String,
+}
+
 /// The executed native legs the qualification receipt must name before
 /// any native-origin evidence is admitted: the durable ack-window
 /// restart, the durable attempt bound, and the DB-level identity race.
@@ -220,48 +228,124 @@ const NATIVE_QUALIFICATION_LEGS: [&str; 3] = [
     "synchronized_identity_race_binds_one_task",
 ];
 
+/// The exact execution boundary the battery records: real SQLite with
+/// separate connections and in-process recovery. Process termination
+/// and maintained-port execution are NOT covered by this boundary, and
+/// the admission says so by requiring the exact recorded spelling.
+const NATIVE_EXECUTION_BOUNDARY: &str = "same-process-recovery-real-sqlite";
+const NATIVE_RUNNER: &str = "cargo-test-lekalo-core-native_leg";
+
 /// Whether the environment actually stands behind native-origin
-/// evidence: the provisioning flag alone is never enough. Qualification
-/// requires the executed battery's receipt beside the provisioned DB —
-/// written by the `native_leg_*` battery itself after its assertions
-/// pass — naming the same database and every required leg. A forged
-/// flag without an executed battery is a refusal
-/// (`evidence-native-unqualified`), never a silent pass.
-fn native_qualified() -> bool {
+/// evidence, and with which executed legs. Qualification requires:
+/// the provisioning flag, a database path whose file EXISTS, and the
+/// executed battery's receipt beside it — read through the same
+/// bounded no-follow discipline as every other family input, parsed
+/// with the duplicate-checked decoder, closed to its exact member set,
+/// and naming the same database, the recorded execution boundary, and
+/// every required leg. A forged flag, a missing database, a tampered
+/// or hand-written receipt, or a duplicate-member receipt is a
+/// refusal (`evidence-native-unqualified`), never a silent pass.
+fn native_qualification() -> Option<NativeQualification> {
     if std::env::var("LEKALO_TASKLINKS_NATIVE").as_deref() != Ok("1") {
-        return false;
+        return None;
     }
-    let Ok(database) = std::env::var("LEKALO_TASKLINKS_NATIVE_DB") else {
-        return false;
-    };
+    let database = std::env::var("LEKALO_TASKLINKS_NATIVE_DB").ok()?;
     if database.is_empty() {
-        return false;
+        return None;
     }
-    let receipt_path = std::path::Path::new(&database).with_file_name(format!(
+    // The provisioned database must actually exist AND be a real
+    // SQLite database file (the magic header every SQLite database
+    // carries): a receipt naming a database nobody ever created is not
+    // custody, and neither is a marker file wearing the right name.
+    let database_path = std::path::Path::new(&database);
+    let database_meta = std::fs::metadata(database_path).ok()?;
+    if !database_meta.is_file() {
+        return None;
+    }
+    let mut header = [0u8; 16];
+    {
+        use std::io::Read as _;
+        std::fs::File::open(database_path)
+            .ok()?
+            .read_exact(&mut header)
+            .ok()?;
+    }
+    if !header.starts_with(b"SQLite format 3\0") {
+        return None;
+    }
+    let receipt_path = database_path.with_file_name(format!(
         "{}.qualified.json",
-        std::path::Path::new(&database)
+        database_path
             .file_name()
             .map(|name| name.to_string_lossy().to_string())
             .unwrap_or_default(),
     ));
-    let Ok(bytes) = std::fs::read(&receipt_path) else {
-        return false;
-    };
-    let Ok(receipt) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
-        return false;
-    };
-    if receipt["identity"] != "dev.lekalo.task-links-native-receipt@0.8.0" {
-        return false;
+    let bytes = read_bounded(
+        receipt_path
+            .to_str()
+            .map(str::to_owned)
+            .as_deref()
+            .unwrap_or_default(),
+    )
+    .ok()?;
+    // Duplicate-checked JSON decode: a smuggled duplicate member is a
+    // refusal, never a last-wins overwrite.
+    let receipt: serde_json::Value = tl::json_parse(&bytes).ok()?;
+    let object = receipt.as_object()?;
+    const RECEIPT_KEYS: [&str; 6] = [
+        "schemaVersion",
+        "identity",
+        "database",
+        "executionBoundary",
+        "runner",
+        "legs",
+    ];
+    if object.len() != RECEIPT_KEYS.len() {
+        return None;
     }
-    if receipt["database"] != database.as_str() {
-        return false;
+    for key in RECEIPT_KEYS {
+        if !object.contains_key(key) {
+            return None;
+        }
     }
-    let Some(legs) = receipt["legs"].as_array() else {
-        return false;
-    };
-    NATIVE_QUALIFICATION_LEGS
-        .iter()
-        .all(|required| legs.iter().any(|leg| leg.as_str() == Some(*required)))
+    if receipt["schemaVersion"] != "lekalo/task-links-native-receipt/v0.8.0"
+        || receipt["identity"] != "dev.lekalo.task-links-native-receipt@0.8.0"
+        || receipt["executionBoundary"] != NATIVE_EXECUTION_BOUNDARY
+        || receipt["runner"] != NATIVE_RUNNER
+    {
+        return None;
+    }
+    // The receipt names the exact database the battery ran against.
+    // Path SPELLING differs legitimately (forward vs back slashes), so
+    // the comparison is canonical — but still fail-closed: a receipt
+    // naming any other database (existing or not) refuses.
+    let receipt_database = receipt["database"].as_str()?;
+    if std::fs::canonicalize(database_path).ok()?
+        != std::fs::canonicalize(std::path::Path::new(receipt_database)).ok()?
+    {
+        return None;
+    }
+    let legs_json = receipt["legs"].as_array()?;
+    let mut legs = std::collections::BTreeSet::new();
+    for leg in legs_json {
+        let name = leg.as_str()?;
+        if name.is_empty() || name.len() > 128 {
+            return None;
+        }
+        legs.insert(name.to_owned());
+    }
+    if legs.len() != legs_json.len() {
+        return None;
+    }
+    for required in NATIVE_QUALIFICATION_LEGS {
+        if !legs.contains(required) {
+            return None;
+        }
+    }
+    Some(NativeQualification {
+        legs,
+        receipt_digest: format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes)),
+    })
 }
 
 fn check_profile(profile: &str) -> Result<(), DomainResult> {
@@ -410,7 +494,7 @@ fn execute(command: Command) -> Result<DomainResult, DomainResult> {
                         &read_bounded(path)?,
                         &attachment,
                         &compilation,
-                        native_qualified(),
+                        native_qualification().is_some(),
                     )
                     .map_err(|f| tl::into_result(&f))?,
                 ),
@@ -464,15 +548,28 @@ fn execute(command: Command) -> Result<DomainResult, DomainResult> {
                     &read_bounded(evidence_path)?,
                     &attachment,
                     &compilation,
-                    native_qualified(),
+                    native_qualification().is_some(),
                 )
                 .map_err(|f| tl::into_result(&f))?;
                 admitted.push(tl::portability::AdmittedEvidence {
                     evidence_id: summary.evidence_id,
                     origin: summary.origin,
                     scenario_id: summary.scenario_id,
+                    executed: summary.executed,
                 });
             }
+            // The verified qualification (executed legs + receipt digest)
+            // rides into the report: native target-guarantee rows claim
+            // support per executed leg and pin the exact receipt, never
+            // the selected profile file.
+            let native = native_qualification();
+            let native_evidence =
+                native
+                    .as_ref()
+                    .map(|qualification| tl::portability::NativeEvidence {
+                        legs: qualification.legs.clone(),
+                        receipt_digest: qualification.receipt_digest.clone(),
+                    });
             let report = tl::portability::report(
                 &attachment,
                 from,
@@ -480,6 +577,7 @@ fn execute(command: Command) -> Result<DomainResult, DomainResult> {
                 &profile,
                 &admitted,
                 &scenario_covers(&compilation),
+                native_evidence.as_ref(),
             );
             let gaps = tl::portability::findings(&report);
             if profile == "strict" && !gaps.is_empty() {

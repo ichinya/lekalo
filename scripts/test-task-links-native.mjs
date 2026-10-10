@@ -148,8 +148,38 @@ if (provisioned) {
             if (receipt.identity !== "dev.lekalo.task-links-native-receipt@0.8.0") {
               fail("native-receipt-identity", String(receipt.identity));
             }
+            // The recorded execution boundary must be honest: this
+            // battery executes real SQLite with separate connections
+            // and in-process recovery. It does NOT terminate processes
+            // and does NOT run the maintained port, and the receipt
+            // says exactly that. A receipt claiming a wider boundary is
+            // a fabrication, not qualification.
+            if (
+              receipt.executionBoundary !== "same-process-recovery-real-sqlite"
+            ) {
+              fail(
+                "native-receipt-boundary",
+                String(receipt.executionBoundary),
+              );
+            }
+            if (receipt.runner !== "cargo-test-lekalo-core-native_leg") {
+              fail("native-receipt-runner", String(receipt.runner));
+            }
+            // The provisioned base database is part of the custody: the
+            // battery itself creates it and records every executed leg
+            // as a durable row, so it must exist and carry the real
+            // SQLite header (a marker file is not a provisioned DB).
+            const databasePath = resolvePath(root, database);
+            if (!existsSync(databasePath)) {
+              fail("native-db-missing", databasePath);
+            } else {
+              const header = readFileSync(databasePath).subarray(0, 16);
+              if (Buffer.from(header).toString("latin1") !== "SQLite format 3\0") {
+                fail("native-db-header", databasePath);
+              }
+            }
             if (failures.length === 0) {
-              nativeLeg = "durable-restart-and-db-race-executed";
+              nativeLeg = "local-battery-executed";
             }
           }
         }
@@ -167,6 +197,8 @@ process.stdout.write(
     ok: true,
     gate,
     nativeLeg,
-    note: "mock evidence never satisfies the durable/race assertions; native coverage stays unclaimed until the qualified environment runs this gate with LEKALO_TASKLINKS_NATIVE=1",
+    note: nativeLeg === "local-battery-executed"
+      ? "the local battery executed real SQLite legs (identity race, in-process recovery, attempt bound); process-termination restarts and the maintained Laravel port remain pending qualification and are never claimed"
+      : "mock evidence never satisfies the durable/race assertions; native coverage stays unclaimed until the qualified environment runs this gate with LEKALO_TASKLINKS_NATIVE=1",
   })}\n`,
 );

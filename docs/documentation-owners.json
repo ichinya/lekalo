@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "productVersion": "0.8.0",
-  "cliSourceDigest": "sha256:2d53f4f9e371a5ac16a1ecee5a03f86b2a81373bbbabb59d3638967580f39454",
+  "cliSourceDigest": "sha256:468a8f49ed5879aa207a8d5760f95669f6610519e6451b2974c6fa433c4843c5",
   "p0Pages": [
     {
       "page": "README.md",
@@ -603,7 +603,7 @@
       "kind": "command",
       "command": "effects show",
       "usage": "lekalo effects show [OPTIONS] <OPERATION>",
-      "helpDigest": "sha256:10a254da468af7345d55a7687da00dae47c58af881d05d096e26f1c304eb512f",
+      "helpDigest": "sha256:5d8b05c3d5605f897fe57cf0d7331bb19410c5fa29b9017edd04d368ad94f090",
       "summary": "Show one operation's declared and detected effects",
       "leaf": true,
       "owner": "docs/effect-graph.md",
@@ -2668,6 +2668,15 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/graph.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/graph.schema.v0.8.0.json",
+      "sourceDigest": "sha256:d55a4a4d4db2f06cebeb4569b40ccb1c3965366a01554d098f4033aa036b7aaf",
+      "owner": "docs/graph.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/impact.schema.v0.2.16.json",
       "kind": "contract",
       "source": "contracts/impact.schema.v0.2.16.json",
@@ -2707,7 +2716,7 @@
       "id": "contract:contracts/ir.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/ir.schema.v0.8.0.json",
-      "sourceDigest": "sha256:561fbec91b60a8fe1f2cfb3956bb5e02c6f095e019cd51a83e6d866161781007",
+      "sourceDigest": "sha256:a3a77a7bccb14cc596ead83a6a53c709895d5c8464866ca8f319dac0fe160483",
       "owner": "docs/ir.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2779,7 +2788,7 @@
       "id": "contract:contracts/model.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/model.schema.v0.8.0.json",
-      "sourceDigest": "sha256:ed78f0701ba2206ebd623e0614d893f0d560f21a9dab71d9633689d0959bd4f6",
+      "sourceDigest": "sha256:fdd01019955210ab52439843ad5e3f4a7d305b4223b270bcb29fc2f74dc30f8d",
       "owner": "docs/model.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

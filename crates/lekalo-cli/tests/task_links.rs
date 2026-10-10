@@ -867,9 +867,12 @@ fn native_claims_are_qualification_gated() {
 
 /// Native qualification is a real admission path, not an env gate: a
 /// provisioned flag WITHOUT the executed battery's receipt is refused
-/// exactly like no flag at all, and a complete receipt (schemaVersion,
-/// identity, database, every required leg) beside the named DB admits
-/// the native claim. The receipt here simulates the battery's
+/// exactly like no flag at all; a receipt beside a database that does
+/// not exist refuses (custody requires the provisioned DB); a complete
+/// receipt (schemaVersion, identity, database, execution boundary,
+/// runner, every required leg) beside the EXISTING named DB admits the
+/// native claim; and a duplicate-member receipt refuses through the
+/// duplicate-checked decoder. The receipt here simulates the battery's
 /// committed artifact; the battery legs write it for real under the
 /// native gate.
 #[test]
@@ -908,11 +911,14 @@ fn native_qualification_requires_the_executed_battery_receipt() {
         envelope["diagnostics"][0]["data"]["detail"],
         "evidence-native-unqualified"
     );
-    // A complete executed-battery receipt beside the named DB admits.
+    // A receipt naming a database that does not exist refuses: the
+    // provisioned DB itself is part of the custody.
     let receipt = serde_json::json!({
         "schemaVersion": "lekalo/task-links-native-receipt/v0.8.0",
         "identity": "dev.lekalo.task-links-native-receipt@0.8.0",
         "database": database_str,
+        "executionBoundary": "same-process-recovery-real-sqlite",
+        "runner": "cargo-test-lekalo-core-native_leg",
         "legs": [
             "accepted_before_ack_survives_restart_as_unknown",
             "attempt_bound_survives_restart",
@@ -929,6 +935,29 @@ fn native_qualification_requires_the_executed_battery_receipt() {
     assert_eq!(
         output.status.code(),
         Some(1),
+        "a receipt without its database refuses"
+    );
+    let envelope: Value = serde_json::from_str(stderr_text(&output).trim()).expect("envelope");
+    assert_eq!(
+        envelope["diagnostics"][0]["data"]["detail"],
+        "evidence-native-unqualified"
+    );
+    // The battery's DB comes into existence; the complete receipt
+    // beside the existing DB admits through the qualification gate.
+    // The battery provisions a real SQLite database (its legs execute
+    // on bundled SQLite and the qualification rows land in this very
+    // file); the simulation here carries the database header the CLI
+    // requires — a bare marker file is not a provisioned database.
+    let mut header = vec![0u8; 100];
+    header[..16].copy_from_slice(b"SQLite format 3\0");
+    // Page size 4096 at offset 16 (big-endian u16).
+    header[16] = 0x10;
+    header[17] = 0x00;
+    std::fs::write(&database, &header).expect("provisioned db file");
+    let output = run_inspect(&env);
+    assert_eq!(
+        output.status.code(),
+        Some(1),
         "the forged native document (injected clock) still refuses, but for the RIGHT reason"
     );
     let envelope: Value = serde_json::from_str(stderr_text(&output).trim()).expect("envelope");
@@ -941,6 +970,8 @@ fn native_qualification_requires_the_executed_battery_receipt() {
         "schemaVersion": "lekalo/task-links-native-receipt/v0.8.0",
         "identity": "dev.lekalo.task-links-native-receipt@0.8.0",
         "database": database_str,
+        "executionBoundary": "same-process-recovery-real-sqlite",
+        "runner": "cargo-test-lekalo-core-native_leg",
         "legs": ["attempt_bound_survives_restart"]
     });
     std::fs::write(
@@ -948,6 +979,45 @@ fn native_qualification_requires_the_executed_battery_receipt() {
         serde_json::to_vec_pretty(&incomplete).expect("receipt"),
     )
     .expect("write receipt");
+    let output = run_inspect(&env);
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value = serde_json::from_str(stderr_text(&output).trim()).expect("envelope");
+    assert_eq!(
+        envelope["diagnostics"][0]["data"]["detail"],
+        "evidence-native-unqualified"
+    );
+    // A receipt carrying a wider execution boundary than the battery
+    // records is a fabrication.
+    let overclaiming = serde_json::json!({
+        "schemaVersion": "lekalo/task-links-native-receipt/v0.8.0",
+        "identity": "dev.lekalo.task-links-native-receipt@0.8.0",
+        "database": database_str,
+        "executionBoundary": "process-kill-and-maintained-port",
+        "runner": "cargo-test-lekalo-core-native_leg",
+        "legs": [
+            "accepted_before_ack_survives_restart_as_unknown",
+            "attempt_bound_survives_restart",
+            "synchronized_identity_race_binds_one_task"
+        ]
+    });
+    std::fs::write(
+        &receipt_path,
+        serde_json::to_vec_pretty(&overclaiming).expect("receipt"),
+    )
+    .expect("write receipt");
+    let output = run_inspect(&env);
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value = serde_json::from_str(stderr_text(&output).trim()).expect("envelope");
+    assert_eq!(
+        envelope["diagnostics"][0]["data"]["detail"],
+        "evidence-native-unqualified"
+    );
+    // A duplicate-member receipt refuses through the duplicate-checked
+    // decoder: last-key-wins parsing is an admission bypass.
+    let duplicate = format!(
+        "{{\"schemaVersion\":\"lekalo/task-links-native-receipt/v0.8.0\",\"identity\":\"dev.lekalo.task-links-native-receipt@0.8.0\",\"database\":\"{database_str}\",\"executionBoundary\":\"wrong\",\"executionBoundary\":\"same-process-recovery-real-sqlite\",\"runner\":\"cargo-test-lekalo-core-native_leg\",\"legs\":[\"accepted_before_ack_survives_restart_as_unknown\",\"attempt_bound_survives_restart\",\"synchronized_identity_race_binds_one_task\"]}}"
+    );
+    std::fs::write(&receipt_path, duplicate).expect("write duplicate receipt");
     let output = run_inspect(&env);
     assert_eq!(output.status.code(), Some(1));
     let envelope: Value = serde_json::from_str(stderr_text(&output).trim()).expect("envelope");

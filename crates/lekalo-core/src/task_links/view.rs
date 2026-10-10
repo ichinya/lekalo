@@ -181,6 +181,10 @@ pub struct EvidenceSummary {
     pub scenario_id: String,
     /// Step count.
     pub steps: u64,
+    /// The commands of the successful steps, so a consumer can prove
+    /// what this run actually executed instead of trusting the
+    /// scenario label.
+    pub executed: std::collections::BTreeSet<String>,
     /// Whether the evidence pins match the attachment (always true for
     /// admitted evidence).
     pub pins_match: bool,

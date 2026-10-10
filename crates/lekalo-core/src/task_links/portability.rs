@@ -126,15 +126,31 @@ pub struct EvidenceCoverage {
 }
 
 /// The admitted-evidence view the portability join consumes: the
-/// summary plus the exact scenario the run witnessed.
+/// summary, the exact scenario the run witnessed, and the commands the
+/// run actually executed successfully.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AdmittedEvidence {
-    /// Evidence id (a validated qualified symbol).
+    /// Evidence id (the admitted opaque reference).
     pub evidence_id: String,
     /// Declared origin (`mock`/`reference`/`native`).
     pub origin: String,
     /// The declared scenario the run witnessed.
     pub scenario_id: String,
+    /// The commands of the run's successful steps: a scenario label is
+    /// witnessed only when a successful step executed a covered symbol.
+    pub executed: std::collections::BTreeSet<String>,
+}
+
+/// The verified native qualification the report consumes: the executed
+/// battery legs and the exact receipt digest. Target-guarantee rows
+/// claim support per executed leg and pin the receipt, never the
+/// selected profile file.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeEvidence {
+    /// The executed legs the qualification receipt names.
+    pub legs: std::collections::BTreeSet<String>,
+    /// The exact `sha256:` digest of the qualification receipt bytes.
+    pub receipt_digest: String,
 }
 
 /// Build the portability report.
@@ -159,6 +175,7 @@ pub fn report(
     profile: &str,
     evidence: &[AdmittedEvidence],
     scenario_covers: &BTreeMap<String, BTreeSet<String>>,
+    native: Option<&NativeEvidence>,
 ) -> Report {
     let revision = attachment.attachment_revision().as_str().to_owned();
     let project_id = attachment.project_id().to_owned();
@@ -187,8 +204,9 @@ pub fn report(
         !attachment.field_policies().is_empty() && !attachment.action_policies().is_empty();
     let family_pin = super::version::IDENTITY.to_owned();
     // Evidence is bound to facts: a fact only claims evidence when an
-    // admitted run witnessed a declared scenario that covers one of
-    // the fact's own symbols.
+    // admitted run named the declared scenario AND a successful step of
+    // that run actually executed a covered symbol. A borrowed scenario
+    // label over refused or unrelated steps witnesses nothing.
     let witnessed = |fact_scenarios: &[&str], native: bool| -> bool {
         evidence.iter().any(|run| {
             let origin_matches = if native {
@@ -201,6 +219,7 @@ pub fn report(
                     scenario_covers
                         .get(&run.scenario_id)
                         .is_some_and(|covered| covered.contains(*required))
+                        && run.executed.contains(*required)
                 })
         })
     };
@@ -346,33 +365,65 @@ pub fn report(
         });
     }
     let rules = attachment.delivery_rules();
-    // Target guarantees are target facts: they claim support only from
-    // qualified native evidence of the delivery surface, and stay
-    // honestly unknown otherwise. No row is a constant.
+    // Target guarantees are target facts: each claims support only from
+    // qualified native evidence of the delivery surface AND the exact
+    // executed battery leg that proves THAT guarantee, pinning the
+    // qualification receipt as provenance. One target-independent
+    // scenario label promotes nothing: an unexecuted guarantee stays
+    // honestly unknown even when a different native runner passed.
     let native_seen = witnessed(
         &["tasklinks.dispatch_outbox", "tasklinks.ack_delivery"],
         true,
     );
-    let target_row = |fact: &'static str, pin: String| Row {
-        fact,
-        requirement: Requirement::Required,
-        provided: if native_seen {
-            Provided::Supported
-        } else {
-            Provided::Unknown
-        },
-        pin,
-        evidence_source: if native_seen {
-            EvidenceSource::NativeEvidence
-        } else {
-            EvidenceSource::AttachmentDeclaration
-        },
+    let leg_ran = |leg: &str| {
+        native_seen && native.is_some_and(|qualification| qualification.legs.contains(leg))
     };
+    let target_row = |fact: &'static str, leg: Option<&str>, pin: String| {
+        let supported = match leg {
+            Some(leg) => leg_ran(leg),
+            None => false,
+        };
+        Row {
+            fact,
+            requirement: Requirement::Required,
+            provided: if supported {
+                Provided::Supported
+            } else {
+                Provided::Unknown
+            },
+            pin,
+            evidence_source: if supported {
+                EvidenceSource::NativeEvidence
+            } else {
+                EvidenceSource::AttachmentDeclaration
+            },
+        }
+    };
+    let identity_race = "synchronized_identity_race_binds_one_task";
+    let receipt_pin = native
+        .map(|qualification| qualification.receipt_digest.clone())
+        .unwrap_or_else(|| to_profile.digest.clone());
     let target_guarantees = vec![
-        target_row("unique-index", to_profile.digest.clone()),
-        target_row("compare-and-swap", to_profile.digest.clone()),
-        target_row("local-transaction", to_profile.digest.clone()),
-        target_row("durable-outbox", to_profile.digest.clone()),
+        // The DB-level identity race executed real competing inserts on
+        // separate connections under the database unique index: it is
+        // the executed proof of the uniqueness and local-transaction
+        // facts, pinned to the exact receipt.
+        target_row("unique-index", Some(identity_race), receipt_pin.clone()),
+        // The battery executes no CAS-specific leg; the fact stays
+        // honestly unknown until one runs.
+        target_row("compare-and-swap", None, to_profile.digest.clone()),
+        target_row(
+            "local-transaction",
+            Some(identity_race),
+            receipt_pin.clone(),
+        ),
+        // The durable outbox facts have their own executed legs: the
+        // ack-window recovery and the durable attempt bound.
+        target_row(
+            "durable-outbox",
+            Some("accepted_before_ack_survives_restart_as_unknown"),
+            receipt_pin,
+        ),
         Row {
             fact: "delivery-uncertainty",
             requirement: Requirement::Required,

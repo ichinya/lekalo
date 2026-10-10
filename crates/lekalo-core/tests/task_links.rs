@@ -26,6 +26,13 @@ const TASK_TWO: &str = "22222222-2222-2222-2222-222222222222";
 const LINK_A: &str = "aaaaaaaa-0000-0000-0000-000000000001";
 const LINK_B: &str = "bbbbbbbb-0000-0000-0000-000000000002";
 
+/// The one process-wide lock for tests that must run with the CWD at
+/// the workspace root (the loader resolves relative project selectors
+/// the same way the CLI does). Per-function statics would be distinct
+/// locks and the concurrent `set_current_dir` calls would corrupt each
+/// other's relative reads.
+static CWD_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn link(link_id: &str, task: &str, installation: &str, provider: &str) -> Link {
     Link {
         link_id: link_id.to_owned(),
@@ -1272,7 +1279,11 @@ mod native_leg {
     /// Record one executed leg in the qualification receipt beside the
     /// provisioned DB: the receipt is the real admission artifact the
     /// CLI requires before any native-origin evidence is admitted (a
-    /// bare environment flag never qualifies).
+    /// bare environment flag never qualifies). The leg is ALSO a real
+    /// durable row in the provisioned base database itself: the DB is
+    /// created and written by this battery run (a genuine SQLite
+    /// database, never a marker file), so the CLI's existence and
+    /// header checks bind qualification to an actually executed run.
     fn record_executed_leg(leg: &str) {
         let base = std::path::PathBuf::from(
             std::env::var("LEKALO_TASKLINKS_NATIVE_DB").expect("provisioned db"),
@@ -1283,6 +1294,33 @@ mod native_leg {
                 .map(|name| name.to_string_lossy().to_string())
                 .expect("db file name")
         ));
+        // The durable leg row: the base DB is provisioned by this very
+        // run, through the same bundled SQLite every leg executes on.
+        {
+            let connection = rusqlite::Connection::open(&base).expect("open provisioned base db");
+            connection
+                .execute_batch(
+                    "PRAGMA journal_mode = WAL;
+                     PRAGMA synchronous = FULL;
+                     CREATE TABLE IF NOT EXISTS qualification (
+                         leg TEXT PRIMARY KEY,
+                         execution_boundary TEXT NOT NULL,
+                         runner TEXT NOT NULL
+                     );",
+                )
+                .expect("qualification table");
+            connection
+                .execute(
+                    "INSERT OR IGNORE INTO qualification (leg, execution_boundary, runner)
+                     VALUES (?1, ?2, ?3)",
+                    rusqlite::params![
+                        leg,
+                        "same-process-recovery-real-sqlite",
+                        "cargo-test-lekalo-core-native_leg"
+                    ],
+                )
+                .expect("record leg row");
+        }
         let mut receipt: serde_json::Value = std::fs::read(&receipt_path)
             .ok()
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
@@ -1291,6 +1329,13 @@ mod native_leg {
                     "schemaVersion": "lekalo/task-links-native-receipt/v0.8.0",
                     "identity": "dev.lekalo.task-links-native-receipt@0.8.0",
                     "database": base.to_string_lossy(),
+                    // The executed boundary is recorded, never implied:
+                    // these legs run real SQLite with separate
+                    // connections and in-process recovery, and the
+                    // receipt says exactly that — process-restart and
+                    // maintained-port qualification stay pending.
+                    "executionBoundary": "same-process-recovery-real-sqlite",
+                    "runner": "cargo-test-lekalo-core-native_leg",
                     "legs": [],
                 })
             });
@@ -1628,14 +1673,20 @@ mod native_leg {
             .expect("identity table");
         drop(creator);
         let (tx, rx) = std::sync::mpsc::channel();
+        // A real barrier: both workers hold their own open connection
+        // and only insert once BOTH are live, so the competing inserts
+        // genuinely overlap instead of accidentally serializing.
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
         let mut handles = Vec::new();
         for task in ["native-task-a", "native-task-b"] {
             let tx = tx.clone();
             let path = path.clone();
+            let barrier = std::sync::Arc::clone(&barrier);
             handles.push(std::thread::spawn(move || {
                 // Each worker holds its own connection for the whole
                 // insert: a genuine DB-level race.
                 let connection = open(&path);
+                barrier.wait();
                 let insert = connection.execute(
                     "INSERT INTO link_identity (
                          workspace_id, installation_id, provider_id, object_type, external_id, task_id
@@ -1816,9 +1867,7 @@ fn extended_effects_declare_the_external_write_and_partial_failure() {
     use lekalo_core::ir::compile;
     use lekalo_core::loader::{normalize_model, LoadSelection};
     use std::path::Path;
-    use std::sync::Mutex;
 
-    static CWD_LOCK: Mutex<()> = Mutex::new(());
     const FIXTURE: &str = "tests/fixtures/task-external-links/project";
     const ATTACHMENT: &str = "tests/fixtures/task-external-links/contracts/extended-effects.json";
 
@@ -2034,9 +2083,7 @@ fn joins_enforce_referenced_semantics_not_mere_existence() {
     use lekalo_core::loader::{normalize_model, LoadSelection};
     use lekalo_core::task_links as tl;
     use std::path::Path;
-    use std::sync::Mutex;
 
-    static CWD_LOCK: Mutex<()> = Mutex::new(());
     let _guard = CWD_LOCK.lock().expect("cwd lock");
     let original = std::env::current_dir().expect("current dir");
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))

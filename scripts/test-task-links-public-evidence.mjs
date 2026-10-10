@@ -96,6 +96,55 @@ if (!binary) {
       }
     }
   }
+
+  // 2b. Valid-grammar confidential markers are admitted but never
+  //    echoed: a schema-valid evidence id naming a forbidden consumer
+  //    identity rides through admission (grammar is not
+  //    classification) and the public projection carries only the
+  //    opaque admitted reference derived from the exact bytes — in the
+  //    success path AND in the failure path. The marker document lives
+  //    outside the checkout, like every mutated runtime input.
+  {
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const tmp = mkdtempSync(join(tmpdir(), "lekalo-privacy-marker-"));
+    const marker = "taskhub.evidence.synthetic_secret_52";
+    const marked = JSON.parse(
+      readFileSync(join(root, "tests/fixtures/task-external-links/evidence/mock-run.json"), "utf8"),
+    );
+    marked.evidenceId = marker;
+    const markedPath = join(tmp, "marked-evidence.json");
+    writeFileSync(markedPath, JSON.stringify(marked, null, 2));
+    const refused = JSON.parse(JSON.stringify(marked));
+    refused.scenarioId = "tasklinks.scenario.ghost_scenario";
+    const refusedPath = join(tmp, "refused-evidence.json");
+    writeFileSync(refusedPath, JSON.stringify(refused, null, 2));
+    const probe = (path) =>
+      spawnSync(
+        binary,
+        ["--no-cache", "--json", "task-links", "inspect", "tasklinks.task_external_link",
+         "--project", "tests/fixtures/task-external-links/project",
+         "--attachment", "tests/fixtures/task-external-links/contracts/integration.json",
+         "--evidence", path],
+        { cwd: root, encoding: "utf8", timeout: 120000 },
+      );
+    const admitted = probe(markedPath);
+    if (admitted.status !== 0) {
+      fail("marker-admission", String(admitted.status) + (admitted.stderr ?? "").slice(0, 200));
+    }
+    const failure = probe(refusedPath);
+    if (failure.status === 0) fail("marker-refusal-exit", String(failure.status));
+    for (const result of [admitted, failure]) {
+      for (const channel of [result.stdout ?? "", result.stderr ?? ""]) {
+        if (channel.includes(marker)) {
+          fail("cli-confidential-marker-leak", "the producer-supplied marker reached a public channel");
+        }
+      }
+    }
+    if (admitted.status === 0 && !(admitted.stdout ?? "").includes("tasklinks.evidence.admitted.")) {
+      fail("marker-opaque-reference", "the admitted projection must carry the opaque reference");
+    }
+  }
 }
 
 // 3. Provenance registration: the family is declared synthetic.
