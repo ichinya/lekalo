@@ -463,6 +463,26 @@ pub(crate) fn admit_execution(
             "plan-mismatch",
         )));
     }
+    // The declared obligations are the plan's, never the document's: a
+    // forged execution could otherwise substitute its own check set (and
+    // with it the demanded coverage and the oracle ids) while keeping the
+    // pinned spec digest string. The envelope's checks must be the exact
+    // plan-time image of the specification's checks — same obligations,
+    // same kinds, same order (X1/F11).
+    if execution.checks.len() != plan.preservation.len()
+        || !execution
+            .checks
+            .iter()
+            .zip(plan.preservation.iter())
+            .all(|(check, obligation)| {
+                check.id == obligation.obligation && check.kind == obligation.check
+            })
+    {
+        return Err(DomainResult::invalid(diagnostic::input_invalid_set(
+            "verification",
+            "checks-mismatch",
+        )));
+    }
     // Custody first: a conclusion without this module's run digest and
     // a bounded measured duration is never evidence of passing.
     let Some(custody) = &execution.custody else {

@@ -369,6 +369,18 @@ const oracleInvented = forgedApply("forged-oracle.json", forge((doc) => {
 if (oracleInvented.result.status !== 1 || !oracleInvented.json.diagnostics.some((item) => item.code === "LEK-ADOPT-007")) {
   fail("forged-oracle", { status: oracleInvented.result.status, diagnostics: oracleInvented.json.diagnostics });
 }
+// A substituted check set refuses even when fully self-consistent: the
+// declared obligations are the plan's preservation image, never the
+// document's own (X1).
+const substituted = forgedApply("forged-substituted.json", forge((doc) => {
+  doc.checks = [{ id: "forged.obligation", kind: "semantic", expect_exit: 0, expect_stdout: [] }];
+  doc.baseline = { checks: [{ id: "forged.obligation", status: "passed", exit: 0, detail: "ok" }] };
+  doc.candidate = { checks: [{ id: "forged.obligation", status: "passed", exit: 0, detail: "ok" }] };
+  doc.oracle = { status: "passed", detail: "forged" };
+}));
+if (substituted.result.status !== 1 || !substituted.json.diagnostics.some((item) => item.id === "adoption.input-invalid" && item.data && item.data.reason === "checks-mismatch")) {
+  fail("forged-substituted", { status: substituted.result.status, diagnostics: substituted.json.diagnostics });
+}
 // The documented residual: a hand-forgery that recomputes every public
 // member over a self-consistent envelope is a consistency pass, not an
 // authenticity proof — apply completes, and the exact rollback owns the
