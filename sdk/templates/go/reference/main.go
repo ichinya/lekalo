@@ -7,6 +7,8 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	sdk "github.com/ichinya/lekalo-adapter-sdk-go/runtime"
 )
@@ -15,6 +17,27 @@ const (
 	adapterID = "sdk-reference"
 	writeRoot = ".lekalo/generated"
 )
+
+// fault reports whether the closed hostile-mode knob is active (issue
+// #106 review r3 #1/#2): the same --lekalo-fault vocabulary as the
+// handwritten fake-adapter control (crash, garbage, hang, noise,
+// mutate-dry, extra-write), so the lifecycle lanes drive the hostile
+// classes against the real SDK serve loop. A run without the flag is
+// fully cooperative.
+func fault(name string) bool {
+	value := ""
+	for index, argument := range os.Args {
+		if argument == "--lekalo-fault" && index+1 < len(os.Args) {
+			value = os.Args[index+1]
+		}
+	}
+	for _, candidate := range strings.Split(value, ",") {
+		if candidate == name {
+			return true
+		}
+	}
+	return false
+}
 
 type referenceAdapter struct {
 	identity    sdk.Value
@@ -110,9 +133,18 @@ func (a *referenceAdapter) Handle(operation string, request sdk.Value) sdk.Outpu
 				return sdk.Output{Error: [3]string{"invalid", "write-refused", "the write plan left the declared output scope: " + violation}, HasError: true}
 			}
 		}
-		if dryRun, _ := sdk.GetBool(request, "dry_run"); !dryRun {
+		if dryRun, _ := sdk.GetBool(request, "dry_run"); !dryRun || fault("mutate-dry") {
 			_ = os.MkdirAll(filepath.Dir(modelPath), 0o755)
-			_ = os.WriteFile(modelPath, []byte(body), 0o644)
+			// The injected dry-run mutation must never normalize to a clean
+			// pass (issue #106 review r3 #1): when the host's confinement
+			// sandbox refuses the write, the fault surfaces as a failed
+			// exchange, never a silent success.
+			if err := os.WriteFile(modelPath, []byte(body), 0o644); err != nil {
+				return sdk.Output{Error: [3]string{"invalid", "dry-run-mutation-refused", "the injected dry-run mutation was refused by the confinement sandbox"}, HasError: true}
+			}
+		}
+		if dryRun, _ := sdk.GetBool(request, "dry_run"); fault("extra-write") && !dryRun {
+			_ = os.WriteFile(filepath.Join(filepath.Dir(modelPath), "extra.txt"), []byte("undeclared"), 0o644)
 		}
 		planID := sdk.GetString(request, "plan_id")
 		if planID == "" {
@@ -156,6 +188,24 @@ func refused() sdk.Output {
 }
 
 func main() {
+	// Hostile pre-serve faults (issue #106 review r3 #1/#2): crash
+	// refuses the handshake with a nonzero exit, garbage pollutes the
+	// wire surface, hang never responds (deadline enforcement), and
+	// noise trips the stderr bounds. All are no-ops cooperatively.
+	if fault("crash") {
+		os.Exit(3)
+	}
+	if fault("garbage") {
+		_, _ = os.Stdout.WriteString("<this is not json>")
+		os.Exit(0)
+	}
+	if fault("hang") {
+		time.Sleep(60 * time.Second)
+		os.Exit(0)
+	}
+	if fault("noise") {
+		_, _ = os.Stderr.WriteString(strings.Repeat("x", 2_000_000))
+	}
 	identity, err := sdk.BuildAdapterIdentity(adapterID, "0.1.0", sdk.Sha256("lekalo adapter-sdk reference adapter"))
 	if err != nil {
 		os.Exit(1)

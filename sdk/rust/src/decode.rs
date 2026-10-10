@@ -7,7 +7,7 @@
 use crate::generated::protocol;
 use crate::ids::{is_plan_id, is_request_id, is_sha256_digest};
 use crate::json::{canonical, read_single_object, ParseReason, Value};
-use crate::paths::{is_capability_id, is_contract_version, is_logical_path, is_token};
+use crate::paths::{is_capability_id, is_contract_version, is_logical_path, is_semantic_id, is_token};
 
 /// A decode/validate refusal: one closed safe reason token.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -664,6 +664,17 @@ fn admit_scan_entry(value: &Value) -> Result<(), Refusal> {
                 return Err(Refusal::new("decode", "shape"));
             }
             if !bounded_text(reference.get("target").unwrap_or(&Value::Null), 192) {
+                return Err(Refusal::new("decode", "bounds"));
+            }
+            // The target carries the manifest-local semantic-id grammar
+            // (core trace::id::is_semantic_id, issue #106 review r3 #8):
+            // production's response decoder refuses path-style slash
+            // targets, so the SDK must too.
+            if !reference
+                .get("target")
+                .and_then(Value::as_str)
+                .is_some_and(is_semantic_id)
+            {
                 return Err(Refusal::new("decode", "bounds"));
             }
             let role = reference.get("role").and_then(Value::as_str).unwrap_or("");

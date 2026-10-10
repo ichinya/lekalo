@@ -296,6 +296,29 @@ func IsToken(value string) bool {
 	return true
 }
 
+// IsSemanticId reports whether one scan-entry evidence reference target
+// matches the manifest-local semantic-id grammar (core
+// trace::id::is_semantic_id, issue #106 review r3 #8): non-empty, at
+// most 192 bytes, ASCII alphanumeric or `_.:-`, starting alphanumeric or
+// underscore. The SDK used to enforce a length bound only, admitting
+// slash-path targets the production response decoder refuses.
+func IsSemanticId(value string) bool {
+	if value == "" || len(value) > 192 {
+		return false
+	}
+	first := value[0]
+	if !(first >= 'a' && first <= 'z') && !(first >= 'A' && first <= 'Z') && !(first >= '0' && first <= '9') && first != '_' {
+		return false
+	}
+	for index := 0; index < len(value); index++ {
+		c := value[index]
+		if !(c >= 'a' && c <= 'z') && !(c >= 'A' && c <= 'Z') && !(c >= '0' && c <= '9') && c != '_' && c != '.' && c != ':' && c != '-' {
+			return false
+		}
+	}
+	return true
+}
+
 // IsWireToken reports whether one lint-request identifier matches the
 // production ai-lint token grammar (issue #106 review r3 #5): non-empty,
 // at most 256 bytes, ASCII alphanumeric or `_.:/#@\\-`, starting

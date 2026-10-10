@@ -15,6 +15,32 @@ use Lekalo\AdapterSdk\Runtime\Serve;
 const WRITE_ROOT = '.lekalo/generated';
 const ADAPTER_ID = 'sdk-reference';
 
+// Hostile-mode fault knobs (issue #106 review r3 #1/#2): the same closed
+// vocabulary as the handwritten fake-adapter control (crash, garbage,
+// hang, noise, mutate-dry, extra-write), so the lifecycle lanes drive
+// the hostile classes against the real SDK serve loop. A run without
+// --lekalo-fault is fully cooperative.
+$FAULT_ARG = array_search('--lekalo-fault', $_SERVER['argv'], true);
+$FAULT = is_int($FAULT_ARG) && isset($_SERVER['argv'][$FAULT_ARG + 1]) ? $_SERVER['argv'][$FAULT_ARG + 1] : '';
+function fault(string $name): bool {
+    global $FAULT;
+    return in_array($name, explode(',', $FAULT), true);
+}
+if (fault('crash')) {
+    exit(3);
+}
+if (fault('garbage')) {
+    fwrite(STDOUT, '<this is not json>');
+    exit(0);
+}
+if (fault('hang')) {
+    sleep(60);
+    exit(0);
+}
+if (fault('noise')) {
+    fwrite(STDERR, str_repeat('x', 2_000_000));
+}
+
 $identity = Build::buildAdapterIdentity(ADAPTER_ID, '0.1.0', Ids::sha256('lekalo adapter-sdk reference adapter'));
 $writeScopes = [WRITE_ROOT . '/' . ADAPTER_ID . '/**'];
 $capabilitiesMap = [
@@ -76,9 +102,18 @@ $handlers = [
                 return ['error' => ['errorClass' => 'invalid', 'errorCode' => 'write-refused', 'message' => "the write plan left the declared output scope: {$violation}"]];
             }
         }
-        if (($request['dry_run'] ?? null) === false) {
+        if (($request['dry_run'] ?? null) === false || fault('mutate-dry')) {
             @mkdir(dirname($deterministic['modelPath']), 0777, true);
-            file_put_contents($deterministic['modelPath'], $deterministic['body']);
+            // The injected dry-run mutation must never normalize to a clean
+            // pass (issue #106 review r3 #1): when the host's confinement
+            // sandbox refuses the write, the fault surfaces as a failed
+            // exchange, never a silent success.
+            if (@file_put_contents($deterministic['modelPath'], $deterministic['body']) === false) {
+                return ['error' => ['errorClass' => 'invalid', 'errorCode' => 'dry-run-mutation-refused', 'message' => 'the injected dry-run mutation was refused by the confinement sandbox']];
+            }
+        }
+        if (fault('extra-write') && ($request['dry_run'] ?? null) === false) {
+            file_put_contents(dirname($deterministic['modelPath']) . '/extra.txt', 'undeclared');
         }
         return [
             'planId' => $request['plan_id'] ?? planIdOf($deterministic['writes']),

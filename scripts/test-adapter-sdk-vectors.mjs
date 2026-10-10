@@ -8,15 +8,34 @@
  * negatives are compared too: a codec that accepts what production
  * admission refuses fails this gate, not the corpus.
  *
- * Since the round-1 review (issue #106) the gate also enforces:
- *   - the complete declared family set (config.testVectorFamilies): a
- *     runner that skips a family, or a corpus directory that loses its
- *     files, fails here instead of silently shrinking the comparison;
+ * Since the round-2/round-3 reviews (issue #106) the gate also enforces:
+ *   - the complete declared family set (config.testVectorFamilies) with
+ *     CORPUS-RELATIVE completeness: per-directory executed counts and the
+ *     canonical output name set are compared against the files on disk,
+ *     so an omission shared by every runner fails instead of hiding in
+ *     the baseline (review r3 #9);
  *   - the lifecycle recipes execute through the real reference adapters
- *     (typescript + rust) with per-recipe terminal expectations;
- *   - production admission agreement: the upgrade rows replay through
- *     the lekalo-core wire decoder (the production oracle binary) and
- *     must accept/refuse exactly like the generated matrix.
+ *     on every lane, the control lane is identified by NAME (never argv
+ *     sniffing), the hostile fault classes actually execute against the
+ *     real SDK serve loops through the templates' `--lekalo-fault` knobs,
+ *     the file-transport fixture drives its declared ["file"] transport,
+ *     and the executed recipe×lane pairs are counted and asserted —
+ *     zero hostile or file legs is a gate failure, not a green verdict
+ *     (review r3 #1);
+ *   - the native-template bootstrap provisions missing binaries with
+ *     per-language build descriptors (cargo --manifest-path, go build
+ *     -o) selected by executable identity, so a clean checkout passes
+ *     on every OS (review r3 #2);
+ *   - production admission agreement over the FULL corpus as raw BYTES
+ *     in hex framing: valid, invalid, semantic-request, and upgrade rows
+ *     replay through the lekalo-core wire decoder unchanged (numeric
+ *     spellings, duplicate keys, CR/LF preserved), and the response
+ *     corpus replays through the production response decoder (review
+ *     r3 #8);
+ *   - process-level transport vectors: a raw invalid-UTF-8 request file
+ *     must refuse on every language, and a valid request whose multibyte
+ *     character straddles the stdin chunk boundary must decode intact
+ *     (review r3 #6).
  *
  * Usage:
  *   node scripts/test-adapter-sdk-vectors.mjs --language all
@@ -32,7 +51,7 @@
  * failure report on stderr otherwise.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -52,15 +71,34 @@ const ALL = ["typescript", "rust", "go", "php"];
 const languages = language === "all" ? ALL : ALL.includes(language) ? [language] : null;
 if (!languages) fail("usage", "--language must be one of rust|typescript|go|php|all");
 
+const run = (program, args_, cwd, options) =>
+  spawnSync(program, args_, { cwd: cwd ?? ROOT, encoding: "utf8", timeout: 600_000, shell: process.platform === "win32" && program !== process.execPath, ...options });
+
+// The Rust runner compiles the SDK crate into the binary; a poisoned
+// incremental target dir once served a stale binary that certified old
+// admission behavior (review r2 #15 disposition). Build it in a fresh
+// target dir so the verdict always reflects current sources. The native
+// lifecycle templates get the same treatment below (review r3 #2).
+const rustTargetDir = mkdtempSync(join(tmpdir(), "adapter-sdk-vectors-rust-"));
+const nativeTemplateDir = mkdtempSync(join(tmpdir(), "adapter-sdk-vectors-native-"));
+process.on("exit", () => {
+  for (const dir of [rustTargetDir, nativeTemplateDir]) {
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ }
+  }
+});
+
 const RUNNERS = {
   go: { command: "go", args: ["run", "./internal/vectorsrunner"], cwd: join(ROOT, "sdk/go"), label: "go run ./internal/vectorsrunner" },
   php: { command: "php", args: ["test/vectors.php"], cwd: join(ROOT, "sdk/php"), label: "php test/vectors.php" },
-  rust: { command: "cargo", args: ["run", "--quiet", "--bin", "vectors"], cwd: join(ROOT, "sdk/rust"), label: "cargo run --bin vectors" },
+  rust: {
+    command: "cargo",
+    args: ["run", "--quiet", "--bin", "vectors"],
+    cwd: join(ROOT, "sdk/rust"),
+    label: "cargo run --bin vectors (fresh target dir)",
+    env: { CARGO_TARGET_DIR: rustTargetDir },
+  },
   typescript: { command: process.execPath, args: ["test/vectors.mjs"], cwd: join(ROOT, "sdk/typescript"), label: "node test/vectors.mjs" },
 };
-
-const run = (program, args_, cwd) =>
-  spawnSync(program, args_, { cwd: cwd ?? ROOT, encoding: "utf8", timeout: 600_000, shell: process.platform === "win32" && program !== process.execPath });
 
 const verdicts = {};
 const missing = [];
@@ -70,7 +108,14 @@ for (const lang of languages) {
     missing.push(lang);
     continue;
   }
-  const run = spawnSync(runner.command, runner.args, { cwd: runner.cwd, encoding: "utf8", timeout: 600_000, input: "", shell: process.platform === "win32" });
+  const run = spawnSync(runner.command, runner.args, {
+    cwd: runner.cwd,
+    encoding: "utf8",
+    timeout: 600_000,
+    input: "",
+    shell: process.platform === "win32",
+    env: { ...process.env, ...(runner.env ?? {}) },
+  });
   if (run.error || run.status !== 0) {
     const detail = run.error ? String(run.error) : `${run.stdout ?? ""}\n${run.stderr ?? ""}`.slice(-4000);
     if (!missing.includes(lang)) missing.push(lang);
@@ -96,23 +141,52 @@ if (missing.length > 0) {
   process.exit(0);
 }
 
+const config = JSON.parse(readFileSync(join(ROOT, "sdk/schema-inputs.json"), "utf8"));
+const corpusRoot = join(ROOT, "tests/fixtures/adapter-sdk");
+const FAMILY_DIRECTORIES = {
+  canonical: ["canonical"],
+  codec: ["valid", "invalid"],
+  security: ["security"],
+  semantic: ["semantic"],
+  upgrade: ["upgrade"],
+};
+
+/** Corpus-relative completeness (issue #106 review r3 #9): the expected
+ * case names and per-directory counts derive from the files on disk, so
+ * an omission shared by every runner still fails. */
+const corpusFiles = (directory) =>
+  readdirSync(join(corpusRoot, directory))
+    .filter((name) => name.endsWith(".json") && !name.endsWith(".expect.json"))
+    .sort();
+const corpusCanonicalNames = corpusFiles("canonical").map((name) => `canonical/${name}`);
+
 // Cross-language canonical byte comparison: every language must emit the
 // exact same canonical bytes for the same values, and the OUTPUT NAME SET
-// must match the baseline exactly — a missing or extra canonical output
-// is a mismatch, never a skip (issue #106 review r2 #11).
-const baseline = Object.entries(verdicts)[0][1].canonicalOutputs ?? {};
-if (Object.keys(baseline).length === 0) {
-  fail("canonical-baseline-empty", "the first language emitted zero canonical outputs");
+// must equal the corpus set exactly — a missing or extra canonical output
+// is a mismatch, never a skip.
+if (corpusCanonicalNames.length === 0) {
+  fail("canonical-corpus-empty", "the canonical/ directory holds no vectors");
 }
 for (const [lang, verdict] of Object.entries(verdicts)) {
   const outputs = verdict.canonicalOutputs ?? {};
-  const baselineNames = Object.keys(baseline).sort();
   const actualNames = Object.keys(outputs).sort();
-  const missing = baselineNames.filter((name) => outputs[name] === undefined);
-  const extra = actualNames.filter((name) => baseline[name] === undefined);
-  if (missing.length > 0 || extra.length > 0) {
-    fail("canonical-output-set", lang + ": missing " + JSON.stringify(missing) + " extra " + JSON.stringify(extra));
+  const missingNames = corpusCanonicalNames.filter((name) => outputs[name] === undefined);
+  const extra = actualNames.filter((name) => !corpusCanonicalNames.includes(name));
+  if (missingNames.length > 0 || extra.length > 0) {
+    fail("canonical-output-set", lang + ": missing " + JSON.stringify(missingNames) + " extra " + JSON.stringify(extra));
   }
+  for (const name of corpusCanonicalNames) {
+    const vector = JSON.parse(readFileSync(join(corpusRoot, name), "utf8"));
+    if (outputs[name] !== vector.canonical) {
+      fail("canonical-bytes-corpus", `${lang} emitted different bytes than the corpus declares for ${name}`);
+    }
+  }
+}
+// Cross-language byte equality against the first runner (kept from r2):
+// every language must agree byte-for-byte on every corpus row.
+const baseline = Object.entries(verdicts)[0][1].canonicalOutputs ?? {};
+for (const [lang, verdict] of Object.entries(verdicts)) {
+  const outputs = verdict.canonicalOutputs ?? {};
   for (const [name, bytes] of Object.entries(baseline)) {
     if (outputs[name] !== bytes) {
       fail("canonical-bytes", `${lang} emitted different bytes for ${name}`);
@@ -123,34 +197,33 @@ for (const [lang, verdict] of Object.entries(verdicts)) {
 const totals = Object.fromEntries(Object.entries(verdicts).map(([lang, verdict]) => [lang, verdict.total]));
 
 // Complete family coverage: every declared family must exist in the
-// corpus and be executed by every runner (issue #106 review: a runner
-// that silently skipped the lifecycle family still printed a green
-// verdict, so "141/141" certified a hole).
-const config = JSON.parse(readFileSync(join(ROOT, "sdk/schema-inputs.json"), "utf8"));
-const corpusRoot = join(ROOT, "tests/fixtures/adapter-sdk");
-const FAMILY_DIRECTORIES = {
-  canonical: ["canonical"],
-  codec: ["valid", "invalid"],
-  security: ["security"],
-  semantic: ["semantic"],
-  upgrade: ["upgrade"],
-};
+// corpus and be executed by every runner with the FULL per-directory
+// count (issue #106 review r3 #9: the old check looked up family names
+// in a directory-keyed map, so `codec` resolved to undefined and a
+// runner reporting zero executions passed).
 for (const family of config.testVectorFamilies) {
   const directories = FAMILY_DIRECTORIES[family];
   if (!directories) fail("family-mapping", family);
   for (const directory of directories) {
     const dir = join(corpusRoot, directory);
     if (!existsSync(dir)) fail("family-directory-missing", directory);
-    const files = readdirSync(dir).filter((name) => name.endsWith(".json") && !name.endsWith(".expect.json"));
-    if (files.length === 0) fail("family-directory-empty", directory);
+    if (corpusFiles(directory).length === 0) fail("family-directory-empty", directory);
   }
   for (const [lang, verdict] of Object.entries(verdicts)) {
     const executed = verdict.executedFamilies ?? [];
     if (!executed.includes(family)) {
       fail("family-not-executed", `${lang}: ${family} absent from the runner's executed families`);
     }
-    if (verdict.executedVectors?.[family] === 0) {
-      fail("family-empty", `${lang}: ${family} executed zero vectors`);
+    const counts = verdict.executedVectors ?? {};
+    for (const directory of directories) {
+      const corpusCount = corpusFiles(directory).length;
+      const executedCount = counts[directory];
+      if (executedCount === undefined) {
+        fail("family-count-missing", `${lang}: ${family} reports no executed count for ${directory}`);
+      }
+      if (executedCount !== corpusCount) {
+        fail("family-count", `${lang}: ${directory} executed ${executedCount} vectors, the corpus holds ${corpusCount}`);
+      }
     }
   }
 }
@@ -187,17 +260,20 @@ const expectedTerminals = {
   "extra-write": (report) => report.verdict !== "pass" && report.checks.some((entry) => entry.state === "fail"),
 };
 
-/** Real per-language SDK lifecycle lanes (issue #106 review r2 #8): each
- * cooperative recipe replays through THAT language's emitted reference
- * adapter, so a serve-loop defect (output-cap bypass, exit-code loss,
- * evidence drift) fails here instead of hiding behind the handwritten
- * control. The control adapter remains a separate independence leg
- * (`control`) whose hostile fault knobs keep the battery's
- * classification honest; the `file-only` fixture drives the
- * `--lekalo-request-file` transport end to end (the reference adapters
- * declare stdin too, so the host would pick stdin for them). */
-const rustReference = join(ROOT, "sdk/templates/rust/reference/target/debug", process.platform === "win32" ? "sdk-reference-adapter.exe" : "sdk-reference-adapter");
-const goReference = join(ROOT, "sdk/templates/go/reference", process.platform === "win32" ? "sdk-reference.exe" : "sdk-reference");
+/** Real per-language SDK lifecycle lanes (issue #106 review r2 #8, r3
+ * #1/#2): each lane replays every recipe through THAT language's emitted
+ * reference adapter, so a serve-loop defect (output-cap bypass, exit-code
+ * loss, evidence drift) fails here instead of hiding behind the
+ * handwritten control. The control lane is identified by its NAME — the
+ * old argv-sniffing (`adapterArgs.includes("fake-adapter.mjs")` on an
+ * args ARRAY) never matched, so zero hostile recipes and zero file legs
+ * executed while the gate printed `lifecycle:10`. The reference
+ * templates carry the control's closed `--lekalo-fault` vocabulary, so
+ * the hostile classes execute against the real SDK serve loops, and the
+ * `file-only` fixture drives the `--lekalo-request-file` transport on
+ * its declared ["file"] coordinate. */
+const rustReference = join(nativeTemplateDir, "rust", "debug", process.platform === "win32" ? "sdk-reference-adapter.exe" : "sdk-reference-adapter");
+const goReference = join(nativeTemplateDir, process.platform === "win32" ? "sdk-reference.exe" : "sdk-reference");
 const lifecycleAdapters = {
   typescript: ["node", join(ROOT, "sdk/templates/typescript/reference/adapter.mjs")],
   rust: [rustReference],
@@ -206,21 +282,41 @@ const lifecycleAdapters = {
   control: ["node", "tests/fixtures/target-protocol/fake-adapter.mjs", "--lekalo-adapter-variant", "fluent"],
 };
 const FILE_ONLY_ADAPTER = ["node", "tests/fixtures/target-protocol/file-only-adapter.mjs"];
-/** Ensure the native template binaries exist before the lane runs. */
-for (const executable of [rustReference, goReference]) {
-  if (!existsSync(executable)) {
-    const buildDir = executable.includes("templates/rust") ? join(ROOT, "sdk/templates/rust/reference") : join(ROOT, "sdk/templates/go/reference");
-    const build = run("cargo", ["build", "--quiet"], buildDir);
-    if (build.status !== 0) fail("lifecycle-template-build", `${buildDir}: ${(build.stderr ?? "").slice(-300)}`);
-    if (!existsSync(executable)) fail("lifecycle-template-binary", executable);
-  }
+
+/** Provision the native template binaries (issue #106 review r3 #2):
+ * per-language build descriptors selected by the executable's identity —
+ * cargo with an explicit --manifest-path for Rust, `go build -o` for Go
+ * — and FRESH target dirs, so the lanes always execute binaries built
+ * from current sources. The old substring match on a platform-dependent
+ * path picked the WRONG language on Windows, `cargo build` inside the Go
+ * directory walked up to the root workspace and never produced the Go
+ * executable, and trusting a previously existing binary let a stale
+ * build certify old behavior. */
+const templateBuilds = [
+  {
+    executable: rustReference,
+    program: "cargo",
+    args: ["build", "--quiet", "--manifest-path", join(ROOT, "sdk/templates/rust/reference/Cargo.toml")],
+    env: { CARGO_TARGET_DIR: join(nativeTemplateDir, "rust") },
+    label: "cargo --manifest-path sdk/templates/rust/reference/Cargo.toml (fresh target dir)",
+  },
+  {
+    executable: goReference,
+    program: "go",
+    args: ["build", "-o", goReference, "."],
+    cwd: join(ROOT, "sdk/templates/go/reference"),
+    label: "go build -o sdk-reference[.exe] (fresh output path)",
+  },
+];
+for (const build of templateBuilds) {
+  const result = run(build.program, build.args, build.cwd, { env: { ...process.env, ...(build.env ?? {}) } });
+  if (result.status !== 0) fail("lifecycle-template-build", `${build.label}: ${(result.stderr ?? "").slice(-300)}`);
+  if (!existsSync(build.executable)) fail("lifecycle-template-binary", `${build.label}: ${build.executable} still missing after build`);
 }
-/** adapterMode → the control adapter's --lekalo-fault knob (null = none).
- * The mapping preserves each recipe's SEMANTIC with the control's closed
- * fault vocabulary: a hostile recipe must never report pass, a
- * cooperative recipe must report pass. The oversize mode has no control
- * fault (the control cannot emit an >8MB envelope), so its leg asserts
- * the negative direction: the hostile noise probe never passes. */
+
+/** adapterMode → the closed fault vocabulary shared by the control and
+ * the reference templates (null = none). A hostile recipe must never
+ * report pass; a cooperative recipe must report pass. */
 const MODE_FAULTS = {
   cooperative: null,
   "silent-exit": "crash",
@@ -237,131 +333,280 @@ if (lifecycleLanguages.length === 0 && languages.length > 0) {
   // always present, so at least one language runs it per invocation.
   lifecycleLanguages.push("typescript");
 }
-// The independence control leg rides along exactly once per invocation.
+// The independence control leg rides along exactly once per invocation,
+// as a named lane — never inferred from argv.
 if (!lifecycleLanguages.includes("control")) lifecycleLanguages.push("control");
+
+/** Executed recipe×lane accounting (issue #106 review r3 #1): the green
+ * verdict must certify recipes that RAN. A recipe whose declared
+ * terminal class never executed on any lane, a file-exchange leg that
+ * never ran, or a skip anywhere is a gate failure. */
+const lifecycleAccounting = { pairs: 0, expectedPairs: 0, hostile: 0, cooperative: 0, fileLegs: 0, recipes: lifecycleNames.length, lanes: lifecycleLanguages.length };
+const runBattery = (adapterArgs, profile, timeoutMs) => {
+  const battery = run(hostCli, [
+    "adapter", "test",
+    "--profile", profile,
+    "--report", "json",
+    "--repeats", "1",
+    "--timeout-ms", String(timeoutMs),
+    ...adapterArgs,
+  ]);
+  let report = null;
+  const stdout = battery.stdout ?? "";
+  const start = stdout.indexOf("{");
+  if (start !== -1) {
+    try { report = JSON.parse(stdout.slice(start, stdout.lastIndexOf("}") + 1)).report; } catch { report = null; }
+  }
+  return report;
+};
+const assertTerminal = (lane, recipe, report, expect) => {
+  const classify = expectedTerminals[expect];
+  if (report === null) {
+    // No report at all: only the process-failure class accepts this.
+    if (expect !== "process-failure") fail("lifecycle-terminal", `${lane}/${recipe.case}: expected ${expect}, battery produced no report`);
+    return;
+  }
+  if (!classify || !classify(report)) {
+    fail("lifecycle-terminal", `${lane}/${recipe.case}: expected ${expect}, verdict ${report.verdict}, failing: ${JSON.stringify((report.checks ?? []).filter((c) => c.state === "fail").map((c) => [c.id, c.detail]).slice(0, 3))}`);
+  }
+};
 for (const lang of lifecycleLanguages) {
   const adapterArgs = [...lifecycleAdapters[lang]];
-  const isControl = adapterArgs.includes("fake-adapter.mjs");
   for (const name of lifecycleNames) {
     const recipe = JSON.parse(readFileSync(join(lifecycleDir, name), "utf8"));
     // The file-exchange transport recipe drives the file-only fixture
-    // once per invocation (from the first lane language): the fixture
-    // declares transports ["file"], so every session exchange after the
-    // stdin-delivered handshake must arrive through the file coordinate.
+    // exactly once per invocation (from the named control lane): the
+    // fixture declares transports ["file"], so every session exchange
+    // after the stdin-delivered handshake must arrive through the file
+    // coordinate.
     if (recipe.adapter === "file-only") {
-      if (!isControl) continue;
-      const fileBattery = run(hostCli, [
-        "adapter", "test",
-        "--profile", "default",
-        "--report", "json",
-        "--repeats", "1",
-        "--timeout-ms", "10000",
-        ...FILE_ONLY_ADAPTER,
-      ]);
-      let fileReport = null;
-      const fileStdout = fileBattery.stdout ?? "";
-      const fileStart = fileStdout.indexOf("{");
-      if (fileStart !== -1) {
-        try { fileReport = JSON.parse(fileStdout.slice(fileStart, fileStdout.lastIndexOf("}") + 1)).report; } catch { fileReport = null; }
-      }
-      if (fileReport === null || fileReport.verdict !== "pass") {
-        fail("lifecycle-terminal", `file-exchange: expected ok, got ${fileReport?.verdict ?? "no report"} (${fileBattery.status})`);
-      }
+      if (lang !== "control") continue;
+      lifecycleAccounting.fileLegs += 1;
+      lifecycleAccounting.pairs += 1;
+      const report = runBattery(FILE_ONLY_ADAPTER, "default", 10000);
+      assertTerminal("file-exchange", recipe, report, recipe.expectedTerminal);
       continue;
     }
-    // Hostile modes ride the control leg only: the SDK reference adapters
-    // are cooperative by construction and must never pass a hostile
-    // recipe, so those recipes simply do not run against them.
     const hostile = MODE_FAULTS[recipe.adapterMode] !== null && MODE_FAULTS[recipe.adapterMode] !== undefined;
-    if (!isControl && hostile) continue;
-    const fault = isControl ? MODE_FAULTS[recipe.adapterMode] : null;
     const argv = [...adapterArgs];
+    const fault = MODE_FAULTS[recipe.adapterMode];
     if (fault) argv.push("--lekalo-fault", fault);
-    const battery = run(hostCli, [
-      "adapter", "test",
-      "--profile", "strict",
-      "--report", "json",
-      "--repeats", "1",
-      "--timeout-ms", recipe.adapterMode === "slow" ? "3000" : "10000",
-      ...argv,
-    ]);
-    let report = null;
-    const stdout = battery.stdout ?? "";
-    const start = stdout.indexOf("{");
-    if (start !== -1) {
-      try { report = JSON.parse(stdout.slice(start, stdout.lastIndexOf("}") + 1)).report; } catch { report = null; }
+    lifecycleAccounting.pairs += 1;
+    lifecycleAccounting.expectedPairs += 1;
+    if (hostile) lifecycleAccounting.hostile += 1;
+    else lifecycleAccounting.cooperative += 1;
+    const report = runBattery(argv, "strict", recipe.adapterMode === "slow" ? 3000 : 10000);
+    assertTerminal(lang, recipe, report, recipe.expectedTerminal);
+  }
+}
+// Every non-file recipe must have executed on EVERY lane, and the
+// hostile/file classes must never be zero (the r3 gate printed
+// `lifecycle:10` — a file count — while executing zero hostile legs).
+const nonFileRecipes = lifecycleNames.map((name) => JSON.parse(readFileSync(join(lifecycleDir, name), "utf8"))).filter((recipe) => recipe.adapter !== "file-only");
+lifecycleAccounting.expectedPairs = nonFileRecipes.length * lifecycleLanguages.length + 1;
+if (lifecycleAccounting.pairs !== lifecycleAccounting.expectedPairs) {
+  fail("lifecycle-accounting", `executed ${lifecycleAccounting.pairs} recipe×lane pairs, expected ${lifecycleAccounting.expectedPairs}`);
+}
+const hostileRecipes = nonFileRecipes.filter((recipe) => MODE_FAULTS[recipe.adapterMode] !== null && MODE_FAULTS[recipe.adapterMode] !== undefined);
+if (lifecycleAccounting.hostile !== hostileRecipes.length * lifecycleLanguages.length) {
+  fail("lifecycle-hostile-skipped", `executed ${lifecycleAccounting.hostile} hostile legs, expected ${hostileRecipes.length * lifecycleLanguages.length} (every declared hostile class must execute on every lane)`);
+}
+if (lifecycleAccounting.fileLegs !== 1) {
+  fail("lifecycle-file-leg", `the file-exchange fixture executed ${lifecycleAccounting.fileLegs} times, expected exactly 1`);
+}
+
+// Process-level transport vectors (issue #106 review r3 #6): the input
+// layer is part of admission. A raw invalid-UTF-8 request must refuse on
+// every language (no U+FFFD repair reaches the codec), and a valid
+// request whose multibyte character straddles the stdin read-chunk
+// boundary must decode intact (chunk-local decoding corrupted it).
+const transportDir = mkdtempSync(join(tmpdir(), "adapter-sdk-vectors-transport-"));
+process.on("exit", () => {
+  try { rmSync(transportDir, { recursive: true, force: true }); } catch { /* best effort */ }
+});
+const transportAccounting = { invalidBytes: 0, straddle: 0 };
+{
+  // A lint request whose revision value contains a raw 0xFF byte: the
+  // repaired text would pass every length bound, so only byte-exact
+  // fatal decoding admits nothing here.
+  const validLint = JSON.stringify({
+    operation: "lint",
+    project_root: ".",
+    protocol: "lekalo.target/v1",
+    protocol_version: "0.6.4",
+    request_id: `req-${"a".repeat(64)}`,
+    target: "sdk-reference",
+    lint_request: {
+      bindings: [],
+      files: ["src/main.ts"],
+      pins: {
+        capabilities: { state: "unknown" },
+        ir: { state: "unknown" },
+        model: { state: "unknown" },
+        observed: { state: "unknown" },
+        profile: { state: "unknown" },
+        revision: { state: "unknown" },
+      },
+      scope: ["src"],
+    },
+  });
+  const marker = '"revision":{"state":"unknown"}';
+  const index = validLint.indexOf(marker) + Math.floor(marker.length / 2);
+  const bytes = Buffer.from(validLint, "utf8");
+  const invalidBytes = Buffer.concat([bytes.subarray(0, index), Buffer.from([0xff]), bytes.subarray(index)]);
+  for (const lang of languages) {
+    const adapterArgs = lifecycleAdapters[lang];
+    // Both transports carry the same raw bytes: the host-owned file
+    // coordinate (written verbatim, file-wins) and piped stdin.
+    const fileFlagPath = join(transportDir, `invalid-${lang}.file.json`);
+    writeFileSync(fileFlagPath, invalidBytes);
+    const fileLeg = run(adapterArgs[0], [...adapterArgs.slice(1), "--lekalo-request-file", fileFlagPath], ROOT, { input: Buffer.alloc(0), timeout: 60000 });
+    if (fileLeg.status === 0) {
+      fail("transport-invalid-utf8", `${lang}: a raw invalid-UTF-8 request file was admitted (exit 0, file transport)`);
     }
-    const expect = recipe.expectedTerminal;
-    const classify = expectedTerminals[expect];
-    if (report === null) {
-      // No report at all: only the process-failure class accepts this.
-      if (expect !== "process-failure") fail("lifecycle-terminal", `${lang}/${recipe.case}: expected ${expect}, battery produced no report (${battery.status})`);
-    } else if (!classify || !classify(report)) {
-      fail("lifecycle-terminal", `${lang}/${recipe.case}: expected ${expect}, verdict ${report.verdict}, failing: ${JSON.stringify((report.checks ?? []).filter((c) => c.state === "fail").map((c) => [c.id, c.detail]).slice(0, 3))}`);
+    const stdinLeg = run(adapterArgs[0], [...adapterArgs.slice(1)], ROOT, { input: invalidBytes, timeout: 60000 });
+    if (stdinLeg.status === 0) {
+      fail("transport-invalid-utf8", `${lang}: a raw invalid-UTF-8 request stream was admitted (exit 0, stdin transport)`);
     }
+    transportAccounting.invalidBytes += 2;
+  }
+  // Boundary-straddle positive control: native_request.changes.symbols
+  // is the request member class with multibyte capacity (bounded
+  // strings, no charset restriction), so a valid plan-native request can
+  // carry a two-byte character whose bytes split across the stdin
+  // read-chunk boundary. A chunk-local decoder corrupts the sequence and
+  // refuses a valid request; a streaming decoder decodes it intact.
+  const symbols = [];
+  const render = (list) => JSON.stringify({
+    operation: "plan-native",
+    project_root: ".",
+    protocol: "lekalo.target/v1",
+    protocol_version: "0.3.2",
+    request_id: `req-${"b".repeat(64)}`,
+    native_request: {
+      capability_snapshot_digest: `sha256:${"c".repeat(64)}`,
+      changes: { files: [], symbols: list },
+      execution_policy_ref: { digest: `sha256:${"d".repeat(64)}` },
+      input_manifest_digest: `sha256:${"e".repeat(64)}`,
+      scan_ref: { digest: `sha256:${"f".repeat(64)}` },
+      tool_catalog_digest: `sha256:${"0".repeat(64)}`,
+    },
+  });
+  // Grow with the largest legal filler symbols until the remaining gap
+  // fits one final symbol, then size that final symbol (still within its
+  // 128-character bound) so the first byte of the two-byte sequence is
+  // the last byte of chunk one and its second byte opens chunk two. The
+  // value of an appended symbol starts two bytes past the symbols
+  // array's closing bracket (the last `]` in the document: the bracket
+  // position becomes the separator + opening quote).
+  const valueOffsetFor = (list) => render(list).lastIndexOf("]") + 2;
+  let gap = 65_535 - valueOffsetFor(symbols);
+  while (gap > 127) {
+    symbols.push("s".repeat(Math.min(128, gap - 4)));
+    gap = 65_535 - valueOffsetFor(symbols);
+  }
+  if (gap < 1 || gap > 127) {
+    fail("transport-straddle-setup", `cannot place the boundary character: gap ${gap}`);
+  }
+  symbols.push("x".repeat(gap) + "é");
+  const text = render(symbols);
+  const finalOffset = Buffer.byteLength(text.slice(0, text.indexOf("é")));
+  if (finalOffset !== 65_535) {
+    fail("transport-straddle-setup", `expected the multibyte character at byte 65535, got ${finalOffset}`);
+  }
+  for (const lang of languages) {
+    const adapterArgs = lifecycleAdapters[lang];
+    const result = run(adapterArgs[0], [...adapterArgs.slice(1)], ROOT, { input: Buffer.from(text, "utf8"), timeout: 60000 });
+    if (result.status !== 0) {
+      fail("transport-straddle", `${lang}: a valid request with a chunk-boundary-straddling multibyte character was refused: ${(result.stderr ?? "").slice(-200)}`);
+    }
+    transportAccounting.straddle += 1;
   }
 }
 
-// Production admission oracle (issue #106 review r2 #10): the FULL
-// request corpus — valid, invalid, semantic, and upgrade rows — replays
-// through the production wire decoder as RAW BYTES (no JSON round-trip,
-// so duplicate-key and numeric-spelling evidence reaches production),
-// and every row's verdict must match the corpus declaration exactly.
-// The oracle is built in this job from lekalo-core — the SDK codecs may
-// never drift from production admission.
+// Production admission oracle (issue #106 review r2 #10, r3 #8): the
+// FULL request corpus — valid, invalid, semantic-request, and upgrade
+// rows — replays through the production wire decoder as RAW BYTES in
+// line-safe hex framing, so numeric spellings, duplicate keys, CR/LF,
+// and control bytes reach production unchanged, and the RESPONSE corpus
+// replays through the production response decoder. Every row's verdict
+// must match the corpus declaration exactly.
 const oracle = join(ROOT, "target", "debug", process.platform === "win32" ? "adapter-sdk-oracle.exe" : "adapter-sdk-oracle");
 if (!existsSync(oracle)) {
   const build = run("cargo", ["build", "--locked", "-p", "lekalo-cli", "--bin", "adapter-sdk-oracle"]);
   if (build.status !== 0) fail("oracle-missing", (build.stderr ?? "").slice(-400));
 }
-// Corpus rows: {path, bytes, accept, reason} — accept declares the
-// production verdict the row pins. Request families: valid (accept),
-// invalid (refuse with the pinned reason), upgrade (per-row accept),
-// semantic validate-before-write rows carry requests too (accept). The
-// deduplication by exact bytes keeps the oracle line-oriented input
-// honest: two identical bytes rows need only one verdict.
+// Corpus rows: {relative, hex, mode, accept, reason, compareReason} —
+// accept declares the production verdict the row pins. Every row is fed
+// (no cross-family dedup) so the per-family accounting certifies that
+// the semantic-request rows actually reach production instead of being
+// aliased away by byte-identical valid/ rows.
 const oracleRows = [];
-const seenBytes = new Map();
-const pushRow = (relative, text, accept, reason, compareReason = false) => {
-  const key = text;
-  if (seenBytes.has(key)) return;
-  seenBytes.set(key, relative);
-  oracleRows.push({ relative, bytes: text, accept, reason, compareReason });
+const pushRow = (relative, text, mode, accept, reason, compareReason = false) => {
+  const hex = Buffer.from(text, "utf8").toString("hex");
+  oracleRows.push({ relative, hex, mode, accept, reason, compareReason });
 };
-for (const name of readdirSync(join(corpusRoot, "valid")).filter((n) => n.endsWith(".json") && !n.endsWith(".expect.json")).sort()) {
+for (const name of corpusFiles("valid")) {
   const text = readFileSync(join(corpusRoot, "valid", name), "utf8");
   const document = JSON.parse(text);
-  if (document.status !== undefined) continue; // response rows are not requests
-  pushRow(`valid/${name}`, text, true, undefined);
+  if (document.status !== undefined) {
+    pushRow(`valid/${name}`, text, "V", true, undefined); // response corpus: production must admit
+  } else {
+    pushRow(`valid/${name}`, text, "B", true, undefined);
+  }
 }
-for (const name of readdirSync(join(corpusRoot, "invalid")).filter((n) => n.endsWith(".json") && !n.endsWith(".expect.json")).sort()) {
+for (const name of corpusFiles("invalid")) {
   const text = readFileSync(join(corpusRoot, "invalid", name), "utf8");
   const expect = JSON.parse(readFileSync(join(corpusRoot, "invalid", name.replace(/\.json$/, ".expect.json")), "utf8"));
-  if (text.includes('"status"') && text.includes('"evidence"')) continue; // response rows
+  const isResponse = text.includes('"status"') && text.includes('"evidence"');
+  if (isResponse) {
+    // Response corpus: production must refuse, unless the expect row
+    // explicitly records the reviewed safe-direction divergence where
+    // the SDK is stricter at emission than the production wire decoder
+    // (e.g. the native-plan digest spelling, which production's typed
+    // wire decode accepts and its client rejects downstream).
+    pushRow(`invalid/${name}`, text, "V", expect.productionAccepts === true, undefined);
+    continue;
+  }
   const isRequest = !expect.stage || expect.stage !== "none";
   if (!isRequest) continue;
-  const reason = expect.reason;
   // Decode-stage refusals (shape/oversize/token/...) bind production
   // refusal vocabulary; validate-stage rows are semantic (production
   // accepts the wire shape and refuses in its own validate pass with
   // the same reason vocabulary).
-  pushRow(`invalid/${name}`, text, false, reason);
+  pushRow(`invalid/${name}`, text, "B", false, expect.reason);
 }
-for (const name of readdirSync(join(corpusRoot, "upgrade")).filter((n) => n.endsWith(".json") && !n.endsWith(".expect.json")).sort()) {
+for (const name of corpusFiles("semantic")) {
+  const vector = JSON.parse(readFileSync(join(corpusRoot, "semantic", name), "utf8"));
+  // Request-bearing semantic rows: the runners replay
+  // JSON.stringify(vector.request) bytes, so production must admit the
+  // same bytes — these vectors pin client-layer semantics (pairing,
+  // evidence depth), not wire shape, and a production refusal here is a
+  // parity hole. `text` rows (decode-oversize) carry no request member.
+  if (vector.request !== undefined) {
+    pushRow(`semantic/${name}`, JSON.stringify(vector.request), "B", true, undefined);
+  }
+}
+for (const name of corpusFiles("upgrade")) {
   const row = JSON.parse(readFileSync(join(corpusRoot, "upgrade", name), "utf8"));
-  pushRow(`upgrade/${name}`, JSON.stringify(row.request), row.accept === true, row.reason, true);
+  // Raw-byte rows replay the exact fixture spelling (rawRequest);
+  // object rows replay the same JSON.stringify bytes the runners use.
+  const bytes = row.rawRequest ?? JSON.stringify(row.request);
+  pushRow(`upgrade/${name}`, bytes, "B", row.accept === true, row.reason, true);
 }
-const oracleInput = oracleRows
-  .map((row) => `R\t${row.bytes.replaceAll(/\r?\n/g, "")}`)
-  .join("\n") + "\n";
+const oracleInput = oracleRows.map((row) => `${row.mode}\t${row.hex}`).join("\n") + "\n";
 const oracleRun = spawnSync(oracle, [], { input: oracleInput, encoding: "utf8", timeout: 300_000, shell: process.platform === "win32" });
 if (oracleRun.status !== 0) fail("oracle-failed", (oracleRun.stderr ?? "").slice(-300));
 const oracleVerdicts = (oracleRun.stdout ?? "").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
 if (oracleVerdicts.length !== oracleRows.length) fail("oracle-row-count", `${oracleVerdicts.length} vs ${oracleRows.length}`);
 let oracleChecked = 0;
+const oracleAccounting = { requests: 0, responses: 0, semanticRequests: 0 };
 oracleRows.forEach((row, index) => {
   const verdict = oracleVerdicts[index];
   oracleChecked += 1;
+  if (row.mode === "V") oracleAccounting.responses += 1;
+  else if (row.relative.startsWith("semantic/")) oracleAccounting.semanticRequests += 1;
+  else oracleAccounting.requests += 1;
   if (verdict.accepted !== row.accept) {
     fail("oracle-disagreement", `${row.relative}: production ${verdict.accepted ? "accepted" : `refused (${verdict.reason})`}, corpus declares accept=${row.accept}`);
   }
@@ -379,6 +624,7 @@ process.stdout.write(`${JSON.stringify({
   gate: "adapter-sdk-vectors",
   languages: Object.keys(verdicts).sort(),
   totals,
-  lifecycle: lifecycleNames.length,
-  oracle: oracleChecked,
+  lifecycle: lifecycleAccounting,
+  transport: transportAccounting,
+  oracle: { rows: oracleChecked, ...oracleAccounting },
 })}\n`);

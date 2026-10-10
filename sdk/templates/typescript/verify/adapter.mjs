@@ -669,6 +669,19 @@ function isCapabilityId(value) {
   });
 }
 
+/** The manifest-local semantic-id grammar (core trace::id::is_semantic_id,
+ * issue #106 review r3 #8): scan-entry evidence reference targets —
+ * non-empty, at most 192 bytes, ASCII alphanumeric or `_.:-`, starting
+ * alphanumeric or underscore. The SDKs used to enforce a length bound
+ * only, admitting slash-path targets the production response decoder
+ * refuses. */
+function isSemanticId(value) {
+  if (typeof value !== "string" || value === "") return false;
+  if (Buffer.byteLength(value, "utf8") > 192) return false;
+  if (!/^[A-Za-z0-9_]/.test(value)) return false;
+  return /^[A-Za-z0-9_.:-]*$/.test(value);
+}
+
 /** The bounded contract-version spelling `x.y.z` (all-numeric parts). */
 function isContractVersion(value) {
   if (typeof value !== "string" || value === "" || value.length > 32) return false;
@@ -685,7 +698,7 @@ function planScopeViolation(entry, writeScopes) {
   return "scope:uncovered";
 }
 
-return { pathViolation, isLogicalPath, isScope, scopeCovers, protectedHome, scopeTouchesProtectedHome, isToken, isWireToken, isCapabilityId, isContractVersion, planScopeViolation };
+return { pathViolation, isLogicalPath, isScope, scopeCovers, protectedHome, scopeTouchesProtectedHome, isToken, isWireToken, isCapabilityId, isSemanticId, isContractVersion, planScopeViolation };
 })());
 // ---- sdk/typescript/src/runtime/canonical.mjs ----
 __register("src/runtime/canonical.mjs", (() => {
@@ -858,7 +871,7 @@ __register("src/runtime/decode.mjs", (() => {
 const {WIRE_TOKEN, SUPPORTED_PROTOCOL_VERSIONS, LATEST_OPERATIONS, BOUNDS, ENUMS} = __module("src/generated/protocol.mjs");
 const {JsonFloat, canonicalJson, readSingleObject} = __module("src/runtime/json.mjs");
 const {isPlanId, isRequestId, isSha256Digest} = __module("src/runtime/ids.mjs");
-const {isCapabilityId, isContractVersion, isLogicalPath, isToken} = __module("src/runtime/paths.mjs");
+const {isCapabilityId, isContractVersion, isLogicalPath, isSemanticId, isToken} = __module("src/runtime/paths.mjs");
 
 const SUPPORT_STATES = ENUMS.supportState;
 const TRANSPORTS = ENUMS.transport;
@@ -1428,7 +1441,11 @@ function decodeScanEntry(value) {
     for (const reference of references) {
       const refClosed = closeObject(reference, ["confidence", "role", "target"]);
       if (refClosed) return refClosed;
-      if (typeof reference.target !== "string" || reference.target === "" || reference.target.length > 192) return failure("bounds");
+      // The target carries the manifest-local semantic-id grammar (core
+      // trace::id::is_semantic_id, issue #106 review r3 #8), not a
+      // length bound: production's response decoder refuses path-style
+      // slash targets, so the SDK must too.
+      if (!isSemanticId(reference.target)) return failure("bounds");
       if (!ENUMS.scanEntryReferenceRole.includes(reference.role)) return failure("shape");
       if (!ENUMS.scanEntryConfidence.includes(reference.confidence)) return failure("shape");
     }

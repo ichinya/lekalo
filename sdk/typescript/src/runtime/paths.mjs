@@ -168,6 +168,19 @@ export function isCapabilityId(value) {
   });
 }
 
+/** The manifest-local semantic-id grammar (core trace::id::is_semantic_id,
+ * issue #106 review r3 #8): scan-entry evidence reference targets —
+ * non-empty, at most 192 bytes, ASCII alphanumeric or `_.:-`, starting
+ * alphanumeric or underscore. The SDKs used to enforce a length bound
+ * only, admitting slash-path targets the production response decoder
+ * refuses. */
+export function isSemanticId(value) {
+  if (typeof value !== "string" || value === "") return false;
+  if (Buffer.byteLength(value, "utf8") > 192) return false;
+  if (!/^[A-Za-z0-9_]/.test(value)) return false;
+  return /^[A-Za-z0-9_.:-]*$/.test(value);
+}
+
 /** The bounded contract-version spelling `x.y.z` (all-numeric parts). */
 export function isContractVersion(value) {
   if (typeof value !== "string" || value === "" || value.length > 32) return false;

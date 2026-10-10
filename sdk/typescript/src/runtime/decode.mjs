@@ -9,7 +9,7 @@
 import { WIRE_TOKEN, SUPPORTED_PROTOCOL_VERSIONS, LATEST_OPERATIONS, BOUNDS, ENUMS } from "../generated/protocol.mjs";
 import { JsonFloat, canonicalJson, readSingleObject } from "./json.mjs";
 import { isPlanId, isRequestId, isSha256Digest } from "./ids.mjs";
-import { isCapabilityId, isContractVersion, isLogicalPath, isToken } from "./paths.mjs";
+import { isCapabilityId, isContractVersion, isLogicalPath, isSemanticId, isToken } from "./paths.mjs";
 
 const SUPPORT_STATES = ENUMS.supportState;
 const TRANSPORTS = ENUMS.transport;
@@ -579,7 +579,11 @@ function decodeScanEntry(value) {
     for (const reference of references) {
       const refClosed = closeObject(reference, ["confidence", "role", "target"]);
       if (refClosed) return refClosed;
-      if (typeof reference.target !== "string" || reference.target === "" || reference.target.length > 192) return failure("bounds");
+      // The target carries the manifest-local semantic-id grammar (core
+      // trace::id::is_semantic_id, issue #106 review r3 #8), not a
+      // length bound: production's response decoder refuses path-style
+      // slash targets, so the SDK must too.
+      if (!isSemanticId(reference.target)) return failure("bounds");
       if (!ENUMS.scanEntryReferenceRole.includes(reference.role)) return failure("shape");
       if (!ENUMS.scanEntryConfidence.includes(reference.confidence)) return failure("shape");
     }

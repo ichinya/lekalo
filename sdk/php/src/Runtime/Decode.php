@@ -501,6 +501,13 @@ final class Decode {
                 if (!self::boundedText($reference['target'] ?? null, 192)) {
                     return self::refuse('decode', 'bounds');
                 }
+                // The target carries the manifest-local semantic-id
+                // grammar (core trace::id::is_semantic_id, issue #106
+                // review r3 #8): production's response decoder refuses
+                // path-style slash targets, so the SDK must too.
+                if (!is_string($reference['target'] ?? null) || !Paths::isSemanticId($reference['target'])) {
+                    return self::refuse('decode', 'bounds');
+                }
                 if (!in_array($reference['role'], Protocol::ENUMS['scanEntryReferenceRole'], true)) {
                     return self::refuse('decode', 'shape');
                 }

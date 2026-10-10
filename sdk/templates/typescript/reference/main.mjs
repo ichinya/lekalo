@@ -18,6 +18,31 @@ const IDENTITY = buildAdapterIdentity({
   version: "0.1.0",
 });
 const WRITE_ROOT = ".lekalo/generated";
+
+// Hostile-mode fault knobs (issue #106 review r3 #1/#2): the same closed
+// vocabulary as the handwritten fake-adapter control (crash, garbage,
+// hang, noise, mutate-dry, extra-write), so the lifecycle lanes drive
+// the hostile classes against the real SDK serve loop — a faulted SDK
+// adapter must fail its recipe exactly like the control does. A run
+// without --lekalo-fault is fully cooperative.
+const FAULT_ARG = process.argv.indexOf("--lekalo-fault");
+const FAULT = FAULT_ARG !== -1 && process.argv[FAULT_ARG + 1] ? process.argv[FAULT_ARG + 1] : "";
+const fault = (name) => FAULT.split(",").includes(name);
+if (fault("crash")) process.exit(3);
+if (fault("garbage")) {
+  process.stdout.write("<this is not json>");
+  process.exit(0);
+}
+if (fault("hang")) {
+  // Never respond: the host's deadline enforcement must terminate the
+  // exchange (the battery classifies the timeout).
+  await new Promise((resolve) => setTimeout(resolve, 60_000));
+}
+if (fault("noise")) {
+  // Unbounded-class chatter on stderr: the battery's stderr bounds must
+  // refuse the run instead of normalizing it.
+  process.stderr.write("x".repeat(2_000_000));
+}
 const CAPABILITIES = {
   "generate.openapi": "partial",
   "generate.ui": "unsupported",
@@ -81,9 +106,12 @@ process.exitCode = await serve({
     async generate({ request }) {
       const { body, modelPath, writes } = deterministicWrites(request);
       assertWithinScopes(writes, WRITE_SCOPES);
-      if (request.dry_run === false) {
+      if (request.dry_run === false || fault("mutate-dry")) {
         mkdirSync(dirname(modelPath), { recursive: true });
         writeFileSync(modelPath, body);
+      }
+      if (fault("extra-write") && request.dry_run === false) {
+        writeFileSync(dirname(modelPath) + "/extra.txt", "undeclared");
       }
       return {
         planId: request.plan_id ?? planId(writes),

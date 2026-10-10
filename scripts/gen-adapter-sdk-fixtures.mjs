@@ -291,8 +291,8 @@ const scanResponseEvidence = {
         detail: "planner",
         evidence: {
           references: [
-            { confidence: "exact", role: "read", target: "lekalo/model/planner.v1" },
-            { confidence: "high", role: "create", target: "lekalo/ir/node.v1" },
+            { confidence: "exact", role: "read", target: "lekalo.model.planner.v1" },
+            { confidence: "high", role: "create", target: "lekalo.ir.node.v1" },
           ],
           signature: D("signature"),
         },
@@ -567,10 +567,20 @@ const invalidVectors = [
   ["native-file-change-bad-path", { ...planNativeRequest, native_request: { ...nativeRequest, changes: { files: [{ change: "added", path: "../escape.ts" }], symbols: [] } } }, "decode", "bounds"],
   ["native-request-bad-manifest-digest", { ...planNativeRequest, native_request: { ...nativeRequest, input_manifest_digest: "sha256:nope" } }, "decode", "bounds"],
   ["native-ref-bad-digest", { ...planNativeRequest, native_request: { ...nativeRequest, scan_ref: { digest: "md5:0" } } }, "decode", "bounds"],
-  ["native-plan-ref-bad-digest", { ...planNativeResponse, result: { native_plan: { ...planNativeResponse.result.native_plan, digest: "sha256:zz" } } }, "decode", "bounds"],
+  // Safe-direction divergence, reviewed (issue #106 response-admission
+  // leg): production's typed wire decode accepts a native-plan digest
+  // spelling its own client rejects downstream, while the SDK validates
+  // before emission — the marker records the divergence explicitly so
+  // the oracle response leg stays exact.
+  ["native-plan-ref-bad-digest", { ...planNativeResponse, result: { native_plan: { ...planNativeResponse.result.native_plan, digest: "sha256:zz" } } }, "decode", "bounds", { productionAccepts: true }],
   ["scan-entry-bad-path", { ...scanResponse, result: { entries: [{ kind: "source", path: "../outside.ts" }], truncated: false } }, "decode", "bounds"],
   ["scan-entry-evidence-bad-digest", { ...scanResponseEvidence, result: { ...scanResponseEvidence.result, entries: [{ ...scanResponseEvidence.result.entries[0], evidence: { references: [], signature: "sha256:QQ" } }] } }, "decode", "bounds"],
-  ["scan-entry-reference-bad-role", { ...scanResponseEvidence, result: { ...scanResponseEvidence.result, entries: [{ ...scanResponseEvidence.result.entries[0], evidence: { references: [{ confidence: "exact", role: "watch", target: "lekalo/model/planner.v1" }] } }] } }, "decode", "shape"],
+  ["scan-entry-reference-bad-role", { ...scanResponseEvidence, result: { ...scanResponseEvidence.result, entries: [{ ...scanResponseEvidence.result.entries[0], evidence: { references: [{ confidence: "exact", role: "watch", target: "lekalo.model.planner.v1" }] } }] } }, "decode", "shape"],
+  // The reference target carries the manifest-local semantic-id grammar
+  // (issue #106 review r3 #8, core trace::id::is_semantic_id): a
+  // path-style slash target is wire-invalid and every SDK must refuse it
+  // exactly like the production response decoder.
+  ["scan-entry-reference-bad-target", { ...scanResponseEvidence, result: { ...scanResponseEvidence.result, entries: [{ ...scanResponseEvidence.result.entries[0], evidence: { references: [{ confidence: "exact", role: "read", target: "lekalo/model/planner.v1" }] } }] } }, "decode", "bounds"],
   ["lint-request-empty-scope", { ...lintRequest, lint_request: { ...lintRequest.lint_request, scope: [] } }, "decode", "bounds"],
   ["lint-request-unsorted-files", { ...lintRequest, lint_request: { ...lintRequest.lint_request, files: ["src/domain/user.php", "src/console/inspect.php"] } }, "validate", "lint-request"],
   ["dry-run-request-with-plan-id", { ...generateDryRequest, plan_id: APPLY_PLAN_ID }, "validate", "plan-id"],
@@ -581,9 +591,9 @@ const invalidVectors = [
   ["bind-without-profile", { ...bindRequest, profile: undefined }, "validate", "profile"],
   ["lint-request-on-032", { ...lintRequest, protocol_version: "0.3.2" }, "validate", "lint-request"],
 ];
-for (const [name, envelope, stage, reason] of invalidVectors) {
+for (const [name, envelope, stage, reason, extra] of invalidVectors) {
   writeWire("invalid", name, envelope);
-  writeExpect(name, { reason, stage });
+  writeExpect(name, { reason, stage, ...(extra ?? {}) });
 }
 
 // Raw-text lexical negatives (issue #106 review r3 #3/#4): the exact

@@ -238,6 +238,24 @@ pub fn is_token(value: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
+/// The manifest-local semantic-id grammar (core trace::id::is_semantic_id,
+/// issue #106 review r3 #8): scan-entry evidence reference targets —
+/// non-empty, at most 192 bytes, ASCII alphanumeric or `_.:-`, starting
+/// alphanumeric or underscore. The SDK used to enforce a length bound
+/// only, admitting slash-path targets the production response decoder
+/// refuses.
+pub fn is_semantic_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 192
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b':' | b'-'))
+        && value
+            .as_bytes()
+            .first()
+            .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
+}
+
 /// The closed capability-id grammar (lowercase dotted segments).
 pub fn is_capability_id(value: &str) -> bool {
     !value.is_empty()

@@ -505,6 +505,19 @@ final class Paths {
         return preg_match('/^[a-z][a-z0-9-]*$/', $value) === 1;
     }
 
+    /** The manifest-local semantic-id grammar (core
+     * trace::id::is_semantic_id, issue #106 review r3 #8): scan-entry
+     * evidence reference targets — non-empty, at most 192 bytes, ASCII
+     * alphanumeric or `_.:-`, starting alphanumeric or underscore. The
+     * SDK used to enforce a length bound only, admitting slash-path
+     * targets the production response decoder refuses. */
+    public static function isSemanticId(string $value): bool {
+        if ($value === '' || strlen($value) > 192) {
+            return false;
+        }
+        return preg_match('/^[A-Za-z0-9_][A-Za-z0-9_.:-]*$/', $value) === 1;
+    }
+
     /** The production ai-lint identifier grammar (issue #106 review r3
      * #5): core ai_lint::input::token gates the lint scope items,
      * binding nativeId/symbol, and the revision pin's known value —
@@ -1249,6 +1262,13 @@ final class Decode {
                     return self::refuse('decode', 'shape');
                 }
                 if (!self::boundedText($reference['target'] ?? null, 192)) {
+                    return self::refuse('decode', 'bounds');
+                }
+                // The target carries the manifest-local semantic-id
+                // grammar (core trace::id::is_semantic_id, issue #106
+                // review r3 #8): production's response decoder refuses
+                // path-style slash targets, so the SDK must too.
+                if (!is_string($reference['target'] ?? null) || !Paths::isSemanticId($reference['target'])) {
                     return self::refuse('decode', 'bounds');
                 }
                 if (!in_array($reference['role'], Protocol::ENUMS['scanEntryReferenceRole'], true)) {

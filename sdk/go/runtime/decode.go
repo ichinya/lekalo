@@ -516,6 +516,13 @@ func admitScanEntry(value Value) *Refusal {
 			if !boundedText(reference.(map[string]any)["target"], 192) {
 				return refuse(stageDecode, "bounds")
 			}
+			// The target carries the manifest-local semantic-id grammar
+			// (core trace::id::is_semantic_id, issue #106 review r3 #8):
+			// production's response decoder refuses path-style slash
+			// targets, so the SDK must too.
+			if !IsSemanticId(GetString(reference, "target")) {
+				return refuse(stageDecode, "bounds")
+			}
 			if !containsString(GeneratedEnums("scanEntryReferenceRole"), GetString(reference, "role")) {
 				return refuse(stageDecode, "shape")
 			}

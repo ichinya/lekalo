@@ -669,6 +669,19 @@ function isCapabilityId(value) {
   });
 }
 
+/** The manifest-local semantic-id grammar (core trace::id::is_semantic_id,
+ * issue #106 review r3 #8): scan-entry evidence reference targets —
+ * non-empty, at most 192 bytes, ASCII alphanumeric or `_.:-`, starting
+ * alphanumeric or underscore. The SDKs used to enforce a length bound
+ * only, admitting slash-path targets the production response decoder
+ * refuses. */
+function isSemanticId(value) {
+  if (typeof value !== "string" || value === "") return false;
+  if (Buffer.byteLength(value, "utf8") > 192) return false;
+  if (!/^[A-Za-z0-9_]/.test(value)) return false;
+  return /^[A-Za-z0-9_.:-]*$/.test(value);
+}
+
 /** The bounded contract-version spelling `x.y.z` (all-numeric parts). */
 function isContractVersion(value) {
   if (typeof value !== "string" || value === "" || value.length > 32) return false;
@@ -685,7 +698,7 @@ function planScopeViolation(entry, writeScopes) {
   return "scope:uncovered";
 }
 
-return { pathViolation, isLogicalPath, isScope, scopeCovers, protectedHome, scopeTouchesProtectedHome, isToken, isWireToken, isCapabilityId, isContractVersion, planScopeViolation };
+return { pathViolation, isLogicalPath, isScope, scopeCovers, protectedHome, scopeTouchesProtectedHome, isToken, isWireToken, isCapabilityId, isSemanticId, isContractVersion, planScopeViolation };
 })());
 // ---- sdk/typescript/src/runtime/canonical.mjs ----
 __register("src/runtime/canonical.mjs", (() => {
@@ -858,7 +871,7 @@ __register("src/runtime/decode.mjs", (() => {
 const {WIRE_TOKEN, SUPPORTED_PROTOCOL_VERSIONS, LATEST_OPERATIONS, BOUNDS, ENUMS} = __module("src/generated/protocol.mjs");
 const {JsonFloat, canonicalJson, readSingleObject} = __module("src/runtime/json.mjs");
 const {isPlanId, isRequestId, isSha256Digest} = __module("src/runtime/ids.mjs");
-const {isCapabilityId, isContractVersion, isLogicalPath, isToken} = __module("src/runtime/paths.mjs");
+const {isCapabilityId, isContractVersion, isLogicalPath, isSemanticId, isToken} = __module("src/runtime/paths.mjs");
 
 const SUPPORT_STATES = ENUMS.supportState;
 const TRANSPORTS = ENUMS.transport;
@@ -1428,7 +1441,11 @@ function decodeScanEntry(value) {
     for (const reference of references) {
       const refClosed = closeObject(reference, ["confidence", "role", "target"]);
       if (refClosed) return refClosed;
-      if (typeof reference.target !== "string" || reference.target === "" || reference.target.length > 192) return failure("bounds");
+      // The target carries the manifest-local semantic-id grammar (core
+      // trace::id::is_semantic_id, issue #106 review r3 #8), not a
+      // length bound: production's response decoder refuses path-style
+      // slash targets, so the SDK must too.
+      if (!isSemanticId(reference.target)) return failure("bounds");
       if (!ENUMS.scanEntryReferenceRole.includes(reference.role)) return failure("shape");
       if (!ENUMS.scanEntryConfidence.includes(reference.confidence)) return failure("shape");
     }
@@ -2286,6 +2303,31 @@ const IDENTITY = buildAdapterIdentity({
   version: "0.1.0",
 });
 const WRITE_ROOT = ".lekalo/generated";
+
+// Hostile-mode fault knobs (issue #106 review r3 #1/#2): the same closed
+// vocabulary as the handwritten fake-adapter control (crash, garbage,
+// hang, noise, mutate-dry, extra-write), so the lifecycle lanes drive
+// the hostile classes against the real SDK serve loop — a faulted SDK
+// adapter must fail its recipe exactly like the control does. A run
+// without --lekalo-fault is fully cooperative.
+const FAULT_ARG = process.argv.indexOf("--lekalo-fault");
+const FAULT = FAULT_ARG !== -1 && process.argv[FAULT_ARG + 1] ? process.argv[FAULT_ARG + 1] : "";
+const fault = (name) => FAULT.split(",").includes(name);
+if (fault("crash")) process.exit(3);
+if (fault("garbage")) {
+  process.stdout.write("<this is not json>");
+  process.exit(0);
+}
+if (fault("hang")) {
+  // Never respond: the host's deadline enforcement must terminate the
+  // exchange (the battery classifies the timeout).
+  await new Promise((resolve) => setTimeout(resolve, 60_000));
+}
+if (fault("noise")) {
+  // Unbounded-class chatter on stderr: the battery's stderr bounds must
+  // refuse the run instead of normalizing it.
+  process.stderr.write("x".repeat(2_000_000));
+}
 const CAPABILITIES = {
   "generate.openapi": "partial",
   "generate.ui": "unsupported",
@@ -2349,9 +2391,12 @@ process.exitCode = await serve({
     async generate({ request }) {
       const { body, modelPath, writes } = deterministicWrites(request);
       assertWithinScopes(writes, WRITE_SCOPES);
-      if (request.dry_run === false) {
+      if (request.dry_run === false || fault("mutate-dry")) {
         mkdirSync(dirname(modelPath), { recursive: true });
         writeFileSync(modelPath, body);
+      }
+      if (fault("extra-write") && request.dry_run === false) {
+        writeFileSync(dirname(modelPath) + "/extra.txt", "undeclared");
       }
       return {
         planId: request.plan_id ?? planId(writes),

@@ -11,6 +11,22 @@ use std::io::Write;
 const ADAPTER_ID: &str = "sdk-reference";
 const WRITE_ROOT: &str = ".lekalo/generated";
 
+/// Hostile-mode fault knobs (issue #106 review r3 #1/#2): the same
+/// closed vocabulary as the handwritten fake-adapter control (crash,
+/// garbage, hang, noise, mutate-dry, extra-write), so the lifecycle
+/// lanes drive the hostile classes against the real SDK serve loop. A
+/// run without --lekalo-fault is fully cooperative.
+fn fault(name: &str) -> bool {
+    let argv = std::env::args().collect::<Vec<_>>();
+    let value = argv
+        .iter()
+        .position(|argument| argument == "--lekalo-fault")
+        .and_then(|index| argv.get(index + 1))
+        .cloned()
+        .unwrap_or_default();
+    value.split(',').any(|candidate| candidate == name)
+}
+
 fn member_of(value: &Value, key: &str) -> Value {
     value.get(key).cloned().unwrap_or(Value::Null)
 }
@@ -126,12 +142,28 @@ impl Adapter for ReferenceAdapter {
                         );
                     }
                 }
-                if member_of(request, "dry_run").as_bool() == Some(false) {
+                if member_of(request, "dry_run").as_bool() == Some(false) || fault("mutate-dry") {
                     if let Some(parent) = std::path::Path::new(&model_path).parent() {
                         let _ = std::fs::create_dir_all(parent);
                     }
-                    if let Ok(mut file) = std::fs::File::create(&model_path) {
-                        let _ = file.write_all(body.as_bytes());
+                    let written = std::fs::File::create(&model_path)
+                        .and_then(|mut file| file.write_all(body.as_bytes()));
+                    // The injected dry-run mutation must never normalize to a
+                    // clean pass (issue #106 review r3 #1): when the host's
+                    // confinement sandbox refuses the write, the fault surfaces
+                    // as a failed exchange, never a silent success.
+                    if written.is_err() {
+                        return error_output(
+                            "invalid",
+                            "dry-run-mutation-refused",
+                            "the injected dry-run mutation was refused by the confinement sandbox".to_owned(),
+                        );
+                    }
+                }
+                if fault("extra-write") && member_of(request, "dry_run").as_bool() == Some(false) {
+                    if let Some(parent) = std::path::Path::new(&model_path).parent() {
+                        let extra = parent.join("extra.txt");
+                        let _ = std::fs::File::create(&extra).and_then(|mut file| file.write_all(b"undeclared"));
                     }
                 }
                 Output {
@@ -217,6 +249,24 @@ fn error_output(class: &'static str, code: &'static str, message: String) -> Out
 }
 
 fn main() {
+    // Hostile pre-serve faults (issue #106 review r3 #1/#2): crash
+    // refuses the handshake with a nonzero exit, garbage pollutes the
+    // wire surface, hang never responds (deadline enforcement), and
+    // noise trips the stderr bounds. All are no-ops cooperatively.
+    if fault("crash") {
+        std::process::exit(3);
+    }
+    if fault("garbage") {
+        let _ = std::io::stdout().write_all(b"<this is not json>");
+        std::process::exit(0);
+    }
+    if fault("hang") {
+        std::thread::sleep(std::time::Duration::from_secs(60));
+        std::process::exit(0);
+    }
+    if fault("noise") {
+        let _ = std::io::stderr().write_all(&vec![b'x'; 2_000_000]);
+    }
     let identity = sdk::build_adapter_identity(
         ADAPTER_ID,
         "0.1.0",
