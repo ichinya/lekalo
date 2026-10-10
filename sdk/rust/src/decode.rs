@@ -7,7 +7,9 @@
 use crate::generated::protocol;
 use crate::ids::{is_plan_id, is_request_id, is_sha256_digest};
 use crate::json::{canonical, read_single_object, ParseReason, Value};
-use crate::paths::{is_capability_id, is_contract_version, is_logical_path, is_semantic_id, is_token};
+use crate::paths::{
+    is_capability_id, is_contract_version, is_logical_path, is_semantic_id, is_token,
+};
 
 /// A decode/validate refusal: one closed safe reason token.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1677,7 +1679,10 @@ pub fn validate_request(value: &Value) -> Result<(), Refusal> {
         if !is_sorted(scope) || !is_sorted(files) {
             return invalid("lint-request");
         }
-        if scope.iter().any(|item| !is_wire_token(item.as_str().unwrap_or(""))) {
+        if scope
+            .iter()
+            .any(|item| !is_wire_token(item.as_str().unwrap_or("")))
+        {
             return invalid("lint-request");
         }
         if files

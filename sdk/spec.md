@@ -86,13 +86,16 @@ public domain result and the status/exit mapping.
 - Canonical output is byte-sorted compact JSON with no trailing LF;
   array order is preserved; string escapes use the closed JSON set;
   numbers keep integer/float distinction within the safe range.
-- Integral limits: a limits member in range is admitted whether spelled
-  as an integer (`1`) or an integral float (`1.0`), and every admitted
-  spelling binds the emitted-output ceiling the same way — the
-  `max_output_bytes` ceiling is enforced on ENCODED UTF-8 BYTES of the
-  complete envelope (never UTF-16 code units), and the effective
-  ceiling is min(declared, default). The multibyte and budget vectors
-  pin this in every language.
+- Integer wire members are admitted by LEXEME, not by rounded value
+  (production parity): production types every wire number `u64`, so a
+  limits member in range must be spelled as an integer (`1`) — a float
+  spelling (`1.0`, `1e2`) is a `shape` refusal, both limits members are
+  REQUIRED whenever `limits` is present, and malformed number spellings
+  (`010000`, `1.`) are `not-json` everywhere. The corpus pins the exact
+  raw byte spellings in every language, and the emitted-output ceiling
+  is enforced on ENCODED UTF-8 BYTES of the complete envelope (never
+  UTF-16 code units), with the effective ceiling min(declared, default).
+  The multibyte and budget vectors pin this in every language.
 - Request identifiers hash the canonical envelope minus `request_id`;
   plan identifiers hash the canonical ordered plan; write digests frame
   exact file bytes. The framing is contract-specific — a universal JSON
@@ -109,7 +112,11 @@ run at decode; the cross-member rules run at validate:
 - request-side: operation/plan pairing, dry-run pairing, IR-path
   requirement, target/profile requirements, describe member
   prohibition, profile-resolution pairing, plan-native and lint seams
-  with version gating;
+  with version gating. The lint-request identifier members carry the
+  production ai-lint token grammar (scope items refuse as `lint-request`,
+  binding `nativeId`/`symbol` as `lint-binding`, the revision pin's
+  known value as `lint-pin`) — charset and byte-length, never a bare
+  length bound;
 - response-side: identity echo (protocol/version/operation/request_id),
   status/error pairing, operation payload completeness, write-plan
   presence and digest/action pairing, plan echo on apply.
