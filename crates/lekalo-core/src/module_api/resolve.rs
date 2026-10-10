@@ -105,6 +105,12 @@ pub fn resolve(bytes: &[u8], compilation: &Compilation) -> Result<Resolved, Diag
             if !seen_symbols.insert(symbol) {
                 return Err(invalid("duplicate-export"));
             }
+            // A typed #62 error export references the error registry, not a
+            // Model definition; existence and payload exposure are checked
+            // at export time.
+            if entry.kind == "error" {
+                continue;
+            }
             let Some(definition) = project
                 .definitions
                 .iter()
