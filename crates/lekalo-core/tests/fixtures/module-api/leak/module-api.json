@@ -1,0 +1,30 @@
+{
+  "schemaVersion": "lekalo/module-api/v0.8.0",
+  "identity": "dev.lekalo.module-api@0.8.0",
+  "project": "leak",
+  "modules": [
+    {
+      "moduleId": "tasks",
+      "apiVersion": null,
+      "exports": [
+        { "export": "tasks.boxed", "kind": "value-object", "since": null, "aliasOf": null },
+        { "export": "tasks.title", "kind": "scalar", "since": null, "aliasOf": null }
+      ],
+      "consumers": [],
+      "ports": [],
+      "capabilities": [],
+      "grants": [],
+      "deprecations": []
+    },
+    {
+      "moduleId": "planner",
+      "apiVersion": null,
+      "exports": [],
+      "consumers": [],
+      "ports": [],
+      "capabilities": [],
+      "grants": [],
+      "deprecations": []
+    }
+  ]
+}

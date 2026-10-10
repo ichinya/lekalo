@@ -573,3 +573,263 @@ fn hostile_inputs_follow_the_status_contract() {
     assert_eq!(unsupported.status.code(), Some(5));
     assert!(codes(&unsupported).contains(&"LEK-MODULE-002".to_owned()));
 }
+
+/// The r1 review probes at the CLI seam.
+
+#[test]
+fn private_closure_leaks_refuse_certified_export() {
+    // Finding 1: the exported shape's private field is an exposure
+    // finding; the bundle is refused in both modes.
+    let leak = scratch_project("leak");
+    let dir = alias_free_path(leak.path());
+    let strict = lekalo_in(
+        &dir,
+        &[
+            "module",
+            "api",
+            "check",
+            "--project",
+            ".",
+            "--api",
+            "module-api.json",
+            "--strict",
+        ],
+    );
+    assert_eq!(strict.status.code(), Some(1));
+    assert!(codes(&strict).contains(&"LEK-MODULE-005".to_owned()));
+    let advisory = lekalo_in(
+        &dir,
+        &[
+            "module",
+            "api",
+            "check",
+            "--project",
+            ".",
+            "--api",
+            "module-api.json",
+        ],
+    );
+    assert_eq!(advisory.status.code(), Some(0));
+    let refused = lekalo_in(
+        &dir,
+        &[
+            "module",
+            "api",
+            "export",
+            "tasks",
+            "--project",
+            ".",
+            "--api",
+            "module-api.json",
+        ],
+    );
+    assert_eq!(refused.status.code(), Some(1));
+}
+
+#[test]
+fn unattached_producers_report_and_unknown_scopes_refuse() {
+    // Finding 2: a producer absent from the attachment is a boundary
+    // finding, never a silent pass. Finding 14: an unknown --module
+    // scope is invalid, never a silent pass.
+    let leak = scratch_project("leak");
+    let dir = alias_free_path(leak.path());
+    let mut attachment: Value =
+        serde_json::from_slice(&fs::read(dir.join("module-api.json")).unwrap()).unwrap();
+    attachment["modules"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|module| module["moduleId"] != "tasks");
+    fs::write(
+        dir.join("unattached.json"),
+        serde_json::to_vec(&attachment).unwrap(),
+    )
+    .unwrap();
+    let unattached = lekalo_in(
+        &dir,
+        &[
+            "module",
+            "api",
+            "check",
+            "--project",
+            ".",
+            "--api",
+            "unattached.json",
+            "--strict",
+        ],
+    );
+    assert_eq!(unattached.status.code(), Some(1));
+    assert!(codes(&unattached).contains(&"LEK-MODULE-003".to_owned()));
+    let ghost = lekalo_in(
+        &dir,
+        &[
+            "module",
+            "api",
+            "check",
+            "--project",
+            ".",
+            "--api",
+            "module-api.json",
+            "--module",
+            "ghost",
+        ],
+    );
+    assert_eq!(ghost.status.code(), Some(1));
+    assert!(codes(&ghost).contains(&"LEK-MODULE-001".to_owned()));
+}
+
+#[test]
+fn kind_contradictions_and_unknown_import_uses_refuse() {
+    // Finding 16: mislabeled kinds and unknown import uses are invalid.
+    let reference = scratch_project("reference/tasks");
+    let dir = alias_free_path(reference.path());
+    let mut attachment: Value =
+        serde_json::from_slice(&fs::read(dir.join("module-api.json")).unwrap()).unwrap();
+    for module in attachment["modules"].as_array_mut().unwrap().iter_mut() {
+        if module["moduleId"] == "tasks" {
+            for entry in module["exports"].as_array_mut().unwrap().iter_mut() {
+                if entry["export"] == "tasks.task_view" {
+                    entry["kind"] = "entity".into();
+                }
+            }
+        }
+    }
+    fs::write(
+        dir.join("mislabeled.json"),
+        serde_json::to_vec(&attachment).unwrap(),
+    )
+    .unwrap();
+    let mislabeled = lekalo_in(
+        &dir,
+        &[
+            "module",
+            "api",
+            "check",
+            "--project",
+            ".",
+            "--api",
+            "mislabeled.json",
+        ],
+    );
+    assert_eq!(mislabeled.status.code(), Some(1));
+
+    let mut attachment: Value =
+        serde_json::from_slice(&fs::read(dir.join("module-api.json")).unwrap()).unwrap();
+    for module in attachment["modules"].as_array_mut().unwrap().iter_mut() {
+        if module["moduleId"] == "planner" {
+            module["imports"] =
+                serde_json::json!([{ "moduleId": "tasks", "uses": ["tasks.nonexistent"] }]);
+        }
+    }
+    fs::write(
+        dir.join("unknown-use.json"),
+        serde_json::to_vec(&attachment).unwrap(),
+    )
+    .unwrap();
+    let unknown_use = lekalo_in(
+        &dir,
+        &[
+            "module",
+            "api",
+            "check",
+            "--project",
+            ".",
+            "--api",
+            "unknown-use.json",
+        ],
+    );
+    assert_eq!(unknown_use.status.code(), Some(1));
+}
+
+#[test]
+fn error_exports_carry_registry_facts_and_uses_stay_bounded() {
+    // Finding 22: the typed #62 error export surface is reachable; the
+    // per-consumer use bound is enforced.
+    let errors = scratch_project("errors");
+    let dir = alias_free_path(errors.path());
+    let exported = lekalo_in(
+        &dir,
+        &[
+            "module",
+            "api",
+            "export",
+            "planner",
+            "--project",
+            ".",
+            "--api",
+            "module-api.json",
+        ],
+    );
+    assert_eq!(exported.status.code(), Some(0));
+    let document = envelope(&exported);
+    let error_export = document["modulePublicContract"]["exports"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["kind"] == "error")
+        .unwrap()
+        .clone();
+    assert_eq!(error_export["code"], "LEK-ERR-005");
+    assert_eq!(error_export["retryable"], false);
+
+    let mut attachment: Value =
+        serde_json::from_slice(&fs::read(dir.join("module-api.json")).unwrap()).unwrap();
+    let flood: Vec<String> = (0..5000)
+        .map(|index| format!("planner.symbol_{index}"))
+        .collect();
+    attachment["modules"][0]["consumers"] = serde_json::json!([
+        { "consumer": "watcher", "uses": flood, "mode": "wire", "policy": null }
+    ]);
+    fs::write(
+        dir.join("flooded.json"),
+        serde_json::to_vec(&attachment).unwrap(),
+    )
+    .unwrap();
+    let flooded = lekalo_in(
+        &dir,
+        &[
+            "module",
+            "api",
+            "check",
+            "--project",
+            ".",
+            "--api",
+            "flooded.json",
+        ],
+    );
+    assert_eq!(flooded.status.code(), Some(1));
+    assert!(codes(&flooded).contains(&"LEK-MODULE-001".to_owned()));
+}
+
+#[test]
+fn validate_seam_advisory_keeps_exit_zero() {
+    // Finding 8: the advisory default keeps exit 0 and records boundary
+    // findings as valid evidence; only --strict invalidates.
+    let family = scratch_family();
+    let dir = alias_free_path(family.path());
+    let advisory = lekalo_in(
+        &dir,
+        &[
+            "validate",
+            "--project",
+            "visibility",
+            "--module-api",
+            "visibility/module-api.json",
+        ],
+    );
+    assert_eq!(advisory.status.code(), Some(0));
+    let document = envelope(&advisory);
+    assert_eq!(document["status"], "valid");
+    assert!(codes(&advisory).contains(&"LEK-MODULE-003".to_owned()));
+    let strict = lekalo_in(
+        &dir,
+        &[
+            "validate",
+            "--project",
+            "visibility",
+            "--strict",
+            "--module-api",
+            "visibility/module-api.json",
+        ],
+    );
+    assert_eq!(strict.status.code(), Some(1));
+}

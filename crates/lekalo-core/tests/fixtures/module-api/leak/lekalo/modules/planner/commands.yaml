@@ -1,0 +1,10 @@
+schema_version: "0.2.16"
+definitions:
+  - id: planner.focus
+    kind: command
+    version: 1
+    description: "Focus one task through the exported tasks surface"
+    input:
+      - name: title
+        type: "tasks.title"
+        required: true

@@ -373,3 +373,592 @@ fn version_policy_evaluates_bumps_independently() {
         RequiredBump::Minor
     );
 }
+
+/// The r1 review probes: every fixed finding carries its own regression.
+
+#[test]
+fn module_private_symbols_never_enter_certified_bundles() {
+    // Finding 1: an exported shape whose field reaches a module-private
+    // symbol is an exposure finding, and the bundle refuses.
+    let leak = "tests/fixtures/module-api/leak";
+    let compilation = compile(leak);
+    let bytes = attachment(leak);
+    let strict = check(&bytes, &compilation, true, None).expect("check runs");
+    let exposure = strict
+        .evidence
+        .iter()
+        .find(|e| e.rule == "module-api.public-private-exposure")
+        .expect("private closure exposure");
+    assert_eq!(exposure.member.as_deref(), Some("tasks.secret"));
+    assert_eq!(
+        exposure.path.last().map(String::as_str),
+        Some("tasks.secret")
+    );
+    let resolved = resolve(&bytes, &compilation).expect("resolves");
+    assert!(export_public(&resolved, &compilation, "tasks").is_err());
+}
+
+#[test]
+fn unattached_producers_cannot_vacate_the_boundary() {
+    // Finding 2: dropping the producer from the attachment turns its
+    // references into boundary findings, never a silent pass.
+    let leak = "tests/fixtures/module-api/leak";
+    let compilation = compile(leak);
+    let mut value: serde_json::Value =
+        serde_json::from_slice(&attachment(leak)).expect("attachment json");
+    value["modules"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|module| module["moduleId"] != "tasks");
+    let bytes = serde_json::to_vec(&value).expect("serializes");
+    let verdict = check(&bytes, &compilation, true, None).expect("check runs");
+    let finding = verdict
+        .evidence
+        .iter()
+        .find(|e| e.rule == "module-api.symbol-not-exported")
+        .expect("unattached producer finding");
+    assert_eq!(finding.detail, "unattached-producer");
+    assert_eq!(finding.producer.as_deref(), Some("tasks"));
+}
+
+#[test]
+fn unknown_module_scopes_are_invalid() {
+    // Finding 14: an unknown --module scope matches nothing and used to
+    // pass silently; it is invalid input.
+    let compilation = compile(REFERENCE);
+    let error = match check(&attachment(REFERENCE), &compilation, false, Some("ghost")) {
+        Err(set) => set,
+        Ok(_) => panic!("an unknown --module scope must be invalid"),
+    };
+    assert!(error
+        .as_slice()
+        .iter()
+        .any(|diagnostic| diagnostic.id() == "module-api.input-invalid"));
+}
+
+#[test]
+fn declared_kinds_and_import_uses_are_contradiction_checked() {
+    // Finding 16: a mislabeled export kind and an unknown import use are
+    // invalid input, not silent relabelings.
+    let compilation = compile(REFERENCE);
+    let good = attachment(REFERENCE);
+    let mut mislabeled: serde_json::Value = serde_json::from_slice(&good).expect("json");
+    for module in mislabeled["modules"].as_array_mut().unwrap().iter_mut() {
+        if module["moduleId"] == "tasks" {
+            for entry in module["exports"].as_array_mut().unwrap().iter_mut() {
+                if entry["export"] == "tasks.task_view" {
+                    entry["kind"] = "entity".into();
+                }
+            }
+        }
+    }
+    let error = resolve(
+        &serde_json::to_vec(&mislabeled).expect("serializes"),
+        &compilation,
+    )
+    .expect_err("kind contradiction");
+    assert!(error
+        .as_slice()
+        .iter()
+        .any(|diagnostic| diagnostic.id() == "module-api.input-invalid"));
+
+    // An import use naming a non-export is invalid.
+    let mut unknown_use: serde_json::Value = serde_json::from_slice(&good).expect("json");
+    for module in unknown_use["modules"].as_array_mut().unwrap().iter_mut() {
+        if module["moduleId"] == "planner" {
+            module["imports"] = serde_json::json!([
+                { "moduleId": "tasks", "uses": ["tasks.nonexistent"] }
+            ]);
+        }
+    }
+    let error = resolve(
+        &serde_json::to_vec(&unknown_use).expect("serializes"),
+        &compilation,
+    )
+    .expect_err("unknown import use");
+    assert!(error
+        .as_slice()
+        .iter()
+        .any(|diagnostic| diagnostic.id() == "module-api.input-invalid"));
+}
+
+#[test]
+fn declared_zero_use_consumers_stay_in_scope() {
+    // Finding 17: an empty declared uses keeps subscriptions and range
+    // policies in scope; it is no longer consumer-use-bound.
+    let compilation = compile(REFERENCE);
+    let mut value: serde_json::Value =
+        serde_json::from_slice(&attachment(REFERENCE)).expect("json");
+    for module in value["modules"].as_array_mut().unwrap().iter_mut() {
+        if module["moduleId"] == "tasks" {
+            module["consumers"][0]["uses"] = serde_json::json!([]);
+        }
+    }
+    let bytes = serde_json::to_vec(&value).expect("serializes");
+    let resolved = resolve(&bytes, &compilation).expect("zero-use consumer resolves");
+    let snapshot = consumer_snapshot(&resolved, &compilation, "tasks").expect("snapshot");
+    let planner = snapshot
+        .consumers
+        .iter()
+        .find(|c| c.consumer == "planner")
+        .expect("declared row retained");
+    assert!(planner
+        .uses
+        .iter()
+        .any(|use_row| use_row.origin == "resolved"));
+}
+
+#[test]
+fn identical_bundles_diff_compatible() {
+    // Finding 9: a no-op re-export demands no bump and never diffs as
+    // breaking.
+    let bundle =
+        std::fs::read("tests/fixtures/module-api/standalone/golden-bundle.json").expect("bundle");
+    let (report, evidence) = lekalo_core::module_api::compare_public(&bundle, &bundle, None, None)
+        .expect("identical diff runs");
+    assert!(report.changes.is_empty());
+    assert_eq!(report.verdict, "compatible");
+    assert_eq!(report.version_policy.decision, "compliant");
+    assert!(evidence.is_empty());
+}
+
+#[test]
+fn snapshots_bind_every_pin() {
+    // Finding 12: a snapshot minted for another project or revision is
+    // invalid input, never a silent participant.
+    let before =
+        std::fs::read("tests/fixtures/module-api/diff/golden-bundle-before.json").expect("bundle");
+    let snapshot =
+        std::fs::read("tests/fixtures/module-api/diff/golden-consumers-before.json").expect("snap");
+    let mut tampered: serde_json::Value = serde_json::from_slice(&snapshot).expect("json");
+    tampered["pins"]["apiDigest"] = serde_json::Value::String(format!("sha256:{}", "0".repeat(64)));
+    let bytes = serde_json::to_vec(&tampered).expect("serializes");
+    let error =
+        lekalo_core::module_api::compare_public(&before, &before, Some(&bytes), Some(&bytes))
+            .expect_err("tampered snapshot");
+    assert!(error
+        .as_slice()
+        .iter()
+        .any(|diagnostic| diagnostic.id() == "module-api.input-invalid"));
+}
+
+/// Seal one hand-authored bundle document with the digest domain the
+/// projection uses (digest member and definition revisions excluded).
+fn seal_bundle(value: &mut serde_json::Value) {
+    value["digest"] = serde_json::Value::String(String::new());
+    for export in value["exports"].as_array_mut().unwrap().iter_mut() {
+        export["version"] = serde_json::Value::from(0);
+    }
+    let canonical = lekalo_core::module_api::wire::canonical(&*value);
+    let digest = format!(
+        "sha256:{}",
+        lekalo_core::digest::sha256_hex(
+            format!("lekalo/module-public-contract/1\n{canonical}").as_bytes()
+        )
+    );
+    value["digest"] = digest.into();
+}
+
+#[test]
+fn dependency_changes_propagate_to_transitive_consumers() {
+    // Finding 19: a consumer of a wrapper export is affected when a
+    // transitive public dependency changes.
+    let bundle_with_dep = |digest: &str| -> serde_json::Value {
+        serde_json::json!({
+            "schemaVersion": "lekalo/module-public-contract/v0.8.0",
+            "identity": "dev.lekalo.module-public-contract@0.8.0",
+            "producer": { "project": "flow", "module": "tasks" },
+            "apiVersion": "1.0.0",
+            "digest": "",
+            "pins": {
+                "modelVersion": "0.2.16",
+                "irDigest": format!("sha256:{}", "a".repeat(64)),
+                "sourceRevision": { "state": "unknown" }
+            },
+            "exports": [
+                {
+                    "export": "tasks.wrapper",
+                    "kind": "value-object",
+                    "version": 0,
+                    "fields": [
+                        { "name": "inner", "required": true,
+                          "type": { "ref": "tasks.inner" } }
+                    ]
+                },
+                {
+                    "export": "tasks.inner",
+                    "kind": "value-object",
+                    "version": 0,
+                    "fields": [
+                        { "name": "thing", "required": true,
+                          "type": { "ref": "dep.thing" } }
+                    ]
+                }
+            ],
+            "publicDependencies": [
+                {
+                    "moduleId": "dep",
+                    "digest": digest,
+                    "apiVersion": null,
+                    "exports": ["dep.thing"]
+                }
+            ],
+            "ports": [],
+            "capabilities": [],
+            "deprecations": []
+        })
+    };
+    let mut before = bundle_with_dep(&format!("sha256:{}", "1".repeat(64)));
+    let mut after = bundle_with_dep(&format!("sha256:{}", "2".repeat(64)));
+    seal_bundle(&mut before);
+    seal_bundle(&mut after);
+    let snap_with = |api_digest: &str| -> serde_json::Value {
+        let mut snapshot = serde_json::json!({
+            "schemaVersion": "lekalo/module-api-consumers/v0.8.0",
+            "identity": "dev.lekalo.module-api-consumers@0.8.0",
+            "producer": { "project": "flow", "module": "tasks" },
+            "pins": {
+                "project": "flow",
+                "modelVersion": "0.2.16",
+                "irDigest": format!("sha256:{}", "a".repeat(64)),
+                "apiDigest": api_digest
+            },
+            "consumers": [
+                {
+                    "consumer": "watcher",
+                    "declared": true,
+                    "mode": "source",
+                    "policy": null,
+                    "uses": [
+                        { "export": "tasks.wrapper", "member": null,
+                          "origin": "declared", "sensitivity": "whole-shape",
+                          "transitive": false, "edges": [] }
+                    ]
+                }
+            ],
+            "complete": false,
+            "digest": ""
+        });
+        snapshot["digest"] = serde_json::Value::String(String::new());
+        let canonical = lekalo_core::module_api::wire::canonical(&snapshot);
+        snapshot["digest"] = format!(
+            "sha256:{}",
+            lekalo_core::digest::sha256_hex(
+                format!("lekalo/module-api-consumers/1\n{canonical}").as_bytes()
+            )
+        )
+        .into();
+        snapshot
+    };
+    let before_bytes = serde_json::to_vec(&before).expect("serializes");
+    let after_bytes = serde_json::to_vec(&after).expect("serializes");
+    let consumers_before =
+        serde_json::to_vec(&snap_with(before["digest"].as_str().expect("digest")))
+            .expect("serializes");
+    let consumers_after = serde_json::to_vec(&snap_with(after["digest"].as_str().expect("digest")))
+        .expect("serializes");
+    let (report, _) = lekalo_core::module_api::compare_public(
+        &before_bytes,
+        &after_bytes,
+        Some(&consumers_before),
+        Some(&consumers_after),
+    )
+    .expect("diff runs");
+    assert_eq!(report.verdict, "breaking");
+    let watcher = report
+        .consumers
+        .iter()
+        .find(|c| c.consumer == "watcher")
+        .expect("watcher row");
+    assert_eq!(
+        watcher.status, "affected",
+        "the transitive dependency break is exact"
+    );
+}
+
+#[test]
+fn deprecation_windows_are_enforced_at_the_diff_seam() {
+    // Finding 18: the parsed deprecation surface has reachable emit
+    // sites: a removal due that never happened is a policy violation.
+    let mut after = serde_json::from_slice::<serde_json::Value>(
+        &std::fs::read("tests/fixtures/module-api/standalone/golden-bundle.json").expect("bundle"),
+    )
+    .expect("json");
+    after["apiVersion"] = "1.3.0".into();
+    after["deprecations"] = serde_json::json!([
+        {
+            "export": "tasks.get_task",
+            "introducedIn": "1.0.0",
+            "removedIn": "1.2.0",
+            "replacement": "tasks.list_tasks",
+            "hint": "migrate to the list view"
+        }
+    ]);
+    seal_bundle(&mut after);
+    let before = std::fs::read("tests/fixtures/module-api/standalone/golden-bundle.json")
+        .expect("bundle bytes");
+    let after_bytes = serde_json::to_vec(&after).expect("serializes");
+    let (report, evidence) =
+        lekalo_core::module_api::compare_public(&before, &after_bytes, None, None)
+            .expect("diff runs");
+    assert!(
+        evidence
+            .iter()
+            .any(|finding| finding.rule == "module-api.deprecation-window-violation"),
+        "the closed removal window is a violation"
+    );
+    assert_eq!(report.verdict, "policy-denied");
+}
+
+#[test]
+fn diagnostic_sets_partition_per_registry_statuses() {
+    // Finding 4: a mixed evidence pool never collapses to the
+    // registry-invariant set; each status keeps only its allowed rules,
+    // and over-limit pools truncate deterministically.
+    use lekalo_core::module_api::diagnostic::{self, Evidence};
+    use lekalo_core::result::Status;
+    let boundary = |subject: &str| {
+        let mut finding = Evidence::new(
+            "module-api.symbol-not-exported",
+            subject,
+            "unexported-cross-module-reference",
+        );
+        finding.export = Some("tasks.secret".to_owned());
+        finding
+    };
+    let gap = Evidence::new(
+        "module-api.evidence-incomplete",
+        "tasks",
+        "public-closure-gap",
+    );
+    let mixed = vec![boundary("planner.focus"), gap];
+    let invalid = diagnostic::set(&mixed, Status::Invalid).expect("partitioned invalid set");
+    assert!(invalid
+        .as_slice()
+        .iter()
+        .all(|d| d.id() != "module-api.evidence-incomplete"));
+    assert!(invalid
+        .as_slice()
+        .iter()
+        .any(|d| d.id() == "module-api.symbol-not-exported"));
+    let valid = diagnostic::set(&mixed, Status::Valid).expect("partitioned valid set");
+    assert_eq!(valid.as_slice().len(), 2);
+    // Over 256 rows: the set truncates instead of collapsing.
+    let floods: Vec<Evidence> = (0..300)
+        .map(|index| boundary(&format!("planner.focus_{index}")))
+        .collect();
+    let truncated = diagnostic::set(&floods, Status::Invalid).expect("truncated set");
+    assert!(truncated.as_slice().len() <= 256);
+    // The denied seam carries only denied-allowed rules plus the marker.
+    let mut stale = Evidence::new("module-api.lock-stale", "planner", "lock-digest");
+    stale.expected = Some("sha256:a".to_owned());
+    stale.actual = Some("sha256:b".to_owned());
+    let denied = diagnostic::denied_set(
+        &[boundary("planner.focus"), stale],
+        "tasks::planner",
+        "lock-policy-denied",
+    )
+    .expect("denied set");
+    assert!(denied
+        .as_slice()
+        .iter()
+        .any(|d| d.id() == "module-api.policy-denied"));
+    assert!(denied
+        .as_slice()
+        .iter()
+        .all(|d| d.id() != "module-api.symbol-not-exported"));
+}
+
+#[test]
+fn public_export_survives_deep_and_wide_dependency_graphs() {
+    // Finding 3 + the second reviewer's stack overflow: memoized bundles
+    // and an explicit worklist keep legal DAGs linear and the stack flat.
+    // The selection grammar admits invocation-relative lowercase paths
+    // only, so the synthetic project is generated under the (ignored)
+    // crate target directory.
+    let root_rel = "target/module-api-dag-probe";
+    let _ = std::fs::remove_dir_all(root_rel);
+    let root = std::path::Path::new(root_rel);
+    let modules_dir = root.join("lekalo/modules");
+    std::fs::create_dir_all(&modules_dir).expect("modules dir");
+    std::fs::write(
+        root.join("lekalo/project.yaml"),
+        "schema_version: \"0.2.16\"\ndefinitions:\n  - id: flow\n    kind: project\n    version: 1\n    description: \"synthetic diamond\"\n    derived_from:\n      - \"TASKS-REQ-001\"\n",
+    )
+    .expect("project");
+    // A 24-module diamond: layers fan out and reconverge, so the old
+    // per-dependency recomputation was exponential; plus a 120-long
+    // chain, which the old recursion walked frame by frame.
+    const WIDE: usize = 4;
+    for index in 0..WIDE {
+        for layer in 0..3 {
+            let id = format!("m{layer}x{index}");
+            let dir = modules_dir.join(&id);
+            std::fs::create_dir_all(&dir).expect("module dir");
+            // The reconvergence: every top module pins the whole middle
+            // layer, and every middle module its own bottom module, so
+            // per-dependency recomputation re-walked shared cones.
+            let imports: Vec<String> = match layer {
+                0 => Vec::new(),
+                1 => vec![format!("m0x{index}")],
+                _ => (0..WIDE).map(|peer| format!("m1x{peer}")).collect(),
+            };
+            let import_lines = if imports.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "    imports:\n{}",
+                    imports
+                        .iter()
+                        .map(|import| format!("      - {import}"))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                )
+            };
+            std::fs::write(
+                dir.join("module.yaml"),
+                format!(
+                    "schema_version: \"0.2.16\"\ndefinitions:\n  - id: {id}\n    kind: module\n    version: 1\n    description: \"layer\"\n{import_lines}\n"
+                ),
+            )
+            .expect("module");
+            let field_type = match layer {
+                0 => format!("{id}.id"),
+                1 => format!("m0x{index}.v"),
+                _ => format!("m1x{index}.v"),
+            };
+            let scalar = if layer == 0 {
+                format!(
+                    "  - id: {id}.id\n    kind: scalar\n    version: 1\n    description: \"leaf domain\"\n    base: string\n"
+                )
+            } else {
+                String::new()
+            };
+            std::fs::write(
+                dir.join("entities.yaml"),
+                format!(
+                    "schema_version: \"0.2.16\"\ndefinitions:\n{scalar}  - id: {id}.v\n    kind: value-object\n    version: 1\n    description: \"node\"\n    fields:\n      - name: carry\n        type: \"{field_type}\"\n        required: true\n"
+                ),
+            )
+            .expect("types");
+        }
+    }
+    let chain_len = 120;
+    for index in 0..chain_len {
+        let id = format!("c{index}");
+        let dir = modules_dir.join(&id);
+        std::fs::create_dir_all(&dir).expect("module dir");
+        let import_lines = if index + 1 < chain_len {
+            format!("    imports:\n      - c{}\n", index + 1)
+        } else {
+            String::new()
+        };
+        std::fs::write(
+            dir.join("module.yaml"),
+            format!(
+                "schema_version: \"0.2.16\"\ndefinitions:\n  - id: {id}\n    kind: module\n    version: 1\n    description: \"chain\"\n{import_lines}"
+            ),
+        )
+        .expect("module");
+        let (field_type, scalar) = if index + 1 < chain_len {
+            (format!("c{}.v", index + 1), String::new())
+        } else {
+            (
+                format!("{id}.id"),
+                format!(
+                    "  - id: {id}.id\n    kind: scalar\n    version: 1\n    description: \"leaf domain\"\n    base: string\n"
+                ),
+            )
+        };
+        std::fs::write(
+            dir.join("entities.yaml"),
+            format!(
+                "schema_version: \"0.2.16\"\ndefinitions:\n{scalar}  - id: {id}.v\n    kind: value-object\n    version: 1\n    description: \"link\"\n    fields:\n      - name: next\n        type: \"{field_type}\"\n        required: true\n"
+            ),
+        )
+        .expect("types");
+    }
+    let mut modules = Vec::new();
+    for index in 0..WIDE {
+        for layer in 0..3 {
+            modules.push(format!("m{layer}x{index}"));
+        }
+    }
+    for index in 0..chain_len {
+        modules.push(format!("c{index}"));
+    }
+    modules.sort();
+    // Every shape-reachable local symbol must be exported (the boundary
+    // fix itself): the leaf modules also publish their scalar domain.
+    let attachment = serde_json::json!({
+        "schemaVersion": "lekalo/module-api/v0.8.0",
+        "identity": "dev.lekalo.module-api@0.8.0",
+        "project": "flow",
+        "modules": modules
+            .iter()
+            .map(|id| {
+                let mut exports = vec![serde_json::json!({
+                    "export": format!("{id}.v"), "kind": "value-object",
+                    "since": null, "aliasOf": null
+                })];
+                if id.starts_with("m0x") || id == "c119" {
+                    exports.push(serde_json::json!({
+                        "export": format!("{id}.id"), "kind": "scalar",
+                        "since": null, "aliasOf": null
+                    }));
+                }
+                serde_json::json!({
+                    "moduleId": id,
+                    "apiVersion": null,
+                    "exports": exports,
+                    "consumers": [], "ports": [], "capabilities": [],
+                    "grants": [], "deprecations": []
+                })
+            })
+            .collect::<Vec<_>>()
+    });
+    let attachment_path = root.join("module-api.json");
+    std::fs::write(
+        &attachment_path,
+        serde_json::to_vec_pretty(&attachment).expect("serializes"),
+    )
+    .expect("attachment");
+    let started = std::time::Instant::now();
+    let compilation = compile(root_rel);
+    let resolved = resolve(
+        &std::fs::read(&attachment_path).expect("attachment"),
+        &compilation,
+    )
+    .expect("resolves");
+    let diamond = export_public(&resolved, &compilation, "m2x0").expect("diamond exports");
+    let chain = export_public(&resolved, &compilation, "c0").expect("chain exports");
+    let elapsed = started.elapsed();
+    assert_eq!(diamond.exports.len(), 1);
+    assert_eq!(chain.exports.len(), 1);
+    assert!(
+        elapsed.as_secs() < 30,
+        "the public export must stay linear on legal DAGs, took {elapsed:?}"
+    );
+    let _ = std::fs::remove_dir_all(root_rel);
+}
+
+#[test]
+fn error_exports_carry_registry_facts() {
+    // Finding 22: kind "error" exports are reachable and carry the typed
+    // #62 registry facts (public payload only).
+    let errors = "tests/fixtures/module-api/errors";
+    let compilation = compile(errors);
+    let bytes = attachment(errors);
+    let verdict = check(&bytes, &compilation, true, None).expect("check runs");
+    assert_eq!(verdict.report.assessment, "pass");
+    let resolved = resolve(&bytes, &compilation).expect("resolves");
+    let bundle = export_public(&resolved, &compilation, "planner").expect("bundle");
+    let error_export = bundle
+        .exports
+        .iter()
+        .find(|export| export.kind == "error")
+        .expect("error export");
+    assert_eq!(error_export.export, "planner.task_not_found");
+    assert_eq!(error_export.code.as_deref(), Some("LEK-ERR-005"));
+    assert_eq!(error_export.retryable, Some(false));
+}

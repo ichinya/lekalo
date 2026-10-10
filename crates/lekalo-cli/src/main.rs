@@ -3021,6 +3021,22 @@ fn run_validate(
     strict: bool,
     no_cache: bool,
 ) -> DomainResult {
+    run_validate_profiled(project, module, strict, no_cache, false)
+}
+
+/// The validate pipeline over one explicit profile family: the accepted
+/// legacy profiles everywhere, and the issue #113 boundary profiles when
+/// the `--module-api` seam owns the run (the boundary profile's only
+/// difference is the portability override handing that seam to
+/// LEK-MODULE-006, so the embedded 0.8.0 profiles are selected exactly
+/// where the boundary report is the authority).
+fn run_validate_profiled(
+    project: Option<String>,
+    module: Option<String>,
+    strict: bool,
+    no_cache: bool,
+    boundary: bool,
+) -> DomainResult {
     let selection = LoadSelection {
         project: project.or_else(|| std::env::var("LEKALO_PROJECT").ok()),
     };
@@ -3028,7 +3044,9 @@ fn run_validate(
         Err(result) => return result,
         Ok(pair) => pair,
     };
-    let profile = match if strict {
+    let profile = match if boundary {
+        lekalo_core::validator::ValidationProfile::embedded_boundary(strict)
+    } else if strict {
         lekalo_core::validator::ValidationProfile::embedded_strict()
     } else {
         lekalo_core::validator::ValidationProfile::embedded_default()

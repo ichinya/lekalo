@@ -296,7 +296,16 @@ pub struct ValidateSeam {
 /// lock denies with full evidence, and otherwise the base result
 /// (including its own strict-profile denial) is returned unchanged.
 pub fn run_validate_seam(seam: ValidateSeam) -> DomainResult {
-    let base = crate::run_validate(seam.project.clone(), seam.module.clone(), seam.strict, true);
+    // The seam's base validation runs under the embedded 0.8.0 boundary
+    // profile: the accepted pipeline with the portability override that
+    // hands the target-specific seam to the boundary report.
+    let base = crate::run_validate_profiled(
+        seam.project.clone(),
+        seam.module.clone(),
+        seam.strict,
+        true,
+        true,
+    );
     let execution = || -> Result<DomainResult, Failure> {
         let compilation = compilation(&seam.project)?;
         let attachment = read(&seam.attachment)?;
