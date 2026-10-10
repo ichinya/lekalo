@@ -2582,7 +2582,7 @@
       "id": "contract:contracts/format-report.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/format-report.schema.v0.8.0.json",
-      "sourceDigest": "sha256:ffab3310c6e653b0fe2c9fd522c9c07765329d7844569ddbb3f1f58e5010c8f3",
+      "sourceDigest": "sha256:cc2aebb1ae7562c0f871d46869d24434f15f790bd75b58256ca5e00832f01e53",
       "owner": "docs/format.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
