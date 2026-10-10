@@ -25,7 +25,8 @@ pub const CUSTODY: &str = ".lekalo/generated/manifests/managed";
 const CURRENT: &str = "current";
 const OBJECTS: &str = "objects";
 const TRANSACTIONS: &str = "transactions";
-/// The exclusive project mutation lock (never held across processes).
+/// The exclusive project mutation lock (held by one live process, proven
+/// via an OS-level advisory lock — see [`history::prove_lock_stale`]).
 pub const MUTATION_LOCK: &str = "mutation.lock";
 
 fn recovery(reason: &str) -> DomainResult {
@@ -70,6 +71,150 @@ pub fn record(
     digest: &str,
 ) -> Result<super::wire::GenerationRecord, DomainResult> {
     record_with_custody(root, digest).map(|(record, _)| record)
+}
+
+/// Read the committed generation record and prove it is the custody
+/// statement of the published manifest (finding 4): every recorded output
+/// appears exactly once in the public manifest with the same digest, and
+/// every manifest entry names a recorded output. A caller-retargeted record
+/// (paths rewritten outside the generated roots, both self-hashes
+/// recomputed) does not biject with the published custody statement and is
+/// refused without touching a project byte. Every consumer of the *current*
+/// record goes through this gate.
+pub fn current_record(
+    root: &std::path::Path,
+) -> Result<super::wire::GenerationRecord, DomainResult> {
+    let digest = match current(root)? {
+        Some(digest) => digest,
+        None => return Err(refused("no-generation")),
+    };
+    let record = record(root, &digest)?;
+    let bytes = match fs::read_file(root, super::custody::MANIFEST_LOGICAL) {
+        Ok(Some(bytes)) => bytes,
+        _ => return Err(refused("manifest-read")),
+    };
+    let manifest = crate::artifacts::ArtifactManifest::parse_canonical(&bytes)
+        .map_err(|_| refused("manifest-read"))?;
+    let recorded: std::collections::BTreeMap<&str, &str> = record
+        .outputs
+        .iter()
+        .map(|output| (output.path.as_str(), output.digest.as_str()))
+        .collect();
+    let published: std::collections::BTreeMap<&str, &str> = manifest
+        .artifacts()
+        .iter()
+        .map(|entry| (entry.key().path().as_str(), entry.content().as_str()))
+        .collect();
+    if recorded != published {
+        return Err(refused("record-manifest"));
+    }
+    Ok(record)
+}
+
+/// Read one retained generation plan by its plan digest (finding 5): the
+/// reviewed plan bytes are content-addressed in the object store, so the
+/// scan admits only a fully closed plan document whose own digest is
+/// exactly the requested pin. Records that merely name a plan digest are
+/// never trusted without these retained bytes.
+pub fn plan(
+    root: &std::path::Path,
+    plan_digest: &str,
+) -> Result<super::wire::GenerationPlan, DomainResult> {
+    for candidate in objects(root)? {
+        let bytes = match read_object_bytes(root, &candidate) {
+            Ok(Some(bytes)) => bytes,
+            _ => continue,
+        };
+        if let Ok(plan) = super::verify_plan(&bytes) {
+            if plan.plan_digest == plan_digest {
+                return Ok(plan);
+            }
+        }
+    }
+    Err(refused("retained-plan"))
+}
+
+/// Read one retained rollback plan by its plan digest (finding 5): the
+/// reviewed rollback intent bounds every pending move of a rollback
+/// journal the same way a generation plan bounds an apply journal.
+pub fn rollback_plan(
+    root: &std::path::Path,
+    plan_digest: &str,
+) -> Result<super::wire::RollbackPlan, DomainResult> {
+    for candidate in objects(root)? {
+        let bytes = match read_object_bytes(root, &candidate) {
+            Ok(Some(bytes)) => bytes,
+            _ => continue,
+        };
+        if let Ok(plan) = super::verify_rollback_plan(&bytes) {
+            if plan.plan_digest == plan_digest {
+                return Ok(plan);
+            }
+        }
+    }
+    Err(refused("retained-plan"))
+}
+
+/// Read one retained coverage document by its canonical digest (finding 13):
+/// rollback re-qualifies adapter and binding dependencies from the exact
+/// retained evidence, never from caller-supplied bytes.
+pub fn coverage(
+    root: &std::path::Path,
+    coverage_digest: &str,
+) -> Result<super::wire::Coverage, DomainResult> {
+    for candidate in objects(root)? {
+        let bytes = match read_object_bytes(root, &candidate) {
+            Ok(Some(bytes)) => bytes,
+            _ => continue,
+        };
+        if let Ok(coverage) = super::parse_coverage(&bytes) {
+            if super::hash(&coverage) == coverage_digest {
+                return Ok(coverage);
+            }
+        }
+    }
+    Err(refused("retained-coverage"))
+}
+
+/// The object names (64 lowercase hex) currently retained in custody.
+fn objects(root: &std::path::Path) -> Result<Vec<String>, DomainResult> {
+    let directory = custody_logical(OBJECTS);
+    let entries = match std::fs::read_dir(root.join(&directory)) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(_) => return Err(refused("object-scan")),
+    };
+    let mut names = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|_| refused("object-scan"))?;
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if name.len() == 64
+            && name
+                .bytes()
+                .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+        {
+            names.push(name.to_owned());
+        }
+    }
+    Ok(names)
+}
+
+/// The exact bytes of one retained object, verified against its name.
+fn read_object_bytes(root: &std::path::Path, hex: &str) -> Result<Option<Vec<u8>>, DomainResult> {
+    match fs::read_file(root, &custody_logical(&format!("{OBJECTS}/{hex}"))) {
+        Ok(Some(bytes)) => {
+            if super::digest(&bytes) == format!("sha256:{hex}") {
+                Ok(Some(bytes))
+            } else {
+                Ok(None)
+            }
+        }
+        Ok(None) => Ok(None),
+        Err(_) => Err(refused("object")),
+    }
 }
 
 /// Read one generation record plus the custody digest of its exact stored
@@ -216,8 +361,10 @@ pub fn transaction_id(root: &std::path::Path, plan_digest: &str) -> Result<Strin
     Ok(format!("{stem}-{attempts:04}"))
 }
 
-/// Write one journal entry atomically enough for recovery: the bounded
-/// transaction document under its own name.
+/// Write one journal entry atomically (finding 11): the bounded
+/// transaction document is staged fresh and renamed over its name, so a
+/// crash mid-write can never leave a torn journal, and a staged alias
+/// (hardlink at the stage name) refuses instead of being truncated.
 pub fn write_transaction(
     root: &std::path::Path,
     transaction: &Transaction,
@@ -226,24 +373,35 @@ pub fn write_transaction(
         "{}\n",
         serde_json::to_string_pretty(transaction).expect("typed transaction")
     );
-    fs::write_file(
-        root,
-        &custody_logical(&format!(
-            "{TRANSACTIONS}/{}.json",
-            transaction.transaction_id
-        )),
-        body.as_bytes(),
-    )
-    .map_err(|_| recovery("transaction-write"))
+    let logical = custody_logical(&format!(
+        "{TRANSACTIONS}/{}.json",
+        transaction.transaction_id
+    ));
+    let stage = custody_logical(&format!(
+        "{TRANSACTIONS}/{}.json.stage",
+        transaction.transaction_id
+    ));
+    fs::write_staged(root, &logical, &stage, body.as_bytes())
+        .map_err(|_| recovery("transaction-write"))
 }
 
-/// Store one content-addressed object; storing is idempotent.
+/// Store one content-addressed object; storing is idempotent. A conflicting
+/// object under the same content address is refused: the storage name is
+/// the exact bytes digest, so different bytes under one name are custody
+/// corruption, never a hit.
 pub fn write_object(root: &std::path::Path, bytes: &[u8]) -> Result<String, DomainResult> {
     let digest = super::digest(bytes);
     let hex = digest.strip_prefix("sha256:").expect("digest");
     let logical = custody_logical(&format!("{OBJECTS}/{hex}"));
-    if matches!(fs::read_file(root, &logical), Ok(Some(_))) {
-        return Ok(digest);
+    match fs::read_file(root, &logical) {
+        Ok(Some(existing)) => {
+            if super::digest(&existing) == digest {
+                return Ok(digest);
+            }
+            return Err(recovery("object-conflict"));
+        }
+        Ok(None) => {}
+        Err(_) => return Err(recovery("object-write")),
     }
     fs::write_file(root, &logical, bytes).map_err(|_| recovery("object-write"))?;
     Ok(digest)
@@ -270,8 +428,28 @@ pub fn write_record(
         .strip_prefix("sha256:")
         .expect("digest");
     let logical = custody_logical(&format!("{OBJECTS}/{hex}"));
-    if matches!(fs::read_file(root, &logical), Ok(Some(_))) {
-        return Ok(custody_digest);
+    match fs::read_file(root, &logical) {
+        Ok(Some(existing)) => {
+            if super::digest(&existing) == custody_digest {
+                return Ok(custody_digest);
+            }
+            // Same generation identity, different lineage (a regenerate →
+            // cleanup → restore cycle re-derives an older inventory): the
+            // retained record is authoritative custody for this identity
+            // and is returned verbatim. A corrupt or non-record object
+            // under a generation name is custody corruption, not a hit.
+            let retained = super::parse_record(&existing).ok().filter(|retained| {
+                retained.generation_digest == record.generation_digest
+                    && super::verify_record_identity(retained).is_ok()
+            });
+            if let Some(retained) = retained {
+                let _ = retained;
+                return Ok(super::digest(&existing));
+            }
+            return Err(recovery("record-conflict"));
+        }
+        Ok(None) => {}
+        Err(_) => return Err(recovery("record-write")),
     }
     fs::write_file(root, &logical, custody.as_bytes()).map_err(|_| recovery("record-write"))?;
     Ok(custody_digest)
@@ -315,28 +493,110 @@ pub fn assert_reconciled(root: &std::path::Path) -> Result<(), DomainResult> {
 }
 
 /// Take the exclusive mutation lock; an existing lock is an unresolved
-/// mutation and blocks until reconciled.
+/// mutation and blocks until reconciled. The lock leaf is created fresh
+/// (`create_new`, never a truncate of an existing file — finding 9) and is
+/// held with an OS-level exclusive advisory lock for the guard's lifetime,
+/// so a live holder is provable: recovery clears a lock only after
+/// acquiring that same advisory lock positively proves no process still
+/// holds it (finding 3).
 pub fn lock(root: &std::path::Path) -> Result<Guard, DomainResult> {
     fs::ensure_dir(root, CUSTODY).map_err(|_| recovery("lock-write"))?;
-    match std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(root.join(custody_logical(MUTATION_LOCK)))
+    let path = root.join(custody_logical(MUTATION_LOCK));
+    #[cfg(unix)]
     {
-        Ok(_) => Ok(Guard {
-            path: root.join(custody_logical(MUTATION_LOCK)),
-        }),
-        Err(_) => Err(recovery("mutation-lock")),
+        use rustix::fs::{flock, FlockOperation};
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .map_err(|_| recovery("mutation-lock"))?;
+        if flock(&file, FlockOperation::NonBlockingLockExclusive).is_err() {
+            drop(file);
+            let _ = std::fs::remove_file(&path);
+            return Err(recovery("mutation-lock"));
+        }
+        Ok(Guard {
+            path,
+            _file: Some(file),
+        })
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        // The exclusive-share handle IS the lock: a live holder's handle
+        // denies every other open of the leaf.
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .share_mode(0)
+            .open(&path)
+            .map_err(|_| recovery("mutation-lock"))?;
+        Ok(Guard {
+            path,
+            _file: Some(file),
+        })
     }
 }
 
-/// The lock guard; dropping releases the path.
+/// Prove an existing mutation lock is abandoned before recovery may touch
+/// the project (finding 3): the lock leaf must be a plain single-link file
+/// inside the custody home (a link, reparse alias, or hardlink refuses
+/// through the confined capability), and acquiring its OS-level exclusive
+/// advisory lock must succeed — a live mutator holds that lock for the
+/// whole mutation, so success is positive stale-owner evidence, not a
+/// heuristic.
+pub fn prove_lock_stale(root: &std::path::Path) -> Result<(), DomainResult> {
+    let logical = custody_logical(MUTATION_LOCK);
+    // A hostile lock leaf (a link, a directory, a shared inode) is not
+    // provably abandoned: refuse instead of clearing it.
+    match fs::read_file(root, &logical) {
+        Ok(Some(_)) => {}
+        Ok(None) => return Ok(()),
+        Err(_) => return Err(recovery("recovery-lock")),
+    }
+    let path = root.join(&logical);
+    #[cfg(unix)]
+    {
+        use rustix::fs::{flock, FlockOperation};
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .map_err(|_| recovery("recovery-lock"))?;
+        if flock(&file, FlockOperation::NonBlockingLockExclusive).is_err() {
+            return Err(recovery("recovery-lock-live"));
+        }
+        let _ = flock(&file, FlockOperation::NonBlockingUnlock);
+        Ok(())
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        // A live mutator holds the leaf with an exclusive-share handle:
+        // acquiring the same share proves abandonment.
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .share_mode(0)
+            .open(&path)
+        {
+            Ok(_) => Ok(()),
+            Err(_) => Err(recovery("recovery-lock-live")),
+        }
+    }
+}
+
+/// The lock guard; dropping releases the advisory lock and the path.
 pub struct Guard {
     path: std::path::PathBuf,
+    /// Held for its `Drop`: releasing the OS-level exclusivity (the
+    /// advisory lock on Unix, the exclusive-share handle on Windows).
+    _file: Option<std::fs::File>,
 }
 
 impl Drop for Guard {
     fn drop(&mut self) {
+        // Release the exclusivity BEFORE unlinking: an open exclusive-
+        // share handle denies deletion (share_mode(0) shares nothing).
+        self._file = None;
         let _ = std::fs::remove_file(&self.path);
     }
 }

@@ -241,7 +241,12 @@ pub fn publish(
         ));
     }
     // The scoped coordinates replace the carried ones; carried entries at
-    // coordinates the plan deleted are dropped, never resurrected.
+    // coordinates the plan deleted are dropped, never resurrected. Carried
+    // source maps are rebound to this manifest's exact inputs revision
+    // (finding 12): the manifest is the whole-project custody statement,
+    // and a carried artifact's bytes are proven unchanged by the bijection
+    // below, so a scoped Model change must not leave sibling maps pinned
+    // to a superseded revision the header no longer names.
     let scoped: std::collections::BTreeSet<String> = entries
         .iter()
         .map(|entry| entry.key().path().as_str().to_owned())
@@ -256,10 +261,21 @@ pub fn publish(
         !scoped.contains(entry.key().path().as_str())
             && !deleted.contains(entry.key().path().as_str())
     }));
-    source_maps.extend(carried_maps.into_iter().filter(|binding| {
-        !scoped.contains(binding.key().path().as_str())
-            && !deleted.contains(binding.key().path().as_str())
-    }));
+    source_maps.extend(
+        carried_maps
+            .into_iter()
+            .filter(|binding| {
+                !scoped.contains(binding.key().path().as_str())
+                    && !deleted.contains(binding.key().path().as_str())
+            })
+            .map(|binding| {
+                SourceMapBinding::new(
+                    binding.key().clone(),
+                    revision.clone(),
+                    binding.entries().to_vec(),
+                )
+            }),
+    );
     // Bijection with the committed record (finding 7): the manifest must
     // be exactly the custody statement of the generation this transaction
     // commits — the caller passes the assembled record. Verified before
@@ -317,32 +333,55 @@ pub fn publish(
     write_manifest(root, &bytes)
 }
 
-/// Write the ownership manifest atomically inside the governed home.
+/// Write the ownership manifest atomically inside the governed home, fully
+/// confined (finding 9): the stage file is created fresh (`create_new`, so a
+/// hardlink planted at the stage name is never truncated) and renamed over
+/// the manifest coordinate, and the whole ancestor chain is revalidated so
+/// no managed write escapes the project.
 fn write_manifest(root: &Path, bytes: &[u8]) -> Result<(), DomainResult> {
-    let directory = root.join(MANIFEST_DIR);
-    std::fs::create_dir_all(&directory).map_err(|_| invalid("manifest-write"))?;
-    let physical = directory.join(MANIFEST_NAME);
-    let stage = directory.join("ownership.json.tmp");
-    std::fs::write(&stage, bytes).map_err(|_| invalid("manifest-write"))?;
-    std::fs::rename(&stage, &physical).map_err(|_| invalid("manifest-write"))?;
-    let read_back = std::fs::read(&physical).map_err(|_| invalid("manifest-write"))?;
-    if read_back != bytes {
+    restore_manifest_bytes(root, bytes)
+}
+
+/// Restore one exact manifest snapshot over the public manifest coordinate,
+/// fully confined (finding 9). Shared by publication, rollback, and
+/// recovery: the stage leaf is created fresh (`create_new`, so a hardlink
+/// planted at the stage name is never truncated), the rename replaces the
+/// destination entry atomically (never a truncate-through on a shared
+/// inode), and the whole ancestor chain is revalidated by the confined
+/// capability so no managed write escapes the project.
+pub(crate) fn restore_manifest_bytes(root: &Path, bytes: &[u8]) -> Result<(), DomainResult> {
+    // The bytes must be a closed manifest document before any byte moves.
+    ArtifactManifest::parse_canonical(bytes).map_err(|_| invalid("manifest"))?;
+    if super::fs::ensure_dir(root, MANIFEST_DIR).is_err() {
         return Err(invalid("manifest-write"));
     }
-    Ok(())
+    let stage = format!("{MANIFEST_DIR}/ownership.json.stage");
+    super::fs::write_staged(root, MANIFEST_LOGICAL, &stage, bytes)
+        .map_err(|_| invalid("manifest-write"))?;
+    // Read back through the confined capability: the published bytes are
+    // the staged bytes.
+    match super::fs::read_file(root, MANIFEST_LOGICAL) {
+        Ok(Some(published)) if published == bytes => Ok(()),
+        _ => Err(invalid("manifest-write")),
+    }
 }
 
 /// Preflight the manifest destination (finding 10): the governed manifests
 /// directory must be creatable and the manifest leaf must be either absent
-/// or a plain writable file — never a directory, link, or other alias.
-/// A blocked destination fails the run before the transaction spends any
-/// staged state, and recovery can complete the journal afterwards.
-fn preflight_destination(root: &Path) -> Result<(), DomainResult> {
+/// or a plain writable file — never a directory, link, hardlink alias, or
+/// other alias. A blocked destination fails the run before the transaction
+/// spends any staged state, and recovery can complete the journal
+/// afterwards.
+pub(crate) fn preflight_destination(root: &Path) -> Result<(), DomainResult> {
     let directory = root.join(MANIFEST_DIR);
     std::fs::create_dir_all(&directory).map_err(|_| invalid("manifest-destination"))?;
     let physical = directory.join(MANIFEST_NAME);
     match std::fs::symlink_metadata(&physical) {
-        Ok(metadata) if metadata.is_dir() || metadata.is_symlink() => {
+        Ok(metadata)
+            if metadata.is_dir()
+                || metadata.is_symlink()
+                || super::fs::is_shared_alias(&physical, &metadata) =>
+        {
             return Err(invalid("manifest-destination"))
         }
         Ok(_) => {}

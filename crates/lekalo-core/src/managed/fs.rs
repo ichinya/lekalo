@@ -36,6 +36,54 @@ fn unconfined(relative: &str, reason: &str) -> DomainResult {
     )
 }
 
+/// The number of directory entries referencing the file: `1` for an
+/// exclusively owned file, more for a hardlink. A hardlink is a regular
+/// file, so the reparse-point checks above accept it — but an in-place
+/// write would truncate the bytes of every alias, including one outside
+/// the project (finding 9). Multi-link leaves are refused on every
+/// mutation path; single-link leaves can only alias themselves. std
+/// exposes no stable link count on Windows (`windows_by_handle` is
+/// unstable), so the count rides the already-pinned `windows-sys`
+/// dependency; an unreadable count refuses (fail closed).
+fn link_count(path: &std::path::Path, metadata: &std::fs::Metadata) -> Option<u64> {
+    #[cfg(windows)]
+    {
+        let _ = metadata;
+        windows_link_count(path).map(u64::from)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+        use std::os::unix::fs::MetadataExt;
+        Some(metadata.nlink())
+    }
+}
+
+#[cfg(windows)]
+fn windows_link_count(path: &std::path::Path) -> Option<u32> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
+    };
+    let file = std::fs::File::open(path).ok()?;
+    let mut info: BY_HANDLE_FILE_INFORMATION = unsafe { std::mem::zeroed() };
+    let ok = unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut info) };
+    if ok == 0 {
+        return None;
+    }
+    Some(info.nNumberOfLinks)
+}
+
+/// Whether the existing leaf is a plain, exclusively owned regular file:
+/// never a link or reparse alias, and never a shared inode (finding 9). An
+/// unreadable link count refuses.
+fn exclusive_leaf(path: &std::path::Path, metadata: &std::fs::Metadata) -> bool {
+    !metadata.is_symlink()
+        && !is_reparse(metadata)
+        && metadata.is_file()
+        && link_count(path, metadata) == Some(1)
+}
+
 /// The confined logical-coordinate grammar: like the published
 /// project-relative grammar, plus leading-dot segments so the reserved
 /// `.lekalo` custody home is expressible. `..`, empty segments, and
@@ -120,6 +168,16 @@ fn validate_leaf(root: &std::path::Path, relative: &str) -> std::io::Result<()> 
     Ok(())
 }
 
+/// Whether one existing leaf is a shared alias: a link, reparse point, or
+/// multi-link inode (a hardlink). Exposed for preflights that must refuse a
+/// blocked destination before any staged byte is spent (finding 9).
+pub fn is_shared_alias(path: &std::path::Path, metadata: &std::fs::Metadata) -> bool {
+    metadata.is_symlink()
+        || is_reparse(metadata)
+        || !metadata.is_file()
+        || link_count(path, metadata) != Some(1)
+}
+
 /// The exact bytes of one project-relative file, or `None` when absent.
 /// Symlinks, reparse aliases, and special files fail closed.
 pub fn read_file(root: &std::path::Path, relative: &str) -> std::io::Result<Option<Vec<u8>>> {
@@ -134,7 +192,10 @@ pub fn read_file(root: &std::path::Path, relative: &str) -> std::io::Result<Opti
 
 /// Write one project file, creating bounded parent directories. The whole
 /// ancestor chain is validated before and revalidated after creation, so a
-/// junction swapped in between checks still fails the write.
+/// junction swapped in between checks still fails the write. A multi-link
+/// leaf (a hardlink alias, possibly outside the project) is refused before
+/// any byte moves: an in-place write must never truncate another owner's
+/// bytes (finding 9).
 pub fn write_file(
     root: &std::path::Path,
     relative: &str,
@@ -151,6 +212,11 @@ pub fn write_file(
     if validate_leaf(root, relative).is_err() {
         return Err(unconfined(relative, "unconfined-leaf"));
     }
+    if let Ok(metadata) = std::fs::symlink_metadata(&path) {
+        if !exclusive_leaf(&path, &metadata) {
+            return Err(unconfined(relative, "shared-inode"));
+        }
+    }
     if !parent.is_empty() && std::fs::create_dir_all(root.join(&parent)).is_err() {
         return Err(unconfined(relative, "publish-mkdir"));
     }
@@ -159,18 +225,87 @@ pub fn write_file(
     if validate_chain(root, relative).is_err() || validate_leaf(root, relative).is_err() {
         return Err(unconfined(relative, "unconfined-recheck"));
     }
-    std::fs::write(&path, bytes).map_err(|_| unconfined(relative, "publish-write"))
+    if let Ok(metadata) = std::fs::symlink_metadata(&path) {
+        if !exclusive_leaf(&path, &metadata) {
+            return Err(unconfined(relative, "shared-inode"));
+        }
+    }
+    // The bytes land through a fresh staged file and an atomic rename
+    // (finding 9): an in-place write would truncate a shared inode, so the
+    // destination entry is replaced atomically instead — an alias planted
+    // at the path keeps its own bytes and the project leaf becomes an
+    // exclusively owned file.
+    let stage = format!("{relative}.stage");
+    write_staged(root, relative, &stage, bytes)
+}
+
+/// Stage fresh bytes at a reserved staging coordinate and atomically move
+/// them onto `destination`: the stage file is created with `create_new`, so
+/// an existing leaf — including a hardlink planted at the stage name — is
+/// never truncated, and the final `rename` replaces the destination's
+/// directory entry instead of writing through a shared inode. Both
+/// coordinates are confined; the stage must be absent or removable as a
+/// plain single-link file before anything is created (finding 9).
+pub fn write_staged(
+    root: &std::path::Path,
+    destination: &str,
+    stage: &str,
+    bytes: &[u8],
+) -> Result<(), DomainResult> {
+    let stage_path = root.join(stage);
+    // The stage leaf must not exist, or must be removable as a plain
+    // single-link file (a stale stage from a crashed run). A link,
+    // directory, or shared inode at the stage name refuses.
+    match std::fs::symlink_metadata(&stage_path) {
+        Ok(metadata) => {
+            if !exclusive_leaf(&stage_path, &metadata) {
+                return Err(unconfined(stage, "unconfined-leaf"));
+            }
+            remove_file(root, stage).map_err(|_| unconfined(stage, "stage"))?;
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(_) => return Err(unconfined(stage, "stage")),
+    }
+    // The destination must be a confinable coordinate whose parent chain
+    // is real directories (the destination leaf itself may be absent or a
+    // plain single-link file — the rename replaces it atomically).
+    if validate_chain(root, destination).is_err() {
+        return Err(unconfined(destination, "unconfined-path"));
+    }
+    if let Ok(metadata) = std::fs::symlink_metadata(root.join(destination)) {
+        if !exclusive_leaf(&root.join(destination), &metadata) {
+            return Err(unconfined(destination, "unconfined-leaf"));
+        }
+    }
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&stage_path)
+        .map_err(|_| unconfined(stage, "stage"))?;
+    use std::io::Write;
+    if file.write_all(bytes).is_err() || file.flush().is_err() {
+        let _ = std::fs::remove_file(&stage_path);
+        return Err(unconfined(stage, "stage"));
+    }
+    drop(file);
+    if std::fs::rename(&stage_path, root.join(destination)).is_err() {
+        let _ = std::fs::remove_file(&stage_path);
+        return Err(unconfined(destination, "publish-write"));
+    }
+    Ok(())
 }
 
 /// Remove one project file; `Ok(false)` when it was already absent. The
-/// leaf is validated so a link or reparse alias is never unlinked.
+/// leaf is validated so a link or reparse alias is never unlinked, and a
+/// shared inode (hardlink alias) is refused like any other mutation
+/// (finding 9): removal is confined to exclusively owned leaves.
 pub fn remove_file(root: &std::path::Path, relative: &str) -> Result<bool, DomainResult> {
     if validate_chain(root, relative).is_err() {
         return Err(unconfined(relative, "unconfined-path"));
     }
     match std::fs::symlink_metadata(root.join(relative)) {
         Ok(metadata) => {
-            if metadata.is_symlink() || is_reparse(&metadata) || !metadata.is_file() {
+            if !exclusive_leaf(&root.join(relative), &metadata) {
                 return Err(unconfined(relative, "unconfined-leaf"));
             }
         }
