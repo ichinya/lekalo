@@ -131,7 +131,7 @@ fn comment_free(bytes: &[u8]) -> Option<String> {
 /// `export const/let/var <name> = (arrow | function | class)` initializers
 /// qualify — a plain `export const <name> = 7` is a named export without a
 /// callable value and is refused, and text inside comments is invisible.
-fn exports_symbol(bytes: &[u8], symbol: &str) -> bool {
+pub(crate) fn exports_symbol(bytes: &[u8], symbol: &str) -> bool {
     let Some(text) = comment_free(bytes) else {
         return false;
     };
@@ -144,7 +144,7 @@ fn exports_symbol(bytes: &[u8], symbol: &str) -> bool {
             // `export { a, b as c }`: the symbol must appear as a name.
             if rest
                 .trim_start_matches('{')
-                .trim_end_matches('}')
+                .trim_end_matches(['}', ';', ' ', '\t'])
                 .split(',')
                 .any(|clause| {
                     let clause = clause.trim();

@@ -1808,3 +1808,405 @@ fn stale_recovery_lock_clear_never_escapes_the_project() {
     let _ = std::fs::remove_dir_all(&root);
     let _ = std::fs::remove_dir_all(&outside);
 }
+
+// ---- Round-3 regressions (issue #41 r3 findings) ---------------------------
+
+fn apply_first_generation(root: &std::path::Path) -> super::wire::GenerationPlan {
+    let ownership = ownership_doc();
+    let coverage = coverage_doc();
+    let coverage_bytes = serde_json::to_vec(&coverage).expect("wire");
+    let model = b"{ \"planner\": true }\n";
+    write_input(root, "model/planner.model.json", model);
+    let assignment = &ownership.modules[0];
+    let target = &assignment.targets[0];
+    let admitted = coverage::admit(assignment, target, &coverage).expect("admission");
+    let built = plan::build(
+        PlanAction::Promotion,
+        &admitted,
+        &coverage,
+        vec![InputPin {
+            path: "model/planner.model.json".to_owned(),
+            digest: digest(model),
+        }],
+        &empty_before(),
+        None,
+        None,
+        hash(&coverage),
+    )
+    .expect("plan");
+    let applied = apply::apply(
+        root,
+        &serde_json::to_vec(&built).expect("wire"),
+        &coverage_bytes,
+        &ownership,
+        Some(built.plan_digest.as_str()),
+        false,
+        Some(&test_authority()),
+    );
+    assert_eq!(applied.status(), Status::Valid, "{applied:?}");
+    built
+}
+
+#[test]
+fn write_file_refuses_a_shared_inode_and_preserves_the_alias() {
+    // A hardlink at a generated path is a regular file: the mutation must
+    // refuse instead of truncating the outside bytes (finding 9).
+    let root = project_root("hardlink-leaf");
+    let outside = root.join("outside-sentinel.ts");
+    std::fs::write(&outside, b"OUTSIDE\n").expect("sentinel");
+    let alias = root.join("apps/planner/gen/src/focus-task.ts");
+    std::fs::create_dir_all(alias.parent().expect("parent")).expect("mkdir");
+    std::fs::hard_link(&outside, &alias).expect("hardlink");
+    let written = fs::write_file(&root, "apps/planner/gen/src/focus-task.ts", b"MANAGED\n");
+    assert!(written.is_err(), "a shared inode must refuse");
+    assert_eq!(std::fs::read(&outside).expect("outside"), b"OUTSIDE\n");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn staged_write_refuses_a_shared_stage_leaf() {
+    // A hardlink planted at the stage name is never truncated (finding 9).
+    let root = project_root("hardlink-stage");
+    let outside = root.join("outside-sentinel.json");
+    std::fs::write(&outside, b"OUTSIDE\n").expect("sentinel");
+    write_input(&root, "custody/keep.txt", b"keep\n");
+    std::fs::create_dir_all(root.join("custody")).expect("mkdir");
+    let stage = root.join("custody/leaf.stage");
+    std::fs::hard_link(&outside, &stage).expect("hardlink");
+    let staged = fs::write_staged(&root, "custody/leaf.json", "custody/leaf.stage", b"NEW\n");
+    assert!(staged.is_err(), "a shared stage leaf must refuse");
+    assert_eq!(std::fs::read(&outside).expect("outside"), b"OUTSIDE\n");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn recovery_clears_the_lock_only_after_proving_it_stale() {
+    // A live holder (this guard) blocks recovery; a dropped guard is
+    // provably abandoned and is cleared (finding 3).
+    let root = project_root("lock-live");
+    let guard = history::lock(&root).expect("lock");
+    write_input(
+        &root,
+        &history::custody_logical(&format!("transactions/{}.json", "stale-0001")),
+        br#"{
+  "schemaVersion": "lekalo/managed-transaction/v0.8.0",
+  "identity": "dev.lekalo.managed-transaction@0.8.0",
+  "transactionId": "stale-0001",
+  "state": "prepared",
+  "action": "apply",
+  "planDigest": { "state": "absent" },
+  "generationDigest": { "state": "absent" },
+  "beforeManifestDigest": { "state": "absent" },
+  "afterManifestDigest": { "state": "absent" },
+  "pending": [],
+  "affectedFiles": [],
+  "conflict": { "state": "absent" },
+  "beforeDigest": { "state": "absent" }
+}"#,
+    );
+    let blocked = recovery::run(&root);
+    assert_eq!(blocked.status(), Status::Invalid, "{blocked:?}");
+    assert!(
+        root.join(history::custody_logical(history::MUTATION_LOCK))
+            .is_file(),
+        "the live lock survives",
+    );
+    drop(guard);
+    let cleared = recovery::run(&root);
+    assert_eq!(cleared.status(), Status::Valid, "{cleared:?}");
+    assert!(
+        !root
+            .join(history::custody_logical(history::MUTATION_LOCK))
+            .exists(),
+        "the stale lock is cleared",
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn forged_journal_cannot_delete_unclaimed_paths() {
+    // A journal naming an unclaimed path (even with a borrowed real plan
+    // digest) converges nothing: exact reviewed outputs only (finding 1).
+    let root = project_root("forged-delete");
+    apply_first_generation(&root);
+    let victim = root.join("apps/planner/gen/maintained.ts");
+    std::fs::write(&victim, b"// maintained\n").expect("victim");
+    let generation = history::current(&root).expect("custody").expect("gen");
+    let record = history::record(&root, &generation).expect("record");
+    let journal = Transaction {
+        schema_version: header("managed-transaction").0,
+        identity: header("managed-transaction").1,
+        transaction_id: "forged-delete-0001".to_owned(),
+        state: TransactionState::Publishing,
+        action: TransactionAction::Apply,
+        plan_digest: State::known(record.plan_digest.clone()),
+        generation_digest: State::known(GenerationDigest {
+            generation_digest: generation.clone(),
+        }),
+        before_manifest_digest: State::Absent,
+        after_manifest_digest: State::Absent,
+        pending: vec![Pending {
+            path: "apps/planner/gen/maintained.ts".to_owned(),
+            op: PendingOp::Delete,
+        }],
+        affected_files: vec!["apps/planner/gen/maintained.ts".to_owned()],
+        conflict: State::Absent,
+        before_digest: State::Absent,
+    };
+    history::write_transaction(&root, &journal).expect("journal");
+    let receipt = recovery::run(&root);
+    assert_ne!(receipt.status(), Status::Valid, "{receipt:?}");
+    assert_eq!(
+        std::fs::read(&victim).expect("victim"),
+        b"// maintained\n",
+        "the unclaimed victim is never deletable",
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn first_publication_journal_converges_to_absence_and_retries() {
+    // An interrupted first publication (no committed generation pointer)
+    // converges its published bytes to absence and a fresh apply succeeds
+    // (finding 11).
+    let root = project_root("first-pub-undo");
+    let built = apply_first_generation(&root);
+    let generation = history::current(&root).expect("custody").expect("gen");
+    let record = history::record(&root, &generation).expect("record");
+    // Simulate a crash right before the pointer commit: rewind the pointer
+    // to absence and leave the journal unresolved with a publishing state.
+    let _ = std::fs::remove_file(root.join(history::custody_logical("current")));
+    let mut pending: Vec<Pending> = record
+        .outputs
+        .iter()
+        .map(|output| Pending {
+            path: output.path.clone(),
+            op: PendingOp::Publish,
+        })
+        .collect();
+    pending.push(Pending {
+        path: super::custody::MANIFEST_LOGICAL.to_owned(),
+        op: PendingOp::Publish,
+    });
+    pending.sort_by(|left, right| (&left.path, &left.op).cmp(&(&right.path, &right.op)));
+    let journal = Transaction {
+        schema_version: header("managed-transaction").0,
+        identity: header("managed-transaction").1,
+        transaction_id: "first-pub-0001".to_owned(),
+        state: TransactionState::Publishing,
+        action: TransactionAction::Apply,
+        plan_digest: State::known(record.plan_digest.clone()),
+        generation_digest: State::Absent,
+        before_manifest_digest: State::Absent,
+        after_manifest_digest: State::Absent,
+        pending,
+        affected_files: Vec::new(),
+        conflict: State::Absent,
+        before_digest: State::Absent,
+    };
+    history::write_transaction(&root, &journal).expect("journal");
+    let receipt = recovery::run(&root);
+    assert_eq!(receipt.status(), Status::Valid, "{receipt:?}");
+    assert!(
+        !root.join("apps/planner/gen/src/focus-task.ts").exists(),
+        "published bytes converge to absence",
+    );
+    assert!(history::unresolved(&root).expect("custody").is_empty());
+    // The fresh apply succeeds without any custody reset.
+    let coverage = coverage_doc();
+    let coverage_bytes = serde_json::to_vec(&coverage).expect("wire");
+    let ownership = ownership_doc();
+    let applied = apply::apply(
+        &root,
+        &serde_json::to_vec(&built).expect("wire"),
+        &coverage_bytes,
+        &ownership,
+        Some(built.plan_digest.as_str()),
+        false,
+        Some(&test_authority()),
+    );
+    assert_eq!(applied.status(), Status::Valid, "{applied:?}");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn rollback_recreates_outputs_deleted_by_a_later_generation() {
+    // The canonical rollback-to-previous-manifest path: outputs an
+    // intermediate generation deleted are recreated from the destination's
+    // retained bytes (findings 3/14).
+    let root = project_root("rollback-recreate");
+    apply_first_generation(&root);
+    let first = history::current(&root).expect("custody").expect("gen");
+    // A second generation that deletes the focus-task outputs: drop the
+    // requirement from the coverage and rebuild over the recorded state.
+    let ownership = ownership_doc();
+    let mut coverage = coverage_doc();
+    coverage
+        .requirements
+        .retain(|requirement| requirement.id != "planner.focus_task");
+    let coverage_bytes = serde_json::to_vec(&coverage).expect("wire");
+    let generation = history::current(&root).expect("custody").expect("gen");
+    let record = history::record(&root, &generation).expect("record");
+    let mut before = empty_before();
+    for output in &record.outputs {
+        before.recorded.insert(
+            output.path.clone(),
+            super::plan::Recorded {
+                digest: output.digest.clone(),
+                role: output.role,
+                owner_module: output.owner_module.clone(),
+                owner_target: output.owner_target.clone(),
+                object_ref: output.after_ref.value().cloned(),
+            },
+        );
+        let bytes = fs::read_file(&root, &output.path)
+            .expect("read")
+            .expect("bytes");
+        before.actual.insert(output.path.clone(), digest(&bytes));
+    }
+    let assignment = &ownership.modules[0];
+    let target = &assignment.targets[0];
+    let admitted = coverage::admit(assignment, target, &coverage).expect("admission");
+    let second = plan::build(
+        PlanAction::Regeneration,
+        &admitted,
+        &coverage,
+        vec![InputPin {
+            path: "model/planner.model.json".to_owned(),
+            digest: digest(b"{ \"planner\": true }\n"),
+        }],
+        &before,
+        Some(generation),
+        None,
+        hash(&coverage),
+    )
+    .expect("second plan");
+    assert!(second
+        .outputs
+        .iter()
+        .any(|output| output.action == OutputAction::Delete));
+    let applied = apply::apply(
+        &root,
+        &serde_json::to_vec(&second).expect("wire"),
+        &coverage_bytes,
+        &ownership,
+        Some(second.plan_digest.as_str()),
+        false,
+        Some(&test_authority()),
+    );
+    assert_eq!(applied.status(), Status::Valid, "{applied:?}");
+    assert!(
+        !root.join("apps/planner/gen/src/focus-task.ts").exists(),
+        "the second generation deleted the outputs",
+    );
+    // Rollback to the first generation must recreate the deleted outputs.
+    let preview = rollback::build(&root, &first).expect("rollback plan");
+    let bytes = serde_json::to_vec(&preview).expect("wire");
+    let confirmed = rollback::apply(
+        &root,
+        &bytes,
+        Some(preview.plan_digest.as_str()),
+        false,
+        Some(&test_authority()),
+    );
+    assert_eq!(confirmed.status(), Status::Valid, "{confirmed:?}");
+    assert!(
+        root.join("apps/planner/gen/src/focus-task.ts").is_file(),
+        "the deleted outputs are recreated from retained bytes",
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn binding_qualification_requires_real_callable_exports() {
+    // A commented-out export and a non-callable named export never qualify
+    // (finding 6 / codex 6).
+    let callable = b"export function hook(input) { return input; }\n";
+    assert!(super::bindings::exports_symbol(callable, "hook"));
+    let arrow = b"export const hook = (input) => input;\nexport {};\n";
+    assert!(super::bindings::exports_symbol(arrow, "hook"));
+    let commented = b"/* export function hook() {} */\n// export function hook() {}\nexport {};\n";
+    assert!(
+        !super::bindings::exports_symbol(commented, "hook"),
+        "a commented-out export is invisible",
+    );
+    let noncallable = b"export const hook = 7;\nexport {};\n";
+    assert!(
+        !super::bindings::exports_symbol(noncallable, "hook"),
+        "a non-callable named export is refused",
+    );
+    let renamed = b"const internal = () => 1;\nexport { internal as hook };\n";
+    assert!(super::bindings::exports_symbol(renamed, "hook"));
+    let unterminated = b"/* export function hook() {}\n";
+    assert!(
+        !super::bindings::exports_symbol(unterminated, "hook"),
+        "an unterminated comment fails closed",
+    );
+}
+
+#[test]
+fn equivalence_fails_on_live_drift_even_with_correct_evidence() {
+    // The implementation pin is recomputed from the live bytes at
+    // adjudication: manual drift fails the gate (finding 5).
+    let root = project_root("equivalence-drift");
+    apply_first_generation(&root);
+    let generation = history::current(&root).expect("custody").expect("gen");
+    let record = history::record(&root, &generation).expect("record");
+    let implementation = super::equivalence::live_implementation_digest_for_test(
+        &root,
+        &record,
+        "planner",
+        "node-typescript",
+    )
+    .expect("live inventory");
+    let reference = record
+        .outputs
+        .iter()
+        .find(|output| output.path == "apps/planner/gen/src/focus-task.ts")
+        .expect("reference")
+        .digest
+        .clone();
+    let scenario_digest = |file: &str| {
+        record
+            .outputs
+            .iter()
+            .find(|output| output.path == file)
+            .expect("scenario test")
+            .digest
+            .clone()
+    };
+    let evidence = Equivalence {
+        schema_version: header("managed-equivalence").0,
+        identity: header("managed-equivalence").1,
+        module: "planner".to_owned(),
+        target: "node-typescript".to_owned(),
+        implementation_digest: implementation,
+        reference_digest: State::known(reference),
+        scenarios: vec![
+            ScenarioVerdict {
+                scenario: "planner.complete_task".to_owned(),
+                digest: scenario_digest("apps/planner/gen/test/complete-task.test.ts"),
+                verdict: ScenarioOutcome::Match,
+            },
+            ScenarioVerdict {
+                scenario: "planner.focus_task".to_owned(),
+                digest: scenario_digest("apps/planner/gen/test/focus-task.test.ts"),
+                verdict: ScenarioOutcome::Match,
+            },
+        ],
+        gaps: Vec::new(),
+        verdict: EquivalenceVerdict::Match,
+    };
+    let bytes = serde_json::to_vec(&evidence).expect("wire");
+    let matched = super::equivalence::adjudicate_for(&root, &bytes);
+    assert_eq!(matched.status(), Status::Valid, "{matched:?}");
+    // Manual drift of one handler fails the gate.
+    write_input(&root, "apps/planner/gen/src/focus-task.ts", b"// drifted\n");
+    let drifted = super::equivalence::adjudicate_for(&root, &bytes);
+    assert_eq!(drifted.status(), Status::Invalid, "{drifted:?}");
+    assert_eq!(
+        drifted.reason_codes().first().map(|code| code.as_str()),
+        Some("managed.equivalence-failed")
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}

@@ -268,7 +268,15 @@ pub fn write_staged(
     }
     // The destination must be a confinable coordinate whose parent chain
     // is real directories (the destination leaf itself may be absent or a
-    // plain single-link file — the rename replaces it atomically).
+    // plain single-link file — the rename replaces it atomically). The
+    // parent chain is created and revalidated here, like write_file.
+    let parent = match destination.rsplit_once('/') {
+        Some((parent, _)) => parent,
+        None => "",
+    };
+    if !parent.is_empty() && ensure_dir(root, parent).is_err() {
+        return Err(unconfined(destination, "publish-mkdir"));
+    }
     if validate_chain(root, destination).is_err() {
         return Err(unconfined(destination, "unconfined-path"));
     }

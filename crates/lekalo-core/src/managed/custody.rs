@@ -388,6 +388,19 @@ pub(crate) fn preflight_destination(root: &Path) -> Result<(), DomainResult> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(_) => return Err(invalid("manifest-destination")),
     }
+    // The staging leaf must be absent or a plain single-link file (finding
+    // 9): a shared inode planted at the stage name refuses the run here,
+    // before any application byte moves, so the committed state stays
+    // exactly where it was.
+    let stage = directory.join("ownership.json.stage");
+    match std::fs::symlink_metadata(&stage) {
+        Ok(metadata) if super::fs::is_shared_alias(&stage, &metadata) => {
+            return Err(invalid("manifest-destination"))
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(_) => return Err(invalid("manifest-destination")),
+    }
     Ok(())
 }
 

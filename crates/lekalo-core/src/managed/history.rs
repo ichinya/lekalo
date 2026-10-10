@@ -393,6 +393,11 @@ pub fn write_object(root: &std::path::Path, bytes: &[u8]) -> Result<String, Doma
     let digest = super::digest(bytes);
     let hex = digest.strip_prefix("sha256:").expect("digest");
     let logical = custody_logical(&format!("{OBJECTS}/{hex}"));
+    // The stage spelling stays inside the 64-character project path policy
+    // (a full-hex stage would exceed it and break project scans after a
+    // crash); the mutation lock serializes writers, so the short prefix is
+    // unambiguous.
+    let stage = custody_logical(&format!("{OBJECTS}/{}.stage", &hex[..8]));
     match fs::read_file(root, &logical) {
         Ok(Some(existing)) => {
             if super::digest(&existing) == digest {
@@ -403,7 +408,7 @@ pub fn write_object(root: &std::path::Path, bytes: &[u8]) -> Result<String, Doma
         Ok(None) => {}
         Err(_) => return Err(recovery("object-write")),
     }
-    fs::write_file(root, &logical, bytes).map_err(|_| recovery("object-write"))?;
+    fs::write_staged(root, &logical, &stage, bytes).map_err(|_| recovery("object-write"))?;
     Ok(digest)
 }
 
@@ -428,6 +433,7 @@ pub fn write_record(
         .strip_prefix("sha256:")
         .expect("digest");
     let logical = custody_logical(&format!("{OBJECTS}/{hex}"));
+    let stage = custody_logical(&format!("{OBJECTS}/{}.stage", &hex[..8]));
     match fs::read_file(root, &logical) {
         Ok(Some(existing)) => {
             if super::digest(&existing) == custody_digest {
@@ -451,7 +457,8 @@ pub fn write_record(
         Ok(None) => {}
         Err(_) => return Err(recovery("record-write")),
     }
-    fs::write_file(root, &logical, custody.as_bytes()).map_err(|_| recovery("record-write"))?;
+    fs::write_staged(root, &logical, &stage, custody.as_bytes())
+        .map_err(|_| recovery("record-write"))?;
     Ok(custody_digest)
 }
 
