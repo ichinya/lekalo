@@ -215,9 +215,11 @@ fn reference(reference: &Reference) -> bool {
     token(&reference.id) && token(&reference.version) && pin(&reference.digest)
 }
 
-/// Published nested-adapter constraints: the closed `Adapter` shape.
+/// Published nested-adapter constraints: the closed `Adapter` shape. The
+/// entry is a project-relative coordinate (finding 10): no absolute
+/// spelling, no traversal, no drive — the entry read is confined.
 fn adapter(adapter: &Adapter) -> bool {
-    token(&adapter.entry) && pin(&adapter.package_digest) && token(&adapter.protocol)
+    rel_path(&adapter.entry) && pin(&adapter.package_digest) && token(&adapter.protocol)
 }
 
 /// Published nested-assignment constraints: references, roots, extensions.
@@ -581,6 +583,8 @@ pub fn parse_record(bytes: &[u8]) -> Result<GenerationRecord, DomainResult> {
             }
         }
     }
+    // The record must be in the public manifest's bijection at consume
+    // time; here the retained inventory is structurally closed.
     if !pin(&document.ownership_digest) {
         return Err(invalid("ownership-digest"));
     }
@@ -597,11 +601,43 @@ pub fn parse_record(bytes: &[u8]) -> Result<GenerationRecord, DomainResult> {
     Ok(document)
 }
 
-/// Validate a transaction journal entry.
+/// Validate a transaction journal entry, including every nested pin (finding
+/// 15): a journal whose plan/generation/manifest/conflict/before fields are
+/// malformed is custody corruption, never a recoverable publication — the
+/// schema's nested constraints are enforced at runtime too.
 pub fn parse_transaction(bytes: &[u8]) -> Result<Transaction, DomainResult> {
     let document: Transaction = decode(bytes, "managed-transaction")?;
     if !token(&document.transaction_id) {
         return Err(invalid("transaction-id"));
+    }
+    if let Some(plan) = document.plan_digest.value() {
+        if !pin(plan) {
+            return Err(invalid("transaction-pin"));
+        }
+    }
+    if let Some(generation) = document.generation_digest.value() {
+        if !pin(&generation.generation_digest) {
+            return Err(invalid("transaction-pin"));
+        }
+    }
+    for manifest in [
+        document.before_manifest_digest.value(),
+        document.after_manifest_digest.value(),
+        document.before_digest.value(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if !pin(manifest) {
+            return Err(invalid("transaction-pin"));
+        }
+    }
+    if let Some(conflict) = document.conflict.value() {
+        if !token(&conflict.reason)
+            || (!rel_path(&conflict.path) && conflict.path != custody::MANIFEST_LOGICAL)
+        {
+            return Err(invalid("transaction-conflict"));
+        }
     }
     if document.affected_files.len() > 8192
         || !sorted(&document.affected_files)
@@ -617,7 +653,10 @@ pub fn parse_transaction(bytes: &[u8]) -> Result<Transaction, DomainResult> {
                 .map(|p| (&p.path, &p.op))
                 .collect::<Vec<_>>(),
         )
-        || document.pending.iter().any(|p| !rel_path(&p.path))
+        || document
+            .pending
+            .iter()
+            .any(|p| !rel_path(&p.path) && p.path != custody::MANIFEST_LOGICAL)
     {
         return Err(invalid("pending-order"));
     }

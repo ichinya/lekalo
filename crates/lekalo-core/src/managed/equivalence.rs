@@ -1,15 +1,21 @@
 //! Neutral behavioral-equivalence adjudication (issue #41).
 //!
 //! The evidence document is producer-owned and independently checked here
-//! against the exact committed generation: the implementation pin must be
-//! the digest of the recorded implementation inventory, every scenario
-//! pin must be the digest of the independently produced outcome bytes the
-//! producer retains in custody (verified against custody objects, never
-//! caller labels), the scenario corpus must cover every rendered
-//! requirement of the committed record, and any qualified mismatch is a
-//! failed gate. Unsupported or missing coverage is an incomplete gate,
-//! and only a fully supported matching corpus passes. Timing metrics and
-//! raw sources are never part of it.
+//! against the exact live generation: the implementation pin must be the
+//! digest of the **live** generated implementation bytes of the committed
+//! record (recomputed at adjudication, so any manual drift fails the gate —
+//! finding 5), every scenario pin must be the exact retained executable
+//! scenario of the requirement it names — the generated behavioral test
+//! that invokes the pinned handler on the pinned sample and asserts the
+//! pinned outcome, retained as a custody object — and the scenario corpus
+//! must cover every rendered requirement of the committed record. Any
+//! qualified mismatch is a failed gate. Unsupported or missing coverage is
+//! an incomplete gate, and only a fully supported matching corpus passes.
+//! Timing metrics and raw sources are never part of it. The gate itself
+//! never executes anything: it certifies that the retained executable
+//! scenario corpus is complete, current, and bound to the live bytes — the
+//! execution happens in the producer's own suite over exactly these
+//! scenarios.
 
 use super::diagnostic;
 use super::wire::{ArtifactRole, Equivalence, EquivalenceVerdict, ScenarioOutcome};
@@ -31,41 +37,48 @@ fn invalid(reason: &str) -> DomainResult {
     diagnostic::failure(INPUT_INVALID, &detail(reason))
 }
 
-/// The digest over one module's recorded implementation inventory: the
-/// ordered concatenation of every implementation/test output digest of
-/// the current generation for the evidence subject.
-/// Test-visible re-export of the inventory digest computation.
-#[cfg(test)]
-pub(crate) fn implementation_inventory_digest_for_test(
+/// The digest over the **live** implementation inventory of one module:
+/// the ordered concatenation of the exact bytes of every implementation/
+/// test output of the current generation for the evidence subject, read
+/// from the live project at adjudication time. Drifted, missing, or
+/// unreadable live bytes fail the gate instead of matching a stale pin
+/// (finding 5): retained-record existence is not behavioral evidence.
+fn live_implementation_digest(
+    root: &std::path::Path,
     record: &super::wire::GenerationRecord,
     module: &str,
     target: &str,
 ) -> Option<String> {
-    implementation_inventory_digest(record, module, target)
-}
-
-fn implementation_inventory_digest(
-    record: &super::wire::GenerationRecord,
-    module: &str,
-    target: &str,
-) -> Option<String> {
-    let digests: Vec<&str> = record
-        .outputs
-        .iter()
-        .filter(|output| {
-            output.owner_module == module
-                && output.owner_target == target
-                && matches!(
-                    output.role,
-                    ArtifactRole::Implementation | ArtifactRole::Test
-                )
-        })
-        .map(|output| output.digest.as_str())
-        .collect();
-    if digests.is_empty() {
+    let mut live = Vec::new();
+    for output in &record.outputs {
+        if output.owner_module != module
+            || output.owner_target != target
+            || !matches!(
+                output.role,
+                ArtifactRole::Implementation | ArtifactRole::Test
+            )
+        {
+            continue;
+        }
+        let bytes = super::fs::read_file(root, &output.path).ok()??;
+        live.push(output.path.clone());
+        live.push(super::digest(&bytes));
+    }
+    if live.is_empty() {
         return None;
     }
-    Some(super::digest(digests.join("\n").as_bytes()))
+    Some(super::digest(live.join("\n").as_bytes()))
+}
+
+/// Test-visible re-export of the live inventory digest computation.
+#[cfg(test)]
+pub(crate) fn live_implementation_digest_for_test(
+    root: &std::path::Path,
+    record: &super::wire::GenerationRecord,
+    module: &str,
+    target: &str,
+) -> Option<String> {
+    live_implementation_digest(root, record, module, target)
 }
 
 /// Adjudicate one equivalence evidence document against the exact
@@ -87,9 +100,11 @@ pub fn adjudicate_for(root: &std::path::Path, bytes: &[u8]) -> DomainResult {
         Ok(record) => record,
         Err(error) => return error,
     };
-    // The evidence is only ever about the exact committed implementation:
-    // the caller-provided pin must equal the recorded inventory digest.
-    match implementation_inventory_digest(&record, &evidence.module, &evidence.target) {
+    // The evidence is only ever about the exact live implementation: the
+    // caller-provided pin must equal the digest of the live generated
+    // bytes (recomputed here, finding 5) — a retained-record pin that no
+    // longer describes the tree fails instead of matching.
+    match live_implementation_digest(root, &record, &evidence.module, &evidence.target) {
         Some(digest) => {
             if digest != evidence.implementation_digest {
                 return diagnostic::failure(EQUIVALENCE_FAILED, &detail("stale-evidence"));
@@ -99,41 +114,51 @@ pub fn adjudicate_for(root: &std::path::Path, bytes: &[u8]) -> DomainResult {
     }
     // The required scenario corpus: every rendered requirement of the
     // committed record for the subject must appear as a scenario, and
-    // every scenario's pinned digest must be the digest of the
-    // independently produced outcome bytes retained in managed custody
-    // (finding 5): the producer writes each native/reference run's
-    // normalized outcome into the custody object store under its digest,
-    // so a caller cannot forge verdict labels — the pinned bytes are
-    // re-read and re-hashed here.
-    let mut required: Vec<String> = record
+    // every scenario's pinned digest must be the exact retained executable
+    // scenario of that requirement (finding 5): the generated behavioral
+    // test that invokes the pinned handler on the pinned sample. Any other
+    // retained object — a source file, a foreign snapshot, a zero hash —
+    // is not scenario evidence.
+    let mut required: Vec<(String, String)> = record
         .outputs
         .iter()
         .filter(|output| {
             output.owner_module == evidence.module
                 && output.owner_target == evidence.target
-                && output.role == ArtifactRole::Implementation
+                && output.role == ArtifactRole::Test
         })
-        .map(|output| output.path.clone())
+        .filter_map(|output| {
+            let name = output
+                .path
+                .rsplit('/')
+                .next()
+                .and_then(|file| file.strip_suffix(".test.ts"))?
+                .to_owned();
+            if name.is_empty() {
+                return None;
+            }
+            Some((
+                format!("{}.{}", evidence.module, name.replace('-', "_")),
+                output.digest.clone(),
+            ))
+        })
         .collect();
     required.sort();
-    for path in &required {
-        let name = path
-            .rsplit('/')
-            .next()
-            .and_then(|file| file.strip_suffix(".ts"))
-            .unwrap_or(path);
-        let scenario = format!("{}.{}", evidence.module, name.replace('-', "_"));
+    if required.is_empty() {
+        return invalid("custody");
+    }
+    for (scenario, scenario_digest) in &required {
         let Some(row) = evidence
             .scenarios
             .iter()
-            .find(|row| row.scenario == scenario)
+            .find(|row| &row.scenario == scenario)
         else {
             return diagnostic::failure(EQUIVALENCE_INCOMPLETE, &detail("corpus"));
         };
-        // Every scenario pin must resolve to real retained outcome bytes:
-        // the digest is verified against the custody object, so a
-        // zero-hash or foreign digest is missing evidence, not a pass.
-        if super::history::object(root, &row.digest).is_err() {
+        // The pin must be the scenario's own retained evidence: the exact
+        // digest of the generated test bytes (whose custody object the
+        // record verification already re-read and re-hashed).
+        if row.digest != *scenario_digest {
             return diagnostic::failure(EQUIVALENCE_INCOMPLETE, &detail("evidence"));
         }
     }

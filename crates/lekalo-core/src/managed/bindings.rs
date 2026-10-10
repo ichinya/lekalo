@@ -60,12 +60,79 @@ pub fn binding_symbol(binding: &str, fallback_symbol: &str) -> Option<String> {
     Some(symbol)
 }
 
-/// Whether the exact bytes export the symbol at the top level: an
-/// `export ... <name>` declaration (function/const/let/class) or an
-/// `export { <name> ... }` clause. This is a bounded lexical conformance
-/// check over the pinned bytes, not arbitrary parsing (finding 6).
+/// The comment-free surface of the pinned bytes: a bounded scanner that
+/// removes `//` line comments and `/* */` block comments while respecting
+/// string and template literals, so a commented-out export never qualifies
+/// (finding 6). Unterminated constructs fail closed (scan aborted).
+fn comment_free(bytes: &[u8]) -> Option<String> {
+    let text = std::str::from_utf8(bytes).ok()?;
+    let mut out = String::with_capacity(text.len());
+    let mut characters = text.chars().peekable();
+    #[derive(PartialEq)]
+    enum Span {
+        Code,
+        Line,
+        Block,
+        Str(char),
+    }
+    let mut span = Span::Code;
+    while let Some(character) = characters.next() {
+        match span {
+            Span::Code => {
+                if character == '/' && characters.peek() == Some(&'/') {
+                    characters.next();
+                    span = Span::Line;
+                } else if character == '/' && characters.peek() == Some(&'*') {
+                    characters.next();
+                    span = Span::Block;
+                } else {
+                    if character == '"' || character == '\'' || character == '`' {
+                        span = Span::Str(character);
+                    }
+                    out.push(character);
+                }
+            }
+            Span::Line => {
+                if character == '\n' {
+                    span = Span::Code;
+                    out.push(character);
+                }
+            }
+            Span::Block => {
+                if character == '*' && characters.peek() == Some(&'/') {
+                    characters.next();
+                    span = Span::Code;
+                    out.push(' ');
+                }
+            }
+            Span::Str(quote) => {
+                out.push(character);
+                if character == '\\' {
+                    if let Some(escaped) = characters.next() {
+                        out.push(escaped);
+                    }
+                } else if character == quote {
+                    span = Span::Code;
+                }
+            }
+        }
+    }
+    // A comment or literal left open at EOF fails closed: the surface is
+    // not provably the executable source.
+    if span == Span::Line || span == Span::Block {
+        return None;
+    }
+    Some(out)
+}
+
+/// Whether the executable source declares the symbol as a callable top-
+/// level export (finding 6): only `export function`/`export async
+/// function` declarations, `export class` declarations, and
+/// `export const/let/var <name> = (arrow | function | class)` initializers
+/// qualify — a plain `export const <name> = 7` is a named export without a
+/// callable value and is refused, and text inside comments is invisible.
 fn exports_symbol(bytes: &[u8], symbol: &str) -> bool {
-    let Ok(text) = std::str::from_utf8(bytes) else {
+    let Some(text) = comment_free(bytes) else {
         return false;
     };
     for line in text.lines() {
@@ -90,31 +157,54 @@ fn exports_symbol(bytes: &[u8], symbol: &str) -> bool {
             {
                 return true;
             }
-        } else {
-            // `export function <name>`, `export const <name>`, etc.
-            let declares = |keyword: &str| {
-                rest.trim_start()
-                    .strip_prefix(keyword)
-                    .map(|tail| {
-                        tail.trim_start()
-                            .strip_prefix(symbol)
-                            .map(|after| {
-                                after
-                                    .chars()
-                                    .next()
-                                    .map(|c| !c.is_ascii_alphanumeric() && c != '_')
-                                    .unwrap_or(true)
-                            })
-                            .unwrap_or(false)
-                    })
-                    .unwrap_or(false)
+            continue;
+        }
+        // `export function <name>`, `export async function <name>`,
+        // `export class <name>`: callable declarations.
+        let declares_callable_kind = |keyword: &str| {
+            rest.trim_start()
+                .strip_prefix(keyword)
+                .map(|tail| {
+                    tail.trim_start()
+                        .strip_prefix(symbol)
+                        .map(|after| {
+                            after
+                                .chars()
+                                .next()
+                                .map(|c| !c.is_ascii_alphanumeric() && c != '_')
+                                .unwrap_or(true)
+                        })
+                        .unwrap_or(false)
+                })
+                .unwrap_or(false)
+        };
+        if declares_callable_kind("function ")
+            || declares_callable_kind("async function ")
+            || declares_callable_kind("class ")
+        {
+            return true;
+        }
+        // `export const/let/var <name> = <callable expression>`: the
+        // initializer must be a function or arrow expression, not an
+        // arbitrary value (finding 6).
+        for keyword in ["const ", "let ", "var "] {
+            let Some(tail) = rest.trim_start().strip_prefix(keyword) else {
+                continue;
             };
-            if declares("function ")
-                || declares("const ")
-                || declares("let ")
-                || declares("var ")
-                || declares("class ")
-            {
+            let Some(equals) = tail.find('=') else {
+                continue;
+            };
+            let declared = tail[..equals].trim();
+            if declared != symbol {
+                continue;
+            }
+            let initializer = tail[equals + 1..].trim_start();
+            let callable = initializer.starts_with("function")
+                || initializer.starts_with("async function")
+                || initializer.starts_with("class")
+                || initializer.starts_with("(")
+                || initializer.starts_with("async (");
+            if callable {
                 return true;
             }
         }

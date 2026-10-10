@@ -289,6 +289,16 @@ pub fn qualify(
     // capability claim). The exact managed successor token is enforced on
     // the coverage's adapter protocol by [`super::coverage::admit`]; the
     // published registry protocol family stays the versioning authority.
+    //
+    // Protocol-story note (auditable split, r3 finding 12): the coverage's
+    // `adapter.protocol` is the *managed lane* protocol — the managed
+    // wire/contract family version (0.8.0) — while the lock's
+    // `targetProtocol` pin is the *resolver negotiation* protocol of the
+    // lock schema itself (0.3.2). The two pins answer different questions
+    // and are deliberately not equated; this comment is the documented
+    // split, and both pins are independently validated (the lane protocol
+    // by `coverage::admit`, the lock protocol by presence here and by the
+    // closed lock reader).
     if authority.lock_protocol.is_none() {
         return Err(super::diagnostic::failure(
             super::VERSION_UNSUPPORTED,
@@ -318,14 +328,27 @@ pub fn qualify(
         // bytes: the single-entry convention makes the locked package
         // digest the entry's own byte digest, so reading the entry under
         // the confined capability and comparing pins the implementation
-        // exactly (finding 4).
-        let entry = match std::fs::read(root.join(coverage.adapter.entry.as_str())) {
-            Ok(bytes) => bytes,
+        // exactly (finding 4). The entry coordinate is a project-relative
+        // path (enforced by the closed grammar), read through the confined
+        // capability — no raw join, no reparse alias, no outside read
+        // (finding 10).
+        let entry = match super::fs::read_file(root, &coverage.adapter.entry) {
+            Ok(Some(bytes)) => bytes,
+            Ok(None) => return Err(stale("adapter", "entry")),
             Err(_) => return Err(stale("adapter", "entry")),
         };
         if super::digest(&entry) != adapter.entry_digest {
             return Err(stale("adapter", "entry-digest"));
         }
+        // The locked bytes must implement the adapter protocol surface,
+        // not merely exist (finding 8): a trivial file with recomputed
+        // lock digests is a false capability proof. The bounded structural
+        // conformance probe requires the entry to carry the complete
+        // request-handling surface of the adapter handshake — the describe
+        // /validate/verify/generate operations and the protocol negotiation
+        // parameter — without executing anything (the planning lane stays
+        // offline).
+        adapter_entry_conformance(&entry)?;
     }
     semantics_match(coverage, authority)?;
     Ok(())
@@ -380,6 +403,30 @@ pub fn ledger_complete(
                     ("reason", "unmodeled-obligation"),
                 ],
             ));
+        }
+    }
+    Ok(())
+}
+
+/// The bounded structural conformance probe of one locked adapter entry
+/// (finding 8): the entry bytes must carry the complete adapter handshake
+/// surface — every lifecycle operation and the protocol negotiation
+/// parameter. This is a source-surface check, not execution: the planning
+/// lane never launches processes. An entry without the full operation set
+/// is a capability claim without an implementation.
+fn adapter_entry_conformance(entry: &[u8]) -> Result<(), DomainResult> {
+    let Ok(text) = std::str::from_utf8(entry) else {
+        return Err(stale("adapter", "entry-encoding"));
+    };
+    for surface in [
+        "describe",
+        "validate",
+        "verify",
+        "generate",
+        "protocol_version",
+    ] {
+        if !text.contains(surface) {
+            return Err(stale("adapter", "entry-surface"));
         }
     }
     Ok(())
@@ -511,7 +558,12 @@ pub fn semantics_match(
         // authority for the generated output shape. A returned entity
         // binds the sample's output keys to its exact declared fields —
         // caller evidence cannot rename the output surface (the same
-        // Model + lock always render the same names).
+        // Model + lock always render the same names). The input side of a
+        // query is bound too (finding 7): every projected source name must
+        // be a declared field of the returned entity, so the handler's
+        // input interface is spelled by the Model, never by caller
+        // evidence — an invented input name cannot change the rendered
+        // bytes under an unchanged IR + lock.
         if obligation.kind == DefinitionKind::Query && !obligation.return_fields.is_empty() {
             if let Some(sample) = requirement.sample.value() {
                 let mut declared = obligation.return_fields.clone();
@@ -524,6 +576,21 @@ pub fn semantics_match(
                         &[
                             ("requirement", obligation.id.as_str()),
                             ("reason", "returns-not-model"),
+                        ],
+                    ));
+                }
+            }
+            for projection in &requirement.projection {
+                if !obligation
+                    .return_fields
+                    .iter()
+                    .any(|field| field == &projection.from)
+                {
+                    return Err(super::diagnostic::failure(
+                        super::CAPABILITY_GAP,
+                        &[
+                            ("requirement", obligation.id.as_str()),
+                            ("reason", "query-input-not-model"),
                         ],
                     ));
                 }
