@@ -33,7 +33,33 @@ const NEEDLES: [(&str, &str); 8] = [
 
 /// The minimum length of an assigned-token value in an assignment
 /// spelling (`password=<value>`, `token: <value>`, `secret = <value>`).
-const ASSIGNED_TOKEN_MIN: usize = 12;
+/// Review r2 F15: a minimum length is not authorization to disclose a
+/// credential — any non-empty assigned value refuses, so short live
+/// credentials (`password=short`) and spaced config spellings
+/// (`password = 0123...`) are refused exactly like long ones. An empty
+/// assignment (`password=` with no value) is not a disclosure and ships.
+const ASSIGNED_TOKEN_MIN: usize = 1;
+
+/// Absolute private-path spellings whose presence in an outgoing envelope
+/// is a disclosure of the host filesystem layout (review r2 F15: a
+/// description carrying `C:/Users/PrivateReview/private.txt` shipped
+/// unscreened). The needles are byte-local, closed, and cover the Windows
+/// drive and user-profile spellings plus the POSIX home roots; the JSON
+/// transport escapes a backslash as `\\`, which the raw envelope scan
+/// still matches through the `:\\` and `\\\\` needles.
+const PRIVATE_PATH_NEEDLES: [&str; 8] = [
+    ":\\Users\\",
+    ":/Users/",
+    ":\\users\\",
+    ":/users/",
+    "/home/",
+    "/root/",
+    // The JSON-escaped backslash spelling (`C:\\Users\\alice` on the
+    // wire) carries doubled separators; the raw envelope scan matches it
+    // through these doubled-separator needles.
+    ":\\\\Users\\\\",
+    ":\\\\users\\\\",
+];
 
 /// Screen one outgoing envelope. `Ok(())` ships; `Err(reason)` refuses
 /// the whole output with `mcp.sensitive-output`. The screen is total:
@@ -60,6 +86,11 @@ fn screen_bytes(bytes: &[u8]) -> Result<(), &'static str> {
     for (needle, reason) in NEEDLES {
         if contains(bytes, needle.as_bytes()) {
             return Err(reason);
+        }
+    }
+    for needle in PRIVATE_PATH_NEEDLES {
+        if contains(bytes, needle.as_bytes()) {
+            return Err("private-absolute-path");
         }
     }
     if contains_assigned_token(bytes) {
@@ -114,37 +145,51 @@ fn contains_assigned_token(bytes: &[u8]) -> bool {
             }
             // JSON spelling: the key closes with a quote, then optional
             // whitespace, then the colon. Config spelling: the key is
-            // followed directly by `=` or `:` (with optional spacing).
-            let mut separator = None;
+            // followed by `=` or `:`. Review r2 F15: the separator may carry
+            // optional whitespace on BOTH sides in either spelling
+            // (`password = <token>`), so whitespace is skipped between the
+            // key (or its closing quote) and the separator.
             if text.as_bytes().get(cursor) == Some(&b'"') {
                 cursor += 1;
-                cursor += text[cursor..].len() - text[cursor..].trim_start().len();
             }
-            match text.as_bytes().get(cursor) {
-                Some(&b':') | Some(&b'=') => separator = Some(cursor),
-                _ => {}
-            }
-            let Some(separator_at) = separator else {
-                continue;
+            cursor += text[cursor..].len() - text[cursor..].trim_start().len();
+            let separator_at = match text.as_bytes().get(cursor) {
+                Some(&b':') | Some(&b'=') => cursor,
+                _ => continue,
             };
             let mut value = &text[separator_at + 1..];
             value = &value[value.len() - value.trim_start().len()..];
-            // A JSON-quoted value: the closing quote ends it.
+            // A JSON-quoted value: the closing quote ends it, and a quote
+            // that closes immediately (or never closes before the frame
+            // ends) carries no token at all — structural fragments like
+            // the `"}` tail of `"password="}` are not assignments.
             let quoted = value.starts_with('"');
-            if quoted {
-                value = &value[1..];
-            }
-            let token: String = value
-                .chars()
-                .take_while(|character| {
-                    if quoted {
-                        *character != '"' && *character != '\\'
-                    } else {
+            let token = if quoted {
+                let mut span = String::new();
+                let mut closed = false;
+                for character in value.chars().skip(1) {
+                    if character == '"' {
+                        closed = true;
+                        break;
+                    }
+                    if character == '\\' {
+                        break;
+                    }
+                    span.push(character);
+                }
+                if !closed || span.is_empty() {
+                    continue;
+                }
+                span
+            } else {
+                value
+                    .chars()
+                    .take_while(|character| {
                         character.is_ascii_alphanumeric()
                             || matches!(*character, '_' | '-' | '+' | '/' | '=')
-                    }
-                })
-                .collect();
+                    })
+                    .collect()
+            };
             if token.chars().count() >= ASSIGNED_TOKEN_MIN {
                 return true;
             }
@@ -201,16 +246,60 @@ mod tests {
             screen_envelope("token: ghp_0123456789abcdef0123456789"),
             Err("assigned-credential")
         );
-        // The field name without an assigned value ships; the envelope
-        // schema (a description or label mentioning `password=`) with a
-        // sub-threshold value ships.
+        // The field name without an assigned value ships (an empty
+        // assignment is not a disclosure).
         assert_eq!(screen_envelope("{\"schema\":\"password=\"}"), Ok(()));
+        // Review r2 F15: a minimum length is not authorization to
+        // disclose — a short live credential refuses too.
         assert_eq!(
             screen_envelope("{\"description\":\"set password=short\"}"),
-            Ok(())
+            Err("assigned-credential")
         );
         // An identifier merely containing the word does not match.
         assert_eq!(screen_envelope("{\"field\":\"NotAPasswordValue\"}"), Ok(()));
+    }
+
+    #[test]
+    fn spaced_assignment_spellings_refuse() {
+        // The config-style spaced spelling the r2 probe smuggled through.
+        assert_eq!(
+            screen_envelope("{\"description\":\"password = 0123456789abcdef0123456789\"}"),
+            Err("assigned-credential")
+        );
+        assert_eq!(
+            screen_envelope("{\"secret\" : \"hunter2hunter2\"}"),
+            Err("assigned-credential")
+        );
+        assert_eq!(
+            screen_envelope("api_key = ghp_0123456789"),
+            Err("assigned-credential")
+        );
+    }
+
+    #[test]
+    fn private_absolute_paths_refuse() {
+        assert_eq!(
+            screen_envelope("{\"note\":\"see C:/Users/PrivateReview/private.txt\"}"),
+            Err("private-absolute-path")
+        );
+        // The JSON-escaped backslash spelling still matches the raw scan.
+        assert_eq!(
+            screen_envelope("{\"note\":\"C:\\\\Users\\\\PrivateReview\\\\f.txt\"}"),
+            Err("private-absolute-path")
+        );
+        assert_eq!(
+            screen_envelope("{\"note\":\"/home/alice/notes.txt\"}"),
+            Err("private-absolute-path")
+        );
+        // Relative project paths and prose never match.
+        assert_eq!(
+            screen_envelope("{\"path\":\"lekalo/modules/planner/commands.yaml\"}"),
+            Ok(())
+        );
+        assert_eq!(
+            screen_envelope("{\"note\":\"the Users table holds profiles\"}"),
+            Ok(())
+        );
     }
 
     #[test]

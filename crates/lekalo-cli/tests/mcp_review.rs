@@ -57,7 +57,7 @@ fn resources_read_respects_the_launch_group_ceiling() {
 }
 
 #[test]
-fn resources_subscribe_authorizes_like_resources_read() {
+fn resources_subscribe_is_refused_while_unadvertised() {
     let root = ServedRoot::new();
     let mut frames = lifecycle();
     frames.push(frame(
@@ -68,15 +68,14 @@ fn resources_subscribe_authorizes_like_resources_read() {
     frames.push(frame(
         11,
         "resources/subscribe",
-        json!({"uri": "lekalo://planner/project-summary"}),
+        json!({"uri": "lekalo://planner/summary"}),
     ));
     let session = root.serve_with_catalog(Some("mcp.local.json"), &frames, &[]);
-    // An unregistered project URI is a typed denial, never a silent `{}`.
-    let denied = session.tool(10);
-    assert_eq!(denied["status"], "denied");
-    assert_eq!(denied["failure"]["failureClass"], "scope-denied");
-    // The admitted identity still subscribes.
-    assert_eq!(session.response(11)["result"], json!({}));
+    // No watcher ships and the capability is advertised false (F8): the
+    // honest answer is the protocol refusal for every identity — an
+    // inert registration is never acknowledged (r2 F3/codex 13).
+    assert_eq!(session.error_code(10), Some(-32601));
+    assert_eq!(session.error_code(11), Some(-32601));
 }
 
 #[test]
@@ -114,17 +113,20 @@ fn a_comma_operand_is_a_structural_refusal_never_a_split_set() {
 fn standard_requestid_cancellation_suppresses_the_late_result() {
     let root = ServedRoot::new();
     // The 2025-11-25 spelling: notifications/cancelled carries requestId.
+    // The call and the cancel ride one batch, so the reader thread
+    // observes the notification while the worker runs (r2 F6): the late
+    // result is suppressed and no reply ships for the cancelled id.
     let mut frames = lifecycle();
-    frames.push(
-        json!({"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": 10}})
-            .to_string(),
-    );
     frames.push(call(
         10,
         "lekalo_inspect",
         json!({"projectId": "planner", "symbol": "planner.focus_task"}),
     ));
-    let session = root.serve(&frames, &[]);
+    frames.push(
+        json!({"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": 10}})
+            .to_string(),
+    );
+    let session = root.serve_with_catalog(Some("mcp.local.json"), &frames, &[]);
     assert!(
         session.response_opt(10).is_none(),
         "cancelled id gets no reply"
@@ -211,28 +213,97 @@ fn an_oversized_response_is_substituted_by_the_typed_output_limit() {
 #[test]
 fn timed_out_workers_keep_holding_their_concurrency_slot() {
     let root = ServedRoot::new();
-    let mut frames = lifecycle();
-    // Five calls with a 1ms deadline: four workers abandon into detached
-    // execution, the fifth must be refused on the concurrency bound while
-    // those workers still run (the bound counts real in-flight work).
-    for id in 10..=14 {
-        frames.push(call(
-            id,
+    // Five calls with a 1ms deadline: the first four are admitted (the
+    // concurrency bound is 4) and each replies with the typed mcp.timeout
+    // refusal while its worker keeps running detached, holding its slot
+    // (F14). The fifth call either hits the live bound (request-limit,
+    // while the four workers still run) or, once a worker has finished
+    // and freed its slot, times out exactly like the others — it can
+    // never succeed, because no admitted worker finishes within its own
+    // 1ms deadline.
+    //
+    // A final call after the detached workers completed proves the slot
+    // release: a timed-out worker never leaks the bound (r2 F18) and the
+    // session outlives its timeouts.
+    let mut child = std::process::Command::new(std::env!("CARGO_BIN_EXE_lekalo"))
+        .args([
+            "mcp",
+            "serve",
+            "--stdio",
+            "--catalog-config",
+            "mcp.local.json",
+        ])
+        .current_dir(crate::mcp_harness::alias_free(&root.root))
+        .env_remove("LEKALO_PROJECT")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn the server");
+    {
+        let stdin = child.stdin.as_mut().expect("stdin");
+        use std::io::Write as _;
+        let mut send = |frame: String| {
+            stdin.write_all(frame.as_bytes()).expect("write frame");
+            stdin
+                .write_all(
+                    b"
+",
+                )
+                .expect("write frame LF");
+        };
+        for frame in crate::mcp_harness::lifecycle() {
+            send(frame);
+        }
+        for id in 10..=14 {
+            send(crate::mcp_harness::call(
+                id,
+                "lekalo_inspect",
+                json!({"projectId": "planner", "symbol": "planner.focus_task", "timeoutMs": 1}),
+            ));
+        }
+        // The detached workers finish in tens of milliseconds; the last
+        // call rides in after they released their slots.
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        send(crate::mcp_harness::call(
+            20,
             "lekalo_inspect",
-            json!({"projectId": "planner", "symbol": "planner.focus_task", "timeoutMs": 1}),
+            json!({"projectId": "planner", "symbol": "planner.focus_task"}),
         ));
     }
-    let session = root.serve_with_catalog(Some("mcp.local.json"), &frames, &[]);
+    let output = child.wait_with_output().expect("server session");
+    let stdout = String::from_utf8(output.stdout).expect("stdout utf8");
+    let responses: Vec<serde_json::Value> = stdout
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| serde_json::from_str(line).expect("one JSON frame"))
+        .collect();
+    let tool = |id: i64| {
+        responses
+            .iter()
+            .find(|response| response["id"] == id)
+            .expect("response")["result"]["structuredContent"]
+            .clone()
+    };
     for id in 10..=13 {
-        let tool = session.tool(id);
-        assert_eq!(tool["status"], "unavailable", "id {id}");
-        assert_eq!(tool["failure"]["failureClass"], "timeout");
+        let status = tool(id);
+        assert_eq!(status["status"], "unavailable", "id {id}");
+        assert_eq!(status["failure"]["failureClass"], "timeout");
     }
-    let fifth = session.tool(14);
-    assert_eq!(fifth["status"], "denied");
-    assert_eq!(fifth["failure"]["failureClass"], "request-limit");
+    let fifth = tool(14);
+    assert_ne!(fifth["status"], "valid", "a 1ms call cannot succeed");
+    assert!(
+        fifth["failure"]["failureClass"] == "timeout"
+            || fifth["failure"]["failureClass"] == "request-limit",
+        "{:?}",
+        fifth["failure"]
+    );
+    let healthy = tool(20);
+    assert_eq!(
+        healthy["status"], "valid",
+        "the session outlives its timeouts"
+    );
 }
-
 #[test]
 fn target_status_spawns_no_git_without_catalog_admission() {
     let root = ServedRoot::new();

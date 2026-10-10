@@ -70,10 +70,24 @@ const TRACE = upstream("trace-manifest.schema.v0.2.16.json");
 const VALIDATION = upstream("validation-report.schema.v0.6.4.json");
 const DOCTOR = upstream("doctor.schema.v0.3.2.json");
 // The closed wire diagnostic item, bundled into every diagnostics array:
-// the faithful projection the validation contract already publishes. Its
-// refs name the nested `diagnostic/*` sub-definitions, so they are
-// bundled under the same `validation.` prefix the item itself uses.
-const DIAGNOSTIC_ITEM = VALIDATION.$defs.diagnosticItem;
+// the faithful projection the validation contract publishes, with one
+// deliberate difference — the MCP surface resolves items against the
+// union successor registry (0.8.0) while preserved domain diagnostics
+// keep their accepted predecessor pins, so the item's registry_version
+// is the closed enumeration of the published registry versions instead
+// of the validation-era constant.
+const DIAGNOSTIC_ITEM_SOURCE = VALIDATION.$defs.diagnosticItem;
+const DIAGNOSTIC_ITEM = {
+  ...DIAGNOSTIC_ITEM_SOURCE,
+  properties: {
+    ...DIAGNOSTIC_ITEM_SOURCE.properties,
+    registry_version: {
+      description:
+        "The exact registry version the item resolves against: the MCP union successor (0.8.0) for transport diagnostics, or the accepted predecessor pin of a preserved domain diagnostic.",
+      enum: ["0.2.16", "0.6.4", "0.6.5", "0.8.0"],
+    },
+  },
+};
 const VALIDATION_MERGED_DEFS = () =>
   mergeDefs(
     ...Object.entries(VALIDATION.$defs)

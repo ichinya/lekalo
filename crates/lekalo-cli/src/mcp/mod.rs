@@ -138,7 +138,9 @@ fn serve_start(
             };
             let mut catalog = catalog_loaded;
             // An explicit --project must name a config project (by id) or
-            // narrow the served set to exactly that project.
+            // narrow the served set to exactly that project. Review r2
+            // F3: the narrowing covers the core catalog too, so no
+            // enumeration or authorization path can widen past it.
             if let Some(selected) = &project {
                 if !catalog.core.admits_project(selected) {
                     return DomainResult::invalid(lekalo_core::mcp::diagnostic::scope_denied_set(
@@ -147,6 +149,7 @@ fn serve_start(
                     ));
                 }
                 let keep = selected.clone();
+                catalog.core = catalog.core.narrowed(&keep);
                 catalog.projects.retain(|id, _| *id == keep);
             }
             catalog

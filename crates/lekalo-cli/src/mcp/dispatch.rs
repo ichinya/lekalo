@@ -3,19 +3,23 @@
 //!
 //! After `initialize`/`notifications/initialized`, the served methods are
 //! ping, tools/list, tools/call, resources/list, resources/templates/list,
-//! resources/read, resources/subscribe, and resources/unsubscribe. Only
-//! implemented capabilities are advertised: tools only, with resource
-//! subscribe/listChanged false (F8) until a bounded watcher ships; no
-//! prompts, sampling, elicitation, tasks, HTTP transport, or client-driven
-//! root expansion. The launcher `--group` is the disclosure ceiling of
-//! every tool call and resource read (F3/F4); inbound frames refuse
-//! duplicate keys (F10); the lifecycle is enforced before any other
-//! method (F12). A timeout produces a typed bounded tool error while the
-//! client is still waiting and the abandoned worker keeps holding its
-//! concurrency slot until it finishes (F14/F19); a cancellation
-//! notification suppresses the late success and never gets a reply.
+//! and resources/read. Only implemented capabilities are advertised:
+//! tools only, with resource subscribe/listChanged false (F8) — and a
+//! subscribe attempt is refused (`-32601`) instead of acknowledged as an
+//! inert registration the server can never honor (r2 F3/codex 13). The
+//! launcher `--group` is the disclosure ceiling of every tool call and
+//! resource read (F3/F4); inbound frames refuse duplicate keys (F10);
+//! the lifecycle is a real state machine (r2 F14/codex 12: the envelope
+//! must be valid JSON-RPC 2.0, requests and notifications are distinct,
+//! and `notifications/initialized` cannot unlock a session that never
+//! ran `initialize`). A timeout produces a typed bounded tool error while
+//! the client is still waiting; the abandoned worker keeps holding its
+//! concurrency slot until it finishes (F14/F19). A cancellation
+//! notification suppresses the late result and never gets a reply; it is
+//! registered only for an outstanding id, so a reused id can never be
+//! poisoned (r2 F6/F19).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -43,8 +47,14 @@ const INVALID_REQUEST: i64 = -32600;
 const METHOD_NOT_FOUND: i64 = -32601;
 const INVALID_PARAMS: i64 = -32602;
 
+/// How often the supervised wait re-polls the inbound channel while a
+/// worker runs: the granularity at which a cancellation notification is
+/// observed during live work.
+const WAIT_POLL: Duration = Duration::from_millis(25);
+
 /// One live server session: the immutable catalog plus the mutable
-/// lifecycle state (subscriptions, cancellation, admission counters).
+/// lifecycle state (admission counters, the handshake, and the
+/// cancellation bookkeeping over outstanding request ids only).
 pub struct Session {
     pub catalog: ServerCatalog,
     pub limits: Limits,
@@ -53,8 +63,15 @@ pub struct Session {
     pub default_group: Option<String>,
     pub writer: Writer,
     initialized: Mutex<bool>,
+    /// `initialize` was answered; `notifications/initialized` only
+    /// unlocks from here (r2 F14: the notification alone never unlocks).
+    handshake: Mutex<bool>,
+    /// Admitted request ids that have not been answered yet: the only ids
+    /// a cancellation notification may register (r2 F6/F19 — unknown,
+    /// completed, or malformed ids are ignored, so a reused id can never
+    /// be poisoned).
+    outstanding: Mutex<BTreeSet<String>>,
     cancelled: Mutex<BTreeSet<String>>,
-    subscriptions: Mutex<BTreeSet<String>>,
     live: AtomicUsize,
     /// Workers abandoned after their deadline: they keep executing, so
     /// they stay counted against the concurrency bound until they
@@ -76,153 +93,253 @@ impl Session {
             default_group,
             writer,
             initialized: Mutex::new(false),
+            handshake: Mutex::new(false),
+            outstanding: Mutex::new(BTreeSet::new()),
             cancelled: Mutex::new(BTreeSet::new()),
-            subscriptions: Mutex::new(BTreeSet::new()),
             live: AtomicUsize::new(0),
             detached: AtomicUsize::new(0),
         }
     }
+
+    /// The scalar-id cancellation key of one request id; malformed ids
+    /// never enter the bookkeeping (r2 F19).
+    fn key_of(id: &Value) -> Option<String> {
+        id_to_key(id)
+    }
 }
 
-/// The incoming request header, structurally validated before routing.
+/// The incoming request, structurally validated before routing
+/// (r2 F14/codex 12: full JSON-RPC 2.0 envelope validation).
 struct Incoming {
     id: Value,
     method: String,
     params: Option<Value>,
 }
 
-fn header_from_value(document: &Value) -> Option<Incoming> {
-    let method = document.get("method")?.as_str()?.to_owned();
-    Some(Incoming {
-        id: document.get("id").cloned().unwrap_or(Value::Null),
-        method,
-        params: document.get("params").cloned(),
-    })
+/// Why one frame is not a servable request.
+enum HeaderOutcome {
+    /// A request with a validated scalar id.
+    Request(Incoming),
+    /// A notification: never answered, whatever its validity.
+    Notification {
+        method: String,
+        params: Option<Value>,
+    },
+    /// An invalid request envelope: answered with `-32600` when an id is
+    /// known, dropped silently when the frame is a notification.
+    Invalid { id: Value },
 }
 
-/// Serve one stdio session to EOF. Requests are processed sequentially
-/// with a per-request deadline; a timed-out worker is abandoned with its
-/// result suppressed (the receiver is dropped), so one cancelled or
-/// timed-out request never poisons the session.
+fn header_from_value(document: &Value) -> HeaderOutcome {
+    let id_member = document.get("id");
+    let scalar_id = match id_member {
+        Some(Value::String(text)) => Some(Value::String(text.clone())),
+        Some(Value::Number(number)) => Some(Value::Number(number.clone())),
+        _ => None,
+    };
+    let method = document.get("method").and_then(Value::as_str);
+    let has_id = id_member.is_some();
+    match (method, has_id) {
+        // A frame without a method is never a notification: the id is
+        // unknowable, so the bounded error carries a null id.
+        (None, _) => HeaderOutcome::Invalid {
+            id: scalar_id.unwrap_or(Value::Null),
+        },
+        (Some(method), false) => {
+            // A method without an id member IS a notification (JSON-RPC
+            // 2.0): the server never answers it, valid or not.
+            HeaderOutcome::Notification {
+                method: method.to_owned(),
+                params: document.get("params").cloned(),
+            }
+        }
+        (Some(method), true) => {
+            // The envelope must be exactly JSON-RPC 2.0, and the id must
+            // be a scalar; explicit null ids and structured ids are
+            // invalid requests (r2 F14).
+            let jsonrpc_ok = document.get("jsonrpc").and_then(Value::as_str) == Some("2.0");
+            if !jsonrpc_ok || scalar_id.is_none() {
+                return HeaderOutcome::Invalid {
+                    id: scalar_id.unwrap_or(Value::Null),
+                };
+            }
+            if method.starts_with("notifications/") {
+                // A notification carrying an id is an invalid request.
+                return HeaderOutcome::Invalid {
+                    id: scalar_id.unwrap_or(Value::Null),
+                };
+            }
+            HeaderOutcome::Request(Incoming {
+                id: scalar_id.unwrap_or(Value::Null),
+                method: method.to_owned(),
+                params: document.get("params").cloned(),
+            })
+        }
+    }
+}
+
+/// The cancellation key of one wire id: scalars only (r2 F19 — every
+/// non-scalar id used to collapse into one shared `"other"` bucket).
+fn id_to_key(id: &Value) -> Option<String> {
+    match id {
+        Value::String(text) => Some(format!("s:{text}")),
+        Value::Number(number) => Some(format!("n:{number}")),
+        _ => None,
+    }
+}
+
+/// Serve one stdio session to EOF.
+///
+/// A dedicated reader thread feeds frames into a channel, so the
+/// dispatcher observes `notifications/cancelled` (and EOF) while a tool
+/// call is in flight instead of only after its reply shipped (r2 F6).
+/// Requests are processed sequentially — the replies stay ordered and
+/// deterministic — and the frames that arrive during a supervised call
+/// are queued in arrival order behind it, bounded by the recorded queue
+/// limit.
 pub fn serve(session: Arc<Session>) {
-    let stdin = std::io::stdin();
-    let mut reader = stdin.lock();
+    let (frame_tx, frame_rx) = mpsc::channel::<Result<String, super::stdio::FrameError>>();
+    let reader = std::thread::Builder::new()
+        .name("lekalo-mcp-reader".to_owned())
+        .spawn(move || {
+            let stdin = std::io::stdin();
+            let mut reader = stdin.lock();
+            loop {
+                match super::stdio::read_frame(&mut reader) {
+                    Ok(frame) => {
+                        if frame_tx.send(Ok(frame)).is_err() {
+                            break;
+                        }
+                    }
+                    Err(error) => {
+                        let _ = frame_tx.send(Err(error));
+                        if error == super::stdio::FrameError::Eof {
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+    drop(reader);
+    let mut pending: VecDeque<Result<String, super::stdio::FrameError>> = VecDeque::new();
     loop {
-        let frame = match super::stdio::read_frame(&mut reader) {
-            Ok(frame) => frame,
-            Err(super::stdio::FrameError::Eof) => break,
+        let frame = match pending.pop_front() {
+            Some(frame) => frame,
+            None => match frame_rx.recv() {
+                Ok(event) => event,
+                Err(_) => break,
+            },
+        };
+        let alive = match frame {
+            Ok(text) => process_frame(&session, &text, &frame_rx, &mut pending),
+            Err(super::stdio::FrameError::Eof) => false,
             Err(super::stdio::FrameError::OverLimit) => {
-                // A bounded error, never a partial JSON frame; the id is
-                // unknowable without parsing, so the error id is null.
+                // The oversized line was drained inside the reader; the
+                // suffix can never resurface as a frame (r2 F8).
                 session
                     .writer
                     .send_error(&Value::Null, INVALID_REQUEST, "mcp.request-limit");
-                continue;
+                true
             }
             Err(_) => {
                 session
                     .writer
                     .send_error(&Value::Null, PARSE_ERROR, "parse-error");
-                continue;
+                true
             }
         };
-        // One checked parse: duplicate keys are refused before any map
-        // insertion (last-key-wins is never an admission path), then the
-        // nesting depth, then the header.
-        let document = match lekalo_core::mcp::parse_checked(&frame) {
-            Ok(document) => document,
-            Err(lekalo_core::mcp::ParseFailure::Duplicate) => {
-                session
-                    .writer
-                    .send_error(&Value::Null, INVALID_REQUEST, "mcp.duplicate-key");
-                continue;
-            }
-            Err(lekalo_core::mcp::ParseFailure::Malformed) => {
-                session
-                    .writer
-                    .send_error(&Value::Null, PARSE_ERROR, "parse-error");
-                continue;
-            }
-        };
-        if super::stdio::check_depth(&document).is_err() {
+        if !alive {
+            break;
+        }
+    }
+    // EOF shuts down outstanding work; the abandoned workers hold their
+    // slots only as long as the process lives, and their receivers are
+    // gone, so no late result can ship.
+    log_event("eof-shutdown");
+}
+
+/// Process one frame; `false` ends the session (EOF).
+fn process_frame(
+    session: &Arc<Session>,
+    text: &str,
+    frame_rx: &mpsc::Receiver<Result<String, super::stdio::FrameError>>,
+    pending: &mut VecDeque<Result<String, super::stdio::FrameError>>,
+) -> bool {
+    // One checked parse: duplicate keys are refused before any map
+    // insertion (last-key-wins is never an admission path), then the
+    // nesting depth, then the header.
+    let document = match lekalo_core::mcp::parse_checked(text) {
+        Ok(document) => document,
+        Err(lekalo_core::mcp::ParseFailure::Duplicate) => {
             session
                 .writer
-                .send_error(&Value::Null, INVALID_REQUEST, "mcp.request-limit");
-            continue;
+                .send_error(&Value::Null, INVALID_REQUEST, "mcp.duplicate-key");
+            return true;
         }
-        let Some(incoming) = header_from_value(&document) else {
+        Err(lekalo_core::mcp::ParseFailure::Malformed) => {
             session
                 .writer
                 .send_error(&Value::Null, PARSE_ERROR, "parse-error");
-            continue;
-        };
-        if incoming.method.starts_with("notifications/") {
-            handle_notification(&session, &incoming.method, incoming.params);
-            continue;
+            return true;
         }
-        // The lifecycle gate: before `notifications/initialized`, the
-        // only served requests are `initialize` and `ping` (hosts probe
-        // during the handshake); every other method is refused.
-        if !*session.initialized.lock().expect("flag")
-            && !matches!(incoming.method.as_str(), "initialize" | "ping")
-        {
-            session.writer.send_error(
-                &incoming.id,
-                INVALID_REQUEST,
-                "mcp.lifecycle-not-initialized",
-            );
-            continue;
-        }
-        if let Some(response) = route(&session, &incoming) {
-            // A cancelled request id ships no reply at all (the worker
-            // already ran; the late envelope is suppressed here).
-            if response.is_null() {
-                continue;
-            }
-            // The single outbound chokepoint: a routed result is the
-            // success member; the closed protocol-error marker becomes a
-            // JSON-RPC error frame (measure-and-substitute happens in the
-            // writer for both).
-            if let Some(error) = response.get("lekaloProtocolError") {
-                let code = error
-                    .get("code")
-                    .and_then(Value::as_i64)
-                    .unwrap_or(INVALID_REQUEST);
-                let message = error
-                    .get("message")
-                    .and_then(Value::as_str)
-                    .unwrap_or("protocol-error");
-                session.writer.send_error(&incoming.id, code, message);
-            } else {
-                session.writer.send_result(&incoming.id, response);
-            }
-        }
+    };
+    if super::stdio::check_depth(&document).is_err() {
+        session
+            .writer
+            .send_error(&Value::Null, INVALID_REQUEST, "mcp.request-limit");
+        return true;
     }
-    // EOF shuts down outstanding work; dropped receivers suppress any
-    // late worker success.
-    log_event("eof-shutdown");
+    let incoming = match header_from_value(&document) {
+        HeaderOutcome::Request(incoming) => incoming,
+        HeaderOutcome::Notification { method, params } => {
+            handle_notification(session, &method, params);
+            return true;
+        }
+        HeaderOutcome::Invalid { id } => {
+            session
+                .writer
+                .send_error(&id, INVALID_REQUEST, "invalid-request");
+            return true;
+        }
+    };
+    // The lifecycle gate: before `notifications/initialized`, the only
+    // served requests are `initialize` and `ping` (hosts probe during the
+    // handshake); every other method is refused.
+    if !*session.initialized.lock().expect("flag")
+        && !matches!(incoming.method.as_str(), "initialize" | "ping")
+    {
+        session.writer.send_error(
+            &incoming.id,
+            INVALID_REQUEST,
+            "mcp.lifecycle-not-initialized",
+        );
+        return true;
+    }
+    route(session, &incoming, frame_rx, pending)
 }
 
 fn handle_notification(session: &Session, method: &str, params: Option<Value>) {
     match method {
         "notifications/initialized" => {
-            *session.initialized.lock().expect("flag") = true;
+            // Only a session that ran `initialize` unlocks (r2 F14).
+            if *session.handshake.lock().expect("flag") {
+                *session.initialized.lock().expect("flag") = true;
+            }
         }
         "notifications/cancelled" => {
-            // Cancelled notifications themselves have no reply. The late
-            // result of a cancelled request is suppressed by registering
-            // the id; the completing worker consults this set before the
-            // reply is written. The 2025-11-25 profile names the member
+            // Cancelled notifications themselves have no reply. The id is
+            // registered only when it is outstanding (admitted and
+            // unanswered); unknown, completed, or malformed ids are
+            // ignored, so a cancelled-then-reused id executes normally
+            // (r2 F6). The 2025-11-25 profile names the member
             // `requestId`; the legacy `id` spelling is tolerated.
             let id = params
                 .as_ref()
                 .and_then(|params| params.get("requestId").or_else(|| params.get("id")));
-            if let Some(id) = id {
-                session
-                    .cancelled
-                    .lock()
-                    .expect("flag")
-                    .insert(id_to_key(id));
+            if let Some(key) = id.and_then(Session::key_of) {
+                if session.outstanding.lock().expect("flag").contains(&key) {
+                    session.cancelled.lock().expect("flag").insert(key);
+                }
             }
         }
         _ => {
@@ -231,28 +348,58 @@ fn handle_notification(session: &Session, method: &str, params: Option<Value>) {
     }
 }
 
-fn id_to_key(id: &Value) -> String {
-    match id {
-        Value::String(text) => format!("s:{text}"),
-        Value::Number(number) => format!("n:{number}"),
-        _ => "other".to_owned(),
-    }
-}
-
-/// Route one request; the payload is the JSON-RPC `result` member.
-fn route(session: &Arc<Session>, incoming: &Incoming) -> Option<Value> {
+/// Route one request. Instant methods answer inline; supervised methods
+/// (tools/call, resources/read) run on a bounded worker while this loop
+/// keeps draining cancellation notifications.
+fn route(
+    session: &Arc<Session>,
+    incoming: &Incoming,
+    frame_rx: &mpsc::Receiver<Result<String, super::stdio::FrameError>>,
+    pending: &mut VecDeque<Result<String, super::stdio::FrameError>>,
+) -> bool {
     match incoming.method.as_str() {
-        "initialize" => Some(initialize()),
-        "ping" => Some(serde_json::json!({})),
-        "tools/list" => Some(tools_list()),
-        "tools/call" => Some(tools_call(session, incoming)),
-        "resources/list" => Some(resources_list(session, incoming)),
-        "resources/templates/list" => Some(templates_list()),
-        "resources/read" => Some(resources_read(session, incoming)),
-        "resources/subscribe" => Some(resources_subscribe(session, incoming)),
-        "resources/unsubscribe" => Some(resources_unsubscribe(session, incoming)),
-        _ => Some(protocol_error_value(METHOD_NOT_FOUND, "method-not-found")),
+        "initialize" => {
+            *session.handshake.lock().expect("flag") = true;
+            session.writer.send_result(&incoming.id, initialize());
+        }
+        "ping" => {
+            session
+                .writer
+                .send_result(&incoming.id, serde_json::json!({}));
+        }
+        "tools/list" => {
+            session.writer.send_result(&incoming.id, tools_list());
+        }
+        "resources/templates/list" => {
+            session.writer.send_result(&incoming.id, templates_list());
+        }
+        "resources/list" => {
+            let response = resources_list(session, incoming);
+            session.writer.send_result(&incoming.id, response);
+        }
+        "tools/call" => {
+            tools_call(session, incoming, frame_rx, pending);
+        }
+        "resources/read" => {
+            resources_read(session, incoming, frame_rx, pending);
+        }
+        // Subscriptions are not implemented and not advertised (F8): the
+        // honest answer is the protocol refusal, never an inert
+        // registration a watcher can never honor (r2 F3/codex 13).
+        "resources/subscribe" | "resources/unsubscribe" => {
+            session.writer.send_error(
+                &incoming.id,
+                METHOD_NOT_FOUND,
+                "subscriptions-not-implemented",
+            );
+        }
+        _ => {
+            session
+                .writer
+                .send_error(&incoming.id, METHOD_NOT_FOUND, "method-not-found");
+        }
     }
+    true
 }
 
 /// The initialize handshake: the supported profile is answered exactly;
@@ -305,22 +452,234 @@ fn tools_list() -> Value {
     serde_json::json!({ "tools": tools })
 }
 
+/// The outcome of one supervised worker wait.
+enum Supervised<T> {
+    /// The worker delivered its payload.
+    Done(T),
+    /// The worker panicked or died without delivering: a recoverable
+    /// fault the dispatcher answers with the typed result-invalid
+    /// refusal; the slot was released (r2 F18 — a dead worker never
+    /// holds one).
+    Fault,
+    /// The deadline expired; the worker keeps running detached and keeps
+    /// its concurrency slot until it finishes (F14).
+    Timeout,
+    /// The request was cancelled while in flight: no reply ships at all
+    /// (the 2025-11-25 cancellation contract), and the worker keeps its
+    /// slot until it finishes.
+    Cancelled,
+}
+
+/// The payload one supervised worker hands back: its work result, or the
+/// fault marker for a panicked worker (the dispatcher answers with the
+/// typed result-invalid refusal, and the slot still releases — a
+/// recoverable fault never leaks the bound, r2 F18).
+enum WorkerPayload<T> {
+    Ok(T),
+    Fault,
+}
+
+/// Run one unit of work on a bounded supervised worker.
+///
+/// While the worker runs, this wait keeps draining the inbound channel:
+/// a cancellation notification for THIS id marks the request cancelled
+/// (no reply ships when the worker completes); every other frame is
+/// queued in arrival order behind the current one. The concurrency slot
+/// is released exactly once through the shared flag: a completed or
+/// faulted outcome releases here; a timed-out or cancelled outcome
+/// leaves it to the worker, which releases when it finishes (r2 F18 —
+/// the `detached` counter moves only in the arm that incremented it,
+/// and a dead worker never holds a slot).
+fn supervise<T: Send + 'static>(
+    session: &Arc<Session>,
+    key: Option<String>,
+    timeout_ms: u64,
+    work: impl FnOnce() -> T + Send + 'static,
+    frame_rx: &mpsc::Receiver<Result<String, super::stdio::FrameError>>,
+    pending: &mut VecDeque<Result<String, super::stdio::FrameError>>,
+) -> Supervised<T> {
+    session.live.fetch_add(1, Ordering::SeqCst);
+    let worker_session = Arc::clone(session);
+    let worker_key = key.clone();
+    let (sender, receiver) = mpsc::channel::<WorkerPayload<T>>();
+    let slot_released = Arc::new(AtomicUsize::new(SLOT_BUSY));
+    let worker_released = Arc::clone(&slot_released);
+    let spawned = std::thread::Builder::new()
+        .name("lekalo-mcp-worker".to_owned())
+        .spawn(move || {
+            // A panicked worker is a recoverable fault: the fault marker
+            // reaches the dispatcher, which answers the typed refusal,
+            // and the slot still releases below (r2 F18).
+            let payload = std::panic::catch_unwind(std::panic::AssertUnwindSafe(work));
+            // The bookkeeping keys leave the outstanding/cancelled sets
+            // at actual completion, so a detached (timed-out) worker's
+            // late completion cannot poison its id for a reuse.
+            if let Some(key) = &worker_key {
+                worker_session.outstanding.lock().expect("flag").remove(key);
+                worker_session.cancelled.lock().expect("flag").remove(key);
+            }
+            let _ = sender.send(match payload {
+                Ok(value) => WorkerPayload::Ok(value),
+                Err(_) => WorkerPayload::Fault,
+            });
+            if worker_released.swap(SLOT_RELEASED, Ordering::SeqCst) == SLOT_BUSY {
+                worker_session.live.fetch_sub(1, Ordering::SeqCst);
+            }
+        });
+    if spawned.is_err() {
+        // A spawn failure frees the slot it reserved.
+        session.live.fetch_sub(1, Ordering::SeqCst);
+        if let Some(key) = &key {
+            session.outstanding.lock().expect("flag").remove(key);
+        }
+        return Supervised::Fault;
+    }
+    drop(spawned);
+    let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+    let mut cancelled = false;
+    let outcome = loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            break Supervised::<T>::Timeout;
+        }
+        let received = match receiver.recv_timeout(remaining.min(WAIT_POLL)) {
+            Ok(payload) => payload,
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                drain_while_waiting(session, key.as_deref(), &mut cancelled, frame_rx, pending);
+                if cancelled {
+                    break Supervised::Cancelled;
+                }
+                continue;
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                // The worker died without delivering; release the slot
+                // here (a dead worker never holds one, r2 F18).
+                if slot_released.swap(SLOT_RELEASED, Ordering::SeqCst) == SLOT_BUSY {
+                    session.live.fetch_sub(1, Ordering::SeqCst);
+                }
+                if let Some(key) = &key {
+                    session.outstanding.lock().expect("flag").remove(key);
+                }
+                break Supervised::Fault;
+            }
+        };
+        // The slot release is shared with the worker's own: exactly one
+        // of the two wins the swap (r2 F18).
+        if slot_released.swap(SLOT_RELEASED, Ordering::SeqCst) == SLOT_BUSY {
+            session.live.fetch_sub(1, Ordering::SeqCst);
+        }
+        break match received {
+            WorkerPayload::Ok(value) => Supervised::Done(value),
+            WorkerPayload::Fault => Supervised::Fault,
+        };
+    };
+    match outcome {
+        Supervised::Timeout | Supervised::Cancelled => {
+            // The worker keeps executing, so it keeps its slot and
+            // releases on completion; `detached` moves only here, in the
+            // arm that records the abandonment (r2 F18).
+            session.detached.fetch_add(1, Ordering::SeqCst);
+        }
+        _ => {}
+    }
+    if let Some(key) = &key {
+        session.outstanding.lock().expect("flag").remove(key);
+    }
+    // A cancellation that arrived while the worker ran but after the
+    // payload was received still suppresses the reply: one final drain
+    // before the caller writes anything (r2 F6).
+    if matches!(outcome, Supervised::Done(_)) && key.is_some() {
+        let mut late_cancel = false;
+        drain_while_waiting(session, key.as_deref(), &mut late_cancel, frame_rx, pending);
+        if late_cancel {
+            return Supervised::Cancelled;
+        }
+    }
+    outcome
+}
+
+/// One poll of the inbound channel while a worker runs: a cancellation
+/// for the live id is observed immediately; every other frame queues in
+/// arrival order behind the current request.
+fn drain_while_waiting(
+    session: &Arc<Session>,
+    key: Option<&str>,
+    cancelled: &mut bool,
+    frame_rx: &mpsc::Receiver<Result<String, super::stdio::FrameError>>,
+    pending: &mut VecDeque<Result<String, super::stdio::FrameError>>,
+) {
+    loop {
+        match frame_rx.try_recv() {
+            Ok(Ok(text)) => {
+                if let Ok(document) = lekalo_core::mcp::parse_checked(&text) {
+                    if document.get("method").and_then(Value::as_str)
+                        == Some("notifications/cancelled")
+                    {
+                        let id = document
+                            .get("params")
+                            .and_then(|params| params.get("requestId").or_else(|| params.get("id")))
+                            .cloned();
+                        match id.as_ref().and_then(Session::key_of) {
+                            Some(wait_key) if Some(wait_key.as_str()) == key => {
+                                *cancelled = true;
+                            }
+                            Some(other)
+                                if session.outstanding.lock().expect("flag").contains(&other) =>
+                            {
+                                session.cancelled.lock().expect("flag").insert(other);
+                            }
+                            Some(_) => {}
+                            None => {}
+                        }
+                        if *cancelled {
+                            return;
+                        }
+                        continue;
+                    }
+                }
+                pending.push_back(Ok(text));
+            }
+            Ok(Err(error)) => {
+                pending.push_back(Err(error));
+                if error == super::stdio::FrameError::Eof {
+                    return;
+                }
+            }
+            Err(mpsc::TryRecvError::Empty) | Err(mpsc::TryRecvError::Disconnected) => return,
+        }
+    }
+}
+
 /// The tools/call admission and execution path: structural parameter
 /// violations are -32602; a known tool's semantic failure is a typed
 /// tool result; timeouts are typed bounded errors; a live cancellation
-/// suppresses the late result.
-fn tools_call(session: &Arc<Session>, incoming: &Incoming) -> Value {
+/// suppresses the late result entirely.
+fn tools_call(
+    session: &Arc<Session>,
+    incoming: &Incoming,
+    frame_rx: &mpsc::Receiver<Result<String, super::stdio::FrameError>>,
+    pending: &mut VecDeque<Result<String, super::stdio::FrameError>>,
+) {
     let Some(params) = incoming.params.as_ref() else {
-        return protocol_error_value(INVALID_PARAMS, "invalid-params");
+        session
+            .writer
+            .send_error(&incoming.id, INVALID_PARAMS, "invalid-params");
+        return;
     };
     let Some(name) = params.get("name").and_then(Value::as_str) else {
-        return protocol_error_value(INVALID_PARAMS, "invalid-params");
+        session
+            .writer
+            .send_error(&incoming.id, INVALID_PARAMS, "invalid-params");
+        return;
     };
     let arguments = params.get("arguments").cloned().unwrap_or(Value::Null);
     if tools::descriptor(name).is_none() {
         // Unknown tools are -32602; the name is a wire token and never an
         // echoed operand.
-        return protocol_error_value(INVALID_PARAMS, "unknown-tool");
+        session
+            .writer
+            .send_error(&incoming.id, INVALID_PARAMS, "unknown-tool");
+        return;
     }
     let request = match parse_request(name, &arguments) {
         Ok(mut request) => {
@@ -340,15 +699,22 @@ fn tools_call(session: &Arc<Session>, incoming: &Incoming) -> Value {
                         None,
                         set,
                         "invalid",
-                        "input-invalid",
+                        // r2 F12: the contract enum spells `invalid-input`.
+                        "invalid-input",
                         "mcp.input-invalid",
                     );
-                    return tool_result(&incoming.id, &envelope, true);
+                    session
+                        .writer
+                        .send_result(&incoming.id, tool_result(&incoming.id, &envelope, true));
+                    return;
                 }
             }
         }
         Err(RequestError::Params(field)) => {
-            return protocol_error_value(INVALID_PARAMS, field.field);
+            session
+                .writer
+                .send_error(&incoming.id, INVALID_PARAMS, field.field);
+            return;
         }
         Err(RequestError::Semantic(boundary)) => {
             // The typed mcp.input-invalid refusal as a tool result.
@@ -363,9 +729,23 @@ fn tools_call(session: &Arc<Session>, incoming: &Incoming) -> Value {
                 "invalid-input",
                 "mcp.input-invalid",
             );
-            return tool_result(&incoming.id, &envelope, true);
+            session
+                .writer
+                .send_result(&incoming.id, tool_result(&incoming.id, &envelope, true));
+            return;
         }
     };
+    // The pre-cancelled id executes nothing and answers nothing: the
+    // client cancelled it before admission (r2 F6).
+    let key = Session::key_of(&incoming.id);
+    if let Some(key) = &key {
+        let mut cancelled = session.cancelled.lock().expect("flag");
+        if cancelled.remove(key) {
+            session.outstanding.lock().expect("flag").remove(key);
+            drop(cancelled);
+            return;
+        }
+    }
     // Effective limits: caller parameters may reduce, never raise.
     let timeout_ms =
         Limits::effective_timeout_ms(request.common().timeout_ms, session.limits.timeout_ms);
@@ -382,94 +762,52 @@ fn tools_call(session: &Arc<Session>, incoming: &Incoming) -> Value {
             "request-limit",
             "mcp.request-limit",
         );
-        return tool_result(&incoming.id, &envelope, true);
+        session
+            .writer
+            .send_result(&incoming.id, tool_result(&incoming.id, &envelope, true));
+        return;
     }
-    session.live.fetch_add(1, Ordering::SeqCst);
+    if let Some(key) = &key {
+        session
+            .outstanding
+            .lock()
+            .expect("flag")
+            .insert(key.clone());
+    }
     let worker_session = Arc::clone(session);
     let worker_request = request.clone();
-    let (sender, receiver) = mpsc::channel();
-    // Slot ownership (F14/F19): the dispatcher and the worker coordinate
-    // the single release of the concurrency slot through one flag.
-    // `SLOT_BUSY` -> `SLOT_RELEASED` happens exactly once: a completed
-    // outcome releases on the dispatcher; a timed-out outcome leaves the
-    // slot owned by the worker, which keeps executing and releases on
-    // completion.
-    let slot_released = Arc::new(AtomicUsize::new(SLOT_BUSY));
-    let worker_released = Arc::clone(&slot_released);
-    let spawned = std::thread::Builder::new()
-        .name("lekalo-mcp-worker".to_owned())
-        .spawn(move || {
-            let output = execution::execute(&worker_session.catalog, &worker_request);
-            let _ = sender.send(output);
-            // Once the result is handed off, this worker is abandoned
-            // only when the dispatcher timed out without taking it (and
-            // so never released). Release the slot exactly once, if the
-            // dispatcher did not already.
-            if worker_released.swap(SLOT_RELEASED, Ordering::SeqCst) == SLOT_BUSY {
-                worker_session.live.fetch_sub(1, Ordering::SeqCst);
-                worker_session.detached.fetch_sub(1, Ordering::SeqCst);
-            }
-        });
-    if spawned.is_err() {
-        // A spawn failure frees the slot it reserved.
-        session.live.fetch_sub(1, Ordering::SeqCst);
-        let set = lekalo_core::mcp::diagnostic::backend_unavailable_set("worker");
-        let envelope = execution::refusal_envelope(
-            name,
-            Some(request.common().project_id.as_str()),
-            request.common().group_id.as_deref(),
-            set,
-            "unavailable",
-            "backend-unavailable",
-            "mcp.backend-unavailable",
-        );
-        return tool_result(&incoming.id, &envelope, true);
-    }
-    // The worker owns the sender from here; this thread holds only the
-    // receiver, so a dropped receiver reliably suppresses late results.
-    drop(spawned);
-    let deadline = Instant::now() + Duration::from_millis(timeout_ms);
-    let outcome = loop {
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        if remaining.is_zero() {
-            break None;
-        }
-        match receiver.recv_timeout(remaining) {
-            Ok(output) => break Some(output),
-            Err(mpsc::RecvTimeoutError::Timeout) => continue,
-            Err(mpsc::RecvTimeoutError::Disconnected) => break None,
-        }
-    };
-    if outcome.is_none() {
-        // Timeout: the worker keeps executing, so it keeps its slot and
-        // releases on completion (its swap still observes SLOT_BUSY,
-        // because this arm does not release).
-        session.detached.fetch_add(1, Ordering::SeqCst);
-    } else {
-        // Completed (or the sender dropped): the dispatcher owns the
-        // release; the worker's later swap observes SLOT_RELEASED and
-        // never double-fires.
-        if slot_released.swap(SLOT_RELEASED, Ordering::SeqCst) == SLOT_BUSY {
-            session.live.fetch_sub(1, Ordering::SeqCst);
-        }
-    }
-    // The late-success suppression: a cancelled request id never
-    // receives the completed envelope, and a timed-out worker is
-    // abandoned with the receiver dropped.
-    if session
-        .cancelled
-        .lock()
-        .expect("flag")
-        .contains(&id_to_key(&incoming.id))
-    {
-        drop(receiver);
-        return Value::Null;
-    }
+    let outcome = supervise(
+        session,
+        key,
+        timeout_ms,
+        move || execution::execute(&worker_session.catalog, &worker_request),
+        frame_rx,
+        pending,
+    );
+    finish_tool(session, incoming, name, &request, timeout_ms, outcome);
+}
+
+fn finish_tool(
+    session: &Arc<Session>,
+    incoming: &Incoming,
+    name: &str,
+    request: &tools::ToolRequest,
+    timeout_ms: u64,
+    outcome: Supervised<Result<execution::ToolOutput, String>>,
+) {
     match outcome {
-        Some(Ok(output)) => tool_result(&incoming.id, &output.envelope, output.is_error),
-        Some(Err(_fault)) => {
-            // An execution seam fault is the typed result-invalid
-            // developer refusal; the fault text is never echoed.
+        Supervised::Cancelled => {
+            // No reply ships for a cancelled request (2025-11-25).
+        }
+        Supervised::Done(Ok(execution::ToolOutput { envelope, is_error })) => {
+            session
+                .writer
+                .send_result(&incoming.id, tool_result(&incoming.id, &envelope, is_error));
+        }
+        Supervised::Done(Err(_)) | Supervised::Fault => {
+            // An execution seam fault (or a panicked worker) is the typed
+            // result-invalid developer refusal; the fault text is never
+            // echoed, and the slot was released (r2 F18).
             log_event("execution-fault");
             let set = lekalo_core::mcp::diagnostic::result_invalid_set("execution");
             let envelope = execution::refusal_envelope(
@@ -481,13 +819,14 @@ fn tools_call(session: &Arc<Session>, incoming: &Incoming) -> Value {
                 "result-invalid",
                 "mcp.result-invalid",
             );
-            tool_result(&incoming.id, &envelope, true)
+            session
+                .writer
+                .send_result(&incoming.id, tool_result(&incoming.id, &envelope, true));
         }
-        None => {
+        Supervised::Timeout => {
             // Timeout: a typed bounded tool error while the client is
             // still waiting; the abandoned worker's late success has no
             // receiver left to reach.
-            drop(receiver);
             let set = lekalo_core::mcp::diagnostic::timeout_set(timeout_ms);
             let envelope = execution::refusal_envelope(
                 name,
@@ -498,7 +837,9 @@ fn tools_call(session: &Arc<Session>, incoming: &Incoming) -> Value {
                 "timeout",
                 "mcp.timeout",
             );
-            tool_result(&incoming.id, &envelope, true)
+            session
+                .writer
+                .send_result(&incoming.id, tool_result(&incoming.id, &envelope, true));
         }
     }
 }
@@ -510,20 +851,27 @@ fn request_project(arguments: &Value) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// The protocol-level error marker: `route` cannot answer a
-/// tools/call refusal itself (the id belongs to the writer), so the
-/// marked value is converted into a JSON-RPC error frame in the serve
-/// loop — one serialization chokepoint, no string interpolation.
-fn protocol_error_value(code: i64, message: &str) -> Value {
-    serde_json::json!({ "lekaloProtocolError": { "code": code, "message": message } })
-}
-
 /// The MCP tool result: `structuredContent` plus a text content block
-/// carrying the same serialized JSON for compatible clients. The envelope
-/// is parsed once into a `serde_json::Value` (the single serialization
-/// chokepoint in the writer measures the whole encoded frame).
+/// carrying the same serialized JSON for compatible clients. A malformed
+/// envelope is the typed `mcp.result-invalid` refusal, never a null
+/// structuredContent (r2 F4).
 fn tool_result(_id: &Value, envelope: &str, is_error: bool) -> Value {
-    let structured: Value = serde_json::from_str(envelope).unwrap_or(Value::Null);
+    let structured: Value = match serde_json::from_str(envelope) {
+        Ok(value) => value,
+        Err(_) => {
+            log_event("result-invalid");
+            let fallback = execution::refusal_envelope(
+                "lekalo_inspect",
+                None,
+                None,
+                lekalo_core::mcp::diagnostic::result_invalid_set("envelope"),
+                "invalid",
+                "result-invalid",
+                "mcp.result-invalid",
+            );
+            serde_json::from_str(&fallback).unwrap_or(Value::Null)
+        }
+    };
     let text = serde_json::to_string(&structured).unwrap_or_else(|_| "\"\"".to_owned());
     serde_json::json!({
         "content": [{"type": "text", "text": text}],
@@ -534,30 +882,23 @@ fn tool_result(_id: &Value, envelope: &str, is_error: bool) -> Value {
 
 /// The admitted resource identities: project- and group-qualified family
 /// URIs in deterministic order; symbol identities are template-only.
+///
+/// Enumeration discloses exactly what `resources/read` admits (r2 F3/
+/// codex 13): the identities come from the narrowed served project map,
+/// and under a launch-group ceiling every whole-project family refuses on
+/// read, so nothing concrete is enumerated — the list is honestly empty
+/// and symbol identities stay template-addressed.
 fn enumerate(session: &Session) -> (Vec<String>, String) {
     let mut uris = Vec::new();
-    for project in session.catalog.core.projects() {
-        for family in [
-            Family::ProjectSummary,
-            Family::ModuleList,
-            Family::TargetStatus,
-            Family::DiagnosticsSummary,
-        ] {
-            uris.push(resources::resource_uri(project, family, None));
-        }
-        for group in session.catalog.core.groups_of(project) {
+    if session.default_group.is_none() {
+        for project in session.catalog.projects.keys() {
             for family in [
                 Family::ProjectSummary,
                 Family::ModuleList,
                 Family::TargetStatus,
                 Family::DiagnosticsSummary,
             ] {
-                uris.push(resources::group_resource_uri(
-                    project,
-                    group.id.as_str(),
-                    family,
-                    None,
-                ));
+                uris.push(resources::resource_uri(project, family, None));
             }
         }
     }
@@ -570,7 +911,7 @@ fn enumerate(session: &Session) -> (Vec<String>, String) {
 
 /// resources/list with the bounded page and the snapshot-bound cursor; a
 /// stale cursor refuses instead of answering. Enumeration discloses only
-/// identities inside the effective launch-group scope (F4).
+/// identities inside the effective launch-group scope (F4, r2 F3).
 fn resources_list(session: &Session, incoming: &Incoming) -> Value {
     let (uris, snapshot) = enumerate(session);
     let requested_cursor = incoming
@@ -640,12 +981,20 @@ fn templates_list() -> Value {
 }
 
 /// resources/read: parse, authorize, and produce the closed resource
-/// envelope as application/json text. Content never contains raw source,
+/// envelope as application/json text — on a bounded supervised worker
+/// like every tool call, so a slow resource can never run past the
+/// recorded deadline (r2 F2/codex 5). Content never contains raw source,
 /// dotfiles, or absolute private roots. The launch group is the enforced
 /// ceiling (F4): an unqualified URI resolves under the launch group; a
-/// group-qualified URI must name exactly that group; the effective
-/// group's module closure is checked on the projected payload families.
-fn resources_read(session: &Arc<Session>, incoming: &Incoming) -> Value {
+/// group-qualified URI must name exactly that group; whole-project
+/// families refuse under any effective group (r2 F1), and a symbol URI
+/// must resolve inside the group's closure.
+fn resources_read(
+    session: &Arc<Session>,
+    incoming: &Incoming,
+    frame_rx: &mpsc::Receiver<Result<String, super::stdio::FrameError>>,
+    pending: &mut VecDeque<Result<String, super::stdio::FrameError>>,
+) {
     let uri = incoming
         .params
         .as_ref()
@@ -655,7 +1004,10 @@ fn resources_read(session: &Arc<Session>, incoming: &Incoming) -> Value {
     let (mut scope, family, qualifier) = match resources::parse_uri(uri) {
         Ok(parsed) => parsed,
         Err(_) => {
-            return protocol_error_value(INVALID_PARAMS, "invalid-resource-uri");
+            session
+                .writer
+                .send_error(&incoming.id, INVALID_PARAMS, "invalid-resource-uri");
+            return;
         }
     };
     // The launcher's --group is the disclosure ceiling for the whole
@@ -679,105 +1031,215 @@ fn resources_read(session: &Arc<Session>, incoming: &Incoming) -> Value {
                     "scope-denied",
                     "mcp.scope-denied",
                 );
-                return tool_result(&incoming.id, &envelope, true);
+                session
+                    .writer
+                    .send_result(&incoming.id, tool_result(&incoming.id, &envelope, true));
+                return;
             }
         }
     }
     // Authorization: the project must be admitted, and the effective
     // group (if any) must belong to exactly that project.
     if !session.catalog.core.admits_project(&scope.project) {
-        let set = lekalo_core::mcp::diagnostic::scope_denied_set("project", "unregistered");
+        let envelope = refused(&scope, "project", "unregistered");
+        session
+            .writer
+            .send_result(&incoming.id, tool_result(&incoming.id, &envelope, true));
+        return;
+    }
+    if let Some(group) = &scope.group {
+        if lekalo_core::mcp::policy::ScopeDecision::Admitted
+            != session.catalog.core.admits_group(&scope.project, group)
+        {
+            let envelope = refused(&scope, "group", "unregistered");
+            session
+                .writer
+                .send_result(&incoming.id, tool_result(&incoming.id, &envelope, true));
+            return;
+        }
+    }
+    // Family closure (r2 F1): under an effective group the whole-project
+    // families refuse exactly like their tool equivalents, and a symbol
+    // URI must name a grammar-valid module inside the allow-list before
+    // any read.
+    if let Some(group) = &scope.group {
+        let head = qualifier.as_deref().and_then(qualifier_head);
+        let outside = match (&family, head.as_deref()) {
+            (Family::SymbolMetadata, Some(head)) => {
+                let grant_modules = session
+                    .catalog
+                    .core
+                    .group(&scope.project, group)
+                    .map(|grant| grant.modules.clone())
+                    .unwrap_or_default();
+                !grant_modules.contains(head)
+            }
+            (Family::SymbolMetadata, None) => true,
+            _ => true,
+        };
+        if outside {
+            let reason = match (&family, head.as_deref()) {
+                (Family::SymbolMetadata, None) => "unresolved-module",
+                _ => "requires-full-scope",
+            };
+            let set = lekalo_core::mcp::diagnostic::scope_denied_set("module", reason);
+            let envelope = execution::refusal_envelope(
+                "lekalo_inspect",
+                Some(&scope.project),
+                Some(group),
+                set,
+                "denied",
+                "scope-denied",
+                "mcp.scope-denied",
+            );
+            session
+                .writer
+                .send_result(&incoming.id, tool_result(&incoming.id, &envelope, true));
+            return;
+        }
+    }
+    // The pre-cancelled id executes nothing and answers nothing (r2 F6).
+    let key = Session::key_of(&incoming.id);
+    if let Some(key) = &key {
+        let mut cancelled = session.cancelled.lock().expect("flag");
+        if cancelled.remove(key) {
+            session.outstanding.lock().expect("flag").remove(key);
+            drop(cancelled);
+            return;
+        }
+    }
+    if session.live.load(Ordering::SeqCst) >= session.limits.concurrent_calls.max(1) {
+        let set = lekalo_core::mcp::diagnostic::request_limit_set("concurrency");
         let envelope = execution::refusal_envelope(
             "lekalo_inspect",
             Some(&scope.project),
             scope.group.as_deref(),
             set,
             "denied",
-            "scope-denied",
-            "mcp.scope-denied",
+            "request-limit",
+            "mcp.request-limit",
         );
-        return tool_result(&incoming.id, &envelope, true);
+        session
+            .writer
+            .send_result(&incoming.id, tool_result(&incoming.id, &envelope, true));
+        return;
     }
-    if let Some(group) = &scope.group {
-        if lekalo_core::mcp::policy::ScopeDecision::Admitted
-            != session.catalog.core.admits_group(&scope.project, group)
-        {
-            let set = lekalo_core::mcp::diagnostic::scope_denied_set("group", "unregistered");
+    if let Some(key) = &key {
+        session
+            .outstanding
+            .lock()
+            .expect("flag")
+            .insert(key.clone());
+    }
+    let worker_session = Arc::clone(session);
+    let worker_scope = scope.clone();
+    let outcome = supervise(
+        session,
+        key,
+        session.limits.timeout_ms,
+        move || {
+            build_resource_checked(&worker_session, &worker_scope, family, qualifier.as_deref())
+        },
+        frame_rx,
+        pending,
+    );
+    match outcome {
+        Supervised::Cancelled => {}
+        Supervised::Done(Ok(document)) => {
+            session.writer.send_result(
+                &incoming.id,
+                serde_json::json!({
+                    "contents": [{
+                        "uri": uri,
+                        "mimeType": "application/json",
+                        "text": document
+                    }]
+                }),
+            );
+        }
+        Supervised::Done(Err(refusal_envelope)) => {
+            session.writer.send_result(
+                &incoming.id,
+                tool_result(&incoming.id, &refusal_envelope, true),
+            );
+        }
+        Supervised::Fault | Supervised::Timeout => {
+            // A worker fault is the typed result-invalid refusal; a
+            // deadline expiry is the typed timeout refusal — both bounded,
+            // both carrying the registered diagnostic (codex 5).
+            let (set, status, class, detail) = if matches!(outcome, Supervised::Timeout) {
+                (
+                    lekalo_core::mcp::diagnostic::timeout_set(session.limits.timeout_ms),
+                    "unavailable",
+                    "timeout",
+                    "mcp.timeout",
+                )
+            } else {
+                (
+                    lekalo_core::mcp::diagnostic::result_invalid_set("resource-worker"),
+                    "invalid",
+                    "result-invalid",
+                    "mcp.result-invalid",
+                )
+            };
             let envelope = execution::refusal_envelope(
                 "lekalo_inspect",
                 Some(&scope.project),
-                Some(group),
+                scope.group.as_deref(),
                 set,
-                "denied",
-                "scope-denied",
-                "mcp.scope-denied",
+                status,
+                class,
+                detail,
             );
-            return tool_result(&incoming.id, &envelope, true);
+            session
+                .writer
+                .send_result(&incoming.id, tool_result(&incoming.id, &envelope, true));
         }
     }
-    // Family closure: symbol/targets/diagnostics read module-scoped
-    // payload; under an effective group the required module must stay
-    // inside the allow-list (the same closure rule tools/call applies).
-    if let Some(group) = &scope.group {
-        let required = match (&family, qualifier.as_deref()) {
-            (Family::SymbolMetadata, Some(symbol)) => {
-                let mut set = std::collections::BTreeSet::new();
-                if let Some(head) = symbol.split('.').next() {
-                    if lekalo_core::mcp::policy::admit_module_id(head).is_ok() {
-                        set.insert(head.to_owned());
-                    }
-                }
-                set
-            }
-            (Family::ProjectSummary | Family::ModuleList, _) => {
-                // Whole-project projections refuse under a group instead
-                // of fabricating a narrowed result (same rule as tools).
-                let set =
-                    lekalo_core::mcp::diagnostic::scope_denied_set("module", "requires-full-scope");
-                let envelope = execution::refusal_envelope(
-                    "lekalo_inspect",
-                    Some(&scope.project),
-                    Some(group),
-                    set,
-                    "denied",
-                    "scope-denied",
-                    "mcp.scope-denied",
-                );
-                return tool_result(&incoming.id, &envelope, true);
-            }
-            _ => std::collections::BTreeSet::new(),
-        };
-        if lekalo_core::mcp::policy::ScopeDecision::Admitted
-            != lekalo_core::mcp::policy::modules_admitted(
-                &session.catalog.core,
-                &scope.project,
-                Some(group),
-                &required,
-            )
-        {
-            let set = lekalo_core::mcp::diagnostic::scope_denied_set("module", "outside-group");
-            let envelope = execution::refusal_envelope(
-                "lekalo_inspect",
-                Some(&scope.project),
-                Some(group),
-                set,
-                "denied",
-                "scope-denied",
-                "mcp.scope-denied",
-            );
-            return tool_result(&incoming.id, &envelope, true);
-        }
+}
+
+/// The module head of a symbol qualifier, when it is a grammar-valid
+/// module id (r2 F1 — the same rule the tool surface applies).
+fn qualifier_head(qualifier: &str) -> Option<String> {
+    qualifier
+        .split('.')
+        .next()
+        .filter(|head| lekalo_core::mcp::policy::admit_module_id(head).is_ok())
+        .map(str::to_owned)
+}
+
+/// Build the closed resource document with the admitted-input recheck
+/// (codex 7): the model and lock inputs are digested before the build and
+/// re-checked after it; a drift or a failed re-check refuses with the
+/// stale-snapshot diagnostic instead of answering.
+fn build_resource_checked(
+    session: &Session,
+    scope: &UriScope,
+    family: Family,
+    qualifier: Option<&str>,
+) -> Result<String, String> {
+    let entry = session
+        .catalog
+        .projects
+        .get(&scope.project)
+        .ok_or_else(|| refused(scope, "project", "unregistered"))?;
+    let before = execution::admitted_inputs_for(entry)
+        .ok_or_else(|| refused(scope, "inputs", "unavailable"))?;
+    let document = build_resource(session, scope, family, qualifier)?;
+    let after = execution::admitted_inputs_for(entry)
+        .ok_or_else(|| refused(scope, "inputs", "unavailable"))?;
+    if before != after {
+        return Err(execution::refusal_envelope(
+            "lekalo_inspect",
+            Some(&scope.project),
+            scope.group.as_deref(),
+            lekalo_core::mcp::diagnostic::snapshot_stale_set("model"),
+            "unavailable",
+            "snapshot-stale",
+            "mcp.snapshot-stale",
+        ));
     }
-    match build_resource(session, &scope, family, qualifier.as_deref()) {
-        Ok(document) => serde_json::json!({
-            "contents": [{
-                "uri": uri,
-                "mimeType": "application/json",
-                "text": document
-            }]
-        }),
-        Err(refusal_envelope) => tool_result(&incoming.id, &refusal_envelope, true),
-    }
+    Ok(document)
 }
 
 /// The resource revision: the domain digest re-spelled into the
@@ -797,7 +1259,7 @@ fn resource_revision(domain: &str, bytes: &[u8]) -> String {
 /// closed `serde_json::Value`; `kind` carries the contract enum spelling
 /// (F7), never the URI family key.
 fn build_resource(
-    session: &Arc<Session>,
+    session: &Session,
     scope: &UriScope,
     family: Family,
     qualifier: Option<&str>,
@@ -883,6 +1345,25 @@ fn build_resource(
                 Ok(view) if view.is_valid() => view,
                 _ => return Err(refused(scope, "symbol", "unknown")),
             };
+            // The grouped ceiling also bounds the disclosed projection
+            // (r2 F1): the symbol payload may only carry admitted-module
+            // facts, resolved through the compiled graph.
+            if let Some(group) = &scope.group {
+                let payload = view
+                    .payload_for(&execution::family_of("lekalo_inspect"))
+                    .ok_or_else(|| refused(scope, "symbol", "invalid"))?;
+                let payload: serde_json::Value = serde_json::from_str(payload.get())
+                    .map_err(|_| refused(scope, "symbol", "invalid"))?;
+                if let Some(output) = execution::disclosed_closure_refusal(
+                    &session.catalog,
+                    &scope.project,
+                    group,
+                    "lekalo_inspect",
+                    &payload,
+                ) {
+                    return Err(output.envelope);
+                }
+            }
             // The raw inspect payload bytes, spliced verbatim.
             let payload = view
                 .payload_for(&execution::family_of("lekalo_inspect"))
@@ -896,41 +1377,51 @@ fn build_resource(
                 ),
             )
         }
-        Family::TargetStatus => match crate::run_status(project) {
-            result @ lekalo_core::DomainResult::Valid { .. } => {
-                let raw = result.to_json_string();
-                // The doctor document is the whole envelope.
-                let revision = resource_revision("doctor", raw.as_bytes());
-                (
-                    revision,
-                    format!(
-                        "{{\"schemaVersion\":\"lekalo/doctor/v0.3.2\",\"identity\":\"dev.lekalo.doctor@0.3.2\",\"doctor\":{raw}}}"
-                    ),
-                )
-            }
-            _ => return Err(refused(scope, "targets", "unavailable")),
-        },
-        Family::DiagnosticsSummary => {
-            match crate::run_validate(project.clone(), None, false, true) {
+        Family::TargetStatus => {
+            // F9/r2 F2: the resource surface honors the same catalog-gated
+            // Git admission as the tool surface — no `git` process is ever
+            // reachable from a read of this family without the explicit
+            // changed-mode grant.
+            let result = if session.catalog.core.admits_git_changed_mode() {
+                crate::run_status(project)
+            } else {
+                crate::run_status_without_git(project)
+            };
+            match result {
                 result @ lekalo_core::DomainResult::Valid { .. } => {
                     let raw = result.to_json_string();
-                    let view: serde_json::Value = serde_json::from_str(&raw).unwrap_or_default();
-                    let count = view
-                        .get("diagnostics")
-                        .and_then(|diagnostics| diagnostics.as_array())
-                        .map(|items| items.len())
-                        .unwrap_or(0);
-                    let revision = resource_revision("validation", raw.as_bytes());
+                    // The doctor document is the whole envelope.
+                    let revision = resource_revision("doctor", raw.as_bytes());
                     (
                         revision,
                         format!(
-                            "{{\"diagnosticCount\":{count},\"evidenceCount\":0,\"complete\":true,\"reasons\":[]}}"
+                            "{{\"schemaVersion\":\"lekalo/doctor/v0.3.2\",\"identity\":\"dev.lekalo.doctor@0.3.2\",\"doctor\":{raw}}}"
                         ),
                     )
                 }
-                _ => return Err(refused(scope, "diagnostics", "unavailable")),
+                _ => return Err(refused(scope, "targets", "unavailable")),
             }
         }
+        Family::DiagnosticsSummary => match crate::run_validate(project.clone(), None, false, true)
+        {
+            result @ lekalo_core::DomainResult::Valid { .. } => {
+                let raw = result.to_json_string();
+                let view: serde_json::Value = serde_json::from_str(&raw).unwrap_or_default();
+                let count = view
+                    .get("diagnostics")
+                    .and_then(|diagnostics| diagnostics.as_array())
+                    .map(|items| items.len())
+                    .unwrap_or(0);
+                let revision = resource_revision("validation", raw.as_bytes());
+                (
+                    revision,
+                    format!(
+                        "{{\"diagnosticCount\":{count},\"evidenceCount\":0,\"complete\":true,\"reasons\":[]}}"
+                    ),
+                )
+            }
+            _ => return Err(refused(scope, "diagnostics", "unavailable")),
+        },
     };
     // The output screening pass runs over the resource data too (F17):
     // a secret-shaped payload refuses with `mcp.sensitive-output`.
@@ -1006,100 +1497,4 @@ fn denied_summary(scope: &UriScope) -> String {
         "backend-unavailable",
         "mcp.backend-unavailable",
     )
-}
-
-fn resources_subscribe(session: &Arc<Session>, incoming: &Incoming) -> Value {
-    let uri = incoming
-        .params
-        .as_ref()
-        .and_then(|params| params.get("uri"))
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    let (scope, _family, _qualifier) = match resources::parse_uri(uri) {
-        Ok(parsed) => parsed,
-        Err(_) => {
-            return protocol_error_value(INVALID_PARAMS, "invalid-resource-uri");
-        }
-    };
-    // Subscribe is an authorization decision, not a bookkeeping one
-    // (F13): the exact read-scope check of resources/read runs first —
-    // project admission, launch-group ceiling, and group membership —
-    // and only an identity this session may read can be watched.
-    if !session.catalog.core.admits_project(&scope.project) {
-        let set = lekalo_core::mcp::diagnostic::scope_denied_set("project", "unregistered");
-        let envelope = execution::refusal_envelope(
-            "lekalo_inspect",
-            Some(&scope.project),
-            scope.group.as_deref(),
-            set,
-            "denied",
-            "scope-denied",
-            "mcp.scope-denied",
-        );
-        return tool_result(&incoming.id, &envelope, true);
-    }
-    if let Some(group) = &scope.group {
-        if lekalo_core::mcp::policy::ScopeDecision::Admitted
-            != session.catalog.core.admits_group(&scope.project, group)
-        {
-            let set = lekalo_core::mcp::diagnostic::scope_denied_set("group", "unregistered");
-            let envelope = execution::refusal_envelope(
-                "lekalo_inspect",
-                Some(&scope.project),
-                Some(group),
-                set,
-                "denied",
-                "scope-denied",
-                "mcp.scope-denied",
-            );
-            return tool_result(&incoming.id, &envelope, true);
-        }
-    }
-    if let Some(launch_group) = session.default_group.as_deref() {
-        let inside = match &scope.group {
-            Some(requested) => requested == launch_group,
-            None => true,
-        };
-        if !inside {
-            let set =
-                lekalo_core::mcp::diagnostic::scope_denied_set("group", "widen-past-launch-group");
-            let envelope = execution::refusal_envelope(
-                "lekalo_inspect",
-                Some(&scope.project),
-                Some(launch_group),
-                set,
-                "denied",
-                "scope-denied",
-                "mcp.scope-denied",
-            );
-            return tool_result(&incoming.id, &envelope, true);
-        }
-    }
-    let mut subscriptions = session.subscriptions.lock().expect("flag");
-    if subscriptions.len() >= lekalo_core::mcp::version::MAX_WATCHED_IDENTITIES {
-        let set = lekalo_core::mcp::diagnostic::request_limit_set("watched");
-        let envelope = execution::refusal_envelope(
-            "lekalo_inspect",
-            None,
-            None,
-            set,
-            "denied",
-            "request-limit",
-            "mcp.request-limit",
-        );
-        return tool_result(&incoming.id, &envelope, true);
-    }
-    subscriptions.insert(uri.to_owned());
-    serde_json::json!({})
-}
-
-fn resources_unsubscribe(session: &Arc<Session>, incoming: &Incoming) -> Value {
-    let uri = incoming
-        .params
-        .as_ref()
-        .and_then(|params| params.get("uri"))
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    session.subscriptions.lock().expect("flag").remove(uri);
-    serde_json::json!({})
 }

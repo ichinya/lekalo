@@ -620,7 +620,13 @@
           "const": "lekalo/diagnostic/v0.2.16"
         },
         "registry_version": {
-          "const": "0.6.4"
+          "description": "The exact registry version the item resolves against: the MCP union successor (0.8.0) for transport diagnostics, or the accepted predecessor pin of a preserved domain diagnostic.",
+          "enum": [
+            "0.2.16",
+            "0.6.4",
+            "0.6.5",
+            "0.8.0"
+          ]
         },
         "id": {
           "$ref": "#/$defs/validation.diagnostic/ruleId"

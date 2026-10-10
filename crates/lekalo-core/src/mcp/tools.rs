@@ -373,11 +373,17 @@ pub fn parse_request(tool: &str, arguments: &Value) -> Result<ToolRequest, Reque
             .map(|value| value.as_str().map(str::to_owned))
             .unwrap_or(None)
     };
-    let bool_field = |arguments: &serde_json::Map<String, Value>, name: &str| -> Option<bool> {
-        arguments
-            .get(name)
-            .map(|value| value.as_bool())
-            .unwrap_or(None)
+    // A present non-boolean is a structural violation, never a silent
+    // `false` (r2 F13): `strict:"true"` must diverge loudly, not run
+    // non-strict. Absence keeps the documented default.
+    let bool_field = |arguments: &serde_json::Map<String, Value>,
+                      name: &'static str|
+     -> Result<Option<bool>, RequestError> {
+        match arguments.get(name) {
+            None => Ok(None),
+            Some(Value::Bool(value)) => Ok(Some(*value)),
+            Some(_) => Err(RequestError::Params(ParamsError { field: name })),
+        }
     };
     match tool {
         "lekalo_inspect" => {
@@ -452,7 +458,7 @@ pub fn parse_request(tool: &str, arguments: &Value) -> Result<ToolRequest, Reque
                 }
                 Some(_) => return Err(field("headRef")),
             };
-            let worktree = bool_field(arguments, "worktree").unwrap_or(false);
+            let worktree = bool_field(arguments, "worktree")?.unwrap_or(false);
             let depth = match arguments.get("depth") {
                 None => None,
                 Some(value) => {
@@ -602,7 +608,7 @@ pub fn parse_request(tool: &str, arguments: &Value) -> Result<ToolRequest, Reque
                 }
                 Some(_) => return Err(field("changedSymbols")),
             };
-            let spans = bool_field(arguments, "spans").unwrap_or(false);
+            let spans = bool_field(arguments, "spans")?.unwrap_or(false);
             let changed_symbol_count = match arguments.get("changedSymbolCount") {
                 None => changed_symbols.len() as u64,
                 Some(value) => {
@@ -679,7 +685,7 @@ pub fn parse_request(tool: &str, arguments: &Value) -> Result<ToolRequest, Reque
                 }
                 Some(_) => return Err(field("to")),
             };
-            let transitive = bool_field(arguments, "transitive").unwrap_or(false);
+            let transitive = bool_field(arguments, "transitive")?.unwrap_or(false);
             match mode {
                 GraphMode::Show | GraphMode::Callers if symbol.is_none() => {
                     return Err(semantic("symbol", "required-for-mode"))
@@ -709,7 +715,7 @@ pub fn parse_request(tool: &str, arguments: &Value) -> Result<ToolRequest, Reque
                 }
                 Some(_) => return Err(field("module")),
             };
-            let strict = bool_field(arguments, "strict").unwrap_or(false);
+            let strict = bool_field(arguments, "strict")?.unwrap_or(false);
             Ok(ToolRequest::Validate {
                 common,
                 module,
@@ -991,6 +997,57 @@ mod tests {
             Err(RequestError::Params(ParamsError {
                 field: "manifestRef"
             }))
+        ));
+    }
+
+    #[test]
+    fn malformed_booleans_are_structural_refusals_never_silent_false() {
+        // Review r2 F13: a present non-boolean diverges from the published
+        // boolean schema; the server refuses it instead of coercing.
+        for (tool, name, arguments) in [
+            (
+                "lekalo_validate",
+                "strict",
+                json!({"projectId": "p", "strict": "true"}),
+            ),
+            (
+                "lekalo_validate",
+                "strict",
+                json!({"projectId": "p", "strict": 1}),
+            ),
+            (
+                "lekalo_impact",
+                "worktree",
+                json!({"projectId": "p", "mode": "changed", "baseRef": "b", "worktree": "yes"}),
+            ),
+            (
+                "lekalo_context",
+                "spans",
+                json!({"projectId": "p", "mode": "symbol", "symbol": "a.b", "budget": 1, "spans": "true"}),
+            ),
+            (
+                "lekalo_graph",
+                "transitive",
+                json!({"projectId": "p", "mode": "callers", "symbol": "a.b", "transitive": "yes"}),
+            ),
+            (
+                "lekalo_impact",
+                "worktree",
+                json!({"projectId": "p", "mode": "changed", "baseRef": "b", "worktree": null}),
+            ),
+        ] {
+            assert_eq!(
+                parse_request(tool, &arguments),
+                Err(RequestError::Params(ParamsError { field: name })),
+                "{tool} {name}"
+            );
+        }
+        // Absence keeps the documented default.
+        let strict_absent = parse_request("lekalo_validate", &json!({"projectId": "p"}))
+            .expect("absent boolean defaults");
+        assert!(matches!(
+            strict_absent,
+            ToolRequest::Validate { strict: false, .. }
         ));
     }
 

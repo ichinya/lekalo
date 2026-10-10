@@ -307,6 +307,36 @@ impl Catalog {
         let grant = self.groups.get(group)?;
         (grant.project == project).then_some(grant)
     }
+
+    /// The catalog narrowed to exactly one admitted project (review r2
+    /// F3): an explicit `--project` selection narrows the served core —
+    /// projects, groups, and manifest grants of every other project are
+    /// dropped, so no enumeration or authorization path can widen past
+    /// the launcher's narrowing. The changed-mode Git admission is a
+    /// catalog-level grant and is preserved.
+    pub fn narrowed(&self, project: &str) -> Catalog {
+        let mut narrowed = Catalog::empty().with_git_changed_mode(self.git_changed_mode);
+        if !self.projects.contains(project) {
+            return narrowed;
+        }
+        let Ok(with_project) = narrowed.with_project(project) else {
+            return Catalog::empty().with_git_changed_mode(self.git_changed_mode);
+        };
+        narrowed = with_project;
+        narrowed.groups = self
+            .groups
+            .iter()
+            .filter(|(_, grant)| grant.project == project)
+            .map(|(id, grant)| (id.clone(), grant.clone()))
+            .collect();
+        narrowed.manifests = self
+            .manifests
+            .iter()
+            .filter(|(_, grant)| grant.project == project)
+            .map(|(id, grant)| (id.clone(), grant.clone()))
+            .collect();
+        narrowed
+    }
 }
 
 /// The semantic scope decision for one request.
@@ -342,6 +372,12 @@ pub fn modules_admitted(
     let Some(grant) = catalog.group(project, group) else {
         return catalog.admits_group(project, group);
     };
+    // Fail closed on an empty required set (review r2 F1): a set that
+    // cannot name its modules would admit under every group, so an
+    // operation that cannot prove its closure refuses instead.
+    if required_modules.is_empty() {
+        return ScopeDecision::Widening;
+    }
     if required_modules.is_subset(&grant.modules) {
         ScopeDecision::Admitted
     } else {
@@ -495,6 +531,39 @@ mod tests {
         assert_eq!(
             modules_admitted(&catalog, "unknown", None, &outside),
             ScopeDecision::Unregistered
+        );
+    }
+
+    #[test]
+    fn narrowing_drops_every_other_project_identity() {
+        let narrowed_catalog = catalog().narrowed("planner");
+        assert!(narrowed_catalog.admits_project("planner"));
+        assert!(!narrowed_catalog.admits_project("other"));
+        assert_eq!(narrowed_catalog.projects().count(), 1);
+        // The project's own groups and manifests survive; other projects'
+        // identities do not exist to authorize or enumerate.
+        assert_eq!(
+            narrowed_catalog.admits_group("planner", "planner-review"),
+            ScopeDecision::Admitted
+        );
+        assert_eq!(
+            narrowed_catalog.admits_manifest("planner", "baseline"),
+            Some("traces/full.trace.json")
+        );
+        assert_eq!(narrowed_catalog.groups_of("planner").count(), 1);
+        // A narrowing to an unregistered project serves nothing.
+        let empty = catalog().narrowed("unknown");
+        assert_eq!(empty.projects().count(), 0);
+    }
+
+    #[test]
+    fn an_empty_required_set_never_admits_under_a_group() {
+        // Review r2 F1: an empty closure bypassed every group.
+        let catalog = catalog();
+        let empty: BTreeSet<String> = BTreeSet::new();
+        assert_eq!(
+            modules_admitted(&catalog, "planner", Some("planner-review"), &empty),
+            ScopeDecision::Widening
         );
     }
 

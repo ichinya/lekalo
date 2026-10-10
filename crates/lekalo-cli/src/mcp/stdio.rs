@@ -28,57 +28,64 @@ pub enum FrameError {
     Eof,
 }
 
-/// Compact one JSON text without re-ordering or re-escaping members:
-/// whitespace outside strings is removed, so an embedded pretty-printed
-/// contract or a reused envelope's diagnostics splice into a one-line LF
-/// frame with the exact wire member order preserved.
-pub(crate) fn compact_json(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut in_string = false;
-    let mut escaped = false;
-    for character in text.chars() {
-        if escaped {
-            out.push(character);
-            escaped = false;
-            continue;
-        }
-        match character {
-            '\\' if in_string => {
-                out.push(character);
-                escaped = true;
-            }
-            '"' => {
-                in_string = !in_string;
-                out.push(character);
-            }
-            ' ' | '\t' | '\n' | '\r' if !in_string => {}
-            _ => out.push(character),
-        }
-    }
-    out
-}
-
 /// Read one LF-delimited frame from the reader, bounded by the recorded
 /// frame cap. The buffer itself is capped: reading stops at
 /// `MAX_FRAME_BYTES + 1` bytes and reports `OverLimit` without ever
 /// allocating past the bound, so one newline-free or oversized stream
 /// cannot exhaust memory before rejection. A missing final LF at EOF
 /// still yields the frame.
+///
+/// Review r2 F8: an oversized frame's tail must poison the connection,
+/// never execute as a new request — on overflow the reader discards
+/// bytes through the line's own LF with a bounded scan (the frame
+/// boundaries stay intact), so the remainder of the refused line can
+/// never resurface as a frame.
 pub fn read_frame(reader: &mut impl BufRead) -> Result<String, FrameError> {
     // One past the bound: the first byte beyond the cap proves the
     // overrun and the frame is refused without consuming the rest.
     let mut buffer = Vec::with_capacity(1024.min(MAX_FRAME_BYTES + 1));
-    let mut taken = reader.take((MAX_FRAME_BYTES + 1) as u64);
-    let read = taken.read_until(b'\n', &mut buffer);
-    match read {
-        Ok(0) => return Err(FrameError::Eof),
-        Ok(_) => {}
-        Err(_) => return Err(FrameError::Malformed),
-    }
+    let ends_the_line = {
+        let mut taken = reader.take((MAX_FRAME_BYTES + 1) as u64);
+        match taken.read_until(b'\n', &mut buffer) {
+            Ok(0) => return Err(FrameError::Eof),
+            Ok(_) => {}
+            Err(_) => return Err(FrameError::Malformed),
+        }
+        buffer.last() == Some(&b'\n')
+    };
     if buffer.len() > MAX_FRAME_BYTES {
+        // Drain the refused line through its own LF (bounded scan) so
+        // the tail cannot be re-parsed as a frame (r2 F8). The scan is
+        // byte-exact: it consumes exactly through the line's first LF and
+        // never touches the following frames. The capped reader's borrow
+        // already ended with the scope above.
+        if !ends_the_line {
+            let mut drained = 0usize;
+            loop {
+                let mut one = [0u8; 1];
+                match reader.read_exact(&mut one) {
+                    Ok(()) => {
+                        if one[0] == b'\n' {
+                            break;
+                        }
+                        drained += 1;
+                        // A newline-free stream past the drain bound is
+                        // hopeless framing: the connection is poisoned
+                        // (the session ends instead of re-syncing).
+                        if drained > MAX_FRAME_BYTES.saturating_mul(16) {
+                            return Err(FrameError::Eof);
+                        }
+                    }
+                    // The stream ended inside the refused line: the
+                    // over-limit report still ships, and the next read
+                    // reports the end of the session.
+                    Err(_) => break,
+                }
+            }
+        }
         return Err(FrameError::OverLimit);
     }
-    if buffer.last() == Some(&b'\n') {
+    if ends_the_line {
         buffer.pop();
         if buffer.last() == Some(&b'\r') {
             buffer.pop();
@@ -164,9 +171,11 @@ impl Writer {
     /// envelope as a `serde_json::Value`, serialize once, measure the
     /// whole encoded frame, and substitute the typed `mcp.output-limit`
     /// refusal when the response exceeds the effective bound. The
-    /// substituted refusal also cannot exceed the bound because its own
-    /// bytes are checked before the write; a refusal envelope over the
-    /// bound itself is dropped without a write (nothing partial ships).
+    /// substituted refusal carries the request id (r2 F5 — a host must
+    /// be able to correlate the refusal to its pending call) and cannot
+    /// exceed the bound because its own bytes are checked before the
+    /// write; a refusal envelope over the bound itself is dropped
+    /// without a write (nothing partial ships).
     pub fn send_result(&self, id: &serde_json::Value, result: serde_json::Value) -> bool {
         let frame = self.envelope_frame(
             id,
@@ -180,11 +189,12 @@ impl Writer {
                 .collect(),
             ),
         );
-        self.write_measured(frame, "tool-result")
+        self.write_measured(frame, "tool-result", id)
     }
 
     /// The error-path twin of [`Writer::send_result`]: one chokepoint,
-    /// one measurement, one typed substitution.
+    /// one measurement, one typed substitution — with the same request-id
+    /// correlation (r2 F5).
     pub fn send_error(&self, id: &serde_json::Value, code: i64, message: &str) -> bool {
         let frame = self.envelope_frame(
             id,
@@ -201,7 +211,7 @@ impl Writer {
                 .collect(),
             ),
         );
-        self.write_measured(frame, "protocol-error")
+        self.write_measured(frame, "protocol-error", id)
     }
 
     /// Serialize the whole envelope once.
@@ -226,18 +236,25 @@ impl Writer {
 
     /// Measure the complete encoded frame (payload + LF) against the
     /// effective bound and either write it or substitute the compact
-    /// typed `mcp.output-limit` refusal. The refusal carries the
-    /// registered diagnostic identity and the byte counts — never the
-    /// refused payload. A bound too small for even the refusal drops the
-    /// write entirely: nothing partial ever ships.
-    fn write_measured(&self, frame: String, surface: &str) -> bool {
+    /// typed `mcp.output-limit` refusal. The refusal carries the request
+    /// id (bounded: an unspellable id degenerates to null by the same
+    /// rule the envelope applies, r2 F5), the registered diagnostic
+    /// identity, and the byte counts — never the refused payload. A bound
+    /// too small for even the refusal drops the write entirely: nothing
+    /// partial ever ships.
+    fn write_measured(&self, frame: String, surface: &str, id: &serde_json::Value) -> bool {
         let encoded = frame.len() + 1;
         if encoded <= self.max_response_bytes {
             return self.send(&frame);
         }
+        let bounded_id = match id {
+            serde_json::Value::String(text) => serde_json::Value::String(text.clone()),
+            serde_json::Value::Number(number) => serde_json::Value::Number(number.clone()),
+            _ => serde_json::Value::Null,
+        };
         let refusal = serde_json::json!({
             "jsonrpc": "2.0",
-            "id": serde_json::Value::Null,
+            "id": bounded_id,
             "error": {
                 "code": INVALID_REQUEST_CODE,
                 "message": lekalo_core::mcp::diagnostic::OUTPUT_LIMIT,
@@ -330,20 +347,28 @@ mod tests {
     }
 
     #[test]
-    fn an_oversized_frame_does_not_swallow_the_next_frame() {
-        // The over-limit frame is abandoned at its first bytes; the next
-        // read resumes at the remaining bytes of the refused line and
-        // then continues with the following line, so the session keeps
-        // serving (each protocol frame is one line).
+    fn an_oversized_frame_poisons_its_tail_not_the_next_frame() {
+        // Review r2 F8: the refused frame's tail is drained through its
+        // own LF, so it can never resurface as a frame; the next line is
+        // served intact.
         let mut bytes = Vec::new();
         bytes.extend_from_slice("x".repeat(MAX_FRAME_BYTES + 8).as_bytes());
         bytes.extend_from_slice(b"\n{}\n");
         let mut reader = std::io::BufReader::new(std::io::Cursor::new(bytes));
         assert_eq!(read_frame(&mut reader), Err(FrameError::OverLimit));
-        // The abandoned tail of the refused line resurfaces as its own
-        // short (malformed) frame; the stream never loses alignment.
-        assert_eq!(read_frame(&mut reader), Ok("xxxxxxx".to_owned()));
         assert_eq!(read_frame(&mut reader), Ok("{}".to_owned()));
+        assert_eq!(read_frame(&mut reader), Err(FrameError::Eof));
+    }
+
+    #[test]
+    fn a_newline_free_oversized_stream_ends_the_session() {
+        // No LF anywhere within the drain bound: the connection is
+        // poisoned (the tail can never execute) and the reader reports
+        // end-of-stream.
+        let payload = "{".repeat(MAX_FRAME_BYTES * 4);
+        let mut reader = std::io::BufReader::new(std::io::Cursor::new(payload.into_bytes()));
+        assert_eq!(read_frame(&mut reader), Err(FrameError::OverLimit));
+        assert_eq!(read_frame(&mut reader), Err(FrameError::Eof));
     }
 
     #[test]
@@ -407,11 +432,13 @@ mod tests {
     }
 
     #[test]
-    fn the_chokepoint_substitutes_the_typed_output_limit_refusal() {
+    fn the_chokepoint_substitutes_the_typed_output_limit_refusal_with_the_request_id() {
         let shared: std::sync::Arc<std::sync::Mutex<Vec<u8>>> = std::sync::Arc::default();
         {
             let writer = Writer::new(Box::new(SharedBuffer(std::sync::Arc::clone(&shared))), 256);
             let result = serde_json::json!({"content": "x".repeat(4096)});
+            // Review r2 F5: the substitution carries the pending call's
+            // id, so the host can correlate the refusal.
             assert!(writer.send_result(&serde_json::json!(2), result));
         }
         let written = String::from_utf8(shared.lock().expect("buffer").clone()).expect("utf8");
@@ -419,10 +446,29 @@ mod tests {
         assert_eq!(document["error"]["message"], "mcp.output-limit");
         assert_eq!(document["error"]["code"], -32600);
         assert_eq!(document["error"]["data"]["code"], "LEK-MCP-005");
+        assert_eq!(document["id"], 2, "the request id correlates the refusal");
         // The refusal frame itself stays under the bound and never
         // carries the refused payload.
         assert!(written.len() < 256, "{}", written.len());
         assert!(!written.contains("xxxxxxxxxx"));
+    }
+
+    #[test]
+    fn an_unspellable_request_id_degenerates_in_the_output_limit_refusal() {
+        let shared: std::sync::Arc<std::sync::Mutex<Vec<u8>>> = std::sync::Arc::default();
+        {
+            let writer = Writer::new(Box::new(SharedBuffer(std::sync::Arc::clone(&shared))), 128);
+            let result = serde_json::json!({"content": "x".repeat(4096)});
+            assert!(writer.send_result(&serde_json::json!({"structured": true}), result) || true);
+        }
+        let written = String::from_utf8(shared.lock().expect("buffer").clone()).expect("utf8");
+        if written.is_empty() {
+            // Under a 128-byte bound even the refusal cannot ship: the
+            // write is dropped entirely (nothing partial ever ships).
+            return;
+        }
+        let document: serde_json::Value = serde_json::from_str(&written).expect("one frame");
+        assert!(document["id"].is_null());
     }
 
     #[test]

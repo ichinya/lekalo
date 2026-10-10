@@ -137,13 +137,14 @@ fn oversized_and_deep_frames_produce_bounded_errors() {
         &[],
     );
     let responses = session.responses();
-    // The abandoned oversized line resurfaces as its own short malformed
-    // frame, so four bounded responses ship: two null-id refusals for the
-    // refused oversized line, the deep-frame refusal, and the ping.
-    assert_eq!(responses.len(), 4);
+    // The refused oversized line's tail is drained through its own LF
+    // (r2 F8), so exactly three bounded responses ship: the oversized
+    // refusal, the deep-frame refusal, and the ping. The suffix can
+    // never resurface as a frame.
+    assert_eq!(responses.len(), 3);
     assert_eq!(session.null_id_error_code(), Some(-32600));
     // One bad request never poisons the session.
-    assert_eq!(responses[3]["id"], 1);
+    assert_eq!(responses[2]["id"], 1);
 }
 
 // ---- tools/list is the exact seven read tools, write-free. ----------------
@@ -510,9 +511,10 @@ fn a_full_session_writes_nothing_and_touches_no_cache() {
     // No .lekalo cache/runtime directory appeared anywhere.
     assert!(!root.root.join("planner/.lekalo").exists());
     assert!(!root.root.join(".lekalo").exists());
-    // Subscribe/unsubscribe answered.
-    assert_eq!(session.response(20)["result"], serde_json::json!({}));
-    assert_eq!(session.response(21)["result"], serde_json::json!({}));
+    // Subscribe/unsubscribe are refused: the capability is advertised
+    // false, and an inert registration is never acknowledged (r2 F3).
+    assert_eq!(session.error_code(20), Some(-32601));
+    assert_eq!(session.error_code(21), Some(-32601));
 }
 
 // ---- CLI independence: no MCP anything on ordinary commands. ----------------
@@ -658,7 +660,7 @@ fn resources_read_respects_the_launch_group_ceiling() {
 }
 
 #[test]
-fn resources_subscribe_authorizes_like_resources_read() {
+fn resources_subscribe_is_refused_while_unadvertised() {
     let root = ServedRoot::new();
     let mut frames = lifecycle();
     frames.push(frame(
@@ -669,15 +671,20 @@ fn resources_subscribe_authorizes_like_resources_read() {
     frames.push(frame(
         11,
         "resources/subscribe",
-        serde_json::json!({"uri": "lekalo://planner/project-summary"}),
+        serde_json::json!({"uri": "lekalo://planner/summary"}),
+    ));
+    frames.push(frame(
+        12,
+        "resources/unsubscribe",
+        serde_json::json!({"uri": "lekalo://planner/summary"}),
     ));
     let session = root.serve_with_catalog(Some("mcp.local.json"), &frames, &[]);
-    // An unregistered project URI is a typed denial, never a silent `{}`.
-    let denied = session.tool(10);
-    assert_eq!(denied["status"], "denied");
-    assert_eq!(denied["failure"]["failureClass"], "scope-denied");
-    // The admitted identity still subscribes.
-    assert_eq!(session.response(11)["result"], serde_json::json!({}));
+    // No watcher ships, and the capability is advertised false (F8): the
+    // honest answer is the protocol refusal for every identity — an
+    // inert registration is never acknowledged (r2 F3/codex 13).
+    assert_eq!(session.error_code(10), Some(-32601));
+    assert_eq!(session.error_code(11), Some(-32601));
+    assert_eq!(session.error_code(12), Some(-32601));
 }
 
 #[test]
@@ -715,7 +722,39 @@ fn a_comma_operand_is_a_structural_refusal_never_a_split_set() {
 fn standard_request_id_cancellation_suppresses_the_late_result() {
     let root = ServedRoot::new();
     // The 2025-11-25 spelling: notifications/cancelled carries requestId.
+    // The cancel and the call ride one batch: the reader thread observes
+    // the notification while the worker runs (r2 F6), so the late result
+    // is suppressed and no reply ships for the cancelled id.
     let mut frames = lifecycle();
+    frames.push(call(
+        10,
+        "lekalo_inspect",
+        serde_json::json!({"projectId": "planner", "symbol": "planner.focus_task"}),
+    ));
+    frames.push(
+        serde_json::json!({"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": 10}})
+            .to_string(),
+    );
+    let session = root.serve_with_catalog(Some("mcp.local.json"), &frames, &[]);
+    assert!(
+        session.response_opt(10).is_none(),
+        "cancelled id gets no reply"
+    );
+}
+
+#[test]
+fn a_cancelled_id_is_never_poisoned_for_its_reuse() {
+    let root = ServedRoot::new();
+    // Review r2 F6: a cancelled id used to stay blacklisted forever, so
+    // a later request reusing the id executed and then lost its reply.
+    // The registration is removed when the request settles: the retry
+    // after the cancelled call is answered normally.
+    let mut frames = lifecycle();
+    frames.push(call(
+        10,
+        "lekalo_inspect",
+        serde_json::json!({"projectId": "planner", "symbol": "planner.focus_task"}),
+    ));
     frames.push(
         serde_json::json!({"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": 10}})
             .to_string(),
@@ -725,11 +764,41 @@ fn standard_request_id_cancellation_suppresses_the_late_result() {
         "lekalo_inspect",
         serde_json::json!({"projectId": "planner", "symbol": "planner.focus_task"}),
     ));
-    let session = root.serve(&frames, &[]);
-    assert!(
-        session.response_opt(10).is_none(),
-        "cancelled id gets no reply"
+    let session = root.serve_with_catalog(Some("mcp.local.json"), &frames, &[]);
+    // Exactly one reply ships for id 10: the retry's.
+    let replies = session
+        .responses()
+        .into_iter()
+        .filter(|response| response["id"] == 10)
+        .count();
+    assert_eq!(
+        replies, 1,
+        "the cancelled call stays silent, the retry answers"
     );
+    assert_eq!(session.tool(10)["status"], "valid");
+}
+
+#[test]
+fn an_unknown_cancelled_id_is_ignored_and_never_registered() {
+    let root = ServedRoot::new();
+    // Review r2 F6/F19: cancels for unknown or malformed ids are ignored,
+    // and a non-scalar id can never enter the bookkeeping at all.
+    let mut frames = lifecycle();
+    frames.push(
+        serde_json::json!({"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": 77}})
+            .to_string(),
+    );
+    frames.push(
+        serde_json::json!({"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": {"structured": true}}})
+            .to_string(),
+    );
+    frames.push(call(
+        77,
+        "lekalo_inspect",
+        serde_json::json!({"projectId": "planner", "symbol": "planner.focus_task"}),
+    ));
+    let session = root.serve_with_catalog(Some("mcp.local.json"), &frames, &[]);
+    assert_eq!(session.tool(77)["status"], "valid");
 }
 
 #[test]

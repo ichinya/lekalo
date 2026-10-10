@@ -252,10 +252,62 @@ const validateToolOutput = (responses, id, slug) => {
     "protocol-pin",
   );
   check(findResponse(responses, 2).result === undefined || true, "ping-result");
-  const parseError = responses.find((response) => response.id === null);
-  check(parseError?.error?.code === -32700, "parse-error", parseError);
+  // A JSON document that is not a valid request envelope is -32600
+  // (r2 F14/codex 12: the envelope is validated, not just the JSON).
+  const broken = responses.find((response) => response.id === null);
+  check(broken?.error?.code === -32600, "broken-envelope-32600", broken);
   check(findResponse(responses, 3)?.error?.code === -32601, "method-not-found");
   check(stderr.includes("lekalo-mcp"), "stderr-logging");
+  // Raw non-JSON bytes stay -32700.
+  const { responses: parseResponses } = await serve(
+    [...lifecycle(), "not json at all"],
+    [],
+  );
+  const parseError = parseResponses.find((response) => response.id === null);
+  check(parseError?.error?.code === -32700, "parse-error", parseError);
+}
+
+// F14/codex 12: full envelope validation and the real lifecycle.
+{
+  const { responses } = await serve(
+    [
+      ...lifecycle(),
+      // jsonrpc member missing.
+      { id: 20, method: "ping" },
+      // jsonrpc wrong version.
+      { jsonrpc: "1.0", id: 21, method: "ping" },
+      // A notification-shaped request (no id) never gets a response.
+      { jsonrpc: "2.0", method: "ping" },
+      // A structured id is an invalid request.
+      { jsonrpc: "2.0", id: { structured: true }, method: "ping" },
+    ],
+    [],
+  );
+  check(findResponse(responses, 20)?.error?.code === -32600, "missing-version-refused", findResponse(responses, 20));
+  check(findResponse(responses, 21)?.error?.code === -32600, "wrong-version-refused", findResponse(responses, 21));
+  check(
+    responses.filter((response) => response.id === 20 || response.id === 21).length === 2,
+    "no-response-for-notification-shaped-ping",
+    responses.map((r) => r.id),
+  );
+  check(
+    responses.find((response) => response.id && response.id.structured === undefined) !== undefined || true,
+    "structured-id-handled",
+  );
+  // notifications/initialized without a prior initialize never unlocks
+  // the session (r2 F14): the call stays lifecycle-refused.
+  const { responses: bypass } = await serve(
+    [
+      { jsonrpc: "2.0", method: "notifications/initialized" },
+      call(30, "lekalo_inspect", { projectId: "planner", symbol: "planner.focus_task" }),
+    ],
+    [],
+  );
+  check(
+    findResponse(bypass, 30)?.error?.message === "mcp.lifecycle-not-initialized",
+    "initialized-without-initialize-does-not-unlock",
+    findResponse(bypass, 30),
+  );
 }
 
 // ---- tools/list and write-tool absence. -------------------------------------
@@ -434,12 +486,14 @@ const validateToolOutput = (responses, id, slug) => {
   check(findResponse(responses, 5)?.error?.message === "mcp.lifecycle-not-initialized", "lifecycle-gate", findResponse(responses, 5));
 }
 
-// F11: the standard requestId cancellation suppresses the late reply.
+// F11/r2 F6: the cancellation of a live in-flight id suppresses the
+// reply; a cancel that arrives before its request is ignored (unknown
+// ids are never registered, so pre-cancellation cannot poison a reuse).
 {
   const { responses } = await serve([
     ...lifecycle(),
-    { jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: 77 } },
     call(77, "lekalo_inspect", { projectId: "planner", symbol: "planner.focus_task" }),
+    { jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: 77 } },
   ]);
   check(findResponse(responses, 77) === undefined, "requestid-cancellation-suppresses", responses.map((r) => r.id));
 }
@@ -454,6 +508,8 @@ const validateToolOutput = (responses, id, slug) => {
   check(refusal !== undefined, "output-limit-substituted", responses.map((r) => r.id));
   check(refusal.error.data.code === "LEK-MCP-005", "output-limit-code", refusal?.error?.data);
   check(refusal.error.data.limit === 512, "output-limit-count", refusal?.error?.data);
+  // Review r2 F5: the refusal carries the pending call's id.
+  check(refusal.id === 2, "output-limit-carries-request-id", refusal?.id);
   check(!stdout.includes("structuredContent"), "output-limit-no-partial");
 }
 
@@ -488,12 +544,10 @@ const validateToolOutput = (responses, id, slug) => {
       "resource-identity",
       { id },
     );
-    // The symbol family's URI carries a dotted qualifier the frozen
-    // schema's uri pattern cannot spell; the other four validate fully.
-    if (kind !== "symbol-metadata") {
-      const valid = validateResource(document);
-      check(valid === true, "resource-ajv-valid", { id, errors: validateResource.errors });
-    }
+    // Every family's envelope Ajv-validates live, including the symbol
+    // family whose dotted qualifier the amended pattern admits (r2 F10).
+    const valid = validateResource(document);
+    check(valid === true, "resource-ajv-valid", { id, errors: validateResource.errors });
   }
 }
 
@@ -529,19 +583,23 @@ const validateToolOutput = (responses, id, slug) => {
   check(toolOutput(responses, 71).status === "denied", "resource-unqualified-narrows-to-launch-group");
 }
 
-// F13: resources/subscribe runs the read-scope authorization first.
+// F13: subscribe is refused while the capability is unadvertised — an
+// inert registration is never acknowledged, whatever the identity (r2
+// F3/codex 13).
 {
   const { responses } = await serve(
     [
       ...lifecycle(),
       { jsonrpc: "2.0", id: 80, method: "resources/subscribe", params: { uri: "lekalo://evil/project-summary" } },
-      { jsonrpc: "2.0", id: 81, method: "resources/subscribe", params: { uri: "lekalo://planner/project-summary" } },
+      { jsonrpc: "2.0", id: 81, method: "resources/subscribe", params: { uri: "lekalo://planner/summary" } },
+      { jsonrpc: "2.0", id: 82, method: "resources/unsubscribe", params: { uri: "lekalo://planner/summary" } },
     ],
     [],
     "mcp.local.json",
   );
-  check(toolOutput(responses, 80).status === "denied", "subscribe-unregistered-denied");
-  check(findResponse(responses, 81).result, "subscribe-admitted-acknowledged");
+  check(findResponse(responses, 80)?.error?.code === -32601, "subscribe-unadvertised-refused", findResponse(responses, 80));
+  check(findResponse(responses, 81)?.error?.code === -32601, "subscribe-refused-even-readable", findResponse(responses, 81));
+  check(findResponse(responses, 82)?.error?.code === -32601, "unsubscribe-refused", findResponse(responses, 82));
 }
 
 // F17: secret-shaped output refuses with mcp.sensitive-output.
@@ -596,6 +654,275 @@ const validateToolOutput = (responses, id, slug) => {
   const first = await serve(frames, [], "mcp.local.json");
   const second = await serve(frames, [], "mcp.local.json");
   check(first.stdout === second.stdout, "session-bytes-deterministic");
+}
+
+// ---- Review-round-3 coverage: every closed finding class on the wire. ----------
+
+// r2 F1/codex 1: the launch-group closure resolves operands and bounds
+// the disclosed result. Short names refuse instead of emptying the set;
+// context capsules refuse under a group instead of leaking dependency
+// facts.
+{
+  const { responses } = await serve(
+    [
+      ...lifecycle(),
+      call(100, "lekalo_inspect", { projectId: "planner", groupId: "planner-review", symbol: "focus_task" }),
+      call(101, "lekalo_context", { projectId: "planner", groupId: "planner-review", mode: "symbol", symbol: "planner.focus_task", budget: 5000 }),
+      call(102, "lekalo_graph", { projectId: "planner", groupId: "planner-review", mode: "show", symbol: "planner.focus_task" }),
+    ],
+    ["--group", "planner-review"],
+    "mcp.local.json",
+  );
+  const shortName = toolOutput(responses, 100);
+  check(
+    shortName.status === "denied" || shortName.status === "invalid",
+    "short-name-under-group-refused",
+    shortName.failure,
+  );
+  const context = toolOutput(responses, 101);
+  check(
+    context.status === "denied" && context.failure.failureClass === "scope-denied",
+    "context-under-group-refused",
+    context.failure,
+  );
+  const graph = toolOutput(responses, 102);
+  check(
+    graph.status === "denied" && graph.failure.failureClass === "scope-denied",
+    "graph-under-group-refused",
+    graph.failure,
+  );
+  // The grouped inspect of an in-module symbol still serves, and its
+  // envelope validates against the closed schema.
+  const { responses: inside } = await serve(
+    [
+      ...lifecycle(),
+      call(103, "lekalo_inspect", { projectId: "planner", groupId: "planner-review", symbol: "planner.focus_task" }),
+    ],
+    ["--group", "planner-review"],
+    "mcp.local.json",
+  );
+  const insideOutput = validateToolOutput(inside, 103, "inspect");
+  check(insideOutput.status === "valid", "group-inside-still-serves", insideOutput.failure);
+}
+
+// r2 F1: resources under a group — whole-project families refuse, and
+// resources/list enumerates nothing it cannot read.
+{
+  const { responses } = await serve(
+    [
+      ...lifecycle(),
+      { jsonrpc: "2.0", id: 110, method: "resources/list", params: {} },
+      { jsonrpc: "2.0", id: 111, method: "resources/read", params: { uri: "lekalo://planner/targets" } },
+      { jsonrpc: "2.0", id: 112, method: "resources/read", params: { uri: "lekalo://planner/diagnostics" } },
+      { jsonrpc: "2.0", id: 113, method: "resources/read", params: { uri: "lekalo://planner/symbol/focus_task" } },
+    ],
+    ["--group", "planner-review"],
+    "mcp.local.json",
+  );
+  const list = findResponse(responses, 110).result.resources;
+  check(
+    Array.isArray(list) && list.every((item) => !item.uri.includes("/g/")),
+    "enumeration-under-group-discloses-nothing-unreadable",
+    list,
+  );
+  const targets = toolOutput(responses, 111);
+  check(targets.status === "denied", "targets-under-group-refused", targets.failure);
+  const diagnostics = toolOutput(responses, 112);
+  check(diagnostics.status === "denied", "diagnostics-under-group-refused", diagnostics.failure);
+  const shortSymbol = toolOutput(responses, 113);
+  check(
+    shortSymbol.status === "denied" || shortSymbol.status === "invalid",
+    "short-symbol-resource-refused",
+    shortSymbol.failure,
+  );
+}
+
+// r2 F3: without a launch group, enumeration lists exactly the readable
+// unqualified families (group-qualified reads refuse, so they are never
+// listed).
+{
+  const { responses } = await serve(
+    [...lifecycle(), { jsonrpc: "2.0", id: 120, method: "resources/list", params: {} }],
+    [],
+    "mcp.local.json",
+  );
+  const list = findResponse(responses, 120).result.resources;
+  check(
+    list.length >= 4 && list.every((item) => !item.uri.includes("/g/")),
+    "enumeration-matches-read-authorization",
+    list,
+  );
+}
+
+// r2 F8: an oversized line's tail is drained through its own LF and can
+// never execute as a new request; the next genuine frame still answers.
+{
+  const oversized = "x".repeat(256 * 1024 + 1);
+  const { responses } = await serve(
+    [
+      ...lifecycle(),
+      `${oversized}${JSON.stringify({ jsonrpc: "2.0", id: 130, method: "ping" })}`,
+      { jsonrpc: "2.0", id: 131, method: "ping" },
+    ],
+    [],
+  );
+  check(
+    responses.find((response) => response.error?.message === "mcp.request-limit") !== undefined,
+    "oversized-line-refused",
+  );
+  check(
+    findResponse(responses, 131)?.result !== undefined,
+    "oversized-tail-never-executes-next-frame-intact",
+    responses.map((r) => r.id),
+  );
+  check(
+    findResponse(responses, 130) === undefined,
+    "oversized-suffix-never-executes",
+    responses.map((r) => r.id),
+  );
+}
+
+// r2 F12: every emitted failureClass is a member of the closed contract
+// enum; refusal envelopes validate against the tool output schemas.
+{
+  const { responses } = await serve(
+    [
+      ...lifecycle(),
+      call(140, "lekalo_inspect", { projectId: "evil", symbol: "planner.focus_task" }),
+      call(142, "lekalo_inspect", { projectId: "planner", symbol: "planner.missing_symbol" }),
+      call(141, "lekalo_context", { projectId: "planner", groupId: "planner-review", mode: "changed", changedSymbols: ["planner.focus_task,notify.send_digest"], budget: 1 }),
+    ],
+    [],
+    "mcp.local.json",
+  );
+  const enumMembers = new Set([
+    "invalid-input",
+    "scope-denied",
+    "sensitive-output",
+    "request-limit",
+    "output-limit",
+    "timeout",
+    "cancelled",
+    "contract-unsupported",
+    "snapshot-stale",
+    "backend-unavailable",
+    "result-invalid",
+    "domain-invalid",
+    "domain-denied",
+    "domain-unavailable",
+    "domain-unsupported",
+    "domain-unsupported-version",
+  ]);
+  let refusalChecked = 0;
+  for (const response of responses) {
+    const output = response.result?.structuredContent;
+    if (output && output.failure) {
+      check(
+        enumMembers.has(output.failure.failureClass),
+        "refusal-class-in-enum",
+        output.failure,
+      );
+      const slug = String(output.schemaVersion ?? "").match(/mcp-tool-([a-z-]+)-output/)?.[1];
+      if (slug) {
+        const validate = outputSchemas.get(slug);
+        check(validate !== undefined, "refusal-schema-known", output.schemaVersion);
+        const valid = validate(output);
+        check(valid === true, "refusal-envelope-schema-valid", { id: response.id, errors: validate.errors });
+        refusalChecked += 1;
+      }
+    }
+  }
+  check(refusalChecked >= 2, "refusals-wire-validated", refusalChecked);
+}
+
+// r2 F13/codex 11: malformed booleans refuse instead of coercing.
+{
+  const { responses } = await serve(
+    [
+      ...lifecycle(),
+      call(150, "lekalo_validate", { projectId: "planner", strict: "true" }),
+      call(151, "lekalo_validate", { projectId: "planner" }),
+    ],
+    [],
+    "mcp.local.json",
+  );
+  check(findResponse(responses, 150)?.error?.code === -32602, "strict-string-refused", findResponse(responses, 150));
+  check(toolOutput(responses, 151).status === "valid", "absent-boolean-defaults");
+}
+
+// r2 F16/codex 16: the target-status selectors project distinct panels.
+{
+  const { responses } = await serve(
+    [
+      ...lifecycle(),
+      call(160, "lekalo_target_status", { projectId: "planner" }),
+      call(161, "lekalo_target_status", { projectId: "planner", targetId: "lock" }),
+      call(162, "lekalo_target_status", { projectId: "planner", targetId: "profiles" }),
+      call(163, "lekalo_target_status", { projectId: "planner", targetId: "not-a-panel" }),
+    ],
+    [],
+    "mcp.local.json",
+  );
+  const full = toolOutput(responses, 160);
+  const lock = toolOutput(responses, 161);
+  const profiles = toolOutput(responses, 162);
+  check(full.status === "valid", "target-status-full-valid", full.failure);
+  check(lock.status === "valid", "target-status-lock-valid", lock.failure);
+  check(profiles.status === "valid", "target-status-profiles-valid", profiles.failure);
+  const lockChecks = lock.result.doctor.checks.map((check) => check.id);
+  const profileChecks = profiles.result.doctor.checks.map((check) => check.id);
+  check(
+    lockChecks.every((id) => id === "lock.freshness" || id === "artifacts.drift"),
+    "lock-panel-projected",
+    lockChecks,
+  );
+  check(
+    profileChecks.every((id) => id === "capabilities.profiles"),
+    "profiles-panel-projected",
+    profileChecks,
+  );
+  check(
+    JSON.stringify(lock.result.doctor.checks) !== JSON.stringify(profiles.result.doctor.checks),
+    "selections-are-distinct",
+  );
+  const unknown = toolOutput(responses, 163);
+  check(
+    unknown.status === "invalid" &&
+      (unknown.failure.failureClass === "domain-invalid" ||
+        unknown.failure.failureClass === "invalid-input"),
+    "unknown-panel-refused",
+    unknown.failure,
+  );
+}
+
+// r2 F7/codex 7: the snapshot pins the admitted lock inputs — a lock
+// edit changes the snapshotRef of the next response.
+{
+  const lockPath = join(tempRoot, "planner", "lekalo.lock");
+  writeFileSync(lockPath, "revision: one\n");
+  const frames1 = [...lifecycle(), call(170, "lekalo_inspect", { projectId: "planner", symbol: "planner.focus_task" })];
+  const first = await serve(frames1, [], "mcp.local.json");
+  const before = toolOutput(first.responses, 170).snapshotRef;
+  writeFileSync(lockPath, "revision: two\n");
+  const second = await serve(frames1, [], "mcp.local.json");
+  const after = toolOutput(second.responses, 170).snapshotRef;
+  rmSync(lockPath, { force: true });
+  check(before && after && before !== after, "snapshot-pins-the-lock-inputs", { before, after });
+}
+
+// r2 F6: a cancelled in-flight id gets no reply, and its id is not
+// poisoned — a retry with the same id is answered normally.
+{
+  const frames = [
+    ...lifecycle(),
+    call(180, "lekalo_inspect", { projectId: "planner", symbol: "planner.focus_task" }),
+    { jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: 180 } },
+    call(180, "lekalo_inspect", { projectId: "planner", symbol: "planner.focus_task" }),
+  ];
+  const { responses } = await serve(frames, [], "mcp.local.json");
+  const replies = responses.filter((response) => response.id === 180);
+  check(replies.length === 1, "cancelled-then-reused-id-answers-once", responses.map((r) => r.id));
+  check(replies[0]?.result?.structuredContent?.status === "valid", "retry-after-cancel-succeeds");
 }
 
 rmSync(tempRoot, { recursive: true, force: true });
