@@ -13,11 +13,15 @@
 //! after the open is caught by the post-read component re-walk and
 //! identity re-comparison. The identity is the strongest the platform
 //! offers through the standard library: device+inode on Unix, and the
-//! attribute/size/timestamp tuple on Windows (the platform exposes no
-//! stable file-id through std, so the seam documents the residual
-//! guarantee honestly instead of overclaiming). Hardlink aliases are
-//! refused outright: multi-link inodes are not single-owner in-root
-//! content under the owner policy, so the seam fails closed on them.
+//! volume/file-id pair through `GetFileInformationByHandleEx` on
+//! Windows. Hardlink aliases are refused outright on BOTH platforms
+//! (review r3 F2): a multi-link file is not single-owner in-root content
+//! under the owner policy — the link count is the one path-independent
+//! signal that the bytes have a second name outside the grant — so the
+//! seam fails closed on a link count above one (Unix: std's `nlink`;
+//! Windows: `GetFileInformationByHandle`'s `nNumberOfLinks` through the
+//! same `windows-sys` seam as the file id, read from the opened
+//! handle's own metadata).
 //! Cache/runtime writes, adapter execution, and repository scans are
 //! unreachable from here.
 
@@ -50,8 +54,12 @@ const _: () = assert!(MANIFEST_READ_CAP >= MAX_FRAME_BYTES);
 /// strongest comparison the platform offers. Unix pins the device and
 /// inode; Windows pins the volume serial and 128-bit file id through
 /// `GetFileInformationByHandleEx` (the platform's real file identity,
-/// not a heuristic timestamp tuple). `None` means the platform could not
-/// provide an identity — the caller fails closed (review codex 15).
+/// not a heuristic timestamp tuple) plus the stable hardlink count
+/// from `GetFileInformationByHandle`'s `nNumberOfLinks` (r3 F2 — std's
+/// `number_of_links` is still unstable, so the count comes through the
+/// same already-admitted `windows-sys` seam). `None` means the platform
+/// could not provide an identity — the caller fails closed (review
+/// codex 15).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FileIdentity {
     size: u64,
@@ -67,6 +75,11 @@ pub struct FileIdentity {
     volume: u32,
     #[cfg(windows)]
     file_id: [u8; 16],
+    /// The hardlink count of the file (r3 F2): a Windows file with
+    /// more than one name is an alias exactly like a multi-link Unix
+    /// inode, and refuses under the same owner policy.
+    #[cfg(windows)]
+    links: u32,
 }
 
 /// The identity of one metadata snapshot; `None` when the metadata does
@@ -114,11 +127,47 @@ fn opened_identity(file: &std::fs::File) -> Option<FileIdentity> {
         // The volume cannot provide a file id: fail closed.
         return None;
     }
+    // r3 F2: the hardlink count from the handle's own
+    // `BY_HANDLE_FILE_INFORMATION.nNumberOfLinks` — the path-independent
+    // signal that the bytes carry a second name. A volume that cannot
+    // answer the query fails closed (None), never answers "single
+    // owner" by omission.
+    let mut information = windows_sys::Win32::Storage::FileSystem::BY_HANDLE_FILE_INFORMATION {
+        dwFileAttributes: 0,
+        ftCreationTime: windows_sys::Win32::Foundation::FILETIME {
+            dwLowDateTime: 0,
+            dwHighDateTime: 0,
+        },
+        ftLastAccessTime: windows_sys::Win32::Foundation::FILETIME {
+            dwLowDateTime: 0,
+            dwHighDateTime: 0,
+        },
+        ftLastWriteTime: windows_sys::Win32::Foundation::FILETIME {
+            dwLowDateTime: 0,
+            dwHighDateTime: 0,
+        },
+        dwVolumeSerialNumber: 0,
+        nFileSizeHigh: 0,
+        nFileSizeLow: 0,
+        nNumberOfLinks: 0,
+        nFileIndexHigh: 0,
+        nFileIndexLow: 0,
+    };
+    let ok = unsafe {
+        windows_sys::Win32::Storage::FileSystem::GetFileInformationByHandle(
+            file.as_raw_handle(),
+            &mut information,
+        )
+    };
+    if ok == 0 {
+        return None;
+    }
     Some(FileIdentity {
         size: metadata.len(),
         attributes: metadata.file_attributes(),
         volume: info.VolumeSerialNumber as u32,
         file_id: info.FileId.Identifier,
+        links: information.nNumberOfLinks,
     })
 }
 
@@ -137,7 +186,8 @@ fn path_identity(path: &Path) -> Option<FileIdentity> {
 
 impl FileIdentity {
     /// Whether the identity pins a single-owner regular file: multi-link
-    /// inodes are hardlink aliases and refuse (the alias policy).
+    /// files are hardlink aliases and refuse (the alias policy) on both
+    /// platforms.
     fn single_owner(&self) -> bool {
         #[cfg(unix)]
         {
@@ -145,12 +195,15 @@ impl FileIdentity {
         }
         #[cfg(windows)]
         {
-            // std exposes no stable link count for every volume; the
-            // alias policy is enforced on the link-attribute checks and
-            // the identity pin. Windows hardlink enumeration is not
-            // available without platform APIs, so the seam does not
-            // claim hardlink detection on this platform.
-            true
+            // r3 F2: `GetFileInformationByHandle`'s
+            // `nNumberOfLinks` is queried from the opened handle's own
+            // metadata, so an in-root hardlink to out-of-root bytes
+            // reports the shared link count and refuses exactly like a
+            // multi-link Unix inode — the read boundary can no longer be
+            // crossed through a same-volume second name. (std's
+            // `number_of_links` is still unstable `windows_by_handle`,
+            // hence the same `windows-sys` seam the file id uses.)
+            self.links == 1
         }
     }
 }
@@ -386,9 +439,10 @@ mod tests {
 
     #[test]
     fn a_multi_link_inode_is_refused_as_a_hardlink_alias() {
-        // The alias policy: a multi-link inode is not single-owner
-        // in-root content, so the seam fails closed (Unix offers the
-        // stable link count through std).
+        // The alias policy: a multi-link file is not single-owner
+        // in-root content, so the seam fails closed. Unix offers the
+        // stable link count through `symlink_metadata`; Windows offers
+        // the same count through the opened handle's metadata (r3 F2).
         #[cfg(unix)]
         {
             let temporary = tempfile::tempdir().expect("tempdir");
@@ -405,5 +459,46 @@ mod tests {
                 Err(ReadRefusal::Link)
             );
         }
+        #[cfg(windows)]
+        {
+            let temporary = tempfile::tempdir().expect("tempdir");
+            let root = temporary.path();
+            std::fs::write(root.join("real.json"), b"{}").expect("write");
+            std::fs::hard_link(root.join("real.json"), root.join("alias.json")).expect("hardlink");
+            let identity = path_identity(&root.join("real.json")).expect("identity");
+            assert_eq!(identity.links, 2);
+            assert!(!identity.single_owner());
+            assert_eq!(read_admitted(root, "real.json", 16), Err(ReadRefusal::Link));
+            assert_eq!(
+                read_admitted(root, "alias.json", 16),
+                Err(ReadRefusal::Link)
+            );
+        }
+    }
+
+    #[test]
+    fn an_in_root_hardlink_to_out_of_root_bytes_refuses() {
+        // r3 F2 probe (the live review escape): the served manifest path
+        // is an in-root hardlink to a file OUTSIDE the root. The link
+        // count — the only path-independent signal — refuses the read
+        // before any byte ships, on both platforms.
+        let temporary = tempfile::tempdir().expect("tempdir");
+        let root = temporary.path();
+        let outside = tempfile::tempdir().expect("outside root");
+        std::fs::write(
+            outside.path().join("secret.trace.json"),
+            b"{\"out\":\"of-root\"}",
+        )
+        .expect("outside file");
+        std::fs::hard_link(
+            outside.path().join("secret.trace.json"),
+            root.join("hard.json"),
+        )
+        .expect("hardlink");
+        assert_eq!(
+            read_admitted(root, "hard.json", 64),
+            Err(ReadRefusal::Link),
+            "an in-root hardlink alias of out-of-root bytes must refuse"
+        );
     }
 }
