@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "productVersion": "0.8.0",
-  "cliSourceDigest": "sha256:1612338dbbf0b01cb89b63c7c065c6685ade3fe51b2a20a481ffd1021929eb5f",
+  "cliSourceDigest": "sha256:4d74fff28c9da71ab1df77682cb8ffdc6db02f6815114caeff9ad2bfdbaf6c6a",
   "p0Pages": [
     {
       "page": "README.md",
@@ -2819,7 +2819,7 @@
       "id": "contract:contracts/module-api.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/module-api.schema.v0.8.0.json",
-      "sourceDigest": "sha256:b88b5b409ba20651936a8a84201c126022754ec6dd0c7795706ab0bcc2efbb1d",
+      "sourceDigest": "sha256:748b020e51c45bd550a0d81dec8f865f0558700ce5920736cdf5cc9a733484a4",
       "owner": "docs/module-api.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
