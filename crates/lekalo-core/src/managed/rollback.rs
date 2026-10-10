@@ -176,6 +176,57 @@ fn stale(path: &str, reason: &str) -> DomainResult {
     diagnostic::failure(PLAN_STALE, &[("path", path), ("reason", reason)])
 }
 
+/// The authoritative rollback plan of one interrupted rollback journal,
+/// rebuilt purely from transaction-owned custody evidence (r4 finding 1):
+/// the anchored destination record and the committed record the rollback
+/// ran from. A journal's own plan pin must equal this rebuilt digest — a
+/// minted rollback plan object in the store never bounds a recovery move,
+/// exactly as a minted generation plan never bounds an apply journal.
+pub(crate) fn recovery_plan(
+    root: &std::path::Path,
+    destination: &GenerationRecord,
+    committed: &GenerationRecord,
+) -> Option<RollbackPlan> {
+    let mut restore = Vec::new();
+    for output in &destination.outputs {
+        let object_ref = output.after_ref.value()?.clone();
+        history::object(root, &object_ref).ok()?;
+        restore.push(RestoreOp {
+            path: output.path.clone(),
+            digest: output.digest.clone(),
+            object_ref,
+        });
+    }
+    let destination_paths: std::collections::BTreeSet<&str> =
+        restore.iter().map(|op| op.path.as_str()).collect();
+    let mut delete = Vec::new();
+    for output in &committed.outputs {
+        if destination_paths.contains(output.path.as_str()) {
+            continue;
+        }
+        delete.push(DeleteOp {
+            path: output.path.clone(),
+            digest: output.digest.clone(),
+        });
+    }
+    let mut plan = RollbackPlan {
+        schema_version: super::header("managed-rollback-plan").0,
+        identity: super::header("managed-rollback-plan").1,
+        current_generation: State::known(GenerationDigest {
+            generation_digest: committed.generation_digest.clone(),
+        }),
+        destination_generation_digest: destination.generation_digest.clone(),
+        restore,
+        delete,
+        manifest_digest: super::digest(
+            &super::custody::retained_manifest(root, &destination.generation_digest).ok()?,
+        ),
+        plan_digest: String::new(),
+    };
+    plan.plan_digest = plan_digest(&plan);
+    Some(plan)
+}
+
 /// Build the exact rollback plan for the retained destination generation.
 pub fn build(root: &std::path::Path, destination: &str) -> Result<RollbackPlan, DomainResult> {
     // The barrier holds for every mutating surface, previews included: an

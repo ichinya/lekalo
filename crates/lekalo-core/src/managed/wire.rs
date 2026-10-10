@@ -354,6 +354,17 @@ dto!(ScenarioVerdict {
     digest: String,
     verdict: ScenarioOutcome
 });
+// One executed-outcome receipt: the digest over the canonical JSON of
+// the observed output the scenario's retained executable test produced
+// for its pinned sample. Unlike the caller-authored `verdict` labels,
+// this pin is independently recomputed by the gate from the retained
+// reviewed coverage (the deterministic handler is the pinned projection
+// over the pinned sample), so a receipt that disagrees with the
+// recomputed executed behavior can never certify `match` (r4 finding 2).
+dto!(ScenarioExecution {
+    scenario: String,
+    observed: String
+});
 dto!(Equivalence {
     schema_version: String,
     identity: String,
@@ -362,6 +373,7 @@ dto!(Equivalence {
     implementation_digest: String,
     reference_digest: State<String>,
     scenarios: Vec<ScenarioVerdict>,
+    execution: Vec<ScenarioExecution>,
     gaps: Vec<String>,
     verdict: EquivalenceVerdict
 });

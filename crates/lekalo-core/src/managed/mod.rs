@@ -604,10 +604,20 @@ pub fn parse_record(bytes: &[u8]) -> Result<GenerationRecord, DomainResult> {
 /// Validate a transaction journal entry, including every nested pin (finding
 /// 15): a journal whose plan/generation/manifest/conflict/before fields are
 /// malformed is custody corruption, never a recoverable publication — the
-/// schema's nested constraints are enforced at runtime too.
+/// schema's nested constraints are enforced at runtime too. The journal
+/// identity is the emitted grammar only (`[a-z0-9-]+`, single path
+/// component): the unresolved scanner reads exactly the top level of
+/// `transactions/`, so a journal id carrying separators could only ever
+/// name a file the scanner never looks at (r4 finding 11).
 pub fn parse_transaction(bytes: &[u8]) -> Result<Transaction, DomainResult> {
     let document: Transaction = decode(bytes, "managed-transaction")?;
-    if !token(&document.transaction_id) {
+    if document.transaction_id.is_empty()
+        || document.transaction_id.len() > 64
+        || !document
+            .transaction_id
+            .bytes()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')
+    {
         return Err(invalid("transaction-id"));
     }
     if let Some(plan) = document.plan_digest.value() {
@@ -728,6 +738,36 @@ pub fn parse_equivalence(bytes: &[u8]) -> Result<Equivalence, DomainResult> {
             .any(|s| !token(&s.scenario) || !pin(&s.digest))
     {
         return Err(invalid("scenario-order"));
+    }
+    // The executed-outcome receipts (r4 finding 2): one per scenario, no
+    // more and no fewer, each pinning the digest of the observed output
+    // of that scenario's retained executable test. The labels stay
+    // caller-authored; the receipts are what the gate recomputes.
+    if document.execution.len() != document.scenarios.len()
+        || document.execution.len() > 4096
+        || !sorted(
+            &document
+                .execution
+                .iter()
+                .map(|s| &s.scenario)
+                .collect::<Vec<_>>(),
+        )
+        || document
+            .execution
+            .iter()
+            .any(|s| !token(&s.scenario) || !pin(&s.observed))
+        || document
+            .execution
+            .iter()
+            .map(|s| s.scenario.as_str())
+            .collect::<std::collections::BTreeSet<_>>()
+            != document
+                .scenarios
+                .iter()
+                .map(|s| s.scenario.as_str())
+                .collect::<std::collections::BTreeSet<_>>()
+    {
+        return Err(invalid("execution-order"));
     }
     if !sorted(&document.gaps) || document.gaps.iter().any(|g| !token(g)) {
         return Err(invalid("gap-order"));

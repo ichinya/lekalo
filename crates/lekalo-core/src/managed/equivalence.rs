@@ -8,14 +8,18 @@
 //! scenario of the requirement it names — the generated behavioral test
 //! that invokes the pinned handler on the pinned sample and asserts the
 //! pinned outcome, retained as a custody object — and the scenario corpus
-//! must cover every rendered requirement of the committed record. Any
-//! qualified mismatch is a failed gate. Unsupported or missing coverage is
-//! an incomplete gate, and only a fully supported matching corpus passes.
-//! Timing metrics and raw sources are never part of it. The gate itself
-//! never executes anything: it certifies that the retained executable
-//! scenario corpus is complete, current, and bound to the live bytes — the
-//! execution happens in the producer's own suite over exactly these
-//! scenarios.
+//! must cover every rendered requirement of the committed record. The
+//! verdict *labels* are caller-authored and are never authority (r4
+//! finding 2): every scenario must additionally carry an executed-outcome
+//! receipt — the digest of the observed output of executing its retained
+//! scenario — which the gate independently recomputes from the retained
+//! reviewed coverage (the deterministic handler is the pinned projection
+//! over the pinned sample), and the pinned expectation must equal that
+//! recomputed executed output, so a `match` verdict can never certify a
+//! generation whose own emitted test fails. Any qualified mismatch is a
+//! failed gate. Unsupported or missing coverage is an incomplete gate,
+//! and only a fully supported matching corpus passes. Timing metrics and
+//! raw sources are never part of it.
 
 use super::diagnostic;
 use super::wire::{ArtifactRole, Equivalence, EquivalenceVerdict, ScenarioOutcome};
@@ -170,7 +174,91 @@ pub fn adjudicate_for(root: &std::path::Path, bytes: &[u8]) -> DomainResult {
             return diagnostic::failure(EQUIVALENCE_INCOMPLETE, &detail("reference"));
         }
     }
+    // Executed-outcome receipts (r4 finding 2): the verdict labels are
+    // never authority. Every rendered scenario must carry a receipt
+    // pinning the digest of its observed output, and the gate recomputes
+    // that output itself from the retained reviewed coverage — the
+    // deterministic generated handler is exactly the pinned projection
+    // applied to the pinned sample input — so a lying verdict over a
+    // natively-failing artifact can never certify `match`.
+    if let Err(error) = verify_executed_outcomes(root, &record, &evidence) {
+        return error;
+    }
     adjudicate_checked(evidence)
+}
+
+/// Recompute every rendered scenario's executed output from the retained
+/// reviewed coverage and verify the evidence's executed-outcome receipts
+/// against it (r4 finding 2). The retained coverage is reached only
+/// through transaction-owned evidence: the committed record's
+/// authenticated plan pin, whose coverage pin resolves the retained
+/// coverage object by its own canonical digest.
+fn verify_executed_outcomes(
+    root: &std::path::Path,
+    record: &super::wire::GenerationRecord,
+    evidence: &Equivalence,
+) -> Result<(), DomainResult> {
+    let plan = super::history::plan(root, &record.plan_digest)
+        .map_err(|_| diagnostic::failure(EQUIVALENCE_INCOMPLETE, &detail("corpus")))?;
+    let coverage = super::history::coverage(root, &plan.coverage_digest)
+        .map_err(|_| diagnostic::failure(EQUIVALENCE_INCOMPLETE, &detail("corpus")))?;
+    for requirement in &coverage.requirements {
+        if !requirement.kind.renders() {
+            continue;
+        }
+        // The scenario identity of one rendered requirement.
+        if !evidence
+            .scenarios
+            .iter()
+            .any(|row| row.scenario == requirement.id)
+        {
+            continue; // corpus completeness is checked above
+        }
+        let sample = requirement
+            .sample
+            .value()
+            .ok_or_else(|| diagnostic::failure(EQUIVALENCE_FAILED, &detail("scenario-input")))?;
+        // The executed output of the generated handler: the pinned
+        // projection applied to the pinned sample input. The handler is
+        // deterministic and side-effect-free over its input (bindings
+        // receive a structured clone), so this recomputation *is* the
+        // executed behavior of the pinned implementation.
+        let mut observed: std::collections::BTreeMap<String, super::wire::Scalar> =
+            std::collections::BTreeMap::new();
+        for projection in &requirement.projection {
+            let value = sample
+                .input
+                .get(&projection.from)
+                .ok_or_else(|| diagnostic::failure(EQUIVALENCE_FAILED, &detail("scenario-input")))?
+                .clone();
+            observed.insert(projection.to.clone(), value);
+        }
+        let recomputed = super::digest(super::canonical_bytes(&observed).as_bytes());
+        let receipt = evidence
+            .execution
+            .iter()
+            .find(|row| row.scenario == requirement.id)
+            .ok_or_else(|| diagnostic::failure(EQUIVALENCE_INCOMPLETE, &detail("execution")))?;
+        if receipt.observed != recomputed {
+            // The receipt does not describe the executed behavior of the
+            // pinned implementation: an unverifiable outcome pin.
+            return Err(diagnostic::failure(
+                EQUIVALENCE_FAILED,
+                &detail("execution"),
+            ));
+        }
+        // The pinned expectation must equal the recomputed executed
+        // output — otherwise the retained scenario's own assertion fails
+        // natively and no honest verdict can be `match` (r4 finding 2's
+        // confirmed exploit: a lying sample over a failing artifact).
+        if sample.output != observed {
+            return Err(diagnostic::failure(
+                EQUIVALENCE_FAILED,
+                &detail("scenario-assertion"),
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// The pure adjudication over a pre-bound evidence document.

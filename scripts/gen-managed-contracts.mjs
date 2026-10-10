@@ -81,6 +81,12 @@ const defs = {
   restoreOp: obj({ path: relPath, digest: pin, ref: pin }),
   deleteOp: obj({ path: relPath, digest: pin }),
   scenarioVerdict: obj({ scenario: token, digest: pin, verdict: en('match', 'mismatch', 'unsupported') }),
+  // One executed-outcome receipt (r4 finding 2): the digest of the
+  // observed output of executing that scenario's retained executable
+  // test. The verdict labels stay caller-authored; the receipts are what
+  // the gate independently recomputes from the retained reviewed
+  // coverage — without them a `match` verdict is unverifiable.
+  scenarioExecution: obj({ scenario: token, observed: pin }),
 };
 
 const shape = (family, properties) => obj({ ...Object.fromEntries(Object.entries(header(family)).map(([k, v]) => [k, { const: v }])), ...properties });
@@ -136,6 +142,7 @@ export const shapes = {
     implementationDigest: pin,
     referenceDigest: knownPin,
     scenarios: arr(ref('scenarioVerdict'), 4096, 1),
+    execution: arr(ref('scenarioExecution'), 4096, 1),
     gaps: arr(token, 4096),
     verdict: en('match', 'mismatch', 'incomplete'),
   },

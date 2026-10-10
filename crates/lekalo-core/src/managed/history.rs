@@ -322,6 +322,17 @@ pub fn unresolved(root: &std::path::Path) -> Result<Vec<Transaction>, DomainResu
         let Some(name) = name.to_str() else {
             return Err(recovery("transaction-scan"));
         };
+        // A directory inside the journal home can never be a legal journal
+        // (the emitted id grammar is a single path component, r4 finding
+        // 11): fail closed instead of leaving smuggled state the scanner
+        // cannot see.
+        if entry
+            .metadata()
+            .map_err(|_| recovery("transaction-scan"))?
+            .is_dir()
+        {
+            return Err(recovery("transaction-scan"));
+        }
         if !name.ends_with(".json") {
             continue;
         }

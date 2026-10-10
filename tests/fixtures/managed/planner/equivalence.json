@@ -20,6 +20,16 @@
       "verdict": "match"
     }
   ],
+  "execution": [
+    {
+      "scenario": "planner.complete_task",
+      "observed": "sha256:54a0eb9d18055c7c67132b48e5b71b8e1b9f7cec728e2b170446c295210f8210"
+    },
+    {
+      "scenario": "planner.focus_task",
+      "observed": "sha256:4ec9852ef939bad75ea72af4e8ed09668f78d38a01a814262048448f3fb83374"
+    }
+  ],
   "gaps": [],
   "verdict": "match"
 }

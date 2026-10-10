@@ -61,6 +61,14 @@
       "maxItems": 4096,
       "minItems": 1
     },
+    "execution": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/scenarioExecution"
+      },
+      "maxItems": 4096,
+      "minItems": 1
+    },
     "gaps": {
       "type": "array",
       "items": {
@@ -88,6 +96,7 @@
     "implementationDigest",
     "referenceDigest",
     "scenarios",
+    "execution",
     "gaps",
     "verdict"
   ],
@@ -98,6 +107,26 @@
       "pattern": "^[A-Za-z0-9_.:/@-]+$",
       "minLength": 1,
       "maxLength": 256
+    },
+    "scenarioExecution": {
+      "type": "object",
+      "properties": {
+        "scenario": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]+$",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "observed": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "scenario",
+        "observed"
+      ],
+      "additionalProperties": false
     },
     "scenarioVerdict": {
       "type": "object",

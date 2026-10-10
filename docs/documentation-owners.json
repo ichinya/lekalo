@@ -2789,7 +2789,7 @@
       "id": "contract:contracts/managed-equivalence.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/managed-equivalence.schema.v0.8.0.json",
-      "sourceDigest": "sha256:c36c856859b43a93697bc1159198421f8926d0a5eee4c3ad2068748c5da25bb5",
+      "sourceDigest": "sha256:259d926e257541a4f734cd7eeabab9d9108204fd3ab1c963bbf08f13590f41e2",
       "owner": "docs/managed-mode.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

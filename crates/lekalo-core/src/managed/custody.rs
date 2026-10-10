@@ -404,12 +404,15 @@ pub(crate) fn preflight_destination(root: &Path) -> Result<(), DomainResult> {
     Ok(())
 }
 
-/// Read the previously published governed manifest, if any.
+/// Read the previously published governed manifest, if any. The read goes
+/// through the confined capability (r4 finding 7): the ancestor chain and
+/// the leaf are revalidated at read time, so a swapped-in symlink or
+/// junction between the preflight and this read fails closed instead of
+/// merging outside-manifest bytes into the new union manifest.
 fn read_manifest(root: &Path) -> Result<Option<ArtifactManifest>, DomainResult> {
-    let physical = root.join(MANIFEST_DIR).join(MANIFEST_NAME);
-    let bytes = match std::fs::read(&physical) {
-        Ok(bytes) => bytes,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+    let bytes = match super::fs::read_file(root, MANIFEST_LOGICAL) {
+        Ok(Some(bytes)) => bytes,
+        Ok(None) => return Ok(None),
         Err(_) => return Err(invalid("manifest-read")),
     };
     ArtifactManifest::parse_canonical(&bytes)

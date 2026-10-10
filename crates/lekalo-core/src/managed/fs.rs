@@ -252,6 +252,13 @@ pub fn write_staged(
     stage: &str,
     bytes: &[u8],
 ) -> Result<(), DomainResult> {
+    // The staging coordinate is validated exactly like the destination
+    // (r4 finding 8): every current caller derives it from the validated
+    // destination, but a future caller passing a caller-influenced stage
+    // name must not be able to stage outside the confined grammar.
+    if !confinable(stage) || validate_chain(root, stage).is_err() {
+        return Err(unconfined(stage, "unconfined-path"));
+    }
     let stage_path = root.join(stage);
     // The stage leaf must not exist, or must be removable as a plain
     // single-link file (a stale stage from a crashed run). A link,

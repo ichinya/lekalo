@@ -291,6 +291,10 @@ fn run_check(args: CheckArgs) -> Outcome {
         core::authority::qualify(&root(&args.project.project), &coverage, &authority)?;
         core::authority::ledger_complete(&coverage, &authority)?;
         core::coverage::admit(assignment, target, &coverage)?;
+        // Ownership provenance resolves against the locked components too
+        // (r4 finding 6): forged `profileRef`/`implementationRef` pins are
+        // refused at inspection time, not only at apply.
+        core::authority::resolve_target_provenance(target, &authority)?;
         // Every validated custom/foreign binding resolves to a real pinned
         // implementation file (finding K).
         core::bindings::resolve(&root(&args.project.project), target, &coverage)?;
@@ -361,6 +365,10 @@ fn run_plan(args: PlanArgs) -> Outcome {
     let authority = core::authority::derive(&selection(&args.project.project), &args.module)?;
     core::authority::qualify(&root(&args.project.project), &coverage, &authority)?;
     core::authority::ledger_complete(&coverage, &authority)?;
+    // Ownership provenance resolves against the locked components too
+    // (r4 finding 6): forged `profileRef`/`implementationRef` pins never
+    // produce a plan.
+    core::authority::resolve_target_provenance(target, &authority)?;
     // Every validated custom/foreign binding resolves to a real pinned
     // implementation file before any plan exists (finding K).
     core::bindings::resolve(&root(&args.project.project), target, &coverage)?;

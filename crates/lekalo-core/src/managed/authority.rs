@@ -43,6 +43,18 @@ pub struct Authority {
     /// digest, the launched-entry artifact digest). A managed generation
     /// requires a real locked adapter (finding 4).
     pub adapter: Option<LockedAdapter>,
+    /// The locked generators of the bound adapter (r4 finding 6): the
+    /// recipe provenance a coverage document may claim.
+    pub generators: Vec<LockedGenerator>,
+    /// The locked profile/generator components (r4 finding 6): the
+    /// provenance ownership references may claim.
+    pub components: Vec<LockedComponent>,
+    /// The exact Model source documents the authority derived from, as
+    /// `(logical path, byte digest)` pins (r4 finding 9): every mutable
+    /// input of the derived authority is re-digestable under the mutation
+    /// lock, so a racer that swaps a Model source between derivation and
+    /// commit cannot win.
+    pub sources: Vec<(String, String)>,
 }
 
 /// The exact Model semantics of one renderable obligation.
@@ -72,6 +84,30 @@ pub struct LockedAdapter {
     pub digest: String,
     /// The locked launched-entry artifact digest (platform `any`).
     pub entry_digest: String,
+}
+
+/// One locked generator: an independently versioned logical implementation
+/// inside an adapter package, with the exact implementation-descriptor
+/// digest the lock pins. Coverage recipe references must resolve against
+/// these (r4 finding 6): provenance stamped into artifact headers and the
+/// ownership manifest is verified lineage, never a caller-authored label.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LockedGenerator {
+    pub id: String,
+    pub version: String,
+    pub digest: String,
+    pub adapter_id: String,
+    pub adapter_version: String,
+}
+
+/// One locked profile/component pin: ownership `profileRef` and
+/// `implementationRef` references must resolve against the locked
+/// profile and generator components (r4 finding 6).
+#[derive(Clone, Debug, PartialEq)]
+pub struct LockedComponent {
+    pub id: String,
+    pub version: String,
+    pub digest: String,
 }
 
 fn invalid(reason: &str) -> DomainResult {
@@ -105,6 +141,9 @@ pub fn derive(selection: &LoadSelection, module: &str) -> Result<Authority, Doma
         Ok(root) => root,
         Err(error) => return Err(classify(error)),
     };
+    // The model pin is the exact payload bytes the accepted load envelope
+    // renders — the same digest the artifact-owner lane binds, so the
+    // governed manifest and the managed authority always agree.
     let model_json = match loader::run(selection, false) {
         crate::result::DomainResult::Valid {
             payload: crate::result::SuccessPayload::Model { json, .. },
@@ -112,10 +151,24 @@ pub fn derive(selection: &LoadSelection, module: &str) -> Result<Authority, Doma
         } => json,
         other => return Err(classify(other)),
     };
-    let model = match loader::normalize_model(selection) {
-        Ok(model) => model,
+    // The same load's snapshot carries the exact source documents the
+    // Model was derived from (r4 finding 9): the authority's Model digest
+    // and its source pins describe one project read.
+    let loaded = match loader::load_with_snapshot(selection) {
+        Ok(loaded) => loaded,
         Err(error) => return Err(classify(error)),
     };
+    let model = loaded.model;
+    let sources = loaded
+        .documents
+        .iter()
+        .map(|document| {
+            (
+                document.document.path.clone(),
+                super::digest(&document.bytes),
+            )
+        })
+        .collect::<Vec<_>>();
     let compilation = match crate::ir::compile(&model) {
         Ok(compilation) => compilation,
         Err(failure) => return Err(classify(failure.into_result())),
@@ -155,6 +208,34 @@ pub fn derive(selection: &LoadSelection, module: &str) -> Result<Authority, Doma
             .map(|artifact| artifact.digest().as_str().to_owned())
             .unwrap_or_default(),
     });
+    // The locked generator/profile provenance inventory (r4 finding 6):
+    // recipe and ownership references resolve against exactly these
+    // components, never against caller-authored pins alone.
+    let generators = lock
+        .generators()
+        .iter()
+        .map(|generator| LockedGenerator {
+            id: generator.id().as_str().to_owned(),
+            version: generator.version().as_str().to_owned(),
+            digest: generator.digest().as_str().to_owned(),
+            adapter_id: generator.adapter().id().as_str().to_owned(),
+            adapter_version: generator.adapter().version().as_str().to_owned(),
+        })
+        .collect::<Vec<_>>();
+    let mut components: Vec<LockedComponent> = lock
+        .profiles()
+        .iter()
+        .map(|profile| LockedComponent {
+            id: profile.id().as_str().to_owned(),
+            version: profile.version().as_str().to_owned(),
+            digest: profile.digest().as_str().to_owned(),
+        })
+        .collect();
+    components.extend(generators.iter().map(|generator| LockedComponent {
+        id: generator.id.clone(),
+        version: generator.version.clone(),
+        digest: generator.digest.clone(),
+    }));
     if adapter.is_some() {
         // The locked generator/profile attachments must resolve inside the
         // lock's own component graph: a profile or generator naming a
@@ -252,6 +333,9 @@ pub fn derive(selection: &LoadSelection, module: &str) -> Result<Authority, Doma
         ledger,
         semantics,
         adapter,
+        generators,
+        components,
+        sources,
     })
 }
 
@@ -346,11 +430,81 @@ pub fn qualify(
         // conformance probe requires the entry to carry the complete
         // request-handling surface of the adapter handshake — the describe
         // /validate/verify/generate operations and the protocol negotiation
-        // parameter — without executing anything (the planning lane stays
-        // offline).
+        // parameter — on its comment-free executable surface, without
+        // executing anything (the planning lane stays offline). A token
+        // scan over raw bytes would be comment-satisfiable (r4 finding 4).
         adapter_entry_conformance(&entry)?;
     }
+    // The recipe provenance resolves to a real locked generator bound to
+    // the generation's adapter (r4 finding 6): id, version, and digest
+    // must match a locked generator exactly — a caller-forged recipe pin
+    // never stamps artifact headers or the ownership manifest.
+    resolve_recipe_provenance(coverage, authority)?;
     semantics_match(coverage, authority)?;
+    Ok(())
+}
+
+/// The canonical semver of a token-spelled version: `1` → `1.0.0`, `1.2`
+/// → `1.2.0` (the same normalization the custody generator identity
+/// applies).
+fn canonical_version(version: &str) -> String {
+    match version.split('.').count() {
+        3 => version.to_owned(),
+        1 => format!("{version}.0.0"),
+        2 => format!("{version}.0"),
+        _ => version.to_owned(),
+    }
+}
+
+/// Whether the coverage's recipe reference names a real locked generator
+/// of the bound adapter (r4 finding 6). Provenance that does not resolve
+/// is refused before any plan exists.
+pub fn resolve_recipe_provenance(
+    coverage: &super::wire::Coverage,
+    authority: &Authority,
+) -> Result<(), DomainResult> {
+    let recipe = &coverage.recipe;
+    let resolved = authority.generators.iter().any(|generator| {
+        generator.id == recipe.id
+            && canonical_version(&generator.version) == canonical_version(&recipe.version)
+            && generator.digest == recipe.digest
+            && match &authority.adapter {
+                // The recipe must bind to the generation's adapter when
+                // one is locked.
+                Some(adapter) => {
+                    generator.adapter_id == adapter.id
+                        && generator.adapter_version == adapter.version
+                }
+                None => true,
+            }
+    });
+    if !resolved {
+        return Err(stale("recipe", "provenance"));
+    }
+    Ok(())
+}
+
+/// Whether one ownership target's `profileRef` and `implementationRef`
+/// resolve to real locked components (r4 finding 6): id, version, and
+/// digest must match a locked profile or generator exactly. Forged
+/// provenance never reaches a committed custody record.
+pub fn resolve_target_provenance(
+    target: &super::wire::TargetAssignment,
+    authority: &Authority,
+) -> Result<(), DomainResult> {
+    for (label, reference) in [
+        ("profileRef", &target.profile_ref),
+        ("implementationRef", &target.implementation_ref),
+    ] {
+        let resolved = authority.components.iter().any(|component| {
+            component.id == reference.id
+                && canonical_version(&component.version) == canonical_version(&reference.version)
+                && component.digest == reference.digest
+        });
+        if !resolved {
+            return Err(stale(label, "provenance"));
+        }
+    }
     Ok(())
 }
 
@@ -409,13 +563,15 @@ pub fn ledger_complete(
 }
 
 /// The bounded structural conformance probe of one locked adapter entry
-/// (finding 8): the entry bytes must carry the complete adapter handshake
-/// surface — every lifecycle operation and the protocol negotiation
-/// parameter. This is a source-surface check, not execution: the planning
-/// lane never launches processes. An entry without the full operation set
-/// is a capability claim without an implementation.
-fn adapter_entry_conformance(entry: &[u8]) -> Result<(), DomainResult> {
-    let Ok(text) = std::str::from_utf8(entry) else {
+/// (findings 8 and r4-4): the entry's comment-free executable surface must
+/// carry the complete adapter handshake surface — every lifecycle
+/// operation and the protocol negotiation parameter. This is a
+/// source-surface check, not execution: the planning lane never launches
+/// processes. An entry without the full operation set is a capability
+/// claim without an implementation; tokens that appear only inside
+/// comments are invisible.
+pub(crate) fn adapter_entry_conformance(entry: &[u8]) -> Result<(), DomainResult> {
+    let Some(text) = super::bindings::comment_free(entry) else {
         return Err(stale("adapter", "entry-encoding"));
     };
     for surface in [
@@ -498,6 +654,24 @@ pub fn semantics_match(
         };
         if !requirement.kind.renders() {
             continue;
+        }
+        // The emitted naming is Model-derived (r4 finding 5): a
+        // projection `to` names an emitted interface field, so under
+        // unchanged Model/IR/lock the emitted bytes may never move — the
+        // coverage may not rename the output surface. `to` must equal the
+        // Model-side `from` name; commands declare no return fields of
+        // their own, so an unbound `to` would be a coverage-owned rename
+        // wearing Model-derived provenance.
+        for projection in &requirement.projection {
+            if projection.to != projection.from {
+                return Err(super::diagnostic::failure(
+                    super::CAPABILITY_GAP,
+                    &[
+                        ("requirement", obligation.id.as_str()),
+                        ("reason", "projection-rename"),
+                    ],
+                ));
+            }
         }
         // The input side of the projection must witness exactly the
         // Model's declared input fields for commands (finding 4): the

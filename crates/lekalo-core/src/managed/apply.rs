@@ -199,6 +199,20 @@ pub fn apply(
         Some(target) => target,
         None => return stale("target", "unowned"),
     };
+    // Ownership provenance resolves against the locked components (r4
+    // finding 6): `profileRef`/`implementationRef` pins that name no real
+    // locked profile or generator never reach a committed custody record.
+    // The coverage recipe resolves the same way — the core refuses what
+    // the CLI qualification already refuses, so no caller path commits
+    // forged provenance.
+    if let Some(authority) = authority {
+        if let Err(error) = super::authority::resolve_target_provenance(target, authority) {
+            return error;
+        }
+        if let Err(error) = super::authority::resolve_recipe_provenance(&coverage, authority) {
+            return error;
+        }
+    }
     let admission = match super::coverage::admit(module, target, &coverage) {
         Ok(admission) => admission,
         Err(error) => return error,
@@ -273,6 +287,26 @@ pub fn apply(
             if live.as_deref() != Some(authority.lock_digest.as_str()) {
                 return Err(stale("lekalo.lock", "authority"));
             }
+            // Every mutable input of the derived authority is re-digested
+            // under the mutation lock (r4 finding 9): the exact Model
+            // source documents the authority was compiled from, the locked
+            // adapter entry bytes, and every validated binding file — a
+            // racer that swapped any of them between the preflight and
+            // this lock cannot commit a record whose pins attest states
+            // that were never simultaneously live.
+            for (path, digest) in &authority.sources {
+                match fs::read_file(root, path) {
+                    Ok(Some(bytes)) if super::digest(&bytes) == *digest => {}
+                    _ => return Err(stale(path, "model-source")),
+                }
+            }
+            if let Some(adapter) = &authority.adapter {
+                match fs::read_file(root, &coverage.adapter.entry) {
+                    Ok(Some(bytes)) if super::digest(&bytes) == adapter.entry_digest => {}
+                    _ => return Err(stale(&coverage.adapter.entry, "adapter-entry")),
+                }
+            }
+            super::bindings::resolve(root, target, &coverage)?;
         }
         let inputs = inputs_actual(root, &plan.input_closure)?;
         let before = before_state(root, Some(&plan))?;
@@ -512,32 +546,12 @@ fn staged_apply(
         .iter()
         .map(|artifact| (artifact.path.as_str(), artifact.bytes.as_slice()))
         .collect();
-    let mut pending = Vec::new();
-    for output in &plan.outputs {
-        match output.action {
-            OutputAction::Delete => pending.push(Pending {
-                path: output.path.clone(),
-                op: PendingOp::Delete,
-            }),
-            OutputAction::Create | OutputAction::Replace | OutputAction::Unchanged => {
-                pending.push(Pending {
-                    path: output.path.clone(),
-                    op: PendingOp::Publish,
-                });
-            }
-        }
-    }
-    // The governed manifest move is part of the transaction (findings 10
-    // and 11): recovery converges it from the exact before/after evidence.
-    pending.push(Pending {
-        path: super::custody::MANIFEST_LOGICAL.to_owned(),
-        op: PendingOp::Publish,
-    });
-    pending.sort_by(|left, right| (&left.path, &left.op).cmp(&(&right.path, &right.op)));
-    transaction.pending = pending;
-    transaction.state = TransactionState::Publishing;
-    history::write_transaction(root, &transaction)?;
-    // Build the committed record while every before byte is still on disk.
+    // The committed record is built and retained BEFORE the journal ever
+    // names a pending move (r4 finding 1): a crash can then leave either a
+    // journal with an empty pending set (nothing moved; abandons
+    // trivially) or a journal whose pending set already carries its
+    // generation pin — the anchor recovery requires. There is no window
+    // where pending moves exist without their anchored record.
     let mut record_outputs = Vec::new();
     for output in &plan.outputs {
         if output.action == OutputAction::Delete {
@@ -627,6 +641,33 @@ fn staged_apply(
     }
     record.record_digest = super::record_identity(&record);
     history::write_record(root, &record)?;
+    let mut pending = Vec::new();
+    for output in &plan.outputs {
+        match output.action {
+            OutputAction::Delete => pending.push(Pending {
+                path: output.path.clone(),
+                op: PendingOp::Delete,
+            }),
+            OutputAction::Create | OutputAction::Replace | OutputAction::Unchanged => {
+                pending.push(Pending {
+                    path: output.path.clone(),
+                    op: PendingOp::Publish,
+                });
+            }
+        }
+    }
+    // The governed manifest move is part of the transaction (findings 10
+    // and 11): recovery converges it from the exact before/after evidence.
+    pending.push(Pending {
+        path: super::custody::MANIFEST_LOGICAL.to_owned(),
+        op: PendingOp::Publish,
+    });
+    pending.sort_by(|left, right| (&left.path, &left.op).cmp(&(&right.path, &right.op)));
+    // The journal advances to publishing in one atomic update that
+    // already carries the generation pin: recovery's anchor (r4 finding
+    // 1) exists for every journal that names pending moves.
+    transaction.pending = pending;
+    transaction.state = TransactionState::Publishing;
     transaction.generation_digest = State::known(GenerationDigest {
         generation_digest: generation.clone(),
     });

@@ -64,7 +64,7 @@ pub fn binding_symbol(binding: &str, fallback_symbol: &str) -> Option<String> {
 /// removes `//` line comments and `/* */` block comments while respecting
 /// string and template literals, so a commented-out export never qualifies
 /// (finding 6). Unterminated constructs fail closed (scan aborted).
-fn comment_free(bytes: &[u8]) -> Option<String> {
+pub(crate) fn comment_free(bytes: &[u8]) -> Option<String> {
     let text = std::str::from_utf8(bytes).ok()?;
     let mut out = String::with_capacity(text.len());
     let mut characters = text.chars().peekable();
@@ -125,86 +125,205 @@ fn comment_free(bytes: &[u8]) -> Option<String> {
     Some(out)
 }
 
-/// Whether the executable source declares the symbol as a callable top-
-/// level export (finding 6): only `export function`/`export async
-/// function` declarations, `export class` declarations, and
-/// `export const/let/var <name> = (arrow | function | class)` initializers
-/// qualify — a plain `export const <name> = 7` is a named export without a
-/// callable value and is refused, and text inside comments is invisible.
+/// Whether `text[at..]` starts a word at `at`: the preceding character is
+/// not an identifier character, so `myfunction` never matches `function`.
+fn word_boundary_before(text: &str, at: usize) -> bool {
+    at == 0
+        || !text[..at]
+            .chars()
+            .next_back()
+            .is_some_and(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+}
+
+/// Whether the identifier is followed by a boundary in `tail`.
+fn word_boundary_after(tail: &str) -> bool {
+    tail.chars()
+        .next()
+        .map(|c| !c.is_ascii_alphanumeric() && c != '_' && c != '$')
+        .unwrap_or(true)
+}
+
+/// The substring following the parenthesis that opens at the start of
+/// `init`, with string literals and nested parentheses respected; `None`
+/// when the parenthesis never closes (fail closed).
+fn after_balanced_paren(init: &str) -> Option<&str> {
+    let mut depth = 0usize;
+    let mut quote: Option<char> = None;
+    let bytes = init.as_bytes();
+    let mut index = 0usize;
+    while index < bytes.len() {
+        let character = init[index..].chars().next()?;
+        if let Some(open) = quote {
+            if character == '\\' {
+                index += character.len_utf8();
+                index += init[index..].chars().next()?.len_utf8();
+                continue;
+            }
+            if character == open {
+                quote = None;
+            }
+        } else {
+            match character {
+                '"' | '\'' | '`' => quote = Some(character),
+                '(' => depth += 1,
+                ')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(&init[index + 1..]);
+                    }
+                }
+                _ => {}
+            }
+        }
+        index += character.len_utf8();
+    }
+    None
+}
+
+/// Whether one initializer expression is a callable value (finding 3):
+/// `function`/`async function`/`class` expressions, or a parenthesized
+/// arrow — `(params) =>` / `(params): Type =>` — never an arbitrary
+/// parenthesized expression like `(7)`.
+fn callable_initializer(init: &str) -> bool {
+    let init = init.trim_start();
+    if init.starts_with("function") || init.starts_with("class") {
+        return true;
+    }
+    if let Some(rest) = init.strip_prefix("async") {
+        if rest.starts_with(' ') || rest.starts_with('\t') {
+            return callable_initializer(rest);
+        }
+    }
+    if !init.starts_with('(') {
+        return false;
+    }
+    let Some(after) = after_balanced_paren(init) else {
+        return false;
+    };
+    let after = after.trim_start();
+    if after.starts_with("=>") {
+        return true;
+    }
+    // An optional TypeScript return-type annotation may sit between the
+    // parameter list and the arrow: `(a: T): Ret => ...`. The annotation
+    // is bounded; a `;` before any `=>` means this is not an arrow.
+    if let Some(annotation) = after.strip_prefix(':') {
+        let bound = annotation.len().min(200);
+        let window = &annotation[..bound];
+        match window.find(';') {
+            Some(semicolon) => window[..semicolon].contains("=>"),
+            None => window.contains("=>"),
+        }
+    } else {
+        false
+    }
+}
+
+/// Whether the executable source declares `name` as a callable binding
+/// anywhere (finding 3): a `function`/`async function`/`class` declaration
+/// of that exact name, or a `const/let/var name = <callable initializer>`
+/// whose initializer is a function/arrow/class expression — a plain value
+/// initializer (`const hook = 7`, `const hook = (7)`) never qualifies.
+fn declares_callable(text: &str, name: &str) -> bool {
+    for keyword in ["function", "class"] {
+        let mut from = 0usize;
+        while let Some(found) = text[from..].find(keyword) {
+            let at = from + found;
+            from = at + keyword.len();
+            if !word_boundary_before(text, at) {
+                continue;
+            }
+            // Generators spell `function* name`.
+            let mut tail = text[at + keyword.len()..].trim_start();
+            if let Some(rest) = tail.strip_prefix('*') {
+                tail = rest.trim_start();
+            }
+            if tail.starts_with(name) && word_boundary_after(&tail[name.len()..]) {
+                return true;
+            }
+        }
+    }
+    for keyword in ["const", "let", "var"] {
+        let mut from = 0usize;
+        while let Some(found) = text[from..].find(keyword) {
+            let at = from + found;
+            from = at + keyword.len();
+            if !word_boundary_before(text, at) {
+                continue;
+            }
+            let tail = text[at + keyword.len()..].trim_start();
+            let Some(after_name) = tail.strip_prefix(name) else {
+                continue;
+            };
+            if !word_boundary_after(after_name) {
+                continue;
+            }
+            let after_name = after_name.trim_start();
+            let Some(initializer) = after_name.strip_prefix('=') else {
+                continue;
+            };
+            if callable_initializer(initializer) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Whether the executable source exports the symbol as a callable top-
+/// level binding (findings 6 and r4-3): `export function`/`export async
+/// function`/`export class` declarations, `export const/let/var <name> =
+/// <callable expression>` initializers, and `export { … }` clauses whose
+/// local name resolves back to one of those callable declarations in the
+/// same file. A named export of a non-callable value (`const hook = 7;
+/// export { hook }`), an arbitrary parenthesized initializer (`export
+/// const hook = (7)`), and a re-export from another module (unverifiable
+/// here) never qualify. Text inside comments is invisible.
 pub(crate) fn exports_symbol(bytes: &[u8], symbol: &str) -> bool {
     let Some(text) = comment_free(bytes) else {
         return false;
     };
+    // Direct exported declaration forms.
     for line in text.lines() {
         let trimmed = line.trim_start();
         let Some(rest) = trimmed.strip_prefix("export ") else {
             continue;
         };
         if rest.starts_with('{') {
-            // `export { a, b as c }`: the symbol must appear as a name.
-            if rest
-                .trim_start_matches('{')
-                .trim_end_matches(['}', ';', ' ', '\t'])
-                .split(',')
-                .any(|clause| {
-                    let clause = clause.trim();
-                    clause == symbol
-                        || clause
-                            .split_once(" as ")
-                            .map(|(_, exported)| exported.trim() == symbol)
-                            .unwrap_or(false)
-                })
-            {
-                return true;
-            }
             continue;
         }
-        // `export function <name>`, `export async function <name>`,
-        // `export class <name>`: callable declarations.
-        let declares_callable_kind = |keyword: &str| {
-            rest.trim_start()
-                .strip_prefix(keyword)
-                .map(|tail| {
-                    tail.trim_start()
-                        .strip_prefix(symbol)
-                        .map(|after| {
-                            after
-                                .chars()
-                                .next()
-                                .map(|c| !c.is_ascii_alphanumeric() && c != '_')
-                                .unwrap_or(true)
-                        })
-                        .unwrap_or(false)
-                })
-                .unwrap_or(false)
-        };
-        if declares_callable_kind("function ")
-            || declares_callable_kind("async function ")
-            || declares_callable_kind("class ")
-        {
+        if declares_callable(rest, symbol) {
             return true;
         }
-        // `export const/let/var <name> = <callable expression>`: the
-        // initializer must be a function or arrow expression, not an
-        // arbitrary value (finding 6).
-        for keyword in ["const ", "let ", "var "] {
-            let Some(tail) = rest.trim_start().strip_prefix(keyword) else {
-                continue;
-            };
-            let Some(equals) = tail.find('=') else {
-                continue;
-            };
-            let declared = tail[..equals].trim();
-            if declared != symbol {
+    }
+    // Named-export clauses: `export { local as symbol }` resolves the
+    // local name back to its declaration in the same file and requires a
+    // callable form (r4 finding 3). A `from "…"` re-export names a
+    // binding this scan cannot verify and never qualifies.
+    for line in text.lines() {
+        let trimmed = line.trim_start();
+        let Some(rest) = trimmed.strip_prefix("export ") else {
+            continue;
+        };
+        let Some(list) = rest.strip_prefix('{') else {
+            continue;
+        };
+        let Some(close) = list.find('}') else {
+            continue;
+        };
+        if list[close + 1..].trim_start().starts_with("from") {
+            continue;
+        }
+        for clause in list[..close].split(',') {
+            let clause = clause.trim();
+            if clause.is_empty() {
                 continue;
             }
-            let initializer = tail[equals + 1..].trim_start();
-            let callable = initializer.starts_with("function")
-                || initializer.starts_with("async function")
-                || initializer.starts_with("class")
-                || initializer.starts_with("(")
-                || initializer.starts_with("async (");
-            if callable {
+            let (local, exported) = match clause.split_once(" as ") {
+                Some((local, exported)) => (local.trim(), exported.trim()),
+                None => (clause, clause),
+            };
+            if exported == symbol && declares_callable(&text, local) {
                 return true;
             }
         }
