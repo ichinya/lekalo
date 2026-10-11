@@ -523,6 +523,100 @@ try {
       rmSync(project, { recursive: true, force: true });
       passed += 1;
     }
+
+    // 6d. A PRESENT BUT UNREADABLE source is never overwritten by the
+    //     phase-4 forward replace (finding r7 1): the pre-fix `Err` arm
+    //     replaced a source whose bytes it failed to READ —
+    //     `replace_file` needs only `symlink_metadata` and a directory
+    //     rename — destroying unverified bytes. The probe overwrites the
+    //     (late-sorting) scheduling module with a user edit and chmods
+    //     it 000 inside the ~200-replacement window after
+    //     planner/module.yaml flips; the refusal must preserve the edit
+    //     byte-exact, roll the applied prefix back, retain the journal
+    //     (readers fail closed), and report the typed custody conflict.
+    //     Restoring the original bytes then lets the explicit format
+    //     recover the armed journal and reach the canonical fixed point —
+    //     the armed journal is a decision, never a wedge.
+    {
+      const project = seed("phase4-unreadable", "seeds/noncanonical");
+      for (let index = 0; index < 200; index += 1) {
+        const directory = `q${String(index).padStart(3, "0")}`;
+        const module = join(project, "lekalo/modules", directory);
+        mkdirSync(module, { recursive: true });
+        writeFileSync(
+          join(module, "module.yaml"),
+          Buffer.from(`schema_version: '0.2.16'\ndefinitions:\n  - id: ${directory}\n    kind: module\n    version: 1\n    description: window module ${directory}\n`)
+        );
+      }
+      const plannerModule = join(project, "lekalo/modules/planner/module.yaml");
+      const originalPlanner = readFileSync(plannerModule);
+      const scheduling = modulePath(project);
+      const originalScheduling = readFileSync(scheduling);
+      const userEdit = Buffer.from("USER EDIT UNDER UNREADABLE\n");
+      let conflict;
+      try {
+        const child = spawn(binary, ["format"], {
+          cwd: project,
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+        let output = "";
+        child.stdout.on("data", (chunk) => { output += chunk; });
+        child.stderr.on("data", (chunk) => { output += chunk; });
+        const exited = new Promise((resolveExit) =>
+          child.once("exit", (code, signal) => resolveExit({ code, signal }))
+        );
+        // Inject the edit plus mode-000 the moment the formatter's own
+        // replacement of planner/module.yaml is on disk (index 1 of the
+        // changed set): the ~200 q-modules that sort before scheduling
+        // keep phase 4 busy, so the read of the scheduling module always
+        // meets the unreadable bytes.
+        const deadline = Date.now() + 120000;
+        let injected = false;
+        while (Date.now() < deadline) {
+          if (!readFileSync(plannerModule).equals(originalPlanner)) {
+            writeFileSync(scheduling, userEdit);
+            chmodSync(scheduling, 0o000);
+            injected = true;
+            break;
+          }
+          if (child.exitCode !== null || child.signalCode !== null) break;
+          await new Promise((resolveTick) => setTimeout(resolveTick, 1));
+        }
+        assert.ok(injected, "the probe observed the replaced prefix");
+        conflict = await exited;
+        assert.equal(conflict.code, 3, `the typed conflict denial: ${conflict.code} ${conflict.signal} ${output}`);
+        assert.match(output, /format\.source-changed/, "the registered conflict identity");
+        // The unread bytes survive untouched: readable again, the file
+        // still carries the injected edit — never the formatted
+        // candidate, never the original.
+        chmodSync(scheduling, 0o644);
+        assert.ok(readFileSync(scheduling).equals(userEdit), "the unread edit is preserved byte-exact");
+        // The already-applied prefix was rolled back to its preimages.
+        assert.ok(readFileSync(plannerModule).equals(originalPlanner), "the applied prefix is restored");
+        // The journal is retained (fail closed), never cleared by the
+        // refusal.
+        const plans = readdirSync(formatHome(project)).filter(
+          (name) => name !== "active.lock" && name !== "temps"
+        );
+        assert.equal(plans.length, 1, "one plan home");
+        assert.ok(existsSync(join(formatHome(project), plans[0], "journal.json")), "the journal stays armed");
+        assert.equal(run(project, ["load"]).status, 1, "readers fail closed on the retained journal");
+        // The lifecycle completes once the user discards the edit: the
+        // explicit format recovers the armed journal, then reapplies to
+        // the canonical fixed point.
+        writeFileSync(scheduling, originalScheduling);
+        const recovered = run(project, ["format"]);
+        assert.equal(recovered.status, 0, recovered.stdout + recovered.stderr);
+        assert.ok(!existsSync(join(formatHome(project), plans[0], "journal.json")), "recovery cleared the journal");
+        const golden = join(fixtures, "planner-canonical/lekalo/modules/scheduling/module.yaml");
+        assert.ok(readFileSync(scheduling).equals(readFileSync(golden)), "the tree reaches the canonical fixed point");
+        assert.equal(run(project, ["format", "--check"]).status, 0, "idempotent at the fixed point");
+      } finally {
+        chmodSync(scheduling, 0o644);
+      }
+      rmSync(project, { recursive: true, force: true });
+      passed += 1;
+    }
   }
 
   // 7. Boundary-size real crash and recovery (finding r5 2): an

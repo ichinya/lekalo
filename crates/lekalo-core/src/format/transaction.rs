@@ -18,6 +18,11 @@
 //!   untouched with the journal retained, and the run ends in the
 //!   explicit conflict decision instead of a declared restoration
 //!   (finding r5 1);
+//! - a phase-4 source whose live bytes cannot be read — present but
+//!   unreadable — is never replaced: the unverified overwrite is
+//!   refused, the applied prefix rolls back custody-checked, the journal
+//!   stays armed, and the custody conflict reports the unverifiable
+//!   marker digest (finding r7 1);
 //! - while a durable journal exists, every loader entry path fails closed
 //!   with `format.recovery-required`; the ownership lock alone is never
 //!   a reader signal;
@@ -836,6 +841,15 @@ mod open_flags {
 /// SHA-256 of existing bytes, so the conflict is always reported.
 const DELETED_DIGEST: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 
+/// The conflict-side digest spelling of a present-but-unreadable
+/// pinned source (finding r7 1): the all-'f' spelling — neither the
+/// deleted zero spelling nor a digest any run of this transaction
+/// pinned or compared — marks bytes the transaction could not read,
+/// and therefore never verified, at the moment of the conflict. Phase
+/// 4 refuses to replace such a source and reports this conflict
+/// instead of an unverified overwrite.
+const UNREADABLE_DIGEST: &str = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+
 /// Parse and fully validate one bounded recovery record (finding A).
 macro_rules! validated_record {
     ($write:expr, $path:expr, $plan_id:expr, $reason:literal, $type:ty) => {{
@@ -1301,8 +1315,7 @@ fn apply_locked(
     // replacement temps carry the "apply" stage key; the rollback below
     // carries "restore".
     for (index, (path, before, _)) in files.iter().enumerate() {
-        let current = write.read_file(path);
-        let replaced = match current {
+        let replaced = match write.read_file(path) {
             Ok(bytes) => {
                 let digest = crate::digest::sha256_hex(&bytes);
                 if &digest != before {
@@ -1314,7 +1327,26 @@ fn apply_locked(
                 }
                 write.replace_file(path, &after_bytes[index], "apply")
             }
-            Err(_) => write.replace_file(path, &after_bytes[index], "apply"),
+            Err(_) => {
+                // A present-but-unreadable source (finding r7 1): its
+                // live bytes cannot be compared to the pinned `before`,
+                // so the transaction cannot prove it owns the
+                // destination — `replace_file` would need only
+                // `symlink_metadata` and a directory rename, so the
+                // forward write is refused outright, never landed over
+                // unverified bytes. The already-applied prefix rolls
+                // back through the same custody-checked restore as
+                // every other replacement failure, the journal stays
+                // armed, and the custody conflict is reported.
+                let outcome = restore_prefix(write, plan_id, &manifest, index);
+                return Err(unreadable_source_failure(
+                    write,
+                    &journal_path,
+                    path,
+                    before,
+                    outcome,
+                ));
+            }
         };
         if replaced.is_err() {
             let outcome = restore_prefix(write, plan_id, &manifest, index);
@@ -1518,6 +1550,38 @@ fn rollback_failure(
             current,
         },
         Rollback::Failed(error) => ApplyFailure::RecoveryError(error),
+    }
+}
+
+/// The terminal failure of a present-but-unreadable phase-4 source
+/// (finding r7 1). The forward write was refused because the source's
+/// live bytes could not be compared to the pinned `before` — replacing
+/// would have needed only `symlink_metadata` and a directory rename, so
+/// any present bytes (a concurrent edit under a permission flip, a
+/// share-mode denial) would have been overwritten unverified. The
+/// applied prefix was rolled back through the same custody-checked
+/// restore as every other replacement failure, but the journal is
+/// retained even by a fully restored prefix: the unreadable bytes were
+/// never verified, so the tree is not proven to be the pre-apply
+/// state — the explicit conflict decision through recovery stays
+/// armed, exactly like a custody conflict. A prefix destination the
+/// rollback could not prove owned names its own conflict; material
+/// failures stay the fail-closed recovery refusal. Both retain the
+/// journal, exactly like `rollback_failure`.
+fn unreadable_source_failure(
+    write: &FormatWrite,
+    journal_path: &str,
+    path: &str,
+    expected: &str,
+    outcome: Rollback,
+) -> ApplyFailure {
+    match outcome {
+        Rollback::Restored => ApplyFailure::SourceChanged {
+            path: path.to_owned(),
+            expected: expected.to_owned(),
+            current: UNREADABLE_DIGEST.to_owned(),
+        },
+        other => rollback_failure(write, journal_path, "replace", other),
     }
 }
 
@@ -3017,5 +3081,201 @@ mod transaction_probes {
             .validate(&homes[0])
             .expect("the reader's own validation accepts the emitted record");
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    // Finding r7 1 (the phase-4 forward replace): a present source whose
+    // live bytes become unreadable mid-transaction — a POSIX permission
+    // flip, or a Windows read-denying share-mode handle that still
+    // shares delete — must never be replaced. The pre-fix arm replaced
+    // such a source anyway (`replace_file` needs only `symlink_metadata`
+    // and a directory rename), landing the verified `after` bytes over
+    // content whose current digest was never compared to the pinned
+    // `before`. The probe injects a real user edit plus the
+    // unreadability the moment the durable journal lands (phase 3,
+    // after every backup succeeded), with the target sorting behind a
+    // window of changed sources, then asserts the refusal: the typed
+    // custody conflict with the unverifiable marker digest, the
+    // injected bytes preserved byte-exact, the already-applied prefix
+    // rolled back, and the journal retained for the explicit conflict
+    // decision.
+    #[test]
+    fn an_unreadable_source_is_refused_not_overwritten() {
+        let (selector, root) = sandbox("phase4-unreadable");
+        let original = b"original: bytes\n";
+        let candidate = b"replacement: bytes\n";
+        let before = crate::digest::sha256_hex(original);
+        let after = crate::digest::sha256_hex(candidate);
+        let seed = b"seed: bytes\n";
+        let user_edit = b"USER EDIT UNDER UNREADABLE\n";
+        let target_path = "lekalo/modules/zz-unreadable/module.yaml";
+        let target = root.join(target_path);
+        std::fs::create_dir_all(target.parent().expect("parent")).expect("target dir");
+        std::fs::write(&target, seed).expect("target seed");
+        let mut files: Vec<(String, String, String)> = Vec::new();
+        let mut after_bytes: Vec<Vec<u8>> = Vec::new();
+        let mut window = Vec::new();
+        for index in 0..300 {
+            let path = format!("lekalo/modules/w{index:03}/module.yaml");
+            let physical = root.join(&path);
+            std::fs::create_dir_all(physical.parent().expect("parent")).expect("window dir");
+            std::fs::write(&physical, original).expect("window source");
+            window.push(physical);
+            files.push((path, before.clone(), after.clone()));
+            after_bytes.push(candidate.to_vec());
+        }
+        files.push((
+            target_path.to_owned(),
+            crate::digest::sha256_hex(seed),
+            after.clone(),
+        ));
+        after_bytes.push(candidate.to_vec());
+
+        // The watcher: the moment the durable journal exists (phase 3),
+        // overwrite the target with the user edit and make its present
+        // bytes unreadable — the exact reachable states of the finding.
+        // The 300-file window keeps phase 4 busy long after the journal
+        // lands, so the injection always precedes the target's read.
+        let watch_root = root.clone();
+        let held: std::sync::Arc<std::sync::Mutex<Option<std::fs::File>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(None));
+        let watcher_held = held.clone();
+        let watcher_target = target.clone();
+        let watcher = std::thread::spawn(move || {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+            while std::time::Instant::now() < deadline {
+                if journal_armed(&watch_root) {
+                    std::fs::write(&watcher_target, user_edit).expect("inject the edit");
+                    make_unreadable(&watcher_target, &watcher_held);
+                    return;
+                }
+                std::thread::yield_now();
+            }
+            panic!("the probe never observed the durable journal");
+        });
+
+        let policy_digest = supported_policy_digest().to_owned();
+        let failure = apply(
+            &Some(selector.clone()),
+            &policy_digest,
+            &files,
+            &after_bytes,
+            None,
+        )
+        .expect_err("the unreadable source is refused, never replaced");
+        watcher.join().expect("the watcher injected");
+        match failure {
+            ApplyFailure::SourceChanged {
+                path,
+                expected,
+                current,
+            } => {
+                assert_eq!(path, target_path);
+                assert_eq!(expected, crate::digest::sha256_hex(seed));
+                assert_eq!(
+                    current, UNREADABLE_DIGEST,
+                    "the unverifiable marker digest of the unread bytes"
+                );
+            }
+            other => panic!("the typed custody conflict, got {other:?}"),
+        }
+        restore_readable(&target, &held);
+        assert_eq!(
+            std::fs::read(&target).expect("target readable again"),
+            user_edit,
+            "the unread bytes are preserved untouched — no unverified overwrite"
+        );
+        for physical in &window {
+            assert_eq!(
+                std::fs::read(physical).expect("window source"),
+                original,
+                "the already-applied prefix is rolled back"
+            );
+        }
+        let homes = plan_homes(&root);
+        assert_eq!(homes.len(), 1, "one plan home");
+        assert!(
+            root.join(".lekalo/cache/format")
+                .join(&homes[0])
+                .join(JOURNAL)
+                .exists(),
+            "the journal stays armed for the explicit conflict decision"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Whether any plan home currently carries a durable journal.
+    fn journal_armed(root: &Path) -> bool {
+        let Ok(entries) = std::fs::read_dir(root.join(".lekalo/cache/format")) else {
+            return false;
+        };
+        entries.flatten().any(|entry| {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            name != ACTIVE_LOCK && name != TEMP_HOME_NAME && entry.path().join(JOURNAL).exists()
+        })
+    }
+
+    /// Make one present file's bytes unreadable while a replacement
+    /// stays possible (the reachable states of finding r7 1): POSIX
+    /// mode-000, or a Windows handle that denies read sharing but still
+    /// shares delete/rename. The handle is held until the assertions
+    /// release it.
+    fn make_unreadable(
+        path: &Path,
+        held: &std::sync::Arc<std::sync::Mutex<Option<std::fs::File>>>,
+    ) {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o000))
+                .expect("mode-000");
+            let _ = held;
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            use windows_sys::Win32::Storage::FileSystem::{FILE_SHARE_DELETE, FILE_SHARE_WRITE};
+            let file = std::fs::OpenOptions::new()
+                .read(true)
+                .share_mode(FILE_SHARE_DELETE | FILE_SHARE_WRITE)
+                .open(path)
+                .expect("read-denying share handle");
+            *held.lock().expect("held") = Some(file);
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            let _ = (path, held);
+            panic!("no unreadability simulation for this platform");
+        }
+        // The simulation must be provably effective before the race
+        // starts: a filesystem or privilege context that ignores the
+        // denial (a metadata-less bind mount, a root runner) would
+        // otherwise silently exercise the digest-mismatch refusal —
+        // a different arm — and pass without ever probing the fix.
+        if std::fs::read(path).is_ok() {
+            panic!("the unreadability simulation is ineffective here");
+        }
+    }
+
+    /// Undo [`make_unreadable`] so the assertions can read the bytes.
+    fn restore_readable(
+        path: &Path,
+        held: &std::sync::Arc<std::sync::Mutex<Option<std::fs::File>>>,
+    ) {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o644))
+                .expect("mode-644");
+            let _ = held;
+        }
+        #[cfg(windows)]
+        {
+            drop(held.lock().expect("held").take());
+            let _ = path;
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            let _ = (path, held);
+        }
     }
 }
