@@ -1074,7 +1074,7 @@
       "kind": "command",
       "command": "module api check",
       "usage": "lekalo module api check [OPTIONS] --api <PATH>",
-      "helpDigest": "sha256:9445f5ac95f860e23900c06b19414a4c93b1a2fa1a0992f276cc76a1c49ca278",
+      "helpDigest": "sha256:240ed1da7061387d4eff2d08bdd0c11ab1173f191daa28fa6a3b89fab5ffa75b",
       "summary": "Validate the whole bound project against the attachment: imports, export closures, applicable obligations, effects, and consumers",
       "leaf": true,
       "owner": "docs/bootstrap.md",
@@ -2513,7 +2513,7 @@
       "id": "contract:contracts/diagnostic-registry.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.8.0.json",
-      "sourceDigest": "sha256:10220b72ac4c1e67c21b9f0eafd8ffb94ccc99c25a639605cd82643ab94b1f68",
+      "sourceDigest": "sha256:55c4edab65544183121f5312219a152dd5849d8e8ff674fc50500418367e83ff",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2819,7 +2819,7 @@
       "id": "contract:contracts/module-api.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/module-api.schema.v0.8.0.json",
-      "sourceDigest": "sha256:748b020e51c45bd550a0d81dec8f865f0558700ce5920736cdf5cc9a733484a4",
+      "sourceDigest": "sha256:773b7b7daf5f3f9cc5fd477a1052389be1c6b0bdde759c30d431e388c9cdbb79",
       "owner": "docs/module-api.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2837,7 +2837,7 @@
       "id": "contract:contracts/module-public-contract.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/module-public-contract.schema.v0.8.0.json",
-      "sourceDigest": "sha256:9647c68b3059ede612d430ea15bf245d08c0cad3dec5dfc046b27afddf694807",
+      "sourceDigest": "sha256:600d6382728633500b00a7569f5b08f5dfe711f2049bffe9c7d41d2497709a82",
       "owner": "docs/module-api.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
