@@ -37,7 +37,14 @@ pub const MANIFEST_LOGICAL: &str = ".lekalo/generated/manifests/ownership.json";
 
 /// Retain one generation's exact published manifest bytes under the
 /// custody home (`managed/manifests/<generation hex>`), so rollback can
-/// restore the destination's own governed manifest (finding 9). Idempotent.
+/// restore the destination's own governed manifest (finding 9).
+/// Idempotent for identical bytes only (r6, devin F4): a different
+/// document already sitting at a retained-manifest name — a pre-planted
+/// forged snapshot the rollback/recovery paths would otherwise treat as
+/// the authoritative restoration source — is a conflict, never a silent
+/// adoption. The retained snapshot of a generation is deterministic, so
+/// different bytes under one generation name are a writer's plant or
+/// divergence, in both directions refused.
 pub fn retain_manifest(root: &Path, generation: &str, bytes: &[u8]) -> Result<(), DomainResult> {
     let hex = generation.strip_prefix("sha256:").unwrap_or(generation);
     if hex.len() != 64
@@ -48,8 +55,11 @@ pub fn retain_manifest(root: &Path, generation: &str, bytes: &[u8]) -> Result<()
         return Err(invalid("generation-digest"));
     }
     let logical = super::history::custody_logical(&format!("manifests/{hex}"));
-    if matches!(super::fs::read_file(root, &logical), Ok(Some(_))) {
-        return Ok(());
+    if let Ok(Some(existing)) = super::fs::read_file(root, &logical) {
+        if super::digest(&existing) == super::digest(bytes) {
+            return Ok(());
+        }
+        return Err(invalid("manifest-conflict"));
     }
     super::fs::write_file(root, &logical, bytes).map_err(|_| invalid("manifest-retain"))
 }

@@ -64,6 +64,10 @@ pub fn generated_roots(
 ///
 /// `inputs` must already be the caller's exact closure; ordering and pin
 /// shape are validated here. The before-state comes from recorded custody.
+/// `semantics` is the derived authority's obligation semantics for this
+/// module (r6, codex F9): the rendered interface types are Model-derived,
+/// so the deterministic inventory is a function of Model + coverage, never
+/// of coverage samples alone.
 #[allow(clippy::too_many_arguments)]
 pub fn build(
     action: PlanAction,
@@ -74,6 +78,7 @@ pub fn build(
     previous_generation: Option<String>,
     _lock_pin: Option<String>,
     coverage_digest: String,
+    semantics: &[super::authority::Obligation],
 ) -> Result<GenerationPlan, DomainResult> {
     if !inputs
         .iter()
@@ -86,7 +91,7 @@ pub fn build(
     if super::has_duplicates(closure.iter().map(|p| &p.path)) {
         return Err(invalid("input-closure"));
     }
-    let rendered = render_inventory(coverage, &admission.generated_root)?;
+    let rendered = render_inventory(coverage, &admission.generated_root, semantics)?;
     let mut outputs = Vec::with_capacity(rendered.len());
     for artifact in &rendered {
         let after = super::digest(&artifact.bytes);

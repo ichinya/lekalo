@@ -431,8 +431,11 @@ fn run_plan(args: PlanArgs) -> Outcome {
         }
     }
     // Unclaimed files at a would-be create path are never invisible at
-    // planning time either.
-    if let Ok(inventory) = core::canonical::render_inventory(&coverage, &target.generated_root) {
+    // planning time either. The pre-scan renders with the Model-derived
+    // semantics (r6, codex F9): the interface types are Model-owned.
+    if let Ok(inventory) =
+        core::canonical::render_inventory(&coverage, &target.generated_root, &authority.semantics)
+    {
         for artifact in &inventory {
             if before.actual.contains_key(&artifact.path) {
                 continue;
@@ -473,6 +476,7 @@ fn run_plan(args: PlanArgs) -> Outcome {
         previous,
         None,
         core::hash(&coverage),
+        &authority.semantics,
     )?;
     let action = match plan.action {
         core::PlanAction::Promotion => "promotion",

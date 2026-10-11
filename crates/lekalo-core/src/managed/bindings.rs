@@ -60,13 +60,35 @@ pub fn binding_symbol(binding: &str, fallback_symbol: &str) -> Option<String> {
     Some(symbol)
 }
 
-/// The comment-free surface of the pinned bytes: a bounded scanner that
-/// removes `//` line comments and `/* */` block comments while respecting
-/// string and template literals, so a commented-out export never qualifies
-/// (finding 6). Unterminated constructs fail closed (scan aborted).
-pub(crate) fn comment_free(bytes: &[u8]) -> Option<String> {
+/// The scanned surface of pinned source bytes (r6, devin F2 / codex F7):
+/// one bounded span machine that strips comments and records every
+/// string/template literal, producing the two surfaces the structural
+/// qualifiers consume:
+///
+/// - `code`: comment-free text whose string *contents* are blanked (the
+///   quote characters themselves survive), so neither comments nor
+///   inert literals can ever satisfy a token scan;
+/// - `top_level`: the `code` surface with every nested `{ … }` region
+///   (function/class bodies, blocks) blanked as well, so a declaration
+///   inside another scope is invisible to the callable scan;
+/// - `literals`: the exact contents of every string/template literal, so
+///   a token may qualify as a *standalone quoted key* (`"describe"`)
+///   rather than only structurally.
+///
+/// Unterminated comments or literals fail closed (scan aborted).
+pub(crate) struct Surface {
+    pub code: String,
+    pub top_level: String,
+    pub literals: Vec<String>,
+}
+
+/// Scan pinned bytes into the [`Surface`] surfaces. Shared by the binding
+/// callable qualifier and the adapter-entry conformance probe.
+pub(crate) fn scan_surface(bytes: &[u8]) -> Option<Surface> {
     let text = std::str::from_utf8(bytes).ok()?;
-    let mut out = String::with_capacity(text.len());
+    let mut code = String::with_capacity(text.len());
+    let mut top_level = String::with_capacity(text.len());
+    let mut literals = Vec::new();
     let mut characters = text.chars().peekable();
     #[derive(PartialEq)]
     enum Span {
@@ -76,53 +98,89 @@ pub(crate) fn comment_free(bytes: &[u8]) -> Option<String> {
         Str(char),
     }
     let mut span = Span::Code;
+    let mut depth = 0usize;
+    let mut literal = String::new();
+    let mut unterminated = false;
     while let Some(character) = characters.next() {
+        let mut string_char = false; // blank on BOTH surfaces
+        let mut nested = false; // blank on the top-level surface only
         match span {
             Span::Code => {
                 if character == '/' && characters.peek() == Some(&'/') {
                     characters.next();
                     span = Span::Line;
+                    unterminated = true;
+                    continue;
                 } else if character == '/' && characters.peek() == Some(&'*') {
                     characters.next();
                     span = Span::Block;
+                    unterminated = true;
+                    continue;
+                } else if character == '"' || character == '\'' || character == '`' {
+                    span = Span::Str(character);
+                    literal.clear();
+                    unterminated = true;
+                    string_char = true;
                 } else {
-                    if character == '"' || character == '\'' || character == '`' {
-                        span = Span::Str(character);
+                    if character == '{' {
+                        depth += 1;
+                    } else if character == '}' && depth > 0 {
+                        depth -= 1;
                     }
-                    out.push(character);
+                    nested = depth > 0 && character != '\n';
                 }
             }
             Span::Line => {
                 if character == '\n' {
                     span = Span::Code;
-                    out.push(character);
+                    unterminated = false;
+                } else {
+                    continue;
                 }
             }
             Span::Block => {
                 if character == '*' && characters.peek() == Some(&'/') {
                     characters.next();
                     span = Span::Code;
-                    out.push(' ');
+                    unterminated = false;
+                    code.push(' ');
+                    top_level.push(' ');
+                    continue;
                 }
+                continue;
             }
             Span::Str(quote) => {
-                out.push(character);
+                string_char = true;
                 if character == '\\' {
                     if let Some(escaped) = characters.next() {
-                        out.push(escaped);
+                        literal.push(escaped);
                     }
                 } else if character == quote {
                     span = Span::Code;
+                    unterminated = false;
+                    literals.push(literal.clone());
+                } else {
+                    literal.push(character);
                 }
             }
         }
+        code.push(if string_char { ' ' } else { character });
+        top_level.push(if string_char || nested {
+            ' '
+        } else {
+            character
+        });
     }
     // A comment or literal left open at EOF fails closed: the surface is
     // not provably the executable source.
-    if span == Span::Line || span == Span::Block {
+    if unterminated {
         return None;
     }
-    Some(out)
+    Some(Surface {
+        code,
+        top_level,
+        literals,
+    })
 }
 
 /// Whether `text[at..]` starts a word at `at`: the preceding character is
@@ -181,12 +239,14 @@ fn after_balanced_paren(init: &str) -> Option<&str> {
 }
 
 /// Whether one initializer expression is a callable value (finding 3):
-/// `function`/`async function`/`class` expressions, or a parenthesized
-/// arrow — `(params) =>` / `(params): Type =>` — never an arbitrary
-/// parenthesized expression like `(7)`.
+/// `function`/`async function` expressions or a parenthesized arrow —
+/// `(params) =>` / `(params): Type =>` — never an arbitrary parenthesized
+/// expression like `(7)`, and never a class expression: the generated
+/// handler invokes bindings with a plain call, so a class-shaped value
+/// cannot execute as one (r6, devin F2b / codex F7).
 fn callable_initializer(init: &str) -> bool {
     let init = init.trim_start();
-    if init.starts_with("function") || init.starts_with("class") {
+    if init.starts_with("function") {
         return true;
     }
     if let Some(rest) = init.strip_prefix("async") {
@@ -219,13 +279,18 @@ fn callable_initializer(init: &str) -> bool {
     }
 }
 
-/// Whether the executable source declares `name` as a callable binding
-/// anywhere (finding 3): a `function`/`async function`/`class` declaration
-/// of that exact name, or a `const/let/var name = <callable initializer>`
-/// whose initializer is a function/arrow/class expression — a plain value
-/// initializer (`const hook = 7`, `const hook = (7)`) never qualifies.
+/// Whether the executable source declares `name` as a callable binding in
+/// a **top-level executable position** (finding 3; r6 devin F2 / codex
+/// F7): a `function`/`async function` declaration of that exact name, or a
+/// `const/let/var name = <callable initializer>` whose initializer is a
+/// function/arrow expression — a plain value initializer (`const hook =
+/// 7`, `const hook = (7)`) never qualifies, a class declaration never
+/// qualifies (the emitted test invokes plain calls), a declaration nested
+/// inside another scope's braces never qualifies, and text inside a string
+/// literal never qualifies: the scan runs over the top-level surface of
+/// [`scan_surface`], where nested bodies and literal contents are blank.
 fn declares_callable(text: &str, name: &str) -> bool {
-    for keyword in ["function", "class"] {
+    for keyword in ["function"] {
         let mut from = 0usize;
         while let Some(found) = text[from..].find(keyword) {
             let at = from + found;
@@ -272,19 +337,27 @@ fn declares_callable(text: &str, name: &str) -> bool {
 
 /// Whether the executable source exports the symbol as a callable top-
 /// level binding (findings 6 and r4-3): `export function`/`export async
-/// function`/`export class` declarations, `export const/let/var <name> =
-/// <callable expression>` initializers, and `export { … }` clauses whose
-/// local name resolves back to one of those callable declarations in the
-/// same file. A named export of a non-callable value (`const hook = 7;
-/// export { hook }`), an arbitrary parenthesized initializer (`export
-/// const hook = (7)`), and a re-export from another module (unverifiable
-/// here) never qualify. Text inside comments is invisible.
+/// function` declarations, `export const/let/var <name> = <callable
+/// expression>` initializers, and `export { … }` clauses whose local name
+/// resolves back to one of those callable declarations in the same file.
+/// The whole qualification runs over the scanned surfaces of
+/// [`scan_surface`] (r6, devin F2 / codex F7): string-literal decoys are
+/// blank (a `"function hook(){}"` inside a literal is invisible), nested
+/// declarations are blank (a `function hook` inside another function's
+/// body does not satisfy an `export { hook }` clause), and class-shaped
+/// bindings never qualify — the emitted test invokes plain calls, so a
+/// constructor-only value would fail natively. A named export of a
+/// non-callable value (`const hook = 7; export { hook }`), an arbitrary
+/// parenthesized initializer (`export const hook = (7)`), and a re-export
+/// from another module (unverifiable here) never qualify. Text inside
+/// comments is invisible.
 pub(crate) fn exports_symbol(bytes: &[u8], symbol: &str) -> bool {
-    let Some(text) = comment_free(bytes) else {
+    let Some(surface) = scan_surface(bytes) else {
         return false;
     };
-    // Direct exported declaration forms.
-    for line in text.lines() {
+    // Direct exported declaration forms: only lines that begin at
+    // top-level depth survive on the top-level surface.
+    for line in surface.top_level.lines() {
         let trimmed = line.trim_start();
         let Some(rest) = trimmed.strip_prefix("export ") else {
             continue;
@@ -297,10 +370,10 @@ pub(crate) fn exports_symbol(bytes: &[u8], symbol: &str) -> bool {
         }
     }
     // Named-export clauses: `export { local as symbol }` resolves the
-    // local name back to its declaration in the same file and requires a
-    // callable form (r4 finding 3). A `from "…"` re-export names a
-    // binding this scan cannot verify and never qualifies.
-    for line in text.lines() {
+    // local name back to its top-level declaration in the same file and
+    // requires a callable form (r4 finding 3). A `from "…"` re-export
+    // names a binding this scan cannot verify and never qualifies.
+    for line in surface.code.lines() {
         let trimmed = line.trim_start();
         let Some(rest) = trimmed.strip_prefix("export ") else {
             continue;
@@ -323,7 +396,7 @@ pub(crate) fn exports_symbol(bytes: &[u8], symbol: &str) -> bool {
                 Some((local, exported)) => (local.trim(), exported.trim()),
                 None => (clause, clause),
             };
-            if exported == symbol && declares_callable(&text, local) {
+            if exported == symbol && declares_callable(&surface.top_level, local) {
                 return true;
             }
         }

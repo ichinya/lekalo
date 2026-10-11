@@ -97,12 +97,26 @@ fn invalid(reason: &str) -> DomainResult {
 }
 
 /// The anchored target record of one journal: the generation named by the
-/// journal must sit on the committed lineage — the committed generation
-/// itself, one of its retained ancestors (a rollback destination), or its
-/// direct retained successor (an interrupted apply). A record minted
-/// outside the committed chain — however self-consistent its hashes — is
-/// never adoptable custody state (findings 1 and 4): the chain link is the
-/// anchor a caller cannot borrow without displacing the real lineage.
+/// journal must sit on the committed lineage — and, since r6 (devin F1 /
+/// codex F10), *which* lineage position anchors depends on the journal's
+/// action, because the two transaction shapes run in opposite directions:
+///
+/// - **Apply** (an interrupted generation): the anchored record is the
+///   committed generation itself (the apply finished everything but the
+///   journal close) or its *direct retained successor* (the record the
+///   interrupted apply minted);
+/// - **Rollback** (an interrupted restoration): the anchored record is the
+///   *destination* — the committed generation itself or any retained
+///   **ancestor**, however deep the chain: a mid-chain destination B in
+///   A→B→C has its own predecessor A, and the interrupted rollback to it
+///   is exactly the shape the old `Some(previous)` arm could never anchor
+///   (recovery-unanchored forever: a wedged project no caller action
+///   except manual journal surgery could clear).
+///
+/// A record minted outside the committed chain — however self-consistent
+/// its hashes — is never adoptable custody state (findings 1 and 4): the
+/// chain link is the anchor a caller cannot borrow without displacing the
+/// real lineage.
 fn anchored_record(
     root: &std::path::Path,
     transaction: &Transaction,
@@ -119,15 +133,27 @@ fn anchored_record(
         // with no previous link of its own.
         None => record.previous_generation.value().is_none(),
         Some(committed) => {
-            record.generation_digest == committed.generation_digest
-                || match record.previous_generation.value() {
+            if record.generation_digest == committed.generation_digest {
+                true
+            } else {
+                match transaction.action {
                     // The direct successor of the committed generation: an
                     // interrupted apply whose record was retained.
-                    Some(previous) => previous.generation_digest == committed.generation_digest,
-                    // Or an ancestor of the committed generation: a
-                    // rollback destination retained in the lineage.
-                    None => is_ancestor(root, &record.generation_digest, committed, 0)?,
+                    TransactionAction::Apply => matches!(
+                        record.previous_generation.value(),
+                        Some(previous) if previous.generation_digest == committed.generation_digest
+                    ),
+                    // A rollback destination: any retained ancestor of the
+                    // committed generation, mid-chain included (r6, devin
+                    // F1 / codex F10 — the interrupted-rollback wedge).
+                    TransactionAction::Rollback => {
+                        is_ancestor(root, &record.generation_digest, committed, 0)?
+                    }
+                    // A resolve journal names the committed generation
+                    // exactly (checked by its own anchor branch).
+                    TransactionAction::Resolve => false,
                 }
+            }
         }
     };
     if !on_lineage {
@@ -196,22 +222,38 @@ fn intent_bounds(intent: &Intent, path: &str) -> (Option<String>, Option<String>
     }
 }
 
-/// The transaction-owned anchor of one journal (r4 finding 1): recovery
-/// authorization derives only from evidence the custody machinery itself
-/// committed — never from caller-authored journal pins. Every journal
-/// with pending moves must anchor:
+/// The transaction-owned anchor of one journal (r4 finding 1; r6 codex
+/// F1/F2/F4): recovery authorization derives only from evidence the
+/// custody machinery itself committed — never from caller-authored
+/// journal pins — and, since r6, the anchored evidence must additionally
+/// be *qualified* the way the apply machinery itself would have admitted
+/// it:
 ///
 /// - **Apply**: the journal's generation pin must sit on the committed
-///   lineage (the committed generation, its direct retained successor, or
-///   a retained ancestor), and the journal's plan pin must equal that
-///   record's authenticated `plan_digest` — a minted plan object in the
-///   store never bounds anything.
-/// - **Rollback**: the generation pin (the destination) must sit on the
-///   lineage, the retained rollback plan must resolve by its self digest,
-///   name that same destination, and run *from* the committed generation.
+///   lineage (the committed generation or its direct retained successor),
+///   the journal's plan pin must equal that record's authenticated
+///   `plan_digest`, the retained plan must biject with the record exactly
+///   as `staged_apply` assembles it (plan outputs verbatim; every other
+///   record output preserved verbatim from the committed generation; every
+///   delete committed-owned), every record output the committed generation
+///   does not own must be a plan **create inside a generated root the
+///   committed custody can derive** (the common directory of the committed
+///   outputs of the same owner), and the journal's pending set must be
+///   exactly the plan's output set — a fabricated direct successor whose
+///   "creates" reach outside every generated root, or a truncated pending
+///   set, never grants mutation authority (codex F1/F4).
+/// - **Rollback**: the generation pin (the destination, mid-chain
+///   ancestors included) must sit on the lineage, the retained rollback
+///   plan is rebuilt from the anchored records and the journal's plan pin
+///   must name exactly it, and the journal's pending set must be exactly
+///   the rebuilt restore+delete set (codex F4: a subset journal can never
+///   finalize a partial destination as `completed`).
 /// - **Resolve**: the generation pin must be exactly the committed
-///   generation; the reviewed drift bound is the journal's own confirmed
-///   before-state.
+///   generation, and — r6, codex F2 — the exact confirmed intent must be
+///   retained as a custody object: the resolve transaction document as the
+///   confirmed flow wrote it (state `prepared`). A bare journal whose
+///   caller-authored `beforeDigest` describes live drift is not reviewed
+///   evidence and never authorizes overwriting a manual edit.
 ///
 /// A journal whose pending set is empty moved nothing and abandons
 /// trivially without an anchor. Anything else is `recovery-unanchored`:
@@ -219,6 +261,7 @@ fn intent_bounds(intent: &Intent, path: &str) -> (Option<String>, Option<String>
 enum Anchored {
     Apply {
         record: super::wire::GenerationRecord,
+        plan: super::wire::GenerationPlan,
     },
     Rollback {
         record: super::wire::GenerationRecord,
@@ -230,6 +273,167 @@ enum Anchored {
 
 fn unanchored() -> DomainResult {
     invalid("recovery-unanchored")
+}
+
+/// The common directory prefix (segment-wise) of the committed outputs of
+/// one owner — the generated-root proxy recovery can derive without the
+/// caller-owned ownership document: a managed module renders an
+/// implementation and a test under its root, so the common prefix of a
+/// module's committed outputs is its generated root (r6, codex F1).
+fn owner_root_prefix(
+    committed: &super::wire::GenerationRecord,
+    owner_module: &str,
+    owner_target: &str,
+) -> Option<String> {
+    let mut prefix: Option<Vec<&str>> = None;
+    for output in &committed.outputs {
+        if output.owner_module != owner_module || output.owner_target != owner_target {
+            continue;
+        }
+        let segments: Vec<&str> = output.path.split('/').collect();
+        // The file name is never part of the directory prefix.
+        let directories = &segments[..segments.len().saturating_sub(1)];
+        prefix = Some(match prefix {
+            None => directories.to_vec(),
+            Some(current) => current
+                .iter()
+                .zip(directories.iter())
+                .take_while(|(left, right)| left == right)
+                .map(|(left, _)| *left)
+                .collect(),
+        });
+    }
+    prefix.map(|segments| segments.join("/"))
+}
+
+/// Whether the retained plan, the minted record, and the committed record
+/// relate exactly as `staged_apply` assembles them (r6, codex F1): every
+/// non-delete plan output appears in the record verbatim (path, digest,
+/// role, owner), every delete targets a committed-owned output, and every
+/// record output the plan does not name is a committed output preserved
+/// verbatim. A fabricated successor whose record/plan pair is internally
+/// consistent but was never admitted by the apply machinery fails the
+/// ownership-scope rule below even when it passes this bijection — but the
+/// bijection closes every cheaper structural hole first.
+fn plan_matches_record(
+    plan: &super::wire::GenerationPlan,
+    record: &super::wire::GenerationRecord,
+    committed: Option<&super::wire::GenerationRecord>,
+) -> Result<(), DomainResult> {
+    let committed_outputs: std::collections::BTreeMap<&str, &super::wire::RecordOutput> = committed
+        .map(|record| {
+            record
+                .outputs
+                .iter()
+                .map(|output| (output.path.as_str(), output))
+                .collect()
+        })
+        .unwrap_or_default();
+    let record_outputs: std::collections::BTreeMap<&str, &super::wire::RecordOutput> = record
+        .outputs
+        .iter()
+        .map(|output| (output.path.as_str(), output))
+        .collect();
+    for output in &plan.outputs {
+        match output.action {
+            super::wire::OutputAction::Delete => {
+                // Deletes consume recorded custody: the committed
+                // generation must own the path with the reviewed before
+                // digest.
+                let Some(recorded) = committed_outputs.get(output.path.as_str()) else {
+                    return Err(unanchored());
+                };
+                if output.before_digest.value() != Some(&recorded.digest) {
+                    return Err(unanchored());
+                }
+            }
+            _ => {
+                let Some(recorded) = record_outputs.get(output.path.as_str()) else {
+                    return Err(unanchored());
+                };
+                let after = output.after_digest.value().cloned().unwrap_or_default();
+                if recorded.digest != after
+                    || recorded.role != output.role
+                    || recorded.owner_module != output.owner_module
+                    || recorded.owner_target != output.owner_target
+                {
+                    return Err(unanchored());
+                }
+            }
+        }
+    }
+    for (path, preserved) in &record_outputs {
+        if plan
+            .outputs
+            .iter()
+            .any(|output| output.path.as_str() == *path)
+        {
+            continue;
+        }
+        // Preserved custody: a committed output carried verbatim.
+        let Some(committed_output) = committed_outputs.get(*path) else {
+            return Err(unanchored());
+        };
+        if preserved.digest != committed_output.digest
+            || preserved.role != committed_output.role
+            || preserved.owner_module != committed_output.owner_module
+            || preserved.owner_target != committed_output.owner_target
+        {
+            return Err(unanchored());
+        }
+    }
+    Ok(())
+}
+
+/// The apply-machinery ownership scope an interrupted apply's *new*
+/// outputs must sit inside (r6, codex F1): every record output the
+/// committed generation does not own must be a plan **create** (before
+/// absent — an apply that found live bytes at a create coordinate was
+/// denied) whose path sits under a generated root recovery can derive from
+/// committed custody: the common directory of the committed outputs of the
+/// same owner. A fabricated successor that names a maintained file
+/// outside every generated root as its "create" — the confirmed exploit —
+/// is unanchored here, before any byte moves. An owner with no committed
+/// outputs cannot prove any root; its journals stay owed (the caller
+/// reconciles by hand rather than recovery deleting on a forged word).
+fn apply_creates_confined(
+    plan: &super::wire::GenerationPlan,
+    record: &super::wire::GenerationRecord,
+    committed: Option<&super::wire::GenerationRecord>,
+) -> Result<(), DomainResult> {
+    let Some(committed) = committed else {
+        return Ok(()); // first publication: nothing is committed-owned
+    };
+    let committed_paths: std::collections::BTreeSet<&str> = committed
+        .outputs
+        .iter()
+        .map(|output| output.path.as_str())
+        .collect();
+    for output in &record.outputs {
+        if committed_paths.contains(output.path.as_str()) {
+            continue;
+        }
+        let Some(planned) = plan
+            .outputs
+            .iter()
+            .find(|planned| planned.path == output.path)
+        else {
+            return Err(unanchored());
+        };
+        if planned.action != super::wire::OutputAction::Create
+            || planned.before_digest.value().is_some()
+        {
+            return Err(unanchored());
+        }
+        let Some(prefix) = owner_root_prefix(committed, &output.owner_module, &output.owner_target)
+        else {
+            return Err(unanchored());
+        };
+        if prefix.is_empty() || !output.path.starts_with(&format!("{prefix}/")) {
+            return Err(unanchored());
+        }
+    }
+    Ok(())
 }
 
 /// Resolve the anchor of one journal, refusing every caller-forged pin.
@@ -249,6 +453,20 @@ fn anchor_journal(
     }) {
         return Err(unanchored());
     }
+    // The pending set must cover exactly the reviewed transaction's
+    // affected inventory (r6, codex F4): the machinery journals every
+    // affected output plus the manifest move — a subset journal can never
+    // finalize a partial destination as `completed` or bound a partial
+    // undo.
+    let pending_paths: std::collections::BTreeSet<&str> = transaction
+        .pending
+        .iter()
+        .map(|pending| pending.path.as_str())
+        .collect();
+    let affected: std::collections::BTreeSet<&str> = pending_paths
+        .into_iter()
+        .filter(|path| *path != manifest)
+        .collect();
     match transaction.action {
         TransactionAction::Apply => {
             let record = anchored_record(root, transaction, committed)?;
@@ -256,7 +474,37 @@ fn anchor_journal(
             if *plan_digest != record.plan_digest {
                 return Err(unanchored());
             }
-            Ok(Anchored::Apply { record })
+            let plan = history::plan(root, &record.plan_digest).map_err(|_| unanchored())?;
+            plan_matches_record(&plan, &record, committed)?;
+            apply_creates_confined(&plan, &record, committed)?;
+            let planned: std::collections::BTreeSet<&str> = plan
+                .outputs
+                .iter()
+                .map(|output| output.path.as_str())
+                .collect();
+            if affected != planned {
+                return Err(unanchored());
+            }
+            // A create is journaled as a publish; deletes of committed
+            // outputs are journaled as deletes. A restore op in an apply
+            // journal is a shape the machinery never emits.
+            for pending in &transaction.pending {
+                if pending.path == manifest {
+                    continue;
+                }
+                let planned_op = plan
+                    .outputs
+                    .iter()
+                    .find(|output| output.path == pending.path)
+                    .map(|output| output.action == super::wire::OutputAction::Delete);
+                let expect_delete = planned_op.unwrap_or(false);
+                let is_delete = pending.op == PendingOp::Delete;
+                let is_publish = pending.op == PendingOp::Publish;
+                if (expect_delete && !is_delete) || (!expect_delete && !is_publish) {
+                    return Err(unanchored());
+                }
+            }
+            Ok(Anchored::Apply { record, plan })
         }
         TransactionAction::Rollback => {
             let record = anchored_record(root, transaction, committed)?;
@@ -275,6 +523,15 @@ fn anchor_journal(
             if *pinned != plan.plan_digest {
                 return Err(unanchored());
             }
+            let reviewed: std::collections::BTreeSet<&str> = plan
+                .restore
+                .iter()
+                .map(|op| op.path.as_str())
+                .chain(plan.delete.iter().map(|op| op.path.as_str()))
+                .collect();
+            if affected != reviewed {
+                return Err(unanchored());
+            }
             Ok(Anchored::Rollback { record, plan })
         }
         TransactionAction::Resolve => {
@@ -289,6 +546,17 @@ fn anchor_journal(
             if generation != committed.generation_digest {
                 return Err(unanchored());
             }
+            // The retained confirmed intent (r6, codex F2): the resolve
+            // flow retains the exact confirmed transaction document as a
+            // custody object before it journals anything. Recovery accepts
+            // a resolve journal only when that retained intent exists and
+            // matches the journal exactly — a bare caller-authored journal
+            // whose `beforeDigest` merely *describes* live drift is not
+            // reviewed evidence and never overwrites a manual edit.
+            let mut intent = transaction.clone();
+            intent.state = TransactionState::Prepared;
+            let bytes = serde_json::to_vec_pretty(&intent).map_err(|_| unanchored())?;
+            history::object(root, &super::digest(&bytes)).map_err(|_| unanchored())?;
             Ok(Anchored::Resolve)
         }
     }
@@ -321,7 +589,7 @@ fn convergence_moves(
     committed: Option<&super::wire::GenerationRecord>,
     anchored: &Anchored,
 ) -> Result<Vec<Move>, DomainResult> {
-    let intent = anchored_intent(root, anchored)?;
+    let intent = anchored_intent(anchored);
     let mut moves = Vec::new();
     for pending in &transaction.pending {
         if pending.path == super::custody::MANIFEST_LOGICAL {
@@ -419,41 +687,51 @@ fn convergence_moves(
 }
 
 /// The reviewed intent of an anchored journal: apply journals are bounded
-/// by the anchored record's authenticated plan (which must still resolve
-/// as a retained object); rollback journals by their anchored rollback
-/// plan; resolve journals carry no plan intent.
-fn anchored_intent(
-    root: &std::path::Path,
-    anchored: &Anchored,
-) -> Result<Option<Intent>, DomainResult> {
+/// by the anchored record's authenticated plan (resolved and held by the
+/// anchor); rollback journals by their anchored rollback plan; resolve
+/// journals carry no plan intent.
+fn anchored_intent(anchored: &Anchored) -> Option<Intent> {
     match anchored {
-        Anchored::Apply { record } => match history::plan(root, &record.plan_digest) {
-            Ok(plan) => Ok(Some(Intent::Generation(plan))),
-            Err(_) => Err(unanchored()),
-        },
-        Anchored::Rollback { plan, .. } => Ok(Some(Intent::Rollback(plan.clone()))),
-        Anchored::Resolve | Anchored::Empty => Ok(None),
+        Anchored::Apply { plan, .. } => Some(Intent::Generation(plan.clone())),
+        Anchored::Rollback { plan, .. } => Some(Intent::Rollback(plan.clone())),
+        Anchored::Resolve | Anchored::Empty => None,
     }
 }
 
-/// Restore the pre-transaction public manifest of one journal (findings 10,
-/// 11, and r4-1/r4-10): the journal's `beforeManifestDigest` pin resolves
-/// ONLY against transaction-owned lineage evidence — the committed
-/// generation's exact retained manifest (the pre-transaction state of every
-/// legitimate apply/rollback journal on a committed project) or the live
-/// manifest's own digest (the transaction never moved it). For a first
-/// publication (no committed generation) an object-store pin remains
-/// admissible: the pre-transaction manifest was never committed anywhere
-/// else, and a planted manifest cannot biject with any custody record (the
-/// publish bijection gate refuses it on the next mutation). An absence pin
-/// is legal only for a first publication; anything else — including a
-/// manifest destination blocked by non-file data — refuses the journal so
-/// recovery stays owed instead of finalizing divergent custody.
-fn restore_manifest_before(
+/// The validated pre-transaction manifest action of one journal (findings
+/// 10, 11, r4-1/r4-10, and r6 codex F3 / devin F6): the journal's
+/// `beforeManifestDigest` pin resolves ONLY against transaction-owned
+/// lineage evidence — the committed generation's exact retained manifest
+/// (the pre-transaction state of every legitimate apply/rollback journal
+/// on a committed project) or the live manifest's own digest (the
+/// transaction never moved it). For a first publication (no committed
+/// generation) an object-store pin remains admissible: the pre-transaction
+/// manifest was never committed anywhere else, and a planted manifest
+/// cannot biject with any custody record (the publish bijection gate
+/// refuses it on the next mutation). An absence pin is legal only for a
+/// first publication; anything else — including a manifest destination
+/// blocked by non-file data — refuses the journal so recovery stays owed
+/// instead of finalizing divergent custody. Validation is read-only:
+/// `abandon` resolves the complete action BEFORE the first application
+/// byte moves and executes it afterwards, so an unanchorable manifest pin
+/// leaves the tree exactly as it was (r6 codex F3: refusal never again
+/// means "already restored the file").
+enum ManifestAction {
+    /// The transaction never moved the manifest (or the pin is the live
+    /// digest): nothing to execute.
+    Keep,
+    /// Restore these exact retained bytes over the public manifest.
+    Restore(Vec<u8>),
+    /// Converge the manifest coordinate to absence (first publication
+    /// whose pre-transaction state had no manifest).
+    Remove,
+}
+
+fn resolve_manifest_before(
     root: &std::path::Path,
     transaction: &Transaction,
     committed: Option<&super::wire::GenerationRecord>,
-) -> Result<(), DomainResult> {
+) -> Result<ManifestAction, DomainResult> {
     // A blocked manifest destination refuses before anything moves
     // (r4 finding 10): a directory, link, or alias at the governed
     // coordinate is a converged impossibility, never a silent skip.
@@ -463,7 +741,7 @@ fn restore_manifest_before(
         Some(pin) => {
             if live.as_deref().map(super::digest).as_deref() == Some(pin) {
                 // The transaction never moved the manifest.
-                return Ok(());
+                return Ok(ManifestAction::Keep);
             }
             let bytes = match committed {
                 Some(record) => {
@@ -479,8 +757,7 @@ fn restore_manifest_before(
                 }
                 None => history::object(root, pin).map_err(|_| invalid("recovery-unanchored"))?,
             };
-            super::custody::restore_manifest_bytes(root, &bytes)
-                .map_err(|_| invalid("recovery-manifest"))
+            Ok(ManifestAction::Restore(bytes))
         }
         None => match committed {
             // A committed generation's pre-transaction manifest always
@@ -488,24 +765,21 @@ fn restore_manifest_before(
             // first-publication shape (r4 findings 1c and 10).
             Some(_) => Err(invalid("recovery-unanchored")),
             None => match live {
-                Some(_) => {
-                    if !fs::remove_file(root, super::custody::MANIFEST_LOGICAL)
-                        .map_err(|_| invalid("recovery-manifest"))?
-                    {
-                        return Err(invalid("recovery-manifest"));
-                    }
-                    Ok(())
-                }
-                None => Ok(()),
+                Some(_) => Ok(ManifestAction::Remove),
+                None => Ok(ManifestAction::Keep),
             },
         },
     }
 }
 
 /// Whether every pending move of `transaction` is already exactly the
-/// recorded state of `record` on disk, and the public manifest already
-/// carries the generation's exact published bytes (finding 10: completion
-/// without the public manifest is a false success).
+/// recorded state of `record` on disk, **every output of the anchored
+/// generation** is present with its exact recorded bytes (r6, codex F4:
+/// completion certified over the journal's pending subset alone could
+/// report `completed` while a recorded generated output was missing — a
+/// state the ordinary read-only check rejects), and the public manifest
+/// already carries the generation's exact published bytes (finding 10:
+/// completion without the public manifest is a false success).
 fn matches_generation_state(
     root: &std::path::Path,
     transaction: &Transaction,
@@ -541,6 +815,15 @@ fn matches_generation_state(
         }
     });
     if !all_pending_match {
+        return false;
+    }
+    // The complete destination inventory must be live and exact: any
+    // missing or divergent recorded output keeps recovery owed (r6,
+    // codex F4).
+    let all_outputs_match = record.outputs.iter().all(|output| {
+        matches!(fs::read_file(root, &output.path), Ok(Some(bytes)) if super::digest(&bytes) == output.digest)
+    });
+    if !all_outputs_match {
         return false;
     }
     // The published manifest must already be this generation's exact
@@ -626,7 +909,7 @@ pub fn run(root: &std::path::Path) -> DomainResult {
             Err(error) => return error,
         };
         let anchored_record_ref = match &anchored {
-            Anchored::Apply { record } | Anchored::Rollback { record, .. } => Some(record),
+            Anchored::Apply { record, .. } | Anchored::Rollback { record, .. } => Some(record),
             Anchored::Resolve => committed.as_ref(),
             Anchored::Empty => None,
         };
@@ -661,8 +944,13 @@ pub fn run(root: &std::path::Path) -> DomainResult {
 }
 
 /// Converge one journal back to the committed state (or absence) and close
-/// it as `abandoned`. Every move is prebuilt before the first mutation;
-/// any refusal leaves the journal unresolved (recovery stays owed).
+/// it as `abandoned`. Every move — application bytes AND the manifest
+/// action — is prebuilt and fully validated before the first mutation
+/// (r6, codex F3 / devin F6: the manifest pin resolves in the preflight
+/// phase, so an invalid manifest-evidence journal refuses with zero
+/// filesystem effects and retries fail identically instead of partially
+/// converging); any refusal leaves the journal unresolved (recovery stays
+/// owed).
 fn abandon(
     root: &std::path::Path,
     transaction: &Transaction,
@@ -674,16 +962,26 @@ fn abandon(
         Ok(moves) => moves,
         Err(_) => return Err(invalid("recovery-undo")),
     };
-    // A blocked manifest destination refuses before any application byte
-    // moves (r4 finding 10): converging the files and then discovering an
-    // unwritable manifest would finalize divergent custody.
+    // The manifest action is resolved and validated in the preflight
+    // phase too — but only when the journal itself moved the manifest
+    // (findings 10 and 11; a resolve journal never touches it). A blocked
+    // manifest destination or an unresolvable manifest pin refuses before
+    // any application byte moves: converging the files and then
+    // discovering an unwritable manifest would finalize divergent custody
+    // (r4 finding 10), and validating after the moves left the tree half
+    // converged on a bad pin (r6 codex F3).
     let moves_manifest = transaction
         .pending
         .iter()
         .any(|pending| pending.path == super::custody::MANIFEST_LOGICAL);
-    if moves_manifest && fs::read_file(root, super::custody::MANIFEST_LOGICAL).is_err() {
-        return Err(invalid("recovery-manifest"));
-    }
+    let manifest_action = if moves_manifest {
+        match resolve_manifest_before(root, transaction, committed) {
+            Ok(action) => Some(action),
+            Err(_) => return Err(invalid("recovery-manifest")),
+        }
+    } else {
+        None
+    };
     for one in &moves {
         match one {
             Move::RestoreCommitted { path, bytes } => {
@@ -700,11 +998,24 @@ fn abandon(
         }
     }
     // Restore the exact pre-transaction public manifest with the
-    // application bytes it describes — only when the journal itself moved
-    // the manifest (findings 10 and 11). A resolve journal never touches
-    // it.
-    if moves_manifest && restore_manifest_before(root, transaction, committed).is_err() {
-        return Err(invalid("recovery-manifest"));
+    // application bytes it describes — the action was already validated
+    // above; only the execution remains.
+    if let Some(action) = manifest_action {
+        let executed = match action {
+            ManifestAction::Keep => Ok(()),
+            ManifestAction::Restore(bytes) => super::custody::restore_manifest_bytes(root, &bytes)
+                .map_err(|_| invalid("recovery-manifest")),
+            ManifestAction::Remove => {
+                if !fs::remove_file(root, super::custody::MANIFEST_LOGICAL)
+                    .map_err(|_| invalid("recovery-manifest"))?
+                {
+                    Err(invalid("recovery-manifest"))
+                } else {
+                    Ok(())
+                }
+            }
+        };
+        executed?;
     }
     if close(root, transaction, TransactionState::Abandoned).is_err() {
         return Err(invalid("recovery-journal"));

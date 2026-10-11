@@ -8,7 +8,7 @@
 use super::diagnostic;
 use super::wire::{
     Coverage, Extension, ExtensionCheck, Mode, ModuleAssignment, Requirement, RequirementKind,
-    Sample, State, Support, TargetAssignment,
+    Sample, Scalar, State, Support, TargetAssignment,
 };
 use super::{
     detail, pin, DomainResult, CAPABILITY_GAP, EXTENSION_UNRESOLVED, INPUT_INVALID,
@@ -46,7 +46,13 @@ fn invalid(reason: &str) -> DomainResult {
 }
 
 /// Sample/projection coherence: the sample must witness exactly the declared
-/// projection (the rendered test invokes the handler with it).
+/// projection (the rendered test invokes the handler with it), and the
+/// sample's expected output must equal the projection applied to the
+/// sample input (r6, devin F5 / codex F6): the rendered behavioral test
+/// asserts exactly that expectation against the deterministic handler,
+/// so a self-contradictory sample would publish an artifact whose own
+/// generated test fails on arrival — it never admits, at planning time,
+/// before any byte exists.
 fn sample_matches(requirement: &Requirement) -> Result<(), DomainResult> {
     let projected_from: Vec<&String> = requirement.projection.iter().map(|p| &p.from).collect();
     let projected_to: Vec<&String> = requirement.projection.iter().map(|p| &p.to).collect();
@@ -56,6 +62,27 @@ fn sample_matches(requirement: &Requirement) -> Result<(), DomainResult> {
             let outputs: Vec<&String> = sample.output.keys().collect();
             if inputs != projected_from || outputs != projected_to {
                 return Err(invalid("sample-projection"));
+            }
+            // Behavioral consistency (r6): observed = projection(input)
+            // must equal the pinned expectation — the emitted test's own
+            // assertion. A contradiction is a self-failing artifact.
+            let observed: std::collections::BTreeMap<&String, &Scalar> = requirement
+                .projection
+                .iter()
+                .filter_map(|projection| {
+                    sample
+                        .input
+                        .get(&projection.from)
+                        .map(|value| (&projection.to, value))
+                })
+                .collect();
+            if observed.len() != requirement.projection.len()
+                || sample
+                    .output
+                    .iter()
+                    .any(|(field, value)| observed.get(field) != Some(&value))
+            {
+                return Err(capability_gap(&requirement.id, "scenario-assertion"));
             }
             Ok(())
         }

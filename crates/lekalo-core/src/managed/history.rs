@@ -423,6 +423,29 @@ pub fn write_object(root: &std::path::Path, bytes: &[u8]) -> Result<String, Doma
     Ok(digest)
 }
 
+/// Whether `digest` names the currently committed generation or one of
+/// its retained ancestors (bounded walk over the `previous_generation`
+/// links — the committed lineage).
+fn lineage_contains(root: &std::path::Path, digest: &str) -> Result<bool, DomainResult> {
+    let mut current = current(root)?;
+    let mut depth = 0usize;
+    while let Some(generation) = current {
+        if depth > 64 {
+            return Err(recovery("lineage"));
+        }
+        if generation == digest {
+            return Ok(true);
+        }
+        let record = record(root, &generation)?;
+        current = record
+            .previous_generation
+            .value()
+            .map(|previous| previous.generation_digest.clone());
+        depth += 1;
+    }
+    Ok(false)
+}
+
 /// Store one generation record; storing is idempotent.
 ///
 /// The storage name stays the record's stable generation identity (what
@@ -430,6 +453,17 @@ pub fn write_object(root: &std::path::Path, bytes: &[u8]) -> Result<String, Doma
 /// custody identity (`recordDigest`, finding 3) rides inside the document
 /// and is verified on every read, binding the plan, ownership, and lock
 /// pins the stable identity deliberately ignores.
+///
+/// Since r6 (devin F4) adoption is first-writer-wins **only for the
+/// committed lineage's own record**: a different, self-consistent record
+/// already sitting at a generation name is adopted verbatim only when it
+/// IS the currently committed record (a re-derivation of the live state);
+/// anything else — the pre-planted forged-record shape, whose `recordDigest`
+/// is self-computable and whose lineage pins are attacker-chosen — is a
+/// `record-conflict`, never silent adoption. A caller-writable object
+/// store is integrity against corruption, not against a writer: the
+/// transaction's own minted record is the only new custody a mutation may
+/// create.
 pub fn write_record(
     root: &std::path::Path,
     record: &super::wire::GenerationRecord,
@@ -450,18 +484,24 @@ pub fn write_record(
             if super::digest(&existing) == custody_digest {
                 return Ok(custody_digest);
             }
-            // Same generation identity, different lineage (a regenerate →
-            // cleanup → restore cycle re-derives an older inventory): the
-            // retained record is authoritative custody for this identity
-            // and is returned verbatim. A corrupt or non-record object
-            // under a generation name is custody corruption, not a hit.
+            // Same generation identity, different document: adoptability
+            // requires proof the retained bytes already sit on the
+            // committed lineage — the live committed record or one of its
+            // retained ancestors (the legitimate regenerate → cleanup →
+            // restore cycle re-derives an older inventory whose identity
+            // recurs). A self-consistent planted record that names no
+            // committed generation — the pre-planted forged-record shape,
+            // whose `recordDigest` is self-computable and whose lineage
+            // pins are attacker-chosen — is custody corruption-by-writer,
+            // not a hit (r6, devin F4).
             let retained = super::parse_record(&existing).ok().filter(|retained| {
                 retained.generation_digest == record.generation_digest
                     && super::verify_record_identity(retained).is_ok()
             });
             if let Some(retained) = retained {
-                let _ = retained;
-                return Ok(super::digest(&existing));
+                if lineage_contains(root, &retained.generation_digest)? {
+                    return Ok(super::digest(&existing));
+                }
             }
             return Err(recovery("record-conflict"));
         }

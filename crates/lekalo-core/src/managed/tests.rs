@@ -116,6 +116,37 @@ fn project_root(name: &str) -> PathBuf {
     root
 }
 
+/// The fixture Model semantics of the fixture coverage: exactly the
+/// obligations `coverage_doc()`'s requirements render under (r6, codex
+/// F9 — the renderer's interface types are Model-derived, so unit-test
+/// plans carry the same obligation semantics the real authority derives).
+fn test_semantics() -> Vec<super::authority::Obligation> {
+    vec![
+        super::authority::Obligation {
+            id: "planner.complete_task".to_owned(),
+            kind: crate::ir::DefinitionKind::Command,
+            input: vec![
+                ("id".to_owned(), "string".to_owned()),
+                ("title".to_owned(), "string".to_owned()),
+            ],
+            reads: Vec::new(),
+            returns: None,
+            return_fields: Vec::new(),
+        },
+        super::authority::Obligation {
+            id: "planner.focus_task".to_owned(),
+            kind: crate::ir::DefinitionKind::Query,
+            input: Vec::new(),
+            reads: Vec::new(),
+            returns: None,
+            return_fields: vec![
+                ("id".to_owned(), "string".to_owned()),
+                ("title".to_owned(), "string".to_owned()),
+            ],
+        },
+    ]
+}
+
 /// A test generation authority: the lock-revision pin every committed
 /// record must carry (findings 3 and 8). The digest value is a fixture
 /// constant; the real CLI path always derives the live authority.
@@ -132,7 +163,7 @@ fn test_authority() -> super::authority::Authority {
         model_version: "0.2.16".to_owned(),
         project_id: "demo".to_owned(),
         ledger: Vec::new(),
-        semantics: Vec::new(),
+        semantics: test_semantics(),
         adapter: None,
         // The locked provenance inventory (r4 finding 6): the fixture
         // coverage's recipe and the fixture ownership's profile/
@@ -159,6 +190,20 @@ fn junction(target: &std::path::Path, link: &std::path::Path) {
     std::os::windows::fs::symlink_dir(target, link).expect("junction");
 }
 
+/// Recursively copy a fixture tree (test helper).
+fn copy_tree(source: &std::path::Path, destination: &std::path::Path) {
+    std::fs::create_dir_all(destination).expect("mkdir");
+    for entry in std::fs::read_dir(source).expect("read dir") {
+        let entry = entry.expect("entry");
+        let to = destination.join(entry.file_name());
+        if entry.file_type().expect("type").is_dir() {
+            copy_tree(&entry.path(), &to);
+        } else {
+            std::fs::copy(entry.path(), &to).expect("copy");
+        }
+    }
+}
+
 /// The exact committed fixture lock bytes, for unit-test project roots.
 /// Relative to the crate directory (cargo test runs there).
 fn write_test_lock(root: &std::path::Path) {
@@ -177,8 +222,10 @@ fn write_test_lock(root: &std::path::Path) {
 #[test]
 fn canonical_renderer_is_byte_stable_and_ordered() {
     let coverage = coverage_doc();
-    let first = render_inventory(&coverage, "apps/planner/gen").expect("inventory");
-    let second = render_inventory(&coverage, "apps/planner/gen").expect("inventory");
+    let first =
+        render_inventory(&coverage, "apps/planner/gen", &test_semantics()).expect("inventory");
+    let second =
+        render_inventory(&coverage, "apps/planner/gen", &test_semantics()).expect("inventory");
     assert_eq!(first, second);
     assert_eq!(
         first.len(),
@@ -335,6 +382,7 @@ fn plan_identity_is_deterministic_and_order_insensitive() {
         None,
         None,
         hash(&coverage_doc()),
+        &test_semantics(),
     )
     .expect("plan");
     let plan_b = plan::build(
@@ -346,6 +394,7 @@ fn plan_identity_is_deterministic_and_order_insensitive() {
         None,
         None,
         hash(&coverage_doc()),
+        &test_semantics(),
     )
     .expect("plan");
     assert_eq!(
@@ -367,6 +416,7 @@ fn plan_identity_is_deterministic_and_order_insensitive() {
         None,
         None,
         PIN_B.to_owned(),
+        &test_semantics(),
     )
     .expect("plan");
     assert_ne!(plan_a.plan_digest, plan_c.plan_digest);
@@ -406,6 +456,7 @@ fn preflight_names_the_moved_pin() {
         None,
         None,
         hash(&coverage_doc()),
+        &test_semantics(),
     )
     .expect_err("drift");
     assert_eq!(
@@ -422,6 +473,7 @@ fn preflight_names_the_moved_pin() {
         None,
         None,
         hash(&coverage_doc()),
+        &test_semantics(),
     )
     .expect("plan");
     let mut inputs = BTreeMap::new();
@@ -461,6 +513,7 @@ fn apply_transaction_is_recoverable_and_exact() {
         None,
         None,
         hash(&coverage),
+        &test_semantics(),
     )
     .expect("plan");
     let plan_bytes = serde_json::to_vec(&built).expect("wire");
@@ -567,6 +620,7 @@ fn apply_transaction_is_recoverable_and_exact() {
         Some(generation.clone()),
         None,
         hash(&coverage),
+        &test_semantics(),
     )
     .expect("plan");
     assert!(
@@ -720,6 +774,7 @@ fn rollback_restores_the_exact_previous_generation() {
         None,
         None,
         hash(&coverage),
+        &test_semantics(),
     )
     .expect("plan");
     let applied = apply::apply(
@@ -768,6 +823,7 @@ fn rollback_restores_the_exact_previous_generation() {
         Some(first_generation.clone()),
         None,
         hash(&coverage),
+        &test_semantics(),
     )
     .expect("plan");
     // Change one requirement so the bytes differ; rebuild over the new plan.
@@ -982,6 +1038,7 @@ fn tampered_records_are_refused_without_touching_files() {
         None,
         None,
         hash(&coverage),
+        &test_semantics(),
     )
     .expect("plan");
     let applied = apply::apply(
@@ -1064,6 +1121,7 @@ fn interrupted_publication_recovers_to_a_defined_state() {
         None,
         None,
         hash(&coverage),
+        &test_semantics(),
     )
     .expect("plan");
     let applied = apply::apply(
@@ -1148,6 +1206,7 @@ fn resolve_confirmation_binds_the_drifted_before_state() {
         None,
         None,
         hash(&coverage),
+        &test_semantics(),
     )
     .expect("plan");
     let applied = apply::apply(
@@ -1234,6 +1293,7 @@ fn forged_recovery_journal_never_deletes_maintained_files() {
         None,
         None,
         hash(&coverage),
+        &test_semantics(),
     )
     .expect("plan");
     let applied = apply::apply(
@@ -1310,6 +1370,7 @@ fn forged_plan_edits_never_overwrite_unclaimed_files() {
         None,
         None,
         hash(&coverage),
+        &test_semantics(),
     );
     assert_eq!(
         built.expect_err("unclaimed create").status(),
@@ -1349,6 +1410,7 @@ fn rehashed_records_never_authorize_restore_outside_ownership() {
         None,
         None,
         hash(&coverage),
+        &test_semantics(),
     )
     .expect("plan");
     let applied = apply::apply(
@@ -1428,6 +1490,7 @@ fn zero_hash_equivalence_scenarios_are_missing_evidence_never_match() {
         None,
         None,
         hash(&coverage),
+        &test_semantics(),
     )
     .expect("plan");
     let applied = apply::apply(
@@ -1526,7 +1589,8 @@ fn rendered_implementations_invoke_resolved_bindings() {
         contract_digest: digest(&bytes),
         validated: true,
     });
-    let inventory = render_inventory(&coverage, "apps/planner/gen").expect("inventory");
+    let inventory =
+        render_inventory(&coverage, "apps/planner/gen", &test_semantics()).expect("inventory");
     let handler = inventory
         .iter()
         .find(|artifact| artifact.path == "apps/planner/gen/src/focus-task.ts")
@@ -1570,6 +1634,7 @@ fn broken_or_missing_live_authority_refuses_rollback() {
         None,
         None,
         hash(&coverage),
+        &test_semantics(),
     )
     .expect("plan");
     let applied = apply::apply(
@@ -1616,6 +1681,7 @@ fn broken_or_missing_live_authority_refuses_rollback() {
         Some(destination.clone()),
         None,
         hash(&coverage),
+        &test_semantics(),
     )
     .expect("plan");
     let applied = apply::apply(
@@ -1731,6 +1797,7 @@ fn recovery_keeps_the_committed_public_manifest() {
         None,
         None,
         hash(&coverage),
+        &test_semantics(),
     )
     .expect("plan");
     let applied = apply::apply(
@@ -1800,6 +1867,7 @@ fn stale_recovery_lock_clear_never_escapes_the_project() {
         None,
         None,
         hash(&coverage),
+        &test_semantics(),
     )
     .expect("plan");
     let applied = apply::apply(
@@ -1856,6 +1924,7 @@ fn apply_first_generation(root: &std::path::Path) -> super::wire::GenerationPlan
         None,
         None,
         hash(&coverage),
+        &test_semantics(),
     )
     .expect("plan");
     let applied = apply::apply(
@@ -2128,6 +2197,7 @@ fn rollback_recreates_outputs_deleted_by_a_later_generation() {
         Some(generation),
         None,
         hash(&coverage),
+        &test_semantics(),
     )
     .expect("second plan");
     assert!(second
@@ -2493,6 +2563,7 @@ fn minted_rollback_plan_never_bounds_recovery() {
         Some(first.clone()),
         None,
         hash(&coverage),
+        &test_semantics(),
     )
     .expect("plan");
     let applied = apply::apply(
@@ -2556,7 +2627,11 @@ fn minted_rollback_plan_never_bounds_recovery() {
 /// A legitimate interrupted resolve journal still converges: the resolve
 /// action's confirmed drift bound remains the accepted live state (r4
 /// finding 1b refuses forged *apply* pins, not the confirmed resolve
-/// transaction itself).
+/// transaction itself). Since r6 (codex F2) the confirmed flow retains
+/// the exact confirmed intent — the transaction document in its
+/// `prepared` shape — as a custody object before journaling anything, and
+/// recovery accepts the journal only when that retained intent matches it
+/// exactly; the test simulates the machinery's full output.
 #[test]
 fn interrupted_resolve_journal_converges_from_its_confirmed_drift() {
     let root = project_root("r5-resolve-recovery");
@@ -2587,6 +2662,15 @@ fn interrupted_resolve_journal_converges_from_its_confirmed_drift() {
         before_digest: State::known(digest(drift_bytes)),
     };
     transaction.plan_digest = State::known(plan_digest(&transaction));
+    // The retained confirmed intent, exactly as `staged_resolve` writes
+    // it: the same document in its `prepared` shape (r6, codex F2).
+    let mut intent = transaction.clone();
+    intent.state = TransactionState::Prepared;
+    history::write_object(
+        &root,
+        &serde_json::to_vec_pretty(&intent).expect("typed intent"),
+    )
+    .expect("retained intent");
     history::write_transaction(&root, &transaction).expect("journal");
     let receipt = recovery::run(&root);
     assert_eq!(receipt.status(), Status::Valid, "{receipt:?}");
@@ -2789,7 +2873,10 @@ fn projection_to_renames_are_model_refused() {
                 input: Vec::new(),
                 reads: Vec::new(),
                 returns: None,
-                return_fields: vec!["id".to_owned(), "title".to_owned()],
+                return_fields: vec![
+                    ("id".to_owned(), "string".to_owned()),
+                    ("title".to_owned(), "string".to_owned()),
+                ],
             },
         ],
         adapter: None,
@@ -2808,7 +2895,8 @@ fn projection_to_renames_are_model_refused() {
     );
     // The emitted bytes really are projection-named: a rename would move
     // them under identical authority pins.
-    let inventory = render_inventory(&renamed, "apps/planner/gen").expect("inventory");
+    let inventory =
+        render_inventory(&renamed, "apps/planner/gen", &test_semantics()).expect("inventory");
     let handler = String::from_utf8(
         inventory
             .iter()
@@ -2848,6 +2936,7 @@ fn forged_provenance_pins_never_commit() {
             None,
             None,
             hash(coverage),
+            &test_semantics(),
         )
         .expect("plan")
     };
@@ -2892,29 +2981,63 @@ fn forged_provenance_pins_never_commit() {
     let _ = std::fs::remove_dir_all(&root);
 }
 
-/// Equivalence verdicts are never caller-certified over failing behavior
-/// (r4 finding 2): the executed-outcome receipts are recomputed from the
-/// retained reviewed coverage, and a pinned expectation the recomputation
-/// contradicts — or a receipt that disagrees with it — fails the gate.
+/// Behavioral evidence is honest end to end (r4 finding 2, hardened in
+/// r6 by devin F5 / codex F6): a self-contradictory coverage sample — the
+/// emitted test would assert an expectation the deterministic handler
+/// never produces — never *admits*, so no plan, no apply, and no published
+/// self-failing artifact can exist; and over an honestly admitted
+/// generation, an executed-outcome receipt that disagrees with the
+/// recomputed executed behavior fails the equivalence gate.
 #[test]
 fn equivalence_lying_verdicts_over_failing_samples_refuse() {
-    let root = project_root("r5-lying-verdicts");
+    let root = project_root("r6-lying-verdicts");
+    let ownership = ownership_doc();
+    let assignment = &ownership.modules[0];
+    let target = &assignment.targets[0];
     // A coverage whose focus_task sample output the projection contradicts:
-    // the generated native test fails (handler returns title "Focus").
+    // the generated native test would fail on arrival (handler returns
+    // title "Focus" while the pinned expectation says "Different").
     let mut coverage = coverage_doc();
     if let State::Known { value } = &mut coverage.requirements[1].sample {
         value
             .output
             .insert("title".to_owned(), Scalar::Text("Different".to_owned()));
     }
-    let coverage_bytes = serde_json::to_vec(&coverage).expect("wire");
-    let ownership = ownership_doc();
-    let assignment = &ownership.modules[0];
-    let target = &assignment.targets[0];
-    let admitted = coverage::admit(assignment, target, &coverage).expect("admission");
+    // r6 (devin F5 / codex F6): the self-failing sample never admits —
+    // at planning time, before any plan, byte, or custody object exists.
+    let refused = coverage::admit(assignment, target, &coverage).expect_err("admission");
+    assert_eq!(refused.status(), Status::Unsupported);
+    assert_eq!(
+        refused.reason_codes().first().map(|code| code.as_str()),
+        Some("managed.capability-gap")
+    );
+    let reason = refused.diagnostics()[0].data.get("reason").cloned();
+    let Some(crate::diagnostics::types::DataValue::Token(reason)) = reason else {
+        panic!("expected a token reason");
+    };
+    assert_eq!(reason, "scenario-assertion");
+    write_input(
+        &root,
+        "model/planner.model.json",
+        b"{ \"planner\": true }\n",
+    );
+    // The apply over such a coverage never publishes either (codex F6:
+    // the publication barrier is the admission, not a post-hoc verb).
+    // The plan is assembled directly over the mutated coverage (its
+    // admission struct is hand-built) so the refusal provably comes from
+    // admission, not from a coverage-digest mismatch.
+    let admission = coverage::Admission {
+        module: "planner".to_owned(),
+        target: "node-typescript".to_owned(),
+        recipe: coverage.recipe.clone(),
+        generated_root: "apps/planner/gen".to_owned(),
+        rendered_requirements: 2,
+        ledger_requirements: coverage.requirements.len(),
+        extensions: Vec::new(),
+    };
     let built = plan::build(
         PlanAction::Promotion,
-        &admitted,
+        &admission,
         &coverage,
         vec![InputPin {
             path: "model/planner.model.json".to_owned(),
@@ -2924,27 +3047,39 @@ fn equivalence_lying_verdicts_over_failing_samples_refuse() {
         None,
         None,
         hash(&coverage),
+        &test_semantics(),
     )
     .expect("plan");
-    write_input(
-        &root,
-        "model/planner.model.json",
-        b"{ \"planner\": true }\n",
-    );
-    let applied = apply::apply(
+    let failed_apply = apply::apply(
         &root,
         &serde_json::to_vec(&built).expect("wire"),
-        &coverage_bytes,
+        &serde_json::to_vec(&coverage).expect("wire"),
         &ownership,
         Some(built.plan_digest.as_str()),
         false,
         Some(&test_authority()),
     );
-    assert_eq!(applied.status(), Status::Valid, "{applied:?}");
-    let generation = history::current(&root).expect("custody").expect("gen");
-    let record = history::record(&root, &generation).expect("record");
+    assert_eq!(
+        failed_apply.status(),
+        Status::Unsupported,
+        "{failed_apply:?}"
+    );
+    assert!(
+        !history::exists(&root),
+        "the self-failing sample never publishes"
+    );
+    let _ = std::fs::remove_dir_all(&root);
+    // Over an honestly admitted generation, a lying executed-outcome
+    // receipt — one that disagrees with the recomputed executed behavior —
+    // still fails the gate (r4 finding 2, retained).
+    let honest_root = project_root("r6-lying-verdicts-honest");
+    apply_first_generation(&honest_root);
+    let generation = history::current(&honest_root)
+        .expect("custody")
+        .expect("gen");
+    let record = history::record(&honest_root, &generation).expect("record");
     let implementation = super::equivalence::live_implementation_digest_for_test(
-        &root,
+        &honest_root,
         &record,
         "planner",
         "node-typescript",
@@ -2971,15 +3106,13 @@ fn equivalence_lying_verdicts_over_failing_samples_refuse() {
     // The recomputed executed output of both scenarios: the projection
     // applied to the pinned sample inputs.
     let recomputed = "sha256:4ec9852ef939bad75ea72af4e8ed09668f78d38a01a814262048448f3fb83374";
-    // The receipt that matches the recomputation: the pinned expectation
-    // ("Different") still contradicts it — the native test fails.
-    let honest = Equivalence {
+    let mut lying = Equivalence {
         schema_version: header("managed-equivalence").0,
         identity: header("managed-equivalence").1,
         module: "planner".to_owned(),
         target: "node-typescript".to_owned(),
-        implementation_digest: implementation.clone(),
-        reference_digest: State::known(reference.clone()),
+        implementation_digest: implementation,
+        reference_digest: State::known(reference),
         scenarios: vec![
             ScenarioVerdict {
                 scenario: "planner.complete_task".to_owned(),
@@ -3005,26 +3138,20 @@ fn equivalence_lying_verdicts_over_failing_samples_refuse() {
         gaps: Vec::new(),
         verdict: EquivalenceVerdict::Match,
     };
-    let refused =
-        super::equivalence::adjudicate_for(&root, &serde_json::to_vec(&honest).expect("wire"));
-    assert_eq!(refused.status(), Status::Invalid, "{refused:?}");
-    assert_eq!(
-        refused.reason_codes().first().map(|code| code.as_str()),
-        Some("managed.equivalence-failed")
-    );
     // The receipt that matches the lie instead: it disagrees with the
-    // recomputed executed behavior and fails the same way.
-    let mut lying = honest.clone();
+    // recomputed executed behavior and fails the gate.
     lying.execution[1].observed =
         "sha256:a419b8cd65c2c3fc70b435c16455e2a235d88da22d88d4fc381d8b22736918fc".to_owned();
-    let refused =
-        super::equivalence::adjudicate_for(&root, &serde_json::to_vec(&lying).expect("wire"));
+    let refused = super::equivalence::adjudicate_for(
+        &honest_root,
+        &serde_json::to_vec(&lying).expect("wire"),
+    );
     assert_eq!(refused.status(), Status::Invalid, "{refused:?}");
     assert_eq!(
         refused.reason_codes().first().map(|code| code.as_str()),
         Some("managed.equivalence-failed")
     );
-    let _ = std::fs::remove_dir_all(&root);
+    let _ = std::fs::remove_dir_all(&honest_root);
 }
 
 /// The staging coordinate is validated like the destination (r4 finding
@@ -3074,6 +3201,7 @@ fn under_lock_model_source_drift_refuses_the_apply() {
         None,
         None,
         hash(&coverage),
+        &test_semantics(),
     )
     .expect("plan");
     // The authority pins a Model source state the live project no longer
@@ -3099,4 +3227,1056 @@ fn under_lock_model_source_drift_refuses_the_apply() {
     );
     assert!(!history::exists(&root), "nothing committed");
     let _ = std::fs::remove_dir_all(&root);
+}
+
+// ---- Round-6 regressions (issue #41 r5 findings, devin + codex) ----------
+
+/// Apply one further generation whose rendered bytes differ from the
+/// committed ones (a moved sample expectation), returning the new
+/// generation digest.
+fn apply_changed_generation(root: &std::path::Path, title: &str) -> String {
+    let ownership = ownership_doc();
+    let mut coverage = coverage_doc();
+    for requirement in &mut coverage.requirements {
+        if let State::Known { value } = &mut requirement.sample {
+            value
+                .output
+                .insert("title".to_owned(), Scalar::Text(title.to_owned()));
+            value
+                .input
+                .insert("title".to_owned(), Scalar::Text(title.to_owned()));
+        }
+    }
+    let coverage_bytes = serde_json::to_vec(&coverage).expect("wire");
+    let generation = history::current(root).expect("custody").expect("gen");
+    let record = history::record(root, &generation).expect("record");
+    let mut before = empty_before();
+    for output in &record.outputs {
+        let bytes = std::fs::read(root.join(&output.path)).expect("generated");
+        before.recorded.insert(
+            output.path.clone(),
+            plan::Recorded {
+                digest: output.digest.clone(),
+                role: output.role,
+                owner_module: output.owner_module.clone(),
+                owner_target: output.owner_target.clone(),
+                object_ref: output.after_ref.value().cloned(),
+            },
+        );
+        before.actual.insert(output.path.clone(), digest(&bytes));
+    }
+    let assignment = &ownership.modules[0];
+    let target = &assignment.targets[0];
+    let admitted = coverage::admit(assignment, target, &coverage).expect("admission");
+    let built = plan::build(
+        PlanAction::Regeneration,
+        &admitted,
+        &coverage,
+        vec![InputPin {
+            path: "model/planner.model.json".to_owned(),
+            digest: digest(b"{ \"planner\": true }\n"),
+        }],
+        &before,
+        Some(generation),
+        None,
+        hash(&coverage),
+        &test_semantics(),
+    )
+    .expect("plan");
+    write_input(root, "model/planner.model.json", b"{ \"planner\": true }\n");
+    let applied = apply::apply(
+        root,
+        &serde_json::to_vec(&built).expect("wire"),
+        &coverage_bytes,
+        &ownership,
+        Some(built.plan_digest.as_str()),
+        false,
+        Some(&test_authority()),
+    );
+    assert_eq!(applied.status(), Status::Valid, "{applied:?}");
+    history::current(root).expect("custody").expect("gen")
+}
+
+/// An interrupted rollback to a mid-chain destination anchors and converges
+/// (r6, devin F1 [P1 blocking] / codex F10): a genuine three-generation
+/// chain A→B→C whose rollback to B was interrupted — both before any byte
+/// moved and after every move but the pointer commit — recovers to a
+/// defined state instead of wedging the project forever with
+/// `recovery-unanchored`.
+#[test]
+fn interrupted_mid_chain_rollback_recovers() {
+    let root = project_root("r6-mid-chain");
+    apply_first_generation(&root);
+    let second = apply_changed_generation(&root, "Focus v2");
+    let third = apply_changed_generation(&root, "Focus v3");
+    let second_record = history::record(&root, &second).expect("record");
+    let third_record = history::record(&root, &third).expect("record");
+    // The destination is a genuine mid-chain ancestor: its own predecessor
+    // is the first generation, not the committed one.
+    assert!(second_record.previous_generation.value().is_some());
+    assert_ne!(
+        second_record
+            .previous_generation
+            .value()
+            .map(|previous| previous.generation_digest.clone()),
+        Some(third.clone())
+    );
+    let preview = rollback::build(&root, &second).expect("rollback plan");
+    let before_manifest =
+        std::fs::read(root.join(super::custody::MANIFEST_LOGICAL)).expect("committed manifest");
+    let before_pin = history::write_object(&root, &before_manifest).expect("object");
+    let journal_of = |state: TransactionState| Transaction {
+        schema_version: header("managed-transaction").0,
+        identity: header("managed-transaction").1,
+        transaction_id: "midchain00001".to_owned(),
+        state,
+        action: TransactionAction::Rollback,
+        plan_digest: State::known(preview.plan_digest.clone()),
+        generation_digest: State::known(GenerationDigest {
+            generation_digest: second.clone(),
+        }),
+        before_manifest_digest: State::known(before_pin.clone()),
+        after_manifest_digest: State::known(preview.manifest_digest.clone()),
+        pending: {
+            let mut pending: Vec<Pending> = second_record
+                .outputs
+                .iter()
+                .map(|output| Pending {
+                    path: output.path.clone(),
+                    op: PendingOp::Restore,
+                })
+                .collect();
+            pending.push(Pending {
+                path: super::custody::MANIFEST_LOGICAL.to_owned(),
+                op: PendingOp::Publish,
+            });
+            pending.sort_by(|left, right| (&left.path, &left.op).cmp(&(&right.path, &right.op)));
+            pending
+        },
+        affected_files: {
+            let mut affected: Vec<String> = second_record
+                .outputs
+                .iter()
+                .map(|output| output.path.clone())
+                .collect();
+            affected.sort();
+            affected
+        },
+        conflict: State::Absent,
+        before_digest: State::Absent,
+    };
+    // Phase A: the rollback was killed before any byte moved — the live
+    // tree still carries the committed generation's bytes.
+    history::write_transaction(&root, &journal_of(TransactionState::Restoring)).expect("journal");
+    let receipt = recovery::run(&root);
+    assert_eq!(receipt.status(), Status::Valid, "{receipt:?}");
+    assert_eq!(
+        history::current(&root).expect("custody").expect("gen"),
+        third,
+        "an unstarted interrupted rollback converges back to the committed generation"
+    );
+    assert!(history::unresolved(&root).expect("custody").is_empty());
+    // Phase B: the rollback moved every byte and the manifest but was
+    // killed before the pointer commit — the exact on-disk state a killed
+    // mid-rollback leaves. Re-arm the same journal over that state.
+    let confirmed = rollback::apply(
+        &root,
+        &serde_json::to_vec(&preview).expect("wire"),
+        Some(preview.plan_digest.as_str()),
+        false,
+        Some(&test_authority()),
+    );
+    assert_eq!(confirmed.status(), Status::Valid, "{confirmed:?}");
+    // Rewind the pointer to the pre-rollback state: the tree now carries
+    // the destination's exact bytes, manifest included.
+    history::write_current(&root, &third).expect("pointer");
+    history::write_transaction(&root, &journal_of(TransactionState::Restoring)).expect("journal");
+    let receipt = recovery::run(&root);
+    assert_eq!(receipt.status(), Status::Valid, "{receipt:?}");
+    assert_eq!(
+        history::current(&root).expect("custody").expect("gen"),
+        second,
+        "a fully-moved interrupted rollback completes to its destination"
+    );
+    // The destination's exact bytes are live again.
+    let live =
+        std::fs::read(root.join("apps/planner/gen/test/focus-task.test.ts")).expect("test file");
+    let expected = history::object(
+        &root,
+        second_record
+            .outputs
+            .iter()
+            .find(|output| output.path == "apps/planner/gen/test/focus-task.test.ts")
+            .expect("output")
+            .after_ref
+            .value()
+            .expect("ref"),
+    )
+    .expect("object");
+    assert_eq!(live, expected);
+    let _ = third_record;
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// A fabricated direct successor never authorizes recovery to delete an
+/// unclaimed maintained file (r6, codex F1): the self-consistent
+/// record+plan pair naming a maintained path as a create is refused at the
+/// anchor — its "creates" reach outside every generated root the committed
+/// custody can derive — and the victim survives untouched.
+#[test]
+fn forged_successor_record_never_deletes_unclaimed_files() {
+    let root = project_root("r6-forged-successor");
+    apply_first_generation(&root);
+    let victim = "maintained/victim.ts";
+    write_input(&root, victim, b"// maintained by hand\n");
+    let committed = history::current(&root).expect("custody").expect("gen");
+    let record = history::record(&root, &committed).expect("record");
+    let plan = history::plan(&root, &record.plan_digest).expect("retained plan");
+    // The forged successor: the real plan plus a create output for the
+    // victim, and a record carrying it, every digest self-consistent.
+    let mut minted = plan.clone();
+    minted.outputs.push(PlanOutput {
+        path: victim.to_owned(),
+        action: OutputAction::Create,
+        role: ArtifactRole::Implementation,
+        owner_module: "planner".to_owned(),
+        owner_target: "node-typescript".to_owned(),
+        before_digest: State::Absent,
+        after_digest: State::known(digest(b"// maintained by hand\n")),
+    });
+    minted
+        .outputs
+        .sort_by(|left, right| left.path.cmp(&right.path));
+    minted.plan_digest = plan_digest(&minted);
+    history::write_object(&root, &serde_json::to_vec_pretty(&minted).expect("wire"))
+        .expect("minted plan object");
+    history::write_object(&root, b"// maintained by hand\n").expect("victim object");
+    let mut outputs = record.outputs.clone();
+    outputs.push(RecordOutput {
+        path: victim.to_owned(),
+        role: ArtifactRole::Implementation,
+        owner_module: "planner".to_owned(),
+        owner_target: "node-typescript".to_owned(),
+        digest: digest(b"// maintained by hand\n"),
+        before_ref: State::Absent,
+        after_ref: State::known(digest(b"// maintained by hand\n")),
+    });
+    outputs.sort_by(|left, right| left.path.cmp(&right.path));
+    let mut forged = record.clone();
+    forged.previous_generation = State::known(GenerationDigest {
+        generation_digest: committed.clone(),
+    });
+    forged.plan_digest = minted.plan_digest.clone();
+    forged.outputs = outputs;
+    forged.generation_digest = super::generation_digest(&forged);
+    forged.record_digest = super::record_identity(&forged);
+    let forged_hex = forged
+        .generation_digest
+        .strip_prefix("sha256:")
+        .expect("digest")
+        .to_owned();
+    write_input(
+        &root,
+        &history::custody_logical(&format!("objects/{forged_hex}")),
+        &serde_json::to_vec(&forged).expect("wire"),
+    );
+    let mut pending: Vec<Pending> = minted
+        .outputs
+        .iter()
+        .map(|output| Pending {
+            path: output.path.clone(),
+            op: PendingOp::Publish,
+        })
+        .collect();
+    pending.push(Pending {
+        path: super::custody::MANIFEST_LOGICAL.to_owned(),
+        op: PendingOp::Publish,
+    });
+    pending.sort_by(|left, right| (&left.path, &left.op).cmp(&(&right.path, &right.op)));
+    let mut affected: Vec<String> = minted
+        .outputs
+        .iter()
+        .map(|output| output.path.clone())
+        .collect();
+    affected.sort();
+    let journal = Transaction {
+        schema_version: header("managed-transaction").0,
+        identity: header("managed-transaction").1,
+        transaction_id: "forged-succ-0001".to_owned(),
+        state: TransactionState::Publishing,
+        action: TransactionAction::Apply,
+        plan_digest: State::known(minted.plan_digest.clone()),
+        generation_digest: State::known(GenerationDigest {
+            generation_digest: forged.generation_digest.clone(),
+        }),
+        before_manifest_digest: State::Absent,
+        after_manifest_digest: State::Absent,
+        pending,
+        affected_files: affected,
+        conflict: State::Absent,
+        before_digest: State::Absent,
+    };
+    history::write_transaction(&root, &journal).expect("journal");
+    let receipt = recovery::run(&root);
+    assert_eq!(receipt.status(), Status::Invalid, "{receipt:?}");
+    assert_eq!(
+        std::fs::read(root.join(victim)).expect("victim"),
+        b"// maintained by hand\n".to_vec(),
+        "the fabricated successor never deletes the unclaimed file",
+    );
+    assert!(
+        !history::unresolved(&root).is_ok_and(|unresolved| unresolved.is_empty()),
+        "the journal stays unresolved: recovery remains owed"
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// A resolve journal without its retained confirmed intent never overwrites
+/// a manual edit (r6, codex F2): a caller-authored journal whose
+/// `beforeDigest` merely describes the live drift is not reviewed evidence.
+#[test]
+fn forged_resolve_journal_never_overwrites_unreviewed_drift() {
+    let root = project_root("r6-forged-resolve");
+    apply_first_generation(&root);
+    let generation = history::current(&root).expect("custody").expect("gen");
+    let path = "apps/planner/gen/src/focus-task.ts";
+    let drift = b"// MANUAL MAINTAINED BY USER\n";
+    write_input(&root, path, drift);
+    let mut transaction = Transaction {
+        schema_version: header("managed-transaction").0,
+        identity: header("managed-transaction").1,
+        transaction_id: "forged-res-0001".to_owned(),
+        state: TransactionState::Restoring,
+        action: TransactionAction::Resolve,
+        plan_digest: State::Absent,
+        generation_digest: State::known(GenerationDigest {
+            generation_digest: generation.clone(),
+        }),
+        before_manifest_digest: State::Absent,
+        after_manifest_digest: State::Absent,
+        pending: vec![Pending {
+            path: path.to_owned(),
+            op: PendingOp::Restore,
+        }],
+        affected_files: vec![path.to_owned()],
+        conflict: State::Absent,
+        before_digest: State::known(digest(drift)),
+    };
+    transaction.plan_digest = State::known(plan_digest(&transaction));
+    // No retained confirmed intent object exists — exactly the externally
+    // created journal of the confirmed exploit.
+    history::write_transaction(&root, &transaction).expect("journal");
+    let receipt = recovery::run(&root);
+    assert_eq!(receipt.status(), Status::Invalid, "{receipt:?}");
+    assert_eq!(
+        std::fs::read(root.join(path)).expect("drift"),
+        drift.to_vec(),
+        "the unreviewed drift is never overwritten",
+    );
+    assert!(
+        !history::unresolved(&root).is_ok_and(|unresolved| unresolved.is_empty()),
+        "the journal stays unresolved: recovery remains owed"
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// An invalid manifest pin refuses before any application byte moves (r6,
+/// codex F3 / devin F6): a journal whose `beforeManifestDigest` resolves to
+/// neither the live digest nor the committed retained manifest leaves the
+/// tree exactly as it was — the missing recorded output is NOT restored
+/// before the refusal.
+#[test]
+fn invalid_manifest_pin_refuses_before_any_byte_moves() {
+    let root = project_root("r6-manifest-preflight");
+    apply_first_generation(&root);
+    let generation = history::current(&root).expect("custody").expect("gen");
+    let record = history::record(&root, &generation).expect("record");
+    // The interrupted shape: one recorded output is missing and pending
+    // restoration; the manifest pin is caller-forged.
+    let missing = "apps/planner/gen/src/complete-task.ts";
+    std::fs::remove_file(root.join(missing)).expect("remove output");
+    let mut pending: Vec<Pending> = record
+        .outputs
+        .iter()
+        .map(|output| Pending {
+            path: output.path.clone(),
+            op: PendingOp::Publish,
+        })
+        .collect();
+    pending.push(Pending {
+        path: super::custody::MANIFEST_LOGICAL.to_owned(),
+        op: PendingOp::Publish,
+    });
+    pending.sort_by(|left, right| (&left.path, &left.op).cmp(&(&right.path, &right.op)));
+    let mut affected: Vec<String> = record
+        .outputs
+        .iter()
+        .map(|output| output.path.clone())
+        .collect();
+    affected.sort();
+    let journal = Transaction {
+        schema_version: header("managed-transaction").0,
+        identity: header("managed-transaction").1,
+        transaction_id: "badpin-0001".to_owned(),
+        state: TransactionState::Publishing,
+        action: TransactionAction::Apply,
+        plan_digest: State::known(record.plan_digest.clone()),
+        generation_digest: State::known(GenerationDigest {
+            generation_digest: generation.clone(),
+        }),
+        before_manifest_digest: State::known(PIN_C.to_owned()),
+        after_manifest_digest: State::Absent,
+        pending,
+        affected_files: affected,
+        conflict: State::Absent,
+        before_digest: State::Absent,
+    };
+    history::write_transaction(&root, &journal).expect("journal");
+    let receipt = recovery::run(&root);
+    assert_eq!(receipt.status(), Status::Invalid, "{receipt:?}");
+    assert!(
+        !root.join(missing).exists(),
+        "the missing output is NOT restored before the refusal"
+    );
+    assert!(
+        !history::unresolved(&root).is_ok_and(|unresolved| unresolved.is_empty()),
+        "the journal stays unresolved"
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// A journal whose pending set covers only a subset of the reviewed
+/// transaction's affected inventory never finalizes a partial destination
+/// as completed (r6, codex F4): recovery stays owed while a recorded
+/// generated output is missing.
+#[test]
+fn partial_pending_journal_never_completes_with_missing_output() {
+    let root = project_root("r6-partial-pending");
+    apply_first_generation(&root);
+    let generation = history::current(&root).expect("custody").expect("gen");
+    let record = history::record(&root, &generation).expect("record");
+    // One recorded generated output is deleted from the tree; the journal
+    // names only one other existing output.
+    std::fs::remove_file(root.join("apps/planner/gen/test/complete-task.test.ts"))
+        .expect("remove test");
+    let journal = Transaction {
+        schema_version: header("managed-transaction").0,
+        identity: header("managed-transaction").1,
+        transaction_id: "partial-0001".to_owned(),
+        state: TransactionState::Publishing,
+        action: TransactionAction::Apply,
+        plan_digest: State::known(record.plan_digest.clone()),
+        generation_digest: State::known(GenerationDigest {
+            generation_digest: generation.clone(),
+        }),
+        before_manifest_digest: State::Absent,
+        after_manifest_digest: State::Absent,
+        pending: vec![Pending {
+            path: "apps/planner/gen/src/focus-task.ts".to_owned(),
+            op: PendingOp::Publish,
+        }],
+        affected_files: vec!["apps/planner/gen/src/focus-task.ts".to_owned()],
+        conflict: State::Absent,
+        before_digest: State::Absent,
+    };
+    history::write_transaction(&root, &journal).expect("journal");
+    let receipt = recovery::run(&root);
+    assert_eq!(receipt.status(), Status::Invalid, "{receipt:?}");
+    assert!(
+        !root
+            .join("apps/planner/gen/test/complete-task.test.ts")
+            .exists(),
+        "the missing recorded output stays missing — never papered over"
+    );
+    assert!(
+        !history::unresolved(&root).is_ok_and(|unresolved| unresolved.is_empty()),
+        "recovery stays owed while a required output diverges"
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// Equivalence is honest about what ran (r6, codex F5 / devin F7): live
+/// bytes drifted from the committed generation fail the gate even when the
+/// evidence was re-pinned to the drifted bytes; phantom scenario rows that
+/// name no rendered requirement are refused instead of padding the
+/// receipt; and a bound coverage — whose handlers invoke a maintained hook
+/// the offline gate cannot execute — is incomplete evidence, never a
+/// projection-recomputed `match`.
+#[test]
+fn equivalence_refuses_repinned_drift_phantom_rows_and_bound_coverage() {
+    let root = project_root("r6-equivalence-honesty");
+    apply_first_generation(&root);
+    let generation = history::current(&root).expect("custody").expect("gen");
+    let record = history::record(&root, &generation).expect("record");
+    // Drift the live handler and re-pin the evidence to the drifted bytes.
+    let drifted = b"// drifted throwing implementation\n";
+    write_input(&root, "apps/planner/gen/src/focus-task.ts", drifted);
+    let repinned = super::equivalence::live_implementation_digest_for_test(
+        &root,
+        &record,
+        "planner",
+        "node-typescript",
+    )
+    .expect("drifted inventory");
+    let scenario_digest = |file: &str| {
+        record
+            .outputs
+            .iter()
+            .find(|output| output.path == file)
+            .expect("scenario test")
+            .digest
+            .clone()
+    };
+    let reference = record
+        .outputs
+        .iter()
+        .find(|output| output.path == "apps/planner/gen/src/focus-task.ts")
+        .expect("reference")
+        .after_ref
+        .value()
+        .expect("ref")
+        .clone();
+    let recomputed = "sha256:4ec9852ef939bad75ea72af4e8ed09668f78d38a01a814262048448f3fb83374";
+    let evidence_of = |implementation: String, extra: bool| {
+        let mut scenarios = vec![
+            ScenarioVerdict {
+                scenario: "planner.complete_task".to_owned(),
+                digest: scenario_digest("apps/planner/gen/test/complete-task.test.ts"),
+                verdict: ScenarioOutcome::Match,
+            },
+            ScenarioVerdict {
+                scenario: "planner.focus_task".to_owned(),
+                digest: scenario_digest("apps/planner/gen/test/focus-task.test.ts"),
+                verdict: ScenarioOutcome::Match,
+            },
+        ];
+        let mut execution = vec![
+            ScenarioExecution {
+                scenario: "planner.complete_task".to_owned(),
+                observed: recomputed.to_owned(),
+            },
+            ScenarioExecution {
+                scenario: "planner.focus_task".to_owned(),
+                observed: recomputed.to_owned(),
+            },
+        ];
+        if extra {
+            // The phantom row: a scenario naming no rendered requirement,
+            // with made-up pins.
+            scenarios.push(ScenarioVerdict {
+                scenario: "planner.ghost".to_owned(),
+                digest: scenario_digest("apps/planner/gen/test/focus-task.test.ts"),
+                verdict: ScenarioOutcome::Match,
+            });
+            execution.push(ScenarioExecution {
+                scenario: "planner.ghost".to_owned(),
+                observed: recomputed.to_owned(),
+            });
+        }
+        Equivalence {
+            schema_version: header("managed-equivalence").0,
+            identity: header("managed-equivalence").1,
+            module: "planner".to_owned(),
+            target: "node-typescript".to_owned(),
+            implementation_digest: implementation,
+            reference_digest: State::known(reference.clone()),
+            scenarios,
+            execution,
+            gaps: Vec::new(),
+            verdict: EquivalenceVerdict::Match,
+        }
+    };
+    // (a) Repinned drift fails on the committed-record byte comparison.
+    let refused = super::equivalence::adjudicate_for(
+        &root,
+        &serde_json::to_vec(&evidence_of(repinned, false)).expect("wire"),
+    );
+    assert_eq!(refused.status(), Status::Invalid, "{refused:?}");
+    assert_eq!(
+        refused.reason_codes().first().map(|code| code.as_str()),
+        Some("managed.equivalence-failed")
+    );
+    // Restore the committed bytes; phantom rows are corpus corruption.
+    let committed_handler = history::object(
+        &root,
+        record
+            .outputs
+            .iter()
+            .find(|output| output.path == "apps/planner/gen/src/focus-task.ts")
+            .expect("output")
+            .after_ref
+            .value()
+            .expect("ref"),
+    )
+    .expect("object");
+    write_input(
+        &root,
+        "apps/planner/gen/src/focus-task.ts",
+        &committed_handler,
+    );
+    let honest = super::equivalence::live_implementation_digest_for_test(
+        &root,
+        &record,
+        "planner",
+        "node-typescript",
+    )
+    .expect("honest inventory");
+    let refused = super::equivalence::adjudicate_for(
+        &root,
+        &serde_json::to_vec(&evidence_of(honest.clone(), true)).expect("wire"),
+    );
+    assert_eq!(refused.status(), Status::Unsupported, "{refused:?}");
+    assert_eq!(
+        refused.reason_codes().first().map(|code| code.as_str()),
+        Some("managed.equivalence-incomplete")
+    );
+    let _ = std::fs::remove_dir_all(&root);
+    // (b) A bound coverage is incomplete evidence: the gate cannot certify
+    // executed outcomes for handlers that invoke a maintained hook.
+    let bound_root = project_root("r6-equivalence-bound");
+    let binding = b"export function legacyHook(input) { return input; }\n";
+    write_input(&bound_root, "src/extensions/legacy_hook.ts", binding);
+    let mut coverage = coverage_doc();
+    coverage.extensions.push(ExtensionCheck {
+        symbol: "legacy_hook".to_owned(),
+        binding: "src/extensions/legacy_hook.ts".to_owned(),
+        contract_digest: digest(binding),
+        validated: true,
+    });
+    let mut ownership = ownership_doc();
+    ownership.modules[0].targets[0].extensions.push(Extension {
+        symbol: "legacy_hook".to_owned(),
+        binding: "src/extensions/legacy_hook.ts".to_owned(),
+        contract_digest: digest(binding),
+    });
+    let assignment = &ownership.modules[0];
+    let target = &assignment.targets[0];
+    let admitted = coverage::admit(assignment, target, &coverage).expect("admission");
+    write_input(
+        &bound_root,
+        "model/planner.model.json",
+        b"{ \"planner\": true }\n",
+    );
+    let built = plan::build(
+        PlanAction::Promotion,
+        &admitted,
+        &coverage,
+        vec![InputPin {
+            path: "model/planner.model.json".to_owned(),
+            digest: digest(b"{ \"planner\": true }\n"),
+        }],
+        &empty_before(),
+        None,
+        None,
+        hash(&coverage),
+        &test_semantics(),
+    )
+    .expect("plan");
+    let applied = apply::apply(
+        &bound_root,
+        &serde_json::to_vec(&built).expect("wire"),
+        &serde_json::to_vec(&coverage).expect("wire"),
+        &ownership,
+        Some(built.plan_digest.as_str()),
+        false,
+        Some(&test_authority()),
+    );
+    assert_eq!(applied.status(), Status::Valid, "{applied:?}");
+    let bound_generation = history::current(&bound_root)
+        .expect("custody")
+        .expect("gen");
+    let bound_record = history::record(&bound_root, &bound_generation).expect("record");
+    let bound_inventory = super::equivalence::live_implementation_digest_for_test(
+        &bound_root,
+        &bound_record,
+        "planner",
+        "node-typescript",
+    )
+    .expect("inventory");
+    let evidence = Equivalence {
+        schema_version: header("managed-equivalence").0,
+        identity: header("managed-equivalence").1,
+        module: "planner".to_owned(),
+        target: "node-typescript".to_owned(),
+        implementation_digest: bound_inventory,
+        reference_digest: State::known(
+            bound_record.outputs[0]
+                .after_ref
+                .value()
+                .expect("ref")
+                .clone(),
+        ),
+        scenarios: vec![
+            ScenarioVerdict {
+                scenario: "planner.complete_task".to_owned(),
+                digest: scenario_digest("apps/planner/gen/test/complete-task.test.ts"),
+                verdict: ScenarioOutcome::Match,
+            },
+            ScenarioVerdict {
+                scenario: "planner.focus_task".to_owned(),
+                digest: scenario_digest("apps/planner/gen/test/focus-task.test.ts"),
+                verdict: ScenarioOutcome::Match,
+            },
+        ],
+        execution: vec![
+            ScenarioExecution {
+                scenario: "planner.complete_task".to_owned(),
+                observed: recomputed.to_owned(),
+            },
+            ScenarioExecution {
+                scenario: "planner.focus_task".to_owned(),
+                observed: recomputed.to_owned(),
+            },
+        ],
+        gaps: Vec::new(),
+        verdict: EquivalenceVerdict::Match,
+    };
+    let refused = super::equivalence::adjudicate_for(
+        &bound_root,
+        &serde_json::to_vec(&evidence).expect("wire"),
+    );
+    assert_eq!(refused.status(), Status::Unsupported, "{refused:?}");
+    assert_eq!(
+        refused.reason_codes().first().map(|code| code.as_str()),
+        Some("managed.equivalence-incomplete")
+    );
+    let _ = std::fs::remove_dir_all(&bound_root);
+}
+
+/// Binding qualification scans only top-level executable positions (r6,
+/// devin F2 / codex F7): nested declarations, string-literal decoys, and
+/// class-shaped bindings never qualify — the emitted test invokes plain
+/// calls, so each shape would fail natively.
+#[test]
+fn binding_qualification_scans_only_top_level_callables() {
+    // A declaration nested inside another scope never satisfies an export
+    // clause (the generated module could not even load).
+    let nested = b"function outer() { function hook(x) { return x; } }\nexport { hook };\n";
+    assert!(
+        !super::bindings::exports_symbol(nested, "hook"),
+        "a nested declaration never satisfies an export clause"
+    );
+    // A string-literal decoy never qualifies: literal contents are blank.
+    let decoy = b"const strhook = \"i am not a function\";\nconst decoy = \"function strhook(x){}\";\nexport { strhook };\n";
+    assert!(
+        !super::bindings::exports_symbol(decoy, "strhook"),
+        "a string-literal decoy never qualifies"
+    );
+    let marker = b"export const marker = \"function hook() {}\";\nexport const hook = 7;\n";
+    assert!(
+        !super::bindings::exports_symbol(marker, "hook"),
+        "a marker string never rescues a non-callable export"
+    );
+    let wrapper = b"export function wrapper() { function hook() {} }\nexport const hook = 7;\n";
+    assert!(
+        !super::bindings::exports_symbol(wrapper, "hook"),
+        "a nested declaration never rescues a non-callable export"
+    );
+    // A class binding never qualifies: the emitted invocation is a plain
+    // call and would throw `Class constructor cannot be invoked without
+    // 'new'`.
+    let class_direct = b"export class hook {}\n";
+    assert!(
+        !super::bindings::exports_symbol(class_direct, "hook"),
+        "a class-shaped binding is refused (plain-call invocation)"
+    );
+    let class_clause = b"class hook {}\nexport { hook };\n";
+    assert!(
+        !super::bindings::exports_symbol(class_clause, "hook"),
+        "a class-shaped named export is refused"
+    );
+    // Genuine top-level callables still qualify.
+    assert!(super::bindings::exports_symbol(
+        b"function hook(x) { return x; }\nexport { hook };\n",
+        "hook"
+    ));
+    assert!(super::bindings::exports_symbol(
+        b"export const hook = (x) => x;\n",
+        "hook"
+    ));
+}
+
+/// Adapter entry conformance is structural, not textual (r6, devin F3 /
+/// codex F8): a token soup inside one string literal never proves locked
+/// capability; a protocol-document entry whose operations are standalone
+/// quoted keys does.
+#[test]
+fn adapter_string_tokens_never_prove_capability() {
+    let soup =
+        b"const tokens = \"describe validate verify generate protocol_version\";\nexport {};\n";
+    let refused =
+        super::authority::adapter_entry_conformance(soup).expect_err("token soup refuses");
+    assert_eq!(refused.status(), Status::Invalid);
+    // A protocol-document spelling: the operations as standalone quoted
+    // keys and the negotiation parameter as a structural property.
+    let quoted = b"const capabilities = { operations: [\"describe\", \"validate\", \"verify\", \"generate\"], protocol_version: \"0.3.2\" };\nexport {};\n";
+    assert!(super::authority::adapter_entry_conformance(quoted).is_ok());
+    // A structural implementation qualifies too.
+    let structural = b"export function describe() {}\nexport function validate() {}\nexport function verify() {}\nexport function generate() {}\nconst handshake = { protocol_version: \"0.3.2\" };\n";
+    assert!(
+        super::authority::adapter_entry_conformance(structural).is_ok(),
+        "a prefix word (protocol_versions) never satisfies protocol_version"
+    );
+    // A prefix word never satisfies the negotiation parameter.
+    let prefix = b"const capabilities = { operations: [\"describe\", \"validate\", \"verify\", \"generate\"], protocol_versions: [\"0.3.2\"] };\nexport {};\n";
+    assert!(super::authority::adapter_entry_conformance(prefix).is_err());
+}
+
+/// The rendered interface is Model-typed, never sample-typed (r6, codex
+/// F9): under byte-identical Model/IR/lock pins, a coverage sample whose
+/// scalar class disagrees with the Model's declared field type refuses —
+/// coverage samples are evidence inputs, not authority over the generated
+/// interface.
+#[test]
+fn model_types_pin_the_rendered_interface() {
+    let mut authority = test_authority();
+    // The Model declares focus_task's returned title as a string.
+    let string_semantics = test_semantics();
+    assert!(super::authority::semantics_match(&coverage_doc(), &authority).is_ok());
+    // The same authority pins, with the sample's title flipped to a
+    // number: the sample disagrees with the Model's declared type.
+    let mut flipped = coverage_doc();
+    for requirement in &mut flipped.requirements {
+        if requirement.id == "planner.focus_task" {
+            if let State::Known { value } = &mut requirement.sample {
+                value.input.insert("title".to_owned(), Scalar::Count(7.0));
+                value.output.insert("title".to_owned(), Scalar::Count(7.0));
+            }
+        }
+    }
+    let refused = super::authority::semantics_match(&flipped, &authority);
+    assert_eq!(
+        refused.expect_err("sample type flip refuses").status(),
+        Status::Unsupported
+    );
+    // The rendered bytes really are Model-typed: rendering under a Model
+    // that declares the title a number emits `number` even though the
+    // sample value is text, and rendering is refused when the Model types
+    // a field the renderer cannot spell.
+    for obligation in &mut authority.semantics {
+        if obligation.id == "planner.focus_task" {
+            for (field, spelling) in &mut obligation.return_fields {
+                if field == "title" {
+                    *spelling = "number".to_owned();
+                }
+            }
+        }
+    }
+    assert!(super::authority::semantics_match(&flipped, &authority).is_ok());
+    let inventory =
+        render_inventory(&flipped, "apps/planner/gen", &authority.semantics).expect("inventory");
+    let handler = String::from_utf8(
+        inventory
+            .iter()
+            .find(|artifact| artifact.path == "apps/planner/gen/src/focus-task.ts")
+            .expect("handler")
+            .bytes
+            .clone(),
+    )
+    .expect("utf8");
+    assert!(
+        handler.contains("title: number;"),
+        "the rendered type follows the Model, not the sample: {handler}"
+    );
+    // A Model type the renderer cannot spell as a scalar surface refuses.
+    let mut untypeable = authority.clone();
+    for obligation in &mut untypeable.semantics {
+        if obligation.id == "planner.focus_task" {
+            for (field, spelling) in &mut obligation.return_fields {
+                if field == "title" {
+                    *spelling = String::new();
+                }
+            }
+        }
+    }
+    let refused = super::authority::semantics_match(&flipped, &untypeable);
+    assert_eq!(
+        refused.expect_err("untypeable field refuses").status(),
+        Status::Unsupported
+    );
+    assert!(
+        render_inventory(&flipped, "apps/planner/gen", &untypeable.semantics).is_err(),
+        "the renderer refuses a field the Model cannot type"
+    );
+    let _ = string_semantics;
+}
+
+/// The custody object store is never first-writer-wins (r6, devin F4): a
+/// pre-planted self-consistent record under a predicted generation name,
+/// and a pre-planted retained manifest, are conflicts — the transaction's
+/// own minted bytes are the only new custody a mutation may create.
+#[test]
+fn planted_custody_records_and_manifests_are_conflicts() {
+    // Derive the exact first-generation custody in a sibling root, then
+    // replant altered versions under the same names before the apply.
+    let source = project_root("r6-plant-source");
+    apply_first_generation(&source);
+    let generation = history::current(&source).expect("custody").expect("gen");
+    let hex = generation.strip_prefix("sha256:").expect("digest");
+    let record_bytes =
+        std::fs::read(source.join(history::custody_logical(&format!("objects/{hex}"))))
+            .expect("record");
+    let manifest_bytes =
+        std::fs::read(source.join(super::custody::MANIFEST_LOGICAL)).expect("manifest");
+
+    // A planted record with a rewritten lineage pin and recomputed
+    // recordDigest under the same generation name.
+    let target = project_root("r6-plant-record");
+    write_input(
+        &target,
+        "model/planner.model.json",
+        b"{ \"planner\": true }\n",
+    );
+    write_test_lock(&target);
+    let mut planted: GenerationRecord = serde_json::from_slice(&record_bytes).expect("record wire");
+    planted.previous_generation = State::known(GenerationDigest {
+        generation_digest: PIN_A.to_owned(),
+    });
+    planted.record_digest = super::record_identity(&planted);
+    write_input(
+        &target,
+        &history::custody_logical(&format!("objects/{hex}")),
+        &serde_json::to_vec(&planted).expect("wire"),
+    );
+    let ownership = ownership_doc();
+    let assignment = &ownership.modules[0];
+    let target_assignment = &assignment.targets[0];
+    let admitted =
+        coverage::admit(assignment, target_assignment, &coverage_doc()).expect("admission");
+    let built = plan::build(
+        PlanAction::Promotion,
+        &admitted,
+        &coverage_doc(),
+        vec![InputPin {
+            path: "model/planner.model.json".to_owned(),
+            digest: digest(b"{ \"planner\": true }\n"),
+        }],
+        &empty_before(),
+        None,
+        None,
+        hash(&coverage_doc()),
+        &test_semantics(),
+    )
+    .expect("plan");
+    let refused = apply::apply(
+        &target,
+        &serde_json::to_vec(&built).expect("wire"),
+        &serde_json::to_vec(&coverage_doc()).expect("wire"),
+        &ownership,
+        Some(built.plan_digest.as_str()),
+        false,
+        Some(&test_authority()),
+    );
+    assert_eq!(refused.status(), Status::Invalid, "{refused:?}");
+    assert!(
+        !history::exists(&target),
+        "the planted record never becomes committed lineage"
+    );
+    let _ = std::fs::remove_dir_all(&target);
+
+    // A planted retained manifest under the predicted generation name.
+    let manifest_target = project_root("r6-plant-manifest");
+    write_input(
+        &manifest_target,
+        "model/planner.model.json",
+        b"{ \"planner\": true }\n",
+    );
+    write_test_lock(&manifest_target);
+    let mut forged_manifest: serde_json::Value =
+        serde_json::from_slice(&manifest_bytes).expect("manifest wire");
+    forged_manifest["artifacts"]
+        .as_array_mut()
+        .expect("artifacts")
+        .push(serde_json::json!({
+            "path": "maintained/victim.ts",
+            "content": PIN_A,
+        }));
+    write_input(
+        &manifest_target,
+        &history::custody_logical(&format!("manifests/{hex}")),
+        &serde_json::to_vec(&forged_manifest).expect("wire"),
+    );
+    let refused = apply::apply(
+        &manifest_target,
+        &serde_json::to_vec(&built).expect("wire"),
+        &serde_json::to_vec(&coverage_doc()).expect("wire"),
+        &ownership,
+        Some(built.plan_digest.as_str()),
+        false,
+        Some(&test_authority()),
+    );
+    assert_eq!(refused.status(), Status::Invalid, "{refused:?}");
+    assert!(
+        !history::exists(&manifest_target),
+        "the planted manifest never becomes the authoritative snapshot"
+    );
+    let _ = std::fs::remove_dir_all(&manifest_target);
+    let _ = std::fs::remove_dir_all(&source);
+}
+
+/// The derived authority comes from one filesystem snapshot (r6, codex
+/// F11 / devin F8): the single-read derivation reproduces the exact
+/// historical Model/IR/lock pins the shipped fixture coverage carries —
+/// any divergence between the envelope payload the authority hashes and
+/// the load pipeline's own bytes would move the Model pin here.
+#[test]
+fn single_snapshot_authority_pins_the_exact_model_digest() {
+    // The fixture is copied into a selection-legal project-relative
+    // directory (the selection grammar refuses `..` traversal).
+    let fixture_source = [
+        "tests/fixtures/managed/planner",
+        "../../tests/fixtures/managed/planner",
+    ]
+    .into_iter()
+    .find(|path| std::path::Path::new(path).join("lekalo").is_dir())
+    .expect("planner fixture");
+    let project = "target/lekalo-snapshot-fixture/planner";
+    let _ = std::fs::remove_dir_all(project);
+    copy_tree(
+        std::path::Path::new(fixture_source),
+        std::path::Path::new(project),
+    );
+    let selection = crate::loader::LoadSelection {
+        project: Some(project.to_owned()),
+    };
+    let authority = super::authority::derive(&selection, "planner").expect("authority");
+    let coverage_bytes = std::fs::read(std::path::Path::new(fixture_source).join("coverage.json"))
+        .expect("coverage");
+    let coverage: Coverage = serde_json::from_slice(&coverage_bytes).expect("wire");
+    let State::Known { value: pins } = &coverage.authority else {
+        panic!("fixture coverage pins its authority");
+    };
+    assert_eq!(authority.model_digest, pins.model, "model pin");
+    assert_eq!(authority.ir_digest, pins.ir, "ir pin");
+    assert_eq!(authority.lock_digest, pins.lock, "lock pin");
+    // The resolved semantics type the fixture's fields from the Model:
+    // complete_task's done is the named boolean scalar, focus_task's
+    // entity fields resolve through task_id/text.
+    let complete = authority
+        .semantics
+        .iter()
+        .find(|obligation| obligation.id == "planner.complete_task")
+        .expect("command obligation");
+    assert_eq!(
+        complete
+            .input
+            .iter()
+            .find(|(name, _)| name == "done")
+            .map(|(_, spelling)| spelling.clone()),
+        Some("boolean".to_owned()),
+        "named scalar refs resolve to their declared base"
+    );
+    let focus = authority
+        .semantics
+        .iter()
+        .find(|obligation| obligation.id == "planner.focus_task")
+        .expect("query obligation");
+    assert_eq!(
+        focus.return_fields,
+        vec![
+            ("id".to_owned(), "uuid".to_owned()),
+            ("title".to_owned(), "string".to_owned()),
+        ],
+        "entity field types resolve through the compiled project"
+    );
 }

@@ -64,15 +64,21 @@ pub struct Obligation {
     pub id: String,
     /// The closed definition kind.
     pub kind: DefinitionKind,
-    /// The exact Model input fields of a command: `(name, type)`.
+    /// The exact Model input fields of a command: `(name, type)`, where
+    /// the type spelling is the **resolved base** of the Model's declared
+    /// type (named scalar/enum refs resolve through the compiled project;
+    /// `list<…>`/`optional<…>` keep their wrappers) — never the raw
+    /// symbolic spelling the renderer cannot type (r6, codex F9).
     pub input: Vec<(String, String)>,
     /// The exact reads of a query.
     pub reads: Vec<String>,
     /// The exact return type spelling of a query, when declared.
     pub returns: Option<String>,
-    /// The declared field names of the returned entity, when the query
-    /// returns an entity: the authority for the output surface.
-    pub return_fields: Vec<String>,
+    /// The declared fields of the returned entity, when the query
+    /// returns an entity: `(field name, resolved base type)` — the
+    /// authority for the output surface, names AND scalar classes
+    /// (r6, codex F9 / devin F5).
+    pub return_fields: Vec<(String, String)>,
 }
 
 /// The locked adapter a managed generation binds.
@@ -136,28 +142,28 @@ pub fn live_lock_digest(root: &std::path::Path) -> Option<String> {
 /// Derive the generation authority of one project: load and compile the
 /// canonical Model through the accepted pipeline, verify the exact lock
 /// pins it, and collect the module's required renderable ledger.
+///
+/// The whole derivation consumes ONE filesystem snapshot (r6, codex F11
+/// / devin F8): the Model envelope payload, the typed Model, the IR, the
+/// semantics, and the source pins all come from the same
+/// `load_with_snapshot` read, so no window exists where the authority's
+/// Model digest describes one read while its sources and IR describe
+/// another. There is deliberately no second `loader::run` call.
 pub fn derive(selection: &LoadSelection, module: &str) -> Result<Authority, DomainResult> {
     let root = match loader::root_for_selection(selection) {
         Ok(root) => root,
         Err(error) => return Err(classify(error)),
     };
-    // The model pin is the exact payload bytes the accepted load envelope
-    // renders — the same digest the artifact-owner lane binds, so the
-    // governed manifest and the managed authority always agree.
-    let model_json = match loader::run(selection, false) {
-        crate::result::DomainResult::Valid {
-            payload: crate::result::SuccessPayload::Model { json, .. },
-            ..
-        } => json,
-        other => return Err(classify(other)),
-    };
-    // The same load's snapshot carries the exact source documents the
-    // Model was derived from (r4 finding 9): the authority's Model digest
-    // and its source pins describe one project read.
+    // One read: the snapshot carries the exact source documents, the
+    // normalized Model, and (through [`loader::model_envelope_payload`])
+    // the exact payload bytes the load envelope renders — the same digest
+    // the artifact-owner lane binds, so the governed manifest and the
+    // managed authority always agree, now provably over one snapshot.
     let loaded = match loader::load_with_snapshot(selection) {
         Ok(loaded) => loaded,
         Err(error) => return Err(classify(error)),
     };
+    let model_json = loader::model_envelope_payload(&loaded.model);
     let model = loaded.model;
     let sources = loaded
         .documents
@@ -278,7 +284,12 @@ pub fn derive(selection: &LoadSelection, module: &str) -> Result<Authority, Doma
                     input: command
                         .input
                         .iter()
-                        .map(|field| (field.name.as_str().to_owned(), type_spelling(&field.r#type)))
+                        .map(|field| {
+                            (
+                                field.name.as_str().to_owned(),
+                                resolve_spelling(&compilation.project, &field.r#type),
+                            )
+                        })
                         .collect(),
                     reads: Vec::new(),
                     returns: None,
@@ -563,25 +574,45 @@ pub fn ledger_complete(
 }
 
 /// The bounded structural conformance probe of one locked adapter entry
-/// (findings 8 and r4-4): the entry's comment-free executable surface must
-/// carry the complete adapter handshake surface — every lifecycle
-/// operation and the protocol negotiation parameter. This is a
-/// source-surface check, not execution: the planning lane never launches
-/// processes. An entry without the full operation set is a capability
-/// claim without an implementation; tokens that appear only inside
-/// comments are invisible.
+/// (findings 8, r4-4, and r6 devin F3 / codex F8): the entry's scanned
+/// executable surface must carry the complete adapter handshake surface —
+/// every lifecycle operation and the protocol negotiation parameter — as
+/// *structural* forms, never as inert text:
+///
+/// - an identifier occurrence (word-bounded) followed by `(` or `:` — a
+///   function identifier or a property key on the code surface, where
+///   comments are stripped and string contents are blank; or
+/// - a *standalone quoted key*: a string/template literal whose entire
+///   content is exactly the token (the protocol-document spelling of an
+///   operation name, e.g. `operations: ["describe", …]`).
+///
+/// This is a source-surface check, not execution: the planning lane never
+/// launches processes. But a token soup inside one string literal — the
+/// r6 confirmed spoof (`const s = "describe validate verify generate
+/// protocol_version"`) — has no structural occurrence and no standalone
+/// literal, and never qualifies.
 pub(crate) fn adapter_entry_conformance(entry: &[u8]) -> Result<(), DomainResult> {
-    let Some(text) = super::bindings::comment_free(entry) else {
+    let Some(surface) = super::bindings::scan_surface(entry) else {
         return Err(stale("adapter", "entry-encoding"));
     };
-    for surface in [
+    for token in [
         "describe",
         "validate",
         "verify",
         "generate",
         "protocol_version",
     ] {
-        if !text.contains(surface) {
+        let structural = surface.code.match_indices(token).any(|(at, _)| {
+            word_boundaries(&surface.code, at, token.len())
+                && surface.code[at + token.len()..]
+                    .trim_start()
+                    .starts_with(['(', ':'])
+        });
+        let quoted = surface
+            .literals
+            .iter()
+            .any(|literal| literal.trim() == token);
+        if !structural && !quoted {
             return Err(stale("adapter", "entry-surface"));
         }
     }
@@ -592,13 +623,32 @@ fn classify(error: DomainResult) -> DomainResult {
     error
 }
 
-/// The declared field names of the entity one type reference resolves
+/// Whether the occurrence at `at` of a `len`-byte token sits on identifier
+/// boundaries in `text` (so `protocol_versions` never satisfies
+/// `protocol_version`).
+fn word_boundaries(text: &str, at: usize, len: usize) -> bool {
+    let before = at == 0
+        || !text[..at]
+            .chars()
+            .next_back()
+            .is_some_and(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$');
+    let after = text[at + len..]
+        .chars()
+        .next()
+        .map(|c| !c.is_ascii_alphanumeric() && c != '_' && c != '$')
+        .unwrap_or(true);
+    before && after
+}
+
+/// The declared fields of the entity one type reference resolves
 /// to, when it names an entity of the compiled project (finding 4): the
-/// authority for a query's generated output surface.
+/// authority for a query's generated output surface — names AND resolved
+/// base types, so the renderer and the sample validator both type the
+/// surface from the Model (r6, codex F9).
 fn return_entity_fields(
     project: &crate::ir::CompiledProject,
     reference: &TypeRef,
-) -> Option<Vec<String>> {
+) -> Option<Vec<(String, String)>> {
     let TypeRef::Ref(symbol) = reference else {
         return None;
     };
@@ -613,9 +663,41 @@ fn return_entity_fields(
         entity
             .fields
             .iter()
-            .map(|field| field.name.as_str().to_owned())
+            .map(|field| {
+                (
+                    field.name.as_str().to_owned(),
+                    resolve_spelling(project, &field.r#type),
+                )
+            })
             .collect(),
     )
+}
+
+/// Resolve one Model type reference to the spelling the renderer and the
+/// sample validator can type (r6, codex F9): named scalar refs resolve to
+/// their declared base (`planner.boolean` → `boolean`), enum refs resolve
+/// to `string` (their JSON scalar class), `list`/`optional` wrappers keep
+/// their shape over the resolved inner type, and anything the renderer
+/// cannot type as a scalar surface (an entity/value-object ref inside a
+/// field) resolves to the empty spelling — which every consumer fails
+/// closed on (`scalar_matches` refuses it, the renderer refuses to emit
+/// an interface field it cannot type from the Model).
+fn resolve_spelling(project: &crate::ir::CompiledProject, reference: &TypeRef) -> String {
+    match reference {
+        TypeRef::List(inner) => format!("list<{}>", resolve_spelling(project, inner)),
+        TypeRef::Optional(inner) => {
+            format!("optional<{}>", resolve_spelling(project, inner))
+        }
+        TypeRef::Ref(symbol) => match project
+            .definitions
+            .iter()
+            .find(|definition| definition.id() == symbol)
+        {
+            Some(crate::ir::Definition::Scalar(scalar)) => scalar.base.as_str().to_owned(),
+            Some(crate::ir::Definition::Enum(_)) => "string".to_owned(),
+            _ => String::new(),
+        },
+    }
 }
 
 /// The closed type spelling of one IR type reference (finding 4): the
@@ -732,16 +814,23 @@ pub fn semantics_match(
         // authority for the generated output shape. A returned entity
         // binds the sample's output keys to its exact declared fields —
         // caller evidence cannot rename the output surface (the same
-        // Model + lock always render the same names). The input side of a
-        // query is bound too (finding 7): every projected source name must
-        // be a declared field of the returned entity, so the handler's
-        // input interface is spelled by the Model, never by caller
-        // evidence — an invented input name cannot change the rendered
-        // bytes under an unchanged IR + lock.
+        // Model + lock always render the same names) — and, since r6
+        // (codex F9), to their exact declared scalar classes: a sample
+        // output value whose JSON scalar class disagrees with the Model's
+        // resolved field type is refused, so coverage samples can never
+        // change the rendered interface types under identical
+        // Model/IR/lock. The input side of a query is bound too (finding
+        // 7): every projected source name must be a declared field of the
+        // returned entity and every sample input value must fit the
+        // Model's declared field type, so the handler's input interface
+        // is spelled and typed by the Model, never by caller evidence.
         if obligation.kind == DefinitionKind::Query && !obligation.return_fields.is_empty() {
             if let Some(sample) = requirement.sample.value() {
-                let mut declared = obligation.return_fields.clone();
-                declared.sort();
+                let declared: Vec<String> = obligation
+                    .return_fields
+                    .iter()
+                    .map(|(field, _)| field.clone())
+                    .collect();
                 let mut witnessed: Vec<String> = sample.output.keys().cloned().collect();
                 witnessed.sort();
                 if declared != witnessed {
@@ -753,12 +842,38 @@ pub fn semantics_match(
                         ],
                     ));
                 }
+                for (field, spelling) in &obligation.return_fields {
+                    let Some(value) = sample.output.get(field) else {
+                        continue;
+                    };
+                    if !scalar_matches(value, spelling) {
+                        return Err(super::diagnostic::failure(
+                            super::CAPABILITY_GAP,
+                            &[
+                                ("requirement", obligation.id.as_str()),
+                                ("reason", "sample-type-not-model"),
+                            ],
+                        ));
+                    }
+                    let Some(input) = sample.input.get(field) else {
+                        continue;
+                    };
+                    if !scalar_matches(input, spelling) {
+                        return Err(super::diagnostic::failure(
+                            super::CAPABILITY_GAP,
+                            &[
+                                ("requirement", obligation.id.as_str()),
+                                ("reason", "sample-type-not-model"),
+                            ],
+                        ));
+                    }
+                }
             }
             for projection in &requirement.projection {
                 if !obligation
                     .return_fields
                     .iter()
-                    .any(|field| field == &projection.from)
+                    .any(|(field, _)| field == &projection.from)
                 {
                     return Err(super::diagnostic::failure(
                         super::CAPABILITY_GAP,
@@ -776,8 +891,14 @@ pub fn semantics_match(
 }
 
 /// Whether the scalar sample value fits the Model's declared type
-/// spelling: the closed scalar bases map to the JSON scalar classes.
+/// spelling: the closed scalar bases map to the JSON scalar classes, and
+/// an unresolved spelling (empty — a type the Model declares but the
+/// renderer cannot type as a scalar surface) never matches (r6,
+/// codex F9: the prior `_ => true` default let named refs through).
 fn scalar_matches(value: &super::wire::Scalar, spelling: &str) -> bool {
+    if spelling.is_empty() {
+        return false;
+    }
     let base = spelling.strip_prefix("optional<").unwrap_or(spelling);
     let base = base.strip_prefix("list<").unwrap_or(base);
     let base = base.strip_suffix('>').unwrap_or(base);
@@ -787,6 +908,6 @@ fn scalar_matches(value: &super::wire::Scalar, spelling: &str) -> bool {
         }
         "number" => matches!(value, super::wire::Scalar::Count(_)),
         "boolean" => matches!(value, super::wire::Scalar::Flag(_)),
-        _ => true,
+        _ => false,
     }
 }

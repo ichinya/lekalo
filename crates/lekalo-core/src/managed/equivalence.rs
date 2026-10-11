@@ -4,22 +4,32 @@
 //! against the exact live generation: the implementation pin must be the
 //! digest of the **live** generated implementation bytes of the committed
 //! record (recomputed at adjudication, so any manual drift fails the gate —
-//! finding 5), every scenario pin must be the exact retained executable
-//! scenario of the requirement it names — the generated behavioral test
-//! that invokes the pinned handler on the pinned sample and asserts the
-//! pinned outcome, retained as a custody object — and the scenario corpus
-//! must cover every rendered requirement of the committed record. The
-//! verdict *labels* are caller-authored and are never authority (r4
-//! finding 2): every scenario must additionally carry an executed-outcome
-//! receipt — the digest of the observed output of executing its retained
-//! scenario — which the gate independently recomputes from the retained
-//! reviewed coverage (the deterministic handler is the pinned projection
-//! over the pinned sample), and the pinned expectation must equal that
-//! recomputed executed output, so a `match` verdict can never certify a
-//! generation whose own emitted test fails. Any qualified mismatch is a
-//! failed gate. Unsupported or missing coverage is an incomplete gate,
-//! and only a fully supported matching corpus passes. Timing metrics and
-//! raw sources are never part of it.
+//! finding 5), every live implementation/test byte must equal its
+//! **committed output digest** (r6, codex F5: evidence re-pinned to drifted
+//! bytes is a behavioral contradiction, never a `match`), every scenario
+//! pin must be the exact retained executable scenario of the requirement
+//! it names — the generated behavioral test that invokes the pinned
+//! handler on the pinned sample and asserts the pinned outcome, retained
+//! as a custody object — and the scenario corpus must cover **exactly**
+//! every rendered requirement of the committed record (r6, devin F7:
+//! phantom rows that bind nothing are refused instead of padding the
+//! receipt). The verdict *labels* are caller-authored and are never
+//! authority (r4 finding 2): every scenario must additionally carry an
+//! executed-outcome receipt — the digest of the observed output of
+//! executing its retained scenario — which the gate independently
+//! recomputes from the retained reviewed coverage, and the pinned
+//! expectation must equal that recomputed executed output, so a `match`
+//! verdict can never certify a generation whose own emitted test fails.
+//! The recomputation is honest about its scope (r6, codex F5 / devin F2):
+//! the deterministic handler *is* the pinned projection only while no
+//! custom binding participates; a bound coverage's handlers invoke a
+//! maintained hook the offline gate cannot execute, so those scenarios
+//! are incomplete evidence (`bound-execution`) until independently
+//! produced execution evidence exists — the gate stops claiming
+//! executed-outcome equivalence it cannot recompute. Any qualified
+//! mismatch is a failed gate. Unsupported or missing coverage is an
+//! incomplete gate, and only a fully supported matching corpus passes.
+//! Timing metrics and raw sources are never part of it.
 
 use super::diagnostic;
 use super::wire::{ArtifactRole, Equivalence, EquivalenceVerdict, ScenarioOutcome};
@@ -47,6 +57,7 @@ fn invalid(reason: &str) -> DomainResult {
 /// from the live project at adjudication time. Drifted, missing, or
 /// unreadable live bytes fail the gate instead of matching a stale pin
 /// (finding 5): retained-record existence is not behavioral evidence.
+#[cfg(test)]
 fn live_implementation_digest(
     root: &std::path::Path,
     record: &super::wire::GenerationRecord,
@@ -107,14 +118,40 @@ pub fn adjudicate_for(root: &std::path::Path, bytes: &[u8]) -> DomainResult {
     // The evidence is only ever about the exact live implementation: the
     // caller-provided pin must equal the digest of the live generated
     // bytes (recomputed here, finding 5) — a retained-record pin that no
-    // longer describes the tree fails instead of matching.
-    match live_implementation_digest(root, &record, &evidence.module, &evidence.target) {
-        Some(digest) => {
-            if digest != evidence.implementation_digest {
-                return diagnostic::failure(EQUIVALENCE_FAILED, &detail("stale-evidence"));
-            }
+    // longer describes the tree fails instead of matching. Since r6
+    // (codex F5) every live implementation/test byte of the subject must
+    // additionally equal its **committed output digest**: a drifted live
+    // handler whose evidence was re-pinned to the drifted bytes is a
+    // behavioral contradiction the gate refuses, never a `match` — the
+    // retained record, not the caller's pin, defines what the committed
+    // generation's bytes are.
+    let mut inventory: Vec<String> = Vec::new();
+    for output in &record.outputs {
+        if output.owner_module != evidence.module
+            || output.owner_target != evidence.target
+            || !matches!(
+                output.role,
+                ArtifactRole::Implementation | ArtifactRole::Test
+            )
+        {
+            continue;
         }
-        None => return invalid("custody"),
+        let live = super::fs::read_file(root, &output.path).ok().flatten();
+        let Some(live) = live else {
+            return invalid("custody");
+        };
+        if super::digest(&live) != output.digest {
+            return diagnostic::failure(EQUIVALENCE_FAILED, &detail("live-drift"));
+        }
+        inventory.push(output.path.clone());
+        inventory.push(super::digest(&live));
+    }
+    if inventory.is_empty() {
+        return invalid("custody");
+    }
+    let live_digest = super::digest(inventory.join("\n").as_bytes());
+    if live_digest != evidence.implementation_digest {
+        return diagnostic::failure(EQUIVALENCE_FAILED, &detail("stale-evidence"));
     }
     // The required scenario corpus: every rendered requirement of the
     // committed record for the subject must appear as a scenario, and
@@ -166,6 +203,21 @@ pub fn adjudicate_for(root: &std::path::Path, bytes: &[u8]) -> DomainResult {
             return diagnostic::failure(EQUIVALENCE_INCOMPLETE, &detail("evidence"));
         }
     }
+    // The corpus is exact, not a superset (r6, devin F7): a phantom
+    // `match` row naming no rendered requirement binds nothing and only
+    // pads the receipt — unknown scenario names are refused so
+    // `scenarios`/`matched` report the real corpus.
+    let required_names: std::collections::BTreeSet<&str> = required
+        .iter()
+        .map(|(scenario, _)| scenario.as_str())
+        .collect();
+    if evidence
+        .scenarios
+        .iter()
+        .any(|row| !required_names.contains(row.scenario.as_str()))
+    {
+        return diagnostic::failure(EQUIVALENCE_INCOMPLETE, &detail("corpus"));
+    }
     // The reference bytes are independently produced evidence too: the
     // pinned reference digest must resolve to retained custody bytes
     // produced by the reference lane, never a caller-chosen label.
@@ -202,6 +254,21 @@ fn verify_executed_outcomes(
         .map_err(|_| diagnostic::failure(EQUIVALENCE_INCOMPLETE, &detail("corpus")))?;
     let coverage = super::history::coverage(root, &plan.coverage_digest)
         .map_err(|_| diagnostic::failure(EQUIVALENCE_INCOMPLETE, &detail("corpus")))?;
+    // Honest scope of the recomputation (r6, codex F5 / devin F2): the
+    // deterministic handler *is* the pinned projection only while no
+    // custom binding participates. A bound coverage's handlers invoke the
+    // maintained hook before returning — a hook that throws fails
+    // natively while the projection recomputation still "matches" — so
+    // for bound coverages the offline gate cannot certify executed
+    // outcomes at all: the verdict is incomplete until independently
+    // produced execution evidence exists for those scenarios. The gate
+    // stops claiming executed-outcome equivalence it cannot recompute.
+    if coverage.extensions.iter().any(|check| check.validated) {
+        return Err(diagnostic::failure(
+            EQUIVALENCE_INCOMPLETE,
+            &detail("bound-execution"),
+        ));
+    }
     for requirement in &coverage.requirements {
         if !requirement.kind.renders() {
             continue;

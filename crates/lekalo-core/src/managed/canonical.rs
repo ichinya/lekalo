@@ -7,8 +7,7 @@
 
 use super::diagnostic;
 use super::wire::{
-    ArtifactRole, Coverage, ExtensionCheck, Reference, Requirement, Sample, Scalar, Support,
-    MAX_BYTES,
+    ArtifactRole, Coverage, ExtensionCheck, Reference, Requirement, Scalar, Support, MAX_BYTES,
 };
 use super::{detail, DomainResult, INPUT_INVALID};
 
@@ -70,12 +69,34 @@ pub fn pascal(name: &str) -> String {
     }
 }
 
-fn ts_type(value: &Scalar) -> &'static str {
-    match value {
-        Scalar::Flag(_) => "boolean",
-        Scalar::Count(_) => "number",
-        Scalar::Text(_) => "string",
-        Scalar::Nothing => "null",
+/// The TypeScript spelling of one resolved Model type (r6, codex F9):
+/// the rendered interface types come from the Model's declared field
+/// types — resolved through the compiled project by the authority — never
+/// from the coverage sample values. A spelling the renderer cannot type
+/// (an entity/value-object ref, an unresolved symbol) refuses the render:
+/// an interface field the Model cannot type is a coverage-owned type
+/// change wearing Model-derived provenance.
+fn ts_spelling(spelling: &str) -> Result<String, DomainResult> {
+    if let Some(inner) = spelling
+        .strip_prefix("optional<")
+        .and_then(|rest| rest.strip_suffix('>'))
+    {
+        return Ok(format!("{} | null", ts_spelling(inner)?));
+    }
+    if let Some(inner) = spelling
+        .strip_prefix("list<")
+        .and_then(|rest| rest.strip_suffix('>'))
+    {
+        return Ok(format!("{}[]", ts_spelling(inner)?));
+    }
+    match spelling {
+        "string" | "date" | "datetime" | "uuid" | "uri" => Ok("string".to_owned()),
+        "number" => Ok("number".to_owned()),
+        "boolean" => Ok("boolean".to_owned()),
+        _ => Err(super::diagnostic::failure(
+            super::CAPABILITY_GAP,
+            &[("type", spelling), ("reason", "type-not-model")],
+        )),
     }
 }
 
@@ -125,17 +146,89 @@ pub fn output_paths(
     ))
 }
 
-fn field_type(
+/// The Model-derived TypeScript types of one requirement's rendered
+/// interface (r6, codex F9): `(input field -> ts type, output field ->
+/// ts type)`. Commands type their input surface from the Model's declared
+/// input fields and their output surface from the projected source field;
+/// queries type both surfaces from the returned entity's declared fields.
+/// A requirement with no Model obligation, or a field the Model does not
+/// type as a scalar surface, refuses the render — coverage samples are
+/// evidence inputs, never authority over the generated interface.
+type FieldTypes = (
+    std::collections::BTreeMap<String, String>,
+    std::collections::BTreeMap<String, String>,
+);
+
+fn model_field_types(
+    semantics: &[super::authority::Obligation],
     requirement: &Requirement,
-    side: fn(&Sample) -> &std::collections::BTreeMap<String, Scalar>,
-    field: &str,
-) -> String {
-    requirement
-        .sample
-        .value()
-        .and_then(|sample| side(sample).get(field))
-        .map(|value| ts_type(value).to_owned())
-        .unwrap_or_else(|| "unknown".to_owned())
+) -> Result<FieldTypes, DomainResult> {
+    let obligation = semantics
+        .iter()
+        .find(|obligation| obligation.id == requirement.id)
+        .ok_or_else(|| {
+            super::diagnostic::failure(
+                super::CAPABILITY_GAP,
+                &[
+                    ("requirement", requirement.id.as_str()),
+                    ("reason", "semantics"),
+                ],
+            )
+        })?;
+    let mut input = std::collections::BTreeMap::new();
+    let mut output = std::collections::BTreeMap::new();
+    match obligation.kind {
+        crate::ir::DefinitionKind::Command => {
+            let declared: std::collections::BTreeMap<&str, &str> = obligation
+                .input
+                .iter()
+                .map(|(name, spelling)| (name.as_str(), spelling.as_str()))
+                .collect();
+            for projection in &requirement.projection {
+                let Some(spelling) = declared.get(projection.from.as_str()) else {
+                    return Err(super::diagnostic::failure(
+                        super::CAPABILITY_GAP,
+                        &[
+                            ("requirement", requirement.id.as_str()),
+                            ("reason", "projection-not-model"),
+                        ],
+                    ));
+                };
+                input.insert(projection.from.clone(), ts_spelling(spelling)?);
+                output.insert(projection.to.clone(), ts_spelling(spelling)?);
+            }
+        }
+        crate::ir::DefinitionKind::Query => {
+            let declared: std::collections::BTreeMap<&str, &str> = obligation
+                .return_fields
+                .iter()
+                .map(|(name, spelling)| (name.as_str(), spelling.as_str()))
+                .collect();
+            for projection in &requirement.projection {
+                let Some(spelling) = declared.get(projection.from.as_str()) else {
+                    return Err(super::diagnostic::failure(
+                        super::CAPABILITY_GAP,
+                        &[
+                            ("requirement", requirement.id.as_str()),
+                            ("reason", "query-input-not-model"),
+                        ],
+                    ));
+                };
+                input.insert(projection.from.clone(), ts_spelling(spelling)?);
+                output.insert(projection.to.clone(), ts_spelling(spelling)?);
+            }
+        }
+        _ => {
+            return Err(super::diagnostic::failure(
+                super::CAPABILITY_GAP,
+                &[
+                    ("requirement", requirement.id.as_str()),
+                    ("reason", "semantics"),
+                ],
+            ))
+        }
+    }
+    Ok((input, output))
 }
 
 fn render_implementation(
@@ -145,11 +238,13 @@ fn render_implementation(
     requirement: &Requirement,
     extensions: &[ExtensionCheck],
     generated_root: &str,
+    semantics: &[super::authority::Obligation],
 ) -> Result<Vec<u8>, DomainResult> {
     let name =
         requirement_name(module, &requirement.id).ok_or_else(|| invalid("requirement-name"))?;
     let function = camel(name);
     let types = pascal(name);
+    let (input_types, output_types) = model_field_types(semantics, requirement)?;
     let mut input_fields = String::new();
     let mut output_fields = String::new();
     let returns: Vec<String> = requirement
@@ -164,15 +259,21 @@ fn render_implementation(
         })
         .collect();
     for projection in &requirement.projection {
+        let input_kind = input_types
+            .get(&projection.from)
+            .ok_or_else(|| invalid("projection-type"))?;
+        let output_kind = output_types
+            .get(&projection.to)
+            .ok_or_else(|| invalid("projection-type"))?;
         input_fields.push_str(&format!(
             "  {field}: {kind};\n",
             field = projection.from,
-            kind = field_type(requirement, |sample| &sample.input, &projection.from)
+            kind = input_kind
         ));
         output_fields.push_str(&format!(
             "  {field}: {kind};\n",
             field = projection.to,
-            kind = field_type(requirement, |sample| &sample.output, &projection.to)
+            kind = output_kind
         ));
     }
     // The declared invocation of every resolved custom/foreign binding
@@ -319,10 +420,14 @@ fn relative_binding_path(generated_root: &str, binding_file: &str) -> Option<Str
 
 /// Render the complete deterministic output inventory of one admitted
 /// coverage document under one generated root. Output order is the fixed
-/// path byte order; every rendered artifact is bounded.
+/// path byte order; every rendered artifact is bounded. The interface
+/// types are Model-derived (r6, codex F9): `semantics` is the authority's
+/// obligation semantics for this module, and a requirement the Model does
+/// not type never renders.
 pub fn render_inventory(
     coverage: &Coverage,
     generated_root: &str,
+    semantics: &[super::authority::Obligation],
 ) -> Result<Vec<Rendered>, DomainResult> {
     if !super::rel_path(generated_root) {
         return Err(invalid("generated-root"));
@@ -351,6 +456,7 @@ pub fn render_inventory(
                 requirement,
                 &coverage.extensions,
                 generated_root,
+                semantics,
             )?,
         )?;
         push(

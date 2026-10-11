@@ -218,8 +218,13 @@ pub fn apply(
         Err(error) => return error,
     };
     // The deterministic inventory derived here must match the reviewed plan
-    // exactly: same paths, same actions, same after digests.
-    let inventory = match render_inventory(&coverage, &admission.generated_root) {
+    // exactly: same paths, same actions, same after digests. The interface
+    // types are Model-derived (r6, codex F9): the re-render types from the
+    // derived authority's semantics, so a coverage sample whose scalar
+    // classes disagree with the Model can never re-render the reviewed
+    // bytes.
+    let semantics = authority.map(|a| a.semantics.as_slice()).unwrap_or(&[]);
+    let inventory = match render_inventory(&coverage, &admission.generated_root, semantics) {
         Ok(inventory) => inventory,
         Err(error) => return error,
     };

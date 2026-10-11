@@ -815,6 +815,21 @@ pub fn resolve(
 }
 
 fn staged_resolve(root: &std::path::Path, transaction: &Transaction, bytes: &[u8]) -> DomainResult {
+    // Retain the exact confirmed intent before anything is journaled (r6,
+    // codex F2): the resolve transaction document, in its confirmed
+    // `prepared` shape, becomes a content-addressed custody object.
+    // Recovery accepts a resolve journal only when this retained intent
+    // exists and matches the journal exactly — a bare caller-authored
+    // journal whose `beforeDigest` merely describes live drift is not
+    // reviewed evidence and never overwrites a manual edit.
+    let mut intent = transaction.clone();
+    intent.state = TransactionState::Prepared;
+    if let Err(error) = history::write_object(
+        root,
+        &serde_json::to_vec_pretty(&intent).expect("typed intent"),
+    ) {
+        return error;
+    }
     if let Err(error) = history::write_transaction(root, transaction) {
         return error;
     }
