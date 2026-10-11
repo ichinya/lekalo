@@ -389,7 +389,7 @@ fn enforce_filter_grammar(filters: &FilterSet) -> Result<(), crate::diagnostics:
     })?;
     bounded("related-to", &filters.related_to, 32, false, &selector)?;
     bounded("ownership", &filters.ownerships, 8, true, &|value| {
-        matches!(value, "module" | "project")
+        matches!(value, "module" | "project" | "observed")
     })?;
     bounded("portability", &filters.portabilities, 8, true, &|value| {
         matches!(value, "portable" | "target-specific")
@@ -446,6 +446,19 @@ pub fn domain_needed(domain: &str, request: &QueryRequest) -> bool {
         }
         "waivers" => {
             !filters.waivers.is_empty() || filters.kinds.iter().any(|kind| kind == "waiver")
+        }
+        // The error-contract and ownership/profile producer domains:
+        // their selectors need the admitted producer evidence, so a
+        // missing domain is disclosed instead of answering a confident
+        // zero over absent coverage.
+        "errors" => !filters.errors.is_empty(),
+        "profiles" => {
+            !filters.profiles.is_empty()
+                || !filters.ownerships.is_empty()
+                || filters
+                    .kinds
+                    .iter()
+                    .any(|kind| matches!(kind.as_str(), "profile"))
         }
         _ => false,
     }
@@ -616,32 +629,68 @@ pub fn execute(
     };
     // 1. Exact filters first.
     let admitted = filter_cards(index, &request.filters)?;
-    // 2. Rank: facts per admitted card. The fuzzy work budget is
-    // reserved BEFORE any scoring: an exhausted budget refuses further
-    // fuzzy expansion instead of paying for scores it cannot admit.
+    // 2. Rank: facts per admitted card. The exact/exact-qualified/
+    //    non-fuzzy tiers are computed for EVERY admitted card first,
+    //    independently of the fuzzy work budget: a fuzzy work limit can
+    //    never suppress an exact match (AC2). Only the additional fuzzy
+    //    expansion — cards that admitted no non-fuzzy facts — spends the
+    //    bounded budget; an exhausted budget refuses further fuzzy
+    //    expansion and is disclosed as truncation, never silently paid
+    //    for with an exact candidate's visibility.
     let mut ranked: Vec<(&Card, RankFacts)> = Vec::with_capacity(admitted.len());
-    let mut fuzzy_budget = FuzzyBudget::new();
-    let mut fuzzy_exhausted = false;
+    let mut fuzzy_pending: Vec<&Card> = Vec::new();
     for card in &admitted {
-        if request.fuzzy && !fuzzy_budget.take() {
-            fuzzy_exhausted = true;
+        if query_text.is_empty() {
+            ranked.push((
+                card,
+                RankFacts {
+                    tier: Tier::AllTerms,
+                    field: FieldPriority::Id,
+                    exact_terms: 0,
+                    total_terms: 0,
+                    edits: 0,
+                },
+            ));
             continue;
         }
-        let facts = if query_text.is_empty() {
-            RankFacts {
-                tier: Tier::AllTerms,
-                field: FieldPriority::Id,
-                exact_terms: 0,
-                total_terms: 0,
-                edits: 0,
+        let qualified = index
+            .qualified_ids
+            .get(&card.key)
+            .cloned()
+            .unwrap_or_default();
+        match match_facts(
+            card.id
+                .as_deref()
+                .unwrap_or(card.key.trim_start_matches("def:")),
+            card.name.as_deref(),
+            card.description.as_deref(),
+            &qualified,
+            query_text,
+            &terms,
+            false,
+        ) {
+            Some(facts) => ranked.push((card, facts)),
+            // A lexical query never admits non-matching cards; only
+            // these unmatched cards are eligible for fuzzy expansion.
+            None => fuzzy_pending.push(card),
+        }
+    }
+    let mut fuzzy_budget = FuzzyBudget::new();
+    let mut fuzzy_exhausted = false;
+    if request.fuzzy {
+        for card in fuzzy_pending {
+            // The budget is reserved for fuzzy scoring alone: refused
+            // expansion is disclosed, never billed against exact work.
+            if !fuzzy_budget.take() {
+                fuzzy_exhausted = true;
+                continue;
             }
-        } else {
             let qualified = index
                 .qualified_ids
                 .get(&card.key)
                 .cloned()
                 .unwrap_or_default();
-            match match_facts(
+            if let Some(facts) = match_facts(
                 card.id
                     .as_deref()
                     .unwrap_or(card.key.trim_start_matches("def:")),
@@ -650,15 +699,11 @@ pub fn execute(
                 &qualified,
                 query_text,
                 &terms,
-                request.fuzzy,
+                true,
             ) {
-                Some(facts) => facts,
-                // A lexical query never admits non-matching cards; the
-                // tuple fallback above exists for `find` alone.
-                None => continue,
+                ranked.push((card, facts));
             }
-        };
-        ranked.push((card, facts));
+        }
     }
     ranked.sort_by(|left, right| {
         left.1
@@ -699,7 +744,14 @@ pub fn execute(
     } else if top_tied || requirement_ambiguous {
         "ambiguous"
     } else if ranked.len() == 1 && coverage_establishes_unique(request, &coverage) {
-        "unique"
+        // An exhausted fuzzy work limit leaves the candidate set
+        // incomplete: a singleton over unfinished work is never a
+        // confirmed `unique` answer (no exact totals, no uniqueness).
+        if fuzzy_exhausted {
+            "ambiguous"
+        } else {
+            "unique"
+        }
     } else if ranked.len() == 1 {
         // One hit over coverage that cannot establish uniqueness is an
         // interpretation the admitted evidence cannot confirm: reported
@@ -803,7 +855,10 @@ pub fn execute(
         page: Page {
             limit: request.limit as u32,
             returned: returned as u32,
-            visible_total: Some(ranked.len() as u32),
+            // An exhausted fuzzy budget means the visible set was not
+            // fully computed: no exact total is asserted over unfinished
+            // work (the truncation flag carries the honest state).
+            visible_total: (!fuzzy_exhausted).then_some(ranked.len() as u32),
             next,
             truncated: fuzzy_exhausted,
         },
@@ -935,12 +990,24 @@ fn admits(index: &SearchIndex, card: &Card, filters: &FilterSet) -> bool {
         return false;
     }
     if !any_of(&filters.reads, |selector| {
-        witness_matches(card, "reads", selector, filters.effect_scope)
+        witness_matches(
+            card,
+            "reads",
+            selector,
+            filters.effect_scope,
+            filters.include_stale,
+        )
     }) {
         return false;
     }
     if !any_of(&filters.writes, |selector| {
-        witness_matches(card, "writes", selector, filters.effect_scope)
+        witness_matches(
+            card,
+            "writes",
+            selector,
+            filters.effect_scope,
+            filters.include_stale,
+        )
     }) {
         return false;
     }
@@ -1040,7 +1107,12 @@ fn admits(index: &SearchIndex, card: &Card, filters: &FilterSet) -> bool {
         }
     }
     if !any_of(&filters.ownerships, |ownership| {
-        card.visibility.as_deref() == Some(ownership)
+        // Ownership is its own typed property (artifact ownership /
+        // observed status), deliberately distinct from Model
+        // visibility: `--ownership observed` resolves recorded observed
+        // ownership, `module`/`project` resolve recorded ownership, and
+        // neither ever reads (or overrides) the Model's visibility.
+        card.ownership.as_deref() == Some(ownership)
     }) {
         return false;
     }
@@ -1085,9 +1157,20 @@ fn admits(index: &SearchIndex, card: &Card, filters: &FilterSet) -> bool {
 }
 
 /// Whether one effect witness matches a `resource` / `resource.field`
-/// selector under the closed scope.
-fn witness_matches(card: &Card, action: &str, selector: &str, scope: EffectScope) -> bool {
+/// selector under the closed scope. Stale-trust witnesses are retained
+/// per fact and match only under the explicit include-stale path — they
+/// are never laundered into current evidence by silence either way.
+fn witness_matches(
+    card: &Card,
+    action: &str,
+    selector: &str,
+    scope: EffectScope,
+    include_stale: bool,
+) -> bool {
     card.effects.iter().any(|witness| {
+        if witness.trust == crate::search::projection::Trust::Stale && !include_stale {
+            return false;
+        }
         if !witness.relation.starts_with(&format!("{action}:")) {
             return false;
         }
@@ -1192,6 +1275,7 @@ mod tests {
             gates: Vec::new(),
             portability: None,
             visibility: None,
+            ownership: None,
             confidence: Confidence::Canonical,
             freshness: Freshness::Current,
             completeness: Completeness::Complete,
@@ -1211,7 +1295,7 @@ mod tests {
             postings,
             qualified_ids: qualified,
         };
-        let cap = 1_000;
+        let cap = crate::search::version::MAX_POSTINGS;
         for (_, card) in projection.cards.clone() {
             crate::search::projection::add_card(&mut projection, card, cap);
         }
@@ -1383,5 +1467,199 @@ mod tests {
         card.bindings.push(binding);
         assert!(binding_path_matches(&card, "apps/api/src/planner-old"));
         assert!(!binding_path_matches(&card, "apps/api/src/planner"));
+    }
+
+    #[test]
+    fn exact_id_survives_an_exhausted_fuzzy_budget() {
+        // 10,005 preceding commands plus one exact-ID target: the fuzzy
+        // work budget must never suppress the exact match (AC2), and an
+        // exhausted budget must not assert exact totals or uniqueness.
+        let mut cards: Vec<Card> = (0..10_005)
+            .map(|index| {
+                card(
+                    &format!("def:planner.filler{index}"),
+                    &format!("planner.filler{index}"),
+                    "filler",
+                    "filler command",
+                )
+            })
+            .collect();
+        cards.push(card(
+            "def:planner.zzexact",
+            "planner.zzexact",
+            "zzexact",
+            "exact command",
+        ));
+        let index = index_of(cards);
+        let request = QueryRequest::admit(
+            Some("planner.zzexact".to_owned()),
+            true,
+            Some(10),
+            None,
+            FilterSet::default(),
+        )
+        .expect("admits");
+        let outcome = execute(
+            &index,
+            "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            Some("planner"),
+            &request,
+            vec![CoverageRow {
+                domain: "ir".to_owned(),
+                state: "complete".to_owned(),
+            }],
+        )
+        .expect("executes");
+        assert!(
+            outcome
+                .result
+                .items
+                .iter()
+                .any(|item| item.card.key == "def:planner.zzexact"),
+            "the exact ID must be present even with fuzzy enabled"
+        );
+        assert_eq!(outcome.result.items[0].card.key, "def:planner.zzexact");
+        assert_eq!(outcome.result.items[0].r#match.tier, "exact-id");
+    }
+
+    #[test]
+    fn exhausted_fuzzy_budget_never_asserts_exact_totals_or_uniqueness() {
+        // Beyond the fuzzy candidate cap with NO exact match: the page
+        // is honestly truncated, the total is withheld, and a lone
+        // fuzzy survivor is never a confirmed unique answer.
+        let cards: Vec<Card> = (0..10_050)
+            .map(|index| {
+                card(
+                    &format!("def:m.fokus{index}"),
+                    &format!("m.fokus{index}"),
+                    &format!("fokus{index}"),
+                    "fokus command",
+                )
+            })
+            .collect();
+        let index = index_of(cards);
+        let request = QueryRequest::admit(
+            Some("fokuz".to_owned()),
+            true,
+            Some(5),
+            None,
+            FilterSet::default(),
+        )
+        .expect("admits");
+        let outcome = execute(
+            &index,
+            "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            None,
+            &request,
+            vec![CoverageRow {
+                domain: "ir".to_owned(),
+                state: "complete".to_owned(),
+            }],
+        )
+        .expect("executes");
+        assert!(
+            outcome.result.page.truncated,
+            "the exhausted budget is disclosed"
+        );
+        assert_eq!(
+            outcome.result.page.visible_total, None,
+            "no exact total over unfinished work"
+        );
+        assert_ne!(
+            outcome.result.selection, "unique",
+            "unfinished work never confirms unique"
+        );
+        assert!(outcome
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.id() == "search.result-limit"));
+    }
+
+    #[test]
+    fn ownership_filters_the_typed_property_not_visibility() {
+        let mut observed = card("def:a.entity", "a.entity", "entity", "entity");
+        observed.ownership = Some("observed".to_owned());
+        observed.visibility = Some("module".to_owned());
+        let mut declared = card("def:b.entity", "b.entity", "entity", "entity");
+        declared.ownership = Some("project".to_owned());
+        declared.visibility = Some("project".to_owned());
+        let index = index_of(vec![observed, declared]);
+        let run = |ownerships: &[&str]| {
+            let filters = FilterSet {
+                ownerships: ownerships.iter().map(|value| value.to_string()).collect(),
+                ..FilterSet::default()
+            };
+            let request = QueryRequest::admit(None, false, None, None, filters).expect("admits");
+            execute(
+                &index,
+                "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+                "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+                None,
+                &request,
+                vec![],
+            )
+            .expect("executes")
+        };
+        // `--ownership observed` resolves the typed observed property.
+        let outcome = run(&["observed"]);
+        assert_eq!(outcome.result.items.len(), 1);
+        assert_eq!(outcome.result.items[0].card.key, "def:a.entity");
+        // `--ownership module` resolves RECORDED ownership only: the
+        // observed card's Model visibility is `module`, but that
+        // property never answers an ownership question.
+        assert_eq!(run(&["module"]).result.selection, "none");
+        let outcome = run(&["project"]);
+        assert_eq!(outcome.result.items.len(), 1);
+        assert_eq!(outcome.result.items[0].card.key, "def:b.entity");
+        // Both properties ride the card independently.
+        assert_eq!(
+            outcome.result.items[0].card.ownership.as_deref(),
+            Some("project")
+        );
+    }
+
+    #[test]
+    fn stale_effect_witnesses_are_retained_but_match_only_when_included() {
+        let mut card = card("def:a.store", "a.store", "store", "store");
+        card.effects
+            .push(crate::search::projection::RelationWitness {
+                relation: "writes:planner.row".to_owned(),
+                other: "resource:planner.row".to_owned(),
+                direction: "outgoing".to_owned(),
+                trust: crate::search::projection::Trust::Stale,
+                confidence: Confidence::Unknown,
+            });
+        let index = index_of(vec![card]);
+        let run = |include_stale: bool| {
+            let filters = FilterSet {
+                writes: vec!["planner.row".to_owned()],
+                include_stale,
+                ..FilterSet::default()
+            };
+            let request = QueryRequest::admit(None, false, None, None, filters).expect("admits");
+            execute(
+                &index,
+                "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+                "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+                None,
+                &request,
+                vec![],
+            )
+            .expect("executes")
+        };
+        assert_eq!(
+            run(false).result.selection,
+            "none",
+            "stale evidence never matches by default"
+        );
+        let included = run(true);
+        assert_eq!(included.result.selection, "unique");
+        assert!(included.result.items[0]
+            .card
+            .effects
+            .iter()
+            .any(|witness| witness.trust.key() == "stale"));
     }
 }

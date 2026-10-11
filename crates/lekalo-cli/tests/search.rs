@@ -514,8 +514,10 @@ fn coverage_states_are_honest_with_and_without_producers() {
         .expect("trace");
     assert_eq!(trace["state"], "unknown");
     // Every producer domain always reports a row: no domain silently
-    // disappears because a manifest admitted only some producers.
-    assert_eq!(rows.len(), 7, "all seven domains report coverage");
+    // disappears because a manifest admitted only some producers. The
+    // error-contract and ownership/profile families carry their own
+    // rows alongside the original seven.
+    assert_eq!(rows.len(), 9, "all nine domains report coverage");
 
     let with = json(&lekalo_in(
         &project,
@@ -762,10 +764,11 @@ fn status_verdict_is_independent_of_cwd_and_manifest_location() {
     assert_eq!(json(&fresh)["searchIndex"]["state"], "ready");
 }
 
-/// A removed manifest never blinds the oracle: the generation's own
-/// recorded pins travel with it, so the intact inputs stay verifiably
-/// `ready` (the manifest file is a pointer, not a pin), and drifting a
-/// pinned producer under the removed manifest is still `stale`.
+/// A removed manifest is admission drift, never an invisible policy
+/// change: the generation's recorded pins AND its recorded admitting
+/// configuration both re-verify, so removing the manifest file (or
+/// editing its admission set) is `stale` — the oracle re-reads the
+/// admission config it recorded, not just the producer bytes.
 #[test]
 fn removed_manifest_is_stale_not_ready() {
     let (project, _guard) = disposable_project();
@@ -776,11 +779,12 @@ fn removed_manifest_is_stale_not_ready() {
         &["--json", "search-index", "status", "--project", "."],
     );
     assert_eq!(exit_code(&status), 0, "{}", stderr_text(&status));
-    // The manifest is only a pointer: the recorded pins re-verify, so
-    // the intact inputs stay verifiably ready.
-    assert_eq!(json(&status)["searchIndex"]["state"], "ready");
-    // But a drifted producer under the removed manifest is still stale:
-    // the oracle reads the pins, not the pointer.
+    // The admitting configuration was revoked: the recorded pins may
+    // still verify byte for byte, but the run that admitted them no
+    // longer exists as configured. Removal is an explicit drift.
+    assert_eq!(json(&status)["searchIndex"]["state"], "stale");
+    // And a drifted producer under the removed manifest is still
+    // stale: the oracle reads the pins, not the pointer.
     let effects = project.join("evidence/effects.detected.json");
     let mut body = std::fs::read_to_string(&effects).expect("read effects");
     body.push(' ');
@@ -1102,7 +1106,7 @@ fn stale_observed_state_is_excluded_by_default() {
             "evidence/search-inputs.json",
         ],
     ));
-    assert_eq!(included["selection"], "unique");
+    assert_eq!(included["selection"], "ambiguous");
     assert_eq!(included["items"][0]["card"]["freshness"], "stale");
 }
 
@@ -1567,11 +1571,16 @@ fn producer_families_answer_with_typed_facts() {
         "--diagnostic",
         "planner.focus-concurrency",
     ]));
-    assert_eq!(by_rule["selection"], "unique");
-    assert_eq!(
-        by_rule["items"][0]["card"]["id"],
-        "planner.focus-concurrency"
-    );
+    // The reverse join answers the subject beside its finding card.
+    assert_eq!(by_rule["selection"], "multiple");
+    let rule_keys: Vec<&str> = by_rule["items"]
+        .as_array()
+        .expect("items")
+        .iter()
+        .map(|item| item["card"]["key"].as_str().expect("key"))
+        .collect();
+    assert!(rule_keys.contains(&"diag:focus-concurrency-001"));
+    assert!(rule_keys.contains(&"def:planner.focus_task"));
     // Profile membership: a recorded fact, never a conformance claim.
     let profile = run(&with_inputs(&[
         "--json",
@@ -1683,5 +1692,452 @@ fn tracked_fixture_stays_cache_clean() {
     assert!(
         !project.join(".lekalo/cache/search").exists(),
         "the tracked fixture must not gain search-cache residue"
+    );
+}
+
+/// A candidate's own `.path` field is admitted independently under the
+/// frozen privacy grammar: an ordinary native spelling never smuggles a
+/// sensitive path value beside it, and the withheld card discloses the
+/// withholding without ever returning the rejected path (issue #93 r4).
+#[test]
+fn candidate_sensitive_path_is_withheld_whole() {
+    let (project, _guard) = disposable_project();
+    // The hostile edit: only the first candidate's own path field,
+    // preserving its ordinary `path#symbol` native spelling (the
+    // record's location and stable key stay admitted).
+    let index = project.join("evidence/observed.index.json");
+    let body = std::fs::read_to_string(&index).expect("read observed");
+    let marker = "\"candidates\":[{";
+    let (head, tail) = body.split_once(marker).expect("candidates");
+    let hostile_tail = tail.replacen(
+        "\"path\":\"apps/api/src/planner/focus-task.ts\"",
+        "\"path\":\".env\"",
+        1,
+    );
+    assert_ne!(hostile_tail, tail, "the hostile edit must land");
+    let hostile = format!("{head}{marker}{hostile_tail}");
+    std::fs::write(&index, hostile).expect("write observed");
+    assert_eq!(exit_code(&build_once(&project)), 0, "{}", {
+        let probe = lekalo_in(
+            &project,
+            &[
+                "--json",
+                "search-index",
+                "build",
+                "--project",
+                ".",
+                "--inputs",
+                "evidence/search-inputs.json",
+            ],
+        );
+        stderr_text(&probe)
+    });
+    // The binding still answers by its ordinary native spelling…
+    let output = lekalo_in(
+        &project,
+        &[
+            "--json",
+            "find",
+            "--kind",
+            "binding",
+            "--native-symbol",
+            "apps/api/src/planner/focus-task.ts#focusTask",
+            "--project",
+            ".",
+        ],
+    );
+    assert_eq!(exit_code(&output), 0, "{}", stderr_text(&output));
+    let text = stdout_text(&output);
+    assert!(
+        !text.contains(".env"),
+        "the sensitive candidate path never returns"
+    );
+    // …but the card discloses the withholding and never carries the
+    // rejected path, in the response or the persisted generation.
+    let envelope = json(&output);
+    assert_eq!(envelope["items"][0]["card"]["completeness"], "withheld");
+    let store = project.join(".lekalo/cache/search");
+    for entry in std::fs::read_dir(&store).expect("store") {
+        let entry = entry.expect("entry");
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.ends_with(".json") || name == "current.json" {
+            continue;
+        }
+        let bytes = std::fs::read_to_string(entry.path()).expect("generation");
+        assert!(
+            !bytes.contains(".env"),
+            "the sensitive candidate path never persists"
+        );
+    }
+}
+
+/// A cursor page never serves stale Model bytes: the token binds the
+/// generation, and the serving generation must still equal what the
+/// CURRENT Model admission would publish (issue #93 r4).
+#[test]
+fn stale_model_cursor_page_refuses() {
+    let (project, _guard) = disposable_project();
+    assert_eq!(exit_code(&build_once(&project)), 0);
+    let first = json(&lekalo_in(
+        &project,
+        &[
+            "--json",
+            "search",
+            "task",
+            "--limit",
+            "3",
+            "--project",
+            ".",
+            "--inputs",
+            "evidence/search-inputs.json",
+        ],
+    ));
+    let token = first["page"]["next"].as_str().expect("cursor").to_owned();
+    // Model drift: one description change.
+    let commands = project.join("lekalo/modules/planner/commands.yaml");
+    let body = std::fs::read_to_string(&commands).expect("read commands");
+    std::fs::write(
+        &commands,
+        body.replace(
+            "Focus one user task planning record",
+            "Focus one user task now",
+        ),
+    )
+    .expect("drift model");
+    let continued = lekalo_in(
+        &project,
+        &[
+            "--json",
+            "search",
+            "task",
+            "--limit",
+            "3",
+            "--cursor",
+            &token,
+            "--project",
+            ".",
+            "--inputs",
+            "evidence/search-inputs.json",
+        ],
+    );
+    assert_eq!(exit_code(&continued), 1);
+    assert_eq!(
+        json(&continued)["diagnostics"][0]["id"],
+        "search.cursor-invalid"
+    );
+    assert_eq!(
+        json(&continued)["diagnostics"][0]["data"]["detail"],
+        "generation-mismatch"
+    );
+}
+
+/// A self-consistent forged generation (edited card, rebound digest,
+/// renamed file, updated pointer, rebound cursor checksum) still
+/// refuses: the serving generation must equal the recomputable current
+/// admission, byte for byte (issue #93 r4).
+#[test]
+fn self_consistent_forged_generation_refuses() {
+    let (project, _guard) = disposable_project();
+    assert_eq!(exit_code(&build_once(&project)), 0);
+    let first = json(&lekalo_in(
+        &project,
+        &[
+            "--json",
+            "search",
+            "focus",
+            "--limit",
+            "2",
+            "--project",
+            ".",
+            "--inputs",
+            "evidence/search-inputs.json",
+        ],
+    ));
+    let token = first["page"]["next"].as_str().expect("cursor").to_owned();
+    // Forge: edit one command card in the stored generation, recompute
+    // its canonical digest, store it under the new name, repoint, and
+    // rebind the cursor token to the forged generation.
+    let store = project.join(".lekalo/cache/search");
+    let pointer = std::fs::read_to_string(store.join("current.json")).expect("pointer");
+    let old_hex = json_from(&pointer)["digest"]
+        .as_str()
+        .expect("digest")
+        .to_owned();
+    let generation_path = store.join(&old_hex);
+    let mut document: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&generation_path).expect("generation"))
+            .expect("generation json");
+    for card in document["cards"].as_array_mut().expect("cards") {
+        if card["key"] == "def:planner.focus_task" {
+            card["description"] = serde_json::Value::from(".env#FORGED_STORED_CANARY");
+        }
+    }
+    let mut record = document.clone();
+    record["digest"] = serde_json::Value::from("");
+    let canonical = serde_json::to_string(&record).expect("canonical");
+    let forged_hex = sha256_hex_test(canonical.as_bytes());
+    document["digest"] = serde_json::Value::from(format!("sha256:{forged_hex}"));
+    let payload = serde_json::to_string(&document).expect("payload");
+    std::fs::write(store.join(&forged_hex), payload).expect("write forged");
+    std::fs::write(
+        store.join("current.json"),
+        format!("{{\"digest\":\"{forged_hex}\"}}"),
+    )
+    .expect("repoint");
+    // Rebind the cursor token to the forged generation digest.
+    let rebound = rebind_cursor_token(&token, &format!("sha256:{forged_hex}"));
+    let continued = lekalo_in(
+        &project,
+        &[
+            "--json",
+            "search",
+            "focus",
+            "--limit",
+            "2",
+            "--cursor",
+            &rebound,
+            "--project",
+            ".",
+            "--inputs",
+            "evidence/search-inputs.json",
+        ],
+    );
+    assert_eq!(exit_code(&continued), 1, "{}", stdout_text(&continued));
+    let envelope = json(&continued);
+    assert_eq!(envelope["diagnostics"][0]["id"], "search.cursor-invalid");
+    assert!(
+        !stdout_text(&continued).contains("FORGED_STORED_CANARY"),
+        "forged stored content never serves"
+    );
+}
+
+/// Helper: parse json text (used for the pointer document).
+fn json_from(text: &str) -> serde_json::Value {
+    serde_json::from_str(text).expect("json")
+}
+
+/// Helper: bare lowercase hex SHA-256 for the forged-generation probe.
+fn sha256_hex_test(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(bytes);
+    digest.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// Helper: rebuild one cursor token against a different index digest
+/// (URL-safe base64 without padding, checksum-bound like the real one).
+fn rebind_cursor_token(token: &str, index_digest: &str) -> String {
+    let (_check, encoded) = token.split_once(':').expect("token");
+    let decoded = base64_url_decode_test(encoded);
+    let mut text = String::from_utf8(decoded).expect("utf8");
+    // The token body carries snake_case members; swap the index digest.
+    let start =
+        text.find("\"index_digest\":\"").expect("index digest") + "\"index_digest\":\"".len();
+    let end = text[start..].find('"').expect("close quote") + start;
+    text.replace_range(start..end, index_digest);
+    let reencoded = base64_url_encode_test(text.as_bytes());
+    let digest = sha256_hex_test(reencoded.as_bytes());
+    format!("{}:{}", &digest[..16], reencoded)
+}
+
+fn base64_url_encode_test(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    let mut out = String::new();
+    for chunk in bytes.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = chunk.get(1).copied().unwrap_or(0) as u32;
+        let b2 = chunk.get(2).copied().unwrap_or(0) as u32;
+        let triple = (b0 << 16) | (b1 << 8) | b2;
+        out.push(ALPHABET[(triple >> 18) as usize & 63] as char);
+        out.push(ALPHABET[(triple >> 12) as usize & 63] as char);
+        if chunk.len() > 1 {
+            out.push(ALPHABET[(triple >> 6) as usize & 63] as char);
+        }
+        if chunk.len() > 2 {
+            out.push(ALPHABET[triple as usize & 63] as char);
+        }
+    }
+    out
+}
+
+fn base64_url_decode_test(text: &str) -> Vec<u8> {
+    fn value_of(byte: u8) -> u8 {
+        match byte {
+            b'A'..=b'Z' => byte - b'A',
+            b'a'..=b'z' => byte - b'a' + 26,
+            b'0'..=b'9' => byte - b'0' + 52,
+            b'-' => 62,
+            b'_' => 63,
+            _ => u8::MAX,
+        }
+    }
+    let mut out = Vec::new();
+    for chunk in text.as_bytes().chunks(4) {
+        let mut values = [0u8; 4];
+        for (index, byte) in chunk.iter().enumerate() {
+            values[index] = value_of(*byte);
+        }
+        let triple = ((values[0] as u32) << 18)
+            | ((values[1] as u32) << 12)
+            | ((values[2] as u32) << 6)
+            | values[3] as u32;
+        out.push((triple >> 16) as u8);
+        if chunk.len() > 2 {
+            out.push((triple >> 8) as u8);
+        }
+        if chunk.len() > 3 {
+            out.push(triple as u8);
+        }
+    }
+    out
+}
+
+/// Ordinary warm queries reuse the saved producer registration: after a
+/// manifest build, a manifest-less query serves the admitted
+/// generation's producer facts, and the registration survives until an
+/// explicit build replaces it (issue #93 r4).
+#[test]
+fn warm_queries_reuse_the_saved_registration() {
+    let (project, _guard) = disposable_project();
+    assert_eq!(exit_code(&build_once(&project)), 0);
+    let warm = json(&lekalo_in(
+        &project,
+        &[
+            "--json",
+            "find",
+            "--requirement",
+            "PLANNER-REQ-001",
+            "--project",
+            ".",
+        ],
+    ));
+    let keys: Vec<&str> = warm["items"]
+        .as_array()
+        .expect("items")
+        .iter()
+        .map(|item| item["card"]["key"].as_str().expect("key"))
+        .collect();
+    assert!(
+        keys.contains(&"req:openspec:PLANNER-REQ-001"),
+        "the saved producer registration serves warm queries: {keys:?}"
+    );
+    // A drift in a pinned producer falls back to the honest cold
+    // canonical-only answer instead of serving stale registration.
+    let effects = project.join("evidence/effects.detected.json");
+    let mut body = std::fs::read_to_string(&effects).expect("read effects");
+    body.push(' ');
+    std::fs::write(&effects, body).expect("drift effects");
+    let cold = json(&lekalo_in(
+        &project,
+        &[
+            "--json",
+            "find",
+            "--requirement",
+            "PLANNER-REQ-001",
+            "--project",
+            ".",
+        ],
+    ));
+    let cold_keys: Vec<&str> = cold["items"]
+        .as_array()
+        .map(|items| {
+            items
+                .iter()
+                .map(|item| item["card"]["key"].as_str().expect("key"))
+                .collect()
+        })
+        .unwrap_or_default();
+    assert!(
+        !cold_keys.iter().any(|key| key.starts_with("req:")),
+        "drifted producer registration never serves warm: {cold_keys:?}"
+    );
+}
+
+/// The persisted generation is schema-valid even when a card carries
+/// more facts than the bounded wire previews: the durable snapshot
+/// keeps the complete searchable facts, reloads clean, and the response
+/// card stays bounded with the omission disclosed (issue #93 r4).
+#[test]
+fn persisted_generation_keeps_nine_signatures_and_reloads_clean() {
+    let (project, _guard) = disposable_project();
+    // The same wide-command model extension as the ninth-input probe.
+    let entities = project.join("lekalo/modules/planner/entities.yaml");
+    let mut body = std::fs::read_to_string(&entities).expect("read entities");
+    body.push_str(
+        "  - id: planner.priority\n    kind: scalar\n    version: 1\n    description: \"Sort priority\"\n    base: string\n",
+    );
+    std::fs::write(&entities, body).expect("write entities");
+    let commands = project.join("lekalo/modules/planner/commands.yaml");
+    let mut inputs = String::new();
+    for index in 0..9 {
+        let id = if index == 8 {
+            "planner.priority"
+        } else {
+            "planner.task_id"
+        };
+        inputs.push_str(&format!(
+            "      - name: field{index}\n        type: \"{id}\"\n        required: true\n"
+        ));
+    }
+    let command = format!(
+        "  - id: planner.wide_task\n    kind: command\n    version: 1\n    description: \"Wide input command\"\n    input:\n{inputs}"
+    );
+    std::fs::write(&commands, {
+        let original = std::fs::read_to_string(&commands).expect("read commands");
+        original + &command
+    })
+    .expect("write commands");
+    assert_eq!(exit_code(&build_once(&project)), 0);
+    // The stored generation carries all nine input signatures and
+    // reloads (a schema-invalid snapshot would be corrupt custody).
+    let store = project.join(".lekalo/cache/search");
+    let pointer = std::fs::read_to_string(store.join("current.json")).expect("pointer");
+    let hex = json_from(&pointer)["digest"]
+        .as_str()
+        .expect("digest")
+        .to_owned();
+    let generation: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(store.join(&hex)).expect("generation"))
+            .expect("generation json");
+    let wide = generation["cards"]
+        .as_array()
+        .expect("cards")
+        .iter()
+        .find(|card| card["key"] == "def:planner.wide_task")
+        .expect("wide card");
+    assert_eq!(
+        wide["signatures"].as_array().expect("signatures").len(),
+        9,
+        "the complete typed facts persist"
+    );
+    let status = json(&lekalo_in(
+        &project,
+        &["--json", "search-index", "status", "--project", "."],
+    ));
+    assert_eq!(
+        status["searchIndex"]["state"], "ready",
+        "the stored generation reloads clean"
+    );
+    // The response card stays bounded at the wire previews with the
+    // omission disclosed.
+    let output = lekalo_in(
+        &project,
+        &[
+            "--json",
+            "find",
+            "--id",
+            "planner.wide_task",
+            "--project",
+            ".",
+            "--inputs",
+            "evidence/search-inputs.json",
+        ],
+    );
+    assert_eq!(exit_code(&output), 0, "{}", stderr_text(&output));
+    let envelope = json(&output);
+    let card = &envelope["items"][0]["card"];
+    assert!(card["signatures"].as_array().expect("bounded").len() <= 8);
+    assert!(
+        card["omitted"].as_u64().expect("omitted") >= 1,
+        "the wire discloses the omitted ninth fact"
     );
 }

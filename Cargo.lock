@@ -587,6 +587,7 @@ dependencies = [
  "clap",
  "lekalo-core",
  "serde_json",
+ "sha2",
  "tempfile",
 ]
 

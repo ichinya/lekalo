@@ -34,7 +34,8 @@ pub mod wire;
 
 pub use cursor::{Cursor, CursorBinding, CursorError, LastTuple};
 pub use index::{
-    digest_of, pins_of, sha256_of, IndexDocument, IndexStatus, InputPin, SearchIndex, SearchStore,
+    digest_of, pins_of, sha256_of, AdmissionConfig, IndexDocument, IndexStatus, InputPin,
+    SearchIndex, SearchStore,
 };
 pub use input::{InputEntry, ProducerKind, SearchInputs};
 pub use projection::{

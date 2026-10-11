@@ -85,6 +85,28 @@ pub struct IndexDocument {
     /// The security/policy digest bound into cursors.
     #[serde(rename = "policyDigest")]
     pub policy_digest: String,
+    /// The digest of the canonical Model compilation this generation
+    /// was built over: the freshness oracle's Model partition pin, so a
+    /// warm reuse can prove the stored generation still reflects the
+    /// current Model without re-decoding every producer.
+    #[serde(
+        rename = "modelDigest",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub model_digest: Option<String>,
+    /// The admitting manifest configuration the build ran under: the
+    /// manifest's project-relative path, the digest of its canonical
+    /// bytes, and the posting cap it selected. Absent when the build
+    /// admitted no manifest (the canonical-only run); a revocation or
+    /// edit of the admitting manifest is a freshness drift, never an
+    /// invisible policy change.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub admission: Option<AdmissionConfig>,
+    /// The per-domain admitted coverage rows the build recorded: the
+    /// warm serving path replays exactly these, never a re-guess.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub coverage: Vec<crate::search::query::CoverageRow>,
     /// Cards sorted by qualified key.
     pub cards: Vec<Card>,
     /// Postings: normalized term -> byte-sorted qualified keys.
@@ -92,6 +114,21 @@ pub struct IndexDocument {
     /// Additional exact qualified identities per card key.
     #[serde(rename = "qualifiedIds")]
     pub qualified_ids: BTreeMap<String, Vec<String>>,
+}
+
+/// The persisted admitting-manifest configuration of one generation.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct AdmissionConfig {
+    /// The project-relative path of the admitting manifest.
+    pub path: String,
+    /// The digest of the manifest's canonical (sorted, compact) bytes:
+    /// re-admission compares canonical bytes, so whitespace-only edits
+    /// never fake a drift while every admission change is caught.
+    pub digest: String,
+    /// The posting cap the manifest selected for the build.
+    #[serde(rename = "maxPostings")]
+    pub max_postings: u64,
 }
 
 /// One consumed producer pin recorded in the snapshot.
@@ -393,9 +430,12 @@ impl SearchStore {
 
 /// The closed structural invariants of one generation document: every
 /// posting entry and qualified identity must resolve to a carried
-/// card, posting lists stay byte-sorted and duplicate-free, and the
-/// bounded card count holds. A forged posting that names no card is
-/// corrupt custody, never silently served content.
+/// card, posting lists stay byte-sorted and duplicate-free, the
+/// bounded card count holds, every card list stays within the
+/// published internal-fact bounds (a generation that exceeds them is
+/// schema-invalid and corrupt, never silently served), and every
+/// stored path-bearing fact passes the frozen privacy path grammar —
+/// a forged generation cannot smuggle a sensitive path back in.
 fn validate_document(document: &IndexDocument) -> Result<(), &'static str> {
     if document.cards.len() > MAX_CARDS {
         return Err("cards");
@@ -407,6 +447,46 @@ fn validate_document(document: &IndexDocument) -> Result<(), &'static str> {
         }
         if !keys.insert(card.key.as_str()) {
             return Err("duplicate-card");
+        }
+        // The published internal-fact bounds: a card carrying more
+        // facts than the closed bound is a schema-invalid snapshot.
+        let facts = crate::search::version::MAX_FACTS;
+        if card.signatures.len() > facts
+            || card.relations.len() > facts
+            || card.effects.len() > facts
+            || card.bindings.len() > facts
+            || card.locations.len() > facts
+            || card.requirements.len() > facts
+            || card.scenarios.len() > facts
+            || card.gates.len() > facts
+        {
+            return Err("card-facts");
+        }
+        // Privacy: every stored path-bearing fact (binding paths,
+        // binding key path parts, source spans) re-passes the frozen
+        // path grammar. A reconstructed foreign card is corrupt custody.
+        for binding in &card.bindings {
+            // An empty binding path is a withheld location, not a
+            // sensitive spelling: only nonempty paths re-pass the frozen
+            // privacy grammar (a forged generation cannot smuggle a
+            // sensitive path back in).
+            if !binding.path.is_empty()
+                && crate::project_fs::path_violation(&binding.path).is_some()
+            {
+                return Err("binding-path");
+            }
+            let path_part = match binding.key.rsplit_once('#') {
+                Some((path, _)) => path,
+                None => binding.key.as_str(),
+            };
+            if crate::project_fs::path_violation(path_part).is_some() {
+                return Err("binding-key");
+            }
+        }
+        for location in &card.locations {
+            if crate::project_fs::path_violation(&location.path).is_some() {
+                return Err("location-path");
+            }
         }
     }
     let mut entries = 0usize;

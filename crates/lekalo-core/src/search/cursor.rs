@@ -49,8 +49,10 @@ pub fn cursor_invalid(error: CursorError) -> DiagnosticSet {
     }
 }
 
-/// The binding facts every cursor carries (wire `cursorState`).
+/// The binding facts every cursor carries (wire `cursorState`):
+/// a closed object — unknown members are refused at every depth.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CursorBinding {
     /// The recipe the page was ranked under.
     pub recipe: String,
@@ -62,8 +64,10 @@ pub struct CursorBinding {
     pub index_digest: String,
 }
 
-/// The last ranking tuple the previous page ended on.
+/// The last ranking tuple the previous page ended on: a closed object
+/// with validated tuple invariants (bounded key, bounded ranks).
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LastTuple {
     /// The tier rank of the last emitted card.
     pub tier: u8,
@@ -127,14 +131,21 @@ impl Cursor {
         if !actual[..16].eq_ignore_ascii_case(check) {
             return Err(CursorError::Malformed);
         }
+        if json.len() > MAX_CURSOR_BYTES {
+            return Err(CursorError::Malformed);
+        }
+        // Closed-document admission: duplicate keys are rejected before
+        // decode (the manifest/generation/producer convention applies to
+        // cursors too), and every cursor depth denies unknown fields —
+        // the wire structs carry `deny_unknown_fields`.
+        let text = std::str::from_utf8(&json).map_err(|_| CursorError::Malformed)?;
+        super::wire::reject_duplicate_keys(text).map_err(|_| CursorError::Malformed)?;
         #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
         struct Wire {
             binding: CursorBinding,
             #[serde(rename = "last")]
             last: Option<LastTuple>,
-        }
-        if json.len() > MAX_CURSOR_BYTES {
-            return Err(CursorError::Malformed);
         }
         let wire: Wire = serde_json::from_slice(&json).map_err(|_| CursorError::Malformed)?;
         if wire.binding.recipe != expected.recipe
@@ -145,6 +156,22 @@ impl Cursor {
             || !is_sha256(&wire.binding.query_digest)
         {
             return Err(CursorError::Mismatch);
+        }
+        if let Some(last) = &wire.last {
+            // Tuple invariants: bounded ranks, bounded coverage/edits,
+            // and a nonempty bounded key. A forged or drifted tuple is
+            // malformed, never paged past.
+            let tier_cap = crate::search::rank::Tier::Fuzzy.rank();
+            let field_cap = crate::search::rank::FieldPriority::Description.rank();
+            if last.tier > tier_cap
+                || last.field > field_cap
+                || last.coverage > u32::MAX as usize
+                || last.edits > 64
+                || last.key.is_empty()
+                || last.key.len() > 256
+            {
+                return Err(CursorError::Malformed);
+            }
         }
         Ok(Self {
             binding: wire.binding,
@@ -256,5 +283,61 @@ mod tests {
             Cursor::decode("zzzz", &expected).unwrap_err(),
             CursorError::Malformed
         );
+    }
+
+    #[test]
+    fn duplicate_and_unknown_cursor_members_are_refused() {
+        let expected = binding();
+        let cursor = Cursor {
+            binding: expected.clone(),
+            last: None,
+        };
+        let token = cursor.encode().expect("encodes");
+        // Rebuild the same payload with an unknown member at the top
+        // depth, then recompute the public checksum so only closed-field
+        // admission and duplicate-key rejection can refuse it.
+        let (check, encoded) = token.split_once(':').expect("token");
+        let decoded = base64_decode(encoded).expect("decodes");
+        let text = String::from_utf8(decoded).expect("utf8");
+        for hostile in [
+            // Unknown top-level member.
+            text.replace("}", ",\"extra\":\"unadmitted\"}"),
+            // Duplicate keys at the binding depth.
+            text.replace("\"index_digest\"", "\"extra\":1,\"index_digest\""),
+            // Duplicate top-level member (last-wins JSON parse would
+            // otherwise silently accept it).
+            format!(
+                "{{{},\"last\":null,\"last\":null}}",
+                &text[1..text.len() - 1]
+            ),
+        ] {
+            let reencoded = base64_encode(hostile.as_bytes());
+            let digest = super::super::wire::sha256_digest(reencoded.as_bytes());
+            let forged = format!("{}:{}", &digest[..16], reencoded);
+            assert_eq!(
+                Cursor::decode(&forged, &expected).unwrap_err(),
+                CursorError::Malformed,
+                "hostile cursor body must be refused: {hostile}"
+            );
+        }
+        // Tuple invariants: an out-of-range rank or an unbounded key is
+        // malformed, never paged past.
+        let with_last = Cursor {
+            binding: expected.clone(),
+            last: Some(LastTuple {
+                tier: 9,
+                field: 1,
+                coverage: 2,
+                edits: 0,
+                key: "def:planner.focus_task".to_owned(),
+            }),
+        }
+        .encode()
+        .expect("encodes");
+        assert_eq!(
+            Cursor::decode(&with_last, &expected).unwrap_err(),
+            CursorError::Malformed
+        );
+        let _ = check;
     }
 }

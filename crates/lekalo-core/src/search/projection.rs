@@ -215,12 +215,16 @@ impl Confidence {
     }
 }
 
-/// The closed declared/detected trust split of effect witnesses.
+/// The closed declared/detected/stale trust split of effect witnesses:
+/// `stale` rows are retained with per-fact status and served only
+/// under the explicit `--include-stale` path, never laundered into
+/// current evidence.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Trust {
     Declared,
     Detected,
+    Stale,
 }
 
 impl Trust {
@@ -229,6 +233,7 @@ impl Trust {
         match self {
             Self::Declared => "declared",
             Self::Detected => "detected",
+            Self::Stale => "stale",
         }
     }
 }
@@ -349,6 +354,12 @@ pub struct Card {
     /// Ownership/visibility, when declared (`module` | `project`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub visibility: Option<String>,
+    /// Artifact ownership (`module` | `project` | `observed`), when an
+    /// admitted producer recorded one: a distinct typed property from
+    /// Model visibility, so observed ownership evidence never silently
+    /// overrides what the Model declares (and vice versa).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ownership: Option<String>,
     /// The evidence confidence of the card's own facts.
     pub confidence: Confidence,
     /// The freshness of the card's evidence.
@@ -487,6 +498,7 @@ pub fn project_ir(project: &CompiledProject, cap: usize) -> Projection {
             effects: Vec::new(),
             bindings: Vec::new(),
             locations: Vec::new(),
+            ownership: None,
             requirements: Vec::new(),
             scenarios: Vec::new(),
             gates: Vec::new(),
@@ -683,6 +695,7 @@ fn add_definition_card(projection: &mut Projection, definition: &Definition, cap
         visibility: common
             .visibility
             .map(|visibility| visibility.as_str().to_owned()),
+        ownership: None,
         confidence: Confidence::Canonical,
         freshness: Freshness::Current,
         completeness: Completeness::Complete,
@@ -757,6 +770,7 @@ pub fn attach_effects(
                 confidence: match trust {
                     Trust::Declared => Confidence::Canonical,
                     Trust::Detected => Confidence::Extracted,
+                    Trust::Stale => Confidence::Unknown,
                 },
             };
             let entry = witnesses.entry(card_key).or_default();
