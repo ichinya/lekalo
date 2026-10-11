@@ -9,7 +9,7 @@
 //! with `change.source-preservation-unavailable` instead of guessing; there
 //! is no whole-file reserialization fallback.
 
-use crate::loader::frontends::{Node, Value};
+use crate::loader::frontends::{Node, Scalar, Value};
 
 use super::diagnostic::ChangeError;
 
@@ -569,38 +569,278 @@ fn content_end(bytes: &[u8], line_start: usize, line_end: usize) -> usize {
     end
 }
 
-/// Plan the replacement of one named member sequence's items with a new
-/// field list. The whole member block (key line plus indented items) is
-/// replaced textually, so container spans never enter the calculation.
+/// Plan the bounded byte edits that replace one named member sequence's
+/// field list (round 3, finding 14): an unchanged signature plans NO byte
+/// edit at all — comments, quoting, blank lines, and CRLF endings stay
+/// verbatim; a changed signature performs proven per-item edits only
+/// (bounded scalar replacements inside an item, whole-line removals,
+/// member-line appends, whole-item insertions/removals that already
+/// refuse comment-adjacent layouts). Reorders and items carrying members
+/// outside the closed field grammar refuse explicitly instead of
+/// reformatting the block.
 pub fn plan_member_sequence_replace(
     bytes: &[u8],
     definition: &Node,
     member: &str,
-    fields: &[(&str, &str, bool)],
-) -> Result<ByteEdit, ChangeError> {
-    let (start, end, key_indent) = member_block_range(bytes, definition, member)?;
-    let item_indent = " ".repeat(key_indent + 2);
-    let newline = newline_before(bytes, end);
-    let mut block = format!("{newline}{}{member}:", " ".repeat(key_indent));
-    for (name, type_spelling, required) in fields {
-        block.push_str(newline);
-        block.push_str(&item_indent);
-        block.push_str("- name: ");
-        block.push_str(&quote_yaml(name));
-        block.push_str(newline);
-        block.push_str(&item_indent);
-        block.push_str("  type: ");
-        block.push_str(&quote_yaml(type_spelling));
-        if *required {
-            block.push_str(newline);
-            block.push_str(&item_indent);
-            block.push_str("  required: true");
+    fields: &[(&str, &str, bool, Option<&str>)],
+) -> Result<Vec<ByteEdit>, ChangeError> {
+    let items = member_sequence(definition, member)?;
+    // Decode the exact current member facts (the closed four-member field
+    // grammar; anything else refuses instead of being silently dropped).
+    let mut existing: Vec<(String, String, bool, Option<String>)> = Vec::with_capacity(items.len());
+    for item in items {
+        let Value::Map(entries) = &item.value else {
+            return Err(ChangeError::SourcePreservation {
+                subject: member.to_owned(),
+                detail: "member-not-sequence",
+            });
+        };
+        let mut name = None;
+        let mut field_type = None;
+        let mut required = false;
+        let mut description = None;
+        let mut extra = 0usize;
+        for entry in entries {
+            match entry.key.as_str() {
+                "name" => name = entry.value.as_str().map(str::to_owned),
+                "type" => field_type = entry.value.as_str().map(str::to_owned),
+                "required" => {
+                    required = matches!(entry.value.value, Value::Scalar(Scalar::Bool(true)))
+                }
+                "description" => description = entry.value.as_str().map(str::to_owned),
+                _ => extra += 1,
+            }
         }
+        let (Some(name), Some(field_type)) = (name, field_type) else {
+            return Err(ChangeError::SourcePreservation {
+                subject: member.to_owned(),
+                detail: "member-layout",
+            });
+        };
+        if extra > 0 {
+            return Err(ChangeError::SourcePreservation {
+                subject: name,
+                detail: "member-layout",
+            });
+        }
+        existing.push((name, field_type, required, description));
+    }
+    let requested: Vec<(String, String, bool, Option<String>)> = fields
+        .iter()
+        .map(|(name, field_type, required, description)| {
+            (
+                (*name).to_owned(),
+                (*field_type).to_owned(),
+                *required,
+                description.map(str::to_owned),
+            )
+        })
+        .collect();
+    // The unchanged signature is a byte-identical no-op: no comment is
+    // transferred, no quoting is normalized, no blank line appears.
+    if existing == requested {
+        return Ok(Vec::new());
+    }
+    // A reorder of the common members is not a proven bounded edit:
+    // refuse instead of reformatting the whole block.
+    let existing_names: Vec<&str> = existing.iter().map(|(name, ..)| name.as_str()).collect();
+    let requested_common: Vec<&str> = requested
+        .iter()
+        .map(|(name, ..)| name.as_str())
+        .filter(|name| existing_names.contains(name))
+        .collect();
+    let existing_common: Vec<&str> = existing_names
+        .iter()
+        .copied()
+        .filter(|name| requested.iter().any(|(other, ..)| other == name))
+        .collect();
+    if requested_common != existing_common {
+        return Err(ChangeError::SourcePreservation {
+            subject: member.to_owned(),
+            detail: "member-order",
+        });
+    }
+    let mut edits: Vec<ByteEdit> = Vec::new();
+    // Removals of disappearing members (whole-item line ranges; the
+    // comment-adjacent refusal applies per item).
+    for (name, ..) in &existing {
+        if !requested.iter().any(|(other, ..)| other == name) {
+            edits.push(plan_seq_item_remove(bytes, definition, member, name)?);
+        }
+    }
+    // In-place updates of kept members: bounded edits inside the item's
+    // own lines only. Appended member lines are collected first so a
+    // same-offset tie with the trailing new-item insertion (both insert
+    // at the last kept item's end) resolves with the appended member
+    // landing inside its item and the new item after it.
+    let mut appended = Vec::new();
+    for (index, (name, field_type, required, description)) in existing.iter().enumerate() {
+        let Some((_, requested_type, requested_required, requested_description)) =
+            requested.iter().find(|(other, ..)| other == name)
+        else {
+            continue;
+        };
+        let item = &items[index];
+        if field_type != requested_type {
+            edits.push(replace_item_scalar(bytes, item, "type", requested_type)?);
+        }
+        if required != requested_required {
+            if *requested_required {
+                appended.push(append_item_member(bytes, item, "required", "true")?);
+            } else {
+                edits.push(remove_item_member(bytes, item, "required")?);
+            }
+        }
+        if description != requested_description {
+            match (description, requested_description) {
+                (Some(_), Some(new)) => {
+                    edits.push(replace_item_scalar(bytes, item, "description", new)?);
+                }
+                (Some(_), None) => {
+                    edits.push(remove_item_member(bytes, item, "description")?);
+                }
+                (None, Some(new)) => {
+                    appended.push(append_item_member(
+                        bytes,
+                        item,
+                        "description",
+                        &format!("\"{}\"", escape_quoted(new)),
+                    )?);
+                }
+                (None, None) => {}
+            }
+        }
+    }
+    edits.extend(appended);
+    // Insertions of new members: ONE combined block at the sequence's
+    // end anchor (requested order preserved; comment-adjacent refusal
+    // applies). An empty member (no items yet) cannot reach here — the
+    // sequence exists because the member decodes.
+    let new_fields: Vec<&(String, String, bool, Option<String>)> = requested
+        .iter()
+        .filter(|(name, ..)| !existing.iter().any(|(other, ..)| other == name))
+        .collect();
+    if !new_fields.is_empty() {
+        let (anchor, _) = seq_anchor(items)?;
+        let mut block = String::new();
+        for (name, field_type, required, description) in new_fields {
+            block.push_str(&yaml_field_item(
+                bytes,
+                anchor,
+                name,
+                field_type,
+                *required,
+                description.as_deref(),
+            ));
+        }
+        edits.push(plan_seq_insert(bytes, definition, member, &block)?);
+    }
+    Ok(edits)
+}
+
+/// Replace one scalar member's value inside one sequence item in place,
+/// reproducing the original scalar style exactly (quoted stays quoted,
+/// plain stays plain).
+fn replace_item_scalar(
+    bytes: &[u8],
+    item: &Node,
+    member: &str,
+    new_text: &str,
+) -> Result<ByteEdit, ChangeError> {
+    let entry = item
+        .get_entry(member)
+        .ok_or(ChangeError::SourcePreservation {
+            subject: member.to_owned(),
+            detail: "member-absent",
+        })?;
+    let span = entry.value.span;
+    let original = std::str::from_utf8(&bytes[span.start.byte..span.end.byte])
+        .map_err(|_| ChangeError::SourcePreservation {
+            subject: member.to_owned(),
+            detail: "encoding",
+        })?
+        .to_owned();
+    let replacement = if original.starts_with('"') || original.starts_with('\'') {
+        let quote = &original[..1];
+        format!("{quote}{}{quote}", escape_quoted(new_text))
+    } else {
+        new_text.to_owned()
+    };
+    Ok(ByteEdit {
+        start: span.start.byte,
+        end: span.end.byte,
+        replacement,
+    })
+}
+
+/// Remove one whole member line (`key: value`) from inside one sequence
+/// item: the line break before the key line through the value's end.
+fn remove_item_member(bytes: &[u8], item: &Node, member: &str) -> Result<ByteEdit, ChangeError> {
+    let entry = item
+        .get_entry(member)
+        .ok_or(ChangeError::SourcePreservation {
+            subject: member.to_owned(),
+            detail: "member-absent",
+        })?;
+    let line_start = line_start_at(bytes, entry.key_span.start.byte);
+    if line_start == 0
+        || bytes[line_start..entry.key_span.start.byte]
+            .iter()
+            .any(|b| *b != b' ')
+    {
+        return Err(ChangeError::SourcePreservation {
+            subject: member.to_owned(),
+            detail: "member-layout",
+        });
+    }
+    let mut start = line_start - 1;
+    if start > 0 && bytes[start - 1] == b'\r' {
+        start -= 1;
     }
     Ok(ByteEdit {
         start,
-        end,
-        replacement: block,
+        end: entry.value.span.end.byte,
+        replacement: String::new(),
+    })
+}
+
+/// Append one member line (`key: value`) inside one sequence item, at the
+/// end of the item's last entry, at the item's own member indentation.
+fn append_item_member(
+    bytes: &[u8],
+    item: &Node,
+    member: &str,
+    value: &str,
+) -> Result<ByteEdit, ChangeError> {
+    let (_, item_end) = item_range(item).ok_or(ChangeError::SourcePreservation {
+        subject: member.to_owned(),
+        detail: "member-layout",
+    })?;
+    let Value::Map(entries) = &item.value else {
+        return Err(ChangeError::SourcePreservation {
+            subject: member.to_owned(),
+            detail: "member-layout",
+        });
+    };
+    let key_column = entries
+        .first()
+        .map(|entry| entry.key_span.start.column)
+        .unwrap_or(1);
+    let Some(indent) = key_column.checked_sub(1) else {
+        return Err(ChangeError::SourcePreservation {
+            subject: member.to_owned(),
+            detail: "member-layout",
+        });
+    };
+    let newline = if bytes.get(item_end) == Some(&b'\r') {
+        "\r\n"
+    } else {
+        "\n"
+    };
+    Ok(ByteEdit {
+        start: item_end,
+        end: item_end,
+        replacement: format!("{newline}{}{member}: {value}", " ".repeat(indent)),
     })
 }
 
@@ -663,7 +903,7 @@ pub fn yaml_field_list(
     bytes: &[u8],
     anchor_column: usize,
     member: &str,
-    fields: &[(&str, &str, bool)],
+    fields: &[(&str, &str, bool, Option<&str>)],
 ) -> String {
     let inner = " ".repeat(anchor_column + 2);
     let item_indent = " ".repeat(anchor_column + 4);
@@ -673,7 +913,7 @@ pub fn yaml_field_list(
     out.push_str(&inner);
     out.push_str(member);
     out.push(':');
-    for (name, type_spelling, required) in fields {
+    for (name, type_spelling, required, description) in fields {
         out.push_str(newline);
         out.push_str(&item_indent);
         out.push_str("- name: ");
@@ -686,6 +926,12 @@ pub fn yaml_field_list(
             out.push_str(newline);
             out.push_str(&item_indent);
             out.push_str("  required: true");
+        }
+        if let Some(description) = description {
+            out.push_str(newline);
+            out.push_str(&item_indent);
+            out.push_str("  description: ");
+            out.push_str(&quote_yaml(description));
         }
     }
     out
@@ -855,6 +1101,47 @@ pub fn plan_seq_item_rename(
     Ok(ByteEdit {
         start: span.start.byte,
         end: span.end.byte,
+        replacement,
+    })
+}
+
+/// Plan the rename of one SCALAR sequence item (the entity's `identity`
+/// field references) in place: only the scalar bytes change; everything
+/// else stays verbatim (round 3, finding 12).
+pub fn plan_scalar_item_rename(
+    bytes: &[u8],
+    definition: &Node,
+    member: &str,
+    value: &str,
+    to: &str,
+) -> Result<ByteEdit, ChangeError> {
+    let items = member_sequence(definition, member)?;
+    let item = items
+        .iter()
+        .find(|item| item.as_str() == Some(value))
+        .ok_or(ChangeError::SubjectConflict {
+            subject: value.to_owned(),
+            detail: "member-missing",
+        })?;
+    let (start, end) = item_range(item).ok_or(ChangeError::SourcePreservation {
+        subject: value.to_owned(),
+        detail: "item-layout",
+    })?;
+    let original = std::str::from_utf8(&bytes[start..end])
+        .map_err(|_| ChangeError::SourcePreservation {
+            subject: value.to_owned(),
+            detail: "encoding",
+        })?
+        .to_owned();
+    let replacement = if original.starts_with('"') || original.starts_with('\'') {
+        let quote = &original[..1];
+        format!("{quote}{}{quote}", escape_quoted(to))
+    } else {
+        to.to_owned()
+    };
+    Ok(ByteEdit {
+        start,
+        end,
         replacement,
     })
 }

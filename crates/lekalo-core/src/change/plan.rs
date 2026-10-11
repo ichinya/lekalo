@@ -200,6 +200,18 @@ pub struct PreparedChange {
     /// the composed result of every sequential operation (never
     /// serialized: the wire carries only digests).
     pub(crate) edits: Vec<(String, Vec<u8>)>,
+    /// The logical paths whose replacement creates a new canonical kind
+    /// home (round 3, finding 11: a module's first definition of a kind).
+    /// Never serialized; the apply-time transaction builds `creation`
+    /// replacement plans from it.
+    pub(crate) creations: Vec<String>,
+    /// The sealed generation evidence pins (round 3, finding 7): every
+    /// declared target document and the project lock, each pinned by
+    /// exact digest (or by the absence sentinel for a missing lock).
+    /// Never serialized — the apply-time revalidation under the writer
+    /// lock re-reads them; the displayed digests live in the generation
+    /// projection.
+    pub(crate) generation_pins: Vec<InputPin>,
     /// The resolved project root.
     pub(crate) root: std::path::PathBuf,
     /// Whether every file diff fit inside the bounded plan export.
@@ -248,6 +260,11 @@ impl PreparedChange {
     /// The resolved operation rows in request order.
     pub fn operations(&self) -> &[ResolvedOperation] {
         &self.operations
+    }
+
+    /// The exact bounded file diffs (sorted by logical path).
+    pub fn file_diffs(&self) -> &[FileDiff] {
+        &self.file_diffs
     }
 
     /// The planned file replacements (sorted by logical path).

@@ -538,7 +538,7 @@
         },
         "via": {
           "type": "array",
-          "maxItems": 64,
+          "maxItems": 256,
           "items": {
             "$ref": "#/$defs/token"
           }

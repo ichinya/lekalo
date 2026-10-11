@@ -318,7 +318,8 @@
       "required": [
         "policyDigest",
         "allowBreaking",
-        "evidence"
+        "evidence",
+        "expectPlan"
       ],
       "properties": {
         "policyDigest": {
@@ -335,6 +336,16 @@
           "type": "boolean"
         },
         "evidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "expectPlan": {
           "anyOf": [
             {
               "$ref": "#/$defs/sha256"

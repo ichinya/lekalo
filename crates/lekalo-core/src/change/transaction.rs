@@ -26,6 +26,18 @@
 //! metadata — a dead owner's handle is closed by the OS and the lock is
 //! provably free. Unknown ownership always denies; recovery never steals a
 //! lock it cannot prove free.
+//!
+//! Round 3 hardening: the journal's ENTIRE target set is validated against
+//! the canonical homes the structure owner admits before any recovery
+//! write, so a forged journal can no longer claim an unrelated project
+//! file (finding 1); every target is preflighted against the states the
+//! transaction can explain before any restoration, so user edits made
+//! after an interrupted transaction survive and the barrier is retained
+//! on drift (finding 2); a durably committed recovery completes its
+//! cleanup before reporting success, so the reader barrier can never
+//! outlive a committed receipt (finding 3); and the read-only pending
+//! verdict reuses the same closed decode + admitted-target gate for the
+//! receipt surface (finding 6).
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -262,22 +274,6 @@ pub(crate) fn pending_transactions(root: &Path) -> Vec<String> {
     }
     pending.sort();
     pending
-}
-
-/// The durable state of one pending transaction's journal, or `None` when
-/// the journal cannot be read or decoded (fail closed: callers must treat
-/// an unknown state as not committed).
-pub(crate) fn journal_state(root: &Path, transaction: &str) -> Option<String> {
-    let path = root
-        .join(super::version::TRANSACTION_CACHE_ROOT)
-        .join(transaction)
-        .join(JOURNAL_NAME);
-    let bytes = std::fs::read(&path).ok()?;
-    if bytes.len() > MAX_JOURNAL_BYTES {
-        return None;
-    }
-    let value: Json = serde_json::from_slice(&bytes).ok()?;
-    value.get("state")?.as_str().map(str::to_owned)
 }
 
 impl Transaction {
@@ -647,17 +643,44 @@ pub(crate) struct RecoveryResult {
 /// - `staging`: no replacement started; the transaction aborts without
 ///   touching a single source byte (a real interruption during staging
 ///   recovers cleanly instead of bricking the project);
-/// - `replacing`: every backup is digest-verified, replaced files are
-///   restored (idempotently — already-restored files are skipped), and
-///   creations are removed again only when the current bytes provably are
-///   the bytes this transaction created and the destination is the
-///   admitted history home (round 2, finding 3);
+/// - `replacing`: every backup is digest-verified, every target is
+///   preflighted against the states this transaction can explain, and
+///   replaced files are restored (idempotently — already-restored files
+///   are skipped); creations are removed again only when the current
+///   bytes provably are the bytes this transaction created and the
+///   destination is an admitted canonical home (round 2, finding 3;
+///   round 3, finding 2 adds the whole-set preflight so a later drift
+///   conflict is discovered before any earlier restoration writes);
 /// - `committed`: the commit is durable; recovery verifies every target
-///   against its pinned after digest and finishes the cleanup.
+///   against its pinned after digest and finishes the cleanup — the
+///   barrier is only cleared after the cleanup actually completed
+///   (round 3, finding 3).
 ///
 /// Verification failures, drifted files, and forged entries keep the
 /// journal (and the reader barrier) in place and fail closed.
 pub(crate) fn recover(root: &Path, transaction: &str) -> Result<RecoveryResult, ChangeError> {
+    let (journal_dir, journal) = load_validated_journal(root, transaction)?;
+    let restorations = restorations_of(root, &journal_dir, &journal)?;
+    match journal.state.as_str() {
+        STATE_STAGING => recover_staging(root, transaction, &restorations),
+        STATE_REPLACING => recover_replacing(transaction, &journal_dir, &restorations),
+        STATE_COMMITTED => recover_committed(transaction, &journal_dir, &restorations),
+        _ => Err(ChangeError::CommitFailed {
+            transaction: transaction.to_owned(),
+            detail: "journal-state",
+        }),
+    }
+}
+
+/// Load and fully validate one pending transaction's journal without
+/// writing: the closed decoder, the transaction/plan identity pins, the
+/// file bound, the admitted-target-set validation (round 3, finding 1),
+/// and the history-flag consistency. Every other recovery-side consumer
+/// (the read-only receipt verdict included) reuses exactly this gate.
+fn load_validated_journal(
+    root: &Path,
+    transaction: &str,
+) -> Result<(PathBuf, Journal), ChangeError> {
     if !transaction
         .bytes()
         .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
@@ -698,18 +721,118 @@ pub(crate) fn recover(root: &Path, transaction: &str) -> Result<RecoveryResult, 
             detail: "journal-files-over-bound",
         });
     }
+    // Round 3, finding 1: the ENTIRE target set is validated against the
+    // admitted canonical homes before any recovery write. Root
+    // containment alone is not custody: a journal naming an unrelated
+    // project file (existing or to-be-created) is a forged overwrite/
+    // deletion authority and fails closed with the barrier retained.
+    validate_journal_targets(root, &journal)?;
+    // The journal's durable history flag must agree with the file set: a
+    // forged combination fails closed before any restoration.
+    if journal.history
+        != journal
+            .files
+            .iter()
+            .any(|file| file.path == super::version::HISTORY_LOGICAL_PATH)
+    {
+        return Err(ChangeError::CommitFailed {
+            transaction: transaction.to_owned(),
+            detail: "journal-history-flag",
+        });
+    }
+    Ok((journal_dir, journal))
+}
+
+/// The module directory and kind stem of one canonical kind-home path
+/// (`lekalo/modules/<dir>/<stem>.yaml`), or `None` for any other shape.
+fn module_kind_home(path: &str) -> Option<(&str, &str)> {
+    let rest = path.strip_prefix("lekalo/modules/")?;
+    let (dir, file) = rest.split_once('/')?;
+    if dir.is_empty() || file.contains('/') {
+        return None;
+    }
+    let stem = file.strip_suffix(".yaml")?;
+    crate::project_fs::KIND_STEMS
+        .iter()
+        .any(|candidate| candidate == &stem)
+        .then_some((dir, stem))
+}
+
+/// Whether one path is a module document home of an admitted module.
+fn admitted_module_home(path: &str, modules: &[String]) -> bool {
+    let Some(rest) = path.strip_prefix("lekalo/modules/") else {
+        return false;
+    };
+    match rest.split_once('/') {
+        Some((dir, "module.yaml")) => modules.iter().any(|module| module == dir),
+        _ => false,
+    }
+}
+
+/// Validate the journal's whole target set against the canonical homes
+/// the structure owner admits right now (round 3, finding 1): every
+/// existing-file entry must be an admitted Model document home or the
+/// history sidecar; every creation entry must be the history sidecar or
+/// an admitted module's kind home (the `definition:add` first-document
+/// creation surface, round 3, finding 11); duplicate or aliased entries
+/// refuse. An unvalidatable structure refuses everything.
+fn validate_journal_targets(root: &Path, journal: &Journal) -> Result<(), ChangeError> {
+    let modules = match crate::project_fs::Fs::validate_project(root) {
+        crate::project_fs::StructureOutcome::Valid(report) => report.modules,
+        _ => return Err(ChangeError::WriteBoundaryDenied),
+    };
+    let mut seen: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+    for file in &journal.files {
+        if !seen.insert(file.path.as_str()) {
+            return Err(ChangeError::CommitFailed {
+                transaction: journal.transaction.clone(),
+                detail: "journal-target-duplicate",
+            });
+        }
+        let admitted = if file.path == super::version::HISTORY_LOGICAL_PATH
+            || file.path == "lekalo/project.yaml"
+            || admitted_module_home(&file.path, &modules)
+        {
+            true
+        } else {
+            match module_kind_home(&file.path) {
+                Some((dir, _)) => modules.iter().any(|module| module == dir),
+                None => false,
+            }
+        };
+        if !admitted {
+            return Err(ChangeError::WriteBoundaryDenied);
+        }
+    }
+    Ok(())
+}
+
+/// Build the validated restoration set of one journal: every target path
+/// is component-wise validated against the confined root (no-follow),
+/// creation destinations are restricted to the admitted history home or
+/// an admitted kind home, and every digest pin is shape-checked.
+fn restorations_of(
+    root: &Path,
+    journal_dir: &Path,
+    journal: &Journal,
+) -> Result<Vec<Restoration>, ChangeError> {
     let mut restorations: Vec<Restoration> = Vec::new();
     for (index, file) in journal.files.iter().enumerate() {
         let target = validated_target(root, &file.path)?;
         if file.creation {
             // A creation destination is restricted to the admitted history
-            // home (round 2, finding 3): any other journaled creation is a
-            // forged deletion authority and fails closed.
-            if file.path != super::version::HISTORY_LOGICAL_PATH {
+            // home or an admitted module kind home (round 2, finding 3,
+            // extended for the first-definition creation surface in round
+            // 3, finding 11 — the whole-set admission already ran): any
+            // other journaled creation is a forged deletion authority and
+            // fails closed.
+            let admitted_creation = file.path == super::version::HISTORY_LOGICAL_PATH
+                || module_kind_home(&file.path).is_some();
+            if !admitted_creation {
                 return Err(ChangeError::WriteBoundaryDenied);
             }
             super::expect_digest(&file.after_digest).ok_or(ChangeError::CommitFailed {
-                transaction: transaction.to_owned(),
+                transaction: journal.transaction.clone(),
                 detail: "journal-after-digest",
             })?;
             restorations.push(Restoration {
@@ -722,11 +845,11 @@ pub(crate) fn recover(root: &Path, transaction: &str) -> Result<RecoveryResult, 
             continue;
         }
         super::expect_digest(&file.before_digest).ok_or(ChangeError::CommitFailed {
-            transaction: transaction.to_owned(),
+            transaction: journal.transaction.clone(),
             detail: "journal-before-digest",
         })?;
         super::expect_digest(&file.after_digest).ok_or(ChangeError::CommitFailed {
-            transaction: transaction.to_owned(),
+            transaction: journal.transaction.clone(),
             detail: "journal-after-digest",
         })?;
         restorations.push(Restoration {
@@ -737,28 +860,36 @@ pub(crate) fn recover(root: &Path, transaction: &str) -> Result<RecoveryResult, 
             after_digest: file.after_digest.clone(),
         });
     }
-    // The journal's durable history flag must agree with the file set: a
-    // forged combination fails closed before any restoration.
-    if journal.history
-        != restorations
-            .iter()
-            .any(|restoration| restoration.path == super::version::HISTORY_LOGICAL_PATH)
-    {
-        return Err(ChangeError::CommitFailed {
+    Ok(restorations)
+}
+
+/// The strict read-only verdict over one pending transaction (round 3,
+/// finding 6): `Ok(())` only when the journal closed-decodes, its whole
+/// target set is admitted, its state is durably `committed`, and every
+/// target still carries its pinned after bytes. Any unresolved,
+/// malformed, or unverifiable state is `RecoveryRequired` — a lexical
+/// winner never masks a later unresolved journal. Never writes.
+pub(crate) fn require_durably_committed(root: &Path, transaction: &str) -> Result<(), ChangeError> {
+    let (journal_dir, journal) = load_validated_journal(root, transaction)?;
+    if journal.state != STATE_COMMITTED {
+        return Err(ChangeError::RecoveryRequired {
             transaction: transaction.to_owned(),
-            detail: "journal-history-flag",
         });
     }
-
-    match journal.state.as_str() {
-        STATE_STAGING => recover_staging(root, transaction, &restorations),
-        STATE_REPLACING => recover_replacing(transaction, &journal_dir, &restorations),
-        STATE_COMMITTED => recover_committed(transaction, &restorations),
-        _ => Err(ChangeError::CommitFailed {
-            transaction: transaction.to_owned(),
-            detail: "journal-state",
-        }),
+    let restorations = restorations_of(root, &journal_dir, &journal)?;
+    for restoration in &restorations {
+        let Some(digest) = target_digest(restoration) else {
+            return Err(ChangeError::RecoveryRequired {
+                transaction: transaction.to_owned(),
+            });
+        };
+        if digest != restoration.after_digest {
+            return Err(ChangeError::RecoveryRequired {
+                transaction: transaction.to_owned(),
+            });
+        }
     }
+    Ok(())
 }
 
 /// `staging`: nothing was replaced; verify no source byte carries a
@@ -817,6 +948,37 @@ fn recover_replacing(
             return Err(ChangeError::CommitFailed {
                 transaction: transaction.to_owned(),
                 detail: "backup-digest-mismatch",
+            });
+        }
+    }
+    // Preflight EVERY target before any restoration write (round 3,
+    // finding 2): a target may only be in a state this transaction can
+    // explain — its pinned before bytes (not yet replaced, or already
+    // restored by an earlier recovery pass), its pinned after bytes (the
+    // transaction's own prospective output), or, for an existing target,
+    // absence pending restoration from the verified backup. Any other
+    // bytes are edits made after the interruption that the transaction
+    // does not own: recovery refuses with the journal and the reader
+    // barrier retained, and no earlier restoration has been performed.
+    for restoration in restorations {
+        let digest = target_digest(restoration);
+        let explained = match (&restoration.backup, digest) {
+            // A creation already removed (or never created).
+            (None, None) => true,
+            // The exact bytes this transaction created: removed again.
+            (None, Some(digest)) => digest == restoration.after_digest,
+            // An existing target absent pending restoration.
+            (Some(_), None) => true,
+            // Already restored to the verified original.
+            (Some(_), Some(digest)) if digest == restoration.before_digest => true,
+            // Still carrying (or indistinguishable from) the transaction's
+            // own prospective bytes: restored from the verified backup.
+            (Some(_), Some(digest)) => digest == restoration.after_digest,
+        };
+        if !explained {
+            return Err(ChangeError::PreconditionFailed {
+                subject: restoration.path.clone(),
+                detail: "recovery-drift",
             });
         }
     }
@@ -896,10 +1058,12 @@ fn recover_replacing(
 
 /// `committed`: the canonical history was durably written before the
 /// journal was removed. Recovery verifies every target still carries its
-/// pinned after bytes, then finishes the outstanding cleanup and reports
-/// the transaction committed — never rolled back.
+/// pinned after bytes, then finishes the outstanding cleanup and ONLY
+/// THEN reports the transaction committed — never rolled back, and never
+/// a success while the journal still gates readers (round 3, finding 3).
 fn recover_committed(
     transaction: &str,
+    journal_dir: &Path,
     restorations: &[Restoration],
 ) -> Result<RecoveryResult, ChangeError> {
     for restoration in restorations {
@@ -917,6 +1081,13 @@ fn recover_committed(
             });
         }
     }
+    // The commit is durably verified: complete the cleanup BEFORE any
+    // success is reported, so a subsequent ordinary read can never still
+    // be gated by this journal and a repeat recovery cannot re-report
+    // success over retained material (round 3, finding 3).
+    std::fs::remove_dir_all(journal_dir).map_err(|_| ChangeError::RecoveryRequired {
+        transaction: transaction.to_owned(),
+    })?;
     let files = restorations
         .iter()
         .map(|restoration| super::receipt::FileOutcome {

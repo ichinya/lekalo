@@ -271,7 +271,8 @@
       "required": [
         "policyDigest",
         "allowBreaking",
-        "evidence"
+        "evidence",
+        "expectPlan"
       ],
       "properties": {
         "policyDigest": {
@@ -296,8 +297,19 @@
               "type": "null"
             }
           ]
+        },
+        "expectPlan": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
-      }
+      },
+      "description": "The accepted policy, evidence, and expected-plan pins of the run; the stored execution-intent constituents cross-checked against the record intentDigest."
     }
   }
 }

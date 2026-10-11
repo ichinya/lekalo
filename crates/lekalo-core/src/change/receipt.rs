@@ -85,7 +85,10 @@ pub struct FileOutcome {
 /// The accepted policy and evidence recorded on every receipt (round 2,
 /// finding 15): which reviewed policy bytes authorized the change, whether
 /// explicit acknowledgement was given, and the migration-evidence digest
-/// when a data-loss or storage class was authorized.
+/// when a data-loss or storage class was authorized. Round 3 (finding 5)
+/// adds the expected-plan pin: the full execution intent is reconstructible
+/// from stored constituent facts and cross-checked against the record's
+/// `intentDigest` on every decode.
 #[derive(Clone, Debug, Serialize, serde::Deserialize, Eq, PartialEq)]
 pub struct PolicyAcceptance {
     #[serde(rename = "policyDigest")]
@@ -93,6 +96,8 @@ pub struct PolicyAcceptance {
     #[serde(rename = "allowBreaking")]
     pub allow_breaking: bool,
     pub evidence: Option<String>,
+    #[serde(rename = "expectPlan")]
+    pub expect_plan: Option<String>,
 }
 
 /// The closed wire projection of one receipt.
@@ -315,14 +320,14 @@ impl History {
                 .and_then(Json::as_str)
                 .ok_or(super::diagnostic::ChangeError::HistoryInvalid { detail: "plan-id" })?
                 .to_owned();
-            let intent_digest = record_map
+            let intent_digest_field = record_map
                 .get("intentDigest")
                 .and_then(Json::as_str)
                 .ok_or(super::diagnostic::ChangeError::HistoryInvalid {
                     detail: "intent-digest",
                 })?
                 .to_owned();
-            if super::expect_digest(&intent_digest).is_none() {
+            if super::expect_digest(&intent_digest_field).is_none() {
                 return Err(super::diagnostic::ChangeError::HistoryInvalid {
                     detail: "intent-digest-shape",
                 });
@@ -364,7 +369,31 @@ impl History {
                 &operations,
                 &files,
             )?;
-            let digest = record_digest(&chain, &receipt);
+            // Intent/receipt consistency from stored constituent facts
+            // (round 3, finding 5): the record's `intentDigest` must be
+            // exactly the digest of the policy acceptance the embedded
+            // receipt carries (policy digest, expected plan, and
+            // acknowledgement flag). A record whose unhashed-looking
+            // intent field disagrees with its own receipt is refused —
+            // replay authorization can never rest on an unbound field.
+            let policy = receipt.get("policy").and_then(Json::as_object).ok_or(
+                super::diagnostic::ChangeError::HistoryInvalid {
+                    detail: "receipt-policy",
+                },
+            )?;
+            let policy_digest = policy.get("policyDigest").and_then(Json::as_str);
+            let expect_plan = policy.get("expectPlan").and_then(Json::as_str);
+            let allow_breaking = policy.get("allowBreaking").and_then(Json::as_bool).ok_or(
+                super::diagnostic::ChangeError::HistoryInvalid {
+                    detail: "receipt-policy",
+                },
+            )?;
+            if intent_digest(policy_digest, expect_plan, allow_breaking) != intent_digest_field {
+                return Err(super::diagnostic::ChangeError::HistoryInvalid {
+                    detail: "intent-consistency",
+                });
+            }
+            let digest = record_digest(&chain, &project, &intent_digest_field, &receipt);
             let anchor = receipt
                 .get("history")
                 .and_then(|history| history.get("recordDigest"))
@@ -383,7 +412,7 @@ impl History {
                 key_digest,
                 request_digest,
                 plan_id,
-                intent_digest,
+                intent_digest: intent_digest_field,
                 operations,
                 files,
                 receipt,
@@ -459,21 +488,31 @@ impl History {
 pub(crate) const GENESIS_DIGEST: &str =
     "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
-/// The canonical per-record digest: binds one history record to the
-/// ENTIRE receipt projection it stores — every operation row (subject,
-/// family, status, detail), every file outcome (path, before/after
+/// The canonical per-record digest (round 3, finding 5): binds one history
+/// record to the ENTIRE receipt projection it stores — every operation row
+/// (subject, family, status, detail), every file outcome (path, before/after
 /// digests, outcome), the transaction identity and state, the accepted
-/// policy/evidence, the receipt state, and the history sequence —
-/// chained to every earlier record through the previous record's digest
-/// (the genesis uses the empty-bytes digest). The anchor's own
+/// policy/evidence/expectation, the receipt state, and the history
+/// sequence — PLUS the record's own authoritative members the projection
+/// does not carry: the project identity and the exact execution-intent
+/// digest. Chained to every earlier record through the previous record's
+/// digest (the genesis uses the empty-bytes digest). The anchor's own
 /// `recordDigest` member is removed before hashing, so the digest is
 /// computable on both encode and decode without circularity. Insertion,
-/// deletion, reorder, and field tampering all break the chain and fail
-/// decode closed (round 2, finding 7: hash chaining alone is not
-/// authentication — every security-relevant claim is inside the digest
-/// input). Encode ([`super::apply_prepared`]) and decode
-/// ([`History::decode`]) compute exactly this formula.
-pub(crate) fn record_digest(previous: &str, receipt_projection: &Json) -> String {
+/// deletion, reorder, and field tampering — including a lone
+/// `intentDigest` edit that recomputes nothing — break the chain and fail
+/// decode closed (round 2, finding 7; round 3, finding 5 extends the
+/// input beyond the bare receipt). This remains an unkeyed chain: it is
+/// tamper evidence against partial edits, not authentication against an
+/// attacker who can recompute every hash — that requires a keyed
+/// successor and stays out of scope. Encode ([`super::apply_prepared`])
+/// and decode ([`History::decode`]) compute exactly this formula.
+pub(crate) fn record_digest(
+    previous: &str,
+    project: &str,
+    intent_digest: &str,
+    receipt_projection: &Json,
+) -> String {
     let mut projection = receipt_projection.clone();
     if let Some(history) = projection.get_mut("history").and_then(Json::as_object_mut) {
         history.remove("recordDigest");
@@ -481,7 +520,9 @@ pub(crate) fn record_digest(previous: &str, receipt_projection: &Json) -> String
     let canonical = serde_json::to_string(&projection).unwrap_or_default();
     format!(
         "sha256:{}",
-        sha256_hex(format!("{previous}\u{1f}{canonical}").as_bytes())
+        sha256_hex(
+            format!("{previous}\u{1f}{project}\u{1f}{intent_digest}\u{1f}{canonical}").as_bytes()
+        )
     )
 }
 
@@ -627,16 +668,17 @@ fn verify_receipt_projection<'a>(
     {
         return invalid("receipt-files-mismatch");
     }
-    // The accepted policy/evidence member must be present and well-formed
-    // (round 2, finding 15): null for plan-less recovery receipts, or the
-    // closed acceptance object. Its content is hash-bound by the chain.
+    // The accepted policy/evidence/expectation member must be present and
+    // well-formed (round 2, finding 15; round 3, finding 5 adds the
+    // expected-plan pin): the closed acceptance object. Its content is
+    // hash-bound by the chain and cross-checked against the record's
+    // intent digest by the caller.
     match map.get("policy") {
-        Some(Json::Null) => {}
         Some(policy) => {
             let Some(policy) = policy.as_object() else {
                 return invalid("receipt-policy");
             };
-            if policy.len() != 3
+            if policy.len() != 4
                 || !matches!(policy.get("allowBreaking"), Some(Json::Bool(_)))
                 || !matches!(
                     policy.get("policyDigest"),
@@ -644,6 +686,10 @@ fn verify_receipt_projection<'a>(
                 )
                 || !matches!(
                     policy.get("evidence"),
+                    None | Some(Json::Null) | Some(Json::String(_))
+                )
+                || !matches!(
+                    policy.get("expectPlan"),
                     None | Some(Json::Null) | Some(Json::String(_))
                 )
             {

@@ -620,11 +620,15 @@ fn decode_operation(catalog: &Catalog, value: &Json) -> Result<Operation, &'stat
         // outcome for a shape the contract refuses.
         let (required, optional) =
             unsupported_member_rules(discriminator).ok_or("implemented-without-executor")?;
-        require_members(map, &required, &required)?;
-        let allowed: std::collections::BTreeSet<&str> =
-            required.iter().chain(optional.iter()).copied().collect();
+        // The allowed set is the UNION of required and optional members:
+        // required presence is enforced against that union, so a
+        // schema-valid optional member (e.g. `symbol:move`'s `toName`)
+        // reaches the explicit unsupported outcome instead of being
+        // rejected as an unknown member (round 3, finding 15).
+        let allowed: Vec<&str> = required.iter().chain(optional.iter()).copied().collect();
+        require_members(map, &allowed, &required)?;
         for (key, value) in map {
-            if key != "operation" && !allowed.contains(key.as_str()) {
+            if key != "operation" && !allowed.contains(&key.as_str()) {
                 return Err("unknown-member");
             }
             validate_unsupported_member(key, value)?;
@@ -1458,6 +1462,32 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn schema_valid_optional_members_reach_the_unsupported_outcome() {
+        // Round 3, finding 15: an optional member the published schema
+        // admits (`symbol:move`'s `toName`, `migration:apply`'s
+        // `parameters`) decodes and is refused later with the registered
+        // unsupported outcome — never `change.request-invalid`.
+        let symbol_move = request(
+            "{\"operation\":\"symbol:move\",\"symbol\":\"tasks.task\",\"toModule\":\"other\",\"toName\":\"new_task\"}",
+        );
+        match &decode_ok(&symbol_move).operations[0] {
+            Operation::Unsupported { operation, .. } => {
+                assert_eq!(operation, "symbol:move");
+            }
+            other => panic!("unexpected operation: {other:?}"),
+        }
+        let migration = request(
+            "{\"operation\":\"migration:apply\",\"step\":\"adopt.entities\",\"parameters\":{\"mode\":\"dry\"}}",
+        );
+        match &decode_ok(&migration).operations[0] {
+            Operation::Unsupported { operation, .. } => {
+                assert_eq!(operation, "migration:apply");
+            }
+            other => panic!("unexpected operation: {other:?}"),
+        }
     }
 
     #[test]

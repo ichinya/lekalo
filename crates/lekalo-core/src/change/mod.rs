@@ -224,6 +224,9 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
     let mut documents = load.documents.clone();
     // The evolving prospective bytes per touched logical path.
     let mut prospective: Vec<(String, Vec<u8>)> = Vec::new();
+    // The logical paths whose replacement creates a new canonical kind
+    // home (round 3, finding 11).
+    let mut creations: Vec<String> = Vec::new();
     let mut resolved_rows = Vec::with_capacity(request.operations.len());
     for operation in &request.operations {
         let row = resolve_operation(&documents, operation)?;
@@ -232,6 +235,25 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
                 operation: operation.operation().to_owned(),
             });
         }
+        // A whole-definition addition joins its kind's home document, not
+        // a document named by the subject (the module). The home is
+        // resolved from the module's DECLARING document (loader
+        // metadata), so a physical directory name is never conflated with
+        // the semantic module id (round 3, finding 11).
+        let kind_home_creation = if let Operation::DefinitionAdd { kind, module, .. } = operation {
+            let home = definition_home_path(&documents, module, kind)?;
+            // The module's first definition of this kind creates the kind
+            // home itself: the document is synthesized whole and journaled
+            // as a creation so recovery removes exactly the bytes this
+            // transaction wrote (round 3, finding 11).
+            let exists = documents
+                .iter()
+                .any(|document| document.document.path == home)
+                || prospective.iter().any(|(planned, _)| planned == &home);
+            (!exists).then_some(home)
+        } else {
+            None
+        };
         // The typed tree edit advances the semantic candidate.
         apply_tree_edit(&mut documents, operation)?;
         // The byte edit is planned against the file's evolving prospective
@@ -243,10 +265,21 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
                 detail: "subject-missing",
             })?
             .to_owned();
-        // A whole-definition addition joins its kind's home document, not
-        // a document named by the subject (the module).
+        if let Some(home) = kind_home_creation {
+            // The whole kind-home document is new: synthesize its exact
+            // bytes (header + the one definition block) — no byte edit is
+            // planned against a nonexistent anchor.
+            let bytes = synthesize_kind_home_bytes(operation, &home)?;
+            match prospective.iter_mut().find(|(planned, _)| planned == &home) {
+                Some((_, target)) => *target = bytes,
+                None => prospective.push((home.clone(), bytes)),
+            }
+            creations.push(home);
+            resolved_rows.push(row);
+            continue;
+        }
         let path = if let Operation::DefinitionAdd { kind, module, .. } = operation {
-            definition_home_path(module, kind)
+            definition_home_path(&documents, module, kind)?
         } else {
             documents
                 .iter()
@@ -442,9 +475,12 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
 
     // Generation projection: a real plan (round 2, finding 13) — every
     // declared target pinned by its exact document bytes, the project
-    // lock pinned when present, and explicit unknown states. Generation
-    // itself is never executed here.
-    let generation = build_generation_plan(&root)?;
+    // lock pinned when present, and explicit unknown states. Round 3
+    // (findings 7 and 8): the evidence is strictly validated (lockfile
+    // owner parse, closed target identity, locked-target custody, cap
+    // propagation) and the exact pins are sealed for the apply-time
+    // revalidation. Generation itself is never executed here.
+    let (generation, generation_pins) = build_generation_plan(&root)?;
 
     // Complete input inventory with exact byte pins. The history sidecar
     // distinguishes absent from empty (round 2, finding 8): a present but
@@ -491,12 +527,16 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
     let file_edits: Vec<FileEdit> = prospective
         .iter()
         .map(|(path, after)| {
-            let original = load
+            // A creation target has no pinned original: its before digest
+            // is the absence sentinel (round 3, finding 11).
+            let before: &[u8] = match load
                 .documents
                 .iter()
                 .find(|document| &document.document.path == path)
-                .expect("pinned document");
-            let before = &original.bytes;
+            {
+                Some(document) => &document.bytes,
+                None => b"",
+            };
             FileEdit {
                 path: path.clone(),
                 before_digest: format!("sha256:{}", crate::digest::sha256_hex(before)),
@@ -507,16 +547,20 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
     let mut file_diffs = Vec::new();
     let mut diff_complete = true;
     for (path, after_bytes) in &prospective {
-        let original = load
+        let before: Vec<u8> = match load
             .documents
             .iter()
             .find(|document| &document.document.path == path)
-            .expect("pinned document");
-        let before =
-            std::str::from_utf8(&original.bytes).map_err(|_| ChangeError::SourcePreservation {
-                subject: path.clone(),
-                detail: "encoding",
-            })?;
+        {
+            Some(document) => document.bytes.clone(),
+            // A creation diff starts from the empty document (round 3,
+            // finding 11).
+            None => Vec::new(),
+        };
+        let before = std::str::from_utf8(&before).map_err(|_| ChangeError::SourcePreservation {
+            subject: path.clone(),
+            detail: "encoding",
+        })?;
         let after =
             std::str::from_utf8(after_bytes).map_err(|_| ChangeError::SourcePreservation {
                 subject: path.clone(),
@@ -557,6 +601,8 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
         mode: "preview",
         project_id,
         edits: prospective,
+        creations,
+        generation_pins,
         root,
         diff_complete,
         allow_breaking: options.allow_breaking,
@@ -754,6 +800,13 @@ pub fn apply_prepared(
         }
     }
 
+    // Round 3, finding 7: the sealed generation evidence — every declared
+    // target document and the project lock — is revalidated under the
+    // writer lock. The digests shown in the plan's generation projection
+    // are apply-time preconditions: a target document or lock added,
+    // removed, or changed after preparation refuses before any mutation.
+    revalidate_generation_evidence(&root, &prepared.generation_pins)?;
+
     // The compatibility gate re-evaluates under the sealed plan's own
     // policy pins: denied classes refuse before any mutation.
     if !prepared.denied_breaking_classes.is_empty() {
@@ -764,19 +817,27 @@ pub fn apply_prepared(
 
     // The source replacement plans, in canonical path order. The exact
     // prospective bytes were pinned at preparation; the before digest
-    // re-read is the CAS point against concurrent edits.
+    // re-read is the CAS point against concurrent edits. A creation
+    // target (round 3, finding 11: a module's first kind home) pins the
+    // absence sentinel instead and is journaled as a creation so recovery
+    // removes exactly the bytes this transaction wrote.
     let mut plans: Vec<ReplacementPlan> = prepared
         .edits
         .iter()
         .map(|(path, after_bytes)| {
-            let before = std::fs::read(root.join(path.replace('/', std::path::MAIN_SEPARATOR_STR)))
-                .unwrap_or_default();
+            let creation = prepared.creations.contains(path);
+            let before = if creation {
+                Vec::new()
+            } else {
+                std::fs::read(root.join(path.replace('/', std::path::MAIN_SEPARATOR_STR)))
+                    .unwrap_or_default()
+            };
             ReplacementPlan {
                 logical: path.clone(),
                 before_digest: format!("sha256:{}", crate::digest::sha256_hex(&before)),
                 after_digest: format!("sha256:{}", crate::digest::sha256_hex(after_bytes)),
                 after_bytes: after_bytes.clone(),
-                creation: false,
+                creation,
             }
         })
         .collect();
@@ -833,9 +894,20 @@ pub fn apply_prepared(
                 .to_owned()
         })
         .unwrap_or_else(|| receipt::GENESIS_DIGEST.to_owned());
+    // The durable execution intent of this run (round 2, finding 10):
+    // policy digest, expected plan, and acknowledgement flag — bound into
+    // the receipt's policy acceptance, the record's `intentDigest`, and
+    // the chain digest input (round 3, finding 5).
+    let intent = receipt::intent_digest(
+        prepared.policy.digest.as_deref(),
+        options.expect_plan,
+        prepared.allow_breaking,
+    );
     // The accepted policy and evidence recorded on the receipt (round 2,
     // finding 15): a data-loss/storage authorization is only recorded
     // when the reviewed policy actually carries the migration evidence.
+    // The expected-plan pin completes the stored intent constituents
+    // (round 3, finding 5).
     let policy_acceptance = receipt::PolicyAcceptance {
         policy_digest: prepared.policy.digest.clone(),
         allow_breaking: prepared.allow_breaking,
@@ -849,6 +921,7 @@ pub fn apply_prepared(
         } else {
             None
         },
+        expect_plan: options.expect_plan.map(str::to_owned),
     };
     let mut receipt = receipt::Receipt {
         status: "valid".to_owned(),
@@ -875,7 +948,8 @@ pub fn apply_prepared(
         .ok_or(ChangeError::HistoryInvalid {
             detail: "projection",
         })?;
-    let record_digest_value = receipt::record_digest(&previous_digest, &projection);
+    let record_digest_value =
+        receipt::record_digest(&previous_digest, &history.project, &intent, &projection);
     receipt.history = Some(HistoryAnchor {
         sequence,
         record_digest: record_digest_value,
@@ -885,11 +959,7 @@ pub fn apply_prepared(
         key_digest: key,
         request_digest: prepared.request_digest(),
         plan_id: prepared.plan_id(),
-        intent_digest: receipt::intent_digest(
-            prepared.policy.digest.as_deref(),
-            options.expect_plan,
-            prepared.allow_breaking,
-        ),
+        intent_digest: intent,
         operations: record_operations,
         files: record_files,
         receipt: receipt
@@ -946,17 +1016,37 @@ pub fn lookup_receipt(
     idempotency_key: &str,
 ) -> Result<Option<Receipt>, ChangeError> {
     let root = resolve_root(project)?;
-    // A pending transaction gates the ledger (round 2, finding 9): the
-    // history becomes readable while the transaction is durably committed
-    // (recovery then only finishes the cleanup), but a staging or
-    // replacing journal may still roll the recorded operation back.
-    if let Some(transaction) = transaction::pending_transactions(&root).first() {
-        if transaction::journal_state(&root, transaction).as_deref()
-            != Some(transaction::STATE_COMMITTED)
-        {
-            return Err(ChangeError::RecoveryRequired {
-                transaction: transaction.clone(),
+    // Pending transactions gate the ledger (round 2, finding 9; hardened
+    // in round 3, finding 6): EVERY pending journal is verdicted with the
+    // closed decoder — never a lexical first-winner over an unvalidated
+    // state field. A staging or replacing journal may still roll back, so
+    // the receipt stays gated; a committed journal must prove its exact
+    // transaction and history custody (its record is present in the
+    // decoded ledger with matching transaction identity) before the
+    // ledger becomes readable through it.
+    let pending = transaction::pending_transactions(&root);
+    if !pending.is_empty() {
+        let history = match read_history_bytes(&root)? {
+            Some(bytes) => Some(History::decode(&bytes)?),
+            None => None,
+        };
+        for transaction in &pending {
+            transaction::require_durably_committed(&root, transaction)?;
+            let custody = history.as_ref().is_some_and(|history| {
+                history.records.iter().any(|record| {
+                    record
+                        .receipt
+                        .get("transaction")
+                        .and_then(|wire| wire.get("id"))
+                        .and_then(Json::as_str)
+                        == Some(transaction.as_str())
+                })
             });
+            if !custody {
+                return Err(ChangeError::RecoveryRequired {
+                    transaction: transaction.clone(),
+                });
+            }
         }
     }
     // Absent reads as "no record"; an existing zero-byte (or
@@ -1231,6 +1321,21 @@ fn resolve_operation(
                 });
             }
             definition_decl_members_fit_kind(kind, definition)?;
+            // Declared defaults are refused consistently at every
+            // field-consuming operation (round 3, finding 13): they need
+            // the reviewed Model/IR successor and are never silently
+            // discarded from a committed declaration.
+            if definition
+                .input
+                .iter()
+                .chain(definition.payload.iter())
+                .any(|field| field.default.is_some())
+            {
+                return Err(ChangeError::UnsupportedMember {
+                    operation: operation.operation().to_owned(),
+                    member: "field-default",
+                });
+            }
             let id = format!("{module}.{}", definition.name);
             if find_definition(documents, &id).is_ok() {
                 return Err(ChangeError::SubjectConflict {
@@ -1337,6 +1442,18 @@ fn resolve_operation(
                         detail: "field-duplicate",
                     });
                 }
+            }
+            // Declared defaults are refused consistently at every
+            // field-consuming operation (round 3, finding 13): an
+            // accepted signature update must carry exactly the requested
+            // semantics — a default this implementation cannot represent
+            // is an explicit unsupported member, never a silently dropped
+            // declaration that still commits.
+            if input.iter().any(|field| field.default.is_some()) {
+                return Err(ChangeError::UnsupportedMember {
+                    operation: operation.operation().to_owned(),
+                    member: "field-default",
+                });
             }
             (target.clone(), true)
         }
@@ -1459,8 +1576,37 @@ fn definition_decl_members_fit_kind(
 /// The kind's home document of one module (the loader's kind-placement
 /// rule): command/effect definitions live in commands.yaml, queries in
 /// queries.yaml, events in events.yaml, policies in policies.yaml, and
-/// scenarios in scenarios.yaml.
-fn definition_home_path(module: &str, kind: &str) -> String {
+/// scenarios in scenarios.yaml. The home is resolved from the module's
+/// DECLARING document path — the loader's own metadata — so the physical
+/// module directory is never conflated with the semantic module id
+/// (round 3, finding 11).
+fn definition_home_path(
+    documents: &[LoadedDocument],
+    module: &str,
+    kind: &str,
+) -> Result<String, ChangeError> {
+    let module_document = documents
+        .iter()
+        .find(|document| {
+            document.document.definitions.iter().any(|definition| {
+                definition.id == module && definition_kind_of(definition) == "module"
+            })
+        })
+        .ok_or(ChangeError::SubjectConflict {
+            subject: module.to_owned(),
+            detail: "document-missing",
+        })?;
+    let Some(directory) = module_document
+        .document
+        .path
+        .strip_prefix("lekalo/modules/")
+        .and_then(|rest| rest.strip_suffix("/module.yaml"))
+    else {
+        return Err(ChangeError::SubjectConflict {
+            subject: module.to_owned(),
+            detail: "document-missing",
+        });
+    };
     let file = match kind {
         "command" | "effect" => "commands.yaml",
         "query" => "queries.yaml",
@@ -1469,7 +1615,7 @@ fn definition_home_path(module: &str, kind: &str) -> String {
         "scenario" => "scenarios.yaml",
         _ => "entities.yaml",
     };
-    format!("lekalo/modules/{module}/{file}")
+    Ok(format!("lekalo/modules/{directory}/{file}"))
 }
 
 /// Whether one scalar sequence already carries the exact value.
@@ -1554,7 +1700,7 @@ fn definition_member_exists(node: &Node, member: &str, name: &str) -> bool {
 
 /// Apply one typed tree edit to the candidate documents.
 fn apply_tree_edit(
-    documents: &mut [LoadedDocument],
+    documents: &mut Vec<LoadedDocument>,
     operation: &Operation,
 ) -> Result<(), ChangeError> {
     // `definition:add` targets the declaring module's document and pushes
@@ -1568,25 +1714,49 @@ fn apply_tree_edit(
     {
         // The definition joins its kind's home document of the module
         // (the loader's kind-placement rule), never the module document.
-        let home = definition_home_path(module, kind);
-        let document = documents
-            .iter_mut()
-            .find(|document| document.document.path == home)
-            .ok_or_else(|| ChangeError::SubjectConflict {
-                subject: home.clone(),
-                detail: "document-missing",
-            })?;
+        // The module's FIRST definition of a kind creates the home
+        // document itself in the candidate (round 3, finding 11).
+        let home = definition_home_path(documents, module, kind)?;
         let id = format!("{module}.{}", declaration.name);
         let node = synthesized_definition_node(&id, kind, declaration)?;
-        document
-            .document
-            .definitions
-            .push(crate::loader::project_docs::Definition {
-                id,
-                id_span: placeholder_span(),
-                node,
-                span: placeholder_span(),
-            });
+        match documents
+            .iter_mut()
+            .find(|document| document.document.path == home)
+        {
+            Some(document) => {
+                document
+                    .document
+                    .definitions
+                    .push(crate::loader::project_docs::Definition {
+                        id,
+                        id_span: placeholder_span(),
+                        node,
+                        span: placeholder_span(),
+                    });
+            }
+            None => {
+                documents.push(LoadedDocument {
+                    document: crate::loader::Document {
+                        path: home,
+                        kind: crate::loader::DocKind::Symbol,
+                        version: crate::loader::project_docs::ModelVersion::Current
+                            .as_str()
+                            .to_owned(),
+                        version_span: placeholder_span(),
+                        definitions: vec![crate::loader::project_docs::Definition {
+                            id,
+                            id_span: placeholder_span(),
+                            node,
+                            span: placeholder_span(),
+                        }],
+                    },
+                    // The bytes of a synthesized candidate document never
+                    // enter the tree-side comparison; the byte side
+                    // carries the exact synthesized document bytes.
+                    bytes: Vec::new(),
+                });
+            }
+        }
         return Ok(());
     }
     let subject = match operation {
@@ -1642,7 +1812,15 @@ fn apply_tree_edit(
             remove_member_item(&mut definition.node, "fields", name)
         }
         Operation::EntityFieldRename { name, to, .. } => {
-            rename_member_item(&mut definition.node, "fields", name, to)
+            rename_member_item(&mut definition.node, "fields", name, to)?;
+            // The entity's own identity references the field by name: the
+            // governed typed reference is rewritten with the rename
+            // (round 3, finding 12) so the candidate stays valid instead
+            // of failing a later identity check.
+            if definition_kind_of(definition) == "entity" {
+                rename_identity_reference(&mut definition.node, name, to)?;
+            }
+            Ok(())
         }
         Operation::EnumCaseChange { name, change, .. } => {
             change_member_item(&mut definition.node, "values", name, change)
@@ -2161,6 +2339,27 @@ fn rename_member_item(
     Ok(())
 }
 
+/// Rewrite one scalar reference inside the entity's `identity` list
+/// (round 3, finding 12): the entity's governed typed reference to its
+/// own field follows the rename. A missing identity member is simply not
+/// rewritten; a present identity that does not carry the field is
+/// untouched.
+fn rename_identity_reference(node: &mut Node, name: &str, to: &str) -> Result<(), ChangeError> {
+    let Some(sequence) = node.get_mut("identity") else {
+        return Ok(());
+    };
+    let Value::Seq(items) = &mut sequence.value else {
+        return Err(ChangeError::SubjectConflict {
+            subject: "identity".to_owned(),
+            detail: "member-not-sequence",
+        });
+    };
+    if let Some(item) = items.iter_mut().find(|item| item.as_str() == Some(name)) {
+        item.value = Value::Scalar(Scalar::Str(to.to_owned()));
+    }
+    Ok(())
+}
+
 /// Apply disjoint original-relative edits in descending-offset order so
 /// every range is interpreted against the original bytes. An unsorted set
 /// is sorted first; the ranges must already be verified non-overlapping.
@@ -2224,7 +2423,24 @@ fn plan_source_edits(
             vec![edit::plan_seq_item_remove(bytes, node, "fields", name)?]
         }
         Operation::EntityFieldRename { name, to, .. } => {
-            vec![edit::plan_seq_item_rename(bytes, node, "fields", name, to)?]
+            let mut edits = vec![edit::plan_seq_item_rename(bytes, node, "fields", name, to)?];
+            // The entity's own identity reference follows the rename in
+            // the source too (round 3, finding 12): only the scalar bytes
+            // of the identity entry change.
+            if node
+                .get("identity")
+                .and_then(|sequence| sequence.as_seq())
+                .is_some_and(|items| {
+                    items
+                        .iter()
+                        .any(|item| item.as_str() == Some(name.as_str()))
+                })
+            {
+                edits.push(edit::plan_scalar_item_rename(
+                    bytes, node, "identity", name, to,
+                )?);
+            }
+            edits
         }
         Operation::EnumCaseAdd { case, .. } => {
             let item = edit::case_item_block(
@@ -2315,19 +2531,18 @@ fn plan_source_edits(
             )?]
         }
         Operation::OperationInputSet { input, .. } => {
-            let fields: Vec<(&str, &str, bool)> = input
+            let fields: Vec<(&str, &str, bool, Option<&str>)> = input
                 .iter()
                 .map(|field| {
                     (
                         field.name.as_str(),
                         Box::leak(field.r#type.to_spelling().into_boxed_str()) as &str,
                         field.required,
+                        field.description.as_deref(),
                     )
                 })
                 .collect();
-            vec![edit::plan_member_sequence_replace(
-                bytes, node, "input", &fields,
-            )?]
+            edit::plan_member_sequence_replace(bytes, node, "input", &fields)?
         }
         Operation::OperationOutputSet { r#type, .. } => {
             vec![edit::plan_returns_replace(
@@ -2341,6 +2556,39 @@ fn plan_source_edits(
     Ok(edits)
 }
 
+/// Synthesize the exact bytes of a brand-new kind-home document (round
+/// 3, finding 11): the canonical document header plus the one definition
+/// block at the canonical two-space dash indentation. The bytes must
+/// re-decode to exactly the synthesized tree node — the reparse check
+/// enforces it.
+fn synthesize_kind_home_bytes(operation: &Operation, _home: &str) -> Result<Vec<u8>, ChangeError> {
+    let Operation::DefinitionAdd {
+        kind,
+        module,
+        definition: declaration,
+    } = operation
+    else {
+        return Err(ChangeError::RequestInvalid {
+            detail: "subject-missing",
+        });
+    };
+    let anchor_column = 2;
+    let full_id = format!("{module}.{}", declaration.name);
+    let members = definition_members_block(b"", anchor_column, kind, declaration)?;
+    let item = edit::yaml_definition_item(
+        b"",
+        anchor_column,
+        &full_id,
+        kind,
+        declaration.description.as_deref(),
+        &members,
+    );
+    let mut text = String::from("schema_version: \"0.2.16\"\ndefinitions:");
+    text.push_str(&item);
+    text.push('\n');
+    Ok(text.into_bytes())
+}
+
 /// The members block (newline+indent prefixed lines) of one synthesized
 /// definition at the given anchor column.
 fn definition_members_block(
@@ -2349,13 +2597,14 @@ fn definition_members_block(
     kind: &str,
     declaration: &request::DefinitionDecl,
 ) -> Result<String, ChangeError> {
-    fn field_tuples(list: &[request::FieldDecl]) -> Vec<(&str, &str, bool)> {
+    fn field_tuples(list: &[request::FieldDecl]) -> Vec<(&str, &str, bool, Option<&str>)> {
         list.iter()
             .map(|field| {
                 (
                     field.name.as_str(),
                     Box::leak(field.r#type.to_spelling().into_boxed_str()) as &str,
                     field.required,
+                    field.description.as_deref(),
                 )
             })
             .collect()
@@ -2524,9 +2773,12 @@ fn project_impact(
                 complete = false;
             }
             // The via chain includes the seed itself plus every
-            // reverse-reachable consumer, deterministically sorted and
-            // bounded.
-            let via: Vec<String> = reached.ids.into_iter().take(64).collect();
+            // reverse-reachable consumer, deterministically sorted. The
+            // wire cap equals the closure bound (round 3, finding 9): the
+            // projection reports every admitted affected subject — a
+            // larger closure already marks the projection incomplete
+            // instead of silently dropping known consumers.
+            let via: Vec<String> = reached.ids.into_iter().take(256).collect();
             affected.push(AffectedEntry {
                 subject: subject.id().to_owned(),
                 subject_family: subject.family().key().to_owned(),
@@ -2577,87 +2829,155 @@ struct ClosureOutcome {
     complete: bool,
 }
 
-/// The generation plan of one project (round 2, finding 13): enumerate
-/// the declared target documents under `lekalo/targets` (sorted, bounded),
-/// pin each document's exact bytes by digest, decode the closed target
-/// identity (`{"target": ...}`), pin the committed project lock when one
-/// exists, and mark unknown/incomplete states explicitly. Nothing is
+/// The generation plan of one project (round 2, finding 13; hardened in
+/// round 3, finding 8): enumerate the declared target documents under
+/// `lekalo/targets` through the structure owner's admission (flat `.yaml`
+/// files only, sorted, bounded), pin each document's exact bytes by
+/// digest, strictly decode the closed target identity, validate the
+/// project lock through the lockfile owner's canonical parser, and admit
+/// a target as `planned` only when the strictly parsed lock actually
+/// locks it. Invalid or absent locks, undecodable targets, unknown target
+/// names, and the enumeration cap all propagate as `complete: false` —
+/// never a complete-looking inventory over invalid evidence. Nothing is
 /// executed and no artifact is written; execution stays with the
-/// separately authorized generation service.
-fn build_generation_plan(root: &Path) -> Result<plan::GenerationProjection, ChangeError> {
+/// separately authorized generation service. The returned pins seal the
+/// exact evidence for the apply-time revalidation (round 3, finding 7).
+fn build_generation_plan(
+    root: &Path,
+) -> Result<(plan::GenerationProjection, Vec<InputPin>), ChangeError> {
     let fs = crate::project_fs::Fs::open(root).map_err(|_| ChangeError::WriteBoundaryDenied)?;
     const TARGETS_HOME: &str = "lekalo/targets";
     let mut files: Vec<String> = Vec::new();
     if let Ok(entries) = fs.entries(TARGETS_HOME) {
         for (name, entry_type) in entries {
             let decodable = matches!(entry_type, crate::project_fs::EntryType::File)
-                && (name.ends_with(".yaml") || name.ends_with(".json"));
+                && name.ends_with(".yaml")
+                && name != ".yaml";
             if decodable {
                 files.push(name);
             }
         }
     }
-    // Deterministic order before the bound (the round-1 review noted the
-    // cap applied to an unsorted enumeration).
+    // Deterministic order before the bound; the cap propagates as an
+    // incomplete state (round 3, finding 8) instead of a silent drop.
     files.sort();
+    let over_cap = files.len() > 64;
+    let pinned_files = files.clone();
     files.truncate(64);
 
+    // The project lock is validated through the lockfile owner's strict
+    // canonical parser (round 3, finding 8): any readable-but-invalid
+    // lock bytes make the whole projection incomplete — a digest over
+    // garbage is not evidence of a generation input.
+    let lock_bytes = fs
+        .read_file_opt("", "lekalo.lock", 4 * 1024 * 1024)
+        .ok()
+        .flatten();
+    let lock = match &lock_bytes {
+        None => None,
+        Some(bytes) => crate::lockfile::Lockfile::parse_canonical(bytes).ok(),
+    };
+    let lock_valid = lock.is_some();
+    let locked_targets: Vec<String> = lock
+        .map(|lock| {
+            lock.adapters()
+                .iter()
+                .map(|adapter| adapter.id().as_str().to_owned())
+                .collect()
+        })
+        .unwrap_or_default();
+
     let mut targets = Vec::with_capacity(files.len());
-    let mut complete = true;
-    for name in &files {
+    let mut pins = Vec::with_capacity(pinned_files.len() + 1);
+    let mut complete = lock_valid && !over_cap;
+    for name in &pinned_files {
         let logical = format!("{TARGETS_HOME}/{name}");
         let bytes = match fs.read_file_opt(TARGETS_HOME, name, 1024 * 1024) {
             Ok(Some(bytes)) => bytes,
             _ => {
                 complete = false;
                 targets.push(plan::TargetPlan {
-                    target: name
-                        .strip_suffix(".yaml")
-                        .or_else(|| name.strip_suffix(".json"))
-                        .unwrap_or(name)
-                        .to_owned(),
-                    file: logical,
+                    target: name.strip_suffix(".yaml").unwrap_or(name).to_owned(),
+                    file: logical.clone(),
                     digest: absent_digest(),
                     status: "unreadable",
                     action: "generation planning is incomplete: target document unreadable"
                         .to_owned(),
                 });
+                pins.push(InputPin {
+                    path: logical,
+                    digest: absent_digest(),
+                });
                 continue;
             }
         };
         let digest = format!("sha256:{}", crate::digest::sha256_hex(&bytes));
-        // The closed target declaration is flow-JSON in every checked-in
-        // fixture; decode what is decodable and pin the rest as opaque
-        // (the exact bytes are pinned either way).
-        let decoded = serde_json::from_slice::<Json>(&bytes)
+        pins.push(InputPin {
+            path: logical.clone(),
+            digest: digest.clone(),
+        });
+        // Beyond the projection cap the evidence is still pinned, but no
+        // wire row is emitted (the cap already marked the projection
+        // incomplete — never a silent drop, round 3, finding 8).
+        if !files.contains(name) {
+            continue;
+        }
+        // The closed target declaration: strict (duplicate-key-refusing)
+        // JSON, or the closed single-`target` YAML form. The declaration
+        // admits opaque extra members (checked-in fixtures carry opaque
+        // adapter configuration) — the validated identity is the `target`
+        // member and its lock custody.
+        let decoded = request::unique_json(&bytes)
             .ok()
-            .or_else(|| serde_yaml_ok(&bytes))
             .and_then(|value| {
                 value
                     .get("target")
                     .and_then(Json::as_str)
                     .map(str::to_owned)
-            });
-        match decoded {
+            })
+            .or_else(|| serde_yaml_strict(&bytes));
+        let grammar_ok = decoded.as_deref().is_some_and(target_name_valid);
+        match decoded.filter(|_| grammar_ok) {
+            Some(target) if lock_valid => {
+                if locked_targets.contains(&target) {
+                    targets.push(plan::TargetPlan {
+                        action: format!(
+                            "generate via `lekalo generate --locked --target {target}` (separately authorized)"
+                        ),
+                        target,
+                        file: logical,
+                        digest,
+                        status: "planned",
+                    });
+                } else {
+                    complete = false;
+                    targets.push(plan::TargetPlan {
+                        action: format!(
+                            "generation planning is incomplete: target `{target}` is not locked by lekalo.lock (run `lekalo lock`)"
+                        ),
+                        target,
+                        file: logical,
+                        digest,
+                        status: "opaque",
+                    });
+                }
+            }
             Some(target) => {
+                complete = false;
                 targets.push(plan::TargetPlan {
-                    action: format!(
-                        "generate via `lekalo generate --locked --target {target}` (separately authorized)"
-                    ),
+                    action:
+                        "generation planning is incomplete: project lock absent or invalid (run `lekalo lock`)"
+                            .to_owned(),
                     target,
                     file: logical,
                     digest,
-                    status: "planned",
+                    status: "opaque",
                 });
             }
             None => {
                 complete = false;
                 targets.push(plan::TargetPlan {
-                    target: name
-                        .strip_suffix(".yaml")
-                        .or_else(|| name.strip_suffix(".json"))
-                        .unwrap_or(name)
-                        .to_owned(),
+                    target: name.strip_suffix(".yaml").unwrap_or(name).to_owned(),
                     file: logical,
                     digest,
                     status: "opaque",
@@ -2668,42 +2988,196 @@ fn build_generation_plan(root: &Path) -> Result<plan::GenerationProjection, Chan
         }
     }
     // The committed project lock pins the generation inputs' custody;
-    // its absence is an explicit incomplete state, never a silent zero.
-    let lock = match fs.read_file_opt("", "lekalo.lock", 4 * 1024 * 1024) {
-        Ok(Some(bytes)) => Some(plan::LockPin {
-            file: "lekalo.lock".to_owned(),
-            digest: format!("sha256:{}", crate::digest::sha256_hex(&bytes)),
-        }),
-        _ => {
-            complete = false;
+    // its absence (or invalid bytes) is an explicit incomplete state,
+    // never a silent zero. Invalid bytes are still pinned by digest as
+    // evidence and by the apply-time revalidation.
+    let lock = match &lock_bytes {
+        Some(bytes) => {
+            pins.push(InputPin {
+                path: "lekalo.lock".to_owned(),
+                digest: format!("sha256:{}", crate::digest::sha256_hex(bytes)),
+            });
+            Some(plan::LockPin {
+                file: "lekalo.lock".to_owned(),
+                digest: format!("sha256:{}", crate::digest::sha256_hex(bytes)),
+            })
+        }
+        None => {
+            pins.push(InputPin {
+                path: "lekalo.lock".to_owned(),
+                digest: absent_digest(),
+            });
             None
         }
     };
-    Ok(plan::GenerationProjection {
-        executed: false,
-        targets,
-        lock,
-        complete,
-        note: "plan-only; generation is separately authorized (`lekalo generate --locked`)"
-            .to_owned(),
-    })
+    let mut note =
+        String::from("plan-only; generation is separately authorized (`lekalo generate --locked`)");
+    if !lock_valid {
+        note =
+            format!("{note}; planning incomplete: project lock absent or invalid (`lekalo lock`)");
+    } else if over_cap {
+        note = format!("{note}; planning incomplete: target cap exceeded");
+    }
+    Ok((
+        plan::GenerationProjection {
+            executed: false,
+            targets,
+            lock,
+            complete,
+            note,
+        },
+        pins,
+    ))
 }
 
-/// Best-effort flow-YAML scalar-map decode for target documents that are
-/// not flow-JSON. Only the closed `{target: <scalar>}` shape is read.
-fn serde_yaml_ok(bytes: &[u8]) -> Option<Json> {
+/// Revalidate the sealed generation evidence under the writer lock
+/// (round 3, finding 7): the current target-document inventory must be
+/// exactly the pinned set (additions refuse too), and every pinned file —
+/// targets and the project lock — must still carry its pinned bytes. A
+/// pinned lock absence (the empty-bytes sentinel) must still be absence.
+fn revalidate_generation_evidence(root: &Path, pins: &[InputPin]) -> Result<(), ChangeError> {
+    if pins.is_empty() {
+        return Ok(());
+    }
+    let fs = crate::project_fs::Fs::open(root).map_err(|_| ChangeError::WriteBoundaryDenied)?;
+    const TARGETS_HOME: &str = "lekalo/targets";
+    let mut current: Vec<String> = Vec::new();
+    if let Ok(entries) = fs.entries(TARGETS_HOME) {
+        for (name, entry_type) in entries {
+            if matches!(entry_type, crate::project_fs::EntryType::File)
+                && name.ends_with(".yaml")
+                && name != ".yaml"
+            {
+                current.push(format!("{TARGETS_HOME}/{name}"));
+            }
+        }
+    }
+    current.sort();
+    let mut pinned_targets: Vec<&str> = pins
+        .iter()
+        .map(|pin| pin.path.as_str())
+        .filter(|path| path.starts_with("lekalo/targets/"))
+        .collect();
+    pinned_targets.sort();
+    let current_refs: Vec<&str> = current.iter().map(String::as_str).collect();
+    if current_refs != pinned_targets {
+        return Err(ChangeError::PreconditionFailed {
+            subject: "generation-evidence".to_owned(),
+            detail: "inventory-changed",
+        });
+    }
+    for pin in pins {
+        let (parent, name) = pin.path.rsplit_once('/').unwrap_or(("", pin.path.as_str()));
+        // The pinned lock absence must still be absence: a lock appearing
+        // after preparation is new generation evidence this plan never
+        // validated.
+        if pin.path == "lekalo.lock" && pin.digest == absent_digest() {
+            if fs.entry_type("", "lekalo.lock").is_ok() {
+                return Err(ChangeError::PreconditionFailed {
+                    subject: pin.path.clone(),
+                    detail: "input-digest",
+                });
+            }
+            continue;
+        }
+        match fs.read_file_opt(parent, name, 4 * 1024 * 1024) {
+            Ok(Some(bytes))
+                if format!("sha256:{}", crate::digest::sha256_hex(&bytes)) == pin.digest => {}
+            _ => {
+                return Err(ChangeError::PreconditionFailed {
+                    subject: pin.path.clone(),
+                    detail: "input-digest",
+                })
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Whether one target identity satisfies the closed target-name grammar
+/// the Model contract pins (`^[a-z][a-z0-9_-]{0,62}$`).
+fn target_name_valid(target: &str) -> bool {
+    let bytes = target.as_bytes();
+    match bytes.split_first() {
+        Some((&first, rest)) => {
+            first.is_ascii_lowercase()
+                && bytes.len() <= 63
+                && rest.iter().all(|byte| {
+                    byte.is_ascii_lowercase()
+                        || byte.is_ascii_digit()
+                        || *byte == b'_'
+                        || *byte == b'-'
+                })
+        }
+        None => false,
+    }
+}
+
+/// The closed YAML target-document decode: exactly one `target:` scalar
+/// member (comments allowed); a second `target:` key refuses instead of
+/// last-wins (round 3, finding 8).
+fn serde_yaml_strict(bytes: &[u8]) -> Option<String> {
     let text = std::str::from_utf8(bytes).ok()?;
-    let mut target = None;
+    let mut target: Option<String> = None;
     for line in text.lines() {
         let trimmed = line.trim();
         if let Some(rest) = trimmed.strip_prefix("target:") {
             let value = rest.trim().trim_matches('"');
-            if !value.is_empty() {
-                target = Some(value.to_owned());
+            if value.is_empty() {
+                return None;
             }
+            if target.is_some() {
+                return None;
+            }
+            target = Some(value.to_owned());
         }
     }
-    target.map(|target| serde_json::json!({ "target": target }))
+    target
+}
+
+/// Merge the shared `--expect-model` CLI precondition into raw request
+/// bytes strictly (round 3, finding 4): convenience normalization must
+/// never launder invalid input. The raw bytes are strict-decoded with the
+/// duplicate-key-refusing parser FIRST; only a clean decode is merged
+/// through the typed member. Bytes the strict parser refuses (duplicate
+/// keys, trailing garbage) pass through unchanged so the closed request
+/// decoder reports the exact failure on the mutation path — the merged
+/// form of a malformed request can never commit.
+pub fn merge_expect_model_flag(bytes: &[u8], expected: &str) -> Result<Vec<u8>, ChangeError> {
+    if expect_digest(expected).is_none() {
+        return Err(ChangeError::RequestInvalid {
+            detail: "expect-model-digest",
+        });
+    }
+    // Strict decode before any transformation: duplicate keys refuse
+    // here-and-now instead of being silently collapsed by a plain
+    // `serde_json` round-trip.
+    let Ok(mut value) = request::unique_json(bytes) else {
+        return Ok(bytes.to_vec());
+    };
+    let Some(map) = value.as_object_mut() else {
+        return Ok(bytes.to_vec());
+    };
+    if let Some(existing) = map.get("expectModel") {
+        if existing.as_str() != Some(expected) {
+            return Err(ChangeError::RequestInvalid {
+                detail: "expect-model-disagreement",
+            });
+        }
+        return Ok(bytes.to_vec());
+    }
+    map.insert("expectModel".to_owned(), Json::String(expected.to_owned()));
+    serde_json::to_vec(&value).map_err(|_| ChangeError::RequestInvalid { detail: "lowering" })
+}
+
+/// Strictly decode one CLI JSON literal flag (`--default-json`,
+/// `--value-json`) with the same duplicate-key-refusing parser as the
+/// request surface (round 3, finding 4: every CLI JSON-literal ingress
+/// validates before it becomes request payload).
+pub fn parse_strict_json_literal(text: &str) -> Result<Json, ChangeError> {
+    request::unique_json(text.as_bytes()).map_err(|_| ChangeError::RequestInvalid {
+        detail: "literal-json",
+    })
 }
 
 /// Resolve the project root through the shared selection rules.

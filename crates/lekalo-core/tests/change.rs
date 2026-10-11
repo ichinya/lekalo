@@ -600,8 +600,11 @@ fn recovery_restores_verified_backups_and_reports_the_rollback() {
     let sandbox = Sandbox::new("restore");
     let journal_dir = sandbox.root.join(".lekalo/cache/change/change-restore01");
     std::fs::create_dir_all(journal_dir.join("backups")).expect("journal dir");
-    // A interrupted commit: the target currently holds the (bad)
-    // prospective bytes; the verified backup holds the original.
+    // An interrupted commit: the target currently holds the (bad)
+    // prospective bytes; the verified backup holds the original. The
+    // after-digest pin matches the actual prospective bytes — recovery
+    // only ever restores states the transaction can explain (round 3,
+    // finding 2).
     let original = sandbox.entities_bytes();
     let mut interrupted = original.clone();
     interrupted.extend(b"interrupted: true\n");
@@ -609,8 +612,9 @@ fn recovery_restores_verified_backups_and_reports_the_rollback() {
     std::fs::write(journal_dir.join("backups/0"), &original).expect("backup");
     let digest = |bytes: &[u8]| format!("sha256:{}", lekalo_core::digest::sha256_hex(bytes));
     let journal = format!(
-        r#"{{"transaction":"change-restore01","planId":"sha256:3333333333333333333333333333333333333333333333333333333333333333","state":"replacing","files":[{{"path":"lekalo/modules/tasks/entities.yaml","beforeDigest":"{0}","afterDigest":"sha256:4444444444444444444444444444444444444444444444444444444444444444","creation":false}}],"history":false}}"#,
-        digest(&original)
+        r#"{{"transaction":"change-restore01","planId":"sha256:3333333333333333333333333333333333333333333333333333333333333333","state":"replacing","files":[{{"path":"lekalo/modules/tasks/entities.yaml","beforeDigest":"{0}","afterDigest":"{1}","creation":false}}],"history":false}}"#,
+        digest(&original),
+        digest(&interrupted)
     );
     std::fs::write(journal_dir.join("journal.json"), journal).expect("journal");
     let outcome = change::recover_transaction(Some(&sandbox.selection_str()), "change-restore01")
@@ -1054,6 +1058,46 @@ definitions:
 }
 
 #[test]
+fn impact_reports_a_closure_larger_than_the_old_wire_cap() {
+    // Round 3, finding 9: 70 known consumers of the changed entity are
+    // all reported (the wire cap equals the closure bound); nothing is
+    // silently dropped while claiming completeness.
+    let sandbox = Sandbox::new("impactwide");
+    let mut definitions = String::from("schema_version: \"0.2.16\"\ndefinitions:\n");
+    for index in 0..70 {
+        definitions.push_str(&format!(
+            "  - id: tasks.consumer{index:02}\n    kind: query\n    version: 1\n    reads:\n      - \"tasks.task\"\n    returns:\n      ref: \"tasks.task\"\n"
+        ));
+    }
+    std::fs::write(
+        sandbox.root.join("lekalo/modules/tasks/queries.yaml"),
+        definitions,
+    )
+    .expect("consumers written");
+    let prepared = prepare(&sandbox, &add_priority_request()).expect("prepares");
+    let plan: serde_json::Value =
+        serde_json::from_str(&prepared.to_json_string()).expect("plan json");
+    let seed = plan["impact"]["affected"]
+        .as_array()
+        .expect("affected")
+        .iter()
+        .find(|entry| entry["subject"] == "tasks.task")
+        .expect("the seed subject is reported")
+        .clone();
+    let via = seed["via"].as_array().expect("via").clone();
+    assert_eq!(via.len(), 71, "the seed plus all 70 consumers: {via:?}");
+    for index in 0..70 {
+        let expected = format!("tasks.consumer{index:02}");
+        assert!(
+            via.iter()
+                .any(|id| id.as_str().unwrap_or("").ends_with(expected.as_str())),
+            "consumer {expected} present: {via:?}"
+        );
+    }
+    assert_eq!(plan["impact"]["complete"], true);
+}
+
+#[test]
 fn a_document_added_after_prepare_refuses_the_sealed_plan() {
     // Round 2, finding 6: apply re-enumerates the admitted inventory; a
     // valid canonical document added after preparation refuses before any
@@ -1364,10 +1408,13 @@ fn command_effect_emit_and_wrong_kinds_stay_explicitly_refused() {
 
 #[test]
 fn generation_plan_pins_targets_and_the_lock_with_explicit_unknowns() {
-    // Round 2, finding 13: the generation projection is a real plan --
-    // every declared target pinned by its exact document digest, the
-    // committed lock pinned when present, and unknown states explicit
-    // (never a filename listing presented as complete).
+    // Round 2, finding 13; hardened in round 3, finding 8: the generation
+    // projection is a real plan -- every declared target pinned by its
+    // exact document digest and validated against the STRICTLY PARSED
+    // project lock (the lockfile owner's canonical parser). An invalid
+    // lock, an unlocked target, or a missing lock is an explicit
+    // incomplete state -- never a complete-looking inventory over
+    // invalid evidence.
     let sandbox = Sandbox::new("generation");
     std::fs::create_dir_all(sandbox.root.join("lekalo/targets")).expect("targets home");
     std::fs::write(
@@ -1375,6 +1422,12 @@ fn generation_plan_pins_targets_and_the_lock_with_explicit_unknowns() {
         "{\"target\":\"node-typescript\",\"note\":\"opaque target configuration\"}\n",
     )
     .expect("target written");
+    let valid_lock = std::fs::read(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/lockfile/valid/multi-adapter.lock.json"),
+    )
+    .expect("valid lock fixture");
+    // An invalid lock first: no complete plan over garbage evidence.
     std::fs::write(sandbox.root.join("lekalo.lock"), b"lock: 1\n").expect("lock written");
     let prepared = prepare(&sandbox, &add_priority_request()).expect("prepares");
     let plan: serde_json::Value =
@@ -1384,6 +1437,23 @@ fn generation_plan_pins_targets_and_the_lock_with_explicit_unknowns() {
     let targets = generation["targets"].as_array().expect("targets");
     assert_eq!(targets.len(), 1);
     assert_eq!(targets[0]["target"], "node-typescript");
+    assert_eq!(
+        targets[0]["status"], "opaque",
+        "invalid lock blocks planning"
+    );
+    assert_eq!(generation["complete"], false, "invalid lock is incomplete");
+    assert_eq!(
+        generation["lock"]["file"], "lekalo.lock",
+        "evidence still pinned"
+    );
+    // The strictly parsed lock: the locked target plans; a target the
+    // lock does not carry refuses as incomplete (round 3, finding 8).
+    std::fs::write(sandbox.root.join("lekalo.lock"), &valid_lock).expect("valid lock");
+    let prepared = prepare(&sandbox, &add_priority_request()).expect("prepares");
+    let plan: serde_json::Value =
+        serde_json::from_str(&prepared.to_json_string()).expect("plan json");
+    let generation = &plan["generation"];
+    let targets = generation["targets"].as_array().expect("targets");
     assert_eq!(targets[0]["status"], "planned");
     let digest = targets[0]["digest"].as_str().expect("digest");
     let expected = format!(
@@ -1394,8 +1464,18 @@ fn generation_plan_pins_targets_and_the_lock_with_explicit_unknowns() {
         )
     );
     assert_eq!(digest, expected, "the target document is pinned by digest");
-    assert_eq!(generation["lock"]["file"], "lekalo.lock");
     assert_eq!(generation["complete"], true);
+    // An unlocked target name is incomplete even with a valid lock.
+    std::fs::write(
+        sandbox.root.join("lekalo/targets/node-typescript.yaml"),
+        "{\"target\":\"missing_adapter\"}\n",
+    )
+    .expect("forged target");
+    let prepared = prepare(&sandbox, &add_priority_request()).expect("prepares");
+    let plan: serde_json::Value =
+        serde_json::from_str(&prepared.to_json_string()).expect("plan json");
+    assert_eq!(plan["generation"]["targets"][0]["status"], "opaque");
+    assert_eq!(plan["generation"]["complete"], false);
     // Without the lock the plan states the incompleteness explicitly.
     std::fs::remove_file(sandbox.root.join("lekalo.lock")).expect("lock removed");
     let prepared = prepare(&sandbox, &add_priority_request()).expect("prepares");
@@ -1403,4 +1483,574 @@ fn generation_plan_pins_targets_and_the_lock_with_explicit_unknowns() {
         serde_json::from_str(&prepared.to_json_string()).expect("plan json");
     assert_eq!(plan["generation"]["lock"], serde_json::Value::Null);
     assert_eq!(plan["generation"]["complete"], false);
+}
+
+/// Write one forged/observed journal into a sandbox transaction home
+/// (round 3 probe helper).
+fn plant_journal(
+    sandbox: &Sandbox,
+    transaction: &str,
+    state: &str,
+    files: serde_json::Value,
+    history: bool,
+) -> PathBuf {
+    let journal_dir = sandbox.root.join(".lekalo/cache/change").join(transaction);
+    std::fs::create_dir_all(journal_dir.join("backups")).expect("journal dir");
+    let journal = serde_json::json!({
+        "transaction": transaction,
+        "planId": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+        "state": state,
+        "files": files,
+        "history": history,
+    });
+    std::fs::write(
+        journal_dir.join("journal.json"),
+        serde_json::to_string(&journal).expect("journal json"),
+    )
+    .expect("journal");
+    journal_dir
+}
+
+fn sha256_of(bytes: &[u8]) -> String {
+    format!("sha256:{}", lekalo_core::digest::sha256_hex(bytes))
+}
+
+#[test]
+fn forged_recovery_entries_for_unrelated_files_are_refused() {
+    // Round 3, finding 1: a journal (even with a digest-verified backup)
+    // naming a file outside the admitted canonical homes is a forged
+    // overwrite authority and must refuse with the barrier retained.
+    let sandbox = Sandbox::new("forgedfile");
+    std::fs::write(sandbox.root.join("notes.txt"), "USER NOTES\n").expect("notes");
+    let forged = b"FORGED RESTORE\n";
+    let journal_dir = plant_journal(
+        &sandbox,
+        "change-forged001",
+        "replacing",
+        serde_json::json!([{
+            "path": "notes.txt",
+            "beforeDigest": sha256_of(b"USER NOTES\n"),
+            "afterDigest": sha256_of(forged),
+            "creation": false,
+        }]),
+        false,
+    );
+    std::fs::write(journal_dir.join("backups/0"), b"FORGED RESTORE\n").expect("forged backup");
+    let error = change::recover_transaction(Some(&sandbox.selection_str()), "change-forged001")
+        .expect_err("forged entry refused");
+    assert!(
+        matches!(error, ChangeError::WriteBoundaryDenied),
+        "got {error:?}"
+    );
+    assert_eq!(
+        std::fs::read(sandbox.root.join("notes.txt")).expect("notes"),
+        b"USER NOTES\n",
+        "the unrelated file is untouched"
+    );
+    assert!(journal_dir.join("journal.json").is_file(), "barrier kept");
+    // A duplicate/aliased target entry refuses too.
+    let journal_dir = plant_journal(
+        &sandbox,
+        "change-forged002",
+        "replacing",
+        serde_json::json!([
+            {
+                "path": "lekalo/modules/tasks/entities.yaml",
+                "beforeDigest": sha256_of(&sandbox.entities_bytes()),
+                "afterDigest": sha256_of(b"x\n"),
+                "creation": false,
+            },
+            {
+                "path": "lekalo/modules/tasks/entities.yaml",
+                "beforeDigest": sha256_of(&sandbox.entities_bytes()),
+                "afterDigest": sha256_of(b"y\n"),
+                "creation": false,
+            }
+        ]),
+        false,
+    );
+    let error = change::recover_transaction(Some(&sandbox.selection_str()), "change-forged002")
+        .expect_err("duplicate target refused");
+    assert!(
+        matches!(
+            error,
+            ChangeError::CommitFailed {
+                detail: "journal-target-duplicate",
+                ..
+            }
+        ),
+        "got {error:?}"
+    );
+    assert!(journal_dir.join("journal.json").is_file());
+}
+
+#[test]
+fn recovery_preserves_user_edits_made_after_an_interrupted_transaction() {
+    // Round 3, finding 2: a target whose current bytes match neither the
+    // pinned before nor after state is an edit the transaction does not
+    // own; recovery refuses BEFORE any restoration write and keeps the
+    // barrier (and every file) intact.
+    let sandbox = Sandbox::new("drift");
+    let original = sandbox.entities_bytes();
+    let mut user_edited = original.clone();
+    user_edited.extend(b"# USER EDIT AFTER INTERRUPTION\n");
+    std::fs::write(sandbox.entities_path(), &user_edited).expect("user edit");
+    let journal_dir = plant_journal(
+        &sandbox,
+        "change-drift0001",
+        "replacing",
+        serde_json::json!([{
+            "path": "lekalo/modules/tasks/entities.yaml",
+            "beforeDigest": sha256_of(&original),
+            "afterDigest": sha256_of(b"prospective bytes\n"),
+            "creation": false,
+        }]),
+        false,
+    );
+    std::fs::write(journal_dir.join("backups/0"), &original).expect("verified backup");
+    let error = change::recover_transaction(Some(&sandbox.selection_str()), "change-drift0001")
+        .expect_err("drift refused");
+    assert!(
+        matches!(
+            error,
+            ChangeError::PreconditionFailed {
+                detail: "recovery-drift",
+                ..
+            }
+        ),
+        "got {error:?}"
+    );
+    assert_eq!(
+        std::fs::read(sandbox.entities_path()).expect("entities"),
+        user_edited,
+        "the user edit survives"
+    );
+    assert!(journal_dir.join("journal.json").is_file(), "barrier kept");
+}
+
+#[test]
+fn committed_recovery_clears_its_reader_barrier_before_success() {
+    // Round 3, finding 3: a durably committed journal verifies every
+    // target against its pinned after bytes, finishes the cleanup, and
+    // only then reports committed — a subsequent ordinary read works and
+    // a repeat recovery has nothing left to do.
+    let sandbox = Sandbox::new("committed");
+    let receipt = apply_request(
+        &sandbox,
+        &add_priority_request(),
+        "committed-cleanup-v1",
+        false,
+    )
+    .expect("applies");
+    let committed = sandbox.entities_bytes();
+    let transaction = receipt
+        .transaction
+        .as_ref()
+        .expect("transaction")
+        .id
+        .clone();
+    let after = sha256_of(&committed);
+    let journal_dir = plant_journal(
+        &sandbox,
+        &transaction,
+        "committed",
+        serde_json::json!([{
+            "path": "lekalo/modules/tasks/entities.yaml",
+            "beforeDigest": sha256_of(b""),
+            "afterDigest": after,
+            "creation": false,
+        }]),
+        false,
+    );
+    // The barrier semantics while a committed journal is pending: the
+    // journal is provably durably committed AND its exact transaction is
+    // proven by history custody, so the ledger reads through it (the
+    // crash window after the commit marker, before cleanup).
+    let through = change::lookup_receipt(Some(&sandbox.selection_str()), "committed-cleanup-v1")
+        .expect("ledger readable through proven committed journal")
+        .expect("record present");
+    assert_eq!(through.state(), ReceiptState::Committed);
+    // Recovery finishes the cleanup and only then reports committed.
+    let outcome = change::recover_transaction(Some(&sandbox.selection_str()), &transaction)
+        .expect("committed recovery");
+    assert_eq!(outcome.state, "committed");
+    assert!(!journal_dir.exists(), "cleanup finished before success");
+    let receipt = change::lookup_receipt(Some(&sandbox.selection_str()), "committed-cleanup-v1")
+        .expect("ledger readable")
+        .expect("record present");
+    assert_eq!(receipt.state(), ReceiptState::Committed);
+    // A second invocation is a clean unknown-transaction refusal, not a
+    // second success over retained material.
+    let error = change::recover_transaction(Some(&sandbox.selection_str()), &transaction)
+        .expect_err("nothing left to recover");
+    assert!(
+        matches!(error, ChangeError::PreconditionFailed { .. }),
+        "got {error:?}"
+    );
+}
+
+#[test]
+fn receipt_lookup_gates_on_every_pending_journal_not_the_first() {
+    // Round 3, finding 6: a lexically-first committed-looking journal
+    // must not mask a later unresolved one.
+    let sandbox = Sandbox::new("pending");
+    apply_request(&sandbox, &add_priority_request(), "pending-gate-v1", false).expect("applies");
+    let committed = sandbox.entities_bytes();
+    plant_journal(
+        &sandbox,
+        "change-aaaa0001",
+        "committed",
+        serde_json::json!([{
+            "path": "lekalo/modules/tasks/entities.yaml",
+            "beforeDigest": sha256_of(b""),
+            "afterDigest": sha256_of(&committed),
+            "creation": false,
+        }]),
+        false,
+    );
+    plant_journal(
+        &sandbox,
+        "change-zzzz0001",
+        "replacing",
+        serde_json::json!([{
+            "path": "lekalo/modules/tasks/module.yaml",
+            "beforeDigest": sha256_of(&std::fs::read(sandbox.root.join("lekalo/modules/tasks/module.yaml")).expect("module")),
+            "afterDigest": sha256_of(b"x\n"),
+            "creation": false,
+        }]),
+        false,
+    );
+    let error = change::lookup_receipt(Some(&sandbox.selection_str()), "pending-gate-v1")
+        .expect_err("an unproven committed-looking journal gates");
+    assert!(
+        matches!(error, ChangeError::RecoveryRequired { ref transaction } if transaction == "change-aaaa0001"),
+        "got {error:?}"
+    );
+}
+
+#[test]
+fn history_intent_tampering_breaks_the_chain_and_refuses_replay() {
+    // Round 3, finding 5: editing ONLY a record's intentDigest (no hash
+    // recomputation) must break decode/verification — the intent is
+    // bound into the chain and cross-checked against the receipt's
+    // stored constituent facts.
+    let sandbox = Sandbox::new("intenttamper");
+    apply_request(&sandbox, &add_priority_request(), "intent-tamper-v1", false).expect("applies");
+    let history_path = sandbox.history_path();
+    let mut history: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&history_path).expect("history")).expect("json");
+    history["records"][0]["intentDigest"] = serde_json::json!(
+        "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+    );
+    std::fs::write(
+        &history_path,
+        serde_json::to_vec_pretty(&history).expect("serializes"),
+    )
+    .expect("tampered");
+    let error = apply_request(&sandbox, &add_priority_request(), "intent-tamper-v1", false)
+        .expect_err("tampered ledger refuses");
+    assert!(
+        matches!(error, ChangeError::HistoryInvalid { .. }),
+        "got {error:?}"
+    );
+}
+
+#[test]
+fn generation_evidence_drift_after_prepare_refuses_the_sealed_plan() {
+    // Round 3, finding 7: target/lock evidence changes between prepare
+    // and apply refuse the sealed plan — the displayed generation pins
+    // are apply-time preconditions.
+    let sandbox = Sandbox::new("genevidence");
+    std::fs::create_dir_all(sandbox.root.join("lekalo/targets")).expect("targets home");
+    std::fs::write(
+        sandbox.root.join("lekalo/targets/node-typescript.yaml"),
+        "{\"target\":\"node-typescript\"}\n",
+    )
+    .expect("target");
+    let prepared = prepare(&sandbox, &add_priority_request()).expect("prepares");
+    // Target drift.
+    std::fs::write(
+        sandbox.root.join("lekalo/targets/node-typescript.yaml"),
+        "{\"target\":\"node-typescript\",\"changed\":true}\n",
+    )
+    .expect("drifted target");
+    let error = change::apply_prepared(
+        &prepared,
+        &ApplyOptions {
+            idempotency_key: "genevidence-v1",
+            expect_plan: None,
+            allow_breaking: false,
+        },
+    )
+    .expect_err("target drift refuses");
+    assert!(
+        matches!(
+            error,
+            ChangeError::PreconditionFailed {
+                detail: "input-digest",
+                ..
+            }
+        ),
+        "got {error:?}"
+    );
+    // Restore, then lock drift: a lock appearing after preparation is new
+    // evidence the plan never validated.
+    std::fs::write(
+        sandbox.root.join("lekalo/targets/node-typescript.yaml"),
+        "{\"target\":\"node-typescript\"}\n",
+    )
+    .expect("restored target");
+    std::fs::write(sandbox.root.join("lekalo.lock"), b"lock: 1\n").expect("new lock");
+    let error = change::apply_prepared(
+        &prepared,
+        &ApplyOptions {
+            idempotency_key: "genevidence-v2",
+            expect_plan: None,
+            allow_breaking: false,
+        },
+    )
+    .expect_err("lock appearance refuses");
+    assert!(
+        matches!(
+            error,
+            ChangeError::PreconditionFailed {
+                detail: "input-digest",
+                ..
+            }
+        ),
+        "got {error:?}"
+    );
+    assert!(!sandbox.history_path().exists(), "nothing committed");
+}
+
+#[test]
+fn definition_add_creates_a_modules_first_kind_home_with_rollback() {
+    // Round 3, finding 11: `definition:add` can create a module's first
+    // definition of a kind — the kind-home document is synthesized whole,
+    // committed as a creation, and recovered by removing exactly the
+    // bytes this transaction wrote.
+    let sandbox = Sandbox::new("firstquery");
+    let request = serde_json::to_vec(&serde_json::json!({
+        "schemaVersion": "lekalo/change-request/v0.8.0",
+        "operations": [{
+            "operation": "definition:add",
+            "kind": "query",
+            "module": "tasks",
+            "definition": {
+                "name": "list_tasks",
+                "reads": ["tasks.task"],
+                "returns": { "list": { "ref": "tasks.task" } }
+            }
+        }]
+    }))
+    .expect("request");
+    let home = sandbox.root.join("lekalo/modules/tasks/queries.yaml");
+    assert!(!home.exists(), "the fixture has no queries yet");
+    let receipt = apply_request(&sandbox, &request, "first-query-v1", false).expect("applies");
+    assert_eq!(receipt.state(), ReceiptState::Committed);
+    let committed = std::fs::read(&home).expect("kind home created");
+    let text = String::from_utf8(committed.clone()).expect("utf8");
+    assert!(text.contains("schema_version: \"0.2.16\""));
+    assert!(text.contains("tasks.list_tasks"));
+    assert!(text.contains("reads:"));
+    // The creation is journaled: an interrupted-style rollback removes
+    // exactly the created bytes.
+    let journal_dir = plant_journal(
+        &sandbox,
+        "change-firstqry1",
+        "replacing",
+        serde_json::json!([{
+            "path": "lekalo/modules/tasks/queries.yaml",
+            "beforeDigest": sha256_of(b""),
+            "afterDigest": sha256_of(&committed),
+            "creation": true,
+        }]),
+        false,
+    );
+    let outcome = change::recover_transaction(Some(&sandbox.selection_str()), "change-firstqry1")
+        .expect("recovers");
+    assert_eq!(outcome.state, "rolled-back");
+    assert!(!home.exists(), "the created document is removed again");
+    assert!(!journal_dir.exists());
+}
+
+#[test]
+fn field_rename_rewrites_the_entitys_own_identity_reference() {
+    // Round 3, finding 12: renaming a field that the entity's identity
+    // carries rewrites the governed typed reference too — the common
+    // valid rename commits instead of failing identity validation.
+    let sandbox = Sandbox::new("renameident");
+    let request = serde_json::to_vec(&serde_json::json!({
+        "schemaVersion": "lekalo/change-request/v0.8.0",
+        "operations": [{
+            "operation": "entity-field:rename",
+            "entity": "tasks.task",
+            "name": "title",
+            "to": "heading"
+        }]
+    }))
+    .expect("request");
+    let receipt = apply_request_opts(
+        &sandbox,
+        &request,
+        "rename-identity-v1",
+        true,
+        Some(evidence_policy()),
+    )
+    .expect("applies");
+    assert_eq!(receipt.state(), ReceiptState::Committed);
+    let text = String::from_utf8(sandbox.entities_bytes()).expect("utf8");
+    assert!(text.contains("name: heading"), "{text}");
+    assert!(text.contains("identity:\n      - heading"), "{text}");
+    assert!(
+        !text.contains("title"),
+        "the identity entry followed the rename"
+    );
+}
+
+#[test]
+fn unchanged_input_signature_is_a_byte_identical_no_op() {
+    // Round 3, finding 14: setting exactly the same signature plans no
+    // byte edit at all — comments, quoting, and formatting stay verbatim
+    // and no blank line is inserted.
+    let sandbox = Sandbox::new("sigpreserved");
+    // A commands home whose input block carries a documentation comment.
+    let commands = "schema_version: \"0.2.16\"\ndefinitions:\n  - id: tasks.task_completed\n    kind: effect\n    version: 1\n    operation: create\n    entity: tasks.task\n  - id: tasks.complete\n    kind: command\n    version: 1\n    input:\n      # KEEP THIS DOCUMENTATION\n      - name: title\n        type: \"tasks.text\"\n        required: true\n    effects:\n      - tasks.task_completed\n";
+    let commands_path = sandbox.root.join("lekalo/modules/tasks/commands.yaml");
+    std::fs::write(&commands_path, commands).expect("commands");
+    let request = serde_json::to_vec(&serde_json::json!({
+        "schemaVersion": "lekalo/change-request/v0.8.0",
+        "operations": [{
+            "operation": "operation-input:set",
+            "operationTarget": "tasks.complete",
+            "definition": {
+                "input": [
+                    { "name": "title", "type": { "ref": "tasks.text" }, "required": true }
+                ]
+            }
+        }]
+    }))
+    .expect("request");
+    let prepared = prepare(&sandbox, &request).expect("prepares");
+    // The unchanged signature plans no byte edit at all: the file is not
+    // even part of the file-edit set, the plan reports a no-op, and every
+    // byte (the comment included) survives an apply unchanged.
+    assert!(
+        prepared
+            .file_edits()
+            .iter()
+            .all(|edit| edit.path != "lekalo/modules/tasks/commands.yaml"),
+        "an unchanged signature plans no edit"
+    );
+    assert!(prepared.is_no_op());
+    let receipt = apply_request(&sandbox, &request, "sig-preserve-v1", false).expect("applies");
+    assert_eq!(receipt.state(), ReceiptState::NoOp);
+    assert_eq!(
+        std::fs::read(&commands_path).expect("commands"),
+        commands.as_bytes(),
+        "the unchanged signature keeps every byte (comment included)"
+    );
+    // A changed signature keeps the comment and edits only the changed
+    // member's own lines.
+    let request = serde_json::to_vec(&serde_json::json!({
+        "schemaVersion": "lekalo/change-request/v0.8.0",
+        "operations": [{
+            "operation": "operation-input:set",
+            "operationTarget": "tasks.complete",
+            "definition": {
+                "input": [
+                    { "name": "title", "type": { "ref": "tasks.text" }, "required": true, "description": "The task heading." }
+                ]
+            }
+        }]
+    }))
+    .expect("request");
+    let prepared = prepare(&sandbox, &request).expect("prepares");
+    let after = prepared
+        .file_diffs()
+        .iter()
+        .find(|diff| diff.path == "lekalo/modules/tasks/commands.yaml")
+        .expect("diff present")
+        .after
+        .clone();
+    assert!(after.contains("# KEEP THIS DOCUMENTATION"), "{after}");
+    assert!(
+        after.contains("description: \"The task heading.\""),
+        "{after}"
+    );
+    assert!(after.contains("name: title"), "{after}");
+    assert!(
+        !after.contains("name: \"title\""),
+        "the member stays verbatim, not reformatted"
+    );
+}
+
+#[test]
+fn declared_defaults_refuse_at_every_field_consuming_operation() {
+    // Round 3, finding 13: an input-signature or definition declaration
+    // carrying a default is an explicit unsupported member — never a
+    // silently dropped declaration that still commits.
+    let sandbox = Sandbox::new("defaults");
+    let commands = "schema_version: \"0.2.16\"\ndefinitions:\n  - id: tasks.task_completed\n    kind: effect\n    version: 1\n    operation: create\n    entity: tasks.task\n  - id: tasks.complete\n    kind: command\n    version: 1\n    input:\n      - name: title\n        type: \"tasks.text\"\n        required: true\n    effects:\n      - tasks.task_completed\n";
+    std::fs::write(
+        sandbox.root.join("lekalo/modules/tasks/commands.yaml"),
+        commands,
+    )
+    .expect("commands");
+    let request = serde_json::to_vec(&serde_json::json!({
+        "schemaVersion": "lekalo/change-request/v0.8.0",
+        "operations": [{
+            "operation": "definition:add",
+            "kind": "command",
+            "module": "tasks",
+            "definition": {
+                "name": "snapshot",
+                "input": [
+                    { "name": "title", "type": { "ref": "tasks.text" }, "default": "VALUE MUST EXIST" }
+                ]
+            }
+        }]
+    }))
+    .expect("request");
+    let error = apply_request(&sandbox, &request, "input-default-v1", false)
+        .expect_err("definition defaults refuse");
+    assert!(
+        matches!(
+            error,
+            ChangeError::UnsupportedMember {
+                member: "field-default",
+                ..
+            }
+        ),
+        "got {error:?}"
+    );
+    let request = serde_json::to_vec(&serde_json::json!({
+        "schemaVersion": "lekalo/change-request/v0.8.0",
+        "operations": [{
+            "operation": "operation-input:set",
+            "operationTarget": "tasks.complete",
+            "definition": {
+                "input": [
+                    { "name": "title", "type": { "ref": "tasks.text" }, "default": 1 }
+                ]
+            }
+        }]
+    }))
+    .expect("request");
+    let error = apply_request(&sandbox, &request, "input-default-v2", false)
+        .expect_err("signature defaults refuse");
+    assert!(
+        matches!(
+            error,
+            ChangeError::UnsupportedMember {
+                member: "field-default",
+                ..
+            }
+        ),
+        "got {error:?}"
+    );
+    assert!(!sandbox.history_path().exists(), "nothing committed");
+    let committed =
+        std::fs::read(sandbox.root.join("lekalo/modules/tasks/commands.yaml")).expect("commands");
+    assert_eq!(committed, commands.as_bytes(), "the source is untouched");
 }

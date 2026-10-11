@@ -567,3 +567,82 @@ fn dry_run_conflicts_with_apply_and_apply_requires_the_key() {
     );
     assert!(!sandbox.root.join("lekalo/change-history.json").exists());
 }
+
+#[test]
+fn expect_model_flag_never_launders_duplicate_keys_into_a_mutation() {
+    // Round 3, finding 4: raw request bytes carrying duplicate JSON keys
+    // are malformed and stay malformed -- supplying the correct
+    // --expect-model precondition (plus --apply) must never normalize the
+    // duplicates away into an accepted mutation.
+    let sandbox = Sandbox::new("dup-key-launder");
+    let raw = concat!(
+        "{\n",
+        "  \"schemaVersion\": \"lekalo/change-request/v0.8.0\",\n",
+        "  \"operations\": [{\n",
+        "    \"operation\": \"entity-field:add\",\n",
+        "    \"entity\": \"tasks.task\",\n",
+        "    \"field\": {\"name\": \"discarded\", \"name\": \"extra\", \"type\": {\"ref\": \"tasks.text\"}}\n",
+        "  }]\n",
+        "}\n"
+    );
+    let request = sandbox.root.join("dup-request.json");
+    std::fs::write(&request, raw).expect("raw request");
+    let request = request
+        .to_string_lossy()
+        .replace(std::path::MAIN_SEPARATOR, "/");
+    // The exact Model digest the implementation documents (the sorted
+    // input pins of the pristine fixture).
+    let entities = std::fs::read(sandbox.entities_path()).expect("entities");
+    let module =
+        std::fs::read(sandbox.root.join("lekalo/modules/tasks/module.yaml")).expect("module");
+    let project = std::fs::read(sandbox.root.join("lekalo/project.yaml")).expect("project");
+    let pins = [
+        ("lekalo/modules/tasks/entities.yaml", &entities[..]),
+        ("lekalo/modules/tasks/module.yaml", &module[..]),
+        ("lekalo/project.yaml", &project[..]),
+    ];
+    let mut lines: Vec<String> = pins
+        .iter()
+        .map(|(path, bytes)| {
+            format!(
+                "{}\u{1f}sha256:{}\n",
+                path,
+                lekalo_core::digest::sha256_hex(bytes)
+            )
+        })
+        .collect();
+    lines.sort();
+    let history_pin = format!(
+        "lekalo/change-history.json\u{1f}sha256:{}\n",
+        lekalo_core::digest::sha256_hex(b"")
+    );
+    lines.push(history_pin);
+    let model_digest = format!(
+        "sha256:{}",
+        lekalo_core::digest::sha256_hex(lines.join("").as_bytes())
+    );
+    let (exit, json, _stream) = sandbox.run(&[
+        "change",
+        "request",
+        "--project",
+        &sandbox.selection(),
+        "--request",
+        &request,
+        "--expect-model",
+        &model_digest,
+        "--apply",
+        "--idempotency-key",
+        "dup-launder-v1",
+        "--json",
+    ]);
+    assert_eq!(exit, 1, "the malformed bytes stay malformed: {json}");
+    assert_eq!(json["reasonCodes"][0], "change.request-invalid");
+    assert!(!sandbox.root.join("lekalo/change-history.json").exists());
+    assert!(
+        std::fs::read(sandbox.entities_path())
+            .expect("entities")
+            .iter()
+            .eq(entities.iter()),
+        "nothing committed"
+    );
+}
