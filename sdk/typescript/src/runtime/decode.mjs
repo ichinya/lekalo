@@ -116,7 +116,15 @@ function decodeContentRef(value) {
   const closed = closeObject(value, ["adapter", "digest", "revision"]);
   if (closed) return closed;
   if (!isSha256Digest(value.digest)) return failure("bounds");
-  for (const member of ["adapter", "revision"]) {
+  // `revision` keeps its separate bounded-string contract (≤128), but
+  // the optional adapter identity carries the production adapter token
+  // grammar (issue #106 review r4 #2, core wire.rs validate:
+  // `!scopes::is_token(adapter)` refuses `native-request`): a present,
+  // non-token identity must never reach dispatch.
+  const absentAdapter = optional(value.adapter);
+  if (absentAdapter) return absentAdapter;
+  if (value.adapter !== undefined && !isToken(value.adapter)) return failure("bounds");
+  for (const member of ["revision"]) {
     const absent = optional(value[member]);
     if (absent) return absent;
     if (value[member] !== undefined && (typeof value[member] !== "string" || value[member].length > 128)) return failure("bounds");

@@ -99,12 +99,24 @@ final class Json {
         return -1;
     }
 
-    /** Strict parse of one complete JSON document (object or array). */
+    private const JSON_WHITESPACE = " \t\r\n";
+
+    /** Strict parse of one complete JSON document (object or array).
+     * Only JSON whitespace (space, tab, CR, LF) may surround the
+     * document (issue #106 review r4 #4): bare ltrim/trim also strip
+     * NUL and vertical tab, admitting control bytes the host's parser
+     * refuses. Nesting depth is bounded like the host's parser (issue
+     * #106 review r4 #5) through json_decode's depth argument. The
+     * parse result also carries the raw-lexeme audit (issue #106 review
+     * r4 #3): the member paths whose raw value is a JSON object and
+     * whose raw number lexeme is `-0` — the two distinctions
+     * json_decode's associative mapping collapses and production's
+     * typed decoder refuses. */
     public static function strictParse(string $text): array {
         if (str_starts_with($text, "\xEF\xBB\xBF")) {
             return ['ok' => false, 'reason' => 'not-json'];
         }
-        $trimmed = ltrim($text);
+        $trimmed = ltrim($text, self::JSON_WHITESPACE);
         $first = $trimmed === '' ? '' : $trimmed[0];
         if ($first !== '{' && $first !== '[') {
             return ['ok' => false, 'reason' => 'not-json'];
@@ -113,19 +125,145 @@ final class Json {
         if ($end === -1) {
             return ['ok' => false, 'reason' => 'not-json'];
         }
-        if (strlen(trim(substr($trimmed, $end + 1))) > 0) {
+        if (strlen(rtrim(substr($trimmed, $end + 1), self::JSON_WHITESPACE)) > 0) {
             return ['ok' => false, 'reason' => 'trailing-document'];
         }
         $document = substr($trimmed, 0, $end + 1);
         try {
-            $value = json_decode($document, true, 512, JSON_THROW_ON_ERROR);
+            $value = json_decode($document, true, 128, JSON_THROW_ON_ERROR);
         } catch (\JsonException $e) {
             return ['ok' => false, 'reason' => 'not-json'];
         }
         if (count(self::duplicateKeys($document)) > 0) {
             return ['ok' => false, 'reason' => 'duplicate-key'];
         }
-        return ['ok' => true, 'value' => $value];
+        $objectPaths = [];
+        $zeroPaths = [];
+        $auditIndex = 0;
+        self::auditValue($document, $auditIndex, '', $objectPaths, $zeroPaths);
+        return ['ok' => true, 'value' => $value, 'objectPaths' => array_keys($objectPaths), 'zeroPaths' => array_keys($zeroPaths)];
+    }
+
+    private static function skipJsonWhitespace(string $text, int &$index): void {
+        $length = strlen($text);
+        while ($index < $length && strpos(self::JSON_WHITESPACE, $text[$index]) !== false) {
+            $index++;
+        }
+    }
+
+    /** Consume one quoted JSON string starting at $index; returns the
+     * decoded text or null when json_decode refuses the token. */
+    private static function auditString(string $text, int &$index): ?string {
+        $start = $index;
+        $index++;
+        $length = strlen($text);
+        while ($index < $length) {
+            $c = $text[$index];
+            if ($c === '\\') {
+                $index += 2;
+                continue;
+            }
+            if ($c === '"') {
+                $index++;
+                break;
+            }
+            $index++;
+        }
+        try {
+            return json_decode(substr($text, $start, $index - $start), true, 2, JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            return null;
+        }
+    }
+
+    /** Structural walk over one ALREADY-VALID raw document recording the
+     * member paths whose raw value is a JSON object (list-position
+     * members must refuse them: `{}` and `{"0":…}` decode to list
+     * values) and whose raw number lexeme is `-0` (json_decode maps it
+     * to int 0; production's serde u64 visitor refuses the signed
+     * spelling). Paths join member names and array indices with dots. */
+    private static function auditValue(string $text, int &$index, string $path, array &$objectPaths, array &$zeroPaths): void {
+        self::skipJsonWhitespace($text, $index);
+        if ($index >= strlen($text)) {
+            return;
+        }
+        $c = $text[$index];
+        if ($c === '{') {
+            $objectPaths[$path] = true;
+            $index++;
+            self::skipJsonWhitespace($text, $index);
+            if (substr($text, $index, 1) === '}') {
+                $index++;
+                return;
+            }
+            for (;;) {
+                self::skipJsonWhitespace($text, $index);
+                if (substr($text, $index, 1) !== '"') {
+                    return;
+                }
+                $key = self::auditString($text, $index);
+                if ($key === null) {
+                    return;
+                }
+                self::skipJsonWhitespace($text, $index);
+                if (substr($text, $index, 1) !== ':') {
+                    return;
+                }
+                $index++;
+                self::auditValue($text, $index, $path === '' ? $key : $path . '.' . $key, $objectPaths, $zeroPaths);
+                self::skipJsonWhitespace($text, $index);
+                $next = substr($text, $index, 1);
+                if ($next === ',') {
+                    $index++;
+                    continue;
+                }
+                if ($next === '}') {
+                    $index++;
+                }
+                return;
+            }
+        }
+        if ($c === '[') {
+            $index++;
+            self::skipJsonWhitespace($text, $index);
+            if (substr($text, $index, 1) === ']') {
+                $index++;
+                return;
+            }
+            for ($element = 0; ; $element++) {
+                self::auditValue($text, $index, $path === '' ? (string) $element : $path . '.' . $element, $objectPaths, $zeroPaths);
+                self::skipJsonWhitespace($text, $index);
+                $next = substr($text, $index, 1);
+                if ($next === ',') {
+                    $index++;
+                    continue;
+                }
+                if ($next === ']') {
+                    $index++;
+                }
+                return;
+            }
+        }
+        if ($c === '"') {
+            self::auditString($text, $index);
+            return;
+        }
+        foreach (['true', 'false', 'null'] as $literal) {
+            if (substr($text, $index, strlen($literal)) === $literal) {
+                $index += strlen($literal);
+                return;
+            }
+        }
+        // A number lexeme: `-0` is the negative-zero integer spelling
+        // json_decode collapses to an accepted int 0.
+        $start = $index;
+        $length = strlen($text);
+        while ($index < $length && strpos('0123456789+-.eE', $text[$index]) !== false) {
+            $index++;
+        }
+        if (substr($text, $start, $index - $start) === '-0') {
+            $zeroPaths[$path] = true;
+        }
     }
 
     /** Read exactly one bounded JSON object document. */

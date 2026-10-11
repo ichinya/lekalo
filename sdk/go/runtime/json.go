@@ -6,8 +6,10 @@ package runtime
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 // Value is a parsed JSON value: nil, bool, int64, float64, string,
@@ -27,6 +29,36 @@ const (
 type parser struct {
 	bytes []byte
 	index int
+	depth int
+}
+
+// The maximum container nesting depth, matching the host parser's
+// recursion limit (issue #106 review r4 #5): deeper documents are a
+// bounded ReasonNotJSON refusal — a growable goroutine stack must never
+// substitute for an admission bound.
+const maxNestingDepth = 128
+
+// hex4 decodes one strict `[0-9a-fA-F]{4}` escape window. fmt.Sscanf
+// ("%04x") is not a strict hex lexer — it accepts signs and prefixes —
+// so the window is validated byte by byte exactly like the host's
+// parser (issue #106 review r4 #2).
+func hex4(window []byte) (int, bool) {
+	value := 0
+	for _, c := range window {
+		var digit int
+		switch {
+		case c >= '0' && c <= '9':
+			digit = int(c - '0')
+		case c >= 'a' && c <= 'f':
+			digit = int(c-'a') + 10
+		case c >= 'A' && c <= 'F':
+			digit = int(c-'A') + 10
+		default:
+			return 0, false
+		}
+		value = value*16 + digit
+	}
+	return value, true
 }
 
 // StrictParse parses one complete JSON document with closed admission.
@@ -119,6 +151,16 @@ func (p *parser) parseLiteral(literal string, value Value) (Value, ParseReason) 
 
 func (p *parser) parseObject() (Value, ParseReason) {
 	p.index++
+	p.depth++
+	if p.depth > maxNestingDepth {
+		return nil, ReasonNotJSON
+	}
+	result, reason := p.parseObjectMembers()
+	p.depth--
+	return result, reason
+}
+
+func (p *parser) parseObjectMembers() (Value, ParseReason) {
 	members := map[string]any{}
 	p.skipWhitespace()
 	if c, _ := p.peek(); c == '}' {
@@ -164,6 +206,16 @@ func (p *parser) parseObject() (Value, ParseReason) {
 
 func (p *parser) parseArray() (Value, ParseReason) {
 	p.index++
+	p.depth++
+	if p.depth > maxNestingDepth {
+		return nil, ReasonNotJSON
+	}
+	result, reason := p.parseArrayItems()
+	p.depth--
+	return result, reason
+}
+
+func (p *parser) parseArrayItems() (Value, ParseReason) {
 	items := []any{}
 	p.skipWhitespace()
 	if c, _ := p.peek(); c == ']' {
@@ -230,23 +282,35 @@ func (p *parser) parseString() (string, ParseReason) {
 				if p.index+4 > len(p.bytes) {
 					return "", ReasonNotJSON
 				}
-				var high int
-				if _, err := fmt.Sscanf(string(p.bytes[p.index:p.index+4]), "%04x", &high); err != nil {
+				high, ok := hex4(p.bytes[p.index : p.index+4])
+				if !ok {
 					return "", ReasonNotJSON
 				}
 				p.index += 4
 				if high >= 0xD800 && high < 0xDC00 {
-					if p.index+6 <= len(p.bytes) && p.bytes[p.index] == '\\' && p.bytes[p.index+1] == 'u' {
-						var low int
-						if _, err := fmt.Sscanf(string(p.bytes[p.index+2:p.index+6]), "%04x", &low); err != nil {
-							return "", ReasonNotJSON
-						}
-						p.index += 6
-						combined := rune(0x10000 + (rune(high)-0xD800)<<10 + (rune(low) - 0xDC00))
-						out.WriteRune(combined)
-					} else {
+					// A high surrogate must be followed by one REAL low
+					// surrogate escape (issue #106 review r4 #2): a missing
+					// pair or a low half outside DC00..DFFF is exactly what
+					// the host's parser refuses — never fabricated
+					// arithmetic on an out-of-range value.
+					if p.index+6 > len(p.bytes) || p.bytes[p.index] != '\\' || p.bytes[p.index+1] != 'u' {
 						return "", ReasonNotJSON
 					}
+					low, ok := hex4(p.bytes[p.index+2 : p.index+6])
+					if !ok {
+						return "", ReasonNotJSON
+					}
+					if low < 0xDC00 || low > 0xDFFF {
+						return "", ReasonNotJSON
+					}
+					p.index += 6
+					combined := rune(0x10000 + (rune(high)-0xD800)<<10 + (rune(low) - 0xDC00))
+					out.WriteRune(combined)
+				} else if high >= 0xDC00 && high <= 0xDFFF {
+					// A lone low surrogate escape (issue #106 review r4 #2c):
+					// the host refuses it; WriteRune would silently repair
+					// it to U+FFFD and admit the document.
+					return "", ReasonNotJSON
 				} else {
 					out.WriteRune(rune(high))
 				}
@@ -260,11 +324,16 @@ func (p *parser) parseString() (string, ParseReason) {
 			if width == 0 || p.index-1+width > len(p.bytes) {
 				return "", ReasonNotJSON
 			}
-			chunk := string(p.bytes[p.index-1 : p.index-1+width])
-			if strings.ContainsRune(chunk, 0xFFFD) {
+			// Full UTF-8 sequence validation (issue #106 review r4 #2c):
+			// overlong encodings, UTF-8-encoded surrogates, and truncated
+			// continuations are refused exactly like the host's parser —
+			// but a DECODED literal U+FFFD is a legal character the host
+			// accepts, so the old ContainsRune(0xFFFD) refusal was a
+			// reverse parity hole and is gone.
+			if !utf8.Valid(p.bytes[p.index-1 : p.index-1+width]) {
 				return "", ReasonNotJSON
 			}
-			out.WriteString(chunk)
+			out.Write(p.bytes[p.index-1 : p.index-1+width])
 			p.index += width - 1
 		}
 	}
@@ -352,6 +421,15 @@ func (p *parser) parseNumber() (Value, ParseReason) {
 			return nil, ReasonNotJSON
 		}
 		return value, ""
+	}
+	if text == "-0" {
+		// The negative-zero integer lexeme (issue #106 review r4 #3):
+		// production types every wire number serde `u64`, whose visitor
+		// refuses the signed spelling outright. The lexeme is kept out of
+		// the integer value space so every u64 member refuses exactly
+		// like the host (shape at `limits`, bounds elsewhere) instead of
+		// collapsing to an accepted zero.
+		return math.Copysign(0, -1), ""
 	}
 	var value int64
 	if _, err := fmt.Sscanf(text, "%d", &value); err != nil {

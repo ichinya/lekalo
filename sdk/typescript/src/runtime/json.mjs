@@ -11,12 +11,24 @@
  * type instead of re-deriving integrality from a rounded value.
  * Canonical output is byte-sorted compact JSON with no trailing LF —
  * exactly the core's serializer contract.
+ *
+ * Surrogate escapes must arrive as complete, correctly paired sequences
+ * (issue #106 review r4 #4): production is serde_json, which refuses
+ * every unpaired or mis-paired surrogate escape — JSON.parse's leniency
+ * is NOT the parity target. A lone high or low surrogate, or a high
+ * followed by a non-low escape, is `not-json`. Nesting depth is bounded
+ * like the host's parser (issue #106 review r4 #5): deeper documents
+ * refuse `not-json` instead of throwing RangeError.
  */
 
-/** A number whose JSON lexeme is not an integer spelling. Production
- * types every wire number `u64` (serde refuses these lexemes with a
- * parse error → `shape`), so admission refuses a JsonFloat wherever an
- * integer member is required, regardless of the parsed value. */
+/** A number whose JSON lexeme is not an unsigned integer spelling.
+ * Production types every wire number `u64` (serde refuses these lexemes
+ * with a parse error → `shape`), so admission refuses a JsonFloat wherever
+ * an integer member is required, regardless of the parsed value. That
+ * includes the `-0` lexeme (issue #106 review r4 #3): it parses to an
+ * integer-valued number through a signed spelling the serde `u64`
+ * visitor refuses, so it is carried as a JsonFloat — never an accepted
+ * zero. */
 export class JsonFloat {
   constructor(raw) {
     this.raw = raw;
@@ -26,6 +38,11 @@ export class JsonFloat {
 
 const SIMPLE_ESCAPES = { '"': '"', "\\": "\\", "/": "/", b: "\b", f: "\f", n: "\n", r: "\r", t: "\t" };
 
+/** The maximum container nesting depth, matching the host parser's
+ * recursion limit (issue #106 review r4 #5): deeper documents are a
+ * bounded `not-json` refusal, never an uncaught RangeError. */
+const MAX_NESTING_DEPTH = 128;
+
 /** Lexeme-aware strict parse of one complete document: keeps the last
  * duplicate key's value (like JSON.parse) but reports `duplicate-key`,
  * and refuses malformed number spellings positionally. Refusal
@@ -34,6 +51,7 @@ const SIMPLE_ESCAPES = { '"': '"', "\\": "\\", "/": "/", b: "\b", f: "\f", n: "\
  * documents. */
 export function parseDocument(text) {
   let index = 0;
+  let depth = 0;
   const length = text.length;
   let duplicated = false;
   const notJson = () => ({ ok: false, reason: "not-json" });
@@ -59,16 +77,21 @@ export function parseDocument(text) {
           index += 4;
           let code = parseInt(hex, 16);
           if (code >= 0xd800 && code <= 0xdbff) {
-            // Surrogate pair required (JSON.parse accepts a lone high
-            // surrogate, so the reference parity keeps it legal).
-            if (text[index] === "\\" && text[index + 1] === "u") {
-              const lowHex = text.slice(index + 2, index + 6);
-              if (!/^[0-9a-fA-F]{4}$/.test(lowHex)) return null;
-              const low = parseInt(lowHex, 16);
-              if (!(low >= 0xdc00 && low <= 0xdfff)) return null;
-              index += 6;
-              code = 0x10000 + ((code - 0xd800) << 10) + (low - 0xdc00);
-            }
+            // A high surrogate REQUIRES one following low-surrogate escape
+            // (issue #106 review r4 #4): production (serde_json) refuses
+            // every unpaired surrogate escape, so an absent or invalid
+            // pair is a refusal — JSON.parse's lone-surrogate leniency is
+            // not the parity target.
+            if (!(text[index] === "\\" && text[index + 1] === "u")) return null;
+            const lowHex = text.slice(index + 2, index + 6);
+            if (!/^[0-9a-fA-F]{4}$/.test(lowHex)) return null;
+            const low = parseInt(lowHex, 16);
+            if (!(low >= 0xdc00 && low <= 0xdfff)) return null;
+            index += 6;
+            code = 0x10000 + ((code - 0xd800) << 10) + (low - 0xdc00);
+          } else if (code >= 0xdc00 && code <= 0xdfff) {
+            // A lone low surrogate escape: refused exactly like the host.
+            return null;
           }
           out += String.fromCodePoint(code);
         } else if (escape in SIMPLE_ESCAPES) {
@@ -113,6 +136,11 @@ export function parseDocument(text) {
     const raw = text.slice(start, index);
     const value = Number(raw);
     if (!Number.isFinite(value)) return notJson();
+    // The `-0` lexeme is not an unsigned integer spelling (issue #106
+    // review r4 #3): Number("-0") is integer-valued, but production's
+    // serde `u64` visitor refuses the signed lexeme, so it is carried as
+    // a JsonFloat and every u64 member refuses it exactly like the host.
+    if (integral && Object.is(value, -0)) return { ok: true, value: new JsonFloat(raw) };
     return { ok: true, value: integral ? value : new JsonFloat(raw) };
   };
   const parseValue = () => {
@@ -142,6 +170,13 @@ export function parseDocument(text) {
   };
   const parseObject = () => {
     index += 1;
+    depth += 1;
+    if (depth > MAX_NESTING_DEPTH) return notJson();
+    const result = parseObjectMembers();
+    depth -= 1;
+    return result;
+  };
+  const parseObjectMembers = () => {
     const members = {};
     const seen = new Set();
     skipWhitespace();
@@ -179,6 +214,13 @@ export function parseDocument(text) {
   };
   const parseArray = () => {
     index += 1;
+    depth += 1;
+    if (depth > MAX_NESTING_DEPTH) return notJson();
+    const result = parseArrayItems();
+    depth -= 1;
+    return result;
+  };
+  const parseArrayItems = () => {
     const items = [];
     skipWhitespace();
     if (text[index] === "]") {

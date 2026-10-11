@@ -30,7 +30,32 @@ public domain result and the status/exit mapping.
    file coordinate is the only missing-input refusal. Refuse trailing
    documents, duplicate decoded keys (including escaped spellings),
    invalid UTF-8, unsupported exact versions, and invalid operation
-   shapes before invoking any callback.
+   shapes before invoking any callback. The strict JSON admission is
+   byte-for-byte the host parser's (issue #106 review r4):
+   - only JSON whitespace (space, tab, CR, LF) may surround a document
+     — any other control byte prefix or suffix refuses (no trim-broad
+     stripping that admits NUL or vertical tab);
+   - `\u` escapes are strict 4-hex-digit windows, and surrogate escapes
+     must arrive as complete, correctly paired sequences: a lone high
+     or low surrogate, a low half outside DC00–DFFF, or a non-hex
+     window is `not-json`, never a fabricated code point or a repair;
+   - a decoded literal U+FFFD is a legal character (the host admits
+     it); only malformed UTF-8 byte sequences refuse;
+   - the `-0` integer lexeme is not an unsigned integer spelling —
+     production types every wire number `u64`, so `-0` refuses exactly
+     like a float lexeme (shape at `limits`, bounds elsewhere) instead
+     of collapsing to an accepted zero;
+   - container nesting is bounded at 128 levels like the host parser:
+     deeper documents refuse `not-json` — a bounded refusal, never a
+     stack overflow or an uncaught recursion error;
+   - optional arrays default only when ABSENT: a present object,
+     string, number, or explicit null refuses instead of collapsing to
+     the empty default (`{}` and `{"0":…}` never pass as arrays);
+   - the optional native-reference adapter identities carry the host's
+     adapter token grammar (`scopes::is_token`), while `revision`
+     keeps its separate bounded-string contract; and identifier
+     grammars anchor at absolute end-of-value — a terminal LF inside a
+     path or token refuses in every runtime.
 2. Echo the host `request_id`, operation, and negotiated version.
    `describe` reports the actual executable identity/digest and precise
    operations/scopes/capabilities/IR pins. Unknown and partial support
@@ -89,13 +114,15 @@ public domain result and the status/exit mapping.
 - Integer wire members are admitted by LEXEME, not by rounded value
   (production parity): production types every wire number `u64`, so a
   limits member in range must be spelled as an integer (`1`) — a float
-  spelling (`1.0`, `1e2`) is a `shape` refusal, both limits members are
-  REQUIRED whenever `limits` is present, and malformed number spellings
-  (`010000`, `1.`) are `not-json` everywhere. The corpus pins the exact
-  raw byte spellings in every language, and the emitted-output ceiling
-  is enforced on ENCODED UTF-8 BYTES of the complete envelope (never
-  UTF-16 code units), with the effective ceiling min(declared, default).
-  The multibyte and budget vectors pin this in every language.
+  spelling (`1.0`, `1e2`) is a `shape` refusal, the negative-zero
+  spelling (`-0`) refuses exactly like one (issue #106 review r4),
+  both limits members are REQUIRED whenever `limits` is present, and
+  malformed number spellings (`010000`, `1.`) are `not-json` everywhere.
+  The corpus pins the exact raw byte spellings in every language, and
+  the emitted-output ceiling is enforced on ENCODED UTF-8 BYTES of the
+  complete envelope (never UTF-16 code units), with the effective
+  ceiling min(declared, default). The multibyte and budget vectors pin
+  this in every language.
 - Request identifiers hash the canonical envelope minus `request_id`;
   plan identifiers hash the canonical ordered plan; write digests frame
   exact file bytes. The framing is contract-specific — a universal JSON

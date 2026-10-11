@@ -72,7 +72,7 @@ final class Paths {
         if (!ctype_lower($stem[0])) {
             return false;
         }
-        return preg_match('/^[a-z0-9+.-]+$/', $stem) === 1;
+        return preg_match('/^[a-z0-9+.-]+\z/', $stem) === 1;
     }
 
     private static function dosStem(string $segment): string {
@@ -108,7 +108,7 @@ final class Paths {
         if (!(($first >= 'a' && $first <= 'z') || ($first >= '0' && $first <= '9') || $first === '.')) {
             return false;
         }
-        return preg_match('/^[a-z0-9._-]*$/', $segment) === 1;
+        return preg_match('/^[a-z0-9._-]*\z/', $segment) === 1;
     }
 
     /** @return list<string>|null */
@@ -233,7 +233,7 @@ final class Paths {
         if ($value === '' || strlen($value) > 64) {
             return false;
         }
-        return preg_match('/^[a-z][a-z0-9-]*$/', $value) === 1;
+        return preg_match('/^[a-z][a-z0-9-]*\z/', $value) === 1;
     }
 
     /** The manifest-local semantic-id grammar (core
@@ -246,7 +246,7 @@ final class Paths {
         if ($value === '' || strlen($value) > 192) {
             return false;
         }
-        return preg_match('/^[A-Za-z0-9_][A-Za-z0-9_.:-]*$/', $value) === 1;
+        return preg_match('/^[A-Za-z0-9_][A-Za-z0-9_.:-]*\z/', $value) === 1;
     }
 
     /** The production ai-lint identifier grammar (issue #106 review r3
@@ -259,7 +259,7 @@ final class Paths {
         if ($value === '' || strlen($value) > 256) {
             return false;
         }
-        return preg_match('/^[A-Za-z0-9][A-Za-z0-9_.:\/#@\\\\-]*$/', $value) === 1;
+        return preg_match('/^[A-Za-z0-9][A-Za-z0-9_.:\/#@\\\\-]*\z/', $value) === 1;
     }
 
     public static function isCapabilityId(string $value): bool {
@@ -274,7 +274,7 @@ final class Paths {
             if (!(($first >= 'a' && $first <= 'z') || ($first >= '0' && $first <= '9'))) {
                 return false;
             }
-            if (preg_match('/^[a-z0-9_-]+$/', $segment) !== 1) {
+            if (preg_match('/^[a-z0-9_-]+\z/', $segment) !== 1) {
                 return false;
             }
         }

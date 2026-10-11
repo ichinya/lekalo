@@ -307,6 +307,21 @@ fn admit_profile_capabilities(value: &Value) -> Result<(), Refusal> {
     Ok(())
 }
 
+/// An optional wire array: absent means the empty default; a present
+/// member must be a JSON array (issue #106 review r4 #3). Explicit null
+/// keeps its own refusal token, and every other present type — object,
+/// string, number, bool — is `bounds`, exactly like production's typed
+/// Vec decoder refusing a non-sequence.
+fn optional_array<'a>(container: &'a Value, member: &str) -> Result<&'a [Value], Refusal> {
+    match container.get(member) {
+        None => Ok(&[]),
+        Some(Value::Null) => Err(Refusal::new("decode", "explicit-null")),
+        Some(items) => items
+            .as_array()
+            .ok_or_else(|| Refusal::new("decode", "bounds")),
+    }
+}
+
 fn admit_content_ref(value: &Value) -> Result<(), Refusal> {
     if !is_closed_object(value, &["adapter", "digest", "revision"]) {
         return Err(Refusal::new("decode", "shape"));
@@ -318,14 +333,25 @@ fn admit_content_ref(value: &Value) -> Result<(), Refusal> {
     {
         return Err(Refusal::new("decode", "bounds"));
     }
-    for member in ["adapter", "revision"] {
-        if explicit_null(value, member) {
-            return Err(Refusal::new("decode", "explicit-null"));
+    // `revision` keeps its separate bounded-string contract (≤128), but
+    // the optional adapter identity carries the production adapter
+    // token grammar (issue #106 review r4 #2, core wire.rs validate:
+    // `!scopes::is_token(adapter)` refuses `native-request`): a
+    // present, non-token identity must never reach dispatch.
+    if explicit_null(value, "adapter") {
+        return Err(Refusal::new("decode", "explicit-null"));
+    }
+    if let Some(adapter) = value.get("adapter") {
+        if !adapter.as_str().is_some_and(is_token) {
+            return Err(Refusal::new("decode", "bounds"));
         }
-        if let Some(member_value) = value.get(member) {
-            if !bounded_text(member_value, 128) {
-                return Err(Refusal::new("decode", "bounds"));
-            }
+    }
+    if explicit_null(value, "revision") {
+        return Err(Refusal::new("decode", "explicit-null"));
+    }
+    if let Some(member_value) = value.get("revision") {
+        if !bounded_text(member_value, 128) {
+            return Err(Refusal::new("decode", "bounds"));
         }
     }
     Ok(())
@@ -366,14 +392,13 @@ fn admit_native_request(value: &Value) -> Result<(), Refusal> {
     if !is_closed_object(changes, &["files", "symbols"]) {
         return Err(Refusal::new("decode", "shape"));
     }
-    let files = changes
-        .get("files")
-        .and_then(Value::as_array)
-        .unwrap_or(&[]);
-    let symbols = changes
-        .get("symbols")
-        .and_then(Value::as_array)
-        .unwrap_or(&[]);
+    // Optional arrays default ONLY when absent (issue #106 review r4
+    // #3): a present member with a non-array JSON type — object, string,
+    // number, or explicit null — is admission `bounds`, never an empty
+    // default. `unwrap_or(&[])` erased the distinction and admitted
+    // `files:{}` into dispatch.
+    let files = optional_array(changes, "files")?;
+    let symbols = optional_array(changes, "symbols")?;
     if files.len() > 1024 || symbols.len() > 1024 {
         return Err(Refusal::new("decode", "bounds"));
     }
@@ -442,12 +467,12 @@ fn admit_lint_request(value: &Value) -> Result<(), Refusal> {
             return Err(Refusal::new("decode", "explicit-null"));
         }
     }
-    let scope = value.get("scope").and_then(Value::as_array).unwrap_or(&[]);
-    let files = value.get("files").and_then(Value::as_array).unwrap_or(&[]);
-    let bindings = value
-        .get("bindings")
-        .and_then(Value::as_array)
-        .unwrap_or(&[]);
+    // Optional arrays default ONLY when absent (issue #106 review r4 #3):
+    // present non-array values (and explicit nulls) refuse `bounds` /
+    // `explicit-null` instead of collapsing to an empty default.
+    let scope = optional_array(value, "scope")?;
+    let files = optional_array(value, "files")?;
+    let bindings = optional_array(value, "bindings")?;
     if scope.is_empty() || scope.len() > 10_000 || files.len() > 4_096 || bindings.len() > 10_000 {
         return Err(Refusal::new("decode", "bounds"));
     }
@@ -654,10 +679,7 @@ fn admit_scan_entry(value: &Value) -> Result<(), Refusal> {
                 return Err(Refusal::new("decode", "bounds"));
             }
         }
-        let references = evidence
-            .get("references")
-            .and_then(Value::as_array)
-            .unwrap_or(&[]);
+        let references = optional_array(evidence, "references")?;
         if references.len() > protocol::bounds::REFERENCES_MAX as usize {
             return Err(Refusal::new("decode", "bounds"));
         }

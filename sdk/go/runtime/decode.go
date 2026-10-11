@@ -249,13 +249,22 @@ func admitContentRef(value Value) *Refusal {
 	if !IsSha256Digest(GetString(value, "digest")) {
 		return refuse(stageDecode, "bounds")
 	}
-	for _, member := range []string{"adapter", "revision"} {
-		if IsNull(value, member) {
-			return refuse(stageDecode, "explicit-null")
-		}
-		if Has(value, member) && !boundedText(value.(map[string]any)[member], 128) {
-			return refuse(stageDecode, "bounds")
-		}
+	// `revision` keeps its separate bounded-string contract (≤128), but
+	// the optional adapter identity carries the production adapter token
+	// grammar (issue #106 review r4 #2, core wire.rs validate:
+	// `!scopes::is_token(adapter)` refuses `native-request`): a present,
+	// non-token identity must never reach dispatch.
+	if IsNull(value, "adapter") {
+		return refuse(stageDecode, "explicit-null")
+	}
+	if Has(value, "adapter") && !IsToken(GetString(value, "adapter")) {
+		return refuse(stageDecode, "bounds")
+	}
+	if IsNull(value, "revision") {
+		return refuse(stageDecode, "explicit-null")
+	}
+	if Has(value, "revision") && !boundedText(value.(map[string]any)["revision"], 128) {
+		return refuse(stageDecode, "bounds")
 	}
 	return nil
 }
@@ -277,8 +286,14 @@ func admitNativeRequest(value Value) *Refusal {
 	if !isClosedObject(changes, []string{"files", "symbols"}) {
 		return refuse(stageDecode, "shape")
 	}
-	files := GetArray(changes, "files")
-	symbols := GetArray(changes, "symbols")
+	files, refusal := optionalArray(changes, "files")
+	if refusal != nil {
+		return refusal
+	}
+	symbols, refusal := optionalArray(changes, "symbols")
+	if refusal != nil {
+		return refusal
+	}
 	if len(files) > 1024 || len(symbols) > 1024 {
 		return refuse(stageDecode, "bounds")
 	}
@@ -333,6 +348,24 @@ func changesOf(value Value, key string) Value {
 	return value.(map[string]any)[key]
 }
 
+// optionalArray admits one optional wire array (issue #106 review r4
+// #3): absent means the empty default; a present member must be a JSON
+// array — an object, string, number, or explicit null refuses instead
+// of collapsing to the empty default like GetArray did.
+func optionalArray(object Value, member string) ([]any, *Refusal) {
+	if !Has(object, member) {
+		return nil, nil
+	}
+	if IsNull(object, member) {
+		return nil, refuse(stageDecode, "explicit-null")
+	}
+	items, ok := object.(map[string]any)[member].([]any)
+	if !ok {
+		return nil, refuse(stageDecode, "bounds")
+	}
+	return items, nil
+}
+
 func admitLintRequest(value Value) *Refusal {
 	allowed := []string{"bindings", "files", "pins", "scope"}
 	if !isClosedObject(value, allowed) {
@@ -343,9 +376,18 @@ func admitLintRequest(value Value) *Refusal {
 			return refuse(stageDecode, "explicit-null")
 		}
 	}
-	scope := GetArray(value, "scope")
-	files := GetArray(value, "files")
-	bindings := GetArray(value, "bindings")
+	scope, refusal := optionalArray(value, "scope")
+	if refusal != nil {
+		return refusal
+	}
+	files, refusal := optionalArray(value, "files")
+	if refusal != nil {
+		return refusal
+	}
+	bindings, refusal := optionalArray(value, "bindings")
+	if refusal != nil {
+		return refusal
+	}
 	if len(scope) == 0 || len(scope) > 10000 || len(files) > 4096 || len(bindings) > 10000 {
 		return refuse(stageDecode, "bounds")
 	}
@@ -505,7 +547,10 @@ func admitScanEntry(value Value) *Refusal {
 		if Has(evidence, "signature") && !IsSha256Digest(GetString(evidence, "signature")) {
 			return refuse(stageDecode, "bounds")
 		}
-		references := GetArray(evidence, "references")
+		references, refusal := optionalArray(evidence, "references")
+		if refusal != nil {
+			return refusal
+		}
 		if len(references) > int(generated.REFERENCES_MAX) {
 			return refuse(stageDecode, "bounds")
 		}

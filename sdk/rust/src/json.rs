@@ -2,6 +2,13 @@
 //! trailing-document, explicit-null, and non-finite refusals, plus the
 //! canonical byte serializer the wire requires (sorted keys, compact, no
 //! trailing LF). Mirrors the TypeScript reference runtime exactly.
+//! Surrogate escapes must arrive as complete, correctly paired sequences
+//! and `\u` windows must be strict 4-digit hex (issue #106 review r4 #1):
+//! serde refuses every unpaired/mis-paired escape, so a lone high or low
+//! surrogate — or a low half outside DC00..DFFF — is `NotJson`, never a
+//! fabricated code point. Nesting depth is bounded like the host's
+//! parser (issue #106 review r4 #5): deeper documents are a bounded
+//! `NotJson` refusal, never a stack overflow.
 
 use std::collections::BTreeSet;
 use std::fmt;
@@ -99,7 +106,14 @@ impl Value {
 struct Parser<'a> {
     bytes: &'a [u8],
     index: usize,
+    depth: usize,
 }
+
+/// The maximum container nesting depth, matching serde_json's default
+/// recursion limit (issue #106 review r4 #5). Production refuses deeper
+/// documents; a bounded refusal — never a native stack overflow — is the
+/// SDK contract.
+const MAX_NESTING_DEPTH: usize = 128;
 
 /// Strict parse of one complete JSON document.
 pub fn strict_parse(text: &str) -> Result<Value, ParseReason> {
@@ -107,7 +121,11 @@ pub fn strict_parse(text: &str) -> Result<Value, ParseReason> {
     if bytes.first() == Some(&0xEF) && bytes.len() >= 3 && bytes[1] == 0xBB && bytes[2] == 0xBF {
         return Err(ParseReason::NotJson);
     }
-    let mut parser = Parser { bytes, index: 0 };
+    let mut parser = Parser {
+        bytes,
+        index: 0,
+        depth: 0,
+    };
     parser.skip_whitespace();
     let value = parser.parse_value()?;
     parser.skip_whitespace();
@@ -165,6 +183,16 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_object(&mut self) -> Result<Value, ParseReason> {
+        self.depth += 1;
+        if self.depth > MAX_NESTING_DEPTH {
+            return Err(ParseReason::NotJson);
+        }
+        let result = self.parse_object_members();
+        self.depth -= 1;
+        result
+    }
+
+    fn parse_object_members(&mut self) -> Result<Value, ParseReason> {
         self.index += 1;
         let mut members: Vec<(String, Value)> = Vec::new();
         let mut seen: BTreeSet<String> = BTreeSet::new();
@@ -203,6 +231,16 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_array(&mut self) -> Result<Value, ParseReason> {
+        self.depth += 1;
+        if self.depth > MAX_NESTING_DEPTH {
+            return Err(ParseReason::NotJson);
+        }
+        let result = self.parse_array_items();
+        self.depth -= 1;
+        result
+    }
+
+    fn parse_array_items(&mut self) -> Result<Value, ParseReason> {
         self.index += 1;
         let mut items = Vec::new();
         self.skip_whitespace();
@@ -255,6 +293,14 @@ impl<'a> Parser<'a> {
                                     }
                                     self.index += 1;
                                     let low = self.parse_hex4()?;
+                                    // The low half must be a real low
+                                    // surrogate (issue #106 review r4 #1):
+                                    // anything else is an unpaired escape
+                                    // the host refuses — never fabricated
+                                    // arithmetic on an out-of-range value.
+                                    if !(0xDC00..=0xDFFF).contains(&low) {
+                                        return Err(ParseReason::NotJson);
+                                    }
                                     let combined = 0x10000
                                         + (((high - 0xD800) as u32) << 10)
                                         + (low - 0xDC00) as u32;
@@ -291,10 +337,22 @@ impl<'a> Parser<'a> {
         if self.index + 4 > self.bytes.len() {
             return Err(ParseReason::NotJson);
         }
-        let chunk = std::str::from_utf8(&self.bytes[self.index..self.index + 4])
-            .map_err(|_| ParseReason::NotJson)?;
-        let value = u16::from_str_radix(chunk, 16).map_err(|_| ParseReason::NotJson)?;
-        self.index += 4;
+        // A strict `[0-9a-fA-F]{4}` window (issue #106 review r4 #2,
+        // applied to every runtime): `from_str_radix` tolerates a sign
+        // prefix, so `\u+abc` would slip through — the host's lexer
+        // refuses every non-hex escape byte.
+        let mut value: u16 = 0;
+        for _ in 0..4 {
+            let byte = self.bytes[self.index];
+            let digit = match byte {
+                b'0'..=b'9' => byte - b'0',
+                b'a'..=b'f' => byte - b'a' + 10,
+                b'A'..=b'F' => byte - b'A' + 10,
+                _ => return Err(ParseReason::NotJson),
+            };
+            value = value * 16 + digit as u16;
+            self.index += 1;
+        }
         Ok(value)
     }
 
@@ -347,6 +405,14 @@ impl<'a> Parser<'a> {
         if is_float {
             let value: f64 = text.parse().map_err(|_| ParseReason::NotJson)?;
             Ok(Value::Float(value))
+        } else if text == "-0" {
+            // The negative-zero integer lexeme (issue #106 review r4 #3):
+            // production types every wire number serde `u64`, whose
+            // visitor refuses the signed spelling outright. Keep the
+            // lexeme out of the integer value space so every u64 member
+            // refuses exactly like the host (shape at `limits`, bounds
+            // elsewhere) instead of collapsing to an accepted `0`.
+            Ok(Value::Float(-0.0))
         } else {
             match text.parse::<i64>() {
                 Ok(value) => Ok(Value::Int(value)),
