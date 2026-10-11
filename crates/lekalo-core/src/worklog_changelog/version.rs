@@ -22,6 +22,25 @@ pub const IR_IDENTITY: &str = "dev.lekalo.ir@0.2.16";
 /// The exact accepted Model version the composition pins.
 pub const MODEL_VERSION: &str = "0.2.16";
 
+/// The exact consumed-attachment contract version every family pins.
+pub const CONTRACT_VERSION: &str = "0.2.16";
+
+/// The contract identity token one consumed family pins: the exact
+/// `dev.lekalo.<token>@<version>` identity the decoder requires. The
+/// error-contract family consumes the error registry document, so its
+/// token is the registry's own identity.
+pub fn consumed_identity_token(family: &str) -> &'static str {
+    match family {
+        "authorization" => "authorization",
+        "transaction-concurrency" => "transaction-concurrency",
+        "extended-effects" => "extended-effects",
+        "error-contract" => "error-registry",
+        "invariant-transition" => "invariant-transition",
+        "requirements" => "requirements",
+        _ => "unknown",
+    }
+}
+
 /// Maximum accepted document size (bytes).
 pub const MAX_DOC_BYTES: usize = 256 * 1024;
 
@@ -66,6 +85,10 @@ pub const MAX_CAPABILITIES_PER_TARGET: usize = 32;
 
 /// Maximum number of assertions per scenario row in one report.
 pub const MAX_ASSERTIONS_PER_SCENARIO: usize = 256;
+
+/// Maximum number of assertion rows per target report: the exact
+/// published schema bound (`maxItems: 256`).
+pub const MAX_ASSERTIONS_PER_TARGET_REPORT: usize = 256;
 
 /// The closed consumed attachment families.
 pub const CONSUMED_FAMILIES: &[&str] = &[

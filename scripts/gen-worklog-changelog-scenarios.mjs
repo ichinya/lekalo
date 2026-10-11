@@ -270,7 +270,11 @@ const scenarios = [
         "one_row",
         "replay",
         "worklog.provider_action",
-        [equals("correlation_key", "corr-1")],
+        [
+          equals("correlation_key", "corr-1"),
+          equals("tenant_id", "tenant-1"),
+          equals("requestor_id", "requestor-1"),
+        ],
         { count: 1 },
       ),
     ],
@@ -391,7 +395,7 @@ const scenarios = [
         [equals("entry_id", "entry-1"), equals("revision", "1")],
         { presence: "exists" },
         {
-          content_digest: { value: str("snapshot-digest-1") },
+          content_digest: { value: str("ad0af336937619d65ead6d39ff3883e6617542a0e48103b1f48f77e4e3483a8e") },
           body: { value: str("published body") },
         },
       ),
@@ -483,9 +487,9 @@ const scenarios = [
       invoke("publish", "changelog.publish_entry", {
         entry_id: str("entry-1"),
         tenant_id: str("tenant-1"),
-        approval_id: str("approval-1"),
-        preview_revision: int(3),
-        preview_digest: str("preview-digest-1"),
+        approval_id: str("approval-0"),
+        preview_revision: int(1),
+        preview_digest: str("3b809df4a1cef55a95e2684d1e3b63f33c67c4665d9e5658bdb09edc93b57728"),
       }),
     ],
     then: [
@@ -686,9 +690,9 @@ const scenarios = [
       invoke("publish", "changelog.publish_entry", {
         entry_id: str("entry-1"),
         tenant_id: str("tenant-1"),
-        approval_id: str("approval-1"),
-        preview_revision: int(2),
-        preview_digest: str("preview-digest-old"),
+        approval_id: str("approval-0"),
+        preview_revision: int(1),
+        preview_digest: str("920de5214f0d1366297d417e04180cfe6939c853d544ddfeea9e9c030ced9c41"),
       }),
     ],
     then: [
@@ -813,8 +817,8 @@ const scenarios = [
         entry_id: str("entry-1"),
         tenant_id: str("tenant-1"),
         approval_id: str("approval-1"),
-        preview_revision: int(4),
-        preview_digest: str("preview-digest-2"),
+        preview_revision: int(2),
+        preview_digest: str("4b249a4e9a36c9318fc189fbbfa0e8336b4b07bb6d7ccfabf4cc7c233270f5db"),
       }),
     ],
     then: [
@@ -825,8 +829,8 @@ const scenarios = [
         [equals("entry_id", "entry-1"), equals("revision", "1")],
         { presence: "exists" },
         {
-          content_digest: { value: str("snapshot-digest-1") },
-          body: { value: str("published body") },
+          content_digest: { value: str("0c6f593e9275074de47de317859e280eab0cfc4e5561f64793d652e29b0ed19c") },
+          body: { value: str("first revision") },
         },
       ),
       entityState(
@@ -874,9 +878,9 @@ const scenarios = [
       invoke("late_publish", "changelog.publish_entry", {
         entry_id: str("entry-1"),
         tenant_id: str("tenant-1"),
-        approval_id: str("approval-1"),
-        preview_revision: int(5),
-        preview_digest: str("preview-digest-3"),
+        approval_id: str("approval-0"),
+        preview_revision: int(1),
+        preview_digest: str("230d8358dc8e8890b4c58deeb62912ee2f20357ae92a5cc861b98e68fe31acb5"),
       }),
     ],
     then: [

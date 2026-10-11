@@ -122,6 +122,9 @@ pub(crate) fn from_value(json: &Json) -> Result<Composition, DiagnosticSet> {
         return Err(diagnostic::input_invalid("closed-required"));
     }
     let project_id = require_str(object, "projectId")?;
+    if !super::types::semantic_id_ok(project_id) {
+        return Err(diagnostic::input_invalid("project-id"));
+    }
     let model_ref = object
         .get("modelRef")
         .and_then(Json::as_object)
@@ -205,7 +208,9 @@ pub(crate) fn digest_pin(
 }
 
 fn bounded_text(raw: &str, max: usize) -> Result<String, DiagnosticSet> {
-    if raw.is_empty() || raw.len() > max || raw.chars().any(|c| c.is_control()) {
+    // The exact published control exclusion: C0 plus DEL only (the
+    // schemas deliberately allow the C1 range).
+    if raw.is_empty() || raw.len() > max || super::types::schema_control(raw) {
         return Err(diagnostic::input_invalid("bounded-text"));
     }
     Ok(raw.to_owned())
@@ -246,14 +251,24 @@ fn consume_all(json: Option<&Json>) -> Result<Vec<ConsumedRef>, DiagnosticSet> {
             .and_then(Json::as_object)
             .ok_or_else(|| diagnostic::input_invalid("consumed-ref-shape"))?;
         check_members(reference, CONTRACT_REF_KEYS)?;
-        let identity = require_str(reference, "identity")?;
-        if !identity.starts_with("dev.lekalo.") || identity.split('@').count() != 2 {
+        // The exact published identity pin: the family's own contract
+        // identity at the closed version, byte for byte. The published
+        // schema pattern (`^dev\\.lekalo\\.[a-z0-9-]+@0\\.2\\.16$`)
+        // accepts any family token; the decoder is stricter on
+        // purpose and binds the identity to the family it is consumed
+        // under, so a document can never claim another family's
+        // identity while riding this pin.
+        let identity = format!(
+            "dev.lekalo.{}@{}",
+            super::version::consumed_identity_token(&family),
+            version::CONTRACT_VERSION
+        );
+        if require_str(reference, "identity")? != identity {
             return Err(diagnostic::input_invalid("consumed-identity"));
         }
-        let identity = bounded_text(identity, 128)?;
         let contract_version = closed_member(
             require_str(reference, "version")?,
-            &["0.2.16"],
+            &[version::CONTRACT_VERSION],
             "consumed-version",
         )?;
         let digest = digest_pin(reference, "consumed-digest")?;
@@ -405,15 +420,31 @@ fn parse_independence(json: Option<&Json>) -> Result<Vec<IndependenceRule>, Diag
             }
             must_not_enable.push(target.to_owned());
         }
+        // The published schema pins `uniqueItems` on `mustNotEnable`:
+        // a repeated member is a wire refusal, never a silent
+        // deduplication that hides the second declaration.
+        let mut seen = std::collections::BTreeSet::new();
+        if must_not_enable
+            .iter()
+            .any(|target| !seen.insert(target.clone()))
+        {
+            return Err(diagnostic::input_invalid("independence-unique"));
+        }
         must_not_enable.sort_unstable();
-        must_not_enable.dedup();
         rules.push(IndependenceRule {
             operation,
             must_not_enable,
         });
     }
     rules.sort_by(|left, right| left.operation.cmp(&right.operation));
-    rules.dedup_by(|left, right| left.operation == right.operation);
+    // The published schema pins `uniqueItems` on the rule array and
+    // the semantic contract keeps one rule per operation: a repeated
+    // operation is an ambiguous declaration and refuses.
+    for pair in rules.windows(2) {
+        if pair[0].operation == pair[1].operation {
+            return Err(diagnostic::input_invalid("duplicate-independence-rule"));
+        }
+    }
     Ok(rules)
 }
 
@@ -433,6 +464,9 @@ fn parse_correlations(json: Option<&Json>) -> Result<Vec<Correlation>, Diagnosti
         let correlation_id = CompositionId::parse(require_str(object, "correlationId")?)
             .ok_or_else(|| diagnostic::input_invalid("correlation-id"))?;
         let key_ref = bounded_text(require_str(object, "keyRef")?, 64)?;
+        if !super::types::field_name_ok(&key_ref) {
+            return Err(diagnostic::input_invalid("key-ref"));
+        }
         let members = object
             .get("memberOperations")
             .and_then(Json::as_array)
@@ -450,8 +484,16 @@ fn parse_correlations(json: Option<&Json>) -> Result<Vec<Correlation>, Diagnosti
             }
             member_operations.push(member.to_owned());
         }
+        // The published schema pins `uniqueItems` on
+        // `memberOperations`: a repeated member refuses.
+        let mut seen = std::collections::BTreeSet::new();
+        if member_operations
+            .iter()
+            .any(|member| !seen.insert(member.clone()))
+        {
+            return Err(diagnostic::input_invalid("correlations-unique"));
+        }
         member_operations.sort_unstable();
-        member_operations.dedup();
         correlations.push(Correlation {
             correlation_id,
             key_ref,
@@ -459,7 +501,11 @@ fn parse_correlations(json: Option<&Json>) -> Result<Vec<Correlation>, Diagnosti
         });
     }
     correlations.sort_by(|left, right| left.correlation_id.cmp(&right.correlation_id));
-    correlations.dedup_by(|left, right| left.correlation_id == right.correlation_id);
+    for pair in correlations.windows(2) {
+        if pair[0].correlation_id == pair[1].correlation_id {
+            return Err(diagnostic::input_invalid("duplicate-correlation"));
+        }
+    }
     Ok(correlations)
 }
 
@@ -482,7 +528,13 @@ fn parse_approvals(json: Option<&Json>) -> Result<Vec<ApprovalBinding>, Diagnost
         if operation != "changelog.publish_entry" {
             return Err(diagnostic::input_invalid("approval-operation"));
         }
-        let field = |key: &str| bounded_text(require_str(object, key)?, 64);
+        let field = |key: &str| {
+            let raw = bounded_text(require_str(object, key)?, 64)?;
+            if !super::types::field_name_ok(&raw) {
+                return Err(diagnostic::input_invalid("approval-field"));
+            }
+            Ok(raw)
+        };
         approvals.push(ApprovalBinding {
             approval_id,
             operation,
@@ -495,7 +547,11 @@ fn parse_approvals(json: Option<&Json>) -> Result<Vec<ApprovalBinding>, Diagnost
         });
     }
     approvals.sort_by(|left, right| left.approval_id.cmp(&right.approval_id));
-    approvals.dedup_by(|left, right| left.approval_id == right.approval_id);
+    for pair in approvals.windows(2) {
+        if pair[0].approval_id == pair[1].approval_id {
+            return Err(diagnostic::input_invalid("duplicate-approval"));
+        }
+    }
     Ok(approvals)
 }
 
@@ -521,7 +577,13 @@ fn parse_snapshots(json: Option<&Json>) -> Result<Vec<SnapshotDecl>, DiagnosticS
             &["append_only"],
             "snapshot-immutability",
         )?;
-        let field = |key: &str| bounded_text(require_str(object, key)?, 64);
+        let field = |key: &str| {
+            let raw = bounded_text(require_str(object, key)?, 64)?;
+            if !super::types::field_name_ok(&raw) {
+                return Err(diagnostic::input_invalid("snapshot-field"));
+            }
+            Ok(raw)
+        };
         snapshots.push(SnapshotDecl {
             snapshot_id,
             entity,
@@ -532,7 +594,11 @@ fn parse_snapshots(json: Option<&Json>) -> Result<Vec<SnapshotDecl>, DiagnosticS
         });
     }
     snapshots.sort_by(|left, right| left.snapshot_id.cmp(&right.snapshot_id));
-    snapshots.dedup_by(|left, right| left.snapshot_id == right.snapshot_id);
+    for pair in snapshots.windows(2) {
+        if pair[0].snapshot_id == pair[1].snapshot_id {
+            return Err(diagnostic::input_invalid("duplicate-snapshot"));
+        }
+    }
     Ok(snapshots)
 }
 
@@ -557,7 +623,13 @@ fn parse_allowlist(json: Option<&Json>) -> Result<PublicAllowlist, DiagnosticSet
             .ok_or_else(|| diagnostic::input_invalid("allowlist-fields-shape"))?;
         check_members(field_object, PUBLIC_FIELD_KEYS)?;
         let name = bounded_text(require_str(field_object, "name")?, 64)?;
+        if !super::types::field_name_ok(&name) {
+            return Err(diagnostic::input_invalid("allowlist-field-name"));
+        }
         let kind = bounded_text(require_str(field_object, "type")?, 128)?;
+        if !super::types::pin_ok(&kind) {
+            return Err(diagnostic::input_invalid("allowlist-field-type"));
+        }
         let source = closed_member(
             require_str(field_object, "source")?,
             &["snapshot", "reviewed_projection"],
@@ -566,7 +638,11 @@ fn parse_allowlist(json: Option<&Json>) -> Result<PublicAllowlist, DiagnosticSet
         fields.push(PublicField { name, kind, source });
     }
     fields.sort_by(|left, right| left.name.cmp(&right.name));
-    fields.dedup_by(|left, right| left.name == right.name);
+    for pair in fields.windows(2) {
+        if pair[0].name == pair[1].name {
+            return Err(diagnostic::input_invalid("allowlist-field-unique"));
+        }
+    }
     let excluded_json = object
         .get("excluded")
         .and_then(Json::as_array)
@@ -579,10 +655,19 @@ fn parse_allowlist(json: Option<&Json>) -> Result<PublicAllowlist, DiagnosticSet
         let field = field
             .as_str()
             .ok_or_else(|| diagnostic::input_invalid("allowlist-excluded-shape"))?;
-        excluded.push(bounded_text(field, 64)?);
+        let field = bounded_text(field, 64)?;
+        if !super::types::field_name_ok(&field) {
+            return Err(diagnostic::input_invalid("allowlist-excluded-name"));
+        }
+        excluded.push(field);
     }
     excluded.sort_unstable();
-    excluded.dedup();
+    // The published schema pins `uniqueItems` on the excluded set.
+    for pair in excluded.windows(2) {
+        if pair[0] == pair[1] {
+            return Err(diagnostic::input_invalid("allowlist-excluded-unique"));
+        }
+    }
     let rendering_json = object
         .get("rendering")
         .and_then(Json::as_object)
@@ -617,7 +702,12 @@ fn parse_allowlist(json: Option<&Json>) -> Result<PublicAllowlist, DiagnosticSet
         url_schemes.push(scheme);
     }
     url_schemes.sort_unstable();
-    url_schemes.dedup();
+    // The published schema pins `uniqueItems` on the scheme list.
+    for pair in url_schemes.windows(2) {
+        if pair[0] == pair[1] {
+            return Err(diagnostic::input_invalid("url-scheme-unique"));
+        }
+    }
     if url_policy.get("rejectEncoded") != Some(&Json::Bool(true))
         || url_policy.get("rejectControlChars") != Some(&Json::Bool(true))
     {
@@ -648,7 +738,11 @@ fn parse_replay(json: Option<&Json>) -> Result<Vec<ReplayScope>, DiagnosticSet> 
         scopes.push(parse_replay_scope(item)?);
     }
     scopes.sort_by(|left, right| left.operation.cmp(&right.operation));
-    scopes.dedup_by(|left, right| left.operation == right.operation);
+    for pair in scopes.windows(2) {
+        if pair[0].operation == pair[1].operation {
+            return Err(diagnostic::input_invalid("duplicate-replay-scope"));
+        }
+    }
     Ok(scopes)
 }
 
@@ -666,6 +760,9 @@ fn parse_replay_scope(item: &Json) -> Result<ReplayScope, DiagnosticSet> {
     let scope = CompositionId::parse(require_str(object, "scope")?)
         .ok_or_else(|| diagnostic::input_invalid("replay-scope-id"))?;
     let key_ref = bounded_text(require_str(object, "keyRef")?, 64)?;
+    if !super::types::field_name_ok(&key_ref) {
+        return Err(diagnostic::input_invalid("key-ref"));
+    }
     let duplicate = closed_member(
         require_str(object, "duplicate")?,
         &["replay_result", "conflict"],
@@ -707,6 +804,9 @@ fn parse_capabilities(json: Option<&Json>) -> Result<Vec<CapabilityRequirement>,
         let requirement_id = CompositionId::parse(require_str(object, "requirementId")?)
             .ok_or_else(|| diagnostic::input_invalid("requirement-id"))?;
         let capability = bounded_text(require_str(object, "capability")?, 96)?;
+        if !super::types::pin_ok(&capability) {
+            return Err(diagnostic::input_invalid("capability-name"));
+        }
         let minimum = closed_member(
             require_str(object, "minimum")?,
             &["full", "partial"],
@@ -730,8 +830,16 @@ fn parse_capabilities(json: Option<&Json>) -> Result<Vec<CapabilityRequirement>,
             }
             operation_refs.push(operation.to_owned());
         }
+        // The published schema pins `uniqueItems` on the operation
+        // refs: a repeated ref is a wire refusal.
+        let mut seen = std::collections::BTreeSet::new();
+        if operation_refs
+            .iter()
+            .any(|operation| !seen.insert(operation.clone()))
+        {
+            return Err(diagnostic::input_invalid("capability-operation-unique"));
+        }
         operation_refs.sort_unstable();
-        operation_refs.dedup();
         requirements.push(CapabilityRequirement {
             requirement_id,
             capability,
@@ -741,6 +849,10 @@ fn parse_capabilities(json: Option<&Json>) -> Result<Vec<CapabilityRequirement>,
         });
     }
     requirements.sort_by(|left, right| left.requirement_id.cmp(&right.requirement_id));
-    requirements.dedup_by(|left, right| left.requirement_id == right.requirement_id);
+    for pair in requirements.windows(2) {
+        if pair[0].requirement_id == pair[1].requirement_id {
+            return Err(diagnostic::input_invalid("duplicate-capability"));
+        }
+    }
     Ok(requirements)
 }

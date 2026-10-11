@@ -218,6 +218,89 @@ invariant-transition subject spaces and transition error outcomes,
 transaction capability coverage) were repaired through the sanctioned
 generators with every pin recomputed.
 
+## Review round 5 resolutions
+
+The devin and codex round-4 reviews (both CHANGES-REQUESTED) drove this
+round; every numbered finding is fixed and probe-verified:
+
+1. **Admission executes the backend.** `lekalo pilot admit` runs every
+   declared native lane itself and hands the executed rows to the pure
+   core as a trusted receipt. A report row claiming execution without
+   a matching receipt is refused (`execution:unverified`): a static
+   hash of the backend file is provenance, not an execution receipt,
+   so an `exit(77)` backend with a copied digest can no longer pass.
+   The receipt join also verifies the exact assertion rows, the
+   capability tuples, and the full scenario corpus, and the consumer
+   witness join verifies every reported `(consumer, relation,
+   witness)` triple against the committed consumer oracle cross-checked
+   with the compilation's derived graph inventory, refuses unknown
+   consumers and unknown assertion ids, and enforces scenario target
+   membership.
+2. **Report-level blockers refuse the targets they apply to.** Core
+   admission attributes every report-level obligation (failed or
+   contradictory scenario rows, missing or invented consumer
+   witnesses, verdict-claim conflicts, closure gaps) to the targets
+   they bind, so the per-target receipt verdict the pilot gate reads
+   can never stay green for a document admission refuses for that
+   target; an honestly absent *other* target stays independently
+   reported. A pruned php-only report (a deleted go row) is an invalid
+   document outright (`targets-inventory`): the portability report can
+   never hide the unsupported lane.
+3. **Inner Model pins verified on every consumed family.** The
+   transaction-concurrency, extended-effects, invariant-transition, and
+   requirements attachments must carry the exact canonical Model
+   digest of the resolved compilation; the error-registry identity pin
+   is exact equality (no prefix fallback); the authorization document's
+   declared identity must equal its consumed pin.
+4. **Custody is physical.** The composition document, every consumed
+   attachment, and the native lane file resolve under the fixture root
+   without traversing symlinks, junctions, or reparse points, and
+   never carry a second hard link — byte equality alone cannot
+   establish custody.
+5. **Creation is insert-only within the tenant scope.** `create_draft`
+   refuses cross-tenant hijacks, refuses recreation over published or
+   withdrawn entries (no unaudited unpublish, no resurrection), keeps
+   the revision monotonic on a same-tenant recreate, and invalidates
+   every outstanding approval; withdrawal also invalidates approvals
+   and dominates every later binding state.
+6. **The gate binds the committed Scenario IR, not labels.** The PHP
+   lane emits the exact ordered invocation log (operation + input map)
+   and structured per-step facts (observed entity rows with field
+   values, typed error payloads, replay classes with duplicate counts,
+   served projection fields); the gate matches every `when` step as an
+   ordered subsequence of the invocation log and evaluates every
+   `then` assertion (selectors, expected fields, payload members,
+   replay detail, projection against the composition's allowlist)
+   against those facts.
+7. **Replay scopes carry actor identity and canonical payload
+   binding.** The scope composite is (tenant, actor-or-service,
+   operation) + correlation key; payload digests are canonical
+   byte-sorted-key JSON of the submitted request members, so a changed
+   request under a recorded key conflicts instead of replaying, and a
+   missing requestor id is refused.
+8. **Durable claims are backed by a write-through journal.** Replay
+   records and outbox rows/outcomes append to a journal file as they
+   commit; the committed scenarios exercise recovery by rebuilding
+   fresh store instances from the journal bytes (restart replay,
+   delivery after restore) — the claim notes describe exactly that
+   in-process recovery model.
+9. **The URL policy refuses encoded forms.** Decoding runs to a
+   fixpoint over numeric entities, a closed named-entity table, and
+   percent escapes; any decode-changing spelling refuses
+   (`rejectEncoded`), controls are re-checked on the decoded text, and
+   the scheme allowlist applies to every `scheme:` token — `mailto:`,
+   `tel:`, `ftp:`, encoded delimiters, and encoded allowed schemes all
+   refuse, while plain prose colons stay safe.
+10. **Decoder/schema parity is exact and gated.** The semantic-id
+    grammar, the field-name and pin patterns, the control-character
+    exclusion, every `uniqueItems` array, the per-target assertion
+    bound (`maxItems: 256`), and the consumed identity/version pins are
+    ported verbatim from the published closed schemas into the shared
+    decoder grammar, and the contracts gate now runs differential
+    wire probes — Ajv 8.17.1 verdict versus production CLI verdict —
+    over curated mutation vectors in both directions so the two
+    grammars cannot drift apart again.
+
 ## Boundary
 
 Real provider integration, live publication, private requirement

@@ -314,36 +314,176 @@ if (target === "php") {
     );
     process.exit(1);
   }
-  // The lane's own assertions are not trusted by name alone: every
-  // committed scenario document's outcome assertions (typed errors,
-  // entity presence, idempotent replay, contract match) must be
-  // observed by the lane exactly as declared. An assertion row that
-  // reports pass while the committed IR's outcomes were not observed
-  // fails the gate — inverting a lane assertion cannot flip the
-  // verdict.
-  const observationOf = (scenarioId, stepId) =>
+  // The lane's own assertions are not trusted by name alone: the
+  // committed Scenario IR is bound to the lane's structured runtime
+  // facts in two directions.
+  //
+  // 1. Invocation binding: every `when` step (its exact operation and
+  //    input map) must appear as an ordered subsequence of the lane's
+  //    actual invocation log — a mutated IR operation or input value
+  //    can no longer hide behind a hand-written label.
+  // 2. Assertion semantics: every `then` assertion is evaluated
+  //    against the lane's observed facts for that step — entity
+  //    selectors, expected field values, typed errors, replay
+  //    classes with duplicate counts, and contract projections.
+  //
+  // An assertion row that reports pass while the committed IR's
+  // outcomes were not observed fails the gate — inverting a lane
+  // assertion or mutating the committed corpus cannot flip the
+  // verdict. (`given` preconditions describe the corpus-level
+  // arrange contract; the lane implements the equivalent arrange
+  // through the application ports, and the forbidden-effect
+  // assertions stay bound through the static section above and the
+  // runtime-retained rows.)
+  const invocationOf = (scenarioId) =>
+    lane.assertions.find((row) => row.scenario === scenarioId)?.invocations ?? [];
+  const plainValue = (typed) => typed?.value;
+  const sameInput = (logged, declared) => {
+    const declaredKeys = Object.keys(declared);
+    if (Object.keys(logged).length !== declaredKeys.length) return false;
+    return declaredKeys.every((key) => {
+      const expected = declared[key];
+      const observed = logged[key];
+      if (observed === undefined) return false;
+      if (typeof expected === "number") return Number(observed) === expected;
+      return String(observed) === String(expected);
+    });
+  };
+  const factOf = (scenarioId, stepId) =>
     lane.assertions.find((row) => row.scenario === scenarioId)?.observations?.[stepId];
+  const evaluateAssertion = (assertion, fact) => {
+    if (!fact || fact.kind !== assertion.kind) {
+      return { ok: false, reason: "fact-missing" };
+    }
+    if (assertion.kind === "error") {
+      if (fact.error !== assertion.error) {
+        return { ok: false, reason: "error-mismatch" };
+      }
+      const payloadKeys = Object.keys(assertion.payload ?? {});
+      const okPayload = payloadKeys.every(
+        (key) => JSON.stringify((fact.payload ?? {})[key]) === JSON.stringify(assertion.payload[key]),
+      );
+      return okPayload ? { ok: true } : { ok: false, reason: "error-payload-mismatch" };
+    }
+    if (assertion.kind === "entity_state") {
+      if (fact.entity !== assertion.entity) {
+        return { ok: false, reason: "entity-mismatch" };
+      }
+      const rows = fact.rows ?? [];
+      const matched = rows.filter((row) =>
+        (assertion.where ?? []).every(
+          (selector) => String(row[selector.field]) === String(selector.equals?.value),
+        ),
+      );
+      const expect = assertion.expect ?? {};
+      if (expect.count !== undefined) {
+        if (matched.length !== expect.count) {
+          return { ok: false, reason: "count-mismatch" };
+        }
+      } else if ((expect.presence ?? "exists") === "exists") {
+        if (matched.length === 0) {
+          return { ok: false, reason: "presence-mismatch" };
+        }
+      } else if (matched.length !== 0) {
+        return { ok: false, reason: "presence-mismatch" };
+      }
+      for (const [field, expectation] of Object.entries(assertion.fields ?? {})) {
+        const expected = expectation?.value?.value;
+        if (!matched.every((row) => String(row[field]) === String(expected))) {
+          return { ok: false, reason: "field-mismatch", field };
+        }
+      }
+      return { ok: true };
+    }
+    if (assertion.kind === "idempotency") {
+      if (fact.replay !== assertion.replay) {
+        return { ok: false, reason: "replay-mismatch" };
+      }
+      const expectedDuplicates = assertion.duplicates === "none" ? 0 : assertion.duplicates;
+      if (fact.duplicates !== expectedDuplicates) {
+        return { ok: false, reason: "duplicates-mismatch" };
+      }
+      if (fact.equivalence !== assertion.equivalence) {
+        return { ok: false, reason: "equivalence-mismatch" };
+      }
+      return { ok: true };
+    }
+    if (assertion.kind === "contract_match") {
+      if (fact.contract !== assertion.contract) {
+        return { ok: false, reason: "contract-mismatch" };
+      }
+      const served = [...(fact.projection ?? [])].sort();
+      const declared = [...(assertion.projection ?? [])].sort();
+      const subset = declared.every((field) => served.includes(field));
+      if (!subset) {
+        return { ok: false, reason: "projection-mismatch" };
+      }
+      // The served projection must be exactly the composition's
+      // committed public allowlist, never a narrower hand-picked set.
+      const allowlist = read(`${fixtureRoot}/attachments/pilot.json`).publicAllowlist.fields
+        .map((field) => field.name)
+        .sort();
+      if (JSON.stringify(served) !== JSON.stringify(allowlist)) {
+        return { ok: false, reason: "projection-not-allowlist" };
+      }
+      return { ok: true };
+    }
+    return { ok: false, reason: "assertion-kind-unbound" };
+  };
   for (const name of scenarioFiles) {
     const doc = read(`${scenarioDir}/${name}`);
     if (scenario !== "all" && doc.scenarioId !== scenario) continue;
-    for (const thenStep of doc.then) {
-      const kind = thenStep.assertion.kind;
-      let expected;
-      if (kind === "error") expected = `error:${thenStep.assertion.error}`;
-      else if (kind === "entity_state") {
-        const presence =
-          thenStep.assertion.expect?.count !== undefined
-            ? `count=${thenStep.assertion.expect.count}`
-            : (thenStep.assertion.expect?.presence ?? "exists");
-        expected = `entity:${thenStep.assertion.entity}:${presence}`;
-      } else if (kind === "idempotency") expected = `replay:${thenStep.assertion.replay}`;
-      else if (kind === "contract_match") expected = `contract:${thenStep.assertion.contract}`;
-      else continue; // forbidden_effect is asserted statically / retained as runtime
-      const observed = observationOf(doc.scenarioId, thenStep.stepId);
-      if (observed !== expected) {
+    // 1. The committed `when` steps execute exactly as declared.
+    const log = invocationOf(doc.scenarioId);
+    let cursor = 0;
+    for (const step of doc.when) {
+      const declaredInput = Object.fromEntries(
+        Object.entries(step.action.input ?? {}).map(([key, typed]) => [key, plainValue(typed)]),
+      );
+      const found = log
+        .slice(cursor)
+        .findIndex(
+          (entry) =>
+            entry.operation === step.action.operation && sameInput(entry.input, declaredInput),
+        );
+      if (found < 0) {
         process.stderr.write(
           JSON.stringify(
-            { ok: false, reason: "scenario-observation-mismatch", scenario: doc.scenarioId, step: thenStep.stepId, expected, observed },
+            {
+              ok: false,
+              reason: "scenario-invocation-mismatch",
+              scenario: doc.scenarioId,
+              step: step.stepId,
+              operation: step.action.operation,
+              input: declaredInput,
+            },
+            null,
+            2,
+          ) + "\n",
+        );
+        process.exit(1);
+      }
+      cursor += found + 1;
+    }
+    // 2. The committed `then` assertions evaluate against the facts.
+    for (const thenStep of doc.then) {
+      const kind = thenStep.assertion.kind;
+      if (kind === "forbidden_effect") continue; // asserted statically / retained as runtime
+      const fact = factOf(doc.scenarioId, thenStep.stepId);
+      const evaluated = evaluateAssertion(thenStep.assertion, fact);
+      if (!evaluated.ok) {
+        process.stderr.write(
+          JSON.stringify(
+            {
+              ok: false,
+              reason: "scenario-observation-mismatch",
+              scenario: doc.scenarioId,
+              step: thenStep.stepId,
+              detail: evaluated.reason,
+              field: evaluated.field,
+              assertion: thenStep.assertion,
+              fact: fact ?? null,
+            },
             null,
             2,
           ) + "\n",

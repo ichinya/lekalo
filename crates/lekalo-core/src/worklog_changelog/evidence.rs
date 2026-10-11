@@ -117,6 +117,47 @@ pub struct BackendProvenance {
     pub digest: String,
 }
 
+/// One expected consumer witness of the committed consumer oracle:
+/// the exact `(relation, witness)` pair the report's consumer row
+/// must carry for this consumer. The shell reads the oracle beside
+/// the composition and hands the closed set here; the core stays
+/// pure. A witness or relation the oracle does not declare is
+/// invented evidence.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExpectedConsumer {
+    /// The consumer subject id (bare operation/endpoint/scenario id,
+    /// or the slash-namespaced file-witness id).
+    pub consumer: String,
+    /// The declared relation (`returns`, `invokes`, `covers`,
+    /// `projects`, `allowlists`).
+    pub relation: String,
+    /// The declared witness artifact.
+    pub witness: String,
+    /// Whether the consumer is a compiled graph subject (query,
+    /// endpoint, or scenario) as opposed to a file witness.
+    pub graph_subject: bool,
+}
+
+/// The trusted native-execution receipt of one target lane: what the
+/// engine itself executed at admission time, never what the report
+/// claims. A report row that does not equal this receipt row by row
+/// is fabricated execution evidence.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeExecutionReceipt {
+    /// The target id of the executed lane.
+    pub target: String,
+    /// The backend identity the lane declared.
+    pub identity: String,
+    /// The `sha256:<64 hex>` digest of the lane bytes.
+    pub digest: String,
+    /// The exact `(scenario, status)` assertion rows the lane
+    /// produced.
+    pub assertions: Vec<(String, String)>,
+    /// The exact `(capability, support, approval, blocking)` tuples
+    /// the lane declared.
+    pub capabilities: Vec<(String, String, Option<String>, bool)>,
+}
+
 // ---------------------------------------------------------------------------
 // The closed wire contract: the exact mirror of the published 0.8.0
 // evidence schema. Every member set is closed, every required member
@@ -234,11 +275,10 @@ fn id_text(raw: &str) -> Result<(), DiagnosticSet> {
     }
 }
 
-/// 1..=2000 scalar units, no control characters.
+/// 1..=2000 scalar units, the exact published control exclusion
+/// (C0 plus DEL only — the schemas deliberately allow C1).
 fn note_text(raw: &str) -> Result<(), DiagnosticSet> {
-    let ok = !raw.is_empty()
-        && raw.len() <= 2000
-        && !raw.chars().any(|character| character.is_control());
+    let ok = !raw.is_empty() && raw.len() <= 2000 && !super::types::schema_control(raw);
     if ok {
         Ok(())
     } else {
@@ -305,6 +345,7 @@ struct EvidenceReport {
     targets: Vec<DecodedTarget>,
     scenarios: Vec<DecodedScenario>,
     consumers: Vec<String>,
+    consumer_rows: Vec<DecodedConsumer>,
     closure_complete: bool,
     strict_claim: &'static str,
     permissive_claim: &'static str,
@@ -334,6 +375,26 @@ struct DecodedCapability {
 struct DecodedScenario {
     scenario: String,
     status: &'static str,
+    targets: Vec<String>,
+}
+
+/// One decoded consumer witness row: the full triple the witness
+/// join verifies.
+#[derive(Debug)]
+struct DecodedConsumer {
+    consumer: String,
+    witness: String,
+    relation: String,
+}
+
+/// The compiled graph-subject kind one oracle relation names.
+fn relation_kind(relation: &str) -> &'static str {
+    match relation {
+        "returns" => "operation",
+        "invokes" => "endpoint",
+        "covers" => "scenario",
+        _ => "",
+    }
 }
 
 /// Decode the complete closed wire contract, or refuse.
@@ -464,21 +525,23 @@ fn decode(text: &str) -> Result<EvidenceReport, DomainResult> {
             )));
         }
         let mut target_row_seen = std::collections::BTreeSet::new();
+        let mut scenario_targets_decoded = Vec::with_capacity(scenario_targets.len());
         for target in scenario_targets {
             let target = target.as_str().ok_or_else(|| {
                 DomainResult::invalid(diagnostic::input_invalid("scenarios-shape"))
             })?;
-            if !target_row_seen
-                .insert(closed(target, SCENARIO_TARGETS).map_err(DomainResult::invalid)?)
-            {
+            let closed_target = closed(target, SCENARIO_TARGETS).map_err(DomainResult::invalid)?;
+            if !target_row_seen.insert(closed_target) {
                 return Err(DomainResult::invalid(diagnostic::input_invalid(
                     "scenarios-unique",
                 )));
             }
+            scenario_targets_decoded.push(closed_target.to_owned());
         }
         scenarios.push(DecodedScenario {
             scenario: scenario.to_owned(),
             status,
+            targets: scenario_targets_decoded,
         });
     }
 
@@ -492,6 +555,7 @@ fn decode(text: &str) -> Result<EvidenceReport, DomainResult> {
         )));
     }
     let mut consumers = Vec::with_capacity(consumers_json.len());
+    let mut consumer_rows: Vec<DecodedConsumer> = Vec::with_capacity(consumers_json.len());
     let mut consumer_seen = std::collections::BTreeSet::new();
     for consumer_json in consumers_json {
         let consumer_object = consumer_json
@@ -511,6 +575,15 @@ fn decode(text: &str) -> Result<EvidenceReport, DomainResult> {
         pin_text(text_member(consumer_object, "relation").map_err(DomainResult::invalid)?)
             .map_err(DomainResult::invalid)?;
         consumers.push(consumer.to_owned());
+        consumer_rows.push(DecodedConsumer {
+            consumer: consumer.to_owned(),
+            witness: text_member(consumer_object, "witness")
+                .map_err(DomainResult::invalid)?
+                .to_owned(),
+            relation: text_member(consumer_object, "relation")
+                .map_err(DomainResult::invalid)?
+                .to_owned(),
+        });
     }
 
     let completeness = object
@@ -563,6 +636,7 @@ fn decode(text: &str) -> Result<EvidenceReport, DomainResult> {
         targets,
         scenarios,
         consumers,
+        consumer_rows,
         closure_complete,
         strict_claim,
         permissive_claim,
@@ -702,7 +776,10 @@ fn decode_target(
         .get("assertions")
         .and_then(Json::as_array)
         .ok_or_else(|| DomainResult::invalid(diagnostic::input_invalid("assertions-shape")))?;
-    if assertions_json.len() > version::MAX_ASSERTIONS_PER_SCENARIO * 64 {
+    // The exact published bound: the schema pins `maxItems: 256` on
+    // the per-target assertion array; the decoder accepts exactly the
+    // same document population, never 64x it.
+    if assertions_json.len() > version::MAX_ASSERTIONS_PER_TARGET_REPORT {
         return Err(DomainResult::invalid(diagnostic::input_invalid(
             "assertions-bound",
         )));
@@ -770,11 +847,41 @@ fn decode_target(
 /// exact composition document and the pinned compilation, or return
 /// the typed rejection result. The receipt keeps every per-target row;
 /// a strict refusal lists its blockers and still carries the rows.
+/// Admit one evidence report under the selected profile, bound to the
+/// exact composition document and the pinned compilation, or return
+/// the typed rejection result. The receipt keeps every per-target
+/// row; a strict refusal lists its blockers and still carries the
+/// rows.
+///
+/// Three joins make the verdict derived, not claimed:
+///
+/// - the **required inventory** (every scenario of the compilation,
+///   every capability of the composition, every target of the closed
+///   vocabulary, every consumer of the committed oracle) comes from
+///   the pinned documents, never from the report, so pruning a row
+///   cannot erase an obligation;
+/// - the **consumer witness join** verifies every reported
+///   `(consumer, relation, witness)` triple against the oracle and
+///   the compilation's derived graph inventory in both directions;
+/// - the **execution receipt join** compares every executed target's
+///   assertion and capability rows against the engine's own native
+///   lane execution, so a static digest claim without matching live
+///   execution is fabricated evidence.
+///
+/// Blockers attach where they belong: a report-level obligation that
+/// applies to a target (a failed scenario that target was part of, a
+/// missing consumer witness, a verdict-claim conflict, an unverified
+/// execution) propagates into that target's receipt verdict, while an
+/// honestly absent *other* target stays independently reported. The
+/// gate can therefore never emit `ok:true` for a document the
+/// admission itself refuses for the selected target's obligations.
 pub fn admit(
     report_bytes: &[u8],
     composition_bytes: &[u8],
     project: &CompiledProject,
     declared_backends: &std::collections::BTreeMap<String, BackendProvenance>,
+    expected_consumers: Option<&[ExpectedConsumer]>,
+    execution_receipts: &std::collections::BTreeMap<String, NativeExecutionReceipt>,
     profile: AdmissionProfile,
 ) -> Result<AdmissionReceipt, DomainResult> {
     if report_bytes.len() > version::MAX_DOC_BYTES
@@ -817,14 +924,43 @@ pub fn admit(
         scenario_status.insert(scenario.scenario.as_str(), scenario.status);
     }
 
+    // The required target inventory is the closed vocabulary of this
+    // portability report: every declared target must be reported, so
+    // a php-only strict pass of a pruned document cannot exist — the
+    // unsupported lane can never be hidden by deleting its row.
+    let reported_targets: std::collections::BTreeSet<&str> = report
+        .targets
+        .iter()
+        .map(|target| target.target.as_str())
+        .collect();
+    for required in TARGETS {
+        if !reported_targets.contains(required) {
+            return Err(DomainResult::invalid(diagnostic::input_invalid(
+                "targets-inventory",
+            )));
+        }
+    }
+
+    // Blocker attribution: report-level obligations propagate into
+    // the receipt verdict of every target they apply to.
+    let mut attributed: std::collections::BTreeMap<String, Vec<String>> =
+        std::collections::BTreeMap::new();
+    let all_targets = |attributed: &mut std::collections::BTreeMap<String, Vec<String>>,
+                       blocker: String| {
+        for target in reported_targets.iter() {
+            attributed
+                .entry((*target).to_owned())
+                .or_default()
+                .push(blocker.clone());
+        }
+    };
+    let mut blockers: Vec<String> = Vec::new();
+
     // The declared consumer inventory of the pinned compilation: the
     // closure of the composition's public DTO subject. One subject per
     // query that returns the DTO, one per endpoint invoking such a
     // query, and one per scenario covering either — exactly the graph
-    // consumers the consumer oracle declares. The report's consumer
-    // witnesses join this set in both directions — a missing witness
-    // and an unknown non-file consumer are both refusals — so clearing
-    // `consumers[]` cannot erase the closure obligation.
+    // consumers the consumer oracle declares.
     let dto_subject = composition.public_allowlist().dto().to_owned();
     // Whether a `returns` type names the DTO at some (possibly nested
     // list/optional) position.
@@ -838,7 +974,6 @@ pub fn admit(
     }
     let mut declared_consumers = std::collections::BTreeSet::new();
     let mut covered_operations = std::collections::BTreeSet::new();
-    let mut derived_consumer_blockers: Vec<String> = Vec::new();
     for definition in &project.definitions {
         if let Definition::Query(query) = definition {
             let returns_dto = query
@@ -872,37 +1007,182 @@ pub fn admit(
             _ => {}
         }
     }
-    let mut covered_consumers = std::collections::BTreeSet::new();
-    for row_consumer in report.consumers() {
-        let resolved = ["operation", "endpoint", "scenario"]
-            .iter()
-            .find_map(|kind| {
-                let subject = format!("{kind}:{row_consumer}");
-                declared_consumers.contains(&subject).then_some(subject)
-            });
-        match resolved {
-            Some(subject) => {
-                covered_consumers.insert(subject);
+
+    // The consumer witness join: the committed oracle is the expected
+    // witness inventory, and the compilation's derived graph subjects
+    // must equal the oracle's graph subjects — a drifted oracle is
+    // itself a blocker. Every reported triple is verified; every
+    // expected consumer must be reported.
+    let mut consumer_blockers: Vec<String> = Vec::new();
+    match expected_consumers {
+        None => {
+            consumer_blockers.push("consumers:oracle:absent".to_owned());
+        }
+        Some(expected) => {
+            let mut expected_map: std::collections::BTreeMap<&str, (&str, &str, bool)> =
+                std::collections::BTreeMap::new();
+            for consumer in expected {
+                if expected_map
+                    .insert(consumer.consumer.as_str(), {
+                        (
+                            consumer.relation.as_str(),
+                            consumer.witness.as_str(),
+                            consumer.graph_subject,
+                        )
+                    })
+                    .is_some()
+                {
+                    consumer_blockers.push("consumers:oracle:unique".to_owned());
+                }
             }
-            // A consumer outside the compilation inventory is a file
-            // witness only when its id is namespaced (`head/tail`); a
-            // bare operation-shaped id the compilation does not declare
-            // is invented evidence, refused outright.
-            None => {
-                if !row_consumer.contains('/') {
-                    derived_consumer_blockers.push(format!("consumers:{row_consumer}:unknown"));
+            // The oracle's graph subjects must be exactly the
+            // compilation's derived graph subjects.
+            let oracle_graph: std::collections::BTreeSet<String> = expected
+                .iter()
+                .filter(|consumer| consumer.graph_subject)
+                .map(|consumer| {
+                    format!(
+                        "{}:{}",
+                        relation_kind(consumer.relation.as_str()),
+                        consumer.consumer
+                    )
+                })
+                .collect();
+            if oracle_graph != declared_consumers {
+                consumer_blockers.push("consumers:inventory:drift".to_owned());
+            }
+            let mut covered: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+            for row_consumer in report.consumers() {
+                match expected_map.get(row_consumer.as_str()) {
+                    Some((relation, witness, _)) => {
+                        let row = report
+                            .consumer_rows
+                            .iter()
+                            .find(|row| row.consumer == *row_consumer)
+                            .expect("decoded consumer row");
+                        if row.relation != *relation || row.witness != *witness {
+                            consumer_blockers.push(format!("consumers:{row_consumer}:witness"));
+                        }
+                        covered.insert(row_consumer.as_str());
+                    }
+                    None => {
+                        consumer_blockers.push(format!("consumers:{row_consumer}:unknown"));
+                    }
+                }
+            }
+            for consumer in expected_map.keys() {
+                if !covered.contains(consumer) {
+                    consumer_blockers.push(format!("consumers:{consumer}:missing"));
                 }
             }
         }
     }
-    for subject in &declared_consumers {
-        if !covered_consumers.contains(subject) {
-            derived_consumer_blockers.push(format!("consumers:{subject}:missing"));
+    for blocker in &consumer_blockers {
+        all_targets(&mut attributed, blocker.clone());
+    }
+    blockers.extend(consumer_blockers);
+
+    // Scenario aggregate rows: an unknown row is invented evidence; a
+    // row's target membership must include every target that claims a
+    // passing assertion for it; and a failing, unsupported, or (under
+    // strict) not-executed aggregate attaches to exactly the targets
+    // it applies to — the targets named by the row that did not pass
+    // it, plus any target whose passing assertion the aggregate row
+    // contradicts.
+    for scenario in &report.scenarios {
+        if !required_scenarios.contains(&scenario.scenario) {
+            let blocker = format!("scenarios:{}:unknown", scenario.scenario);
+            for target in &scenario.targets {
+                if reported_targets.contains(target.as_str()) {
+                    attributed
+                        .entry(target.clone())
+                        .or_default()
+                        .push(blocker.clone());
+                }
+            }
+            blockers.push(blocker);
+            continue;
+        }
+        let passing: Vec<&str> = report
+            .targets
+            .iter()
+            .filter(|target| {
+                target
+                    .assertions
+                    .iter()
+                    .any(|(name, status)| name == &scenario.scenario && *status == "pass")
+            })
+            .map(|target| target.target.as_str())
+            .collect();
+        // Membership: a passing assertion belongs to a target the
+        // aggregate row names.
+        for target in &passing {
+            if !scenario.targets.iter().any(|member| member == target) {
+                let blocker = format!("{target}:{}:membership", scenario.scenario);
+                attributed
+                    .entry((*target).to_owned())
+                    .or_default()
+                    .push(blocker.clone());
+                blockers.push(blocker);
+            }
+        }
+        let mut row_blockers: Vec<String> = Vec::new();
+        match scenario.status {
+            "fail" => {
+                row_blockers.push(format!("scenarios:{}:fail", scenario.scenario));
+                if !passing.is_empty() {
+                    row_blockers.push(format!("scenarios:{}:conflict", scenario.scenario));
+                }
+            }
+            "unsupported" => {
+                row_blockers.push(format!("scenarios:{}:unsupported", scenario.scenario));
+            }
+            "not_executed" => {
+                if !passing.is_empty() {
+                    row_blockers.push(format!("scenarios:{}:conflict", scenario.scenario));
+                } else if profile == AdmissionProfile::Strict {
+                    row_blockers.push(format!("scenarios:{}:not_executed", scenario.scenario));
+                }
+            }
+            _ => {}
+        }
+        if row_blockers.is_empty() {
+            continue;
+        }
+        blockers.extend(row_blockers.iter().cloned());
+        // Attribution: the named targets that did not pass the
+        // scenario carry the aggregate blocker; a passing target
+        // carries only a contradiction blocker (its own claim
+        // conflicts with the aggregate row).
+        let named: Vec<&str> = scenario
+            .targets
+            .iter()
+            .filter(|target| reported_targets.contains(target.as_str()))
+            .map(String::as_str)
+            .collect();
+        for blocker in &row_blockers {
+            let contradiction = blocker.ends_with(":conflict");
+            for target in &named {
+                let passing_target = passing.contains(target);
+                if contradiction || !passing_target {
+                    attributed
+                        .entry((*target).to_owned())
+                        .or_default()
+                        .push(blocker.clone());
+                }
+            }
+        }
+    }
+    // A required scenario row that is absent entirely is a pruned
+    // report: every target carries the omission.
+    for scenario in &required_scenarios {
+        if !scenario_status.contains_key(scenario.as_str()) {
+            let blocker = format!("scenarios:{scenario}:missing");
+            all_targets(&mut attributed, blocker.clone());
+            blockers.push(blocker);
         }
     }
 
-    let mut blockers: Vec<String> = Vec::new();
-    blockers.extend(derived_consumer_blockers);
     let mut receipt_targets = Vec::with_capacity(report.targets.len());
     for target in &report.targets {
         let mut target_blockers: Vec<String> = Vec::new();
@@ -1001,25 +1281,75 @@ pub fn admit(
                 target_blockers.push(format!("{}:backend:provenance", target.target));
             }
         }
-        // Assertion coverage: every required scenario of the pinned
-        // compilation must carry a per-target assertion, and a target
-        // that claims execution must carry it as passed. Deleting a
-        // row cannot delete the obligation.
-        if target.execution == "executed" {
-            let asserted: std::collections::BTreeSet<&str> = target
-                .assertions
-                .iter()
-                .map(|(scenario, _)| scenario.as_str())
-                .collect();
-            for scenario in &required_scenarios {
-                if !asserted.contains(scenario.as_str()) {
-                    target_blockers
-                        .push(format!("{}:{}:assertion-missing", target.target, scenario));
+        // The trusted execution receipt: the engine itself executed
+        // the native lane for this admission. A claim of execution
+        // without a matching receipt is fabricated evidence — hashing
+        // a backend file is not an execution receipt. The receipt's
+        // assertion rows and capability tuples must equal the report's
+        // rows exactly, and the receipt's scenario corpus must be the
+        // compilation's full inventory.
+        match execution_receipts.get(target.target.as_str()) {
+            Some(receipt) => {
+                if target.execution != "executed" {
+                    target_blockers.push(format!("{}:execution:unverified", target.target));
+                } else {
+                    let mut claimed: Vec<(String, String)> = target
+                        .assertions
+                        .iter()
+                        .map(|(scenario, status)| (scenario.clone(), (*status).to_owned()))
+                        .collect();
+                    claimed.sort();
+                    let mut executed = receipt.assertions.clone();
+                    executed.sort();
+                    if claimed != executed {
+                        target_blockers.push(format!("{}:execution:assertions", target.target));
+                    }
+                    let mut claimed_capabilities: Vec<(String, String, Option<String>, bool)> =
+                        target
+                            .capabilities
+                            .iter()
+                            .map(|row| {
+                                (
+                                    row.capability.clone(),
+                                    row.support.to_owned(),
+                                    row.approval.map(str::to_owned),
+                                    row.blocking,
+                                )
+                            })
+                            .collect();
+                    claimed_capabilities.sort();
+                    let mut receipt_capabilities = receipt.capabilities.clone();
+                    receipt_capabilities.sort();
+                    if claimed_capabilities != receipt_capabilities {
+                        target_blockers.push(format!("{}:execution:capabilities", target.target));
+                    }
+                    let receipt_corpus: std::collections::BTreeSet<String> = receipt
+                        .assertions
+                        .iter()
+                        .map(|(scenario, _)| scenario.clone())
+                        .collect();
+                    if receipt_corpus != required_scenarios {
+                        target_blockers.push(format!("{}:execution:corpus", target.target));
+                    }
+                }
+            }
+            None => {
+                if target.execution == "executed" {
+                    target_blockers.push(format!("{}:execution:unverified", target.target));
                 }
             }
         }
+        // Assertion coverage: every required scenario of the pinned
+        // compilation must carry a per-target assertion, and a target
+        // that claims execution must carry it as passed. An assertion
+        // naming a scenario outside the inventory is invented
+        // evidence. Deleting a row cannot delete the obligation.
         let mut passed = 0usize;
         for (scenario, status) in &target.assertions {
+            if !required_scenarios.contains(scenario.as_str()) {
+                target_blockers.push(format!("{}:{scenario}:assertion-unknown", target.target));
+                continue;
+            }
             if *status == "pass" {
                 passed += 1;
                 if target.execution != "executed" {
@@ -1033,14 +1363,30 @@ pub fn admit(
                 target_blockers.push(format!("{}:{scenario}:{status}", target.target));
             }
         }
-        let verdict = if target_blockers.is_empty() {
+        if target.execution == "executed" {
+            let asserted: std::collections::BTreeSet<&str> = target
+                .assertions
+                .iter()
+                .map(|(scenario, _)| scenario.as_str())
+                .collect();
+            for scenario in &required_scenarios {
+                if !asserted.contains(scenario.as_str()) {
+                    target_blockers.push(format!("{}:{scenario}:assertion-missing", target.target));
+                }
+            }
+        }
+        // The propagated report-level obligations of this target
+        // decide its receipt verdict together with its own rows.
+        let mut row_blockers = target_blockers;
+        row_blockers.extend(attributed.get(&target.target).cloned().unwrap_or_default());
+        let verdict = if row_blockers.is_empty() {
             "pass"
         } else if profile == AdmissionProfile::Strict {
             "unsupported"
         } else {
             "degraded"
         };
-        blockers.extend(target_blockers.iter().cloned());
+        blockers.extend(row_blockers.iter().cloned());
         receipt_targets.push(TargetVerdict {
             target: target.target.clone(),
             execution: target.execution.to_owned(),
@@ -1057,53 +1403,13 @@ pub fn admit(
     }
     receipt_targets.sort_by(|left, right| left.target.cmp(&right.target));
 
-    // Scenario coverage: every declared scenario of the pinned
-    // compilation is covered exactly once, and its aggregate status is
-    // honest: `fail`, `unsupported`, and a `not_executed` row beneath a
-    // passing execution all refuse; the compilation inventory decides,
-    // never the report.
-    for scenario in &required_scenarios {
-        match scenario_status.get(scenario.as_str()) {
-            None => blockers.push(format!("scenarios:{scenario}:missing")),
-            Some(&"fail") => blockers.push(format!("scenarios:{scenario}:fail")),
-            Some(&"unsupported") => blockers.push(format!("scenarios:{scenario}:unsupported")),
-            Some(&"not_executed") => {
-                let executed = report.targets.iter().any(|target| {
-                    target.execution == "executed"
-                        && target
-                            .assertions
-                            .iter()
-                            .any(|(name, status)| name == scenario.as_str() && *status == "pass")
-                });
-                if executed {
-                    blockers.push(format!("scenarios:{}:conflict", scenario.as_str()));
-                } else if profile == AdmissionProfile::Strict {
-                    blockers.push(format!("scenarios:{scenario}:not_executed"));
-                }
-            }
-            Some(_) => {}
-        }
-    }
-    for scenario in &report.scenarios {
-        if scenario.status != "fail" {
-            continue;
-        }
-        let contradicted = report.targets.iter().any(|target| {
-            target
-                .assertions
-                .iter()
-                .any(|(name, status)| name == &scenario.scenario && *status == "pass")
-        });
-        if contradicted {
-            blockers.push(format!("scenarios:{}:conflict", scenario.scenario));
-        }
-    }
-
     // Completeness gaps are retained under every profile: an
     // incomplete closure degrades permissive admission instead of
     // passing it.
     if !report.closure_complete {
-        blockers.push("consumers:closure:incomplete".to_owned());
+        let blocker = "consumers:closure:incomplete".to_owned();
+        all_targets(&mut attributed, blocker.clone());
+        blockers.push(blocker);
     }
 
     // The report's own verdict claims cannot contradict the derived
@@ -1113,10 +1419,14 @@ pub fn admit(
     let strict_claim_pass = report.strict_claim == "pass";
     let permissive_claim_pass = report.permissive_claim == "pass";
     if strict_claim_pass != derived_success {
-        blockers.push("verdict:strict-claim".to_owned());
+        let blocker = "verdict:strict-claim".to_owned();
+        all_targets(&mut attributed, blocker.clone());
+        blockers.push(blocker);
     }
     if permissive_claim_pass != derived_success {
-        blockers.push("verdict:permissive-claim".to_owned());
+        let blocker = "verdict:permissive-claim".to_owned();
+        all_targets(&mut attributed, blocker.clone());
+        blockers.push(blocker);
     }
 
     let has_blockers = !blockers.is_empty();

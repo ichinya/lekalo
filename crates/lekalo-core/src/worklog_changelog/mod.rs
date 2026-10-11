@@ -42,7 +42,8 @@ pub mod version;
 pub mod wire;
 
 pub use evidence::{
-    admit, io_failure, AdmissionProfile, AdmissionReceipt, BackendProvenance, TargetVerdict,
+    admit, io_failure, AdmissionProfile, AdmissionReceipt, BackendProvenance, ExpectedConsumer,
+    NativeExecutionReceipt, TargetVerdict,
 };
 pub use types::Composition;
 pub use wire::parse;

@@ -7,33 +7,83 @@
 use crate::diagnostics::DiagnosticSet;
 use crate::lockfile::types::Sha256Digest;
 
-/// A validated bounded identifier of the composition surface:
-/// lowercase segments separated by dots or slashes.
+/// The exact published `semanticId` grammar both closed schemas
+/// pin:
+/// `^[a-z][a-z0-9_-]*$` (one bare segment) or
+/// `^[a-z][a-z0-9_-]*(\.[a-z][a-z0-9_-]*)+(/[a-z][a-z0-9_-]+)*$`
+/// (a dotted head of at least two segments with optional slash tails
+/// of at least two characters each), total length 1..=256. The Rust
+/// decoders and the published 0.8.0 schemas accept exactly the same
+/// identifier strings: this function is the single shared port.
+pub(crate) fn semantic_id_ok(raw: &str) -> bool {
+    let segment_ok = |text: &str| -> bool {
+        let bytes = text.as_bytes();
+        !bytes.is_empty()
+            && bytes[0].is_ascii_lowercase()
+            && bytes[1..].iter().all(|byte| {
+                byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'_' || *byte == b'-'
+            })
+    };
+    if raw.is_empty() || raw.len() > 256 {
+        return false;
+    }
+    let parts: Vec<&str> = raw.split('/').collect();
+    let head_segments: Vec<&str> = parts[0].split('.').collect();
+    if !head_segments.iter().all(|segment| segment_ok(segment)) {
+        return false;
+    }
+    if parts.len() == 1 {
+        // Without a slash tail both alternatives apply: a bare
+        // segment (alternative 1) or a dotted head (alternative 2).
+        return true;
+    }
+    // A slash tail requires the dotted head and tail segments of at
+    // least two characters (`[a-z][a-z0-9_-]+`).
+    head_segments.len() >= 2
+        && parts[1..]
+            .iter()
+            .all(|part| segment_ok(part) && part.len() >= 2)
+}
+
+/// The exact published field-name grammar both closed schemas pin:
+/// `^[a-z][a-z0-9_]{0,63}$`.
+pub(crate) fn field_name_ok(raw: &str) -> bool {
+    let bytes = raw.as_bytes();
+    !bytes.is_empty()
+        && bytes.len() <= 64
+        && bytes[0].is_ascii_lowercase()
+        && bytes[1..]
+            .iter()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'_')
+}
+
+/// The exact published pin grammar both closed schemas pin:
+/// `^[A-Za-z0-9_.:/@-]+$`, 1..=256.
+pub(crate) fn pin_ok(raw: &str) -> bool {
+    !raw.is_empty()
+        && raw.len() <= 256
+        && raw.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b':' | b'/' | b'@' | b'-')
+        })
+}
+
+/// The exact published control-character exclusion both closed
+/// schemas pin (`[^\u0000-\u001f\u007f]`): the C0 range and DEL
+/// only, never the C1 range the schemas deliberately allow.
+pub(crate) fn schema_control(raw: &str) -> bool {
+    raw.chars()
+        .any(|character| character <= '\u{1f}' || character == '\u{7f}')
+}
+
+/// A validated bounded identifier of the composition surface: the
+/// exact published `semanticId` grammar.
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub(crate) struct CompositionId(String);
 
 impl CompositionId {
     /// Validate and keep the exact text.
     pub(crate) fn parse(text: &str) -> Option<Self> {
-        if text.is_empty() || text.len() > 192 {
-            return None;
-        }
-        for segment in text.split(['.', '/']) {
-            let bytes = segment.as_bytes();
-            if bytes.is_empty()
-                || bytes.len() > 63
-                || !bytes[0].is_ascii_lowercase()
-                || !bytes[1..].iter().all(|byte| {
-                    byte.is_ascii_lowercase()
-                        || byte.is_ascii_digit()
-                        || *byte == b'_'
-                        || *byte == b'-'
-                })
-            {
-                return None;
-            }
-        }
-        Some(Self(text.to_owned()))
+        semantic_id_ok(text).then(|| Self(text.to_owned()))
     }
 
     /// The exact validated text.
@@ -431,13 +481,7 @@ impl Composition {
         replay_scopes: Vec<ReplayScope>,
         capability_requirements: Vec<CapabilityRequirement>,
     ) -> Result<Self, DiagnosticSet> {
-        if project_id.is_empty() || project_id.len() > 64 {
-            return Err(super::diagnostic::input_invalid("project-id"));
-        }
-        if project_id
-            .bytes()
-            .any(|byte| !(byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_'))
-        {
+        if !semantic_id_ok(project_id) || project_id.len() > 64 {
             return Err(super::diagnostic::input_invalid("project-id"));
         }
         if operations.len() < super::version::OPERATION_ROLES.len()

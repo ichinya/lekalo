@@ -6477,6 +6477,90 @@ impl PilotProfileArg {
     }
 }
 
+/// Whether one path component is a link or reparse point: the core's
+/// shared physical-custody predicate (symlinks plus every Windows
+/// reparse point — junctions and mount points included).
+fn is_link(metadata: &std::fs::Metadata) -> bool {
+    lekalo_core::project_fs::metadata_is_physical_link(metadata)
+}
+
+/// One custody-confined read: the file must resolve under `root`
+/// without traversing any symlink, junction, or reparse point below
+/// the root, and must not carry a second hard link. The composition's
+/// directory tree — the consumed attachments, the composition
+/// document, the native lane — is physical custody: an escaping link
+/// substitutes bytes the composition never pinned.
+fn confined_read(root: &std::path::Path, file: &std::path::Path) -> Result<Vec<u8>, io::Error> {
+    let denial = |detail: &'static str| io::Error::new(io::ErrorKind::PermissionDenied, detail);
+    let absolute = |path: &std::path::Path| {
+        if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            std::env::current_dir()
+                .map(|cwd| cwd.join(path))
+                .unwrap_or_else(|_| path.to_path_buf())
+        }
+    };
+    let root = absolute(root);
+    let file = absolute(file);
+    let mut walk = root.clone();
+    for component in file
+        .strip_prefix(&root)
+        .map_err(|_| denial("custody-path"))?
+        .components()
+    {
+        walk.push(component);
+        let metadata = std::fs::symlink_metadata(&walk).map_err(|_| denial("custody-path"))?;
+        if is_link(&metadata) {
+            return Err(denial("custody-link"));
+        }
+    }
+    let metadata = std::fs::symlink_metadata(&file).map_err(|_| denial("custody-path"))?;
+    if is_link(&metadata) {
+        return Err(denial("custody-link"));
+    }
+    if !metadata.is_file() {
+        return Err(denial("custody-path"));
+    }
+    #[cfg(windows)]
+    let links = lekalo_core::project_fs::windows_link_count(&file);
+    #[cfg(unix)]
+    let links = lekalo_core::project_fs::unix_link_count(&metadata);
+    if links != Some(1) {
+        return Err(denial("custody-hardlink"));
+    }
+    std::fs::read(&file)
+}
+
+/// The inner Model pin of one consumed attachment document: the
+/// document's own `modelRef` must name the exact canonical Model
+/// digest of the resolved compilation and the closed Model version.
+/// The outer composition pin proves only "these bytes"; this join
+/// proves "these bytes describe this Model", so an attachment
+/// authored against a different Model revision cannot ride a
+/// refreshed outer digest.
+fn check_inner_model_ref(
+    json: &serde_json::Value,
+    model_digest: &str,
+    custody: &dyn Fn(&'static str) -> DomainResult,
+) -> Result<(), DomainResult> {
+    let model_ref = json
+        .get("modelRef")
+        .and_then(serde_json::Value::as_object)
+        .ok_or_else(|| custody("consumed-model-ref"))?;
+    if model_ref
+        .get("modelVersion")
+        .and_then(serde_json::Value::as_str)
+        != Some(lekalo_core::worklog_changelog::version::MODEL_VERSION)
+    {
+        return Err(custody("consumed-model-ref"));
+    }
+    match model_ref.get("digest").and_then(serde_json::Value::as_str) {
+        Some(digest) if digest == model_digest => Ok(()),
+        _ => Err(custody("consumed-model-ref")),
+    }
+}
+
 /// The consumed-attachment join (issue #51 r2): every consumed family
 /// pin is checked against the exact canonical bytes on disk, and every
 /// consumed document is validated through its own production core
@@ -6488,6 +6572,8 @@ fn validate_consumed_attachments(
     raw_selection: &LoadSelection,
     project_root: &std::path::Path,
     composition_dir: &std::path::Path,
+    model_digest: &str,
+    fixture_root: &std::path::Path,
 ) -> Result<(), DomainResult> {
     let custody = |detail: &'static str| {
         DomainResult::invalid(lekalo_core::worklog_changelog::diagnostic::input_invalid(
@@ -6512,9 +6598,19 @@ fn validate_consumed_attachments(
             "error-contract" => composition_dir.join("error-registry.json"),
             family => composition_dir.join(format!("{family}.json")),
         };
-        let bytes = match std::fs::read(&path) {
+        // Custody confinement: consumed documents resolve inside the
+        // fixture tree without traversing links, and never carry a
+        // second hard link. The authorization attachment is confined
+        // to the project root; the JSON families to the fixture root
+        // (the composition's own tree).
+        let confinement_root = if consumed.family() == "authorization" {
+            project_root
+        } else {
+            fixture_root
+        };
+        let bytes = match confined_read(confinement_root, &path) {
             Ok(bytes) => bytes,
-            Err(_) => return Err(custody("consumed-file-missing")),
+            Err(_) => return Err(custody("consumed-custody-confined")),
         };
         // Custody: the pin is the exact canonical digest of the bytes.
         let digest = format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes));
@@ -6529,6 +6625,20 @@ fn validate_consumed_attachments(
                 // The already-resolved project root is read directly:
                 // re-running the selector grammar on an absolute path
                 // would refuse the very project the loader accepted.
+                // The document's declared identity must equal the
+                // consumed pin: a document claiming another
+                // contract's identity never rides this pin.
+                let declared_identity = bytes
+                    .split(|byte| *byte == b'\n')
+                    .find_map(|line| {
+                        let text = String::from_utf8_lossy(line);
+                        text.strip_prefix("identity:")
+                            .map(|value| value.trim().trim_matches('"').to_owned())
+                    })
+                    .unwrap_or_default();
+                if declared_identity != consumed.identity() {
+                    return Err(custody("consumed-identity"));
+                }
                 let document = match lekalo_core::authorization::parse::read_document(project_root)
                 {
                     Ok(document) => document,
@@ -6551,6 +6661,7 @@ fn validate_consumed_attachments(
             "transaction-concurrency" => {
                 let json = parse_consumed_unique(&bytes, &custody)?;
                 custody_identity(&json, consumed.identity())?;
+                check_inner_model_ref(&json, model_digest, &custody)?;
                 let attachment =
                     lekalo_core::transaction_concurrency::TransactionConcurrencyAttachment::from_value(
                         &json,
@@ -6565,6 +6676,7 @@ fn validate_consumed_attachments(
             "extended-effects" => {
                 let json = parse_consumed_unique(&bytes, &custody)?;
                 custody_identity(&json, consumed.identity())?;
+                check_inner_model_ref(&json, model_digest, &custody)?;
                 let attachment =
                     lekalo_core::extended_effects::ExtendedEffectsAttachment::from_value(&json)
                         .map_err(DomainResult::invalid)?;
@@ -6577,14 +6689,18 @@ fn validate_consumed_attachments(
             "error-contract" => {
                 let registry = lekalo_core::error_contract::ErrorRegistry::from_bytes(&bytes)
                     .map_err(DomainResult::invalid)?;
-                let identity = format!("dev.lekalo.error-registry@{}", consumed.version());
-                // The wire layer already validated the closed shape;
-                // custody is the exact identity pin.
-                if consumed.identity() != identity
-                    && !consumed
-                        .identity()
-                        .starts_with("dev.lekalo.error-registry@")
-                {
+                // The exact identity pin: the family's contract
+                // identity at the closed version, byte for byte. Any
+                // other spelling — a prefix match, an invented family,
+                // a drifted version — is a forged pin.
+                let identity = format!(
+                    "dev.lekalo.{}@{}",
+                    lekalo_core::worklog_changelog::version::consumed_identity_token(
+                        "error-contract",
+                    ),
+                    lekalo_core::worklog_changelog::version::CONTRACT_VERSION
+                );
+                if consumed.identity() != identity {
                     return Err(custody("consumed-identity"));
                 }
                 let _ = registry;
@@ -6592,6 +6708,7 @@ fn validate_consumed_attachments(
             "invariant-transition" => {
                 let json = parse_consumed_unique(&bytes, &custody)?;
                 custody_identity(&json, consumed.identity())?;
+                check_inner_model_ref(&json, model_digest, &custody)?;
                 let attachment =
                     lekalo_core::invariant_transition::InvariantTransitionAttachment::from_value(
                         &json,
@@ -6604,6 +6721,7 @@ fn validate_consumed_attachments(
             "requirements" => {
                 let json = parse_consumed_unique(&bytes, &custody)?;
                 custody_identity(&json, consumed.identity())?;
+                check_inner_model_ref(&json, model_digest, &custody)?;
                 let attachment =
                     lekalo_core::requirements::RequirementsAttachment::from_value(&json)
                         .map_err(DomainResult::invalid)?;
@@ -6655,7 +6773,7 @@ fn check_model_custody(
     compilation: &lekalo_core::ir::Compilation,
     selection: &LoadSelection,
     no_cache: bool,
-) -> Result<(), DomainResult> {
+) -> Result<String, DomainResult> {
     // The model envelope the engine itself renders is the canonical
     // digest input: the exact terminal JSON bytes of the load result,
     // the same bytes the engine-pin verification hashes, so the pilot
@@ -6680,7 +6798,7 @@ fn check_model_custody(
         ));
     }
     let _ = compilation;
-    Ok(())
+    Ok(digest)
 }
 
 /// The engine backend provenance receipt: for each target the engine
@@ -6709,7 +6827,10 @@ fn engine_backend_provenance(
         if let lekalo_core::ir::Definition::TargetBinding(binding) = definition {
             if let Some((lane, identity)) = native_lane_for(binding.target.as_str()) {
                 let lane_path = fixture_root.join(lane).join("run.php");
-                let Some(bytes) = std::fs::read(&lane_path).ok() else {
+                // The lane bytes are custody-confined to the fixture
+                // tree like every other consumed input: an escaping
+                // link never provides provenance.
+                let Some(bytes) = confined_read(fixture_root, &lane_path).ok() else {
                     continue;
                 };
                 let digest = format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes));
@@ -6733,6 +6854,198 @@ fn native_lane_for(target: &str) -> Option<(&'static str, &'static str)> {
         "php-laravel" => Some(("php", "taskhub.runtime/fake-transport")),
         _ => None,
     }
+}
+
+/// The trusted execution receipts (issue #51 r5): the engine shell
+/// itself executes every declared native lane for this admission and
+/// hands the exact executed rows to the pure core. A static hash of
+/// the backend file is provenance, not execution: the receipt is what
+/// the lane actually printed and exited with. A lane that cannot run
+/// (no interpreter, nonzero exit, unparseable output) produces no
+/// receipt, and a report claiming execution without one is refused.
+fn native_execution_receipts(
+    selection: &LoadSelection,
+    composition_dir: &std::path::Path,
+) -> BTreeMap<String, lekalo_core::worklog_changelog::NativeExecutionReceipt> {
+    let mut receipts = BTreeMap::new();
+    let Ok((_, compilation)) = lekalo_core::cache::load_compiled(selection, false) else {
+        return receipts;
+    };
+    let fixture_root = composition_dir.parent().unwrap_or(composition_dir);
+    for definition in &compilation.project.definitions {
+        let lekalo_core::ir::Definition::TargetBinding(binding) = definition else {
+            continue;
+        };
+        let Some((lane, identity)) = native_lane_for(binding.target.as_str()) else {
+            continue;
+        };
+        let lane_path = fixture_root.join(lane).join("run.php");
+        let Ok(bytes) = confined_read(fixture_root, &lane_path) else {
+            continue;
+        };
+        // The interpreter resolves exactly the way the harness
+        // resolves it: LEKALO_PHP first, then the PATH default.
+        let interpreters: Vec<String> = std::env::var("LEKALO_PHP")
+            .ok()
+            .filter(|value| !value.is_empty())
+            .map(|value| {
+                value
+                    .split(';')
+                    .filter(|item| !item.is_empty())
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_else(|| vec!["php".to_owned()]);
+        let mut output = None;
+        for interpreter in &interpreters {
+            let attempted = std::process::Command::new(interpreter)
+                .arg(&lane_path)
+                .current_dir(fixture_root)
+                .output();
+            let Ok(attempted) = attempted else {
+                continue;
+            };
+            if attempted.status.success() {
+                output = Some(attempted.stdout);
+                break;
+            }
+        }
+        let Some(stdout) = output else {
+            continue;
+        };
+        let text = String::from_utf8_lossy(&stdout);
+        let lane_json = text
+            .lines()
+            .rev()
+            .find_map(|line| serde_json::from_str::<serde_json::Value>(line.trim()).ok());
+        let Some(lane_json) = lane_json else {
+            continue;
+        };
+        // The closed runtime surface: a lane output that does not
+        // declare this contract is not a receipt.
+        if lane_json.get("target").and_then(serde_json::Value::as_str) != Some(lane)
+            || lane_json
+                .get("execution")
+                .and_then(serde_json::Value::as_str)
+                != Some("executed")
+            || lane_json
+                .get("identity")
+                .and_then(serde_json::Value::as_str)
+                != Some("dev.lekalo.worklog-changelog-runtime@0.8.0")
+        {
+            continue;
+        }
+        let mut assertions = Vec::new();
+        let mut capabilities = Vec::new();
+        let mut ok = true;
+        if let Some(rows) = lane_json
+            .get("assertions")
+            .and_then(serde_json::Value::as_array)
+        {
+            for row in rows {
+                let Some(scenario) = row.get("scenario").and_then(serde_json::Value::as_str) else {
+                    ok = false;
+                    break;
+                };
+                let Some(status) = row.get("status").and_then(serde_json::Value::as_str) else {
+                    ok = false;
+                    break;
+                };
+                assertions.push((scenario.to_owned(), status.to_owned()));
+            }
+        } else {
+            ok = false;
+        }
+        if let Some(rows) = lane_json
+            .get("capabilities")
+            .and_then(serde_json::Value::as_array)
+        {
+            for row in rows {
+                let Some(capability) = row.get("capability").and_then(serde_json::Value::as_str)
+                else {
+                    ok = false;
+                    break;
+                };
+                let Some(support) = row.get("support").and_then(serde_json::Value::as_str) else {
+                    ok = false;
+                    break;
+                };
+                let approval = row
+                    .get("approval")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned);
+                let Some(blocking) = row.get("blocking").and_then(serde_json::Value::as_bool)
+                else {
+                    ok = false;
+                    break;
+                };
+                capabilities.push((
+                    capability.to_owned(),
+                    support.to_owned(),
+                    approval,
+                    blocking,
+                ));
+            }
+        } else {
+            ok = false;
+        }
+        if !ok {
+            continue;
+        }
+        let digest = format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes));
+        receipts.insert(
+            lane.to_owned(),
+            lekalo_core::worklog_changelog::NativeExecutionReceipt {
+                target: lane.to_owned(),
+                identity: identity.to_owned(),
+                digest,
+                assertions,
+                capabilities,
+            },
+        );
+    }
+    receipts
+}
+
+/// The expected consumer witnesses of the committed consumer oracle:
+/// the shell reads the oracle that rides beside the composition's
+/// fixture root and hands the closed set to the pure core. The oracle
+/// is the report's expected witness inventory — the impact gate
+/// independently proves it against the compiled graph — and a missing
+/// oracle is a fail-closed admission condition, never a vacuous join.
+fn expected_consumer_witnesses(
+    composition_dir: &std::path::Path,
+) -> Option<Vec<lekalo_core::worklog_changelog::ExpectedConsumer>> {
+    let fixture_root = composition_dir.parent().unwrap_or(composition_dir);
+    let oracle_path = fixture_root.join("evidence").join("consumer-oracle.json");
+    let bytes = confined_read(fixture_root, &oracle_path).ok()?;
+    let oracle: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    if oracle.get("identity").and_then(serde_json::Value::as_str)
+        != Some("dev.lekalo.worklog-changelog-consumer-oracle@0.8.0")
+    {
+        return None;
+    }
+    let mut expected = Vec::new();
+    for row in oracle
+        .get("expectedConsumers")
+        .and_then(serde_json::Value::as_array)?
+    {
+        let consumer = row.get("consumer")?.as_str()?.to_owned();
+        let relation = row.get("relation")?.as_str()?.to_owned();
+        let witness = row.get("witness")?.as_str()?.to_owned();
+        let kind = row
+            .get("kind")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("");
+        let graph_subject = matches!(kind, "query" | "endpoint" | "scenario");
+        expected.push(lekalo_core::worklog_changelog::ExpectedConsumer {
+            consumer,
+            relation,
+            witness,
+            graph_subject,
+        });
+    }
+    Some(expected)
 }
 
 /// One consumed document's identity member must equal its pin.
@@ -6796,11 +7109,11 @@ fn run_pilot(command: PilotCommands, no_cache: bool) -> DomainResult {
             // the exact canonical Model digest of the resolved
             // compilation. A claimed provenance the compilation does
             // not carry refuses exactly like a stale IR pin.
-            if let Err(result) =
-                check_model_custody(&composition, &compilation, &selection, no_cache)
-            {
-                return result;
-            }
+            let model_digest =
+                match check_model_custody(&composition, &compilation, &selection, no_cache) {
+                    Ok(digest) => digest,
+                    Err(result) => return result,
+                };
             // Consumed-attachment custody and semantics: the shell
             // loads and hashes every consumed input and hands typed
             // content to the pure core validators, so the pilot can
@@ -6811,12 +7124,28 @@ fn run_pilot(command: PilotCommands, no_cache: bool) -> DomainResult {
                 .parent()
                 .map(std::path::Path::to_path_buf)
                 .unwrap_or_default();
+            let fixture_root = composition_dir
+                .parent()
+                .map(std::path::Path::to_path_buf)
+                .unwrap_or_else(|| composition_dir.clone());
+            // The composition document itself is custody: an
+            // attachments directory replaced by a link never provides
+            // the bytes the evidence pins.
+            if confined_read(&fixture_root, std::path::Path::new(&path)).is_err() {
+                return DomainResult::invalid(
+                    lekalo_core::worklog_changelog::diagnostic::input_invalid(
+                        "composition-custody-confined",
+                    ),
+                );
+            }
             if let Err(result) = validate_consumed_attachments(
                 &composition,
                 &compilation,
                 &selection,
                 &resolved_root,
                 &composition_dir,
+                &model_digest,
+                &fixture_root,
             ) {
                 return result;
             }
@@ -6873,21 +7202,45 @@ fn run_pilot(command: PilotCommands, no_cache: bool) -> DomainResult {
                 Ok(composition) => composition,
                 Err(result) => return result,
             };
-            if let Err(result) =
-                check_model_custody(&composition, &compilation, &selection, no_cache)
-            {
-                return result;
-            }
+            let model_digest =
+                match check_model_custody(&composition, &compilation, &selection, no_cache) {
+                    Ok(digest) => digest,
+                    Err(result) => return result,
+                };
             let composition_dir = std::path::Path::new(composition_path.as_deref().unwrap_or(""))
                 .parent()
                 .map(std::path::Path::to_path_buf)
                 .unwrap_or_default();
+            let fixture_root = composition_dir
+                .parent()
+                .map(std::path::Path::to_path_buf)
+                .unwrap_or_else(|| composition_dir.clone());
+            // The composition document itself is custody: an
+            // attachments directory replaced by a link never provides
+            // the bytes the evidence pins.
+            if confined_read(
+                &fixture_root,
+                composition_path
+                    .as_deref()
+                    .map(std::path::Path::new)
+                    .unwrap_or(std::path::Path::new("")),
+            )
+            .is_err()
+            {
+                return DomainResult::invalid(
+                    lekalo_core::worklog_changelog::diagnostic::input_invalid(
+                        "composition-custody-confined",
+                    ),
+                );
+            }
             if let Err(result) = validate_consumed_attachments(
                 &composition,
                 &compilation,
                 &selection,
                 &resolved_root,
                 &composition_dir,
+                &model_digest,
+                &fixture_root,
             ) {
                 return result;
             }
@@ -6895,11 +7248,19 @@ fn run_pilot(command: PilotCommands, no_cache: bool) -> DomainResult {
             // native lane bytes is the provenance receipt every bound
             // backend identity/digest must equal.
             let declared_backends = engine_backend_provenance(&selection, &composition_dir);
+            // The trusted execution receipts and the expected
+            // consumer witnesses of the committed oracle: the engine
+            // executes the lanes itself, so admission can never
+            // certify execution claims the backend never ran.
+            let execution_receipts = native_execution_receipts(&selection, &composition_dir);
+            let expected_consumers = expected_consumer_witnesses(&composition_dir);
             match lekalo_core::worklog_changelog::admit(
                 &bytes,
                 &composition_bytes,
                 &compilation.project,
                 &declared_backends,
+                expected_consumers.as_deref(),
+                &execution_receipts,
                 profile,
             ) {
                 Ok(receipt) => {

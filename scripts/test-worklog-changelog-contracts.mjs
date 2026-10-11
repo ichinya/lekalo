@@ -15,8 +15,16 @@
 
 import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import {
+  cpSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
@@ -390,6 +398,186 @@ if (engine) {
     const actual = sha(readText(relative));
     if (pin.ref.digest !== actual) {
       fail("consumed-pin-drift", `${family}: ${pin.ref.digest} != ${actual}`);
+    }
+  }
+}
+
+// 9. Differential wire probes (r5): the published closed schemas and
+//    the production decoders must accept and refuse the same
+//    documents. Each vector below is asserted in both directions —
+//    the Ajv 8.17.1 verdict over the published schema and the
+//    production CLI verdict — so the two grammars cannot silently
+//    drift apart again. (Semantic joins beyond the wire layer —
+//    custody digests, effect-graph agreement, execution receipts —
+//    are the CLI's own refusals and are not schema parity.)
+{
+  const runCli = (args) => {
+    try {
+      execFileSync(binary, args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+      return 0;
+    } catch (error) {
+      return typeof error.status === "number" ? error.status : -1;
+    }
+  };
+  const temp = mkdtempSync(join(tmpdir(), "lekalo-parity-"));
+  cpSync(
+    resolve(root, "tests/fixtures/pilot/worklog-changelog/attachments"),
+    join(temp, "attachments"),
+    { recursive: true },
+  );
+  const mutatedComposition = (mutate) => {
+    const document = structuredClone(pilotDoc);
+    mutate(document);
+    const path = join(temp, "attachments", "pilot.json");
+    writeFileSync(path, JSON.stringify(document));
+    return path;
+  };
+  const vectors = [
+    {
+      probe: "approval identifier: slash tail without a dotted head",
+      mutate: (document) => {
+        document.approvals[0].approvalId = "plain/nodot";
+      },
+    },
+    {
+      probe: "correlation identifier: one-character slash tail",
+      mutate: (document) => {
+        document.correlations[0].correlationId = "a/b";
+      },
+    },
+    {
+      probe: "uniqueItems on mustNotEnable",
+      mutate: (document) => {
+        document.independentEffects[0].mustNotEnable = [
+          document.independentEffects[0].mustNotEnable[0],
+          document.independentEffects[0].mustNotEnable[0],
+        ];
+      },
+    },
+    {
+      probe: "uniqueItems on memberOperations",
+      mutate: (document) => {
+        document.correlations[0].memberOperations = [
+          "worklog.complete_task",
+          "worklog.write_worklog",
+          "worklog.complete_task",
+        ];
+      },
+    },
+    {
+      probe: "uniqueItems on capability operationRefs",
+      mutate: (document) => {
+        const row = document.capabilityRequirements.find((requirement) =>
+          requirement.operationRefs.includes("worklog.request_provider_comment"),
+        );
+        row.operationRefs = [row.operationRefs[0], row.operationRefs[0]];
+      },
+    },
+    {
+      probe: "uniqueItems on the excluded field set",
+      mutate: (document) => {
+        document.publicAllowlist.excluded = [
+          document.publicAllowlist.excluded[0],
+          document.publicAllowlist.excluded[0],
+        ];
+      },
+    },
+    {
+      probe: "uniqueItems on the url scheme list",
+      mutate: (document) => {
+        document.publicAllowlist.rendering.urlPolicy.schemes = ["https", "https"];
+      },
+    },
+    {
+      probe: "consumed identity version pin",
+      mutate: (document) => {
+        document.consumed[0].ref.identity = "dev.lekalo.invented@9.9.9";
+      },
+    },
+    {
+      probe: "consumed identity family token",
+      // The published pattern accepts any family token; the decoder is
+      // deliberately stricter and binds the identity to the family it
+      // is consumed under — a schema-valid document the CLI refuses
+      // on purpose (documented divergence in the stricter direction).
+      cliStricter: true,
+      mutate: (document) => {
+        document.consumed[0].ref.identity = "dev.lekalo.extended-effects@0.2.16";
+      },
+    },
+  ];
+  for (const vector of vectors) {
+    const document = structuredClone(pilotDoc);
+    vector.mutate(document);
+    const schemaValid = validatePilot(document);
+    const path = mutatedComposition(vector.mutate);
+    const cliExit = runCli([
+      "--json",
+      "--no-cache",
+      "pilot",
+      "validate",
+      path,
+      "--project",
+      project,
+    ]);
+    if (!vector.cliStricter && (schemaValid || cliExit === 0)) {
+      fail("differential-wire-drift", {
+        probe: vector.probe,
+        schemaValid,
+        cliExit,
+      });
+    }
+    if (vector.cliStricter && cliExit === 0) {
+      fail("differential-cli-weakened", {
+        probe: vector.probe,
+        schemaValid,
+        cliExit,
+      });
+    }
+  }
+  // The evidence-side bound: 257 per-target assertion rows are above
+  // the published maxItems 256 and wire-refused by the decoder.
+  {
+    const report = structuredClone(evidenceDoc);
+    const rows = report.targets[0].assertions;
+    const base = rows[0];
+    for (let index = 0; rows.length <= 256; index += 1) {
+      rows.push({ scenario: `worklog.scenario.pad.${index}`, status: base.status });
+    }
+    if (validateEvidence(report)) fail("differential-evidence-bound", "schema accepted 257 rows");
+    const path = join(temp, "evidence-overbound.json");
+    writeFileSync(path, JSON.stringify(report));
+    const cliExit = runCli([
+      "--json",
+      "--no-cache",
+      "pilot",
+      "admit",
+      path,
+      resolve(root, "tests/fixtures/pilot/worklog-changelog/attachments/pilot.json"),
+      "--profile",
+      "strict",
+      "--project",
+      project,
+    ]);
+    if (cliExit === 0) {
+      fail("differential-evidence-bound", `cli admitted the over-bound report (exit ${cliExit})`);
+    }
+  }
+  // The control direction: the committed documents are valid in both.
+  {
+    const compositionPath = join(temp, "attachments", "pilot.json");
+    writeFileSync(compositionPath, JSON.stringify(pilotDoc));
+    const cliExit = runCli([
+      "--json",
+      "--no-cache",
+      "pilot",
+      "validate",
+      compositionPath,
+      "--project",
+      project,
+    ]);
+    if (cliExit !== 0) {
+      fail("differential-control", `committed composition refused by the cli (exit ${cliExit})`);
     }
   }
 }

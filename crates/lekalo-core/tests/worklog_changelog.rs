@@ -6,7 +6,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use lekalo_core::loader::LoadSelection;
-use lekalo_core::worklog_changelog::{self, BackendProvenance, Composition};
+use lekalo_core::worklog_changelog::{
+    self, BackendProvenance, Composition, NativeExecutionReceipt,
+};
 
 const PILOT_JSON: &str = "tests/fixtures/pilot/worklog-changelog/attachments/pilot.json";
 const MODEL_PROJECT: &str = "tests/fixtures/pilot/worklog-changelog/model";
@@ -193,9 +195,8 @@ fn negative_vectors_refuse_with_the_registered_rule_and_detail() {
         // declared effect id with its forbidden target.
         let mut document = valid_document();
         document["independentEffects"][0]["mustNotEnable"] =
-            serde_json::json!(["worklog.write_worklog", "worklog.write_worklog"]);
-        // (dedup keeps it one target; instead couple via the write role
-        // declaring the completion effect)
+            serde_json::json!(["worklog.write_worklog"]);
+        // couple via the write role declaring the completion effect
         document["operations"][1]["effects"] = serde_json::json!([
             { "kind": "update", "effectId": "worklog.effect_task_state_write" }
         ]);
@@ -408,9 +409,94 @@ fn evidence_admission_target(
             &composition_bytes,
             &compilation.project,
             &admitted_backends(),
+            Some(&oracle_consumers()),
+            &engine_receipts(),
             lekalo_core::worklog_changelog::AdmissionProfile::Strict,
         )
     })
+}
+
+/// The expected consumer witnesses of the committed oracle, the same
+/// closed set the engine shell hands to admission.
+fn oracle_consumers() -> Vec<lekalo_core::worklog_changelog::ExpectedConsumer> {
+    let oracle: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(
+            workspace_root()
+                .join("tests/fixtures/pilot/worklog-changelog/evidence/consumer-oracle.json"),
+        )
+        .expect("oracle fixture present"),
+    )
+    .expect("oracle parses");
+    oracle["expectedConsumers"]
+        .as_array()
+        .expect("oracle rows")
+        .iter()
+        .map(|row| lekalo_core::worklog_changelog::ExpectedConsumer {
+            consumer: row["consumer"].as_str().expect("consumer").to_owned(),
+            relation: row["relation"].as_str().expect("relation").to_owned(),
+            witness: row["witness"].as_str().expect("witness").to_owned(),
+            graph_subject: matches!(
+                row["kind"].as_str().unwrap_or(""),
+                "query" | "endpoint" | "scenario"
+            ),
+        })
+        .collect()
+}
+
+/// The native execution receipts the engine produces for the
+/// committed fixture: the php lane's executed rows (mirrored here
+/// from the committed report the lane's canonical run produces) and
+/// no go lane — the go target honestly cannot claim execution.
+fn engine_receipts() -> std::collections::BTreeMap<String, NativeExecutionReceipt> {
+    let mut receipts = std::collections::BTreeMap::new();
+    let evidence: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(workspace_root().join(EVIDENCE_JSON)).expect("evidence fixture present"),
+    )
+    .expect("evidence parses");
+    let php = evidence["targets"]
+        .as_array()
+        .expect("targets")
+        .iter()
+        .find(|target| target["target"] == "php")
+        .expect("php row");
+    receipts.insert(
+        "php".to_owned(),
+        NativeExecutionReceipt {
+            target: "php".to_owned(),
+            identity: "taskhub.runtime/fake-transport".to_owned(),
+            digest: php["backend"]["digest"]
+                .as_str()
+                .expect("digest")
+                .to_owned(),
+            assertions: php["assertions"]
+                .as_array()
+                .expect("assertions")
+                .iter()
+                .map(|row| {
+                    (
+                        row["scenario"].as_str().expect("scenario").to_owned(),
+                        row["status"].as_str().expect("status").to_owned(),
+                    )
+                })
+                .collect(),
+            capabilities: php["capabilities"]
+                .as_array()
+                .expect("capabilities")
+                .iter()
+                .map(|row| {
+                    (
+                        row["capability"].as_str().expect("capability").to_owned(),
+                        row["support"].as_str().expect("support").to_owned(),
+                        row.get("approval")
+                            .and_then(|value| value.as_str())
+                            .map(str::to_owned),
+                        row["blocking"].as_bool().expect("blocking"),
+                    )
+                })
+                .collect(),
+        },
+    );
+    receipts
 }
 
 /// The engine provenance receipt the shell resolves for the fixture:
@@ -448,18 +534,31 @@ fn evidence_admission_is_honest_for_both_profiles() {
             &composition_bytes,
             &compilation.project,
             &admitted_backends(),
+            Some(&oracle_consumers()),
+            &engine_receipts(),
             lekalo_core::worklog_changelog::AdmissionProfile::Strict,
         )
         .expect("strict admission produces a receipt");
         assert_eq!(strict.verdict, "unsupported");
         assert!(!strict.blockers.is_empty());
         assert_eq!(strict.targets.len(), 2);
+        // The php target honestly executed and matched the engine
+        // receipt: its row stays a pass while the aggregate refuses on
+        // the honestly unsupported go row.
+        let php = strict
+            .targets
+            .iter()
+            .find(|target| target.target == "php")
+            .expect("php row");
+        assert_eq!(php.verdict, "pass");
         // Permissive: degraded, every row still visible.
         let permissive = lekalo_core::worklog_changelog::admit(
             &bytes,
             &composition_bytes,
             &compilation.project,
             &admitted_backends(),
+            Some(&oracle_consumers()),
+            &engine_receipts(),
             lekalo_core::worklog_changelog::AdmissionProfile::Permissive,
         )
         .expect("permissive admission produces a receipt");
@@ -578,4 +677,273 @@ fn forged_or_erased_evidence_cannot_pass_strict_admission() {
         let result = evidence_admission_target(mutation);
         assert!(result.is_err(), "mutation must refuse");
     }
+}
+
+// ---------------------------------------------------------------------------
+// r5: the wire/schema parity and admission-attribution probes. Every
+// vector mirrors an independent-review reproduction: what the
+// published closed schemas reject, the production decoder rejects
+// too, and report-level obligations refuse the targets they apply to.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn decoder_parity_refuses_what_the_published_schemas_reject() {
+    with_workspace_cwd(|| {
+        let parse_only = |document: &serde_json::Value| {
+            let bytes = serde_json::to_vec(document).expect("vector serializes");
+            worklog_changelog::parse(&bytes).map_err(|set| detail_of(&set))
+        };
+        // The identifier grammar: a slash tail never stands in for the
+        // dot the published pattern requires.
+        let mut document = valid_document();
+        document["approvals"][0]["approvalId"] = serde_json::json!("plain/nodot");
+        assert_eq!(parse_only(&document).unwrap_err(), "approval-id");
+        let mut document = valid_document();
+        document["correlations"][0]["correlationId"] = serde_json::json!("a/b");
+        assert_eq!(parse_only(&document).unwrap_err(), "correlation-id");
+        // The semantic id accepts its exact grammar.
+        let mut document = valid_document();
+        document["approvals"][0]["approvalId"] =
+            serde_json::json!("taskhub.approval.entry_publication");
+        assert!(parse_only(&document).is_ok());
+
+        // uniqueItems on mustNotEnable.
+        let mut document = valid_document();
+        document["independentEffects"][0]["mustNotEnable"] =
+            serde_json::json!(["worklog.write_worklog", "worklog.write_worklog"]);
+        assert_eq!(parse_only(&document).unwrap_err(), "independence-unique");
+        // uniqueItems on memberOperations.
+        let mut document = valid_document();
+        document["correlations"][0]["memberOperations"] = serde_json::json!([
+            "worklog.complete_task",
+            "worklog.write_worklog",
+            "worklog.complete_task"
+        ]);
+        assert_eq!(parse_only(&document).unwrap_err(), "correlations-unique");
+        // uniqueItems on operationRefs.
+        let mut document = valid_document();
+        document["capabilityRequirements"][0]["operationRefs"] = serde_json::json!([
+            "worklog.request_provider_comment",
+            "worklog.request_provider_comment"
+        ]);
+        assert_eq!(
+            parse_only(&document).unwrap_err(),
+            "capability-operation-unique"
+        );
+        // uniqueItems on the excluded set.
+        let mut document = valid_document();
+        let excluded = document["publicAllowlist"]["excluded"].clone();
+        document["publicAllowlist"]["excluded"] =
+            serde_json::json!([excluded[0].clone(), excluded[0].clone()]);
+        assert_eq!(
+            parse_only(&document).unwrap_err(),
+            "allowlist-excluded-unique"
+        );
+        // uniqueItems on the scheme list.
+        let mut document = valid_document();
+        document["publicAllowlist"]["rendering"]["urlPolicy"]["schemes"] =
+            serde_json::json!(["https", "https"]);
+        assert_eq!(parse_only(&document).unwrap_err(), "url-scheme-unique");
+
+        // The exact consumed identity/version pins.
+        let mut document = valid_document();
+        document["consumed"][0]["ref"]["identity"] = serde_json::json!("dev.lekalo.invented@9.9.9");
+        assert_eq!(parse_only(&document).unwrap_err(), "consumed-identity");
+        let mut document = valid_document();
+        document["consumed"][0]["ref"]["identity"] =
+            serde_json::json!("dev.lekalo.extended-effects@0.2.16");
+        // The family token must be the consumed family's own.
+        assert_eq!(parse_only(&document).unwrap_err(), "consumed-identity");
+        let mut document = valid_document();
+        document["consumed"][0]["ref"]["version"] = serde_json::json!("9.9.9");
+        assert_eq!(parse_only(&document).unwrap_err(), "consumed-version");
+    });
+}
+
+#[test]
+fn pruned_target_rows_are_an_invalid_document() {
+    // Finding r4-7: a php-only strict pass of a pruned document must
+    // not exist — every target of the closed vocabulary is reported.
+    let result = evidence_admission_target(|report| {
+        report["targets"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|target| target["target"] != "go");
+    });
+    assert!(result.is_err());
+    let lekalo_core::result::DomainResult::Invalid { diagnostics: set } = result.unwrap_err()
+    else {
+        panic!("the pruned report is an invalid document");
+    };
+    assert_eq!(detail_of(&set), "targets-inventory");
+}
+
+#[test]
+fn report_level_obligations_refuse_the_targets_they_apply_to() {
+    // Finding r4-1: a sabotaged aggregate scenario row propagates into
+    // the php receipt verdict, not only the report-level verdict.
+    let receipt = evidence_admission_target(|report| {
+        report["scenarios"][0]["status"] = serde_json::json!("fail");
+    })
+    .expect("receipt");
+    assert_eq!(receipt.verdict, "unsupported");
+    let php = receipt
+        .targets
+        .iter()
+        .find(|target| target.target == "php")
+        .expect("php row");
+    assert_eq!(
+        php.verdict, "unsupported",
+        "the failed scenario row named php"
+    );
+    // The honest baseline stays a php pass (the unsupported aggregate
+    // is attributable to the lane that did not run it).
+    let receipt = evidence_admission_target(|_| {}).expect("receipt");
+    let php = receipt
+        .targets
+        .iter()
+        .find(|target| target.target == "php")
+        .expect("php row");
+    assert_eq!(php.verdict, "pass");
+
+    // Finding r4-1 (second vector): clearing the consumer witnesses
+    // refuses every target.
+    let receipt = evidence_admission_target(|report| {
+        report["consumers"] = serde_json::json!([]);
+    })
+    .expect("receipt");
+    assert_eq!(receipt.verdict, "unsupported");
+    assert!(receipt
+        .blockers
+        .iter()
+        .any(|b| b == "consumers:changelog.public_entry:missing"));
+    let php = receipt
+        .targets
+        .iter()
+        .find(|target| target.target == "php")
+        .expect("php row");
+    assert_eq!(php.verdict, "unsupported");
+
+    // A tampered witness relation is invented evidence.
+    let receipt = evidence_admission_target(|report| {
+        report["consumers"][0]["witness"] = serde_json::json!("invented.witness");
+    })
+    .expect("receipt");
+    assert!(receipt
+        .blockers
+        .iter()
+        .any(|b| b == "consumers:changelog.public_entry:witness"));
+
+    // An unknown assertion id is invented evidence.
+    let receipt = evidence_admission_target(|report| {
+        report["targets"][0]["assertions"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "scenario": "worklog.scenario.invented",
+                "status": "pass"
+            }));
+    })
+    .expect("receipt");
+    assert!(receipt
+        .blockers
+        .iter()
+        .any(|b| b == "php:worklog.scenario.invented:assertion-unknown"));
+
+    // Scenario target membership: a passing assertion under a row that
+    // does not name the target is a coverage lie.
+    let receipt = evidence_admission_target(|report| {
+        report["scenarios"][0]["targets"] = serde_json::json!(["go"]);
+    })
+    .expect("receipt");
+    assert!(receipt
+        .blockers
+        .iter()
+        .any(|b| b == "php:worklog.scenario.completion_without_worklog:membership"));
+}
+
+#[test]
+fn the_assertion_bound_is_the_published_bound() {
+    // Finding r4-9: 257 per-target assertion rows are wire-refused —
+    // the schema pins maxItems 256 and the decoder accepts exactly
+    // that population.
+    let result = evidence_admission_target(|report| {
+        let rows = report["targets"][0]["assertions"].as_array_mut().unwrap();
+        let base = rows[0].clone();
+        for index in 0..241u32 {
+            rows.push(serde_json::json!({
+                "scenario": format!("worklog.scenario.pad.{index}"),
+                "status": base["status"].clone(),
+            }));
+        }
+    });
+    assert!(result.is_err());
+    let lekalo_core::result::DomainResult::Invalid { diagnostics: set } = result.unwrap_err()
+    else {
+        panic!("the over-populated assertion array is an invalid document");
+    };
+    assert_eq!(detail_of(&set), "assertions-bound");
+}
+
+#[test]
+fn fabricated_execution_without_a_receipt_is_refused() {
+    // Finding r4-codex-1: an executed claim the engine never ran is
+    // unverified — a static file hash is not an execution receipt.
+    // No receipts at all (the engine could not execute any lane).
+    let result = with_workspace_cwd(|| {
+        let compilation = compilation();
+        let composition_bytes = composition_bytes();
+        let evidence: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(workspace_root().join(EVIDENCE_JSON)).expect("evidence fixture"),
+        )
+        .expect("evidence parses");
+        // The fabricated report claims execution with every row copied.
+        let report_bytes = serde_json::to_vec(&evidence).expect("serializes");
+        lekalo_core::worklog_changelog::admit(
+            &report_bytes,
+            &composition_bytes,
+            &compilation.project,
+            &admitted_backends(),
+            Some(&oracle_consumers()),
+            &std::collections::BTreeMap::new(),
+            lekalo_core::worklog_changelog::AdmissionProfile::Strict,
+        )
+    });
+    let receipt = result.expect("receipt");
+    let php = receipt
+        .targets
+        .iter()
+        .find(|target| target.target == "php")
+        .expect("php row");
+    assert_eq!(php.verdict, "unsupported");
+    assert!(receipt
+        .blockers
+        .iter()
+        .any(|b| b == "php:execution:unverified"));
+
+    // A receipt that disagrees with the claimed rows is refused too.
+    let result = with_workspace_cwd(|| {
+        let compilation = compilation();
+        let composition_bytes = composition_bytes();
+        let mut evidence: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(workspace_root().join(EVIDENCE_JSON)).expect("evidence fixture"),
+        )
+        .expect("evidence parses");
+        evidence["targets"][0]["assertions"][0]["status"] = serde_json::json!("fail");
+        let report_bytes = serde_json::to_vec(&evidence).expect("serializes");
+        lekalo_core::worklog_changelog::admit(
+            &report_bytes,
+            &composition_bytes,
+            &compilation.project,
+            &admitted_backends(),
+            Some(&oracle_consumers()),
+            &engine_receipts(),
+            lekalo_core::worklog_changelog::AdmissionProfile::Strict,
+        )
+    });
+    let receipt = result.expect("receipt");
+    assert!(receipt
+        .blockers
+        .iter()
+        .any(|b| b == "php:execution:assertions"));
 }
