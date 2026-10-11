@@ -65,6 +65,17 @@ function emit(relative, text) {
   written.push(`tests/fixtures/adapter-sdk/${relative}`);
 }
 
+// Binary corpus row (issue #106 review r4 #8): a vector whose bytes are
+// NOT valid UTF-8 cannot round-trip through a utf8 string — the raw
+// 0xFF must reach both the runtimes' input layers and the production
+// oracle unchanged (hex framing from the original Buffer).
+function emitBytes(relative, bytes) {
+  const target = join(CORPUS, relative);
+  mkdirSync(dirname(target), { recursive: true });
+  writeFileSync(target, bytes);
+  written.push(`tests/fixtures/adapter-sdk/${relative}`);
+}
+
 const ADAPTER = { digest: digest("lekalo adapter-sdk reference adapter"), id: "sdk-reference", version: "0.1.0" };
 const IR = ".lekalo/ir/planner.json";
 const D = (seed) => digest(`lekalo adapter-sdk fixture ${seed}`);
@@ -590,6 +601,26 @@ const invalidVectors = [
   ["plan-native-without-native", { ...planNativeRequest, native_request: undefined }, "validate", "native-request"],
   ["bind-without-profile", { ...bindRequest, profile: undefined }, "validate", "profile"],
   ["lint-request-on-032", { ...lintRequest, protocol_version: "0.3.2" }, "validate", "lint-request"],
+  // Native-reference adapter identities carry the production adapter
+  // token grammar (issue #106 review r4 #2): a length bound admitted
+  // `"bad token"`, empty, and non-ASCII identities that production
+  // refuses `native-request` — the SDKs refuse `bounds` before dispatch.
+  ["native-ref-adapter-bad-token", { ...planNativeRequest, native_request: { ...nativeRequest, scan_ref: { adapter: "bad token", digest: nativeRequest.scan_ref.digest } } }, "decode", "bounds"],
+  ["native-ref-adapter-empty", { ...planNativeRequest, native_request: { ...nativeRequest, execution_policy_ref: { adapter: "", digest: nativeRequest.execution_policy_ref.digest } } }, "decode", "bounds"],
+  ["native-ref-adapter-non-ascii", { ...planNativeRequest, native_request: { ...nativeRequest, observed_ref: { adapter: "sdk-référence", digest: nativeRequest.scan_ref.digest } } }, "decode", "bounds"],
+  // Optional arrays default only when ABSENT (issue #106 review r4 #3):
+  // an object-typed `files` (empty or keyed) previously collapsed to an
+  // empty/default list in three runtimes and reached dispatch; every
+  // runtime now refuses `bounds`.
+  ["native-changes-files-object", { ...planNativeRequest, native_request: { ...nativeRequest, changes: { files: {}, symbols: [] } } }, "decode", "bounds"],
+  ["native-changes-files-object-keyed", { ...planNativeRequest, native_request: { ...nativeRequest, changes: { files: { "0": { change: "added", path: "src/a.ts" } }, symbols: [] } } }, "decode", "bounds"],
+  ["lint-files-object", { ...lintRequest, lint_request: { ...lintRequest.lint_request, files: {} } }, "decode", "bounds"],
+  // A terminal LF inside an identifier (issue #106 review r4 #1):
+  // PHP's unanchored `$` admitted `"sdk-reference\n"` on request decode
+  // AND emission; every runtime now refuses the token grammar.
+  ["request-target-trailing-newline", { ...describeRequest, target: "sdk-reference\n" }, "decode", "grammar"],
+  // An object-typed optional response array (issue #106 review r4 #3).
+  ["response-entries-object", { ...scanResponse, result: { entries: {}, truncated: false } }, "decode", "bounds"],
 ];
 for (const [name, envelope, stage, reason, extra] of invalidVectors) {
   writeWire("invalid", name, envelope);
@@ -613,10 +644,62 @@ const rawInvalidVectors = [
   // A raw control byte inside a string member: every strict parser
   // refuses the document (production's serde refuses the same bytes).
   ["request-raw-newline", canonicalJson(describeRequest).replace(/"request_id":"req-/, '"request_id":"req-\n'), "decode", "not-json"],
+  // -----------------------------------------------------------------
+  // Round-4 review admission fixes (issue #106 r4 findings 1–6): every
+  // row below is authored as an exact byte spelling and pins a verified
+  // four-runtime agreement; production refuses each one.
+  // -----------------------------------------------------------------
+  // The negative-zero integer lexeme (r4 #3): production types every
+  // wire number serde `u64`, whose visitor refuses the signed spelling —
+  // `shape` at limits, `bounds` at constraints/spans, never an accepted
+  // zero. The `-0.0` float spelling is the float-lexeme class.
+  ["limits-negative-zero", canonicalJson(floatLexemeBase).replace('"timeout_ms":600000', '"timeout_ms":-0'), "decode", "shape"],
+  ["limits-negative-zero-float", canonicalJson(floatLexemeBase).replace('"timeout_ms":600000', '"timeout_ms":-0.0'), "decode", "shape"],
+  ["constraints-negative-zero", canonicalJson(describeResponseConstraints).replace('"max_entries":10000', '"max_entries":-0'), "decode", "bounds"],
+  ["lint-span-negative-zero", canonicalJson(lintResponse).replace('"start":0', '"start":-0'), "decode", "bounds"],
+  // Surrogate escapes must be complete, correctly paired sequences
+  // (r4 #1/#2/#4): a lone high or low surrogate, a mis-paired low half,
+  // a non-low second escape, or a non-hex `\u` window is `not-json` in
+  // every runtime — production's serde refuses them all.
+  ["native-symbols-lone-high-surrogate", canonicalJson(planNativeRequest).replace('"symbols":["planner","util"]', '"symbols":["a\\ud800"]'), "decode", "not-json"],
+  ["native-symbols-lone-low-surrogate", canonicalJson(planNativeRequest).replace('"symbols":["planner","util"]', '"symbols":["a\\udc00"]'), "decode", "not-json"],
+  ["native-symbols-pair-wrong-low", canonicalJson(planNativeRequest).replace('"symbols":["planner","util"]', '"symbols":["a\\ud800\\u0041"]'), "decode", "not-json"],
+  ["native-symbols-pair-high-nonlow", canonicalJson(planNativeRequest).replace('"symbols":["planner","util"]', '"symbols":["a\\ud800\\ue000"]'), "decode", "not-json"],
+  ["native-symbols-escape-hex-sign", canonicalJson(planNativeRequest).replace('"symbols":["planner","util"]', '"symbols":["a\\u-abc"]'), "decode", "not-json"],
+  ["native-symbols-escape-hex-prefix", canonicalJson(planNativeRequest).replace('"symbols":["planner","util"]', '"symbols":["a\\u0x41"]'), "decode", "not-json"],
+  ["scan-detail-lone-surrogate", canonicalJson(scanResponse).replace('{"kind":"source","path":"src/main.ts"}', '{"detail":"a\\ud800","kind":"source","path":"src/main.ts"}'), "decode", "not-json"],
+  // Control bytes outside the document (r4 #4): only JSON whitespace may
+  // surround a document — a NUL/vertical-tab prefix or a NUL suffix is
+  // refused by every runtime exactly like production's serde.
+  ["request-nul-prefix", String.fromCharCode(0) + canonicalJson(describeRequest), "decode", "not-json"],
+  ["request-vertical-tab-prefix", String.fromCharCode(11) + canonicalJson(describeRequest), "decode", "not-json"],
+  ["request-nul-suffix", canonicalJson(describeRequest) + String.fromCharCode(0), "decode", "trailing-document"],
+  // Nesting depth is bounded like the host parser (r4 #5): a 200-deep
+  // and a 2000-deep document refuse `not-json` in every runtime — a
+  // bounded refusal, never a stack overflow or an uncaught RangeError.
+  ["request-depth-bounded", `{"x":${"{\"y\":".repeat(200)}1${"}".repeat(200)}}`, "decode", "not-json"],
+  ["request-depth-hostile", `{"x":${"{\"y\":".repeat(2000)}1${"}".repeat(2000)}}`, "decode", "not-json"],
 ];
 for (const [name, text, stage, reason] of rawInvalidVectors) {
   writeWire("invalid", name, text);
   writeExpect(name, { reason, stage });
+}
+
+// A corpus row with REAL invalid UTF-8 bytes (issue #106 review r4 #8):
+// a raw 0xFF inside the request_id value. Every runtime's input layer
+// refuses the bytes before any parse (decode/not-json), and the
+// production oracle receives the exact bytes through Buffer-derived hex
+// framing — a utf8 string round trip would replace the byte before
+// production ever sees it.
+{
+  const text = canonicalJson(describeRequest);
+  const marker = '"request_id":"req-';
+  const cut = text.indexOf(marker) + marker.length + 8;
+  emitBytes(
+    "invalid/request-invalid-utf8.json",
+    Buffer.concat([Buffer.from(text.slice(0, cut), "utf8"), Buffer.from([0xff]), Buffer.from(text.slice(cut), "utf8")]),
+  );
+  writeExpect("request-invalid-utf8", { reason: "not-json", stage: "decode" });
 }
 
 // ---------------------------------------------------------------------------
@@ -707,6 +790,21 @@ const semanticVectors = [
     kind: "build-success",
     name: "semantic-build-generate-cannot-claim-ok",
     request: generateApplyRequest,
+  },
+  {
+    // Emission-side terminal-LF regression (issue #106 review r4 #1): a
+    // scan callback returning a path with a trailing LF used to pass the
+    // PHP SDK's emission validation (`$` matched before the newline) and
+    // ship `status:"ok"` bytes the production decoder refuses. Every
+    // runtime's builder must refuse the fragment `bounds`.
+    expect: "reject:bounds",
+    builder: {
+      fragments: { payload: { entries: [{ kind: "source", path: "src/main.ts\n" }], truncated: false } },
+      identity: ADAPTER,
+    },
+    kind: "build-success",
+    name: "semantic-build-scan-path-trailing-newline",
+    request: scanRequest,
   },
   {
     expect: "accept",
@@ -943,7 +1041,19 @@ const lifecycleRecipes = [
   // r2 #8). The transport fixture adapter declares ["file"] alone, so
   // this recipe drives the actual --lekalo-request-file delivery path.
   { adapterMode: "cooperative", case: "file-exchange", adapter: "file-only", expectedTerminal: "ok" },
-  { adapterMode: "silent-exit", case: "callback-crash", expectedTerminal: "process-failure" },
+  // The in-serve fault classes (issue #106 review r4 #7): every declared
+  // fault now executes against the real SDK callback/serializer/logger
+  // paths INSIDE the serve loop, and each recipe's terminal binds to the
+  // battery's specific failing check (id + detail) — an unrelated setup
+  // failure qualifies no hostile class.
+  //   callback-crash: the handler itself fails; the SDK answers with a
+  //     closed error envelope (feature/operation-failed on the handshake)
+  //     — a process crash would be the old pre-serve knob's class.
+  //   callback-hang (slow): the handler stalls past every deadline with
+  //     the serve loop live; the host's deadline enforcement terminates.
+  //   log-verbose (stderr-verbose): the bounded SDK logger floods from
+  //     inside the handler; a verbose run must still pass.
+  { adapterMode: "callback-crash", case: "callback-crash", expectedTerminal: "operation-error" },
   { adapterMode: "stdout-noise", case: "stdout-pollution", expectedTerminal: "response-invalid" },
   { adapterMode: "stderr-verbose", case: "bounded-stderr-logging", expectedTerminal: "ok" },
   { adapterMode: "slow", case: "deadline-termination", expectedTerminal: "timeout" },

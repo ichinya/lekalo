@@ -106,7 +106,6 @@ fn main() {
 
     // invalid/
     for name in list(&corpus, "invalid") {
-        let text = read(&corpus, &format!("invalid/{name}"));
         let expect_text = read(
             &corpus,
             &format!("invalid/{}.expect.json", name.trim_end_matches(".json")),
@@ -127,6 +126,18 @@ fn main() {
             ),
             Err(_) => (String::new(), String::new()),
         };
+        // Real-byte admission (issue #106 review r4 #8): a corpus row may
+        // carry genuinely invalid UTF-8; the input layer refuses the raw
+        // bytes before any parse (decode/not-json), never a lossy
+        // replacement — the old read_to_string failure path collapsed to
+        // an empty document by accident.
+        let raw = std::fs::read(format!("{corpus}/invalid/{name}")).unwrap_or_default();
+        if std::str::from_utf8(&raw).is_err() {
+            let ok = expect_stage == "decode" && expect_reason == "not-json";
+            verdict.record(&format!("invalid/{name}"), ok, "invalid-utf8");
+            continue;
+        }
+        let text = String::from_utf8(raw).unwrap_or_default();
         let is_response = text.contains("\"status\"") && text.contains("\"evidence\"");
         let actual = if !is_response {
             match sdk::admit_request(&text) {

@@ -1,5 +1,5 @@
 {
-  "adapterMode": "silent-exit",
+  "adapterMode": "callback-crash",
   "case": "callback-crash",
-  "expectedTerminal": "process-failure"
+  "expectedTerminal": "operation-error"
 }

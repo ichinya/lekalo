@@ -18,6 +18,20 @@ function resolveCorpus() {
 }
 
 const read = (name) => readFileSync(join(CORPUS, name), "utf8");
+// Real-byte admission (issue #106 review r4 #8): a corpus row may carry
+// genuinely invalid UTF-8. A utf8-string read would silently replace
+// the bytes (admitting what every other runtime refuses), so the
+// invalid family decodes buffers FATALY — invalid bytes are a
+// decode/not-json refusal, exactly like the other runtimes' byte-exact
+// input layers.
+const utf8Fatal = (name) => {
+  const buffer = readFileSync(join(CORPUS, name));
+  try {
+    return { text: new TextDecoder("utf-8", { fatal: true }).decode(buffer), invalidBytes: false };
+  } catch {
+    return { text: "", invalidBytes: true };
+  }
+};
 const list = (family) => readdirSync(join(CORPUS, family)).filter((name) => name.endsWith(".json") && !name.endsWith(".expect.json")).sort();
 
 const results = [];
@@ -44,8 +58,14 @@ for (const name of list("valid")) {
 }
 
 for (const name of list("invalid")) {
-  const text = read(`invalid/${name}`);
   const expect = JSON.parse(read(`invalid/${name.replace(/\.json$/, ".expect.json")}`));
+  const { text, invalidBytes } = utf8Fatal(`invalid/${name}`);
+  if (invalidBytes) {
+    // The input layer refuses the raw bytes before any parse: the only
+    // legal expectation is decode/not-json.
+    verdict(`invalid/${name}`, expect.stage === "decode" && expect.reason === "not-json", { bytes: "invalid-utf8" });
+    continue;
+  }
   // The wire families are distinguishable without parsing: response
   // envelopes always carry the closed status/evidence pair.
   const isResponse = text.includes('"status"') && text.includes('"evidence"');
@@ -92,6 +112,10 @@ for (const name of list("semantic")) {
       if (!request.ok) {
         ok = false;
       } else {
+        // A thrown SdkBuildError (a builder refusal — issue #106 review
+        // r4 #1 pins a trailing-LF scan path as one) is compared by the
+        // loop's catch against the vector's `reject:<reason>` expect,
+        // exactly like the other runtimes' refusal envelopes.
         const envelope = sdk.buildSuccess({
           adapter: sdk.buildAdapterIdentity(vector.builder.identity),
           capabilities: vector.builder.capabilities,
