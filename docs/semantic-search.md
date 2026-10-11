@@ -37,13 +37,23 @@ candidate; sorting never becomes a selection.
 
 Producers enter only through the `search-inputs` manifest and are
 decoded with their own published contracts: canonical effect-graph
-snapshots (detected rows keep exact subjects and recorded trust),
-neutral trace manifests (requirement identities stay
-provider-qualified: `req:openspec:PLANNER-REQ-001`), observed binding
-indexes (canonical bytes only), and AI-lint waiver sets (revoked rows
-are stale and visible only under `--include-stale`). Missing optional
-producers report `unknown` coverage — unknown is never zero, and
-absence of evidence is never proof of absence.
+snapshots (detected rows keep exact subjects and recorded trust;
+stale-trust rows are retained with an explicit per-fact stale status
+and match only under `--include-stale`), neutral trace manifests
+(requirement identities stay provider-qualified:
+`req:openspec:PLANNER-REQ-001`; the relation graph is traversed over
+raw nodes, so test/artifact intermediate nodes and cited evidence
+refs bridge the chain; a relation's own confidence/status survive per
+relationship and are never strengthened into `verified`), observed
+binding indexes (canonical bytes only; the recorded binding set is
+admitted with an explicit binding gap — the observed wire carries no
+Model/IR pin, so bindings coverage is partial, never silently
+confirmed), and AI-lint waiver sets (revoked rows are stale and
+visible only under `--include-stale`). Missing optional producers
+report `unknown` coverage — unknown is never zero, and absence of
+evidence is never proof of absence. The error-contract and
+ownership/profile families carry their own `errors` and `profiles`
+coverage rows for the same reason.
 
 ## Producer families
 
@@ -67,14 +77,27 @@ is read once, confined and bounded):
   project-validated by the #62 constructors; operation bindings land
   as typed error-role signatures so `--error` resolves.
 - `diagnostics` — the closed search diagnostic-set snapshot
-  (`lekalo/search-diagnostics/v0.8.0`): admitted findings project as
-  diagnostic cards (rule identity, severity subkind, `evidences`
-  relation onto the subject); resolved findings stay visibly stale.
+  (`lekalo/search-diagnostics/v0.8.0`, published as
+  `contracts/search-diagnostics.schema.v0.8.0.json`): admitted findings
+  project as diagnostic cards (rule identity, severity subkind,
+  `evidences` relation onto the subject, and the reverse relation on
+  the subject card so `--diagnostic <rule> --kind command` joins);
+  resolved findings stay visibly stale. Custody: every subject must
+  name a real card of the admitted projection, and one finding id
+  carries exactly one (rule, subject) identity — ghost subjects and
+  conflicting identities are typed refusals, never silently merged
+  cards.
 - `ownership-profile` — the closed artifact-ownership/profile snapshot
-  (`lekalo/search-ownership-profile/v0.8.0`): artifact ownership fills
-  the declared ownership of definitions bound under the artifact path
-  (Model declarations always win), and profile memberships land as
+  (`lekalo/search-ownership-profile/v0.8.0`, published as
+  `contracts/search-ownership-profile.schema.v0.8.0.json`): artifact
+  ownership fills the typed `ownership` property (`module` |
+  `project` | `observed`) of definitions bound under the artifact path
+  — a property deliberately distinct from Model `visibility`, so
+  neither reading ever overrides the other and `--ownership observed`
+  resolves recorded observed ownership. Profile memberships land as
   typed `profile-member` relations — membership, never conformance.
+  Custody: profile members must name real cards; empty member sets
+  refuse.
 
 ## Commands
 
@@ -94,9 +117,24 @@ Filters (repeatable values of one flag OR, different flags AND):
 `--output-type`, `--error`, `--relation` + `--related-to`,
 `--ownership`, `--portability`, `--profile`, `--diagnostic`,
 `--waiver`, `--include-stale`, and `--effect-scope exact|overlapping`.
+`--ownership` states are `module` | `project` | `observed` (the typed
+artifact-ownership property, distinct from Model visibility).
 `find` requires at least one filter; `search` requires exactly one
 nonempty query. `--no-cache` bypasses every cache read/write; a build
 or a `search-index status` under the bypass is a usage error.
+
+Ordinary cache-enabled queries without `--inputs` reuse the persisted
+admitted registration when it is still fresh (see Status below):
+the saved producer generation — with its recorded coverage — is the
+service, not a discarded byproduct. A canonical-only cold query never
+clobbers a producer-built registration it did not admit; only an
+explicit `build`/`update` (or drift) replaces it.
+
+Exact lexical tiers never spend the fuzzy budget: every admitted card
+is scored for exact/exact-qualified/name/prefix matches first, and
+the bounded fuzzy expansion runs only over the still-unmatched cards.
+An exhausted fuzzy budget is disclosed as truncation, withholds the
+visible total, and never confirms a `unique` verdict.
 
 ## Index custody
 
@@ -110,24 +148,38 @@ identities resolve to carried cards; `cache clear --yes` clears them
 and keeps `.lekalo/cache/migrations/**` exactly as before. Cursors
 bind the raw query, its normalization, the fuzzy mode, every filter
 member, the policy digest, and the immutable generation digest; a
-cursor page serves the validated durable generation, a missing or
-drifted generation is `search.cursor-invalid`, and a cold cache-enabled
-query publishes its generation so an issued page token always has one
-to bind. No raw source text, file bodies, prompt/tool output, or
+cursor page serves the validated durable generation revalidated
+against the CURRENTLY admitted content/policy snapshot (a stale
+Model, a changed manifest, or a reconstructed foreign generation is
+`search.cursor-invalid`, never a page of old or forged bytes), a
+missing or drifted generation is `search.cursor-invalid`, and a cold
+cache-enabled query publishes its generation so an issued page token
+always has one to bind. Cursor tokens are closed documents (no
+unknown members at any depth, no duplicate keys, bounded tuple
+invariants). No raw source text, file bodies, prompt/tool output, or
 hidden lexical tokens is ever persisted.
 
 ## Status
 
 `search-index status` is the durable freshness oracle: the published
 generation carries its own input pins (producer kind, path, bytes
-digest, contract identity), and the verdict re-verifies exactly those
-pins under the canonical project root and recomputes the snapshot
-digest a fresh build would publish. The verdict never depends on the
-caller's working directory or on where the manifest happened to live:
-a drifted or missing pin file is `stale` (`search.index-stale`), a
-model or policy change is `stale`, an admission failure surfaces as
-its own diagnostic, and `ready` means every pin re-verified and the
-recomputed snapshot is byte-identical.
+digest, contract identity), its Model partition digest, and its
+admitting-manifest configuration (path, canonical digest, posting
+cap), and the verdict re-verifies exactly those facts under the
+canonical project root and recomputes the snapshot digest a fresh
+build would publish. The verdict never depends on the caller's
+working directory or on where the manifest happened to live: a
+drifted or missing pin file is `stale` (`search.index-stale`), a
+model or policy change is `stale`, a revoked, edited, or removed
+admitting manifest is `stale` (admission changes never hide behind
+surviving producer bytes), an admission failure surfaces as its own
+diagnostic, and `ready` means every pin, the admission config, and
+the recomputed snapshot are byte-identical. The same partition pins
+(`update`'s no-op reuse path and the warm query path) make `update`
+a genuine partition reuse: when the Model digest, every producer
+pin, and the admission config all re-verify, the immutable generation
+is republished as-is without re-decoding producers or recomputing
+the projection.
 
 Implemented: the pure core (`lekalo_core::search`), the CLI surface,
 the durable generation store, the diagnostic family, the four wire

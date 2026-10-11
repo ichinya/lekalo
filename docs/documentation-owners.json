@@ -711,7 +711,7 @@
       "kind": "command",
       "command": "find",
       "usage": "lekalo find [OPTIONS]",
-      "helpDigest": "sha256:1112b080435371b107c6725b5e8694f0fcf13dbcc64ce19175e2d59a1f90772d",
+      "helpDigest": "sha256:3a152b4411dbfb60bb5b904502ba832d31b8bbe085bf546ff3ecf124465c0a56",
       "summary": "Exact filtered lookup over the typed projection (issue #93): never fuzzes a selector; repeated flags OR, different flags AND",
       "leaf": true,
       "owner": "docs/semantic-search.md",
@@ -1536,7 +1536,7 @@
       "kind": "command",
       "command": "search",
       "usage": "lekalo search [OPTIONS] <QUERY>",
-      "helpDigest": "sha256:320d4ca6184717aada01ad790545ad9833dc1a434c80bd2eb9da61a1c351bea9",
+      "helpDigest": "sha256:b8c9443b8e1b6f01f7a9d0c1922cc5b0a7b5937cfcc3315ac1e16741e38fd314",
       "summary": "Deterministic semantic search over the typed projection (issue #93): `search` combines exact filters with lexical retrieval, `find` applies exact filters alone, and `search-index` owns the durable generation lifecycle. The core owns every decision; this binary only admits inputs, persists the cache-owned store, and maps exits",
       "leaf": true,
       "owner": "docs/semantic-search.md",
@@ -3174,10 +3174,19 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/search-diagnostics.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/search-diagnostics.schema.v0.8.0.json",
+      "sourceDigest": "sha256:ccdc129bf2ea7bd2391115152ce2aab9cc9ce754233028b6e5c2dd5bcccf86e2",
+      "owner": "docs/semantic-search.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/search-index.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/search-index.schema.v0.8.0.json",
-      "sourceDigest": "sha256:b677e1c21e2ec3592456347aa28083a05ca7e7ade945a50cd0de50eb8a868d3c",
+      "sourceDigest": "sha256:4639873592665406074b979d0d92477c6610f1743fdd22c6b238b9b237b1c9e6",
       "owner": "docs/semantic-search.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3192,10 +3201,19 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/search-ownership-profile.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/search-ownership-profile.schema.v0.8.0.json",
+      "sourceDigest": "sha256:9871d1c282d7c091b9ce5fcd7e81bbf26947b3fe184696c5d47da8d00d71b1d5",
+      "owner": "docs/semantic-search.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/search-query.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/search-query.schema.v0.8.0.json",
-      "sourceDigest": "sha256:b20a18c647570cd08c2b831afd60314a6ae25f44ef886ba82b8692ec2c198ba7",
+      "sourceDigest": "sha256:b9dd5fc85b2e2f3920275d4da0505384e20ac4772c66de703e297ab2bd217d17",
       "owner": "docs/semantic-search.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3204,7 +3222,7 @@
       "id": "contract:contracts/search-result.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/search-result.schema.v0.8.0.json",
-      "sourceDigest": "sha256:14bf02bbecd1bbb9dff5bdddea0388d13959d9dfd13842a33f5e17b366cf687a",
+      "sourceDigest": "sha256:ca127ee0dd2a01b133b16a23b9082145c4c27618f4c53b152ec9b22eb1b005e6",
       "owner": "docs/semantic-search.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

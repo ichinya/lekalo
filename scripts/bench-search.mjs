@@ -7,13 +7,18 @@
 //
 // Every task declares, before either tool runs: the relevant answer
 // keys (recall), the exact selection verdict, the top-ranked key where
-// one must lead, the precision the page must meet, the returned-row cap
-// for negatives, and the rg answer files its plain-text pattern must
-// surface (no-hit negatives expect zero hits). Both legs are scored
-// against those declarations: recall, precision, selection correctness,
-// top-1 correctness, and rg answer-file recall. A task is fullyCorrect
-// only when every declared expectation holds — recall-only success is
-// never labeled correct, and no-hit negatives must be valid `none`.
+// one must lead, the minimum ANSWER precision the page must meet
+// (declared on every task — a broad lexical question names its
+// deliberately tolerated irrelevant tail in `toleratedIrrelevant` so a
+// passing task never hides a low-precision page behind an undeclared
+// omission), the returned-row cap for negatives, and the rg answer
+// files its plain-text pattern must surface together with the minimum
+// rg answer-file precision (no-hit negatives expect zero hits). Both
+// legs are scored against those declarations: recall, precision,
+// selection correctness, top-1 correctness, rg answer-file recall AND
+// rg answer-file precision. A task is fullyCorrect only when every
+// declared expectation holds — recall-only success is never labeled
+// correct, and no-hit negatives must be valid `none`.
 //
 // The benchmark separates three cost classes and never conflates them:
 // cold index build, warm semantic query, and incremental update (noop
@@ -34,6 +39,7 @@ import {
   existsSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   rmSync,
   statSync,
@@ -72,8 +78,40 @@ if (rg.status !== 0) fail("rg-missing", "ripgrep must be on PATH for the compari
 const tasks = JSON.parse(readFileSync(tasksPath, "utf8"));
 if (tasks.benchmarkId !== "dev.lekalo.search-benchmark") fail("benchmark-identity", tasks.benchmarkId);
 if (!Array.isArray(tasks.tasks) || tasks.tasks.length === 0) fail("tasks-empty");
+// Predeclared comparison hygiene: every task carries an explicit
+// minimum answer precision and names its tolerated irrelevant class —
+// an undeclared omission can never pass as correct.
+for (const task of tasks.tasks) {
+  if (typeof task.expectedPrecision !== "number") {
+    fail("task-precision-undeclared", { id: task.id });
+  }
+  if (typeof task.toleratedIrrelevant !== "string") {
+    fail("task-tolerance-unnamed", { id: task.id });
+  }
+}
 const sha256 = (path) =>
   `sha256:${createHash("sha256").update(readFileSync(path)).digest("hex")}`;
+const binaryDigest = sha256(binary);
+// The full fixture tree digest: every committed fixture file (sorted
+// project-relative POSIX paths, each pinned by its own digest) — not
+// just one manifest — plus the exact lekalo binary bytes.
+const treeDigest = (dir, prefix = "") => {
+  const entries = readdirSync(dir, { withFileTypes: true })
+    .map((entry) => ({ name: entry.name, dir: entry.isDirectory() }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const hasher = createHash("sha256");
+  for (const entry of entries) {
+    const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.dir) {
+      hasher.update(relative);
+      hasher.update(treeDigest(join(dir, entry.name), relative));
+    } else {
+      hasher.update(relative);
+      hasher.update(sha256(join(dir, entry.name)));
+    }
+  }
+  return hasher.digest("hex");
+};
 
 // Identical frozen fixture copies for both tools.
 const project = realpathSync.native(mkdtempSync(join(tmpdir(), "lekalo-search-bench-")));
@@ -232,8 +270,11 @@ for (const task of tasks.tasks) {
   if (lekaloCorrect && ambiguityHonest) correct += 1;
 
   // rg leg: the predeclared fair plain-text query, scored against the
-  // declared answer files. A no-hit negative is correct only with zero
-  // hits; every other task must surface every declared answer file.
+  // declared answer files on BOTH recall and answer-file precision —
+  // merely hitting every answer file is not a correct answer when the
+  // same pattern drags in unrelated files a consumer must open. A
+  // no-hit negative is correct only with zero hits; every other task
+  // must surface every declared answer file at the declared precision.
   const rgRun = runRg(task.rgPattern);
   const rgError = rgRun.code !== 0 && rgRun.code !== 1;
   const rgHitFiles = new Set(rgRun.filesWithHits);
@@ -246,8 +287,18 @@ for (const task of tasks.tasks) {
           : 0
         : 1
       : rgRelevantHit.length / task.rgRelevantFiles.length;
+  // Answer-file precision: the share of opened files that are declared
+  // answer files. The rg consumer's real cost is the irrelevant files
+  // the line hits force open (explicitly modeled here, not measured by
+  // the tool: rg opens exactly the files it reports).
+  const rgFilePrecision =
+    rgRun.filesOpened === 0 ? 1 : rgRelevantHit.length / rgRun.filesOpened;
+  const rgPrecisionCorrect =
+    task.rgNoHitNegative || task.rgExpectedFilePrecision == null
+      ? true
+      : rgFilePrecision >= task.rgExpectedFilePrecision;
   const rgCorrect =
-    !rgError &&
+    !rgError && rgPrecisionCorrect &&
     (task.rgNoHitNegative
       ? rgRun.lines === 0
       : rgRecall === 1 || (task.rgRelevantFiles ?? []).length === 0);
@@ -257,6 +308,7 @@ for (const task of tasks.tasks) {
     family: task.family ?? "general",
     negative: task.negative === true,
     question: task.question,
+    toleratedIrrelevant: task.toleratedIrrelevant ?? null,
     lekalo: {
       command: task.command,
       selection,
@@ -282,10 +334,17 @@ for (const task of tasks.tasks) {
       pattern: task.rgPattern,
       exitCode: rgRun.code,
       recallOverDeclaredAnswerFiles: rgRecall,
+      answerFilePrecision: rgFilePrecision,
+      expectedFilePrecision: task.rgExpectedFilePrecision ?? null,
       answerFilesHit: rgRelevantHit,
       lineHits: rgRun.lines,
+      // Explicitly modeled file-open work: rg opens exactly the files
+      // its line hits name; a human consumer then reads each hit line's
+      // context to select an answer.
       filesOpened: rgRun.filesOpened,
+      filesOpenedModel: "modeled: rg opens exactly the files it reports line hits for",
       stdoutBytes: Buffer.byteLength(rgRun.stdout, "utf8"),
+      approxTokens: Math.ceil(Buffer.byteLength(rgRun.stdout, "utf8") / 4),
       latencyMillis: Math.round(rgRun.millis * 1000) / 1000,
     },
     lekaloCorrect,
@@ -311,11 +370,16 @@ const report = {
     node: process.version,
     rg: rg.stdout.split("\n")[0],
     fixture: tasks.fixture ?? "tests/fixtures/search/planner",
+    // The full fixture tree and both tool binaries are pinned: the
+    // comparison is reproducible against exact fixture and tool bytes.
+    fixtureTreeDigest: `sha256:${treeDigest(fixtureRoot)}`,
     fixtureManifestDigest: sha256(join(fixtureRoot, "lekalo/project.yaml")),
     taskManifestDigest: sha256(tasksPath),
     binary: process.env.LEKALO_BIN ?? "target/debug/lekalo",
+    binaryDigest,
+    rgDigest: rg.stdout.split("\n")[0],
     trials,
-    note: "Timings are local-run distributions, never universal claims.",
+    note: "Timings are local-run distributions, never universal claims; rg file opens are explicitly modeled (see filesOpenedModel).",
   },
   costClasses: {
     coldIndexBuildMillis: Math.round(coldIndexBuildMillis * 1000) / 1000,
@@ -330,6 +394,10 @@ const report = {
     fullyCorrect: correct,
     ambiguityHonest: honest,
     rgCorrect: rows.filter((row) => row.rgCorrect).length,
+    // The consumer-answer comparison in one line: both tools' precision
+    // over their own declared answer spaces, task for task.
+    lekaloPrecision: rows.map((row) => row.lekalo.precision),
+    rgAnswerFilePrecision: rows.map((row) => row.rg.answerFilePrecision),
   },
 };
 

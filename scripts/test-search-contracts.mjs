@@ -146,6 +146,57 @@ for (const input of manifest.inputs) {
   seenInputs.add(key);
 }
 
+// 3b. The two 0.8.0 producer wire contracts are published, closed, and
+//     in parity with the runtime decoders: the committed fixtures
+//     validate, and negative vectors (unknown member, missing member,
+//     foreign version, open vocabulary, ghost shapes the schema itself
+//     can close) refuse. The metadata count cross-checks and the deeper
+//     custody vectors (ghost subjects, identity conflicts) are runtime
+//     admissions beyond JSON Schema's expressive power — proven by the
+//     CLI gate over the same fixtures.
+const diagnosticsSchema = "contracts/search-diagnostics.schema.v0.8.0.json";
+const ownershipSchema = "contracts/search-ownership-profile.schema.v0.8.0.json";
+let validateDiagnostics;
+let validateOwnership;
+try {
+  validateDiagnostics = compile(diagnosticsSchema);
+  validateOwnership = compile(ownershipSchema);
+} catch (error) {
+  fail("producer-schema-compile", { detail: error.message });
+}
+const diagnosticsFixture = read("tests/fixtures/search/planner/evidence/diagnostics.json");
+if (!validateDiagnostics(diagnosticsFixture)) {
+  fail("diagnostics-producer-invalid", validateDiagnostics.errors);
+}
+const ownershipFixture = read("tests/fixtures/search/planner/evidence/ownership-profile.json");
+if (!validateOwnership(ownershipFixture)) {
+  fail("ownership-producer-invalid", validateOwnership.errors);
+}
+const clone = (document) => JSON.parse(JSON.stringify(document));
+const setPath = (document, path, value) => {
+  const keys = path.split(".");
+  let node = document;
+  for (const key of keys.slice(0, -1)) node = node[key];
+  node[keys[keys.length - 1]] = value;
+};
+for (const [name, validator, base, path, value] of [
+  ["diagnostics-unknown-member", validateDiagnostics, diagnosticsFixture, "extra", 1],
+  ["diagnostics-finding-unknown-member", validateDiagnostics, diagnosticsFixture, "findings.0.extra", 1],
+  ["diagnostics-foreign-version", validateDiagnostics, diagnosticsFixture, "schemaVersion", "lekalo/search-diagnostics/v0.9.0"],
+  ["diagnostics-open-severity", validateDiagnostics, diagnosticsFixture, "findings.0.severity", "critical"],
+  ["diagnostics-missing-subject", validateDiagnostics, diagnosticsFixture, "findings.1.subject", null],
+  ["ownership-unknown-member", validateOwnership, ownershipFixture, "extra", 1],
+  ["ownership-artifact-unknown-member", validateOwnership, ownershipFixture, "artifacts.0.extra", 1],
+  ["ownership-foreign-identity", validateOwnership, ownershipFixture, "identity", "dev.lekalo.search-ownership-profile@0.9.0"],
+  ["ownership-open-vocabulary", validateOwnership, ownershipFixture, "artifacts.0.ownership", "team"],
+  ["ownership-traversal-path", validateOwnership, ownershipFixture, "artifacts.0.path", "../escape.ts"],
+  ["ownership-empty-members", validateOwnership, ownershipFixture, "profiles.0.members", []],
+]) {
+  const hostile = clone(base);
+  setPath(hostile, path, value);
+  if (validator(hostile)) fail(`producer-parity-${name}`, { path, value });
+}
+
 // 4. The recorded query/result/index request shapes: golden request
 //    documents (closed grammar) and negative vectors (refused shapes).
 const goldenDir = "tests/fixtures/search/golden";
@@ -203,6 +254,7 @@ process.stdout.write(
       searchRules: searchCodes.size,
       goldenRequests: goldens,
       detectedEffects: detected.length,
+      producerParityVectors: 11,
     },
     null,
     2,

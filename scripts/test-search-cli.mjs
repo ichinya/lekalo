@@ -351,7 +351,16 @@ const build = run([
   "search-index", "build", "--project", ".", "--inputs", inputsRelative,
 ]);
 ok("ac6-build-exit", build.code === 0, build.stderr);
-ok("ac6-build-receipt", build.stdout.includes("search index built"), build.stdout);
+// Either honest receipt is correct: `built` when a new generation was
+// published, `current` when the identical generation is already the
+// published registration (a canonical-only query must never clobber a
+// manifest registration, so the admitted generation can legitimately
+// already be current here).
+ok(
+  "ac6-build-receipt",
+  build.stdout.includes("search index built") || build.stdout.includes("search index current"),
+  build.stdout,
+);
 
 const status = run(["--json", "search-index", "status", "--project", "."]);
 const statusDoc = status.json();
@@ -504,11 +513,16 @@ const diagnosticRule = run([
   "--json", "find", "--diagnostic", "planner.focus-concurrency",
   "--project", ".", "--inputs", inputsRelative,
 ]);
+const diagnosticRuleKeys = diagnosticRule.json().items.map((item) => item.card.key);
 ok(
   "f11-diagnostic-rule",
-  diagnosticRule.json().selection === "unique" &&
-    diagnosticRule.json().items[0].card.id === "planner.focus-concurrency",
-  diagnosticRule.json().selection,
+  // The reverse join answers the finding card AND its subject beside
+  // it — the rule lookup is multiple, never a lone finding cut off
+  // from what it evidences.
+  diagnosticRule.json().selection === "multiple" &&
+    diagnosticRuleKeys.includes("diag:focus-concurrency-001") &&
+    diagnosticRuleKeys.includes("def:planner.focus_task"),
+  diagnosticRuleKeys,
 );
 const profile = run([
   "--json", "find", "--profile", "focus-critical",
@@ -577,6 +591,104 @@ ok(
 );
 rmSync(join(project, "evidence/probe-manifest.json"), { force: true });
 rmSync(join(project, "evidence/diag-hostile.json"), { force: true });
+
+// ---------------------------------------------------------------------------
+// Issue #93 r4 probes: schema/runtime parity for the effects producer,
+// the typed observed-ownership property, missing-domain coverage
+// disclosure, and evidence-custody refusals for ghost/conflicting
+// diagnostic identities.
+// ---------------------------------------------------------------------------
+// (a) The effects producer's modelVersion is the published closed enum
+// (0.2.16), not a semver pattern: a syntactically valid foreign
+// version refuses exactly like Ajv does.
+const foreignEffects = JSON.parse(readFileSync(join(project, "evidence/effects.detected.json"), "utf8"));
+foreignEffects.modelVersion = "99.0.0";
+writeFileSync(join(project, "evidence/effects.detected.json"), JSON.stringify(foreignEffects));
+const refusedVersion = run([
+  "--json", "find", "--writes", "planner.user_task_planning.focused_at",
+  "--project", ".", "--inputs", inputsRelative,
+]);
+ok(
+  "r4-effects-model-version-parity",
+  refusedVersion.code === 1 && refusedVersion.json().diagnostics[0].id === "search.input-invalid",
+  refusedVersion.json().diagnostics[0]?.data?.detail,
+);
+// Restore the committed producer bytes.
+const effectsPath = join(project, "evidence/effects.detected.json");
+const originalEffects = readFileSync(join(fixture, "evidence/effects.detected.json"), "utf8");
+writeFileSync(effectsPath, originalEffects);
+
+// (b) `--ownership observed` resolves the typed observed-ownership
+// property (never Model visibility).
+const observed = run([
+  "--json", "find", "--ownership", "observed",
+  "--project", ".", "--inputs", inputsRelative,
+]);
+const observedKeys = observed.json().items.map((item) => item.card.key);
+ok(
+  "r4-ownership-observed",
+  observed.json().selection === "multiple" &&
+    observedKeys.includes("def:planner.user_task_planning") &&
+    observedKeys.every((key) => key.includes("user_task_planning")),
+  observedKeys,
+);
+
+// (c) A needed-but-missing producer domain is disclosed, never a
+// confident zero: under the cold bypass (no registration, no manifest)
+// --error answers over unknown coverage with the coverage warning and
+// no unique verdict. (A warm query without a manifest legitimately
+// reuses the saved registration, whose error coverage is complete.)
+const errorNoManifest = run([
+  "--json", "--no-cache", "find", "--error", "planner.task_not_found", "--project", ".",
+]);
+ok(
+  "r4-missing-domain-disclosure",
+  errorNoManifest.code === 0 &&
+    (errorNoManifest.json().reasonCodes ?? []).includes("search.coverage-incomplete") &&
+    errorNoManifest.json().selection !== "unique",
+  { selection: errorNoManifest.json().selection, codes: errorNoManifest.json().reasonCodes },
+);
+
+// (d) Evidence custody: a ghost diagnostic subject and a conflicting
+// diagnostic identity are typed refusals, never silently merged cards.
+const writeManifestFor2 = (document, name) => {
+  const manifest = { schemaVersion: "lekalo/search-inputs/v0.8.0", identity: "dev.lekalo.search-inputs@0.8.0", projectId: "planner", inputs: [{ kind: "diagnostics", path: `evidence/${name}`, identity: "dev.lekalo.search-diagnostics@0.8.0" }] };
+  writeFileSync(join(project, `evidence/${name}`), JSON.stringify(document));
+  writeFileSync(join(project, "evidence/probe-manifest.json"), JSON.stringify(manifest));
+  return "evidence/probe-manifest.json";
+};
+const ghost = JSON.parse(readFileSync(join(project, "evidence/diagnostics.json"), "utf8"));
+ghost.findings[0].subject = "planner.does_not_exist";
+let hostile2 = writeManifestFor2(ghost, "diag-ghost.json");
+const refusedGhost = run([
+  "--json", "find", "--kind", "command", "--project", ".", "--inputs", hostile2,
+]);
+ok(
+  "r4-ghost-diagnostic-subject",
+  refusedGhost.code === 1 && refusedGhost.json().diagnostics[0].data.detail === "subject-unknown",
+  refusedGhost.json().diagnostics[0]?.data?.detail,
+);
+const conflicting = JSON.parse(readFileSync(join(project, "evidence/diagnostics.json"), "utf8"));
+conflicting.metadata.findingCount = 3;
+conflicting.findings.push({
+  id: "focus-concurrency-001",
+  rule: "planner.different-rule",
+  subject: "planner.focus_task",
+  severity: "warning",
+  disposition: "active",
+});
+hostile2 = writeManifestFor2(conflicting, "diag-conflict.json");
+const refusedConflict = run([
+  "--json", "find", "--kind", "command", "--project", ".", "--inputs", hostile2,
+]);
+ok(
+  "r4-conflicting-diagnostic-identity",
+  refusedConflict.code === 1 && refusedConflict.json().diagnostics[0].data.detail === "identity-conflict",
+  refusedConflict.json().diagnostics[0]?.data?.detail,
+);
+rmSync(join(project, "evidence/probe-manifest.json"), { force: true });
+rmSync(join(project, "evidence/diag-ghost.json"), { force: true });
+rmSync(join(project, "evidence/diag-conflict.json"), { force: true });
 process.stdout.write(
   `${JSON.stringify({ ok: true, checks, project: "disposable temp copy" }, null, 2)}\n`,
 );
