@@ -2,7 +2,7 @@
   "benchmarkId": "dev.lekalo.search-benchmark",
   "recipe": "semantic-search/1",
   "fixture": "tests/fixtures/search/planner",
-  "note": "Task-oriented consumer questions with independently authored expectations: every task declares the relevant answer keys, the exact selection verdict, the top-ranked key where one must lead, the precision the page must meet, and the rg answer files its plain-text pattern must surface. Negative tasks declare an empty answer and expect a valid none from lekalo (and, for no-hit negatives, zero rg hits). Expectations are committed before either tool runs and both legs are scored against them.",
+  "note": "Task-oriented consumer questions with independently authored expectations: every task declares the relevant answer keys, the exact selection verdict, the top-ranked key where one must lead, the MINIMUM answer precision the page must meet (declared on every task, negatives included), the returned-row cap for negatives, and the rg answer files its plain-text pattern must surface together with the minimum rg answer-file precision. Broad lexical questions deliberately tolerate their irrelevant lexical tail: the tolerated class is named per task in toleratedIrrelevant, so a passing task never hides a 0.1-precision page behind an undeclared omission. Negative tasks declare an empty answer and expect a valid none from lekalo (and, for no-hit negatives, zero rg hits). Expectations are committed before either tool runs and both legs are scored against them.",
   "tasks": [
     {
       "id": "field-writers",
@@ -19,11 +19,14 @@
       "expectedSelection": "multiple",
       "expectedTop": "def:planner.focus_task",
       "expectedPrecision": 1,
+      "toleratedIrrelevant": "none: an exact field selector admits only field-scoped writers",
       "rgPattern": "focused_at",
       "rgRelevantFiles": [
         "lekalo/modules/planner/entities.yaml",
-        "evidence/effects.detected.json"
-      ]
+        "evidence/effects.detected.json",
+        "lekalo/modules/planner/events.yaml"
+      ],
+      "rgExpectedFilePrecision": 1
     },
     {
       "id": "field-readers",
@@ -39,11 +42,14 @@
       "expectedSelection": "unique",
       "expectedTop": "def:planner.get_focused_task",
       "expectedPrecision": 1,
+      "toleratedIrrelevant": "none: an exact field selector admits only field-scoped readers",
       "rgPattern": "focused_at",
       "rgRelevantFiles": [
         "lekalo/modules/planner/entities.yaml",
-        "evidence/effects.detected.json"
-      ]
+        "evidence/effects.detected.json",
+        "lekalo/modules/planner/events.yaml"
+      ],
+      "rgExpectedFilePrecision": 1
     },
     {
       "id": "exact-operation",
@@ -57,11 +63,14 @@
       ],
       "expectedSelection": "ambiguous",
       "expectedTop": "bind:planner.focus_task",
+      "expectedPrecision": 0.1,
+      "toleratedIrrelevant": "the lexical tail of a two-term ID query (focus/task-family definitions, events, and their cards) is deliberately tolerated beside the two exact answers; the exact-ID tier still ranks both answers first",
       "rgPattern": "planner.focus_task",
       "rgRelevantFiles": [
         "lekalo/modules/planner/commands.yaml",
         "evidence/observed.index.json"
-      ]
+      ],
+      "rgExpectedFilePrecision": 0.15
     },
     {
       "id": "requirement-chain",
@@ -80,12 +89,16 @@
       ],
       "expectedSelection": "ambiguous",
       "expectedTop": "def:planner.focus_flow",
+      "expectedPrecision": 0.8,
+      "toleratedIrrelevant": "the gate card that covers the same requirement chain is a tolerated sixth row, not a false answer",
       "rgPattern": "PLANNER-REQ-001",
       "rgRelevantFiles": [
         "evidence/trace.openspec.json",
         "evidence/trace.aifhub.json",
-        "lekalo/modules/planner/commands.yaml"
-      ]
+        "lekalo/modules/planner/commands.yaml",
+        "lekalo/project.yaml"
+      ],
+      "rgExpectedFilePrecision": 1
     },
     {
       "id": "gate-chain",
@@ -101,14 +114,16 @@
       "expectedSelection": "ambiguous",
       "expectedTop": "gate:hlv.gate.focus",
       "expectedPrecision": 1,
+      "toleratedIrrelevant": "none: kind gates over the admitted trace close to exactly the recorded gate cards",
       "rgPattern": "hlv.gate.focus",
       "rgRelevantFiles": [
         "evidence/trace.openspec.json"
-      ]
+      ],
+      "rgExpectedFilePrecision": 1
     },
     {
       "id": "binding-prefix",
-      "family": "binding-prefix",
+      "family": "taskhub-observed-binding",
       "question": "What native bindings live under apps/api/src/planner?",
       "command": "find",
       "flags": [
@@ -125,10 +140,36 @@
       "expectedSelection": "multiple",
       "expectedTop": "bind:planner.focus_task",
       "expectedPrecision": 1,
+      "toleratedIrrelevant": "none: the prefix selector closes at component boundaries",
       "rgPattern": "apps/api/src/planner",
       "rgRelevantFiles": [
+        "evidence/observed.index.json",
+        "evidence/ownership-profile.json",
+        "evidence/trace.openspec.json"
+      ],
+      "rgExpectedFilePrecision": 1
+    },
+    {
+      "id": "native-symbol",
+      "family": "taskhub-observed-binding",
+      "question": "Which semantic operation does the focusTask native symbol bind to?",
+      "command": "find",
+      "flags": [
+        "--native-symbol apps/api/src/planner/focus-task.ts#focusTask"
+      ],
+      "relevant": [
+        "bind:planner.focus_task",
+        "def:planner.focus_task"
+      ],
+      "expectedSelection": "multiple",
+      "expectedTop": "bind:planner.focus_task",
+      "expectedPrecision": 1,
+      "toleratedIrrelevant": "none: the exact recorded spelling answers on both the binding and definition cards only",
+      "rgPattern": "focusTask",
+      "rgRelevantFiles": [
         "evidence/observed.index.json"
-      ]
+      ],
+      "rgExpectedFilePrecision": 1
     },
     {
       "id": "input-type",
@@ -147,11 +188,13 @@
       "expectedSelection": "multiple",
       "expectedTop": "def:planner.archive_task_cmd",
       "expectedPrecision": 1,
+      "toleratedIrrelevant": "none: typed input-role signatures admit exactly the declaring commands",
       "rgPattern": "planner.task_id",
       "rgRelevantFiles": [
         "lekalo/modules/planner/commands.yaml",
         "lekalo/modules/planner/entities.yaml"
-      ]
+      ],
+      "rgExpectedFilePrecision": 0.5
     },
     {
       "id": "input-type-negative",
@@ -165,9 +208,96 @@
       "relevant": [],
       "expectedSelection": "none",
       "expectedReturned": 0,
+      "expectedPrecision": 1,
+      "toleratedIrrelevant": "none: an undeclared type admits nothing",
       "rgPattern": "planner.nonexistent_type",
       "rgNoHitNegative": true,
-      "rgRelevantFiles": []
+      "rgRelevantFiles": [],
+      "rgExpectedFilePrecision": 1
+    },
+    {
+      "id": "error-positive",
+      "family": "error-contract",
+      "question": "Which operation raises the planner.task_not_found error?",
+      "command": "find",
+      "flags": [
+        "--error planner.task_not_found"
+      ],
+      "relevant": [
+        "def:planner.focus_task"
+      ],
+      "expectedSelection": "unique",
+      "expectedTop": "def:planner.focus_task",
+      "expectedPrecision": 1,
+      "toleratedIrrelevant": "none: the validated error registry binds the identity to exactly one operation",
+      "rgPattern": "task_not_found",
+      "rgRelevantFiles": [
+        "evidence/error-registry.json"
+      ],
+      "rgExpectedFilePrecision": 1
+    },
+    {
+      "id": "error-negative",
+      "family": "error-contract",
+      "negative": true,
+      "question": "Which operation raises an unregistered error identity?",
+      "command": "find",
+      "flags": [
+        "--error planner.no_such_error"
+      ],
+      "relevant": [],
+      "expectedSelection": "none",
+      "expectedReturned": 0,
+      "expectedPrecision": 1,
+      "toleratedIrrelevant": "none: an unregistered identity admits nothing",
+      "rgPattern": "planner.no_such_error",
+      "rgNoHitNegative": true,
+      "rgRelevantFiles": [],
+      "rgExpectedFilePrecision": 1
+    },
+    {
+      "id": "diagnostic-rule",
+      "family": "diagnostic-waiver",
+      "question": "Which admitted finding carries the planner.focus-concurrency rule, and which command is its subject?",
+      "command": "find",
+      "flags": [
+        "--diagnostic planner.focus-concurrency"
+      ],
+      "relevant": [
+        "def:planner.focus_task",
+        "diag:focus-concurrency-001"
+      ],
+      "expectedSelection": "multiple",
+      "expectedTop": "def:planner.focus_task",
+      "expectedPrecision": 1,
+      "toleratedIrrelevant": "none: the exact registered rule id closes to its finding card and the joined subject",
+      "rgPattern": "focus-concurrency",
+      "rgRelevantFiles": [
+        "evidence/diagnostics.json"
+      ],
+      "rgExpectedFilePrecision": 1
+    },
+    {
+      "id": "diagnostic-subject",
+      "family": "diagnostic-waiver",
+      "question": "Which command is the subject of the planner.focus-concurrency finding?",
+      "command": "find",
+      "flags": [
+        "--diagnostic planner.focus-concurrency",
+        "--kind command"
+      ],
+      "relevant": [
+        "def:planner.focus_task"
+      ],
+      "expectedSelection": "unique",
+      "expectedTop": "def:planner.focus_task",
+      "expectedPrecision": 1,
+      "toleratedIrrelevant": "none: the reverse finding relation joins the subject beside its finding",
+      "rgPattern": "focus-concurrency",
+      "rgRelevantFiles": [
+        "evidence/diagnostics.json"
+      ],
+      "rgExpectedFilePrecision": 1
     },
     {
       "id": "cross-module-ambiguous-name",
@@ -181,11 +311,14 @@
       ],
       "expectedSelection": "ambiguous",
       "expectedTop": "def:notify.get_status",
+      "expectedPrecision": 0.3,
+      "toleratedIrrelevant": "the lexical get_status-family tail (the planner binding card, the status entity, the focused-task query, and the status finding) is deliberately tolerated beside the two cross-module answers",
       "rgPattern": "get_status",
       "rgRelevantFiles": [
         "lekalo/modules/notify/queries.yaml",
         "lekalo/modules/planner/queries.yaml"
-      ]
+      ],
+      "rgExpectedFilePrecision": 0.5
     },
     {
       "id": "waiver-lookup",
@@ -202,10 +335,57 @@
       "expectedSelection": "multiple",
       "expectedTop": "def:planner.focus_task",
       "expectedPrecision": 1,
+      "toleratedIrrelevant": "none: the qualified waiver id joins the waiver card and its waived subject",
       "rgPattern": "lint-focus-debt",
       "rgRelevantFiles": [
         "evidence/waivers.json"
-      ]
+      ],
+      "rgExpectedFilePrecision": 1
+    },
+    {
+      "id": "ownership-observed",
+      "family": "ownership-profile",
+      "question": "Which artifacts carry observed (not declared) ownership?",
+      "command": "find",
+      "flags": [
+        "--ownership observed"
+      ],
+      "relevant": [
+        "bind:planner.user_task_planning",
+        "def:planner.user_task_planning"
+      ],
+      "expectedSelection": "multiple",
+      "expectedTop": "bind:planner.user_task_planning",
+      "expectedPrecision": 1,
+      "toleratedIrrelevant": "none: observed ownership is its own typed property, never a visibility alias",
+      "rgPattern": "user-task-planning.ts",
+      "rgRelevantFiles": [
+        "evidence/observed.index.json",
+        "evidence/ownership-profile.json"
+      ],
+      "rgExpectedFilePrecision": 0.5
+    },
+    {
+      "id": "profile-positive",
+      "family": "ownership-profile",
+      "question": "Which operations are members of the focus-critical profile?",
+      "command": "find",
+      "flags": [
+        "--profile focus-critical"
+      ],
+      "relevant": [
+        "def:planner.focus_task",
+        "def:planner.refocus_task"
+      ],
+      "expectedSelection": "multiple",
+      "expectedTop": "def:planner.focus_task",
+      "expectedPrecision": 1,
+      "toleratedIrrelevant": "none: recorded profile membership is a typed relation, never a conformance claim",
+      "rgPattern": "focus-critical",
+      "rgRelevantFiles": [
+        "evidence/ownership-profile.json"
+      ],
+      "rgExpectedFilePrecision": 1
     },
     {
       "id": "diagnostic-negative",
@@ -219,9 +399,12 @@
       "relevant": [],
       "expectedSelection": "none",
       "expectedReturned": 0,
+      "expectedPrecision": 1,
+      "toleratedIrrelevant": "none: an unregistered rule admits nothing",
       "rgPattern": "lekako-no-such-diagnostic-canary",
       "rgNoHitNegative": true,
-      "rgRelevantFiles": []
+      "rgRelevantFiles": [],
+      "rgExpectedFilePrecision": 1
     }
   ]
 }

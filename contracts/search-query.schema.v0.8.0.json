@@ -255,7 +255,8 @@
           "items": {
             "enum": [
               "module",
-              "project"
+              "project",
+              "observed"
             ]
           }
         },

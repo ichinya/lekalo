@@ -87,6 +87,21 @@
           }
         }
       }
+    },
+    "modelDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "The digest of the canonical Model compilation bytes this generation was built over: the Model partition pin of the warm-reuse/freshness oracle."
+    },
+    "admission": {
+      "$ref": "#/$defs/admissionConfig"
+    },
+    "coverage": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "$ref": "#/$defs/coverageRow"
+      }
     }
   },
   "$defs": {
@@ -198,42 +213,42 @@
         },
         "signatures": {
           "type": "array",
-          "maxItems": 8,
+          "maxItems": 4096,
           "items": {
             "$ref": "#/$defs/signatureRef"
           }
         },
         "relations": {
           "type": "array",
-          "maxItems": 64,
+          "maxItems": 4096,
           "items": {
             "$ref": "#/$defs/relationWitness"
           }
         },
         "effects": {
           "type": "array",
-          "maxItems": 64,
+          "maxItems": 4096,
           "items": {
             "$ref": "#/$defs/relationWitness"
           }
         },
         "bindings": {
           "type": "array",
-          "maxItems": 8,
+          "maxItems": 4096,
           "items": {
             "$ref": "#/$defs/nativeBinding"
           }
         },
         "locations": {
           "type": "array",
-          "maxItems": 8,
+          "maxItems": 4096,
           "items": {
             "$ref": "#/$defs/sourceSpan"
           }
         },
         "requirements": {
           "type": "array",
-          "maxItems": 8,
+          "maxItems": 4096,
           "items": {
             "type": "string",
             "minLength": 1,
@@ -243,7 +258,7 @@
         },
         "scenarios": {
           "type": "array",
-          "maxItems": 8,
+          "maxItems": 4096,
           "items": {
             "type": "string",
             "minLength": 1,
@@ -253,7 +268,7 @@
         },
         "gates": {
           "type": "array",
-          "maxItems": 8,
+          "maxItems": 4096,
           "items": {
             "type": "string",
             "minLength": 1,
@@ -313,6 +328,14 @@
             "diagnostics",
             "waivers"
           ]
+        },
+        "ownership": {
+          "enum": [
+            "module",
+            "project",
+            "observed"
+          ],
+          "description": "Artifact ownership recorded by an admitted producer (module | project | observed) — a distinct typed property from Model visibility."
         }
       }
     },
@@ -371,7 +394,8 @@
         "trust": {
           "enum": [
             "declared",
-            "detected"
+            "detected",
+            "stale"
           ]
         },
         "confidence": {
@@ -445,6 +469,65 @@
         "end": {
           "type": "integer",
           "minimum": 0
+        }
+      }
+    },
+    "admissionConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "digest",
+        "maxPostings"
+      ],
+      "description": "The admitting manifest configuration the build ran under: path, canonical-bytes digest, and the posting cap it selected. Absent for a canonical-only build; a revoked or edited manifest is freshness drift.",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^[A-Za-z0-9._-][A-Za-z0-9._/-]*$"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "maxPostings": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        }
+      }
+    },
+    "coverageRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "domain",
+        "state"
+      ],
+      "properties": {
+        "domain": {
+          "enum": [
+            "ir",
+            "effects",
+            "trace",
+            "requirements",
+            "bindings",
+            "diagnostics",
+            "waivers",
+            "errors",
+            "profiles"
+          ]
+        },
+        "state": {
+          "enum": [
+            "complete",
+            "partial",
+            "unknown",
+            "unsupported",
+            "withheld"
+          ]
         }
       }
     }

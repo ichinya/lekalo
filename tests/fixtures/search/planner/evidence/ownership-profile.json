@@ -3,7 +3,7 @@
   "identity": "dev.lekalo.search-ownership-profile@0.8.0",
   "project": "planner",
   "metadata": {
-    "artifactCount": 2,
+    "artifactCount": 3,
     "profileCount": 1
   },
   "artifacts": [
@@ -14,6 +14,10 @@
     {
       "path": "apps/api/src/planner/status.ts",
       "ownership": "module"
+    },
+    {
+      "path": "apps/api/src/planner/user-task-planning.ts",
+      "ownership": "observed"
     }
   ],
   "profiles": [

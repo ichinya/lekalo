@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.search-ownership-profile-schema@0.8.0",
+  "title": "Lekalo Search Ownership Profile",
+  "description": "Closed producer snapshot of one admitted artifact-ownership/profile set (dev.lekalo.search-ownership-profile@0.8.0, wire lekalo/search-ownership-profile/v0.8.0). A search input manifest admits this document by kind `ownership-profile`; the runtime decoder enforces exactly this closed grammar member for member (required members, no unknown members at any depth, closed ownership vocabulary, per-member bounds, and the metadata count cross-checks), and additionally refuses profile members that name no real card of the admitted projection and empty member sets. Ownership is a typed property deliberately distinct from Model visibility: `observed` records ownership established by observation, and neither reading ever overrides the other. Documents are exact UTF-8 JSON with no duplicate keys.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "project",
+    "metadata",
+    "artifacts",
+    "profiles"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/search-ownership-profile/v0.8.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.search-ownership-profile@0.8.0"
+    },
+    "project": {
+      "$ref": "#/$defs/semanticId",
+      "description": "The project this snapshot is scoped to; a foreign project never joins another project's view."
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifactCount", "profileCount"],
+      "properties": {
+        "artifactCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4096,
+          "description": "Must equal the number of carried artifact rows exactly (a spliced snapshot refuses)."
+        },
+        "profileCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4096,
+          "description": "Must equal the number of carried profile rows exactly."
+        }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "$ref": "#/$defs/artifact"
+      }
+    },
+    "profiles": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "$ref": "#/$defs/profile"
+      }
+    }
+  },
+  "$defs": {
+    "semanticId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[a-z][a-z0-9_.]*$"
+    },
+    "artifactPath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$",
+      "description": "A portable project-relative POSIX path; absolute forms, traversal segments, and dotfiles are refused before any read site is constructible."
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "ownership"],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/artifactPath"
+        },
+        "ownership": {
+          "enum": ["module", "project", "observed"],
+          "description": "The artifact's recorded ownership state; `observed` is ownership established by observation — recorded as its own typed property, never conflated with Model visibility."
+        }
+      }
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "members"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192,
+          "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.:-]*$",
+          "description": "The profile identity; membership is a recorded fact, never a conformance claim from the name."
+        },
+        "members": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4096,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 192,
+            "pattern": "^[a-z][a-z0-9_.]*$",
+            "description": "A member semantic id; must name a real card of the admitted projection (ghost members refuse at admission)."
+          }
+        }
+      }
+    }
+  }
+}

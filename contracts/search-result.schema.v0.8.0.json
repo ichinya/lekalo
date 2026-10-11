@@ -339,6 +339,14 @@
             "diagnostics",
             "waivers"
           ]
+        },
+        "ownership": {
+          "enum": [
+            "module",
+            "project",
+            "observed"
+          ],
+          "description": "Artifact ownership recorded by an admitted producer — distinct from Model visibility."
         }
       }
     },
@@ -394,7 +402,8 @@
         "trust": {
           "enum": [
             "declared",
-            "detected"
+            "detected",
+            "stale"
           ]
         },
         "confidence": {
