@@ -5,6 +5,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -76,6 +77,23 @@ func (a *referenceAdapter) Identity() sdk.Value {
 }
 
 func (a *referenceAdapter) Handle(operation string, request sdk.Value) sdk.Output {
+	// In-serve fault knobs (issue #106 review r4 #7): callback-crash
+	// fails the real handler (the SDK serve loop answers with a closed
+	// error envelope — the callback-failure contract), callback-hang
+	// stalls inside the handler past every deadline (host termination
+	// while the serve loop is live), and log-verbose floods the bounded
+	// SDK logger from inside the handler (a verbose run must still pass).
+	if fault("log-verbose") {
+		for index := 0; index < 200; index++ {
+			sdk.Error(adapterID, fmt.Sprintf("verbose lifecycle tick %d (%s)", index, operation))
+		}
+	}
+	if fault("callback-hang") {
+		time.Sleep(60 * time.Second)
+	}
+	if fault("callback-crash") {
+		return sdk.Output{Error: [3]string{"infrastructure", "callback-crashed", "the callback failed inside the SDK serve loop"}, HasError: true}
+	}
 	switch operation {
 	case "bind":
 		return sdk.Output{Payload: map[string]any{

@@ -31,6 +31,34 @@ fn member_of(value: &Value, key: &str) -> Value {
     value.get(key).cloned().unwrap_or(Value::Null)
 }
 
+// In-serve fault helpers (issue #106 review r4 #7): callback-crash makes
+// the real handler fail (the SDK serve loop answers with a closed error
+// envelope — the callback-failure contract), callback-hang stalls inside
+// the handler past every deadline (host termination while the serve
+// loop is live), and log-verbose floods the bounded SDK logger from
+// inside the handler (a verbose run must still pass).
+fn callback_faults(operation: &str) -> Option<Output> {
+    if fault("log-verbose") {
+        for index in 0..200 {
+            sdk::logger::error(
+                ADAPTER_ID,
+                &format!("verbose lifecycle tick {index} ({operation})"),
+            );
+        }
+    }
+    if fault("callback-hang") {
+        std::thread::sleep(std::time::Duration::from_secs(60));
+    }
+    if fault("callback-crash") {
+        return Some(error_output(
+            "infrastructure",
+            "callback-crashed",
+            "the callback failed inside the SDK serve loop".to_owned(),
+        ));
+    }
+    None
+}
+
 struct ReferenceAdapter {
     identity: Value,
     write_scopes: Vec<String>,
@@ -69,6 +97,9 @@ impl Adapter for ReferenceAdapter {
     }
 
     fn handle(&self, operation: &str, request: &Value) -> Output {
+        if let Some(failed) = callback_faults(operation) {
+            return failed;
+        }
         match operation {
             "bind" => Output {
                 payload: Some(Value::Object(vec![(
@@ -240,7 +271,6 @@ impl Adapter for ReferenceAdapter {
 fn refused() -> Output {
     error_output("infrastructure", "sdk-build-refused", "the capability builder refused the declaration".to_owned())
 }
-
 fn error_output(class: &'static str, code: &'static str, message: String) -> Output {
     Output {
         error: Some((class, code, message)),

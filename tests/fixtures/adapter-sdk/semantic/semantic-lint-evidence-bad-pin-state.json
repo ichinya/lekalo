@@ -228,5 +228,7 @@
       }
     },
     "status": "ok"
-  }
+  },
+  "productionResponseAccepts": false,
+  "productionResponseNote": "production response oracle refuses these bytes itself (shape): the pinned 0.6.4 lint-evidence subtree is wire-admission, not only client semantics (issue #106 review r4 #8)"
 }

@@ -65,6 +65,27 @@ function planIdOf(array $writes): string {
     return Canonical::canonicalPlanId($writes);
 }
 
+// In-serve fault knobs (issue #106 review r4 #7): callback-crash fails
+// the real handler (the SDK serve loop answers with a closed error
+// envelope — the callback-failure contract), callback-hang stalls inside
+// the handler past every deadline (host termination while the serve loop
+// is live), and log-verbose floods the bounded SDK logger from inside
+// the handler (a verbose run must still pass).
+function callbackFaults(string $operation): ?array {
+    if (fault('log-verbose')) {
+        for ($index = 0; $index < 200; $index++) {
+            Logger::error(ADAPTER_ID, "verbose lifecycle tick {$index} ({$operation})");
+        }
+    }
+    if (fault('callback-hang')) {
+        sleep(60);
+    }
+    if (fault('callback-crash')) {
+        return ['error' => ['errorClass' => 'infrastructure', 'errorCode' => 'callback-crashed', 'message' => 'the callback failed inside the SDK serve loop']];
+    }
+    return null;
+}
+
 $handlers = [
     'bind' => function (array $request) {
         return ['payload' => ['bindings' => [['module' => 'planner', 'profile' => $request['profile'], 'target' => $request['target']]]]];
@@ -80,6 +101,10 @@ $handlers = [
         return ['planId' => $request['plan_id'] ?? planIdOf($plan), 'writes' => $plan];
     },
     'describe' => function () use ($identity, $capabilitiesMap, $writeScopes) {
+        $failed = callbackFaults('describe');
+        if ($failed !== null) {
+            return $failed;
+        }
         return Build::buildCapabilities(
             $identity,
             ['0.3.2'],
@@ -95,6 +120,10 @@ $handlers = [
         );
     },
     'generate' => function (array $request) use ($writeScopes) {
+        $failed = callbackFaults('generate');
+        if ($failed !== null) {
+            return $failed;
+        }
         $deterministic = deterministicWrites($request);
         foreach ($deterministic['writes'] as $entry) {
             $violation = Canonical::writePlanViolation($entry['path'], $writeScopes);

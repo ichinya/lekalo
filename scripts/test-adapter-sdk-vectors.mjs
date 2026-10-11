@@ -243,21 +243,35 @@ if (!existsSync(hostCli)) {
 }
 
 /** Terminal classification over the battery's closed verdict vocabulary
- * (issue #106 review: the lifecycle recipes are executed for real, and
- * each declared terminal maps to the observable battery outcome).
- * Classes: pass = the run held; process = a process-level exchange could
- * not complete; response-invalid = the exchange completed but the wire
- * surface failed (protocol/feature classes); extra-write/dry-run = the
- * confinement classes surface as feature/process failures. The key
- * property under test: a recipe that must fail NEVER reports pass. */
+ * (issue #106 review r4 #7): every predicate binds to the SPECIFIC
+ * failing check (id + detail) the battery emits for that class, so an
+ * unrelated setup failure can no longer qualify a hostile terminal —
+ * the r3 predicates accepted any failing check. The negative controls
+ * below pin that property: a battery that never starts and a synthetic
+ * unrelated failure must qualify NO hostile class. */
+const failingChecks = (report) => (report?.checks ?? []).filter((entry) => entry.state === "fail");
+const hasFailure = (report, id, detail) =>
+  failingChecks(report).some((entry) => entry.id === id && (detail === undefined || entry.detail === detail));
 const expectedTerminals = {
-  ok: (report) => report.verdict === "pass",
-  "process-failure": (report) => report.verdict === "process" || report.checks.some((entry) => entry.state === "fail"),
-  "response-invalid": (report) => report.verdict !== "pass" && report.checks.some((entry) => entry.state === "fail"),
-  "output-limit": (report) => report.verdict !== "pass" && report.checks.some((entry) => entry.state === "fail"),
-  timeout: (report) => report.verdict === "process" || report.checks.some((entry) => entry.state === "fail"),
-  "dry-run-mutation": (report) => report.verdict !== "pass" && report.checks.some((entry) => entry.state === "fail"),
-  "extra-write": (report) => report.verdict !== "pass" && report.checks.some((entry) => entry.state === "fail"),
+  ok: (report) => report?.verdict === "pass",
+  // The adapter process died before any response: crash detail.
+  "process-failure": (report) => report !== null && report.verdict === "process" && hasFailure(report, "describe.handshake", "crash"),
+  // Non-JSON bytes on the wire surface of the describe exchanges.
+  "response-invalid": (report) => report?.verdict === "protocol" && hasFailure(report, "describe.handshake", "not-json"),
+  // The real callback-failure path: the SDK answered the handshake with
+  // a closed error envelope (operation-failed) instead of capabilities.
+  "operation-error": (report) => report?.verdict === "feature" && hasFailure(report, "describe.handshake", "operation-failed"),
+  // The stderr bound tripped while the serve loop was live.
+  "output-limit": (report) => report?.verdict === "process" && hasFailure(report, "describe.handshake", "output-limit"),
+  // The host's deadline enforcement terminated a stalled handler.
+  timeout: (report) => report?.verdict === "process" && hasFailure(report, "describe.handshake", "deadline"),
+  "dry-run-mutation": (report) =>
+    // Bound to the dry-run check id: the SDK lanes surface the mutation
+    // as a closed operation failure; the control's raw write throws in
+    // the sandbox and the process dies — both are the mutation surfacing
+    // on exactly this check, never a silent success.
+    hasFailure(report, "generate.dry-run-plan", "operation-failed") || hasFailure(report, "generate.dry-run-plan", "crash"),
+  "extra-write": (report) => report?.verdict === "feature" && hasFailure(report, "generate.apply-plan", "undeclared"),
 };
 
 /** Real per-language SDK lifecycle lanes (issue #106 review r2 #8, r3
@@ -316,13 +330,17 @@ for (const build of templateBuilds) {
 
 /** adapterMode → the closed fault vocabulary shared by the control and
  * the reference templates (null = none). A hostile recipe must never
- * report pass; a cooperative recipe must report pass. */
+ * report pass; a cooperative recipe must report pass. The in-serve
+ * knobs (issue #106 review r4 #7) drive the real SDK paths inside the
+ * serve loop: callback-crash fails the handler (closed error envelope),
+ * callback-hang stalls the handler past every deadline, and log-verbose
+ * floods the bounded SDK logger from inside the handler. */
 const MODE_FAULTS = {
   cooperative: null,
-  "silent-exit": "crash",
+  "callback-crash": "callback-crash",
   "stdout-noise": "garbage",
-  "stderr-verbose": null, // bounded logging must not disturb a good run
-  slow: "hang",
+  "stderr-verbose": "log-verbose", // bounded logging must not disturb a good run
+  slow: "callback-hang", // deadline enforcement with the serve loop live
   oversize: "noise", // hostile probe: the run must still fail, never normalize
   "write-through": "mutate-dry",
   "undeclared-write": "extra-write",
@@ -361,12 +379,14 @@ const runBattery = (adapterArgs, profile, timeoutMs) => {
 };
 const assertTerminal = (lane, recipe, report, expect) => {
   const classify = expectedTerminals[expect];
+  if (!classify) fail("lifecycle-terminal-class", `${lane}/${recipe.case}: unknown expected terminal ${expect}`);
   if (report === null) {
-    // No report at all: only the process-failure class accepts this.
-    if (expect !== "process-failure") fail("lifecycle-terminal", `${lane}/${recipe.case}: expected ${expect}, battery produced no report`);
+    // No report at all: with the specific predicates nothing qualifies
+    // from a missing report — the recipe failed to produce evidence.
+    fail("lifecycle-terminal", `${lane}/${recipe.case}: expected ${expect}, battery produced no report`);
     return;
   }
-  if (!classify || !classify(report)) {
+  if (!classify(report)) {
     fail("lifecycle-terminal", `${lane}/${recipe.case}: expected ${expect}, verdict ${report.verdict}, failing: ${JSON.stringify((report.checks ?? []).filter((c) => c.state === "fail").map((c) => [c.id, c.detail]).slice(0, 3))}`);
   }
 };
@@ -413,6 +433,105 @@ if (lifecycleAccounting.hostile !== hostileRecipes.length * lifecycleLanguages.l
 }
 if (lifecycleAccounting.fileLegs !== 1) {
   fail("lifecycle-file-leg", `the file-exchange fixture executed ${lifecycleAccounting.fileLegs} times, expected exactly 1`);
+}
+
+// Negative controls (issue #106 review r4 #7): predicate specificity is
+// proved, not assumed. A battery that never starts (broken adapter
+// executable) and a synthetic unrelated setup failure must qualify NO
+// hostile terminal — the r3 predicates accepted any failing check, so
+// both of these qualified every class at once.
+lifecycleAccounting.negativeControls = 0;
+{
+  const hostileTerminals = Object.keys(expectedTerminals).filter((terminal) => terminal !== "ok");
+  const broken = runBattery(["node", join(tmpdir(), "lekalo-negative-control-missing.mjs")], "strict", 5000);
+  const brokenQualified = hostileTerminals.filter((terminal) => expectedTerminals[terminal](broken));
+  // A battery that never starts may legitimately be a process failure —
+  // but NOTHING ELSE: one unrelated failure must never qualify several
+  // hostile classes at once (the r3 predicates qualified all of them).
+  if (brokenQualified.length > 1 || (brokenQualified.length === 1 && brokenQualified[0] !== "process-failure")) {
+    fail("lifecycle-negative-control", `a broken-adapter battery qualified ${JSON.stringify(brokenQualified)} — an unrelated failure must not satisfy hostile terminals`);
+  }
+  lifecycleAccounting.negativeControls += 1;
+  const unrelated = {
+    verdict: "feature",
+    checks: [{ id: "describe.negotiation", class: "feature", state: "fail", detail: "setup" }],
+  };
+  for (const terminal of hostileTerminals) {
+    if (expectedTerminals[terminal](unrelated)) {
+      fail("lifecycle-negative-control", `an unrelated describe.negotiation setup failure qualified the ${terminal} terminal`);
+    }
+  }
+  lifecycleAccounting.negativeControls += 1;
+}
+
+// Real per-SDK lifecycle lanes beyond the battery (issue #106 review r4
+// #7): a POSITIVE valid file exchange and an oversized-response refusal
+// through the real bounded serializer, one leg per SDK lane — the
+// battery's file fixture is control-only and its stderr class is not
+// the SDK stdout budget.
+lifecycleAccounting.fileValidLegs = 0;
+lifecycleAccounting.outputLimitLegs = 0;
+{
+  const fileExchangeDir = mkdtempSync(join(tmpdir(), "adapter-sdk-vectors-file-exchange-"));
+  process.on("exit", () => {
+    try { rmSync(fileExchangeDir, { recursive: true, force: true }); } catch { /* best effort */ }
+  });
+  const validDescribe = JSON.stringify({
+    limits: { max_output_bytes: 8388608, timeout_ms: 60000 },
+    operation: "describe",
+    project_root: ".",
+    protocol: "lekalo.target/v1",
+    protocol_version: "0.3.2",
+    request_id: `req-${"e".repeat(64)}`,
+  });
+  // A VALID request declaring max_output_bytes:1 (the wire minimum):
+  // every legal envelope exceeds one byte, so the completed response
+  // must refuse at the bounded serializer — nonzero exit, empty stdout,
+  // never a truncated success.
+  const tinyBudget = JSON.stringify({
+    limits: { max_output_bytes: 1, timeout_ms: 60000 },
+    operation: "describe",
+    project_root: ".",
+    protocol: "lekalo.target/v1",
+    protocol_version: "0.3.2",
+    request_id: `req-${"f".repeat(64)}`,
+  });
+  for (const lang of lifecycleLanguages.filter((lane) => ALL.includes(lane))) {
+    const adapterArgs = lifecycleAdapters[lang];
+    // Positive file exchange: the host-owned --lekalo-request-file
+    // coordinate carries a VALID request; the run must complete with a
+    // real success envelope (status ok, capabilities present).
+    const requestFile = join(fileExchangeDir, `valid-${lang}.json`);
+    writeFileSync(requestFile, validDescribe);
+    const fileLeg = run(adapterArgs[0], [...adapterArgs.slice(1), "--lekalo-request-file", requestFile], ROOT, { input: Buffer.alloc(0), timeout: 60000 });
+    if (fileLeg.status !== 0) {
+      fail("lifecycle-file-exchange-valid", `${lang}: a valid request through the file coordinate refused: ${(fileLeg.stderr ?? "").slice(-200)}`);
+    }
+    let envelope = null;
+    try { envelope = JSON.parse((fileLeg.stdout ?? "").trim()); } catch { /* not json */ }
+    if (envelope === null || envelope.status !== "ok" || envelope.capabilities === undefined) {
+      fail("lifecycle-file-exchange-valid", `${lang}: the file-coordinate exchange did not emit a success capabilities envelope`);
+    }
+    lifecycleAccounting.fileValidLegs += 1;
+    // Oversized emission through the bounded serializer: the response
+    // exceeds the declared one-byte budget and must refuse — nonzero
+    // exit, zero stdout bytes, a bounded stderr line.
+    const budgetLeg = run(adapterArgs[0], [...adapterArgs.slice(1)], ROOT, { input: Buffer.from(tinyBudget, "utf8"), timeout: 60000 });
+    if (budgetLeg.status === 0) {
+      fail("lifecycle-output-limit", `${lang}: a response over the declared one-byte budget was emitted as success`);
+    }
+    if ((budgetLeg.stdout ?? "").length > 0) {
+      fail("lifecycle-output-limit", `${lang}: the oversize refusal wrote stdout bytes`);
+    }
+    lifecycleAccounting.outputLimitLegs += 1;
+  }
+  const expectedLegs = lifecycleLanguages.filter((lane) => ALL.includes(lane)).length;
+  if (lifecycleAccounting.fileValidLegs !== expectedLegs) {
+    fail("lifecycle-file-exchange-count", `executed ${lifecycleAccounting.fileValidLegs} valid file legs, expected ${expectedLegs} (one per SDK lane)`);
+  }
+  if (lifecycleAccounting.outputLimitLegs !== expectedLegs) {
+    fail("lifecycle-output-limit-count", `executed ${lifecycleAccounting.outputLimitLegs} serializer-budget legs, expected ${expectedLegs} (one per SDK lane)`);
+  }
 }
 
 // Process-level transport vectors (issue #106 review r3 #6): the input
@@ -524,48 +643,57 @@ const transportAccounting = { invalidBytes: 0, straddle: 0 };
   }
 }
 
-// Production admission oracle (issue #106 review r2 #10, r3 #8): the
-// FULL request corpus — valid, invalid, semantic-request, and upgrade
-// rows — replays through the production wire decoder as RAW BYTES in
-// line-safe hex framing, so numeric spellings, duplicate keys, CR/LF,
-// and control bytes reach production unchanged, and the RESPONSE corpus
-// replays through the production response decoder. Every row's verdict
-// must match the corpus declaration exactly.
+// Production admission oracle (issue #106 review r2 #10, r3 #8, r4 #8):
+// the FULL corpus — requests AND responses, including the semantic
+// vectors' embedded responses — replays through the production wire
+// decoders. Framing is derived from the ORIGINAL file Buffers (hex), so
+// numeric spellings, duplicate keys, CR/LF, control bytes, and
+// genuinely invalid UTF-8 reach production unchanged — the r4 gate read
+// corpus files as utf8 strings and re-encoded them, replacing every
+// invalid byte before the decoder ever saw it. The row set is an
+// EXPLICIT corpus-derived inventory: every case names the production
+// layer it exercises, exclusions are justified inline, and the executed
+// rows must equal the inventory exactly.
 const oracle = join(ROOT, "target", "debug", process.platform === "win32" ? "adapter-sdk-oracle.exe" : "adapter-sdk-oracle");
 if (!existsSync(oracle)) {
   const build = run("cargo", ["build", "--locked", "-p", "lekalo-cli", "--bin", "adapter-sdk-oracle"]);
   if (build.status !== 0) fail("oracle-missing", (build.stderr ?? "").slice(-400));
 }
-// Corpus rows: {relative, hex, mode, accept, reason, compareReason} —
-// accept declares the production verdict the row pins. Every row is fed
-// (no cross-family dedup) so the per-family accounting certifies that
-// the semantic-request rows actually reach production instead of being
-// aliased away by byte-identical valid/ rows.
-const oracleRows = [];
-const pushRow = (relative, text, mode, accept, reason, compareReason = false) => {
-  const hex = Buffer.from(text, "utf8").toString("hex");
-  oracleRows.push({ relative, hex, mode, accept, reason, compareReason });
+// Inventory entries: {relative → {bytes, mode, accept, reason?, compareReason?}}.
+// mode "B" = the production request decoder; "V" = the production
+// response decoder. No cross-family dedup: the per-family accounting
+// certifies that every declared row actually reached production.
+const oracleInventory = new Map();
+const pushRow = (relative, bytes, mode, accept, reason, compareReason = false) => {
+  if (oracleInventory.has(relative)) fail("oracle-inventory-duplicate", relative);
+  oracleInventory.set(relative, { bytes, mode, accept, reason, compareReason });
 };
+const readCorpusBytes = (relative) => readFileSync(join(corpusRoot, relative));
 for (const name of corpusFiles("valid")) {
-  const text = readFileSync(join(corpusRoot, "valid", name), "utf8");
+  const bytes = readCorpusBytes(`valid/${name}`);
+  // Valid rows are well-formed UTF-8; the response/request split is the
+  // same envelope-shape check the runners use.
+  const text = bytes.toString("utf8");
   const document = JSON.parse(text);
   if (document.status !== undefined) {
-    pushRow(`valid/${name}`, text, "V", true, undefined); // response corpus: production must admit
+    pushRow(`valid/${name}`, bytes, "V", true, undefined); // response corpus: production must admit
   } else {
-    pushRow(`valid/${name}`, text, "B", true, undefined);
+    pushRow(`valid/${name}`, bytes, "B", true, undefined);
   }
 }
 for (const name of corpusFiles("invalid")) {
-  const text = readFileSync(join(corpusRoot, "invalid", name), "utf8");
+  // RAW BYTES from disk (issue #106 review r4 #8): the invalid-utf8 row
+  // must reach production byte-for-byte.
+  const bytes = readCorpusBytes(`invalid/${name}`);
   const expect = JSON.parse(readFileSync(join(corpusRoot, "invalid", name.replace(/\.json$/, ".expect.json")), "utf8"));
-  const isResponse = text.includes('"status"') && text.includes('"evidence"');
+  const isResponse = bytes.toString("utf8").includes('"status"') && bytes.toString("utf8").includes('"evidence"');
   if (isResponse) {
     // Response corpus: production must refuse, unless the expect row
     // explicitly records the reviewed safe-direction divergence where
     // the SDK is stricter at emission than the production wire decoder
     // (e.g. the native-plan digest spelling, which production's typed
     // wire decode accepts and its client rejects downstream).
-    pushRow(`invalid/${name}`, text, "V", expect.productionAccepts === true, undefined);
+    pushRow(`invalid/${name}`, bytes, "V", expect.productionAccepts === true, undefined);
     continue;
   }
   const isRequest = !expect.stage || expect.stage !== "none";
@@ -574,39 +702,79 @@ for (const name of corpusFiles("invalid")) {
   // refusal vocabulary; validate-stage rows are semantic (production
   // accepts the wire shape and refuses in its own validate pass with
   // the same reason vocabulary).
-  pushRow(`invalid/${name}`, text, "B", false, expect.reason);
+  pushRow(`invalid/${name}`, bytes, "B", false, expect.reason);
 }
+const semanticWithResponse = [];
 for (const name of corpusFiles("semantic")) {
   const vector = JSON.parse(readFileSync(join(corpusRoot, "semantic", name), "utf8"));
   // Request-bearing semantic rows: the runners replay
   // JSON.stringify(vector.request) bytes, so production must admit the
   // same bytes — these vectors pin client-layer semantics (pairing,
   // evidence depth), not wire shape, and a production refusal here is a
-  // parity hole. `text` rows (decode-oversize) carry no request member.
+  // parity hole.
   if (vector.request !== undefined) {
-    pushRow(`semantic/${name}`, JSON.stringify(vector.request), "B", true, undefined);
+    pushRow(`semantic/${name}`, Buffer.from(JSON.stringify(vector.request), "utf8"), "B", true, undefined);
+  }
+  // Response-bearing semantic rows (issue #106 review r4 #8): the
+  // embedded response replays through the production RESPONSE decoder.
+  // The default expectation is WIRE ADMISSIBILITY (the wire decoder is
+  // the layer this oracle exercises): `accept` vectors and
+  // semantic-only rejections (pairing, echo, plan-id, span uniqueness)
+  // are wire-admissible, so they default to accept=true; the four
+  // lint-evidence rows whose bytes production's wire decoder itself
+  // refuses declare productionResponseAccepts:false. Vectors with
+  // neither request nor response (canonical-plan, artifact-manifest,
+  // scenario-result, decode-oversize text rows) carry no wire document
+  // and are excluded from the oracle inventory by construction.
+  if (vector.response !== undefined) {
+    semanticWithResponse.push(name);
+    const accept = vector.productionResponseAccepts !== undefined
+      ? vector.productionResponseAccepts === true
+      : true;
+    pushRow(`semantic/${name}#response`, Buffer.from(JSON.stringify(vector.response), "utf8"), "V", accept, undefined);
   }
 }
 for (const name of corpusFiles("upgrade")) {
   const row = JSON.parse(readFileSync(join(corpusRoot, "upgrade", name), "utf8"));
   // Raw-byte rows replay the exact fixture spelling (rawRequest);
   // object rows replay the same JSON.stringify bytes the runners use.
-  const bytes = row.rawRequest ?? JSON.stringify(row.request);
+  const bytes = row.rawRequest !== undefined
+    ? Buffer.from(row.rawRequest, "utf8")
+    : Buffer.from(JSON.stringify(row.request), "utf8");
   pushRow(`upgrade/${name}`, bytes, "B", row.accept === true, row.reason, true);
 }
+const oracleRows = [...oracleInventory.entries()].map(([relative, entry]) => ({
+  relative,
+  hex: entry.bytes.toString("hex"),
+  mode: entry.mode,
+  accept: entry.accept,
+  reason: entry.reason,
+  compareReason: entry.compareReason,
+}));
 const oracleInput = oracleRows.map((row) => `${row.mode}\t${row.hex}`).join("\n") + "\n";
 const oracleRun = spawnSync(oracle, [], { input: oracleInput, encoding: "utf8", timeout: 300_000, shell: process.platform === "win32" });
 if (oracleRun.status !== 0) fail("oracle-failed", (oracleRun.stderr ?? "").slice(-300));
 const oracleVerdicts = (oracleRun.stdout ?? "").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
 if (oracleVerdicts.length !== oracleRows.length) fail("oracle-row-count", `${oracleVerdicts.length} vs ${oracleRows.length}`);
 let oracleChecked = 0;
-const oracleAccounting = { requests: 0, responses: 0, semanticRequests: 0 };
+const oracleAccounting = { requests: 0, responses: 0, semanticRequests: 0, semanticResponses: 0 };
+// The semantic-response gap stays pinned (issue #106 review r4 #8):
+// every semantic vector that embeds a response must produce exactly one
+// response oracle row — the r4 gate replayed zero of the fifteen.
+if (semanticWithResponse.length === 0) {
+  fail("oracle-semantic-responses-empty", "no semantic vector embeds a response");
+}
 oracleRows.forEach((row, index) => {
   const verdict = oracleVerdicts[index];
   oracleChecked += 1;
-  if (row.mode === "V") oracleAccounting.responses += 1;
-  else if (row.relative.startsWith("semantic/")) oracleAccounting.semanticRequests += 1;
-  else oracleAccounting.requests += 1;
+  if (row.mode === "V") {
+    oracleAccounting.responses += 1;
+    if (row.relative.startsWith("semantic/")) oracleAccounting.semanticResponses += 1;
+  } else if (row.relative.startsWith("semantic/")) {
+    oracleAccounting.semanticRequests += 1;
+  } else {
+    oracleAccounting.requests += 1;
+  }
   if (verdict.accepted !== row.accept) {
     fail("oracle-disagreement", `${row.relative}: production ${verdict.accepted ? "accepted" : `refused (${verdict.reason})`}, corpus declares accept=${row.accept}`);
   }
@@ -618,6 +786,17 @@ oracleRows.forEach((row, index) => {
     fail("oracle-reason", `${row.relative}: production refused with ${verdict.reason}, corpus declares ${row.reason}`);
   }
 });
+if (oracleAccounting.semanticResponses !== semanticWithResponse.length) {
+  fail("oracle-semantic-responses", `replayed ${oracleAccounting.semanticResponses} semantic responses, the corpus embeds ${semanticWithResponse.length}`);
+}
+// Byte-preservation regression (issue #106 review r4 #8): the invalid
+// UTF-8 row's raw 0xFF must appear in the framed hex fed to production.
+{
+  const row = oracleRows.find((candidate) => candidate.relative === "invalid/request-invalid-utf8.json");
+  if (!row || !row.hex.includes("ff")) {
+    fail("oracle-byte-preservation", "the invalid-utf8 corpus row did not frame its raw bytes");
+  }
+}
 
 process.stdout.write(`${JSON.stringify({
   ok: true,

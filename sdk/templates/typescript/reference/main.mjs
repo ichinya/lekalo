@@ -25,9 +25,27 @@ const WRITE_ROOT = ".lekalo/generated";
 // the hostile classes against the real SDK serve loop — a faulted SDK
 // adapter must fail its recipe exactly like the control does. A run
 // without --lekalo-fault is fully cooperative.
+//
+// In-serve knobs (issue #106 review r4 #7): callback-crash throws inside
+// the real handler (the SDK serve loop must answer with a closed error
+// envelope, never a crash), callback-hang stalls inside the handler past
+// every deadline (host termination while the SDK serve loop is live),
+// and log-verbose floods the bounded SDK logger from inside the handler
+// (a verbose run must still pass). The pre-serve knobs remain for the
+// host-termination classes they pin.
 const FAULT_ARG = process.argv.indexOf("--lekalo-fault");
 const FAULT = FAULT_ARG !== -1 && process.argv[FAULT_ARG + 1] ? process.argv[FAULT_ARG + 1] : "";
 const fault = (name) => FAULT.split(",").includes(name);
+const CALLBACK_CRASH = () => {
+  if (fault("callback-crash")) throw new Error("callback exploded inside the SDK serve loop");
+};
+const AWAIT_CALLBACK_HANG = async () => {
+  if (fault("callback-hang")) await new Promise((resolve) => setTimeout(resolve, 60_000));
+};
+const LOG_VERBOSE = (log) => {
+  if (!fault("log-verbose")) return;
+  for (let index = 0; index < 200; index += 1) log.error(`verbose lifecycle tick ${index}`);
+};
 if (fault("crash")) process.exit(3);
 if (fault("garbage")) {
   process.stdout.write("<this is not json>");
@@ -89,7 +107,10 @@ process.exitCode = await serve({
       }
       return { planId: request.plan_id ?? planId(plan), writes: plan };
     },
-    async describe() {
+    async describe({ log }) {
+      LOG_VERBOSE(log);
+      await AWAIT_CALLBACK_HANG();
+      CALLBACK_CRASH();
       return buildCapabilities({
         adapter: IDENTITY,
         capabilities: CAPABILITIES,
@@ -103,7 +124,10 @@ process.exitCode = await serve({
         writeScopes: WRITE_SCOPES,
       });
     },
-    async generate({ request }) {
+    async generate({ log, request }) {
+      LOG_VERBOSE(log);
+      await AWAIT_CALLBACK_HANG();
+      CALLBACK_CRASH();
       const { body, modelPath, writes } = deterministicWrites(request);
       assertWithinScopes(writes, WRITE_SCOPES);
       if (request.dry_run === false || fault("mutate-dry")) {
