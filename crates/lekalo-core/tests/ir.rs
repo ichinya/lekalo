@@ -515,6 +515,66 @@ fn successor_constraints_validate_fields_and_normalization() {
     );
 }
 
+/// Decoder/schema parity probes for the relation and constraint member
+/// grammars: whatever the published Model schema admits, the decoder
+/// admits, and whatever it refuses, the decoder refuses. The separator
+/// is a literal dot on both sides, lengths count characters (not UTF-8
+/// bytes) on both sides, and an explicit `null` is refused exactly like
+/// the closed schema refuses it (absent is the only omission spelling).
+#[test]
+fn relation_and_constraint_grammar_matches_the_published_schema() {
+    // A non-dot separator (`!`) is schema-invalid now that the pattern
+    // escapes the separator, and the decoder refuses it in lockstep.
+    let bang_separator = format!(
+        "{}{}{}",
+        THING_SCALARS,
+        "  - id: alpha.left\n    kind: entity\n    version: 1\n    fields:\n      - name: id\n        type: alpha.thing\n        required: true\n    identity:\n      - id\n    relations:\n      - id: \"alpha!rel!thing\"\n        target: \"alpha.right\"\n        localFields:\n          - id\n        targetFields:\n          - id\n        min: 0\n        max: null\n        ownership: local\n        onDetach: retain-history\n        onDelete: restrict\n",
+        "  - id: alpha.right\n    kind: entity\n    version: 1\n    fields:\n      - name: id\n        type: alpha.thing\n        required: true\n    identity:\n      - id\n"
+    );
+    assert_refused("bang-separator-id", &bang_separator, &["ir.value-invalid"]);
+
+    // JSON Schema string lengths count characters: a 128-scalar
+    // non-ASCII scope is schema-valid under `maxLength: 128` and the
+    // decoder's char-based bound admits it too (it is 256 UTF-8
+    // bytes, which a byte-based bound would have refused).
+    let unicode_scope = "\u{00e9}".repeat(128);
+    let unicode_constraint = format!(
+        "      - id: \"alpha.uq.thing\"\n        fields:\n          - id\n        comparison: exact-text\n        scope: \"{unicode_scope}\"\n"
+    );
+    assert_compiles(
+        "constraint-unicode-scope-128-chars",
+        &format!(
+            "{THING_SCALARS}{}",
+            entity("alpha.record", "", &unicode_constraint)
+        ),
+    );
+    let over_scope = "\u{00e9}".repeat(129);
+    let over_constraint = format!(
+        "      - id: \"alpha.uq.thing\"\n        fields:\n          - id\n        comparison: exact-text\n        scope: \"{over_scope}\"\n"
+    );
+    assert_refused(
+        "constraint-unicode-scope-129-chars",
+        &format!(
+            "{THING_SCALARS}{}",
+            entity("alpha.record", "", &over_constraint)
+        ),
+        &["ir.value-invalid"],
+    );
+
+    // An explicit `null` normalizationRef is schema-invalid in every
+    // position; the decoder distinguishes it from an absent member and
+    // refuses it instead of silently treating it as an omission.
+    let null_normalization = "      - id: \"alpha.uq.thing\"\n        fields:\n          - id\n        comparison: exact-text\n        normalizationRef: null\n        scope: \"alpha-record-id\"\n";
+    assert_refused(
+        "constraint-null-normalization",
+        &format!(
+            "{THING_SCALARS}{}",
+            entity("alpha.record", "", null_normalization)
+        ),
+        &["ir.value-invalid"],
+    );
+}
+
 #[test]
 fn missing_required_members_fail_their_owning_definition() {
     // Every required relation member is diagnosed with its own

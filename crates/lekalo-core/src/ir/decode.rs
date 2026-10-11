@@ -1363,7 +1363,18 @@ fn decode_unique_constraint(
     let normalization_ref = match members.get("normalizationRef") {
         None => None,
         Some(entry) => match &entry.value.value {
-            Value::Scalar(Scalar::Null) => None,
+            // The closed schema has no nullable member anywhere: an
+            // explicit `null` is schema-invalid in every position, so
+            // the decoder refuses it instead of silently conflating
+            // "absent" (the only omission spelling) with "null".
+            Value::Scalar(Scalar::Null) => {
+                cx.push(
+                    VALUE_INVALID,
+                    entry.node().span,
+                    serde_json::json!({ "detail": "constraint-normalization-null" }),
+                );
+                return None;
+            }
             _ => Some(decode_reference(
                 entry.node(),
                 &format!("{pointer}/normalizationRef"),
@@ -1384,7 +1395,10 @@ fn decode_unique_constraint(
     }
     let scope_node = required_member(&members, "scope", node, cx)?.node();
     let scope_text = cx.string(scope_node, "constraint-scope")?;
-    if scope_text.is_empty() || scope_text.len() > 128 {
+    // JSON Schema string lengths count characters, never bytes, so
+    // the runtime bound mirrors `maxLength` exactly: a 128-scalar
+    // non-ASCII scope is schema-valid and must load too.
+    if scope_text.is_empty() || scope_text.chars().count() > 128 {
         cx.push(
             VALUE_INVALID,
             scope_node.span,

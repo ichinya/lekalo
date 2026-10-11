@@ -583,6 +583,12 @@ pub struct ConflictRecord {
     /// provider-side version an expected-version precondition must
     /// match).
     pub observed_revision: String,
+    /// The current link version an expected-version precondition must
+    /// match (the second required version of the resolution contract).
+    pub link_version: u64,
+    /// The conflicted field scope: the exact fields the conflict is
+    /// about, which an admitted authority must cover.
+    pub fields: Vec<String>,
     /// The lifecycle state.
     pub state: ConflictState,
 }
@@ -608,10 +614,19 @@ pub struct ResolutionAudit {
     /// The expected version the resolver presented (the precondition
     /// that matched).
     pub expected_revision: String,
+    /// The expected link version the resolver presented (the second
+    /// required precondition).
+    pub expected_link_version: u64,
     /// The resolved revision.
     pub resolved_revision: String,
     /// The resolving actor class.
     pub actor: String,
+    /// The explicit resolution decision that closed the conflict.
+    pub decision: ResolutionDecision,
+    /// The field scope the admitted authority covered.
+    pub fields: Vec<String>,
+    /// The causation identity of the resolution command.
+    pub causation_id: String,
 }
 
 /// The outcome of one explicit resolution attempt.
@@ -633,58 +648,121 @@ pub enum ResolveOutcome {
     Replayed,
 }
 
+/// The closed explicit resolution decision vocabulary (the research
+/// contract's `accept_local|accept_remote|merge_allowed_fields`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ResolutionDecision {
+    /// Take the local value and close the conflict.
+    AcceptLocal,
+    /// Take the remote value and close the conflict.
+    AcceptRemote,
+    /// Merge exactly the permitted allowed fields and close.
+    MergeAllowedFields,
+}
+
+impl ResolutionDecision {
+    /// The exact wire key.
+    pub const fn key(self) -> &'static str {
+        match self {
+            Self::AcceptLocal => "accept_local",
+            Self::AcceptRemote => "accept_remote",
+            Self::MergeAllowedFields => "merge_allowed_fields",
+        }
+    }
+
+    /// Registry lookup by exact key.
+    pub fn from_key(key: &str) -> Option<Self> {
+        match key {
+            "accept_local" => Some(Self::AcceptLocal),
+            "accept_remote" => Some(Self::AcceptRemote),
+            "merge_allowed_fields" => Some(Self::MergeAllowedFields),
+            _ => None,
+        }
+    }
+}
+
 /// The typed resolution authority of one resolver: the current,
 /// scoped authorization decision over the exact link and field scope.
 /// A resolver without an explicit allowed decision is never admitted,
-/// whatever revision it presents.
+/// whatever revision it presents; the actor is a closed admitted
+/// class, the link and field scope are explicit and protected planning
+/// fields are refused at construction, so an authority can never be
+/// minted wider than the decision it carries.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolutionAuthority {
     /// The resolving actor class (admitted, never free text).
     pub actor: String,
+    /// The exact link this authority resolves conflicts on.
+    pub link_id: String,
     /// The current authorization decision for this resolution.
     pub authorization: AuthorizationOutcome,
     /// The allowed field scope of the resolution (the exact fields the
     /// admitted decision covers).
     pub fields: Vec<String>,
+    /// The explicit resolution decision the authority permits.
+    pub decision: ResolutionDecision,
+    /// The causation identity of the resolution command.
+    pub causation_id: String,
 }
 
 impl ResolutionAuthority {
-    /// One checked authority: the actor is a bounded token and the
-    /// field scope is non-empty, so an unscoped "resolve everything"
-    /// authority cannot be constructed.
+    /// One checked authority: the actor is one of the admitted closed
+    /// classes (never free text like `provider.foreign`), the link and
+    /// field scope are explicit, non-empty, bounded, and never touch a
+    /// protected planning field, the decision is one of the closed
+    /// resolution decisions, and the causation identity is present —
+    /// so an unscoped "resolve everything" authority cannot be
+    /// constructed.
     pub fn new(
         actor: &str,
+        link_id: &str,
         authorization: AuthorizationOutcome,
         fields: Vec<String>,
+        decision: ResolutionDecision,
+        causation_id: &str,
     ) -> Option<Self> {
-        let actor_ok = !actor.is_empty() && actor.len() <= 128;
+        const ADMITTED_ACTORS: [&str; 3] = ["identity.user", "system.job", "provider.event"];
+        let bounded = |text: &str| !text.is_empty() && text.len() <= 128;
+        let actor_ok = ADMITTED_ACTORS.contains(&actor);
+        let link_ok = bounded(link_id) && bounded(causation_id);
         let fields_ok = !fields.is_empty()
-            && fields
-                .iter()
-                .all(|field| !field.is_empty() && field.len() <= 128);
-        (actor_ok && fields_ok).then(|| Self {
+            && fields.iter().all(|field| {
+                bounded(field)
+                    && !super::validate::PROTECTED_PLANNING_FIELDS.contains(&field.as_str())
+            });
+        (actor_ok && link_ok && fields_ok).then(|| Self {
             actor: actor.to_owned(),
+            link_id: link_id.to_owned(),
             authorization,
             fields,
+            decision,
+            causation_id: causation_id.to_owned(),
         })
     }
 }
 
-/// Resolve one conflict under an explicit expected-version
-/// precondition and a current scoped authority, appending an immutable
-/// audit entry atomically with the resolution.
+/// Resolve one conflict under explicit expected-version preconditions
+/// (the observed conflict revision AND the current link version) and a
+/// current scoped authority, appending an immutable audit entry
+/// atomically with the resolution.
 ///
 /// Admission order: an unauthorized resolver is refused outright
-/// (`Denied`, no state change, no audit) whatever revision it names; a
-/// resolver whose expected version does not equal the record's
-/// observed revision is stale and refused outright; a fresh admitted
-/// resolution closes the conflict and appends exactly one audit entry;
-/// resolving an already-resolved record replays without a duplicate.
+/// (`Denied`, no state change, no audit) whatever revisions it names;
+/// an authority minted for a DIFFERENT link, or whose field scope is
+/// not contained in the conflict's own conflicted fields, is equally
+/// refused (`Denied`) — scope is authority, not a suggestion; a
+/// resolver whose expected conflict revision or expected link version
+/// does not match the record is stale and refused outright; a fresh
+/// admitted resolution closes the conflict and appends exactly one
+/// audit entry carrying the actor, decision, both revisions, field
+/// scope, and causation; resolving an already-resolved record replays
+/// without a duplicate.
 pub fn resolve_conflict(
     conflicts: &mut BTreeMap<String, ConflictRecord>,
     audit_log: &mut Vec<ResolutionAudit>,
     conflict_id: &str,
     expected_revision: &str,
+    expected_link_version: u64,
     authority: &ResolutionAuthority,
 ) -> ResolveOutcome {
     // Authority first: an unadmitted actor never reaches the record,
@@ -695,10 +773,22 @@ pub fn resolve_conflict(
     let Some(record) = conflicts.get_mut(conflict_id) else {
         return ResolveOutcome::Unknown;
     };
+    // Link and field scope are binding: an authority minted for another
+    // link, or covering fields this conflict is not about, resolves
+    // nothing here.
+    if record.link_id != authority.link_id
+        || !authority
+            .fields
+            .iter()
+            .all(|field| record.fields.contains(field))
+    {
+        return ResolveOutcome::Denied;
+    }
     if record.state == ConflictState::Resolved {
         return ResolveOutcome::Replayed;
     }
-    if record.observed_revision != expected_revision {
+    if record.observed_revision != expected_revision || record.link_version != expected_link_version
+    {
         return ResolveOutcome::Stale;
     }
     record.state = ConflictState::Resolved;
@@ -706,8 +796,12 @@ pub fn resolve_conflict(
         conflict_id: conflict_id.to_owned(),
         link_id: record.link_id.clone(),
         expected_revision: expected_revision.to_owned(),
+        expected_link_version,
         resolved_revision: record.observed_revision.clone(),
         actor: authority.actor.to_owned(),
+        decision: authority.decision,
+        fields: authority.fields.clone(),
+        causation_id: authority.causation_id.clone(),
     });
     ResolveOutcome::Resolved
 }
@@ -759,9 +853,10 @@ pub fn plan_intent(
         }
         return PlanOutcome::ConflictingKey;
     }
-    // The intent id is injective: the link id and the key are joined in
-    // fixed-width hex of their byte lengths, so `(a.b, c)` and `(a, b.c)`
-    // can never collide. A collision is a caller bug and fails loudly.
+    // The intent id is injective: the link id and the key are joined
+    // with their decimal byte lengths as separators, so `(a.b, c)` and
+    // `(a, b.c)` can never collide. A collision is a caller bug and
+    // fails loudly.
     let intent_id = injective_intent_id(&link.link_id, &key);
     if intents.contains_key(&intent_id) {
         return PlanOutcome::NotAdmitted;

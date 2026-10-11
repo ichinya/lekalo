@@ -128,25 +128,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tmp_revision_debug() {
-        let bytes =
-            std::fs::read("../../tests/fixtures/task-external-links/contracts/integration.json")
-                .or_else(|_| {
-                    std::fs::read("tests/fixtures/task-external-links/contracts/integration.json")
-                })
-                .expect("fixture");
-        let rev = compute_revision(&bytes).expect("revision");
-        let declared: serde_json::Value = serde_json::from_slice::<serde_json::Value>(&bytes)
-            .unwrap()["attachmentRevision"]
-            .clone();
-        assert_eq!(
-            declared.as_str(),
-            Some(rev.as_str()),
-            "fixture revision recomputes"
-        );
-    }
-
-    #[test]
     fn revision_covers_every_member_and_moves_with_any_member() {
         let mut object = serde_json::Map::new();
         for member in REVISION_MEMBERS {

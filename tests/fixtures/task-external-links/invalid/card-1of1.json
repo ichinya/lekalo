@@ -1,15 +1,15 @@
 {
   "schemaVersion": "lekalo/task-links-integration/v0.8.0",
   "identity": "dev.lekalo.task-links-integration@0.8.0",
-  "attachmentRevision": "sha256:a6f3f9c9bac7f3e2cc35351559c6936a52d6fa63757787fd08af4069f1544aa3",
+  "attachmentRevision": "sha256:b73e62e6b27ead6d0b92c4fd1ee352b7ce6154841a0bcae8c29566725c5d2ed7",
   "projectId": "tasklinks",
   "modelRef": {
     "schemaVersion": "0.8.0",
-    "irDigest": "sha256:043149d77b81d42e4369c49b99397640fa7d2be3c72ad9b8b210471127db4d2b"
+    "irDigest": "sha256:534193e7c9c86ef95cda6ea3d2f0c2df6e8cc1e528e8c5627b73fdb9f9682584"
   },
   "irRef": {
     "identity": "dev.lekalo.ir@0.8.0",
-    "digest": "sha256:043149d77b81d42e4369c49b99397640fa7d2be3c72ad9b8b210471127db4d2b"
+    "digest": "sha256:534193e7c9c86ef95cda6ea3d2f0c2df6e8cc1e528e8c5627b73fdb9f9682584"
   },
   "ownerContractPins": [
     {
@@ -58,7 +58,25 @@
   "relations": [
     {
       "id": "tasklinks.rel.task_links",
+      "entity": "tasklinks.task_external_link",
       "target": "planner.task",
+      "localFields": [
+        "task_id"
+      ],
+      "targetFields": [
+        "task_id"
+      ],
+      "min": 1,
+      "max": 1,
+      "ownership": "local",
+      "onDetach": "retain-history",
+      "onDelete": "restrict",
+      "description": "Every link refers to exactly one local Task (link-to-one-Task); detach preserves history and the external object"
+    },
+    {
+      "id": "tasklinks.rel.task_owns_links",
+      "entity": "planner.task",
+      "target": "tasklinks.task_external_link",
       "localFields": [
         "task_id"
       ],
@@ -67,13 +85,14 @@
       ],
       "min": 0,
       "max": null,
-      "ownership": "local",
+      "ownership": "external",
       "onDetach": "retain-history",
       "onDelete": "restrict",
-      "description": "One task owns zero or more links; detach preserves history and the external object"
+      "description": "One task owns zero or more external links (Task 0..N links); the link aggregate is owned by the tasklinks module"
     },
     {
       "id": "tasklinks.rel.link_outbox",
+      "entity": "tasklinks.outbox_item",
       "target": "tasklinks.task_external_link",
       "localFields": [
         "link_id"

@@ -83,7 +83,7 @@ fn valid_attachment_validates_strict_with_exact_counts() {
     assert_eq!(report["status"], "valid");
     assert_eq!(report["projectId"], "tasklinks");
     assert_eq!(report["modelRef"]["schemaVersion"], "0.8.0");
-    assert_eq!(report["checks"]["relationsChecked"], 2);
+    assert_eq!(report["checks"]["relationsChecked"], 3);
     assert_eq!(report["checks"]["uniqueConstraintsChecked"], 1);
     assert_eq!(report["checks"]["providerContractsChecked"], 2);
     assert_eq!(report["checks"]["findings"], 0);
@@ -253,12 +253,17 @@ fn inspect_projects_the_typed_view_and_admits_evidence() {
         "dev.lekalo.task-links-integration@0.8.0"
     );
     let relations = payload["relations"].as_array().expect("relations");
-    assert_eq!(relations.len(), 2);
+    assert_eq!(relations.len(), 3);
     assert!(relations
         .iter()
         .any(|row| row["id"] == "tasklinks.rel.task_links"
-            && row["cardinality"] == "0..N"
+            && row["cardinality"] == "1..1"
             && row["on_detach"] == "retain-history"));
+    assert!(relations
+        .iter()
+        .any(|row| row["id"] == "tasklinks.rel.task_owns_links"
+            && row["cardinality"] == "0..N"),
+            "the Task -> links direction is part of the typed view");
     let constraints = payload["unique_constraints"]
         .as_array()
         .expect("constraints");

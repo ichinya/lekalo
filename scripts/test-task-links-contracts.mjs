@@ -173,6 +173,90 @@ for (const [name, path] of Object.entries(schemas)) {
   }
 }
 
+// 4b. Model member-grammar parity under the exact pinned Ajv: the
+//     relation/constraint identifier patterns must accept and refuse
+//     exactly what the runtime decoder accepts and refuses. Before
+//     the separator was escaped, the schema's `.` matched ANY
+//     character, so `a!b` and `a/b` ids were schema-valid while the
+//     decoder refused them, and backtracking admitted 64+-character
+//     segments over the 63-byte runtime cap. The scope bound is
+//     char-based on both sides (a 128-scalar non-ASCII scope is
+//     256 UTF-8 bytes and stays schema-valid, so the runtime bound
+//     must count characters too).
+{
+  const modelSchema = read("contracts/model.schema.v0.8.0.json");
+  const relationDefs = {
+    $defs: {
+      relation: modelSchema.$defs.relation,
+      fieldName: modelSchema.$defs.fieldName,
+    },
+    $ref: "#/$defs/relation",
+  };
+  const constraintDefs = {
+    $defs: {
+      uniqueConstraint: modelSchema.$defs.uniqueConstraint,
+      fieldName: modelSchema.$defs.fieldName,
+    },
+    $ref: "#/$defs/uniqueConstraint",
+  };
+  const relationValidator = ajv.compile(relationDefs);
+  const constraintValidator = ajv.compile(constraintDefs);
+  const relation = (id, target = "alpha.right") => ({
+    id,
+    target,
+    localFields: ["id"],
+    targetFields: ["id"],
+    min: 0,
+    max: null,
+    ownership: "local",
+    onDetach: "retain-history",
+    onDelete: "restrict",
+  });
+  const constraint = (scope, extra = {}) => ({
+    id: "alpha.uq.thing",
+    fields: ["id"],
+    comparison: "exact-text",
+    scope,
+    ...extra,
+  });
+  const cases = [
+    ["relation-dot-id-valid", () => relationValidator(relation("alpha.rel.thing")), true],
+    ["relation-bang-id-invalid", () => relationValidator(relation("alpha!rel!thing")), false],
+    ["relation-slash-target-invalid", () => relationValidator(relation("alpha.rel.thing", "alpha/right")), false],
+    [
+      "relation-64-char-segment-invalid",
+      () => relationValidator(relation(`alpha.${"b".repeat(64)}`)),
+      false,
+    ],
+    [
+      "constraint-63-char-segment-valid",
+      () => relationValidator(relation(`alpha.${"b".repeat(63)}`)),
+      true,
+    ],
+    [
+      "constraint-unicode-scope-128-chars-valid",
+      () => constraintValidator(constraint("\u00e9".repeat(128))),
+      true,
+    ],
+    [
+      "constraint-unicode-scope-129-chars-invalid",
+      () => constraintValidator(constraint("\u00e9".repeat(129))),
+      false,
+    ],
+    [
+      "constraint-null-normalization-invalid",
+      () => constraintValidator(constraint("alpha-record-id", { normalizationRef: null })),
+      false,
+    ],
+  ];
+  for (const [name, run, expected] of cases) {
+    const accepted = run();
+    if (accepted !== expected) {
+      fail("model-member-parity", `${name}: expected ${expected}`);
+    }
+  }
+}
+
 // 5. Duplicate JSON keys are rejected in every fixture JSON of the
 //    family (the repo convention; serde would silently take the last).
 function walkValues(value, visit) {
@@ -339,7 +423,7 @@ if (!schemaOnly) {
       } else {
         const envelope = JSON.parse(run.stdout);
         if (envelope.status !== "valid") fail("validate-strict-status", envelope.status);
-        if (envelope.taskLinks.checks.relationsChecked !== 2) {
+        if (envelope.taskLinks.checks.relationsChecked !== 3) {
           fail("validate-strict-counts", JSON.stringify(envelope.taskLinks.checks));
         }
         if (
@@ -368,8 +452,11 @@ if (!schemaOnly) {
       else {
         const envelope = JSON.parse(run.stdout);
         const relations = envelope.taskLinks.relations;
-        if (!relations.some((row) => row.id === "tasklinks.rel.task_links" && row.cardinality === "0..N")) {
+        if (!relations.some((row) => row.id === "tasklinks.rel.task_links" && row.cardinality === "1..1")) {
           fail("inspect-relations", "missing typed relation");
+        }
+        if (!relations.some((row) => row.id === "tasklinks.rel.task_owns_links" && row.cardinality === "0..N")) {
+          fail("inspect-relations", "missing the Task -> links direction");
         }
         if (envelope.taskLinks.evidence?.origin !== "mock") {
           fail("inspect-evidence", JSON.stringify(envelope.taskLinks.evidence));

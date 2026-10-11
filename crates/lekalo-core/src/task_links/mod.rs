@@ -642,8 +642,13 @@ pub fn admit_evidence(
         // grammar-valid confidential marker cannot ride through inspect
         // or portability output. The id is still grammar-checked above
         // (garbage refuses); admission and echo are separate powers.
+        // The digest segment is prefixed with a fixed alphabetic
+        // token: every public symbol segment must begin with a letter,
+        // and a bare hex digest starts with a digit for 10/16 of all
+        // serializations (including semantically irrelevant whitespace
+        // differences), which would emit schema-invalid output.
         evidence_id: format!(
-            "tasklinks.evidence.admitted.{}",
+            "tasklinks.evidence.admitted.ev{}",
             &crate::digest::sha256_hex(bytes)[..16]
         ),
         origin: evidence.origin,

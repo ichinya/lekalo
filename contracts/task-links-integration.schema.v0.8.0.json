@@ -236,6 +236,10 @@
         "id": {
           "$ref": "#/$defs/qualifiedSymbol"
         },
+        "entity": {
+          "$ref": "#/$defs/qualifiedSymbol",
+          "description": "The declaring entity that owns this relation in the Model; the runtime join resolves the relation id through this owner."
+        },
         "target": {
           "$ref": "#/$defs/qualifiedSymbol"
         },
@@ -256,6 +260,11 @@
           },
           "description": "Ordered target-side identity fields; length must equal localFields."
         },
+        "min": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
         "max": {
           "type": [
             "integer",
@@ -264,11 +273,6 @@
           "minimum": 0,
           "maximum": 1000000,
           "description": "The member is required; `null` is the explicit unbounded spelling (runtime/schema parity)."
-        },
-        "min": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 1000000
         },
         "ownership": {
           "enum": [
@@ -296,6 +300,7 @@
       },
       "required": [
         "id",
+        "entity",
         "target",
         "localFields",
         "targetFields",

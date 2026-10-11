@@ -193,10 +193,11 @@ pub fn report(
                 .zip(super::validate::EXTERNAL_IDENTITY_TUPLE.iter())
                 .all(|(field, expected)| field == expected)
     });
-    let declared_zero_n = attachment
-        .relations()
-        .iter()
-        .any(|relation| relation.target == "tasklinks.task_external_link" && relation.min == 0);
+    let declared_zero_n = attachment.relations().iter().any(|relation| {
+        relation.entity == "planner.task"
+            && relation.target == "tasklinks.task_external_link"
+            && relation.min == 0
+    });
     let declared_history = attachment.relations().iter().any(|relation| {
         relation.target == "tasklinks.task_external_link" && relation.on_detach == "retain-history"
     });

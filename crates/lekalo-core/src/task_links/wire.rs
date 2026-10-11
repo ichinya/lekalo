@@ -62,6 +62,10 @@ pub struct OwnerPin {
 pub struct Relation {
     /// Stable relation id (`tasklinks.rel.task_links`).
     pub id: String,
+    /// The declaring entity that owns the relation in the Model: the
+    /// relation id is joined through this owner, so a matching id
+    /// declared on an unrelated entity can never satisfy the join.
+    pub entity: String,
     /// Referenced entity (one local Task).
     pub target: String,
     /// Ordered local-side fields (workspace/task refs).
@@ -717,7 +721,8 @@ fn relations(array: &[Json]) -> Result<Vec<Relation>, diagnostic::Failure> {
         for key in object.keys() {
             if !matches!(
                 key.as_str(),
-                "id" | "target"
+                "id" | "entity"
+                    | "target"
                     | "localFields"
                     | "targetFields"
                     | "min"
@@ -736,6 +741,16 @@ fn relations(array: &[Json]) -> Result<Vec<Relation>, diagnostic::Failure> {
             .ok_or_else(|| diagnostic::input_invalid("relation-shape"))?;
         if !is_qualified_symbol(id) {
             return Err(diagnostic::input_invalid("relation-symbol"));
+        }
+        // The declaring owner is required and is itself a qualified
+        // symbol: the attachment mirrors the Model's declaring entity,
+        // and the runtime join resolves the relation id through it.
+        let entity = object
+            .get("entity")
+            .and_then(Json::as_str)
+            .ok_or_else(|| diagnostic::input_invalid("relation-shape"))?;
+        if !is_qualified_symbol(entity) {
+            return Err(diagnostic::input_invalid("relation-entity"));
         }
         let target = object
             .get("target")
@@ -797,6 +812,7 @@ fn relations(array: &[Json]) -> Result<Vec<Relation>, diagnostic::Failure> {
         }
         parsed.push(Relation {
             id: id.to_owned(),
+            entity: entity.to_owned(),
             target: target.to_owned(),
             local_fields,
             target_fields,

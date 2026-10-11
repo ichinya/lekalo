@@ -1762,7 +1762,7 @@ mod native_leg {
 /// one immutable audit entry, and a replay never duplicates the entry.
 #[test]
 fn scenario_stale_resolution_refuses_and_fresh_resolution_audits() {
-    use decision::{ConflictRecord, ConflictState};
+    use decision::{ConflictRecord, ConflictState, ResolutionDecision};
     let mut conflicts = BTreeMap::new();
     let mut audit_log = Vec::new();
     conflicts.insert(
@@ -1772,27 +1772,42 @@ fn scenario_stale_resolution_refuses_and_fresh_resolution_audits() {
             link_id: LINK_A.to_owned(),
             base_revision: "r-5".to_owned(),
             observed_revision: "r-7".to_owned(),
+            link_version: 4,
+            fields: vec!["state".to_owned(), "observed_revision".to_owned()],
             state: ConflictState::Open,
         },
     );
     let authority = |fields: &[&str]| {
         decision::ResolutionAuthority::new(
             "identity.user",
+            LINK_A,
             decision::AuthorizationOutcome::Allowed,
             fields.iter().map(|field| (*field).to_owned()).collect(),
+            ResolutionDecision::AcceptRemote,
+            "causation-1",
         )
         .expect("bounded authority")
     };
     let denied = decision::ResolutionAuthority::new(
-        "provider.foreign",
+        "provider.event",
+        LINK_A,
         decision::AuthorizationOutcome::Denied,
         vec!["state".to_owned()],
+        ResolutionDecision::AcceptRemote,
+        "causation-1",
     )
     .expect("bounded authority");
     // An unauthorized resolver is refused before the record is even
     // touched, whatever revision it presents.
     assert_eq!(
-        decision::resolve_conflict(&mut conflicts, &mut audit_log, "conflict-1", "r-7", &denied),
+        decision::resolve_conflict(
+            &mut conflicts,
+            &mut audit_log,
+            "conflict-1",
+            "r-7",
+            4,
+            &denied
+        ),
         decision::ResolveOutcome::Denied
     );
     assert_eq!(conflicts["conflict-1"].state, ConflictState::Open);
@@ -1804,11 +1819,62 @@ fn scenario_stale_resolution_refuses_and_fresh_resolution_audits() {
         &mut audit_log,
         "conflict-1",
         "r-5",
+        4,
         &authority(&["state", "observed_revision"]),
     );
     assert_eq!(outcome, decision::ResolveOutcome::Stale);
     assert_eq!(conflicts["conflict-1"].state, ConflictState::Open);
     assert!(audit_log.is_empty(), "a stale resolution never audits");
+    // A stale link version is the same refusal: BOTH required versions
+    // must match, not just the conflict revision.
+    let outcome = decision::resolve_conflict(
+        &mut conflicts,
+        &mut audit_log,
+        "conflict-1",
+        "r-7",
+        3,
+        &authority(&["state", "observed_revision"]),
+    );
+    assert_eq!(outcome, decision::ResolveOutcome::Stale);
+    assert!(audit_log.is_empty(), "a stale link version never audits");
+    // An authority minted for ANOTHER link resolves nothing here: link
+    // scope is authority, not a suggestion.
+    let foreign_link = decision::ResolutionAuthority::new(
+        "identity.user",
+        "link-b",
+        decision::AuthorizationOutcome::Allowed,
+        vec!["state".to_owned()],
+        ResolutionDecision::AcceptRemote,
+        "causation-1",
+    )
+    .expect("bounded authority");
+    assert_eq!(
+        decision::resolve_conflict(
+            &mut conflicts,
+            &mut audit_log,
+            "conflict-1",
+            "r-7",
+            4,
+            &foreign_link
+        ),
+        decision::ResolveOutcome::Denied
+    );
+    assert!(audit_log.is_empty(), "an out-of-scope link never audits");
+    // A field scope beyond the conflict's own conflicted fields is not
+    // covered by any admitted decision over THIS conflict.
+    let beyond_scope = decision::resolve_conflict(
+        &mut conflicts,
+        &mut audit_log,
+        "conflict-1",
+        "r-7",
+        4,
+        &authority(&["state", "title"]),
+    );
+    assert_eq!(beyond_scope, decision::ResolveOutcome::Denied);
+    assert!(
+        audit_log.is_empty(),
+        "an out-of-scope field set never audits"
+    );
     // Unknown conflict ids refuse too.
     assert_eq!(
         decision::resolve_conflict(
@@ -1816,18 +1882,20 @@ fn scenario_stale_resolution_refuses_and_fresh_resolution_audits() {
             &mut audit_log,
             "conflict-x",
             "r-7",
+            4,
             &authority(&["state"]),
         ),
         decision::ResolveOutcome::Unknown
     );
-    // Fresh admitted resolver: the expected version matches the
-    // observed revision. The conflict closes and exactly one audit
-    // entry lands.
+    // Fresh admitted resolver: the expected versions match the record.
+    // The conflict closes and exactly one audit entry lands, carrying
+    // the decision and causation, not just the actor.
     let outcome = decision::resolve_conflict(
         &mut conflicts,
         &mut audit_log,
         "conflict-1",
         "r-7",
+        4,
         &authority(&["state", "observed_revision"]),
     );
     assert_eq!(outcome, decision::ResolveOutcome::Resolved);
@@ -1836,7 +1904,11 @@ fn scenario_stale_resolution_refuses_and_fresh_resolution_audits() {
     assert_eq!(audit_log[0].conflict_id, "conflict-1");
     assert_eq!(audit_log[0].link_id, LINK_A);
     assert_eq!(audit_log[0].expected_revision, "r-7");
+    assert_eq!(audit_log[0].expected_link_version, 4);
     assert_eq!(audit_log[0].actor, "identity.user");
+    assert_eq!(audit_log[0].decision, ResolutionDecision::AcceptRemote);
+    assert_eq!(audit_log[0].fields, vec!["state", "observed_revision"]);
+    assert_eq!(audit_log[0].causation_id, "causation-1");
     // A replay resolves nothing twice: the audit log stays append-only
     // with exactly one entry.
     assert_eq!(
@@ -1845,11 +1917,99 @@ fn scenario_stale_resolution_refuses_and_fresh_resolution_audits() {
             &mut audit_log,
             "conflict-1",
             "r-7",
+            4,
             &authority(&["state", "observed_revision"]),
         ),
         decision::ResolveOutcome::Replayed
     );
     assert_eq!(audit_log.len(), 1, "the audit log never duplicates");
+}
+
+/// The authority constructor is the first scope gate: free-text
+/// actors, protected planning fields, empty scopes, and unknown
+/// decisions never construct an authority at all, so no later call
+/// can admit them whatever revisions it presents.
+#[test]
+fn resolution_authority_construction_refuses_unscoped_or_foreign_authority() {
+    use decision::ResolutionDecision;
+    let allowed = decision::AuthorizationOutcome::Allowed;
+    // Unadmitted free-text actors never construct.
+    assert!(
+        decision::ResolutionAuthority::new(
+            "provider.foreign",
+            "link-a",
+            allowed,
+            vec!["state".to_owned()],
+            ResolutionDecision::AcceptLocal,
+            "causation-1",
+        )
+        .is_none(),
+        "a foreign actor class is refused at construction"
+    );
+    assert!(
+        decision::ResolutionAuthority::new(
+            "",
+            "link-a",
+            allowed,
+            vec!["state".to_owned()],
+            ResolutionDecision::AcceptLocal,
+            "causation-1",
+        )
+        .is_none(),
+        "an empty actor is refused at construction"
+    );
+    // Protected planning fields never construct, live or in evidence.
+    assert!(
+        decision::ResolutionAuthority::new(
+            "identity.user",
+            "link-a",
+            allowed,
+            vec!["planned_for".to_owned()],
+            ResolutionDecision::MergeAllowedFields,
+            "causation-1",
+        )
+        .is_none(),
+        "a protected planning field is refused at construction"
+    );
+    // Empty link scope, empty field scope, and empty causation never
+    // construct.
+    for fields in [Vec::new(), vec![String::new()]] {
+        assert!(decision::ResolutionAuthority::new(
+            "system.job",
+            "link-a",
+            allowed,
+            fields,
+            ResolutionDecision::AcceptLocal,
+            "causation-1",
+        )
+        .is_none());
+    }
+    assert!(decision::ResolutionAuthority::new(
+        "system.job",
+        "",
+        allowed,
+        vec!["state".to_owned()],
+        ResolutionDecision::AcceptLocal,
+        "causation-1",
+    )
+    .is_none());
+    assert!(decision::ResolutionAuthority::new(
+        "system.job",
+        "link-a",
+        allowed,
+        vec!["state".to_owned()],
+        ResolutionDecision::AcceptLocal,
+        "",
+    )
+    .is_none());
+    // The closed decision vocabulary has exactly the contracted keys.
+    assert_eq!(ResolutionDecision::AcceptLocal.key(), "accept_local");
+    assert_eq!(ResolutionDecision::AcceptRemote.key(), "accept_remote");
+    assert_eq!(
+        ResolutionDecision::MergeAllowedFields.key(),
+        "merge_allowed_fields"
+    );
+    assert!(ResolutionDecision::from_key("accept-theirs").is_none());
 }
 
 /// The external write, the outbox worker job, the durable delivery
@@ -2168,6 +2328,90 @@ fn joins_enforce_referenced_semantics_not_mere_existence() {
         )
         .map_err(|f| format!("validate: {f:?}"))?;
         assert!(detail(&report).is_empty(), "the base stays valid");
+
+        // 5. An outbound binding cannot borrow an unrelated inbound
+        // action policy: the referenced policy must decide THIS
+        // binding's action (and carry its capability when it declares
+        // one) — existence in the policy-id set is not authority.
+        let borrowed_policy = mutate(&|wire| {
+            wire["operationBindings"][0]["actionPolicyRef"] =
+                serde_json::Value::String("tasklinks.policy.ap.ingest_event".into());
+        });
+        let report = tl::validate(&borrowed_policy, &compilation, "strict")
+            .map_err(|f| format!("validate: {f:?}"))?;
+        let details = detail(&report);
+        assert!(
+            details.contains(&"binding-policy-action-mismatch".to_owned()),
+            "findings: {details:?}"
+        );
+        assert!(
+            details.contains(&"binding-policy-capability-mismatch".to_owned()),
+            "the borrowed policy's capability is not the binding's own: {details:?}"
+        );
+
+        // 6. The Model owner's applicability scope is enforced: an
+        // allow action policy composed over an owner whose
+        // `applies_to` never covers the row's action borrows authority
+        // the owner never granted for that action.
+        let inapplicable_owner = mutate(&|wire| {
+            wire["actionPolicies"][0]["policyRef"] =
+                serde_json::Value::String("tasklinks.policy.inbound_canonical_fields".into());
+        });
+        let report = tl::validate(&inapplicable_owner, &compilation, "strict")
+            .map_err(|f| format!("validate: {f:?}"))?;
+        assert!(
+            detail(&report).contains(&"policy-owner-inapplicable".to_owned()),
+            "findings: {:?}",
+            detail(&report)
+        );
+
+        // 7. An allow action policy composing an in-attachment DENY
+        // field policy is the same contradiction one level down: the
+        // referenced row's decision is enforced, transitively, not
+        // just the Model owner's.
+        let composes_deny = mutate(&|wire| {
+            wire["actionPolicies"][0]["policyRef"] =
+                serde_json::Value::String("tasklinks.policy.fp.planning_deny".into());
+        });
+        let report = tl::validate(&composes_deny, &compilation, "strict")
+            .map_err(|f| format!("validate: {f:?}"))?;
+        assert!(
+            detail(&report).contains(&"policy-ref-denies".to_owned()),
+            "findings: {:?}",
+            detail(&report)
+        );
+
+        // 8. The relation declaring owner is carried and joined: a
+        // relation id the Model declares on ANOTHER entity (or nowhere)
+        // does not satisfy the attachment's own declaration. A shadow
+        // relation claiming `planner.task` as its declaring owner —
+        // while every field still resolves — is refused because the
+        // Model declares no such relation on that entity, never a
+        // silent pass.
+        let moved_owner = mutate(&|wire| {
+            wire["relations"]
+                .as_array_mut()
+                .expect("relations")
+                .push(serde_json::json!({
+                    "id": "tasklinks.rel.shadow_links",
+                    "entity": "planner.task",
+                    "target": "planner.task",
+                    "localFields": ["task_id"],
+                    "targetFields": ["task_id"],
+                    "min": 0,
+                    "max": null,
+                    "ownership": "local",
+                    "onDetach": "retain-history",
+                    "onDelete": "restrict"
+                }));
+        });
+        let report = tl::validate(&moved_owner, &compilation, "strict")
+            .map_err(|f| format!("validate: {f:?}"))?;
+        let details = detail(&report);
+        assert!(
+            details.contains(&"relation-not-in-model".to_owned()),
+            "findings: {details:?}"
+        );
         Ok(())
     })();
     std::env::set_current_dir(original).expect("restore cwd");

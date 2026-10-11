@@ -376,16 +376,6 @@ fn check_relations(
     model_relations: &ModelRelations,
     findings: &mut Vec<Finding>,
 ) {
-    // The relation's local entity is the declaring link aggregate; every
-    // `localFields` entry must exist on that entity, while `targetFields`
-    // are checked against the relation target.
-    let local_entity = attachment
-        .entities()
-        .iter()
-        .map(|binding| binding.entity.as_str())
-        .find(|entity| is_link_entity(entity))
-        .unwrap_or("tasklinks.task_external_link");
-    let local_fields_table = entities.get(local_entity);
     let mut seen_targets: BTreeSet<&str> = BTreeSet::new();
     for relation in attachment.relations() {
         let Some((fields, _)) = entities.get(&relation.target) else {
@@ -406,6 +396,19 @@ fn check_relations(
                     "relation-field-missing",
                 );
             }
+        }
+        // The relation's declaring owner is carried explicitly: every
+        // `localFields` entry is checked against THAT entity, never
+        // against a fixed aggregate, so a relation moved to an
+        // unrelated entity cannot borrow the link aggregate's fields.
+        let local_fields_table = entities.get(&relation.entity);
+        if local_fields_table.is_none() {
+            finding(
+                findings,
+                diagnostic::INPUT_INVALID,
+                relation.id.clone(),
+                "relation-entity-unresolved",
+            );
         }
         for field in &relation.local_fields {
             let present = local_fields_table
@@ -450,10 +453,13 @@ fn check_relations(
         seen_targets.insert(relation.target.as_str());
     }
     // The cardinality declarations must cover both directions of the
-    // pilot's aggregate: Task -> links (`0..N`) and the link child
-    // scope. An unconstrained target set leaves the relation semantics
-    // declared nowhere.
+    // pilot's aggregate: Task -> links (`0..N`, declared BY the Task
+    // entity) and links -> Task (declared BY the link entity, bounded
+    // `0..1`), plus the link child scope. An unconstrained target set
+    // leaves the relation semantics declared nowhere, and a one-sided
+    // declaration does not express the directional pair.
     let link_entity = "tasklinks.task_external_link";
+    let task_entity = "planner.task";
     if !seen_targets.contains(link_entity) {
         finding(
             findings,
@@ -462,11 +468,34 @@ fn check_relations(
             "relation-coverage-missing",
         );
     }
+    let task_owns_links = attachment.relations().iter().any(|relation| {
+        relation.entity == task_entity && relation.target == link_entity && relation.min == 0
+    });
+    if !task_owns_links {
+        finding(
+            findings,
+            diagnostic::INPUT_INVALID,
+            "tasklinks.rel.task_owns_links".to_owned(),
+            "relation-direction-missing",
+        );
+    }
+    let link_refers_one_task = attachment.relations().iter().any(|relation| {
+        relation.entity == link_entity && relation.target == task_entity && relation.max == Some(1)
+    });
+    if !link_refers_one_task {
+        finding(
+            findings,
+            diagnostic::INPUT_INVALID,
+            "tasklinks.rel.task_links".to_owned(),
+            "relation-direction-missing",
+        );
+    }
     // The cardinality (including `max`) and every relation member are
     // pinned authoritatively by the Model/IR: the attachment's typed
-    // relations must exist in the compiled Model of their declaring
-    // entity and agree exactly — target, ordered fields, min, max,
-    // ownership, and detach/delete semantics. An attachment-only
+    // relations must exist in the compiled Model OF THEIR DECLARING
+    // ENTITY and agree exactly — a matching relation id declared on an
+    // unrelated entity is not this relation, so the join resolves the
+    // id only through the carried declaring owner. An attachment-only
     // relation, or any drift from the Model, is a refusal; the
     // attachment mirrors the Model, never the other way around.
     for relation in attachment.relations() {
@@ -474,9 +503,8 @@ fn check_relations(
             continue;
         }
         let model_relation = model_relations
-            .values()
-            .flat_map(|table| table.get(relation.id.as_str()))
-            .next();
+            .get(relation.entity.as_str())
+            .and_then(|table| table.get(relation.id.as_str()));
         let Some(model_relation) = model_relation else {
             finding(
                 findings,
@@ -643,15 +671,21 @@ fn check_decisions(
     // policies. Any referenced id must be declared in the attachment,
     // and the composition graph must be acyclic.
     let model_policies = ir_policy_ids(compilation);
-    // The typed Model policy owners: id -> declared decision. A
-    // referenced owner's decision is enforced, not just its existence:
-    // an allow row over a deny owner contradicts its authority.
-    let model_policy_decisions: BTreeMap<&str, &str> = compilation
+    // The typed Model policy owners: id -> (declared decision,
+    // applies_to set). A referenced owner's decision AND applicability
+    // scope are enforced, not just its existence: an allow row over a
+    // deny owner contradicts its authority, and an allow row whose
+    // owner never applies to the row's action borrows authority the
+    // owner never granted for that action.
+    let model_policy_owners: BTreeMap<&str, (&str, &Vec<crate::ir::SymbolId>)> = compilation
         .project
         .definitions
         .iter()
         .filter_map(|definition| match definition {
-            Definition::Policy(policy) => Some((policy.id.as_str(), policy.decision.as_str())),
+            Definition::Policy(policy) => Some((
+                policy.id.as_str(),
+                (policy.decision.as_str(), &policy.applies_to),
+            )),
             _ => None,
         })
         .collect();
@@ -681,6 +715,46 @@ fn check_decisions(
         // resolves through composition.
         model_policies.contains(policy_ref) || policy_ids.contains(policy_ref)
     };
+    // The composition chain of one policy row: every in-attachment
+    // `policyRef` is walked to its referenced row, transitively, until
+    // the chain reaches a Model-owner policy (or an id outside the
+    // attachment, which the unresolved check above already refuses).
+    // The referenced semantics of EVERY hop are enforced, so a deny or
+    // an inapplicable owner buried one composition deep cannot confer
+    // authority an allow row claims.
+    let field_policy_by_id: BTreeMap<&str, &super::wire::FieldPolicy> = attachment
+        .field_policies()
+        .iter()
+        .map(|policy| (policy.policy_id.as_str(), policy))
+        .collect();
+    let action_policy_by_id: BTreeMap<&str, &super::wire::ActionPolicy> = attachment
+        .action_policies()
+        .iter()
+        .map(|policy| (policy.policy_id.as_str(), policy))
+        .collect();
+    let referenced_rows = |start: &str| -> Vec<&str> {
+        // Returns every in-attachment policy id reachable from `start`
+        // (excluding `start` itself), in walk order, cycle-safe.
+        let mut visited: Vec<&str> = Vec::new();
+        let mut queue = vec![start];
+        while let Some(current) = queue.pop() {
+            let next = field_policy_by_id
+                .get(current)
+                .map(|policy| policy.policy_ref.as_str())
+                .or_else(|| {
+                    action_policy_by_id
+                        .get(current)
+                        .map(|policy| policy.policy_ref.as_str())
+                });
+            let Some(next) = next else { break };
+            if visited.contains(&next) || next == start {
+                continue;
+            }
+            visited.push(next);
+            queue.push(next);
+        }
+        visited
+    };
     for policy in attachment.field_policies() {
         if policy.policy_ref.is_empty() || !referenced_ok(&policy.policy_ref) {
             finding(
@@ -689,6 +763,54 @@ fn check_decisions(
                 policy.policy_id.clone(),
                 "policy-ref-unresolved",
             );
+        }
+        // Every Model owner this row joins through — direct or through
+        // in-attachment composition — is enforced: a deny owner never
+        // confer allow, however deep the chain hides it.
+        let mut owner_refs: Vec<&str> = Vec::new();
+        if model_policies.contains(policy.policy_ref.as_str()) {
+            owner_refs.push(policy.policy_ref.as_str());
+        }
+        for hop in referenced_rows(policy.policy_id.as_str()) {
+            if model_policies.contains(hop) {
+                owner_refs.push(hop);
+            }
+        }
+        for owner in owner_refs {
+            if let Some((owner_decision, _)) = model_policy_owners.get(owner) {
+                if policy.decision == "allow" && *owner_decision == "deny" {
+                    finding(
+                        findings,
+                        diagnostic::DECISION_INCOMPLETE,
+                        policy.policy_id.clone(),
+                        "policy-owner-denies",
+                    );
+                }
+            }
+        }
+        // An in-attachment deny row composed under an allow row is the
+        // same contradiction, one level down: the allow claim must not
+        // outrun a referenced row that denies.
+        if policy.decision == "allow" {
+            for hop in referenced_rows(policy.policy_id.as_str()) {
+                let hop_denies = field_policy_by_id
+                    .get(hop)
+                    .map(|row| row.decision == "deny")
+                    .or_else(|| {
+                        action_policy_by_id
+                            .get(hop)
+                            .map(|row| row.decision == "deny")
+                    })
+                    .unwrap_or(false);
+                if hop_denies {
+                    finding(
+                        findings,
+                        diagnostic::DECISION_INCOMPLETE,
+                        policy.policy_id.clone(),
+                        "policy-ref-denies",
+                    );
+                }
+            }
         }
         // The bound entity and every bound field must exist in the
         // compiled Model: a policy graph that asserts authority over a
@@ -745,13 +867,76 @@ fn check_decisions(
         // whose declared decision contradicts this row's own claim
         // (an allow row over a deny owner) is not authority, it is a
         // contradiction with it.
-        if let Some(owner_decision) = model_policy_decisions.get(policy.policy_ref.as_str()) {
+        if let Some((owner_decision, _)) = model_policy_owners.get(policy.policy_ref.as_str()) {
             if policy.decision == "allow" && *owner_decision == "deny" {
                 finding(
                     findings,
                     diagnostic::DECISION_INCOMPLETE,
                     policy.policy_id.clone(),
                     "policy-owner-denies",
+                );
+            }
+        }
+        // The owner's applicability scope is enforced too: an allow
+        // action policy composed over a Model policy whose `applies_to`
+        // never covers the row's action borrows authority for an action
+        // the owner never granted.
+        if let Some((_, applies_to)) = model_policy_owners.get(policy.policy_ref.as_str()) {
+            if policy.decision == "allow"
+                && !applies_to
+                    .iter()
+                    .any(|symbol| symbol.as_str() == policy.action)
+            {
+                finding(
+                    findings,
+                    diagnostic::DECISION_INCOMPLETE,
+                    policy.policy_id.clone(),
+                    "policy-owner-inapplicable",
+                );
+            }
+        }
+        // The transitive composition is the same join: every Model
+        // owner reachable through in-attachment rows is enforced for
+        // decision AND applicability, and a referenced in-attachment
+        // deny row under an allow row is a contradiction.
+        for hop in referenced_rows(policy.policy_id.as_str()) {
+            if let Some((owner_decision, applies_to)) = model_policy_owners.get(hop) {
+                if policy.decision == "allow" && *owner_decision == "deny" {
+                    finding(
+                        findings,
+                        diagnostic::DECISION_INCOMPLETE,
+                        policy.policy_id.clone(),
+                        "policy-owner-denies",
+                    );
+                }
+                if policy.decision == "allow"
+                    && !applies_to
+                        .iter()
+                        .any(|symbol| symbol.as_str() == policy.action)
+                {
+                    finding(
+                        findings,
+                        diagnostic::DECISION_INCOMPLETE,
+                        policy.policy_id.clone(),
+                        "policy-owner-inapplicable",
+                    );
+                }
+            }
+            let hop_denies = field_policy_by_id
+                .get(hop)
+                .map(|row| row.decision == "deny")
+                .or_else(|| {
+                    action_policy_by_id
+                        .get(hop)
+                        .map(|row| row.decision == "deny")
+                })
+                .unwrap_or(false);
+            if policy.decision == "allow" && hop_denies {
+                finding(
+                    findings,
+                    diagnostic::DECISION_INCOMPLETE,
+                    policy.policy_id.clone(),
+                    "policy-ref-denies",
                 );
             }
         }
@@ -1051,6 +1236,43 @@ fn check_bindings(attachment: &Attachment, compilation: &Compilation, findings: 
                 binding.operation.clone(),
                 "binding-policy-unresolved",
             );
+        } else if let Some(policy) = attachment
+            .action_policies()
+            .iter()
+            .find(|policy| policy.policy_id == binding.action_policy_ref)
+        {
+            // Join the referenced policy through its own declaration:
+            // membership in the policy-id set is not authority. The
+            // policy must decide THIS binding's action, and its declared
+            // capability (when present) must be the binding's own — an
+            // outbound binding cannot borrow an unrelated inbound
+            // action policy, whatever ids exist.
+            if policy.action != binding.action {
+                finding(
+                    findings,
+                    diagnostic::DECISION_INCOMPLETE,
+                    binding.operation.clone(),
+                    "binding-policy-action-mismatch",
+                );
+            }
+            if policy.decision != "allow" {
+                finding(
+                    findings,
+                    diagnostic::DECISION_INCOMPLETE,
+                    binding.operation.clone(),
+                    "binding-policy-denied",
+                );
+            }
+            if let Some(capability_ref) = &policy.capability_ref {
+                if capability_ref.as_str() != binding.capability_ref.as_str() {
+                    finding(
+                        findings,
+                        diagnostic::DECISION_INCOMPLETE,
+                        binding.operation.clone(),
+                        "binding-policy-capability-mismatch",
+                    );
+                }
+            }
         }
         if !effects.contains_key(binding.effect_ref.as_str()) {
             finding(
