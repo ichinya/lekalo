@@ -68,7 +68,12 @@ pub fn resolve_lock(
 
 /// Parse and validate a consumer lock document.
 pub fn parse_lock(bytes: &[u8]) -> Result<ConsumerLock, DiagnosticSet> {
-    let lock: ConsumerLock = super::wire::decode(bytes, super::diagnostic::invalid)?;
+    let raw: serde_json::Value = wire::decode(bytes, super::diagnostic::invalid)?;
+    // The closed schema is the admission grammar (r3 review finding 1):
+    // required members must be present even when nullable.
+    super::admission::admit_lock_presence(&raw)?;
+    let lock: ConsumerLock =
+        serde_json::from_value(raw).map_err(|_| super::diagnostic::invalid("closed-shape"))?;
     if lock.schema_version != format!("{}/v{}", wire::LOCK_SCHEMA, wire::VERSION)
         || lock.identity != format!("{}@{}", wire::LOCK_IDENTITY, wire::VERSION)
     {

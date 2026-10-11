@@ -479,7 +479,7 @@ fn validate_seam_gates_the_boundary_and_the_lock() {
             "--project",
             "reference/tasks",
             "--module-api",
-            "reference/tasks/module-api.json",
+            "module-api.json",
         ],
     );
     assert_eq!(seam.status.code(), Some(0));
@@ -495,7 +495,7 @@ fn validate_seam_gates_the_boundary_and_the_lock() {
             "visibility",
             "--strict",
             "--module-api",
-            "visibility/module-api.json",
+            "module-api.json",
         ],
     );
     assert_eq!(rejected.status.code(), Some(1));
@@ -521,9 +521,9 @@ fn validate_seam_gates_the_boundary_and_the_lock() {
             "--project",
             "lock",
             "--module-api",
-            "lock/stale-attachment.json",
+            "stale-attachment.json",
             "--module-api-lock",
-            "lock/golden-lock.json",
+            "golden-lock.json",
         ],
     );
     assert_eq!(denied.status.code(), Some(3));
@@ -813,7 +813,7 @@ fn validate_seam_advisory_keeps_exit_zero() {
             "--project",
             "visibility",
             "--module-api",
-            "visibility/module-api.json",
+            "module-api.json",
         ],
     );
     assert_eq!(advisory.status.code(), Some(0));
@@ -828,8 +828,176 @@ fn validate_seam_advisory_keeps_exit_zero() {
             "visibility",
             "--strict",
             "--module-api",
-            "visibility/module-api.json",
+            "module-api.json",
         ],
     );
     assert_eq!(strict.status.code(), Some(1));
+}
+
+/// The r3 review probes at the CLI seam.
+
+#[test]
+fn r3_supplied_check_lock_is_honored_or_refused() {
+    // r3 findings 7/16: `check --lock PATH` without --check-lock is a
+    // usage error, never a silently ignored lock; a nonexistent lock
+    // under --check-lock refuses instead of looking checked.
+    let reference = scratch_project("reference/tasks");
+    let dir = alias_free_path(reference.path());
+    let ignored = lekalo_in(
+        &dir,
+        &[
+            "module",
+            "api",
+            "check",
+            "--project",
+            ".",
+            "--api",
+            "module-api.json",
+            "--lock",
+            "golden-lock.json",
+        ],
+    );
+    assert_eq!(ignored.status.code(), Some(1));
+    let refused = lekalo_in(
+        &dir,
+        &[
+            "module",
+            "api",
+            "check",
+            "--project",
+            ".",
+            "--api",
+            "module-api.json",
+            "--check-lock",
+            "--lock",
+            "nonexistent-lock.json",
+        ],
+    );
+    assert_eq!(refused.status.code(), Some(1));
+    assert!(codes(&refused).contains(&"LEK-MODULE-001".to_owned()));
+}
+
+#[test]
+fn r3_strict_diff_requires_consumer_snapshots() {
+    // r3 finding 7/codex: strict verdicts require all declared evidence;
+    // a diff without the consumer inventory is unavailable (exit 4) with
+    // typed evidence, never a silent approval.
+    let family = scratch_family();
+    let dir = alias_free_path(family.path()).join("diff");
+    let strict = lekalo_in(
+        &dir,
+        &[
+            "module",
+            "api",
+            "diff",
+            "golden-bundle-before.json",
+            "golden-bundle-after.json",
+            "--strict",
+        ],
+    );
+    assert_eq!(strict.status.code(), Some(4));
+    assert!(codes(&strict).contains(&"LEK-MODULE-012".to_owned()));
+    // Advisory keeps the honest unknown-coverage report at exit 0.
+    let advisory = lekalo_in(
+        &dir,
+        &[
+            "module",
+            "api",
+            "diff",
+            "golden-bundle-before.json",
+            "golden-bundle-after.json",
+        ],
+    );
+    assert_eq!(advisory.status.code(), Some(0));
+    let report = envelope(&advisory)["moduleApiDiff"].clone();
+    assert!(report["coverage"]["unknownReasons"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|reason| reason == "consumer-snapshots-missing"));
+}
+
+#[test]
+fn r3_project_bound_inputs_reject_escape_paths() {
+    // r3 finding 13/codex: the attachment selector resolves through the
+    // classified project boundary — absolute and traversal spellings are
+    // refused, never interpreted against the invocation directory.
+    let reference = scratch_project("reference/tasks");
+    let dir = alias_free_path(reference.path());
+    let absolute = lekalo_in(
+        &dir,
+        &[
+            "module",
+            "api",
+            "check",
+            "--project",
+            ".",
+            "--api",
+            dir.join("module-api.json").to_str().unwrap(),
+        ],
+    );
+    assert_eq!(absolute.status.code(), Some(1));
+    let traversal = lekalo_in(
+        &dir,
+        &[
+            "module",
+            "api",
+            "check",
+            "--project",
+            ".",
+            "--api",
+            "../module-api.json",
+        ],
+    );
+    assert_eq!(traversal.status.code(), Some(1));
+}
+
+#[test]
+fn r3_owner_evidence_gaps_exit_unavailable() {
+    // r3 finding 14/codex: exported operations without declared owner
+    // evidence make the strict check unavailable (exit 4) and refuse the
+    // certified export in every mode.
+    let reference = scratch_project("reference/tasks");
+    let dir = alias_free_path(reference.path());
+    let mut attachment: Value =
+        serde_json::from_slice(&fs::read(dir.join("module-api.json")).unwrap()).unwrap();
+    for module in attachment["modules"].as_array_mut().unwrap().iter_mut() {
+        module.as_object_mut().unwrap().remove("operationErrors");
+        module.as_object_mut().unwrap().remove("queryFacts");
+    }
+    fs::write(
+        dir.join("no-owner-evidence.json"),
+        serde_json::to_vec(&attachment).unwrap(),
+    )
+    .unwrap();
+    let strict = lekalo_in(
+        &dir,
+        &[
+            "module",
+            "api",
+            "check",
+            "--project",
+            ".",
+            "--api",
+            "no-owner-evidence.json",
+            "--strict",
+        ],
+    );
+    assert_eq!(strict.status.code(), Some(4));
+    assert!(codes(&strict).contains(&"LEK-MODULE-012".to_owned()));
+    let export = lekalo_in(
+        &dir,
+        &[
+            "module",
+            "api",
+            "export",
+            "tasks",
+            "--project",
+            ".",
+            "--api",
+            "no-owner-evidence.json",
+        ],
+    );
+    assert_eq!(export.status.code(), Some(4));
+    assert!(codes(&export).contains(&"LEK-MODULE-012".to_owned()));
 }

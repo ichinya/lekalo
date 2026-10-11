@@ -84,6 +84,16 @@
           "type": "array",
           "items": { "$ref": "#/$defs/deprecation" },
           "maxItems": 1024
+        },
+        "operationErrors": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/operationErrors" },
+          "maxItems": 4096
+        },
+        "queryFacts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/queryFacts" },
+          "maxItems": 4096
         }
       },
       "required": ["moduleId", "apiVersion", "exports"]
@@ -367,6 +377,37 @@
         }
       },
       "required": ["export", "introducedIn", "removedIn", "replacement", "hint"]
+    },
+    "operationErrors": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "operation": { "$ref": "#/$defs/semanticId" },
+        "errors": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/semanticId" },
+          "maxItems": 4096,
+          "uniqueItems": true
+        }
+      },
+      "required": ["operation", "errors"]
+    },
+    "queryFacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "query": { "$ref": "#/$defs/semanticId" },
+        "cardinality": {
+          "enum": ["one", "optional", "list", "page", "stream"]
+        },
+        "consistency": {
+          "enum": ["strong", "bounded", "stale-ok"]
+        },
+        "pagination": {
+          "enum": ["none", "offset", "cursor"]
+        }
+      },
+      "required": ["query", "cardinality", "consistency", "pagination"]
     },
     "digest": {
       "type": "string",

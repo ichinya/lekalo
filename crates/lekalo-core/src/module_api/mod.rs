@@ -15,6 +15,7 @@
 //! violations invalid (1), strict policy failures denied (3), and required
 //! missing evidence unavailable (4). Advisory reports stay valid (0).
 
+pub mod admission;
 pub mod consumers;
 pub mod context;
 pub mod diagnostic;

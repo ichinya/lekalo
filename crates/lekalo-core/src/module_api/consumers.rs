@@ -156,7 +156,12 @@ pub fn consumer_snapshot(
 
 /// Parse and validate a consumer snapshot document (the diff seam).
 pub fn parse_snapshot(bytes: &[u8]) -> Result<ConsumerSnapshot, DiagnosticSet> {
-    let snapshot: ConsumerSnapshot = wire::decode(bytes, invalid)?;
+    let raw: serde_json::Value = wire::decode(bytes, invalid)?;
+    // The closed schema is the admission grammar (r3 review finding 1):
+    // required members must be present even when nullable.
+    super::admission::admit_snapshot_presence(&raw)?;
+    let snapshot: ConsumerSnapshot =
+        serde_json::from_value(raw).map_err(|_| invalid("closed-shape"))?;
     if snapshot.schema_version != format!("{}/v{}", wire::CONSUMERS_SCHEMA, wire::VERSION)
         || snapshot.identity != format!("{}@{}", wire::CONSUMERS_IDENTITY, wire::VERSION)
     {

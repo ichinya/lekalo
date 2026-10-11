@@ -44,7 +44,12 @@ const EXPORT_KINDS: &[(&str, DefinitionKind)] = &[
 /// Decode and bind the attachment against the compilation. Every violation
 /// is one invalid set; nothing partial is ever returned.
 pub fn resolve(bytes: &[u8], compilation: &Compilation) -> Result<Resolved, DiagnosticSet> {
-    let attachment: Attachment = wire::decode(bytes, invalid)?;
+    let raw: serde_json::Value = wire::decode(bytes, invalid)?;
+    // The closed schema is the admission grammar (r3 review finding 1):
+    // required members must be present even when nullable or defaulted.
+    super::admission::admit_attachment_presence(&raw)?;
+    let attachment: Attachment =
+        serde_json::from_value(raw).map_err(|_| invalid("closed-shape"))?;
     if attachment.schema_version != format!("{}/v{}", wire::API_SCHEMA, wire::VERSION)
         || attachment.identity != format!("{}@{}", wire::API_IDENTITY, wire::VERSION)
     {
@@ -137,6 +142,69 @@ pub fn resolve(bytes: &[u8], compilation: &Compilation) -> Result<Resolved, Diag
                 return Err(invalid("kind-contradiction"));
             }
         }
+        // r3 review finding 10/codex: alias declarations bind through
+        // their target and preserve semantic identity — a dangling,
+        // kind-mismatched, or cyclic alias is invalid input, never a
+        // silently dropped rename.
+        for entry in &module.exports {
+            if let Some(since) = &entry.since {
+                if ApiVersion::parse(since).is_none() {
+                    return Err(invalid("alias-since"));
+                }
+            }
+            let Some(alias) = &entry.alias_of else {
+                continue;
+            };
+            if alias == &entry.export || !entry_exported(&module.exports, alias) {
+                return Err(invalid("alias-target"));
+            }
+            let target_kind = module
+                .exports
+                .iter()
+                .find(|candidate| candidate.export == *alias)
+                .map(|candidate| candidate.kind.as_str());
+            if target_kind != Some(entry.kind.as_str()) {
+                return Err(invalid("alias-kind"));
+            }
+            if entry.kind == "scalar" {
+                // A rename never changes the primitive domain: the alias
+                // and its target must share the scalar base.
+                let base_of = |id: &str| {
+                    project
+                        .definitions
+                        .iter()
+                        .find_map(|definition| match definition {
+                            crate::ir::Definition::Scalar(scalar) if scalar.id.as_str() == id => {
+                                Some(scalar.base.as_str().to_owned())
+                            }
+                            _ => None,
+                        })
+                };
+                match (base_of(&entry.export), base_of(alias)) {
+                    (Some(left), Some(right)) if left == right => {}
+                    _ => return Err(invalid("alias-semantics")),
+                }
+            }
+        }
+        // Alias chains terminate: a cyclic rename graph is invalid input.
+        for entry in &module.exports {
+            let mut visited: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+            let mut cursor = entry.export.as_str();
+            loop {
+                if !visited.insert(cursor) {
+                    return Err(invalid("alias-cycle"));
+                }
+                let Some(next) = module
+                    .exports
+                    .iter()
+                    .find(|candidate| candidate.export == cursor)
+                    .and_then(|candidate| candidate.alias_of.as_deref())
+                else {
+                    break;
+                };
+                cursor = next;
+            }
+        }
         // apiVersion, when present, must be canonical stable SemVer.
         if let Some(version) = &module.api_version {
             if ApiVersion::parse(version).is_none() {
@@ -175,8 +243,18 @@ pub fn resolve(bytes: &[u8], compilation: &Compilation) -> Result<Resolved, Diag
                 return Err(invalid("port-operations"));
             }
             for operation in &port.operations {
-                if !entry_exported(&module.exports, operation) {
-                    return Err(invalid("port-operation-not-exported"));
+                let entry_kind = module
+                    .exports
+                    .iter()
+                    .find(|entry| entry.export == *operation)
+                    .map(|entry| entry.kind.as_str());
+                // A public port maps semantic operations (commands and
+                // queries) — never a type, event, or error export (r3
+                // review finding 15/codex: the mapping conformance seam).
+                match entry_kind {
+                    Some("command") | Some("query") => {}
+                    Some(_) => return Err(invalid("port-operation-kind")),
+                    None => return Err(invalid("port-operation-not-exported")),
                 }
             }
         }
@@ -197,6 +275,25 @@ pub fn resolve(bytes: &[u8], compilation: &Compilation) -> Result<Resolved, Diag
             if grant.fields.len() > 256 {
                 return Err(invalid("grant-field-bound"));
             }
+            // The declared invariant/concurrency obligation binds through
+            // its owner (r3 review finding 12/codex): a nonempty invariant
+            // must resolve to a policy definition owned by the producing
+            // module. A matching resource string alone never authorizes
+            // the shared-write exception.
+            if !grant.invariant.is_empty() {
+                let bound = project.definitions.iter().any(|definition| {
+                    definition.id().as_str() == grant.invariant
+                        && definition.kind() == crate::ir::DefinitionKind::Policy
+                        && definition
+                            .id()
+                            .as_str()
+                            .split_once('.')
+                            .is_some_and(|(owner, _)| owner == module.module_id)
+                });
+                if !bound {
+                    return Err(invalid("grant-invariant"));
+                }
+            }
         }
         for deprecation in &module.deprecations {
             if !entry_exported(&module.exports, &deprecation.export) {
@@ -215,6 +312,85 @@ pub fn resolve(bytes: &[u8], compilation: &Compilation) -> Result<Resolved, Diag
                 if removed < introduced {
                     return Err(invalid("deprecation-window"));
                 }
+            }
+        }
+        // The operation-error owner seam (r3 review finding 14/codex):
+        // every declared union names an exported command or query of this
+        // module, every member resolves to the #62 registry or an
+        // error-kind export, and the declared query facts use the closed
+        // query-owner vocabulary.
+        if module.operation_errors.len() > MAX_EXPORTS_PER_MODULE
+            || module.query_facts.len() > MAX_EXPORTS_PER_MODULE
+        {
+            return Err(invalid("owner-evidence-bound"));
+        }
+        let mut declared_unions: std::collections::BTreeSet<&str> =
+            std::collections::BTreeSet::new();
+        for union in &module.operation_errors {
+            if !declared_unions.insert(union.operation.as_str()) {
+                return Err(invalid("duplicate-operation-errors"));
+            }
+            let exported_kind = module
+                .exports
+                .iter()
+                .find(|entry| entry.export == union.operation)
+                .map(|entry| entry.kind.as_str());
+            if !matches!(exported_kind, Some("command") | Some("query")) {
+                return Err(invalid("operation-errors-target"));
+            }
+            if union.errors.len() > MAX_EXPORTS_PER_MODULE {
+                return Err(invalid("operation-errors-bound"));
+            }
+            for error_id in &union.errors {
+                let registry_member = crate::error_contract::registry::ErrorRegistry::embedded()
+                    .ok()
+                    .is_some_and(|registry| {
+                        crate::error_contract::ErrorId::new(error_id)
+                            .is_some_and(|id| registry.error(&id).is_some())
+                    });
+                let exported_error = modules.values().any(|policy| {
+                    policy
+                        .exports
+                        .iter()
+                        .any(|entry| entry.export == *error_id && entry.kind == "error")
+                });
+                if !registry_member && !exported_error {
+                    return Err(invalid("operation-errors-member"));
+                }
+            }
+        }
+        let mut declared_facts: std::collections::BTreeSet<&str> =
+            std::collections::BTreeSet::new();
+        for facts in &module.query_facts {
+            if !declared_facts.insert(facts.query.as_str()) {
+                return Err(invalid("duplicate-query-facts"));
+            }
+            let exported_kind = module
+                .exports
+                .iter()
+                .find(|entry| entry.export == facts.query)
+                .map(|entry| entry.kind.as_str());
+            if exported_kind != Some("query") {
+                return Err(invalid("query-facts-target"));
+            }
+            if !matches!(
+                facts.cardinality.as_str(),
+                "one" | "optional" | "list" | "page" | "stream"
+            ) {
+                return Err(invalid("query-cardinality"));
+            }
+            if !matches!(
+                facts.consistency.as_str(),
+                "strong" | "bounded" | "stale-ok"
+            ) {
+                return Err(invalid("query-consistency"));
+            }
+            if !matches!(facts.pagination.as_str(), "none" | "offset" | "cursor") {
+                return Err(invalid("query-pagination"));
+            }
+            let paged = matches!(facts.cardinality.as_str(), "page" | "stream");
+            if paged == (facts.pagination == "none") {
+                return Err(invalid("query-pagination-window"));
             }
         }
     }

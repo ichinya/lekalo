@@ -374,6 +374,516 @@ fn version_policy_evaluates_bumps_independently() {
     );
 }
 
+/// The r3 review probes: every fixed finding carries its own regression.
+///
+/// Copy one fixture project into an ignored target-directory scratch the
+/// selection grammar accepts (invocation-relative lowercase path).
+fn scratch_fixture(rel: &str, name: &str) -> String {
+    fn copy_dir(from: &std::path::Path, to: &std::path::Path) {
+        std::fs::create_dir_all(to).expect("scratch dir");
+        for entry in std::fs::read_dir(from).expect("fixture dir") {
+            let entry = entry.expect("fixture entry");
+            let target = to.join(entry.file_name());
+            if entry.file_type().expect("fixture type").is_dir() {
+                copy_dir(&entry.path(), &target);
+            } else {
+                std::fs::copy(entry.path(), target).expect("fixture copy");
+            }
+        }
+    }
+    let target = format!("target/module-api-r3/{name}");
+    let _ = std::fs::remove_dir_all(&target);
+    copy_dir(std::path::Path::new(rel), std::path::Path::new(&target));
+    target
+}
+
+#[test]
+fn r3_scoped_module_check_keeps_import_undeclared() {
+    // r3 finding 1: the scoped module's own undeclared import never
+    // vanishes under --module filtering, and it blocks certification.
+    // The probe mirrors the review: an endpoint invoking a foreign
+    // operation while the consumer declares no import (endpoint invokes
+    // are identity references, so the loader itself admits them).
+    let project = scratch_fixture(REFERENCE, "d1-scope");
+    let module_yaml =
+        std::fs::read_to_string(format!("{project}/lekalo/modules/planner/module.yaml"))
+            .expect("module yaml");
+    let stripped = module_yaml.replace("    imports:\n      - tasks\n", "");
+    assert_ne!(
+        stripped.len(),
+        module_yaml.len(),
+        "the import declaration is present in the fixture"
+    );
+    std::fs::write(
+        format!("{project}/lekalo/modules/planner/module.yaml"),
+        stripped,
+    )
+    .expect("write");
+    // Localize the planner shapes so the loader's type-reference import
+    // rule stays out of the probe's way.
+    let entities =
+        std::fs::read_to_string(format!("{project}/lekalo/modules/planner/entities.yaml"))
+            .expect("entities");
+    std::fs::write(
+        format!("{project}/lekalo/modules/planner/entities.yaml"),
+        entities.replace("\"tasks.title\"", "\"planner.text\"").replace(
+            "definitions:\n",
+            "definitions:\n  - id: planner.text\n    kind: scalar\n    version: 1\n    description: \"local text\"\n    base: string\n",
+        ),
+    )
+    .expect("write");
+    let commands =
+        std::fs::read_to_string(format!("{project}/lekalo/modules/planner/commands.yaml"))
+            .expect("commands");
+    std::fs::write(
+        format!("{project}/lekalo/modules/planner/commands.yaml"),
+        commands.replace("\"tasks.title\"", "\"planner.text\""),
+    )
+    .expect("write");
+    std::fs::write(
+        format!("{project}/lekalo/modules/planner/bindings.yaml"),
+        "schema_version: \"0.2.16\"\ndefinitions:\n  - id: planner.tasks_endpoint\n    kind: endpoint\n    version: 1\n    description: \"Foreign list endpoint\"\n    invokes: \"tasks.list_tasks\"\n    method: GET\n    path: \"/tasks\"\n",
+    )
+    .expect("write");
+    let compilation = compile(&project);
+    let bytes = attachment(&project);
+    let scoped = check(&bytes, &compilation, false, Some("planner")).expect("scoped check");
+    let finding = scoped
+        .evidence
+        .iter()
+        .find(|e| e.rule == "module-api.import-undeclared")
+        .expect("the scoped module keeps its own undeclared import");
+    assert_eq!(finding.consumer.as_deref(), Some("planner"));
+    assert_eq!(finding.producer.as_deref(), Some("tasks"));
+    assert_eq!(finding.subject, "planner.tasks_endpoint");
+    let strict = check(&bytes, &compilation, true, Some("planner")).expect("strict scoped");
+    assert_eq!(strict.class, FindingClass::Invalid);
+}
+
+/// One minimal two-module project: entities, a scalar, and optional
+/// effects/commands referencing the other module.
+fn write_cycle_project(root: &str, planner_write: bool, tasks_write: bool) -> Vec<u8> {
+    let modules = std::path::Path::new(root).join("lekalo/modules");
+    std::fs::create_dir_all(modules.join("tasks")).expect("tasks dir");
+    std::fs::create_dir_all(modules.join("planner")).expect("planner dir");
+    std::fs::write(
+        std::path::Path::new(root).join("lekalo/project.yaml"),
+        "schema_version: \"0.2.16\"\ndefinitions:\n  - id: flow\n    kind: project\n    version: 1\n    description: \"synthetic\"\n    derived_from:\n      - \"TASKS-REQ-001\"\n",
+    )
+    .expect("project");
+    std::fs::write(
+        modules.join("tasks/module.yaml"),
+        "schema_version: \"0.2.16\"\ndefinitions:\n  - id: tasks\n    kind: module\n    version: 1\n    description: \"tasks\"\n",
+    )
+    .expect("tasks module");
+    std::fs::write(
+        modules.join("planner/module.yaml"),
+        "schema_version: \"0.2.16\"\ndefinitions:\n  - id: planner\n    kind: module\n    version: 1\n    description: \"planner\"\n",
+    )
+    .expect("planner module");
+    std::fs::write(
+        modules.join("tasks/entities.yaml"),
+        "schema_version: \"0.2.16\"\ndefinitions:\n  - id: tasks.title\n    kind: scalar\n    version: 1\n    description: \"title\"\n    base: string\n  - id: tasks.task\n    kind: entity\n    version: 1\n    description: \"task\"\n    fields:\n      - name: title\n        type: \"tasks.title\"\n        required: true\n    identity:\n      - title\n",
+    )
+    .expect("tasks entities");
+    // Effects live in commands.yaml (the IR kind-placement rule).
+    std::fs::write(
+        modules.join("tasks/commands.yaml"),
+        format!(
+            "schema_version: \"0.2.16\"\ndefinitions:\n{}",
+            if tasks_write {
+                "  - id: tasks.touch\n    kind: effect\n    version: 1\n    description: \"touches focus\"\n    operation: create\n    entity: \"planner.focus\"\n"
+            } else {
+                ""
+            }
+        ),
+    )
+    .expect("tasks commands");
+    std::fs::write(
+        modules.join("planner/entities.yaml"),
+        "schema_version: \"0.2.16\"\ndefinitions:\n  - id: planner.text\n    kind: scalar\n    version: 1\n    description: \"local text\"\n    base: string\n  - id: planner.focus\n    kind: entity\n    version: 1\n    description: \"focus\"\n    fields:\n      - name: title\n        type: \"planner.text\"\n        required: true\n    identity:\n      - title\n",
+    )
+    .expect("planner entities");
+    std::fs::write(
+        modules.join("planner/commands.yaml"),
+        format!(
+            "schema_version: \"0.2.16\"\ndefinitions:\n{}",
+            if planner_write {
+                "  - id: planner.edit\n    kind: effect\n    version: 1\n    description: \"edits task\"\n    operation: update\n    entity: \"tasks.task\"\n"
+            } else {
+                ""
+            }
+        ),
+    )
+    .expect("planner commands");
+    serde_json::to_vec(&serde_json::json!({
+        "schemaVersion": "lekalo/module-api/v0.8.0",
+        "identity": "dev.lekalo.module-api@0.8.0",
+        "project": "flow",
+        "modules": [
+            {
+                "moduleId": "tasks",
+                "apiVersion": "1.0.0",
+                "exports": [
+                    { "export": "tasks.title", "kind": "scalar", "since": null, "aliasOf": null },
+                    { "export": "tasks.task", "kind": "entity", "since": null, "aliasOf": null }
+                ],
+                "operationErrors": [],
+                "queryFacts": [],
+                "consumers": [], "ports": [], "capabilities": [],
+                "grants": [], "deprecations": []
+            },
+            {
+                "moduleId": "planner",
+                "apiVersion": null,
+                "exports": [
+                    { "export": "planner.focus", "kind": "entity", "since": null, "aliasOf": null }
+                ],
+                "operationErrors": [],
+                "queryFacts": [],
+                "consumers": [], "ports": [], "capabilities": [],
+                "grants": [], "deprecations": []
+            }
+        ]
+    }))
+    .expect("attachment serializes")
+}
+
+#[test]
+fn r3_write_only_dependency_cycles_are_visible() {
+    // r3 finding 2: mutual effect-entity writes with no import declared
+    // anywhere are a reference-projection cycle and two undeclared
+    // imports — never a clean pass.
+    let root = "target/module-api-r3/d2-write-cycle";
+    let _ = std::fs::remove_dir_all(root);
+    std::fs::create_dir_all(root).expect("root");
+    let bytes = write_cycle_project(root, true, true);
+    let compilation = compile(root);
+    let verdict = check(&bytes, &compilation, true, None).expect("check runs");
+    assert_eq!(verdict.class, FindingClass::Invalid);
+    assert!(verdict.evidence.iter().any(|e| {
+        e.rule == "module-api.dependency-cycle" && e.detail == "reference-dependency-scc"
+    }));
+    let undeclared: Vec<_> = verdict
+        .evidence
+        .iter()
+        .filter(|e| e.rule == "module-api.import-undeclared")
+        .collect();
+    assert!(
+        undeclared.len() >= 2,
+        "both write edges are undeclared imports"
+    );
+    let cycle = verdict
+        .report
+        .cycles
+        .iter()
+        .find(|cycle| cycle.projection == "references")
+        .expect("the reference projection witness is reported");
+    assert_eq!(cycle.path.first().map(String::as_str), Some("planner"));
+    assert_eq!(cycle.path.last().map(String::as_str), Some("planner"));
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn r3_public_dependency_cycles_carry_the_path() {
+    // r3 finding 3: a public dependency cycle is the registered
+    // dependency-cycle rule with its exact path, invalid under strict
+    // (exit 1), never an unavailable gap or a bare input-invalid set.
+    // The mutual exported effect-entity obligations pin each other's
+    // module: planner -> tasks and tasks -> planner.
+    let root = "target/module-api-r3/d3-public-cycle";
+    let _ = std::fs::remove_dir_all(root);
+    std::fs::create_dir_all(root).expect("root");
+    let mut bytes = write_cycle_project(root, true, true);
+    let mut value: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
+    value["modules"][0]["exports"] = serde_json::json!([
+        { "export": "tasks.title", "kind": "scalar", "since": null, "aliasOf": null },
+        { "export": "tasks.task", "kind": "entity", "since": null, "aliasOf": null },
+        { "export": "tasks.touch", "kind": "effect", "since": null, "aliasOf": null }
+    ]);
+    value["modules"][1]["exports"] = serde_json::json!([
+        { "export": "planner.text", "kind": "scalar", "since": null, "aliasOf": null },
+        { "export": "planner.focus", "kind": "entity", "since": null, "aliasOf": null },
+        { "export": "planner.edit", "kind": "effect", "since": null, "aliasOf": null }
+    ]);
+    bytes = serde_json::to_vec(&value).expect("serializes");
+    std::fs::write(format!("{root}/module-api.json"), &bytes).expect("attachment");
+    let compilation = compile(root);
+    let verdict = check(&bytes, &compilation, true, None).expect("check runs");
+    let cycle = verdict
+        .evidence
+        .iter()
+        .find(|e| e.rule == "module-api.dependency-cycle" && e.detail == "public-dependency-scc")
+        .expect("the public cycle is a registered finding with a path");
+    assert!(cycle.path.len() >= 3, "the cycle path is the active path");
+    assert_eq!(verdict.class, FindingClass::Invalid);
+    assert!(verdict
+        .report
+        .cycles
+        .iter()
+        .any(|cycle| cycle.projection == "public"));
+    // The core certified export refuses the cyclic closure (the scoped
+    // refusal carries the boundary findings; the public-cycle rule is
+    // already the check-side witness above).
+    let resolved = resolve(&bytes, &compilation).expect("resolves");
+    assert!(export_public(&resolved, &compilation, "tasks").is_err());
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn r3_public_identity_ignores_private_edits_and_set_order() {
+    // r3 finding 4: a private field rename or an export-allowlist reorder
+    // never churns the public identity.
+    let compilation = compile(REFERENCE);
+    let base = export_public(
+        &resolve(&attachment(REFERENCE), &compilation).expect("resolves"),
+        &compilation,
+        "tasks",
+    )
+    .expect("bundle");
+    // (a) private edit: rename the internal field of the non-exported
+    // tasks.task entity.
+    let project = scratch_fixture(REFERENCE, "d4-private-edit");
+    let entities = std::fs::read_to_string(format!("{project}/lekalo/modules/tasks/entities.yaml"))
+        .expect("entities");
+    std::fs::write(
+        format!("{project}/lekalo/modules/tasks/entities.yaml"),
+        entities.replace("internal_note", "secret_note"),
+    )
+    .expect("write");
+    let edited = compile(&project);
+    let edited_bundle = export_public(
+        &resolve(&attachment(&project), &edited).expect("resolves"),
+        &edited,
+        "tasks",
+    )
+    .expect("bundle");
+    assert_eq!(
+        base.digest, edited_bundle.digest,
+        "a private edit is not a public identity change"
+    );
+    // (b) export allowlist reorder.
+    let mut value: serde_json::Value =
+        serde_json::from_slice(&attachment(REFERENCE)).expect("json");
+    for module in value["modules"].as_array_mut().unwrap().iter_mut() {
+        if module["moduleId"] == "tasks" {
+            module["exports"].as_array_mut().unwrap().reverse();
+        }
+    }
+    let reordered = export_public(
+        &resolve(
+            &serde_json::to_vec(&value).expect("serializes"),
+            &compilation,
+        )
+        .expect("resolves"),
+        &compilation,
+        "tasks",
+    )
+    .expect("bundle");
+    assert_eq!(
+        base.digest, reordered.digest,
+        "an allowlist reorder is not a public identity change"
+    );
+}
+
+#[test]
+fn r3_grant_invariants_bind_through_their_owner() {
+    // r3 finding 12: a shared-write grant whose invariant obligation
+    // dangles never authorizes the write — it is invalid input.
+    let compilation = compile("tests/fixtures/module-api/writes");
+    let mut value: serde_json::Value =
+        serde_json::from_slice(&attachment("tests/fixtures/module-api/writes")).expect("json");
+    value["modules"][0]["grants"] = serde_json::json!([{
+        "grant": "planner-update",
+        "consumer": "planner",
+        "aggregate": "tasks.task",
+        "operations": ["update"],
+        "fields": ["*"],
+        "invariant": "tasks.nonexistent_invariant",
+        "rationale": "probe"
+    }]);
+    let error = resolve(
+        &serde_json::to_vec(&value).expect("serializes"),
+        &compilation,
+    )
+    .expect_err("a dangling invariant refuses the grant");
+    assert!(error
+        .as_slice()
+        .iter()
+        .any(|diagnostic| diagnostic.id() == "module-api.input-invalid"));
+}
+
+#[test]
+fn r3_alias_declarations_bind_and_resolve() {
+    // r3 finding 10: cyclic, dangling, and semantically incompatible
+    // aliases are invalid input, never silently dropped renames.
+    let compilation = compile(REFERENCE);
+    let base: serde_json::Value = serde_json::from_slice(&attachment(REFERENCE)).expect("json");
+    let attachment = |alias_of: serde_json::Value| -> Vec<u8> {
+        let mut value = base.clone();
+        for module in value["modules"].as_array_mut().unwrap().iter_mut() {
+            if module["moduleId"] == "tasks" {
+                for entry in module["exports"].as_array_mut().unwrap().iter_mut() {
+                    if entry["export"] == "tasks.title" {
+                        entry["aliasOf"] = alias_of.clone();
+                    }
+                }
+            }
+        }
+        serde_json::to_vec(&value).expect("serializes")
+    };
+    // A dangling target.
+    let error = resolve(
+        &attachment(serde_json::json!("tasks.nonexistent")),
+        &compilation,
+    )
+    .expect_err("dangling alias");
+    assert!(error
+        .as_slice()
+        .iter()
+        .any(|d| d.id() == "module-api.input-invalid"));
+    // A cycle: task_id -> title -> task_id.
+    let cyclic = {
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&attachment(serde_json::json!("tasks.task_id"))).expect("json");
+        for module in value["modules"].as_array_mut().unwrap().iter_mut() {
+            if module["moduleId"] == "tasks" {
+                for entry in module["exports"].as_array_mut().unwrap().iter_mut() {
+                    if entry["export"] == "tasks.task_id" {
+                        entry["aliasOf"] = serde_json::json!("tasks.title");
+                    }
+                }
+            }
+        }
+        serde_json::to_vec(&value).expect("serializes")
+    };
+    let error = resolve(&cyclic, &compilation).expect_err("alias cycle");
+    assert!(error
+        .as_slice()
+        .iter()
+        .any(|d| d.id() == "module-api.input-invalid"));
+    // An incompatible scalar meaning: title (string) -> task_id (uuid).
+    let error = resolve(
+        &attachment(serde_json::json!("tasks.task_id")),
+        &compilation,
+    )
+    .expect_err("alias semantics");
+    assert!(error
+        .as_slice()
+        .iter()
+        .any(|d| d.id() == "module-api.input-invalid"));
+    // Accepted alias evidence is preserved in the public surface and
+    // visible to the diff (r3 finding 10: never silently dropped).
+    let bundle =
+        std::fs::read("tests/fixtures/module-api/standalone/golden-bundle.json").expect("bundle");
+    let mut before: serde_json::Value = serde_json::from_slice(&bundle).expect("json");
+    let mut after = before.clone();
+    let title = after["exports"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|export| export["export"] == "tasks.title")
+        .unwrap();
+    title["aliasOf"] = serde_json::json!("tasks.task_id");
+    seal_bundle(&mut before);
+    seal_bundle(&mut after);
+    let (report, _) = lekalo_core::module_api::compare_public(
+        &serde_json::to_vec(&before).expect("serializes"),
+        &serde_json::to_vec(&after).expect("serializes"),
+        None,
+        None,
+    )
+    .expect("diff runs");
+    assert!(report
+        .changes
+        .iter()
+        .any(|change| change.reason == "alias-changed"));
+}
+
+#[test]
+fn r3_missing_owner_evidence_blocks_strict_and_certification() {
+    // r3 finding 14: exported operations without their declared error
+    // unions or query facts are required evidence gaps; strict checks go
+    // unavailable and certified exports refuse.
+    let project = scratch_fixture(REFERENCE, "c14-owner-evidence");
+    let compilation = compile(&project);
+    let mut value: serde_json::Value = serde_json::from_slice(&attachment(&project)).expect("json");
+    for module in value["modules"].as_array_mut().unwrap().iter_mut() {
+        module.as_object_mut().unwrap().remove("operationErrors");
+        module.as_object_mut().unwrap().remove("queryFacts");
+    }
+    let bytes = serde_json::to_vec(&value).expect("serializes");
+    let verdict = check(&bytes, &compilation, false, None).expect("advisory check");
+    assert_eq!(verdict.report.assessment, "indeterminate");
+    assert!(verdict
+        .report
+        .gaps
+        .contains(&"owner-evidence-missing".to_owned()));
+    assert!(verdict.evidence.iter().any(|e| {
+        e.rule == "module-api.evidence-incomplete" && e.detail == "owner-evidence-missing"
+    }));
+    let strict = check(&bytes, &compilation, true, None).expect("strict check");
+    assert_eq!(strict.class, FindingClass::Evidence);
+    let resolved = resolve(&bytes, &compilation).expect("resolves");
+    let error = export_public(&resolved, &compilation, "tasks").expect_err("refuses");
+    assert!(error
+        .as_slice()
+        .iter()
+        .any(|d| d.id() == "module-api.evidence-incomplete"));
+}
+
+#[test]
+fn r3_resealed_schema_invalid_bundles_refuse() {
+    // r3 finding 1: a recomputed checksum never admits a bundle the
+    // published closed schema rejects.
+    let bundle =
+        std::fs::read("tests/fixtures/module-api/standalone/golden-bundle.json").expect("bundle");
+    let base: serde_json::Value = serde_json::from_slice(&bundle).expect("json");
+    // A made-up export kind.
+    let mut made_up = base.clone();
+    made_up["exports"][0]["kind"] = serde_json::json!("made-up");
+    seal_bundle(&mut made_up);
+    assert!(lekalo_core::module_api::compare_public(
+        &serde_json::to_vec(&made_up).expect("serializes"),
+        &bundle,
+        None,
+        None,
+    )
+    .is_err());
+    // A required nullable member deleted (apiVersion).
+    let mut no_version = base.clone();
+    no_version.as_object_mut().unwrap().remove("apiVersion");
+    seal_bundle(&mut no_version);
+    assert!(
+        lekalo_core::module_api::parse_bundle(&serde_json::to_vec(&no_version).expect("s"))
+            .is_err()
+    );
+    // A required defaulted member deleted (ports).
+    let mut no_ports = base.clone();
+    no_ports.as_object_mut().unwrap().remove("ports");
+    seal_bundle(&mut no_ports);
+    assert!(
+        lekalo_core::module_api::parse_bundle(&serde_json::to_vec(&no_ports).expect("s")).is_err()
+    );
+    // A member outside the export's discriminated branch (a scalar
+    // carrying a command input member).
+    let mut wrong_member = base.clone();
+    let scalar = wrong_member["exports"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|export| export["kind"] == "scalar")
+        .expect("scalar export");
+    scalar["input"] = serde_json::json!([
+        { "name": "probe", "required": true, "type": { "ref": "tasks.title" } }
+    ]);
+    seal_bundle(&mut wrong_member);
+    assert!(
+        lekalo_core::module_api::parse_bundle(&serde_json::to_vec(&wrong_member).expect("s"))
+            .is_err()
+    );
+}
+
 /// The r1 review probes: every fixed finding carries its own regression.
 
 #[test]
@@ -519,7 +1029,12 @@ fn identical_bundles_diff_compatible() {
     assert!(report.changes.is_empty());
     assert_eq!(report.verdict, "compatible");
     assert_eq!(report.version_policy.decision, "compliant");
-    assert!(evidence.is_empty());
+    // Missing consumer snapshots are explicit unknown coverage (r3
+    // finding 7/codex), never a silent pass.
+    assert!(evidence.iter().any(|finding| {
+        finding.rule == "module-api.evidence-incomplete"
+            && finding.gaps == vec!["consumer-snapshots-missing".to_owned()]
+    }));
 }
 
 #[test]
@@ -543,10 +1058,19 @@ fn snapshots_bind_every_pin() {
 }
 
 /// Seal one hand-authored bundle document with the digest domain the
-/// projection uses (digest member and definition revisions excluded).
+/// projection uses: the digest member, the freshness pins, and the
+/// integer definition revisions excluded, and every set-like collection
+/// canonically ordered (r3 finding 4: the identity is order-insensitive).
 fn seal_bundle(value: &mut serde_json::Value) {
+    let original_pins = value["pins"].clone();
     value["digest"] = serde_json::Value::String(String::new());
-    for export in value["exports"].as_array_mut().unwrap().iter_mut() {
+    value["pins"] = serde_json::json!({
+        "modelVersion": "",
+        "irDigest": "",
+        "sourceRevision": { "state": "unknown" }
+    });
+    let exports = value["exports"].as_array_mut().expect("exports array");
+    for export in exports.iter_mut() {
         export["version"] = serde_json::Value::from(0);
         // The wire projection skips empty arrays and nulls; the digest
         // domain is computed over the decoded projection, so the sealed
@@ -562,6 +1086,55 @@ fn seal_bundle(value: &mut serde_json::Value) {
             export.as_object_mut().unwrap().remove(&key);
         }
     }
+    exports.sort_by(|left, right| {
+        left["export"]
+            .as_str()
+            .unwrap_or_default()
+            .cmp(right["export"].as_str().unwrap_or_default())
+    });
+    for key in [
+        "publicDependencies",
+        "ports",
+        "capabilities",
+        "deprecations",
+    ] {
+        if let Some(items) = value[key].as_array_mut() {
+            let sort_key = match key {
+                "publicDependencies" => "moduleId",
+                "ports" => "port",
+                "capabilities" => "capability",
+                _ => "export",
+            };
+            items.sort_by(|left, right| {
+                left[sort_key]
+                    .as_str()
+                    .unwrap_or_default()
+                    .cmp(right[sort_key].as_str().unwrap_or_default())
+            });
+        }
+    }
+    if let Some(dependencies) = value["publicDependencies"].as_array_mut() {
+        for dependency in dependencies {
+            if let Some(symbols) = dependency["exports"].as_array_mut() {
+                symbols.sort_by(|left, right| {
+                    left.as_str()
+                        .unwrap_or_default()
+                        .cmp(right.as_str().unwrap_or_default())
+                });
+            }
+        }
+    }
+    if let Some(ports) = value["ports"].as_array_mut() {
+        for port in ports {
+            if let Some(operations) = port["operations"].as_array_mut() {
+                operations.sort_by(|left, right| {
+                    left.as_str()
+                        .unwrap_or_default()
+                        .cmp(right.as_str().unwrap_or_default())
+                });
+            }
+        }
+    }
     let canonical = lekalo_core::module_api::wire::canonical(&*value);
     let digest = format!(
         "sha256:{}",
@@ -570,6 +1143,9 @@ fn seal_bundle(value: &mut serde_json::Value) {
         )
     );
     value["digest"] = digest.into();
+    // The emitted bundle carries its real freshness pins: only the digest
+    // domain excludes them.
+    value["pins"] = original_pins;
 }
 
 #[test]
@@ -1012,9 +1588,13 @@ fn every_public_field_flip_is_visible_to_the_diff() {
               "payload": [{ "name": "id", "required": true,
                             "type": { "ref": "tasks.level" } }] },
             { "export": "tasks.call", "kind": "endpoint", "version": 0,
-              "invokes": "tasks.pick", "method": "post", "path": "/pick" },
+              "invokes": "tasks.pick", "method": "POST", "path": "/pick" },
             { "export": "tasks.guard", "kind": "policy", "version": 0,
-              "operations": ["tasks.pick"], "decision": "allow" }
+              "operations": ["tasks.pick"], "decision": "allow" },
+            { "export": "tasks.boom", "kind": "error", "version": 0,
+              "code": "LEK-ERR-005", "retryable": false,
+              "payload": [{ "name": "task", "required": true,
+                            "type": { "ref": "tasks.level" } }] }
         ],
         "publicDependencies": [],
         "ports": [{ "port": "tasks.api",
@@ -1111,7 +1691,7 @@ fn every_public_field_flip_is_visible_to_the_diff() {
     assert!(reasons.contains(&"field-removed".to_owned()), "{reasons:?}");
     // Endpoint route and operation.
     let reasons = flip(&|value| {
-        value["exports"][6]["method"] = "get".into();
+        value["exports"][6]["method"] = "GET".into();
         value["exports"][6]["path"] = "/picks".into();
     });
     assert!(reasons.contains(&"route-changed".to_owned()), "{reasons:?}");
@@ -1145,6 +1725,91 @@ fn every_public_field_flip_is_visible_to_the_diff() {
         reasons.contains(&"capability-removed".to_owned()),
         "{reasons:?}"
     );
+    // r3 finding 8/codex: the capability version pin is public semantics.
+    let reasons = flip(&|value| value["capabilities"][0]["version"] = "2.0.0".into());
+    assert!(
+        reasons.contains(&"capability-version-changed".to_owned()),
+        "{reasons:?}"
+    );
+    // r3 finding 8/codex: error payload types are compared surface.
+    let reasons = flip(&|value| {
+        let error = value["exports"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|export| export["kind"] == "error")
+            .unwrap();
+        error["payload"][0]["type"] = serde_json::json!({ "ref": "tasks.state" });
+    });
+    assert!(reasons.contains(&"type-changed".to_owned()), "{reasons:?}");
+    // r3 findings 4 and 9/codex: member-level additive surface and
+    // output-breaking optionality drive the version policy.
+    let policy_flip = |mutate: &dyn Fn(&mut serde_json::Value),
+                       version: &str|
+     -> (Vec<String>, String, Option<String>) {
+        let mut after = base.clone();
+        mutate(&mut after);
+        after["apiVersion"] = version.into();
+        seal_bundle(&mut after);
+        let (report, _) = lekalo_core::module_api::compare_public(
+            &base_bytes,
+            &serde_json::to_vec(&after).expect("serializes"),
+            None,
+            None,
+        )
+        .expect("diff runs");
+        (
+            report.changes.iter().map(|c| c.reason.clone()).collect(),
+            report.version_policy.decision.clone(),
+            report.version_policy.expected.clone(),
+        )
+    };
+    // An optional output field addition is additive surface: a patch
+    // bump violates the documented minor requirement.
+    let (reasons, decision, expected) = policy_flip(
+        &|value| {
+            value["exports"][2]["fields"] = serde_json::json!([
+                { "name": "id", "required": true, "type": { "ref": "tasks.level" } },
+                { "name": "notes", "required": false, "type": { "ref": "tasks.level" } }
+            ]);
+        },
+        "2.0.1",
+    );
+    assert!(reasons.contains(&"field-added".to_owned()), "{reasons:?}");
+    assert_eq!(decision, "violation");
+    assert_eq!(expected.as_deref(), Some("minor"));
+    // A required output member becoming optional is a break: only a
+    // major bump satisfies it.
+    let (reasons, decision, expected) = policy_flip(
+        &|value| {
+            value["exports"][2]["fields"] = serde_json::json!([
+                { "name": "id", "required": false, "type": { "ref": "tasks.level" } }
+            ]);
+        },
+        "2.1.0",
+    );
+    assert!(
+        reasons.contains(&"required-output-became-optional".to_owned()),
+        "{reasons:?}"
+    );
+    assert_eq!(decision, "violation");
+    assert_eq!(expected.as_deref(), Some("major"));
+    // r3 finding 5: a new deprecation declaration is visible surface.
+    let (reasons, decision, expected) = policy_flip(
+        &|value| {
+            value["deprecations"] = serde_json::json!([
+                { "export": "tasks.read", "introducedIn": "2.0.0", "removedIn": null,
+                  "replacement": null, "hint": "migrate" }
+            ]);
+        },
+        "2.0.0",
+    );
+    assert!(
+        reasons.contains(&"deprecation-added".to_owned()),
+        "{reasons:?}"
+    );
+    assert_eq!(decision, "violation");
+    assert_eq!(expected.as_deref(), Some("minor"));
 }
 
 #[test]
@@ -1233,6 +1898,146 @@ fn locks_flag_policy_api_version_and_extra_pins() {
             .map(|f| f.detail.as_str())
             .collect::<Vec<_>>()
     );
+}
+
+#[test]
+fn r3_policy_incompatible_consumers_deny_without_shape_hits() {
+    // r3 findings 6/codex and 6/devin: policy evaluation is an
+    // independent obligation — a consumer whose declared resolution can
+    // never resolve again (an exact digest pin on the before bundle) is
+    // affected and strict-denied even when none of its used exports
+    // changed shape (an additive-only change elsewhere moves the digest).
+    let bundle_with_dep = |_field: &str, digest: &str| -> serde_json::Value {
+        serde_json::json!({
+            "schemaVersion": "lekalo/module-public-contract/v0.8.0",
+            "identity": "dev.lekalo.module-public-contract@0.8.0",
+            "producer": { "project": "flow", "module": "tasks" },
+            "apiVersion": "2.0.0",
+            "digest": "",
+            "pins": {
+                "modelVersion": "0.2.16",
+                "irDigest": format!("sha256:{}", "a".repeat(64)),
+                "sourceRevision": { "state": "unknown" }
+            },
+            "exports": [
+                { "export": "tasks.inner", "kind": "value-object", "version": 0,
+                  "fields": [{ "name": "thing", "required": true,
+                               "type": { "ref": "dep.thing" } }] },
+                { "export": "tasks.outer", "kind": "value-object", "version": 0,
+                  "fields": [{ "name": "carry", "required": true,
+                               "type": { "ref": "tasks.inner" } }] }
+            ],
+            "publicDependencies": [
+                { "moduleId": "dep", "digest": digest, "apiVersion": null,
+                  "exports": ["dep.thing"] }
+            ],
+            "ports": [], "capabilities": [], "deprecations": []
+        })
+    };
+    let mut before = bundle_with_dep("thing", &format!("sha256:{}", "1".repeat(64)));
+    // Additive-only change: a new optional field on inner + a minor bump.
+    let mut after = bundle_with_dep("thing", &format!("sha256:{}", "1".repeat(64)));
+    after["exports"][0]["fields"] = serde_json::json!([
+        { "name": "thing", "required": true, "type": { "ref": "dep.thing" } },
+        { "name": "note", "required": false, "type": { "ref": "dep.thing" } }
+    ]);
+    after["apiVersion"] = "2.1.0".into();
+    seal_bundle(&mut before);
+    seal_bundle(&mut after);
+    let snap_with = |api_digest: &str, digest: &str| -> serde_json::Value {
+        let mut snapshot = serde_json::json!({
+            "schemaVersion": "lekalo/module-api-consumers/v0.8.0",
+            "identity": "dev.lekalo.module-api-consumers@0.8.0",
+            "producer": { "project": "flow", "module": "tasks" },
+            "pins": {
+                "project": "flow",
+                "modelVersion": "0.2.16",
+                "irDigest": format!("sha256:{}", "a".repeat(64)),
+                "apiDigest": api_digest
+            },
+            "consumers": [
+                { "consumer": "pinned", "declared": true, "mode": "source",
+                  "policy": { "type": "exact-digest", "digest": digest },
+                  "uses": [
+                    { "export": "tasks.outer", "member": null,
+                      "origin": "declared", "sensitivity": "whole-shape",
+                      "transitive": false, "edges": [] }
+                  ] },
+                { "consumer": "ranger", "declared": true, "mode": "source",
+                  "policy": { "type": "version-range", "lower": "2.0.0",
+                              "lowerInclusive": true, "upper": "3.0.0",
+                              "upperInclusive": false },
+                  "uses": [
+                    { "export": "tasks.inner", "member": null,
+                      "origin": "declared", "sensitivity": "whole-shape",
+                      "transitive": false, "edges": [] }
+                  ] }
+            ],
+            "complete": false,
+            "digest": ""
+        });
+        snapshot["digest"] = serde_json::Value::String(String::new());
+        let canonical = lekalo_core::module_api::wire::canonical(&snapshot);
+        snapshot["digest"] = format!(
+            "sha256:{}",
+            lekalo_core::digest::sha256_hex(
+                format!("lekalo/module-api-consumers/1\n{canonical}").as_bytes()
+            )
+        )
+        .into();
+        snapshot
+    };
+    let before_digest = before["digest"].as_str().expect("digest").to_owned();
+    let after_digest = after["digest"].as_str().expect("digest").to_owned();
+    let before_bytes = serde_json::to_vec(&before).expect("serializes");
+    let after_bytes = serde_json::to_vec(&after).expect("serializes");
+    let consumers_before =
+        serde_json::to_vec(&snap_with(&before_digest, &before_digest)).expect("serializes");
+    let consumers_after =
+        serde_json::to_vec(&snap_with(&after_digest, &before_digest)).expect("serializes");
+    let (report, evidence) = lekalo_core::module_api::compare_public(
+        &before_bytes,
+        &after_bytes,
+        Some(&consumers_before),
+        Some(&consumers_after),
+    )
+    .expect("diff runs");
+    let pinned = report
+        .consumers
+        .iter()
+        .find(|c| c.consumer == "pinned")
+        .expect("pinned row");
+    assert_eq!(pinned.status, "affected");
+    assert_eq!(pinned.reason.as_deref(), Some("policy-incompatible"));
+    assert!(pinned.changes.is_empty(), "no used shape changed");
+    let ranger = report
+        .consumers
+        .iter()
+        .find(|c| c.consumer == "ranger")
+        .expect("ranger row");
+    assert_eq!(ranger.status, "compatible");
+    assert!(evidence
+        .iter()
+        .any(|f| f.rule == "module-api.consumer-incompatible"
+            && f.consumer.as_deref() == Some("pinned")));
+    // r3 finding 3/codex: the context capsule materializes the required
+    // local closure and records the unmaterialized foreign signatures as
+    // explicit gaps, never a complete claim without them.
+    let capsule =
+        plan_consumer_context(&before_bytes, "watcher", &["tasks.outer".to_owned()], 4000)
+            .expect("capsule");
+    let exports: Vec<&str> = capsule.exports.iter().map(|f| f.export.as_str()).collect();
+    assert!(
+        exports.contains(&"tasks.inner"),
+        "the DTO closure is materialized"
+    );
+    assert!(capsule
+        .gaps
+        .contains(&"foreign-signature-not-materialized".to_owned()));
+    assert!(capsule
+        .omissions
+        .iter()
+        .any(|omission| omission.subject == "dep.thing"));
 }
 
 #[test]

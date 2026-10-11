@@ -17,7 +17,6 @@ use lekalo_core::module_api::{
     self, check, consumer_snapshot, plan_consumer_context, resolve, FindingClass,
 };
 use lekalo_core::{DomainResult, Status};
-use std::collections::BTreeSet;
 use std::io::Read;
 
 /// The `module api` subcommands.
@@ -44,8 +43,10 @@ pub enum ApiCommands {
         /// resolution (requires --lock).
         #[arg(long, requires = "lock")]
         check_lock: bool,
-        /// The consumer lock document to check (with --check-lock).
-        #[arg(long, value_name = "PATH")]
+        /// The consumer lock document to check (requires --check-lock:
+        /// a supplied lock is honored or the invocation is a usage error,
+        /// never silently ignored).
+        #[arg(long, value_name = "PATH", requires = "check_lock")]
         lock: Option<String>,
     },
     /// Emit the complete public bundle for one exact module id. An
@@ -130,7 +131,10 @@ pub enum ApiCommands {
     },
 }
 
-/// Read one bounded input file; the core never touches the filesystem.
+/// Read one bounded standalone input file (diff bundles, snapshots,
+/// context capsules): these documents are deliberately standalone — no
+/// project root is imposed on them (r3 review finding 13/codex). The
+/// core never touches the filesystem.
 fn read(path: &str) -> Result<Vec<u8>, Failure> {
     let file = std::fs::File::open(path).map_err(|_| Failure::Set(invalid("input-read")))?;
     if !file
@@ -150,86 +154,52 @@ fn read(path: &str) -> Result<Vec<u8>, Failure> {
     Ok(bytes)
 }
 
-/// The certified-bundle gate: the boundary check must report no exact
-/// semantic violation for the module *and for every transitive public
-/// dependency of its certified closure* before a bundle or lock may be
-/// emitted (finding 20: a dirty dependency's own closure can never hide
-/// behind --module scoping). Illegal closures refuse regardless of
-/// advisory mode.
-fn certified(
-    attachment: &[u8],
-    compilation: &lekalo_core::ir::Compilation,
-    module: &str,
-) -> Result<(), Failure> {
-    let resolved = resolve(attachment, compilation)?;
-    // The unfiltered boundary check owns the whole project; the certified
-    // set refuses when the module or any transitive public dependency of
-    // its closure owns a boundary violation, with the exact findings.
-    let verdict = check(attachment, compilation, false, None).map_err(Failure::from)?;
-    let mut session = lekalo_core::module_api::public::ExportSession::new(&resolved, compilation);
-    // The certified closure: every transitive public dependency pin, from
-    // the edges the session records even when a dep bundle itself fails.
-    let mut scope: BTreeSet<String> = BTreeSet::new();
-    scope.insert(module.to_owned());
-    let mut work: Vec<String> = vec![module.to_owned()];
-    let mut seen: BTreeSet<String> = work.iter().cloned().collect();
-    while let Some(current) = work.pop() {
-        // Best-effort build: it records the module's dependency edges even
-        // when the bundle ultimately refuses.
-        let _ = session.bundle(&current);
-        for dependency in session.deps_of(&current) {
-            if seen.insert(dependency.clone()) {
-                scope.insert(dependency.clone());
-                work.push(dependency);
-            }
+/// Read one bounded project-bound input (the attachment and the consumer
+/// lock of the project commands) through the canonical classified
+/// filesystem boundary (r3 review finding 13/codex): the path must be a
+/// legal project-relative path, and every component is opened through
+/// the validated root with no-follow/reparse checks — a junction or root
+/// escape denies instead of reading outside the project.
+fn read_project_input(project: &Option<String>, relative: &str) -> Result<Vec<u8>, Failure> {
+    if let Some(code) = lekalo_core::project_fs::path_violation(relative) {
+        let _ = code;
+        return Err(Failure::Set(invalid("project-input-path")));
+    }
+    let selection = LoadSelection {
+        project: project
+            .clone()
+            .or_else(|| std::env::var("LEKALO_PROJECT").ok()),
+    };
+    let root = lekalo_core::loader::project_root(&selection).map_err(Failure::Finished)?;
+    let fs = lekalo_core::project_fs::Fs::open(&root)
+        .map_err(|_| Failure::Set(invalid("project-input-unreadable")))?;
+    let (directory, name) = match relative.rsplit_once('/') {
+        Some((directory, name)) => (directory, name),
+        None => ("", relative),
+    };
+    match fs.read_file_opt(directory, name, wire::MAX_BYTES) {
+        Ok(Some(bytes)) => Ok(bytes),
+        Ok(None) => Err(Failure::Set(invalid("input-read"))),
+        Err(lekalo_core::project_fs::FsErrorKind::Limit { .. }) => {
+            Err(Failure::Set(invalid("input-size")))
         }
+        Err(_) => Err(Failure::Set(invalid("input-read"))),
     }
-    let scoped: Vec<_> = verdict
-        .evidence
-        .iter()
-        .filter(|finding| {
-            is_boundary_rule(finding.rule)
-                && finding
-                    .consumer
-                    .as_deref()
-                    .or(finding.producer.as_deref())
-                    .is_some_and(|owner| scope.contains(owner))
-        })
-        .cloned()
-        .collect();
-    if !scoped.is_empty() {
-        let set = lekalo_core::module_api::diagnostic::set(&scoped, Status::Invalid)
-            .map_err(Failure::from)?;
-        return Err(Failure::Set(set));
-    }
-    // A structurally illegal closure the boundary walk cannot express
-    // (cycle, unattached pin, private shape) still refuses certification.
-    if let Err(failure) = session.bundle_checked(module) {
-        return match failure {
-            lekalo_core::module_api::public::ExportFailure::Invalid(set) => Err(Failure::Set(set)),
-            lekalo_core::module_api::public::ExportFailure::Cycle(_) => {
-                Err(Failure::Set(invalid("public-dependency-cycle")))
-            }
-        };
-    }
-    Ok(())
 }
 
-/// Whether one rule is an exact semantic boundary violation.
+/// The certified-bundle gate: the boundary certification lives in the
+/// core `export_public` seam (r3 review finding 2/codex) — the CLI only
+/// loads, dispatches, and projects the typed refusal.
+///
+/// Whether one rule is an exact semantic boundary violation: the shared
+/// set of the strict seam gates.
 fn is_boundary_rule(rule: &str) -> bool {
-    matches!(
-        rule,
-        "module-api.symbol-not-exported"
-            | "module-api.import-undeclared"
-            | "module-api.public-private-exposure"
-            | "module-api.public-target-exposure"
-            | "module-api.cross-module-write-forbidden"
-            | "module-api.dependency-cycle"
-    )
+    lekalo_core::module_api::validate::is_boundary_rule(rule)
 }
 
 /// Map one core failure set to the typed result: unsupported family
-/// versions exit 5 on stderr; everything else is invalid.
+/// versions exit 5 on stderr; required missing evidence exits 4
+/// (unavailable); everything else is invalid.
 fn failure(set: lekalo_core::diagnostics::DiagnosticSet) -> DomainResult {
     if set
         .as_slice()
@@ -237,6 +207,12 @@ fn failure(set: lekalo_core::diagnostics::DiagnosticSet) -> DomainResult {
         .any(|diagnostic| diagnostic.id() == "module-api.version-unsupported")
     {
         DomainResult::unsupported_version(set)
+    } else if set
+        .as_slice()
+        .iter()
+        .any(|diagnostic| diagnostic.id() == "module-api.evidence-incomplete")
+    {
+        DomainResult::unavailable(set)
     } else {
         DomainResult::invalid(set)
     }
@@ -312,7 +288,7 @@ pub fn run_validate_seam(seam: ValidateSeam) -> DomainResult {
     );
     let execution = || -> Result<DomainResult, Failure> {
         let compilation = compilation(&seam.project)?;
-        let attachment = read(&seam.attachment)?;
+        let attachment = read_project_input(&seam.project, &seam.attachment)?;
         let verdict = check(
             &attachment,
             &compilation,
@@ -324,7 +300,7 @@ pub fn run_validate_seam(seam: ValidateSeam) -> DomainResult {
         if let Some(lock_path) = &seam.lock {
             // One freshness comparison everywhere (finding 15): the full
             // check_lock comparison, never a digest-only shortcut.
-            let supplied = parse_lock(&read(lock_path)?)?;
+            let supplied = parse_lock(&read_project_input(&seam.project, lock_path)?)?;
             let resolved = resolve(&attachment, &compilation)?;
             let producer = supplied.producer.module.clone();
             let current = resolve_lock(&resolved, &compilation, &producer, &supplied.consumer)?;
@@ -403,7 +379,7 @@ fn execute(command: ApiCommands) -> Result<DomainResult, Failure> {
             lock,
         } => {
             let compilation = compilation(&project)?;
-            let attachment = read(&api)?;
+            let attachment = read_project_input(&project, &api)?;
             let verdict = check(&attachment, &compilation, strict, module.as_deref())?;
             let mut evidence = verdict.evidence.clone();
             // The optional lock seam: a stale lock under --check is a
@@ -416,7 +392,7 @@ fn execute(command: ApiCommands) -> Result<DomainResult, Failure> {
                 // One freshness comparison everywhere (finding 15): the
                 // full identity/digest/policy/selection/dependency
                 // comparison against the current resolution.
-                let supplied = parse_lock(&read(lock_path)?)?;
+                let supplied = parse_lock(&read_project_input(&project, lock_path)?)?;
                 let resolved = resolve(&attachment, &compilation)?;
                 let producer = supplied.producer.module.clone();
                 let current = resolve_lock(&resolved, &compilation, &producer, &supplied.consumer)?;
@@ -432,11 +408,11 @@ fn execute(command: ApiCommands) -> Result<DomainResult, Failure> {
             api,
         } => {
             let compilation = compilation(&project)?;
-            let attachment = read(&api)?;
+            let attachment = read_project_input(&project, &api)?;
             let resolved = resolve(&attachment, &compilation)?;
-            // Certified-bundle rule: an incomplete or illegal public
-            // closure refuses even without --strict.
-            certified(&attachment, &compilation, &module)?;
+            // Certified-bundle rule (core seam, r3 review finding 2/codex):
+            // an incomplete, illegal, or uncertifiable public closure
+            // refuses even without --strict.
             let bundle = module_api::export_public(&resolved, &compilation, &module)?;
             let human = format!(
                 "Module API: {} exports for {} (apiVersion {}).",
@@ -456,7 +432,7 @@ fn execute(command: ApiCommands) -> Result<DomainResult, Failure> {
             api,
         } => {
             let compilation = compilation(&project)?;
-            let resolved = resolve(&read(&api)?, &compilation)?;
+            let resolved = resolve(&read_project_input(&project, &api)?, &compilation)?;
             let snapshot = consumer_snapshot(&resolved, &compilation, &module)?;
             let human = format!(
                 "Module API consumers: {} declared/resolved consumers for {}.",
@@ -478,15 +454,14 @@ fn execute(command: ApiCommands) -> Result<DomainResult, Failure> {
             check: check_flag,
         } => {
             let compilation = compilation(&project)?;
-            let attachment = read(&api)?;
+            let attachment = read_project_input(&project, &api)?;
             let resolved = resolve(&attachment, &compilation)?;
-            certified(&attachment, &compilation, &module)?;
             let current = resolve_lock(&resolved, &compilation, &module, &consumer)?;
             if check_flag {
                 let Some(lock_path) = &lock else {
                     return Err(Failure::Set(invalid("lock-required")));
                 };
-                let supplied = parse_lock(&read(lock_path)?)?;
+                let supplied = parse_lock(&read_project_input(&project, lock_path)?)?;
                 let findings = check_lock(&current, &supplied);
                 if findings.is_empty() {
                     let human = format!("Module API lock: fresh for {consumer}.");
@@ -550,6 +525,28 @@ fn execute(command: ApiCommands) -> Result<DomainResult, Failure> {
                 report.changes.len(),
                 report.verdict
             );
+            // Strict verdicts require all declared evidence (r3 review
+            // finding 7/codex): a diff without the consumer inventory is
+            // explicitly unknown coverage and never silently approves —
+            // the contracted unavailable outcome with typed evidence.
+            if strict
+                && report
+                    .coverage
+                    .unknown_reasons
+                    .iter()
+                    .any(|reason| reason == "consumer-snapshots-missing")
+            {
+                let coverage_evidence: Vec<_> = evidence
+                    .iter()
+                    .filter(|finding| finding.rule == "module-api.evidence-incomplete")
+                    .cloned()
+                    .collect();
+                let set = lekalo_core::module_api::diagnostic::set(
+                    &coverage_evidence,
+                    Status::Unavailable,
+                )?;
+                return Ok(DomainResult::unavailable(set));
+            }
             // Strict denies both an incompatible consumer resolution and a
             // bare version-policy violation (finding 10: the gate is
             // toothless without consumer snapshots otherwise).

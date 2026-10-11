@@ -1,52 +1,88 @@
 {
+  "schemaVersion": "lekalo/module-consumer-context/v0.8.0",
+  "identity": "dev.lekalo.module-consumer-context@0.8.0",
+  "consumer": "planner",
+  "producer": {
+    "project": "tasks",
+    "module": "tasks"
+  },
+  "producerDigest": "sha256:dd02bc7d30d9894c01707851627477e83e360004c872fdc89b9a841fccf30136",
   "apiVersion": "1.2.0",
   "budget": 16,
-  "consumer": "planner",
-  "dependencies": [],
-  "digest": "sha256:b162a31381b056f5e950f4f98f8b2660734a87ecb3f7e660479e0413fdd7d3b2",
   "estimator": {
     "id": "module-context-estimator",
     "recipe": "public-facts-chars4/1",
     "version": "1"
   },
+  "fits": false,
+  "requiredCost": 235,
+  "selectedCost": 235,
   "exports": [
     {
-      "apiVersion": "1.2.0",
-      "capabilities": [
-        "http"
-      ],
-      "deprecation": null,
-      "effects": [],
-      "errors": [],
       "export": "tasks.get_task",
       "kind": "query",
-      "signature": "query -> tasks.task_view"
-    },
-    {
-      "apiVersion": "1.2.0",
+      "signature": "query -> tasks.task_view cardinality one consistency strong pagination none",
+      "errors": [],
+      "effects": [],
       "capabilities": [
         "http"
       ],
       "deprecation": null,
-      "effects": [],
+      "apiVersion": "1.2.0"
+    },
+    {
+      "export": "tasks.task_id",
+      "kind": "scalar",
+      "signature": "scalar uuid",
       "errors": [],
+      "effects": [],
+      "capabilities": [
+        "http"
+      ],
+      "deprecation": null,
+      "apiVersion": "1.2.0"
+    },
+    {
+      "export": "tasks.task_state",
+      "kind": "enum",
+      "signature": "enum { open active done }",
+      "errors": [],
+      "effects": [],
+      "capabilities": [
+        "http"
+      ],
+      "deprecation": null,
+      "apiVersion": "1.2.0"
+    },
+    {
       "export": "tasks.task_view",
       "kind": "value-object",
-      "signature": "value-object { task_id!: tasks.task_id title!: tasks.title state!: tasks.task_state }"
+      "signature": "value-object { task_id!: tasks.task_id title!: tasks.title state!: tasks.task_state }",
+      "errors": [],
+      "effects": [],
+      "capabilities": [
+        "http"
+      ],
+      "deprecation": null,
+      "apiVersion": "1.2.0"
+    },
+    {
+      "export": "tasks.title",
+      "kind": "scalar",
+      "signature": "scalar string",
+      "errors": [],
+      "effects": [],
+      "capabilities": [
+        "http"
+      ],
+      "deprecation": null,
+      "apiVersion": "1.2.0"
     }
   ],
-  "fits": false,
+  "dependencies": [],
+  "omissions": [],
   "gaps": [
     "budget-exceeded"
   ],
-  "identity": "dev.lekalo.module-consumer-context@0.8.0",
-  "omissions": [],
-  "producer": {
-    "module": "tasks",
-    "project": "tasks"
-  },
-  "producerDigest": "sha256:dc76bd8b92a0ebbe99a8ef42a9920f43dda93efa17ccc51d0df72b2393e4e9de",
-  "requiredCost": 101,
-  "schemaVersion": "lekalo/module-consumer-context/v0.8.0",
-  "selectedCost": 101
+  "digest": "sha256:e480334b4a2d66a89509fdfcef21d83a667fa5fbef33b83c9c51103c3de5d000"
 }

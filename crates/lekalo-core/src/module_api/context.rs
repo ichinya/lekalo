@@ -80,42 +80,67 @@ pub fn plan_consumer_context(
             }
         }
     }
-    // Required public dependencies of the selected exports: the closure is
-    // transitive over local exports (a selected command's input may reach
-    // a local value object whose fields pin the dependency), so every
-    // required pin is materialized and nothing is silently dropped.
-    let mut required_dependencies: Vec<PublicDependency> = Vec::new();
+    // The complete required local closure (r3 review finding 3/codex): a
+    // fitting capsule materializes and budgets every local public shape
+    // the selected exports' signatures actually reach, not just the
+    // selected roots — a selected query's result DTO and its scalar
+    // domains are required facts of the same task.
+    let mut closure: Vec<&PublicExport> = selected.clone();
     let mut queued: std::collections::BTreeSet<&str> = selected
         .iter()
         .map(|export| export.export.as_str())
         .collect();
     let mut work: Vec<&PublicExport> = selected.clone();
     while let Some(export) = work.pop() {
-        let references = export_references(export);
-        for dependency in &bundle.public_dependencies {
-            if references
-                .iter()
-                .any(|reference| dependency.exports.contains(reference))
-                && !required_dependencies
-                    .iter()
-                    .any(|pinned| pinned.module_id == dependency.module_id)
-            {
-                required_dependencies.push((*dependency).clone());
-            }
-        }
-        for reference in references {
-            if let Some(local) = by_id.get(reference.as_str()) {
+        for leaf in shape_leaves(export) {
+            if let Some(local) = by_id.get(leaf.as_str()) {
                 if queued.insert(local.export.as_str()) {
+                    closure.push(local);
                     work.push(local);
                 }
             }
         }
     }
+    closure.sort_by(|left, right| left.export.cmp(&right.export));
+    // Required public dependencies of the closure: the transitive
+    // reference set (shapes and identity obligations) decides which
+    // pins are required.
+    let closure_references: std::collections::BTreeSet<String> = closure
+        .iter()
+        .flat_map(|export| export_references(export))
+        .collect();
+    let mut required_dependencies: Vec<PublicDependency> = Vec::new();
+    for dependency in &bundle.public_dependencies {
+        if dependency
+            .exports
+            .iter()
+            .any(|symbol| closure_references.contains(symbol))
+        {
+            required_dependencies.push((*dependency).clone());
+            // A retained dependency pin without the foreign signature is
+            // an explicit required gap (r3 review finding 3/codex): the
+            // capsule never claims a complete fitting closure while a
+            // referenced dependency shape is unavailable.
+            gaps.push("foreign-signature-not-materialized".to_owned());
+            for symbol in &dependency.exports {
+                if closure_references.contains(symbol) {
+                    omissions.push(Omission {
+                        subject: symbol.clone(),
+                        reason: "dependency-signature-not-in-bundle".to_owned(),
+                    });
+                }
+            }
+        }
+    }
     required_dependencies.sort_by(|left, right| left.module_id.cmp(&right.module_id));
+    omissions.sort_by(|left, right| left.subject.cmp(&right.subject));
+    omissions.dedup_by(|left, right| left.subject == right.subject);
     // Required facts: signatures, typed errors, effect obligations,
-    // capability and version/deprecation obligations.
+    // capability and version/deprecation obligations, and the query
+    // owner facts (r3 review finding 14/codex: the capsule never claims
+    // known-empty operation errors from absence).
     let mut facts = Vec::new();
-    for export in &selected {
+    for export in &closure {
         let signature = signature_text(export);
         let errors = export_errors(export);
         let effects = export
@@ -159,9 +184,8 @@ pub fn plan_consumer_context(
     for dependency in &required_dependencies {
         required_cost = required_cost.saturating_add(estimate(&wire::canonical(dependency)));
     }
-    let selected_cost = required_cost;
-    // Protected required facts can never be dropped for fit: an
-    // over-budget capsule stays explicit.
+    let selected_cost = required_cost; // Protected required facts can never be dropped for fit: an
+                                       // over-budget capsule stays explicit.
     let fits = selected_cost <= budget;
     if !fits {
         gaps.push("budget-exceeded".to_owned());
@@ -237,12 +261,40 @@ pub(crate) fn export_references(export: &PublicExport) -> Vec<String> {
     references
 }
 
-/// The typed error exports of one export: error-kind exports carry their
-/// own identity; operations carry nothing in the current closed surface
-/// beyond their kind rows.
+/// The public *shape* leaves of one export (field/input/payload/result
+/// types only): the materialization closure of the capsule. Identity
+/// obligations — reads, effect entities, governed operations,
+/// invocations — stay identity-only and never drag aggregate shapes
+/// into the capsule (r3 review finding 3/codex).
+fn shape_leaves(export: &PublicExport) -> Vec<String> {
+    let mut leaves = Vec::new();
+    let push_type = |expression: &super::wire::TypeExpr, leaves: &mut Vec<String>| {
+        leaves.push(expression.leaf().to_owned());
+    };
+    for field in export
+        .fields
+        .iter()
+        .chain(&export.input)
+        .chain(&export.payload)
+    {
+        push_type(&field.r#type, &mut leaves);
+    }
+    if let Some(returns) = &export.returns {
+        push_type(returns, &mut leaves);
+    }
+    leaves
+}
+
+/// The typed error facts of one export: error-kind exports carry their
+/// own identity; exported commands and queries carry their declared
+/// public error union (r3 review finding 14/codex — never a silently
+/// known-empty union).
 fn export_errors(export: &PublicExport) -> Vec<String> {
     if export.kind == "error" {
         return vec![export.export.clone()];
+    }
+    if matches!(export.kind.as_str(), "command" | "query") {
+        return export.errors.clone();
     }
     Vec::new()
 }
@@ -311,6 +363,16 @@ fn signature_text(export: &PublicExport) -> String {
             if let Some(returns) = &export.returns {
                 text.push_str(" -> ");
                 text.push_str(&type_text(returns));
+            }
+            // The public query owner facts ride the signature (r3 review
+            // finding 14/codex).
+            if export.cardinality.is_some() {
+                text.push_str(&format!(
+                    " cardinality {} consistency {} pagination {}",
+                    export.cardinality.as_deref().unwrap_or_default(),
+                    export.consistency.as_deref().unwrap_or_default(),
+                    export.pagination.as_deref().unwrap_or_default()
+                ));
             }
         }
         "event" => {

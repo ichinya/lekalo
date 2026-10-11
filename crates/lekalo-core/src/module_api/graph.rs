@@ -36,11 +36,18 @@ pub fn import_edges(modules: &[crate::ir::Module]) -> Vec<ImportEdge> {
 
 /// Detect every strongly connected component of the declared import graph
 /// with at least two members or a self-loop. The returned witnesses carry
-/// the canonical (rotation-minimal, lexicographically smallest) path and
-/// the original edge keys, deterministically sorted. Kosaraju's algorithm
-/// over the bounded module graph with iterative DFS: no recursion depth
-/// scales with hostile input.
+/// an actual directed cycle path (every adjacent pair, including the
+/// closing hop, is an original edge — never an invented rotation of the
+/// member set) plus the original edge keys, deterministically sorted.
+/// Kosaraju's algorithm over the bounded module graph with iterative DFS:
+/// no recursion depth scales with hostile input.
 pub fn import_sccs(edges: &[ImportEdge]) -> Vec<CycleWitness> {
+    sccs_labeled(edges, "imports")
+}
+
+/// The labeled SCC projection shared by the import and reference
+/// projections (r3 finding: the projection name rides the witness).
+pub fn sccs_labeled(edges: &[ImportEdge], projection: &str) -> Vec<CycleWitness> {
     let mut adjacency: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
     let mut reverse: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
     for edge in edges {
@@ -103,39 +110,65 @@ pub fn import_sccs(edges: &[ImportEdge]) -> Vec<CycleWitness> {
         }
         components.push(component);
     }
-    sccs_to_witnesses(edges, components)
+    sccs_to_witnesses(edges, components, projection)
 }
 
-/// Convert components into closed witnesses with canonical paths.
-fn sccs_to_witnesses(edges: &[ImportEdge], sccs: Vec<Vec<&str>>) -> Vec<CycleWitness> {
+/// Convert components into closed witnesses with actual cycle paths.
+fn sccs_to_witnesses(
+    edges: &[ImportEdge],
+    sccs: Vec<Vec<&str>>,
+    projection: &str,
+) -> Vec<CycleWitness> {
+    let edge_set: BTreeSet<(&str, &str)> = edges
+        .iter()
+        .map(|edge| (edge.from.as_str(), edge.to.as_str()))
+        .collect();
+    let mut adjacency: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for (from, to) in &edge_set {
+        adjacency.entry(from).or_default().push(to);
+    }
     let mut witnesses = Vec::new();
     for component in sccs {
-        if component.len() == 1 {
+        let member_set: BTreeSet<&str> = component.iter().copied().collect();
+        if member_set.len() == 1 {
             let member = component[0];
-            if !edges
-                .iter()
-                .any(|edge| edge.from == member && edge.to == member)
-            {
+            if !edge_set.contains(&(member, member)) {
                 continue;
             }
         }
-        let members: Vec<String> = component.iter().map(|node| (*node).to_owned()).collect();
-        // Canonical path: rotate the cycle so the smallest member leads.
-        let rotation = smallest_rotation(&members);
-        let mut path = rotation.clone();
+        let members: Vec<String> = {
+            let mut sorted = component.clone();
+            sorted.sort();
+            sorted.iter().map(|node| (*node).to_owned()).collect()
+        };
+        // The witness path is an actual directed cycle inside the
+        // component (r3 finding 11/codex): a DFS that stays within the
+        // component and returns to its root, never a rotation of the
+        // member set. Every adjacent pair is verified against the
+        // original edges below.
+        let Some(cycle) = directed_cycle(&adjacency, &member_set) else {
+            continue;
+        };
+        // Canonical spelling: rotate the real cycle so its smallest node
+        // leads; only valid rotations of an actual cycle are considered.
+        let rotation = smallest_rotation(&cycle);
+        let mut path: Vec<String> = rotation.iter().map(|node| String::from(*node)).collect();
         if let Some(first) = rotation.first() {
-            path.push(first.clone());
+            path.push(String::from(*first));
         }
-        let member_set: BTreeSet<&str> = component.iter().copied().collect();
-        let cycle_edges: Vec<String> = edges
+        // Verification: every adjacent witness pair, including the
+        // closing hop, must be an original directed edge — a witness that
+        // invented an edge is a contract violation, never a report row.
+        assert!(path
+            .windows(2)
+            .all(|pair| edge_set.contains(&(pair[0].as_str(), pair[1].as_str()))));
+        let cycle_edges: Vec<String> = edge_set
             .iter()
-            .filter(|edge| {
-                member_set.contains(edge.from.as_str()) && member_set.contains(edge.to.as_str())
-            })
-            .map(|edge| format!("{}->{}", edge.from, edge.to))
+            .filter(|(from, to)| member_set.contains(from) && member_set.contains(to))
+            .map(|(from, to)| format!("{from}->{to}"))
             .collect();
         witnesses.push(CycleWitness {
-            projection: "imports".to_owned(),
+            projection: projection.to_owned(),
             members,
             path,
             edges: cycle_edges,
@@ -145,12 +178,49 @@ fn sccs_to_witnesses(edges: &[ImportEdge], sccs: Vec<Vec<&str>>) -> Vec<CycleWit
     witnesses
 }
 
-/// The rotation-minimal, lexicographically smallest cycle spelling.
-fn smallest_rotation(members: &[String]) -> Vec<String> {
-    let mut rotations: Vec<Vec<String>> = Vec::new();
-    for start in 0..members.len() {
-        let mut rotated: Vec<String> = members[start..].to_vec();
-        rotated.extend_from_slice(&members[..start]);
+/// Find one actual directed cycle inside a strongly connected component:
+/// deterministic DFS from the smallest member following only component
+/// edges until the root repeats. Returns the cycle nodes in walk order
+/// (the root is not repeated; the closing hop is implicit).
+fn directed_cycle<'a>(
+    adjacency: &BTreeMap<&'a str, Vec<&'a str>>,
+    component: &BTreeSet<&'a str>,
+) -> Option<Vec<&'a str>> {
+    let root = *component.first()?;
+    // Iterative DFS over (node, neighbor cursor) frames.
+    let mut path: Vec<&'a str> = vec![root];
+    let mut on_path: BTreeSet<&'a str> = [root].into_iter().collect();
+    let mut cursors: Vec<usize> = vec![0];
+    while let Some(node) = path.last().copied() {
+        let neighbors = adjacency.get(node).cloned().unwrap_or_default();
+        let cursor = cursors.last_mut()?;
+        if let Some(next) = neighbors.get(*cursor).copied() {
+            *cursor += 1;
+            if next == root {
+                // A real directed cycle closes here.
+                return Some(path.clone());
+            }
+            if component.contains(next) && on_path.insert(next) {
+                path.push(next);
+                cursors.push(0);
+            }
+            continue;
+        }
+        // Exhausted: backtrack.
+        path.pop();
+        cursors.pop();
+    }
+    None
+}
+
+/// The rotation-minimal, lexicographically smallest spelling of one
+/// actual directed cycle (only valid rotations of a real cycle arrive
+/// here).
+fn smallest_rotation<'a>(cycle: &'a [&'a str]) -> Vec<&'a str> {
+    let mut rotations: Vec<Vec<&str>> = Vec::new();
+    for start in 0..cycle.len() {
+        let mut rotated: Vec<&str> = cycle[start..].to_vec();
+        rotated.extend_from_slice(&cycle[..start]);
         rotations.push(rotated);
     }
     rotations.sort();
@@ -217,5 +287,57 @@ mod tests {
             },
         ];
         assert!(import_sccs(&chain).is_empty());
+    }
+
+    #[test]
+    fn witness_paths_are_real_directed_cycles() {
+        // r3 review finding: rotating SCC members invented nonexistent
+        // edges. Every witness pair must be an original edge.
+        let edge = |from: &str, to: &str| ImportEdge {
+            from: from.to_owned(),
+            to: to.to_owned(),
+        };
+        let edges = vec![edge("a", "b"), edge("b", "c"), edge("c", "a")];
+        for witness in import_sccs(&edges) {
+            let original: BTreeSet<(&str, &str)> = edges
+                .iter()
+                .map(|e| (e.from.as_str(), e.to.as_str()))
+                .collect();
+            assert!(witness
+                .path
+                .windows(2)
+                .all(|pair| original.contains(&(pair[0].as_str(), pair[1].as_str()))));
+            assert_eq!(witness.path.first(), witness.path.last());
+        }
+        // A wide SCC whose member rotation order is not a directed cycle:
+        // edges a->b->c->d->a plus chords a->c, d->b. The old rotation
+        // [a,b,c,d,a] contains b->c and c->d (present) — use a shape where
+        // rotation invents edges: cycle b->d->c->b plus spoke a->b, a->c.
+        let edges = vec![
+            edge("a", "b"),
+            edge("a", "c"),
+            edge("b", "d"),
+            edge("d", "c"),
+            edge("c", "b"),
+        ];
+        // SCC: {b, c, d} (a is not in it). Members sorted: b, c, d — the
+        // rotation [b,c,d,b] would need c->d and d->b, neither exists.
+        let witnesses = import_sccs(&edges);
+        let witness = witnesses
+            .iter()
+            .find(|w| w.members == vec!["b".to_owned(), "c".to_owned(), "d".to_owned()])
+            .expect("b/c/d component");
+        let original: BTreeSet<(&str, &str)> = edges
+            .iter()
+            .map(|e| (e.from.as_str(), e.to.as_str()))
+            .collect();
+        assert!(
+            witness
+                .path
+                .windows(2)
+                .all(|pair| original.contains(&(pair[0].as_str(), pair[1].as_str()))),
+            "path {:?} must be a real directed cycle",
+            witness.path
+        );
     }
 }

@@ -237,6 +237,36 @@ pub struct ModulePolicy {
     pub grants: Vec<GrantPolicy>,
     #[serde(default)]
     pub deprecations: Vec<DeprecationPolicy>,
+    /// The producer-declared public error unions of exported operations
+    /// (the #62 owner seam; r3 review finding 14/codex): absence for an
+    /// exported command or query is a required evidence gap, never a
+    /// silently empty union.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub operation_errors: Vec<OperationErrors>,
+    /// The producer-declared public query owner facts (cardinality,
+    /// pagination, consistency) of exported queries.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub query_facts: Vec<QueryFacts>,
+}
+
+/// The declared public error union of one exported operation.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OperationErrors {
+    pub operation: String,
+    #[serde(default)]
+    pub errors: Vec<String>,
+}
+
+/// The declared public query owner facts of one exported query.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct QueryFacts {
+    pub query: String,
+    pub cardinality: String,
+    pub consistency: String,
+    /// `none`, `offset`, or `cursor`.
+    pub pagination: String,
 }
 
 /// One explicit export allowlist row.
@@ -438,6 +468,28 @@ pub struct PublicExport {
     pub entity: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub emits: Vec<String>,
+    /// The public error union of an exported command or query (the #62
+    /// owner seam; r3 review finding 14/codex).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub errors: Vec<String>,
+    /// The public query owner facts of an exported query: `one`,
+    /// `optional`, `list`, `page`, or `stream`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cardinality: Option<String>,
+    /// `strong`, `bounded`, or `stale-ok`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub consistency: Option<String>,
+    /// `none`, `offset`, or `cursor`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pagination: Option<String>,
+    /// The accepted rename alias evidence of the export (r3 review
+    /// finding 10/codex): preserved in the public surface, never
+    /// silently dropped at the boundary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alias_of: Option<String>,
+    /// The version the export (or its alias) appeared in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub since: Option<String>,
 }
 
 impl PublicExport {
@@ -466,6 +518,12 @@ impl PublicExport {
             operation: None,
             entity: None,
             emits: Vec::new(),
+            errors: Vec::new(),
+            cardinality: None,
+            consistency: None,
+            pagination: None,
+            alias_of: None,
+            since: None,
         }
     }
 }

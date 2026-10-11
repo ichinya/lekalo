@@ -2,13 +2,13 @@
   "moduleApiDiff": {
     "after": {
       "apiVersion": "1.2.0",
-      "digest": "sha256:c239085eb2f6ebe05e1e44a3dca9152ef88c594d30c5089f8f5008bda6122888",
+      "digest": "sha256:d4207dc7b8ad77e61b3e41ca760c886cd95222c74165f1284f443f8656999a65",
       "module": "tasks",
       "project": "tasks"
     },
     "before": {
       "apiVersion": "1.2.0",
-      "digest": "sha256:dc76bd8b92a0ebbe99a8ef42a9920f43dda93efa17ccc51d0df72b2393e4e9de",
+      "digest": "sha256:fa6aa835e57adec514652203707a2beb786819a88421af8d486dc2be58dc78cc",
       "module": "tasks",
       "project": "tasks"
     },
@@ -25,6 +25,7 @@
     "consumers": [
       {
         "changes": [
+          "tasks.get_task",
           "tasks.task_view"
         ],
         "consumer": "planner",
@@ -33,6 +34,7 @@
         "reason": "policy-accepted",
         "status": "affected",
         "witness": [
+          "planner::tasks.get_task",
           "planner::tasks.task_view"
         ]
       },

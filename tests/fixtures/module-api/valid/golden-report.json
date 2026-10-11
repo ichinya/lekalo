@@ -1,50 +1,50 @@
 {
+  "schemaVersion": "lekalo/module-api-report/v0.8.0",
+  "identity": "dev.lekalo.module-api-report@0.8.0",
   "assessment": "pass",
   "command": "check",
-  "complete": true,
-  "cycles": [],
-  "findings": [],
-  "gaps": [],
-  "identity": "dev.lekalo.module-api-report@0.8.0",
+  "strict": false,
   "moduleFilter": null,
+  "pins": {
+    "project": "tasks",
+    "modelVersion": "0.2.16",
+    "irDigest": "sha256:f60bad30f53d2b660eaeeafcc4cabb55a529f5baa0e69e7cf9a4160199a8614e",
+    "attachmentDigest": "sha256:ab3c7dc3371d3613a0fb04b79afe084fd515a1c0eaf352d217e0b1fe6a4249b7",
+    "registryVersion": "0.8.0"
+  },
   "modules": [
     {
+      "moduleId": "planner",
       "apiVersion": null,
       "attachment": true,
-      "consumers": 0,
       "exports": 0,
       "imports": [
         "tasks"
       ],
-      "moduleId": "planner",
+      "consumers": 0,
       "publicDigest": null
     },
     {
+      "moduleId": "provider",
       "apiVersion": null,
       "attachment": false,
-      "consumers": 0,
       "exports": 0,
       "imports": [],
-      "moduleId": "provider",
+      "consumers": 0,
       "publicDigest": null
     },
     {
+      "moduleId": "tasks",
       "apiVersion": "1.2.0",
       "attachment": true,
-      "consumers": 1,
       "exports": 9,
       "imports": [],
-      "moduleId": "tasks",
-      "publicDigest": "sha256:dc76bd8b92a0ebbe99a8ef42a9920f43dda93efa17ccc51d0df72b2393e4e9de"
+      "consumers": 1,
+      "publicDigest": "sha256:dd02bc7d30d9894c01707851627477e83e360004c872fdc89b9a841fccf30136"
     }
   ],
-  "pins": {
-    "attachmentDigest": "sha256:dce21400fb4e43b49ae062204b6d5b6e3a6cef4bcabe8a651f2552719a40d128",
-    "irDigest": "sha256:f60bad30f53d2b660eaeeafcc4cabb55a529f5baa0e69e7cf9a4160199a8614e",
-    "modelVersion": "0.2.16",
-    "project": "tasks",
-    "registryVersion": "0.8.0"
-  },
-  "schemaVersion": "lekalo/module-api-report/v0.8.0",
-  "strict": false
+  "findings": [],
+  "cycles": [],
+  "gaps": [],
+  "complete": true
 }

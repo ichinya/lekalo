@@ -6926,6 +6926,10 @@
       "location_requirement": "none",
       "data_fields": [
         {
+          "name": "subject",
+          "type": "token"
+        },
+        {
           "name": "version",
           "type": "token"
         },

@@ -26,7 +26,10 @@
       "ports": [],
       "capabilities": [],
       "grants": [],
-      "deprecations": []
+      "deprecations": [],
+      "operationErrors": [
+        { "operation": "planner.focus", "errors": [] }
+      ]
     }
   ]
 }

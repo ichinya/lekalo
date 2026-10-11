@@ -252,6 +252,28 @@
             "pattern": "^[a-z][a-z0-9_]*$"
           },
           "maxItems": 64
+        },
+        "aliasOf": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/semanticId"
+            }
+          ]
+        },
+        "since": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*).(0|[1-9][0-9]*).(0|[1-9][0-9]*)$",
+              "maxLength": 32
+            }
+          ]
         }
       },
       "required": [
@@ -287,6 +309,36 @@
             "$ref": "#/$defs/effectObligation"
           },
           "maxItems": 256
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          },
+          "maxItems": 1024,
+          "uniqueItems": true
+        },
+        "aliasOf": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/semanticId"
+            }
+          ]
+        },
+        "since": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*).(0|[1-9][0-9]*).(0|[1-9][0-9]*)$",
+              "maxLength": 32
+            }
+          ]
         }
       },
       "required": [
@@ -319,6 +371,45 @@
           },
           "maxItems": 1024,
           "uniqueItems": true
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          },
+          "maxItems": 1024,
+          "uniqueItems": true
+        },
+        "cardinality": {
+          "enum": ["one", "optional", "list", "page", "stream"]
+        },
+        "consistency": {
+          "enum": ["strong", "bounded", "stale-ok"]
+        },
+        "pagination": {
+          "enum": ["none", "offset", "cursor"]
+        },
+        "aliasOf": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/semanticId"
+            }
+          ]
+        },
+        "since": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*).(0|[1-9][0-9]*).(0|[1-9][0-9]*)$",
+              "maxLength": 32
+            }
+          ]
         }
       },
       "required": [
@@ -347,6 +438,28 @@
             "$ref": "#/$defs/field"
           },
           "maxItems": 1024
+        },
+        "aliasOf": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/semanticId"
+            }
+          ]
+        },
+        "since": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*).(0|[1-9][0-9]*).(0|[1-9][0-9]*)$",
+              "maxLength": 32
+            }
+          ]
         }
       },
       "required": [
@@ -384,6 +497,28 @@
             "$ref": "#/$defs/field"
           },
           "maxItems": 1024
+        },
+        "aliasOf": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/semanticId"
+            }
+          ]
+        },
+        "since": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*).(0|[1-9][0-9]*).(0|[1-9][0-9]*)$",
+              "maxLength": 32
+            }
+          ]
         }
       },
       "required": [
@@ -501,6 +636,28 @@
           },
           "maxItems": 1024,
           "uniqueItems": true
+        },
+        "aliasOf": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/semanticId"
+            }
+          ]
+        },
+        "since": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*).(0|[1-9][0-9]*).(0|[1-9][0-9]*)$",
+              "maxLength": 32
+            }
+          ]
         }
       },
       "required": [

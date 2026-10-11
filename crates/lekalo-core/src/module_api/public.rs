@@ -11,29 +11,113 @@
 
 use super::diagnostic::invalid;
 use super::resolve::Resolved;
+use super::validate::{boundary_verdict, is_boundary_rule};
 use super::version::is_digest;
 use super::wire::{
-    self, EffectObligation, ProducerPin, PublicBundle, PublicDependency, PublicExport, PublicField,
-    PublicPins, TypeExpr,
+    self, EffectObligation, ModulePolicy, ProducerPin, PublicBundle, PublicDependency,
+    PublicExport, PublicField, PublicPins, TypeExpr,
 };
 use crate::diagnostics::DiagnosticSet;
 use crate::error_contract::registry::ErrorRegistry;
+use crate::error_contract::ErrorId;
 use crate::ir::{Compilation, Definition, TypeRef};
+use crate::result::Status;
 use std::collections::BTreeMap;
 
-/// Derive the certified public bundle of one module. An incomplete or
-/// illegal closure refuses even in advisory mode: no uncertified bundle is
-/// ever produced.
+/// Derive the certified public bundle of one module (r3 review finding
+/// 2/codex: the certification lives in the core public API, never only in
+/// the CLI). The unfiltered boundary check must report no exact semantic
+/// violation for the module *or for any transitive public dependency of
+/// its certified closure*, the required operation-error/query owner
+/// evidence must be complete, and only then is the portable bundle
+/// emitted. An incomplete or illegal closure refuses even in advisory
+/// mode: no uncertified bundle is ever produced.
 pub fn export_public(
     resolved: &Resolved,
     compilation: &Compilation,
     module: &str,
 ) -> Result<PublicBundle, DiagnosticSet> {
-    match ExportSession::new(resolved, compilation).bundle_checked(module) {
-        Ok(bundle) => Ok(bundle),
-        Err(ExportFailure::Cycle(_)) => Err(invalid("public-dependency-cycle")),
-        Err(ExportFailure::Invalid(set)) => Err(set),
+    // The unfiltered boundary check owns the whole project; the certified
+    // set refuses when the module or any transitive public dependency of
+    // its closure owns a boundary violation, with the exact findings.
+    let verdict = boundary_verdict(resolved, compilation, false, None)?;
+    let mut session = ExportSession::new(resolved, compilation);
+    // The certified closure: every transitive public dependency pin, from
+    // the edges the session records even when a dep bundle itself fails.
+    let scope = certified_scope(&mut session, module);
+    let scoped: Vec<_> = verdict
+        .evidence
+        .iter()
+        .filter(|finding| {
+            is_boundary_rule(finding.rule)
+                && finding
+                    .consumer
+                    .as_deref()
+                    .or(finding.producer.as_deref())
+                    .is_some_and(|owner| scope.contains(owner))
+        })
+        .cloned()
+        .collect();
+    if !scoped.is_empty() {
+        return Err(super::diagnostic::set(&scoped, Status::Invalid)?);
     }
+    // Required owner evidence (r3 review finding 14/codex): the declared
+    // operation-error/query facts of every module in the certified scope;
+    // their absence is a required evidence gap and refuses certification.
+    let owner_gaps: Vec<_> = verdict
+        .evidence
+        .iter()
+        .filter(|finding| {
+            finding.rule == "module-api.evidence-incomplete"
+                && finding.detail == "owner-evidence-missing"
+                && scope.contains(finding.subject.as_str())
+        })
+        .cloned()
+        .collect();
+    if !owner_gaps.is_empty() {
+        return Err(super::diagnostic::set(&owner_gaps, Status::Unavailable)?);
+    }
+    match session.bundle_checked(module) {
+        Ok(bundle) => Ok(bundle),
+        Err(ExportFailure::Invalid(set)) => Err(set),
+        Err(ExportFailure::Cycle(path)) => {
+            // A real cycle refuses with the registered cycle rule and its
+            // exact path (r3 review finding 3), never a bare input-invalid
+            // set that discards the witness.
+            let mut finding = super::diagnostic::Evidence::new(
+                "module-api.dependency-cycle",
+                module,
+                "public-dependency-scc",
+            );
+            finding.path = path;
+            Err(super::diagnostic::set(&[finding], Status::Invalid)?)
+        }
+    }
+}
+
+/// The transitive certified-closure scope of one module: the module plus
+/// every public dependency reachable through the session's recorded
+/// edges, walked with a bounded worklist even when bundles refuse.
+fn certified_scope(
+    session: &mut ExportSession,
+    module: &str,
+) -> std::collections::BTreeSet<String> {
+    let mut scope = std::collections::BTreeSet::new();
+    scope.insert(module.to_owned());
+    let mut work: Vec<String> = vec![module.to_owned()];
+    let mut seen: std::collections::BTreeSet<String> = work.iter().cloned().collect();
+    while let Some(current) = work.pop() {
+        // Best-effort build: it records the module's dependency edges even
+        // when the bundle ultimately refuses.
+        let _ = session.bundle(&current);
+        for dependency in session.deps_of(&current) {
+            if seen.insert(dependency.clone()) {
+                scope.insert(dependency.clone());
+                work.push(dependency);
+            }
+        }
+    }
+    scope
 }
 
 /// One export failure: a typed invalid set or a real public dependency
@@ -112,13 +196,7 @@ impl<'a> ExportSession<'a> {
         self.active.push(module.to_owned());
         let built = self.build(module);
         self.active.pop();
-        match built {
-            Ok(bundle) => {
-                self.bundles.insert(module.to_owned(), bundle.clone());
-                Ok(bundle)
-            }
-            Err(set) => Err(ExportFailure::Invalid(set)),
-        }
+        built
     }
 
     /// The active public dependency path (a cycle witness), exposed to the
@@ -127,9 +205,9 @@ impl<'a> ExportSession<'a> {
         self.active.clone()
     }
 
-    fn build(&mut self, module: &str) -> Result<PublicBundle, DiagnosticSet> {
+    fn build(&mut self, module: &str) -> Result<PublicBundle, ExportFailure> {
         let Some(policy) = self.resolved.modules.get(module) else {
-            return Err(invalid("unknown-module"));
+            return Err(ExportFailure::Invalid(invalid("unknown-module")));
         };
         let compilation = self.compilation;
         let resolved = self.resolved;
@@ -148,11 +226,11 @@ impl<'a> ExportSession<'a> {
         let mut foreign: BTreeMap<String, Vec<String>> = BTreeMap::new();
         for entry in &policy.exports {
             if entry.kind == "error" {
-                exports.push(error_export(&entry.export)?);
+                exports.push(error_export(&entry.export).map_err(ExportFailure::Invalid)?);
                 continue;
             }
             let Some(definition) = by_id.get(entry.export.as_str()) else {
-                return Err(invalid("unknown-export"));
+                return Err(ExportFailure::Invalid(invalid("unknown-export")));
             };
             project_export(
                 definition,
@@ -161,7 +239,37 @@ impl<'a> ExportSession<'a> {
                 &exported,
                 &mut exports,
                 &mut foreign,
-            )?;
+            )
+            .map_err(ExportFailure::Invalid)?;
+        }
+        // The operation-error and query owner facts (r3 review finding
+        // 14/codex): the declared attachment seam wins; the embedded #62
+        // registry binding is the fallback owner for operations it covers.
+        for export in &mut exports {
+            if matches!(export.kind.as_str(), "command" | "query") {
+                export.errors = operation_errors_of(policy, &export.export);
+            }
+            if export.kind == "query" {
+                if let Some(facts) = policy
+                    .query_facts
+                    .iter()
+                    .find(|facts| facts.query == export.export)
+                {
+                    export.cardinality = Some(facts.cardinality.clone());
+                    export.consistency = Some(facts.consistency.clone());
+                    export.pagination = Some(facts.pagination.clone());
+                }
+            }
+            // Accepted alias evidence travels with the export (r3 review
+            // finding 10/codex): preserved in the public surface.
+            if let Some(entry) = policy
+                .exports
+                .iter()
+                .find(|entry| entry.export == export.export)
+            {
+                export.alias_of = entry.alias_of.clone();
+                export.since = entry.since.clone();
+            }
         }
         // Public dependency pins: one exact pin per foreign module.
         let mut public_dependencies: Vec<PublicDependency> = Vec::new();
@@ -169,12 +277,14 @@ impl<'a> ExportSession<'a> {
             let Some(policy) = resolved.modules.get(&foreign_module) else {
                 // A foreign type from an unattached module: no public pin can
                 // exist, so the closure is incomplete by construction.
-                return Err(invalid("unattached-public-dependency"));
+                return Err(ExportFailure::Invalid(invalid(
+                    "unattached-public-dependency",
+                )));
             };
             for symbol in &symbols {
                 if !policy.exports.iter().any(|entry| entry.export == *symbol) {
                     // The foreign type is not exported: the bundle refuses.
-                    return Err(invalid("foreign-type-not-exported"));
+                    return Err(ExportFailure::Invalid(invalid("foreign-type-not-exported")));
                 }
             }
             public_dependencies.push(PublicDependency {
@@ -205,10 +315,44 @@ impl<'a> ExportSession<'a> {
             module: module.to_owned(),
         };
         // Resolve public dependency digests through the memoized session: an
-        // explicit active path bounds the depth, every cone is computed once.
+        // explicit active path bounds the depth, every cone is computed
+        // once, and a real cycle propagates as the typed cycle failure
+        // with its exact path (r3 review finding 3) instead of collapsing
+        // into an input-invalid set.
         for dependency in &mut public_dependencies {
-            dependency.digest = self.bundle(&dependency.module_id)?.digest;
+            dependency.digest = self.bundle_checked(&dependency.module_id)?.digest;
         }
+        // Canonical set order (r3 review finding 4/codex): the emitted
+        // bundle and its digest are order-insensitive for every set-like
+        // collection — exports, dependency pins and their export sets,
+        // ports, capabilities, and deprecations. An allowlist reorder is
+        // not a public semantic change.
+        exports.sort_by(|left, right| left.export.cmp(&right.export));
+        public_dependencies.sort_by(|left, right| left.module_id.cmp(&right.module_id));
+        for dependency in &mut public_dependencies {
+            dependency.exports.sort();
+            dependency.exports.dedup();
+        }
+        let mut ports = policy.ports.clone();
+        ports.sort_by(|left, right| left.port.cmp(&right.port));
+        for port in &mut ports {
+            port.operations.sort();
+            port.operations.dedup();
+        }
+        let mut capabilities = policy.capabilities.clone();
+        capabilities.sort_by(|left, right| left.capability.cmp(&right.capability));
+        let mut deprecations: Vec<_> = policy
+            .deprecations
+            .iter()
+            .filter(|entry| {
+                policy
+                    .exports
+                    .iter()
+                    .any(|export| export.export == entry.export)
+            })
+            .cloned()
+            .collect();
+        deprecations.sort_by(|left, right| left.export.cmp(&right.export));
         let partial = PublicBundle {
             schema_version: format!("{}/v{}", wire::PUBLIC_SCHEMA, wire::VERSION),
             identity: format!("{}@{}", wire::PUBLIC_IDENTITY, wire::VERSION),
@@ -218,26 +362,24 @@ impl<'a> ExportSession<'a> {
             pins,
             exports,
             public_dependencies,
-            ports: policy.ports.clone(),
-            capabilities: policy.capabilities.clone(),
-            deprecations: policy
-                .deprecations
-                .iter()
-                .filter(|entry| {
-                    policy
-                        .exports
-                        .iter()
-                        .any(|export| export.export == entry.export)
-                })
-                .cloned()
-                .collect(),
+            ports,
+            capabilities,
+            deprecations,
         };
-        // The digest covers canonical public semantics only: it excludes its
-        // own digest member and the integer definition revision (a private
-        // edit that only bumps the revision preserves the public identity),
-        // so equivalent bundles agree byte-for-byte on the digest input.
+        // The digest covers canonical public semantics only (r3 review
+        // finding 4/codex): it excludes its own digest member, the integer
+        // definition revision (a private edit that only bumps the revision
+        // preserves the public identity), and the whole freshness pin
+        // block — `irDigest` is whole-project provenance and never part of
+        // the public identity. Pins stay in the bundle for freshness
+        // checks but outside the digest domain.
         let mut digest_projection = partial.clone();
         digest_projection.digest = String::new();
+        digest_projection.pins = PublicPins {
+            model_version: String::new(),
+            ir_digest: String::new(),
+            source_revision: super::wire::State::Unknown,
+        };
         for export in &mut digest_projection.exports {
             export.version = 0;
         }
@@ -245,8 +387,40 @@ impl<'a> ExportSession<'a> {
             wire::DIGEST_DOMAIN_PUBLIC,
             &wire::canonical(&digest_projection),
         );
-        Ok(PublicBundle { digest, ..partial })
+        let bundle = PublicBundle { digest, ..partial };
+        self.bundles.insert(module.to_owned(), bundle.clone());
+        Ok(bundle)
     }
+}
+
+/// The public error union of one exported operation: the declared
+/// attachment seam wins; the embedded #62 registry binding is the
+/// fallback owner. Empty means no owner declared a union — the boundary
+/// walk records the required evidence gap (r3 review finding 14/codex).
+fn operation_errors_of(policy: &ModulePolicy, operation: &str) -> Vec<String> {
+    if let Some(declared) = policy
+        .operation_errors
+        .iter()
+        .find(|union| union.operation == operation)
+    {
+        let mut errors = declared.errors.clone();
+        errors.sort();
+        errors.dedup();
+        return errors;
+    }
+    if let Ok(registry) = ErrorRegistry::embedded() {
+        if let Some(id) = ErrorId::new(operation) {
+            if let Some(binding) = registry.binding(&id) {
+                return binding
+                    .errors()
+                    .members()
+                    .iter()
+                    .map(|member| member.id().as_str().to_owned())
+                    .collect();
+            }
+        }
+    }
+    Vec::new()
 }
 
 /// Project one owned definition into the closed export surface.
@@ -595,8 +769,15 @@ fn convert_error_type(expression: &crate::error_contract::types::TypeExpr) -> Ty
 }
 
 /// Parse and validate a public bundle document (the diff/context seam).
+/// The full closed wire contract is enforced before canonicalization and
+/// semantic use (r3 review finding 1): required member presence,
+/// discriminated export shapes, closed vocabularies, bounds, uniqueness,
+/// IDs, versions, the digest domain, and the reference/policy closure —
+/// a recomputed checksum never admits a schema-invalid document.
 pub fn parse_bundle(bytes: &[u8]) -> Result<PublicBundle, DiagnosticSet> {
-    let bundle: PublicBundle = wire::decode(bytes, invalid)?;
+    let raw: serde_json::Value = wire::decode(bytes, invalid)?;
+    super::admission::admit_bundle_presence(&raw)?;
+    let bundle: PublicBundle = serde_json::from_value(raw).map_err(|_| invalid("closed-shape"))?;
     if bundle.schema_version != format!("{}/v{}", wire::PUBLIC_SCHEMA, wire::VERSION)
         || bundle.identity != format!("{}@{}", wire::PUBLIC_IDENTITY, wire::VERSION)
     {
@@ -607,19 +788,17 @@ pub fn parse_bundle(bytes: &[u8]) -> Result<PublicBundle, DiagnosticSet> {
     if !is_digest(&bundle.digest) {
         return Err(invalid("bundle-digest"));
     }
-    // The digest domain excludes its own digest member and the integer
-    // definition revision (private provenance), matching the export seam.
-    let mut without_digest = bundle.clone();
-    without_digest.digest = String::new();
-    for export in &mut without_digest.exports {
-        export.version = 0;
-    }
+    super::admission::admit_bundle(&bundle)?;
+    // The digest domain excludes its own digest member, the freshness
+    // pins, and the integer definition revisions, and is canonicalized
+    // over the set order — the exact projection of the export seam.
     let expected = wire::digest(
         wire::DIGEST_DOMAIN_PUBLIC,
-        &wire::canonical(&without_digest),
+        &wire::canonical(&super::admission::digest_projection(&bundle)),
     );
     if expected != bundle.digest {
         return Err(invalid("bundle-digest-mismatch"));
     }
+    super::admission::admit_bundle_semantics(&bundle)?;
     Ok(bundle)
 }

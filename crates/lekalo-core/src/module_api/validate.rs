@@ -58,6 +58,33 @@ pub fn check(
         }
     }
     let resolved = resolve(attachment_bytes, compilation)?;
+    boundary_verdict(&resolved, compilation, strict, module_filter)
+}
+
+/// Whether one rule is an exact semantic boundary violation (the shared
+/// certified-export and strict gates key on this set).
+pub fn is_boundary_rule(rule: &str) -> bool {
+    matches!(
+        rule,
+        "module-api.symbol-not-exported"
+            | "module-api.import-undeclared"
+            | "module-api.public-private-exposure"
+            | "module-api.public-target-exposure"
+            | "module-api.cross-module-write-forbidden"
+            | "module-api.dependency-cycle"
+    )
+}
+
+/// The boundary walk over an already-resolved attachment: the pure core
+/// of `check` and of the core certified-export seam (r3 review finding
+/// 2/codex: certification must live in the core public API, never only
+/// in the CLI).
+pub fn boundary_verdict(
+    resolved: &Resolved,
+    compilation: &Compilation,
+    strict: bool,
+    module_filter: Option<&str>,
+) -> Result<Verdict, DiagnosticSet> {
     let mut evidence: Vec<Evidence> = Vec::new();
     let project = &compilation.project;
     let ir_digest = format!(
@@ -66,7 +93,7 @@ pub fn check(
     );
     // 1. Declared import cycles, before any graph construction.
     let edges = graph::import_edges(&project.modules);
-    let cycles = graph::import_sccs(&edges);
+    let mut cycles = graph::import_sccs(&edges);
     for cycle in &cycles {
         let mut finding = Evidence::new(
             "module-api.dependency-cycle",
@@ -79,6 +106,29 @@ pub fn check(
         );
         finding.path = cycle.path.clone();
         evidence.push(finding);
+    }
+    // 1b. Projected semantic dependencies: every actual cross-owner
+    // reference participates in the cycle projection (r3 review finding
+    // 2), so write-only dependency cycles (effect entities with mutual
+    // grants) and read-back edges are visible even when no import is
+    // declared anywhere.
+    let reference_edges: Vec<graph::ImportEdge> = effects::reference_edges(compilation)
+        .into_iter()
+        .map(|(from, to)| graph::ImportEdge { from, to })
+        .collect();
+    for cycle in graph::sccs_labeled(&reference_edges, "references") {
+        let mut finding = Evidence::new(
+            "module-api.dependency-cycle",
+            cycle
+                .members
+                .first()
+                .map(String::as_str)
+                .unwrap_or_default(),
+            "reference-dependency-scc",
+        );
+        finding.path = cycle.path.clone();
+        evidence.push(finding);
+        cycles.push(cycle);
     }
     // 2. Cross-module references against the export allowlists.
     let mut exports_of: std::collections::BTreeMap<&str, Vec<&str>> =
@@ -116,59 +166,63 @@ pub fn check(
                 continue;
             }
             // The dedicated cross-owner-write rule owns effect-entity write
-            // sites; the export allowlist rule never double-reports them.
-            if matches!(definition, crate::ir::Definition::Effect(effect) if effect.entity.as_str() == reference)
-            {
-                continue;
-            }
-            // Cross-module references resolve against the producer's export
-            // allowlist. Module-private targets are unexported by
-            // definition, so they report through the same rule instead of a
-            // silent skip (the legacy LEK-SEM-020 direct finding keeps its
-            // own seam in the validator).
-            match exports_of.get(producer) {
-                Some(exported) => {
-                    if !exported.contains(&reference) {
+            // sites; the export-allowlist rule never double-reports them.
+            // The declared-import agreement still applies (r3 review
+            // finding 2): a granted write never legitimizes an undeclared
+            // dependency.
+            let effect_entity_site = matches!(definition, crate::ir::Definition::Effect(effect) if effect.entity.as_str() == reference);
+            if !effect_entity_site {
+                // Cross-module references resolve against the producer's export
+                // allowlist. Module-private targets are unexported by
+                // definition, so they report through the same rule instead of a
+                // silent skip (the legacy LEK-SEM-020 direct finding keeps its
+                // own seam in the validator).
+                match exports_of.get(producer) {
+                    Some(exported) => {
+                        if !exported.contains(&reference) {
+                            let mut finding = Evidence::new(
+                                "module-api.symbol-not-exported",
+                                definition.id().as_str(),
+                                "unexported-cross-module-reference",
+                            );
+                            finding.consumer = Some(consumer.to_owned());
+                            finding.producer = Some(producer.to_owned());
+                            finding.export = Some(reference.to_owned());
+                            finding.path = vec![
+                                format!("{consumer}->{producer}"),
+                                format!("import:{reference}"),
+                                format!("export:{reference}"),
+                            ];
+                            evidence.push(finding);
+                        }
+                    }
+                    None => {
+                        // A producer absent from the attachment has no allowlist
+                        // at all: the reference is a boundary finding, never a
+                        // silent pass (unattached producers cannot vacate the
+                        // boundary by omission).
                         let mut finding = Evidence::new(
                             "module-api.symbol-not-exported",
                             definition.id().as_str(),
-                            "unexported-cross-module-reference",
+                            "unattached-producer",
                         );
                         finding.consumer = Some(consumer.to_owned());
                         finding.producer = Some(producer.to_owned());
                         finding.export = Some(reference.to_owned());
                         finding.path = vec![
                             format!("{consumer}->{producer}"),
-                            format!("import:{reference}"),
-                            format!("export:{reference}"),
+                            format!("reference:{reference}"),
+                            "attachment:absent".to_owned(),
                         ];
                         evidence.push(finding);
                     }
                 }
-                None => {
-                    // A producer absent from the attachment has no allowlist
-                    // at all: the reference is a boundary finding, never a
-                    // silent pass (unattached producers cannot vacate the
-                    // boundary by omission).
-                    let mut finding = Evidence::new(
-                        "module-api.symbol-not-exported",
-                        definition.id().as_str(),
-                        "unattached-producer",
-                    );
-                    finding.consumer = Some(consumer.to_owned());
-                    finding.producer = Some(producer.to_owned());
-                    finding.export = Some(reference.to_owned());
-                    finding.path = vec![
-                        format!("{consumer}->{producer}"),
-                        format!("reference:{reference}"),
-                        "attachment:absent".to_owned(),
-                    ];
-                    evidence.push(finding);
-                }
             }
             // Declared imports: every resolved cross-module use edge must
             // agree with the Model imports (unused imports stay visible,
-            // never an error).
+            // never an error). The owning consumer module is recorded so
+            // `--module` scoping and export certification can never drop
+            // the finding (r3 review finding 1).
             let imports = declared_imports.get(consumer).cloned().unwrap_or_default();
             if !imports.contains(&producer) {
                 let mut finding = Evidence::new(
@@ -176,6 +230,7 @@ pub fn check(
                     definition.id().as_str(),
                     "undeclared-import",
                 );
+                finding.consumer = Some(consumer.to_owned());
                 finding.producer = Some(producer.to_owned());
                 finding.export = Some(reference.to_owned());
                 finding.path = vec![format!("{consumer}->{producer}")];
@@ -192,19 +247,63 @@ pub fn check(
         if module.exports.is_empty() {
             continue;
         }
-        closure_findings(&resolved, compilation, &module.module_id, &mut evidence)?;
+        closure_findings(resolved, compilation, &module.module_id, &mut evidence)?;
     }
     // 4. Cross-owner writes over typed effect facts.
     let effect_graph = crate::effects::build(project)?;
-    for finding in effects::check_writes(&resolved, compilation, &effect_graph) {
+    for finding in effects::check_writes(resolved, compilation, &effect_graph) {
         evidence.push(finding);
+    }
+    // 4b. Required owner evidence (r3 review finding 14/codex): every
+    // exported command and query carries its public error union — the
+    // attachment seam or an embedded #62 registry binding — and every
+    // exported query its cardinality/pagination/consistency facts.
+    // Absence is a required evidence gap, never a silently known-empty
+    // union; strict checks and certified exports refuse on it.
+    for module in resolved.modules.values() {
+        for entry in &module.exports {
+            let kind = entry.kind.as_str();
+            if matches!(kind, "command" | "query")
+                && !module
+                    .operation_errors
+                    .iter()
+                    .any(|union| union.operation == entry.export)
+                && !registry_binds_operation(&entry.export)
+            {
+                let mut gap = Evidence::new(
+                    "module-api.evidence-incomplete",
+                    &module.module_id,
+                    "owner-evidence-missing",
+                );
+                gap.export = Some(entry.export.clone());
+                gap.producer = Some(module.module_id.clone());
+                gap.gaps = vec!["operation-errors-undeclared".to_owned()];
+                evidence.push(gap);
+            }
+            if kind == "query"
+                && !module
+                    .query_facts
+                    .iter()
+                    .any(|facts| facts.query == entry.export)
+            {
+                let mut gap = Evidence::new(
+                    "module-api.evidence-incomplete",
+                    &module.module_id,
+                    "owner-evidence-missing",
+                );
+                gap.export = Some(entry.export.clone());
+                gap.producer = Some(module.module_id.clone());
+                gap.gaps = vec!["query-facts-undeclared".to_owned()];
+                evidence.push(gap);
+            }
+        }
     }
     // Public dependency projection cycles (module-level public bundles):
     // one memoized export session computes every bundle once, so legal
     // DAGs stay linear and real cycles carry the active path.
     let mut bundles = std::collections::BTreeMap::new();
     let mut public_cycle_evidence = Vec::new();
-    let mut session = super::public::ExportSession::new(&resolved, compilation);
+    let mut session = super::public::ExportSession::new(resolved, compilation);
     for module in resolved.modules.values() {
         if module.exports.is_empty() {
             continue;
@@ -214,20 +313,25 @@ pub fn check(
                 bundles.insert(module.module_id.clone(), bundle);
             }
             Err(super::public::ExportFailure::Cycle(path)) => {
+                // A real public dependency cycle is known evidence with an
+                // explainable path (r3 review finding 3): the registered
+                // cycle rule carries it, advisory stays valid/0 and strict
+                // is invalid/1, never an unavailable gap.
                 let mut finding = Evidence::new(
                     "module-api.dependency-cycle",
                     &module.module_id,
                     "public-dependency-scc",
                 );
-                finding.path = path;
+                finding.path = path.clone();
                 public_cycle_evidence.push(finding);
-                let mut gap = Evidence::new(
-                    "module-api.evidence-incomplete",
-                    &module.module_id,
-                    "public-closure-incomplete",
-                );
-                gap.gaps = vec!["public-dependency-cycle".to_owned()];
-                public_cycle_evidence.push(gap);
+                let mut members = path.clone();
+                members.dedup();
+                cycles.push(super::wire::CycleWitness {
+                    projection: "public".to_owned(),
+                    members,
+                    path,
+                    edges: Vec::new(),
+                });
             }
             Err(_) => {
                 let mut finding = Evidence::new(
@@ -310,6 +414,12 @@ pub fn check(
             .count()
     {
         gaps.push("public-closure-incomplete".to_owned());
+    }
+    if evidence
+        .iter()
+        .any(|finding| finding.detail == "owner-evidence-missing")
+    {
+        gaps.push("owner-evidence-missing".to_owned());
     }
     // The verdict: exact semantic violations are invalid under strict;
     // advisory default keeps the run valid with explicit findings.
@@ -513,6 +623,16 @@ fn shape_references_of(definition: &crate::ir::Definition) -> Vec<&str> {
 
 fn owner_of(symbol: &str) -> Option<&str> {
     symbol.split_once('.').map(|(owner, _)| owner)
+}
+
+/// Whether the embedded #62 registry binds an operation error union for
+/// `operation` (the authoritative owner fallback of the owner-evidence
+/// seam).
+fn registry_binds_operation(operation: &str) -> bool {
+    let Ok(registry) = crate::error_contract::registry::ErrorRegistry::embedded() else {
+        return false;
+    };
+    crate::error_contract::ErrorId::new(operation).is_some_and(|id| registry.binding(&id).is_some())
 }
 
 /// The recorded report bound: a canonical report above `MAX_REPORT_BYTES`

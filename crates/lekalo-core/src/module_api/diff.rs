@@ -107,13 +107,17 @@ pub fn compare_public(
             additive = true;
         }
     }
-    // Changed exports: field/shape-level comparison.
+    // Changed exports: field/shape-level comparison. Member-level
+    // additive surface and member-level breaks both propagate to the
+    // version policy (r3 review findings 4/9).
     for (export, after_export) in &after_map {
         let Some(before_export) = before_map.get(export) else {
             continue;
         };
-        let (export_changes, export_breaking) = compare_exports(before_export, after_export);
+        let (export_changes, export_breaking, export_additive) =
+            compare_exports(before_export, after_export);
         breaking |= export_breaking;
+        additive |= export_additive;
         for (member, class, reason, before_text, after_text) in export_changes {
             changes.push(DiffChange {
                 export: (*export).to_owned(),
@@ -231,6 +235,29 @@ pub fn compare_public(
                             after: Some(capability.obligation.clone()),
                         });
                     }
+                    // The capability version pin is public semantics (r3
+                    // review finding 8/codex): a changed version is a
+                    // consumer-visible compatibility fact, never digest-only.
+                    if before_capability.version != capability.version {
+                        changes.push(DiffChange {
+                            export: capability.capability.clone(),
+                            member: None,
+                            class: "behavioral".to_owned(),
+                            reason: "capability-version-changed".to_owned(),
+                            before: before_capability.version.clone(),
+                            after: capability.version.clone(),
+                        });
+                    }
+                    if before_capability.owner != capability.owner {
+                        changes.push(DiffChange {
+                            export: capability.capability.clone(),
+                            member: None,
+                            class: "behavioral".to_owned(),
+                            reason: "capability-owner-changed".to_owned(),
+                            before: before_capability.owner.clone(),
+                            after: capability.owner.clone(),
+                        });
+                    }
                 }
             }
         }
@@ -258,17 +285,81 @@ pub fn compare_public(
                 .map(|entry| (entry.export.as_str(), entry))
                 .collect();
         for entry in &after.deprecations {
-            if let Some(before_entry) = before_deprecations.get(entry.export.as_str()) {
-                if before_entry.replacement != entry.replacement {
+            match before_deprecations.get(entry.export.as_str()) {
+                None => {
+                    // A deprecation declaration that appears only on the
+                    // after side is new public semantics (r3 review finding
+                    // 5): the diff must never ignore it.
                     changes.push(DiffChange {
                         export: entry.export.clone(),
                         member: None,
-                        class: "behavioral".to_owned(),
-                        reason: "deprecation-replacement-changed".to_owned(),
-                        before: before_entry.replacement.clone(),
+                        class: "additive".to_owned(),
+                        reason: "deprecation-added".to_owned(),
+                        before: None,
                         after: entry.replacement.clone(),
                     });
+                    additive = true;
                 }
+                Some(before_entry) => {
+                    if before_entry.replacement != entry.replacement {
+                        changes.push(DiffChange {
+                            export: entry.export.clone(),
+                            member: None,
+                            class: "behavioral".to_owned(),
+                            reason: "deprecation-replacement-changed".to_owned(),
+                            before: before_entry.replacement.clone(),
+                            after: entry.replacement.clone(),
+                        });
+                    }
+                    if before_entry.introduced_in != entry.introduced_in
+                        || before_entry.removed_in != entry.removed_in
+                    {
+                        changes.push(DiffChange {
+                            export: entry.export.clone(),
+                            member: None,
+                            class: "behavioral".to_owned(),
+                            reason: "deprecation-window-changed".to_owned(),
+                            before: Some(format!(
+                                "{}..{}",
+                                before_entry.introduced_in,
+                                before_entry.removed_in.as_deref().unwrap_or("open")
+                            )),
+                            after: Some(format!(
+                                "{}..{}",
+                                entry.introduced_in,
+                                entry.removed_in.as_deref().unwrap_or("open")
+                            )),
+                        });
+                    }
+                    if before_entry.hint != entry.hint {
+                        changes.push(DiffChange {
+                            export: entry.export.clone(),
+                            member: None,
+                            class: "behavioral".to_owned(),
+                            reason: "deprecation-hint-changed".to_owned(),
+                            before: Some(before_entry.hint.clone()),
+                            after: Some(entry.hint.clone()),
+                        });
+                    }
+                }
+            }
+        }
+        // A deprecation retracted between the two sides is a behavioral
+        // change of the public migration policy (r3 review finding 5).
+        for entry in &before.deprecations {
+            if !after
+                .deprecations
+                .iter()
+                .any(|kept| kept.export == entry.export)
+            {
+                changes.push(DiffChange {
+                    export: entry.export.clone(),
+                    member: None,
+                    class: "behavioral".to_owned(),
+                    reason: "deprecation-removed".to_owned(),
+                    before: entry.replacement.clone(),
+                    after: None,
+                });
             }
         }
     }
@@ -293,7 +384,10 @@ pub fn compare_public(
             decision: "digest-only".to_owned(),
             expected: None,
             actual: None,
-            detail: if breaking {
+            // The digest-only detail reports the actual digest relation
+            // (r3 review finding 4): additive and behavioral changes move
+            // the digest too, so `digest-stable` never mislabels them.
+            detail: if before.digest != after.digest {
                 "digest-changed"
             } else {
                 "digest-stable"
@@ -385,6 +479,25 @@ pub fn compare_public(
                 .unwrap_or_else(|| "unversioned".to_owned())];
             evidence.push(finding);
         }
+    }
+    // Unknown consumer coverage is explicit evidence (r3 review finding
+    // 7/codex): a strict gate can never silently approve a diff whose
+    // consumer inventory is missing. The permanently unknown external
+    // caller surface stays a coverage note; the missing-snapshot gap is
+    // the required-evidence denial seam.
+    if report
+        .coverage
+        .unknown_reasons
+        .iter()
+        .any(|reason| reason == "consumer-snapshots-missing")
+    {
+        let mut gap = Evidence::new(
+            "module-api.evidence-incomplete",
+            &report.after.module,
+            "consumer-coverage-unknown",
+        );
+        gap.gaps = vec!["consumer-snapshots-missing".to_owned()];
+        evidence.push(gap);
     }
     Ok((report, evidence))
 }
@@ -482,16 +595,21 @@ fn export_kind(export: &super::wire::PublicExport) -> String {
     export.kind.clone()
 }
 
-/// The field list of one export by kind.
+/// The field list of one export by kind (error payloads are error-kind
+/// fields: r3 review finding 8/codex — the public payload type of an
+/// error is part of the compared surface).
 fn fields_of(export: &super::wire::PublicExport) -> &Vec<super::wire::PublicField> {
     match export.kind.as_str() {
         "command" => &export.input,
-        "event" => &export.payload,
+        "event" | "error" => &export.payload,
         _ => &export.fields,
     }
 }
 
 /// Field-level comparison of one export pair: exact classes and reasons.
+/// The return carries the member-level break and additive bits so the
+/// version policy sees the complete final change set (r3 review findings
+/// 4 and 9/codex).
 #[allow(clippy::type_complexity)]
 fn compare_exports(
     before: &super::wire::PublicExport,
@@ -505,9 +623,11 @@ fn compare_exports(
         Option<String>,
     )>,
     bool,
+    bool,
 ) {
     let mut changes = Vec::new();
     let mut breaking = false;
+    let mut additive = false;
     if before.kind != after.kind {
         changes.push((
             None,
@@ -516,7 +636,7 @@ fn compare_exports(
             Some(before.kind.clone()),
             Some(after.kind.clone()),
         ));
-        return (changes, true);
+        return (changes, true, false);
     }
     let before_fields = fields_of(before);
     let after_fields = fields_of(after);
@@ -562,6 +682,7 @@ fn compare_exports(
                     None,
                     Some(field_text(added)),
                 ));
+                additive = true;
             }
         }
     }
@@ -569,8 +690,11 @@ fn compare_exports(
         let Some(before_field) = before_map.get(name) else {
             continue;
         };
-        // Nullable-to-required is a break; required-to-nullable is a
-        // behavior change that widens output.
+        // Nullable-to-required is a break; required-to-nullable carries
+        // input/output variance (r3 review finding 9/codex): a command
+        // input that becomes optional widens the accepted surface, but a
+        // consumer that relied on the presence of an output member is no
+        // longer safe, so output optionality breaks.
         if after_field.required && !before_field.required {
             changes.push((
                 Some((*name).to_owned()),
@@ -581,13 +705,24 @@ fn compare_exports(
             ));
             breaking = true;
         } else if before_field.required && !after_field.required {
-            changes.push((
-                Some((*name).to_owned()),
-                "behavioral".to_owned(),
-                "required-became-optional".to_owned(),
-                Some(field_text(before_field)),
-                Some(field_text(after_field)),
-            ));
+            if before.kind == "command" {
+                changes.push((
+                    Some((*name).to_owned()),
+                    "behavioral".to_owned(),
+                    "required-became-optional".to_owned(),
+                    Some(field_text(before_field)),
+                    Some(field_text(after_field)),
+                ));
+            } else {
+                changes.push((
+                    Some((*name).to_owned()),
+                    "wire-breaking".to_owned(),
+                    "required-output-became-optional".to_owned(),
+                    Some(field_text(before_field)),
+                    Some(field_text(after_field)),
+                ));
+                breaking = true;
+            }
         }
         // Type identity change.
         if before_field.r#type != after_field.r#type {
@@ -612,6 +747,7 @@ fn compare_exports(
                     None,
                     Some(value.clone()),
                 ));
+                additive = true;
             }
         }
         for value in &before.values {
@@ -719,6 +855,90 @@ fn compare_exports(
         ));
         breaking = true;
     }
+    // Error unions of exported operations (r3 review finding 14/codex):
+    // an added member breaks exhaustive consumers; a removed member is a
+    // wire-visible union change.
+    if before.errors != after.errors {
+        let added: Vec<&String> = after
+            .errors
+            .iter()
+            .filter(|error| !before.errors.contains(error))
+            .collect();
+        let removed: Vec<&String> = before
+            .errors
+            .iter()
+            .filter(|error| !after.errors.contains(error))
+            .collect();
+        for error in added {
+            changes.push((
+                None,
+                "wire-breaking".to_owned(),
+                "error-union-added".to_owned(),
+                None,
+                Some(error.clone()),
+            ));
+            breaking = true;
+        }
+        for error in removed {
+            changes.push((
+                None,
+                "wire-breaking".to_owned(),
+                "error-union-removed".to_owned(),
+                Some(error.clone()),
+                None,
+            ));
+            breaking = true;
+        }
+    }
+    // Public query owner facts: cardinality, consistency, and pagination
+    // are consumer-visible query semantics.
+    for (member, before_fact, after_fact) in [
+        (
+            "cardinality",
+            before.cardinality.clone(),
+            after.cardinality.clone(),
+        ),
+        (
+            "consistency",
+            before.consistency.clone(),
+            after.consistency.clone(),
+        ),
+        (
+            "pagination",
+            before.pagination.clone(),
+            after.pagination.clone(),
+        ),
+    ] {
+        if before_fact != after_fact {
+            changes.push((
+                None,
+                "behavioral".to_owned(),
+                format!("{member}-changed"),
+                before_fact,
+                after_fact,
+            ));
+        }
+    }
+    // Accepted alias evidence is preserved public semantics (r3 review
+    // finding 10/codex): a changed rename binding is visible to the diff.
+    if before.alias_of != after.alias_of {
+        changes.push((
+            None,
+            "behavioral".to_owned(),
+            "alias-changed".to_owned(),
+            before.alias_of.clone(),
+            after.alias_of.clone(),
+        ));
+    }
+    if before.since != after.since {
+        changes.push((
+            None,
+            "behavioral".to_owned(),
+            "since-changed".to_owned(),
+            before.since.clone(),
+            after.since.clone(),
+        ));
+    }
     // Policy decision and governed operations.
     if before.decision != after.decision {
         changes.push((
@@ -781,7 +1001,7 @@ fn compare_exports(
             }
         }
     }
-    (changes, breaking)
+    (changes, breaking, additive)
 }
 
 fn field_text(field: &super::wire::PublicField) -> String {
@@ -816,50 +1036,39 @@ fn consumer_impact<'a>(
     after_snapshot: &Option<ConsumerSnapshot>,
     after: &super::wire::PublicBundle,
 ) -> (Vec<ConsumerImpact>, DiffCoverage) {
-    // The hard-impact export set: every export with a non-additive change
-    // plus the transitive dependents of changed public dependencies.
+    // The hard-impact export set (r3 review findings 5 and 6/codex): every
+    // export with a non-additive change, every export whose public
+    // signature closure — computed over BOTH versions, so before-only
+    // removal paths survive — transitively reaches a changed or removed
+    // export, and every export reaching a symbol pinned by a changed
+    // foreign public dependency.
     let mut hard: std::collections::BTreeSet<&str> = changes
         .iter()
         .filter(|change| change.class != "additive")
         .map(|change| change.export.as_str())
         .collect();
+    // The propagation seeds: changed/removed exports plus the symbols of
+    // changed foreign dependencies.
+    let mut seeds: std::collections::BTreeSet<&str> = hard.clone();
     let changed_deps: std::collections::BTreeSet<&str> = changes
         .iter()
         .filter(|change| change.reason == "public-dependency-changed")
         .map(|change| change.export.as_str())
         .collect();
-    if !changed_deps.is_empty() {
-        let dep_symbols: std::collections::BTreeSet<&str> = after
-            .public_dependencies
-            .iter()
-            .filter(|dependency| changed_deps.contains(dependency.module_id.as_str()))
-            .flat_map(|dependency| dependency.exports.iter().map(String::as_str))
-            .collect();
-        for export_id in after_map.keys() {
-            // Explicit worklist over the local reference closure; a hit on
-            // any changed dependency symbol marks the dependent export.
-            let mut visited: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
-            let mut stack: Vec<&str> = vec![*export_id];
-            let mut touches = false;
-            while let Some(node) = stack.pop() {
-                if !visited.insert(node) {
-                    continue;
-                }
-                if let Some(node_export) = after_map.get(node) {
-                    for reference in super::context::export_references(node_export) {
-                        if dep_symbols.contains(reference.as_str()) {
-                            touches = true;
-                            break;
-                        }
-                        if let Some((key, _)) = after_map.get_key_value(reference.as_str()) {
-                            stack.push(*key);
-                        }
-                    }
-                }
-                if touches {
-                    break;
-                }
-            }
+    for dependency in &after.public_dependencies {
+        if changed_deps.contains(dependency.module_id.as_str()) {
+            seeds.extend(dependency.exports.iter().map(String::as_str));
+        }
+    }
+    if !seeds.is_empty() {
+        let before_closure = reference_closures(before_map);
+        let after_closure = reference_closures(after_map);
+        for export_id in before_map.keys().copied().chain(after_map.keys().copied()) {
+            let touches = after_closure.get(export_id).is_some_and(|closure| {
+                closure.iter().any(|symbol| seeds.contains(symbol.as_str()))
+            }) || before_closure.get(export_id).is_some_and(|closure| {
+                closure.iter().any(|symbol| seeds.contains(symbol.as_str()))
+            });
             if touches {
                 hard.insert(export_id);
             }
@@ -954,10 +1163,11 @@ fn consumer_impact<'a>(
         };
         let policy_kind = policy.map(policy_kind_text);
         // The declared policy is evaluated against the candidate
-        // resolution (finding 5): an accepted range/version keeps the
-        // break visible without denying; a rejected resolution marks the
-        // consumer affected and denies under strict even when the public
-        // change itself is additive (the pinned digest no longer matches).
+        // resolution (findings 5, r3 findings 6/codex): policy evaluation
+        // is an independent obligation — a rejected resolution marks the
+        // consumer affected and denies under strict even when no used
+        // shape changed at all (the pinned digest can never resolve
+        // again). Hits only refine the reason, never the verdict.
         let policy_verdict = policy
             .and_then(super::version::ConsumerPolicy::parse)
             .map(|parsed| {
@@ -967,7 +1177,7 @@ fn consumer_impact<'a>(
                     "policy-incompatible"
                 }
             });
-        if !hits.is_empty() && policy_verdict == Some("policy-incompatible") {
+        if policy_verdict == Some("policy-incompatible") {
             status = "affected";
         }
         if status != "unaffected" {
@@ -1025,4 +1235,38 @@ fn policy_kind_text(policy: &super::wire::VersionPolicyWire) -> String {
         super::wire::VersionPolicyWire::ExactVersion { .. } => "exact-version".to_owned(),
         super::wire::VersionPolicyWire::VersionRange { .. } => "version-range".to_owned(),
     }
+}
+
+/// The memoized transitive local reference closure per export of one
+/// side, including the foreign leaves that terminate it (r3 review
+/// finding 5/codex: local shape changes propagate exactly like foreign
+/// dependency changes).
+fn reference_closures<'a>(
+    side: &std::collections::BTreeMap<&'a str, &'a super::wire::PublicExport>,
+) -> std::collections::BTreeMap<&'a str, std::collections::BTreeSet<String>> {
+    let mut memo: std::collections::BTreeMap<&'a str, std::collections::BTreeSet<String>> =
+        std::collections::BTreeMap::new();
+    for root in side.keys() {
+        let mut visited: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        let mut collected: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        let mut stack: Vec<String> = vec![(*root).to_owned()];
+        while let Some(node) = stack.pop() {
+            if !visited.insert(node.clone()) {
+                continue;
+            }
+            let Some(node_export) = side.get(node.as_str()) else {
+                // A foreign leaf: terminal, but still a hit candidate.
+                collected.insert(node);
+                continue;
+            };
+            for reference in super::context::export_references(node_export) {
+                collected.insert(reference.clone());
+                if side.contains_key(reference.as_str()) {
+                    stack.push(reference);
+                }
+            }
+        }
+        memo.insert(root, collected);
+    }
+    memo
 }

@@ -18,24 +18,27 @@
         { "export": "tasks.task_created", "kind": "event", "since": "1.0.0", "aliasOf": null }
       ],
       "consumers": [
-        {
-          "consumer": "planner",
-          "uses": ["tasks.task_view", "tasks.get_task", "tasks.task_id"],
-          "mode": "source",
-          "policy": { "type": "version-range", "lower": "1.0.0", "lowerInclusive": true, "upper": "2.0.0", "upperInclusive": false }
-        }
+        { "consumer": "planner", "uses": ["tasks.task_view","tasks.get_task","tasks.task_id"], "mode": "source", "policy": { "type": "version-range", "lower": "1.0.0", "lowerInclusive": true, "upper": "2.0.0", "upperInclusive": false } }
       ],
       "ports": [
-        {
-          "port": "tasks.api",
-          "operations": ["tasks.get_task", "tasks.list_tasks", "tasks.create_task_cmd", "tasks.complete_task_cmd"]
-        }
+        { "port": "tasks.api", "operations": ["tasks.get_task","tasks.list_tasks","tasks.create_task_cmd","tasks.complete_task_cmd"] },
+        { "port": "tasks.inprocess", "operations": ["tasks.get_task","tasks.list_tasks","tasks.create_task_cmd","tasks.complete_task_cmd"] }
       ],
       "capabilities": [
         { "capability": "http", "obligation": "required", "owner": null, "version": null }
       ],
       "grants": [],
-      "deprecations": []
+      "deprecations": [],
+      "operationErrors": [
+        { "operation": "tasks.complete_task_cmd", "errors": [] },
+        { "operation": "tasks.create_task_cmd", "errors": [] },
+        { "operation": "tasks.get_task", "errors": [] },
+        { "operation": "tasks.list_tasks", "errors": [] }
+      ],
+      "queryFacts": [
+        { "query": "tasks.get_task", "cardinality": "one", "consistency": "strong", "pagination": "none" },
+        { "query": "tasks.list_tasks", "cardinality": "list", "consistency": "strong", "pagination": "none" }
+      ]
     },
     {
       "moduleId": "planner",
