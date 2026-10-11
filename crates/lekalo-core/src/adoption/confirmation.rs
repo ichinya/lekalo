@@ -371,6 +371,7 @@ pub fn apply(
             snapshot,
             action: Some(write.action.clone()),
             before: write.before.clone(),
+            after: write.after.clone(),
         });
         transaction::persist_journal(&ctx.root, &home, &journal)?;
     }
@@ -530,6 +531,7 @@ fn install_binding(
         snapshot,
         action: Some(write.action.clone()),
         before: write.before.clone(),
+        after: write.after.clone(),
     });
     transaction::persist_journal(&ctx.root, home, journal)
 }
@@ -560,7 +562,8 @@ fn rollback_partial(
             },
             snapshot: Some(record.snapshot.clone()),
             action: None,
-            before: None,
+            before: record.before_digest.clone(),
+            after: None,
         });
     }
     let _ = transaction::persist_journal(&ctx.root, home, &recovery);
@@ -594,22 +597,35 @@ fn rollback_home(digest: &str) -> super::wire::RollbackHome {
 
 /// Render one canonical kind document: existing bytes with the planned
 /// definition blocks appended, or the canonical header when absent.
+/// An existing document appends only through the admitted canonical
+/// representation (R9): the document parses as exactly the canonical
+/// `schema_version` + `definitions` pair, so an ordinary generated
+/// definition — whose last line is `version: 1`, not a list item —
+/// accepts the next incremental confirmation exactly like a
+/// list-final document, while a foreign shape and a duplicate
+/// definition id refuse loudly.
 fn render_document(root: &std::path::Path, document: &str, blocks: &[String]) -> Outcome<String> {
     let existing = std::fs::read_to_string(root.join(document)).ok();
     let mut text = match existing {
         Some(text) => {
-            let trimmed = text.trim_end_matches(['\n', '\r']);
-            let last = trimmed
-                .lines()
-                .last()
-                .map(|line| line.trim_start())
-                .unwrap_or_default();
-            if !last.starts_with("- ") && !last.starts_with("definitions:") {
-                return Err(DomainResult::invalid(diagnostic::input_invalid_set(
-                    document,
-                    "document-shape",
-                )));
+            let ids = crate::observed::promote::validate_append_shape(&text).map_err(|reason| {
+                DomainResult::invalid(diagnostic::input_invalid_set(document, reason))
+            })?;
+            for block in blocks {
+                let id = block
+                    .lines()
+                    .next()
+                    .and_then(|line| line.trim_start().strip_prefix("- id: "));
+                if let Some(id) = id {
+                    if ids.contains(id) {
+                        return Err(DomainResult::invalid(diagnostic::input_invalid_set(
+                            document,
+                            "duplicate-definition",
+                        )));
+                    }
+                }
             }
+            let trimmed = text.trim_end_matches(['\n', '\r']);
             format!("{trimmed}\n")
         }
         None => "schema_version: \"0.2.16\"\ndefinitions:\n".to_owned(),

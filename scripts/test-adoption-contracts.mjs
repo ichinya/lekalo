@@ -217,6 +217,35 @@ if (!parse(foreignPlan).diagnostics.some((item) => item.id === "adoption.version
   fail("foreign-version-diagnostic", parse(foreignPlan).diagnostics);
 }
 
+// 4c-bis. R7 wire parity: every specification mutation the pinned Ajv
+// schema rejects is also refused by the Rust admission, and vice
+// versa — the decoder and the closed 0.8.0 schema agree in both
+// directions (nullable-but-required members, digest grammars, token
+// bounds).
+const specValidator = validators.get("adoption-verification");
+const specBase = JSON.parse(readFileSync(join(root, "tests/fixtures/adoption/verification/verification-spec.json"), "utf8"));
+const parityMutations = [
+  ["nested-tool-digest", (doc) => { delete doc.tool.digest; }],
+  ["top-level-custody", (doc) => { delete doc.custody; }],
+  ["baseline-not-a-digest", (doc) => { doc.baseline_source = "not-a-digest"; }],
+  ["spec-not-a-digest", (doc) => { doc.spec = "not-a-digest"; }],
+  ["empty-verification-token", (doc) => { doc.verification = ""; }],
+];
+for (const [name, mutate] of parityMutations) {
+  const doc = structuredClone(specBase);
+  mutate(doc);
+  if (specValidator(doc)) fail("parity-ajv-accepts-" + name, "Ajv must reject the mutation");
+  const path = join(sandboxBase, "parity-" + name + ".json");
+  writeFileSync(path, JSON.stringify(doc, null, 2));
+  const result = run(["--no-cache", "--json", "adoption", "refactor", "--use-case", "complete_case", "--target", "node-typescript", "--profile", "default", "--verification", path, "--project", "."]);
+  if (result.status !== 1) fail("parity-cli-" + name, { status: result.status });
+  if (!parse(result).diagnostics.some((item) => item.code === "LEK-ADOPT-001")) {
+    fail("parity-cli-diagnostic-" + name, parse(result).diagnostics);
+  }
+}
+// The pristine specification stays valid on both sides.
+if (!specValidator(specBase)) fail("parity-pristine-ajv", specValidator.errors);
+
 // 4d. The real analysis: exact scope, provenance, confidence, unknowns,
 // pins — and zero writes to sources, the canonical Model, or any
 // report/cache home.
@@ -332,6 +361,49 @@ if (canonicalRun.status !== 1) fail("already-canonical-exit", canonicalRun.statu
 if (!parse(canonicalRun).diagnostics.some((item) => item.code === "LEK-ADOPT-001")) {
   fail("already-canonical-diagnostic", parse(canonicalRun).diagnostics);
 }
+
+// 4e-bis. R9: incremental confirmation — a SECOND definition joins the
+// ordinary existing canonical document the first confirmation wrote
+// (whose last line is "version: 1", not a list item). The append goes
+// through the admitted canonical representation: the existing
+// definitions and bytes are preserved and both definitions land.
+const moduleAnalysis = run([
+  "--no-cache", "--json", "adoption", "analyze",
+  "--module", "taskboard", "--target", "node-typescript", "--profile", "default",
+  "--project", ".",
+]);
+if (moduleAnalysis.status !== 0) fail("second-analysis-exit", moduleAnalysis.stderr);
+const moduleAnalysisPath = join(sandboxBase, "module-analysis.json");
+writeFileSync(moduleAnalysisPath, moduleAnalysis.stdout);
+const secondPreview = run([
+  "--no-cache", "--json", "adoption", "confirm",
+  "--analysis", moduleAnalysisPath, "--definition", "taskboard.register_task",
+  "--dry-run", "--project", ".",
+]);
+if (secondPreview.status !== 0) fail("second-confirm-preview-exit", secondPreview.stderr);
+const secondPlan = parse(secondPreview);
+if (secondPlan.writes.length !== 1 || secondPlan.writes[0].path !== "lekalo/modules/taskboard/commands.yaml") {
+  fail("second-confirm-write-set", secondPlan.writes);
+}
+if (secondPlan.writes[0].action !== "replace" || !secondPlan.writes[0].before) {
+  fail("second-confirm-replace", secondPlan.writes[0]);
+}
+const secondPlanPath = join(sandboxBase, "second-confirmation-plan.json");
+writeFileSync(secondPlanPath, secondPreview.stdout);
+const secondApply = run(["--json", "adoption", "confirm", "--plan", secondPlanPath, "--confirm", secondPlan.plan, "--project", "."]);
+if (secondApply.status !== 0) fail("second-confirm-apply-exit", secondApply.stderr);
+const commandsText = readFileSync(join(project, "lekalo/modules/taskboard/commands.yaml"), "utf8");
+const confirmedIds = [...commandsText.matchAll(/- id: (taskboard.[a-z_]+)/g)].map((match) => match[1]).sort();
+if (JSON.stringify(confirmedIds) !== JSON.stringify(["taskboard.complete_task", "taskboard.register_task"])) {
+  fail("second-confirm-definitions", confirmedIds);
+}
+// The final staleness drift below starts from a live re-analysis.
+const thirdAnalysis = run([
+  "--no-cache", "--json", "adoption", "analyze",
+  "--use-case", "complete_case", "--target", "node-typescript", "--profile", "default",
+  "--project", ".",
+]);
+if (thirdAnalysis.status !== 0) fail("third-analysis-exit", thirdAnalysis.stderr);
 
 // 4f. Coverage over the confirmed project: disjoint counts and the
 // Ajv-validated coverage document.

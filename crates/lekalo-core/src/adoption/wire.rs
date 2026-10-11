@@ -130,12 +130,15 @@ impl<'de> Deserialize<'de> for Unique {
     }
 }
 
-/// Decode raw bytes into one closed typed document.
-pub(crate) fn decode<T: serde::de::DeserializeOwned>(
+/// Decode raw bytes into the raw closed JSON value: the byte bound,
+/// UTF-8/JSON syntax with duplicate-key refusal, the exact
+/// `schema_version` discriminator, and the top-level required keys —
+/// the raw value is what nested presence checks run over (X8/R7).
+pub(crate) fn decode_value(
     bytes: &[u8],
     expected_schema_version: &'static str,
     required_keys: &'static [&'static str],
-) -> Result<T, WireError> {
+) -> Result<Json, WireError> {
     let value = unique_json(bytes)?;
     let object = value.as_object().ok_or(WireError::Shape)?;
     match object.get("schema_version").and_then(Json::as_str) {
@@ -148,7 +151,7 @@ pub(crate) fn decode<T: serde::de::DeserializeOwned>(
             return Err(WireError::Shape);
         }
     }
-    serde_json::from_value(value).map_err(|_| WireError::Shape)
+    Ok(value)
 }
 
 /// Compact recursively key-sorted JSON with no insignificant whitespace.
@@ -249,6 +252,25 @@ fn check_path(path: &str) -> Result<(), WireError> {
     }
 }
 
+/// The bounded non-empty token grammar (`$defs/token`): minLength 1,
+/// maxLength 256.
+fn check_token(token: &str) -> Result<(), WireError> {
+    if (1..=256).contains(&token.len()) {
+        Ok(())
+    } else {
+        Err(WireError::Shape)
+    }
+}
+
+/// A required-but-nullable digest member: present-or-null sha256.
+fn check_digest_value(digest: &str) -> Result<(), WireError> {
+    if version::is_sha256(digest) {
+        Ok(())
+    } else {
+        Err(WireError::Shape)
+    }
+}
+
 fn check_digest(digest: &Option<String>) -> Result<(), WireError> {
     match digest {
         Some(digest) if version::is_sha256(digest) => Ok(()),
@@ -326,6 +348,144 @@ trait ClosedValidate {
     /// refuses as a Shape error exactly like the schema (X8).
     const REQUIRED_KEYS: &'static [&'static str];
     fn validate(&self) -> Result<(), WireError>;
+    /// The nested required-but-nullable members the raw object must
+    /// carry even when their value is `null` (X8/R7): `Option`-typed
+    /// serde members default a missing key to `None`, so presence is
+    /// checked over the raw JSON exactly where the schema demands it.
+    fn validate_raw(_value: &Json) -> Result<(), WireError> {
+        Ok(())
+    }
+}
+
+/// Whether the raw object at `path` carries the final member (its
+/// value may be `null`); `false` when any path step is absent or not
+/// an object.
+fn raw_member_present(value: &Json, path: &[&str]) -> bool {
+    let Some((last, steps)) = path.split_last() else {
+        return false;
+    };
+    let mut current = value;
+    for step in steps {
+        current = match current.as_object().and_then(|object| object.get(*step)) {
+            Some(next) => next,
+            None => return false,
+        };
+    }
+    current
+        .as_object()
+        .is_some_and(|object| object.contains_key(*last))
+}
+
+/// Whether every element of the raw array at `path` carries `key`
+/// (value may be `null`); an absent array refuses, an empty one holds
+/// vacuously.
+fn raw_each_member_present(value: &Json, path: &[&str], key: &str) -> bool {
+    let Some((last, steps)) = path.split_last() else {
+        return false;
+    };
+    // A nullable parent (or a null array) holds vacuously; a present
+    // non-array does not carry the member anywhere.
+    let parent = match raw_at(value, steps) {
+        Some(parent) => parent,
+        // An absent optional ancestor holds vacuously.
+        None => return true,
+    };
+    if parent.is_null() {
+        return true;
+    }
+    let container = match parent.get(*last) {
+        Some(container) => container,
+        // An absent optional container holds vacuously: no element can
+        // violate a per-element presence rule.
+        None => return true,
+    };
+    if container.is_null() {
+        return true;
+    }
+    let Some(items) = container.as_array() else {
+        return false;
+    };
+    items.iter().all(|item| {
+        item.as_object()
+            .is_some_and(|object| object.contains_key(key))
+    })
+}
+
+/// Whether every element of the raw array at `path` carries an object
+/// `member` that itself carries `key` (both nullable-valued).
+fn raw_each_nested_member_present(value: &Json, path: &[&str], member: &str, key: &str) -> bool {
+    let Some((last, steps)) = path.split_last() else {
+        return false;
+    };
+    let parent = match raw_at(value, steps) {
+        Some(parent) => parent,
+        // An absent optional ancestor holds vacuously.
+        None => return true,
+    };
+    if parent.is_null() {
+        return true;
+    }
+    let container = match parent.get(*last) {
+        Some(container) => container,
+        // An absent optional container holds vacuously: no element
+        // can violate a per-element presence rule.
+        None => return true,
+    };
+    if container.is_null() {
+        return true;
+    }
+    let Some(items) = container.as_array() else {
+        return false;
+    };
+    items.iter().all(|item| {
+        item.as_object()
+            .and_then(|object| object.get(member))
+            .and_then(|nested| nested.as_object())
+            .is_some_and(|nested| nested.contains_key(key))
+    })
+}
+
+/// Walk object steps to the raw value at `path`.
+fn raw_at<'a>(value: &'a Json, path: &[&str]) -> Option<&'a Json> {
+    let mut current = value;
+    for step in path {
+        current = current.as_object().and_then(|object| object.get(*step))?;
+    }
+    Some(current)
+}
+
+/// The shared `pins` raw presence (X8/R7): the nullable-but-required
+/// `lock`, `observed_index`, `adapter`, and `sources` members must be
+/// carried, and a present `adapter` object must carry `digest`.
+fn raw_pins_present(value: &Json) -> Result<(), WireError> {
+    let pins_path: &[&str] = &["pins"];
+    for key in ["model", "lock", "observed_index", "adapter", "sources"] {
+        if !raw_member_present(value, &[pins_path[0], key]) {
+            return Err(WireError::Shape);
+        }
+    }
+    if let Some(adapter) = raw_at(value, &["pins", "adapter"]) {
+        if !adapter.is_null()
+            && !adapter
+                .as_object()
+                .is_some_and(|object| object.contains_key("digest"))
+        {
+            return Err(WireError::Shape);
+        }
+    }
+    Ok(())
+}
+
+/// The shared write-entry raw presence (X8/R7): `before`, `after`, and
+/// `content` are required-but-nullable on every write of a plan,
+/// patch, or receipt.
+fn raw_writes_present(value: &Json, array: &str) -> Result<(), WireError> {
+    for key in ["path", "action", "before", "after", "content"] {
+        if !raw_each_member_present(value, &[array], key) {
+            return Err(WireError::Shape);
+        }
+    }
+    Ok(())
 }
 
 impl ClosedValidate for AnalysisDocument {
@@ -345,6 +505,18 @@ impl ClosedValidate for AnalysisDocument {
         "ambiguities",
         "discrepancies",
     ];
+    fn validate_raw(value: &Json) -> Result<(), WireError> {
+        raw_pins_present(value)?;
+        if !raw_member_present(value, &["module", "native_root"])
+            || !raw_each_member_present(value, &["definitions"], "provenance")
+            || !raw_each_nested_member_present(value, &["definitions"], "provenance", "native")
+            || !raw_each_nested_member_present(value, &["definitions"], "provenance", "path")
+            || !raw_each_nested_member_present(value, &["definitions"], "provenance", "line")
+        {
+            return Err(WireError::Shape);
+        }
+        Ok(())
+    }
     fn validate(&self) -> Result<(), WireError> {
         check_identity(&self.identity, version::ANALYSIS_IDENTITY)?;
         check_scope(&self.scope)?;
@@ -399,6 +571,16 @@ impl ClosedValidate for ConfirmationPlan {
         "unresolved",
         "rollback",
     ];
+    fn validate_raw(value: &Json) -> Result<(), WireError> {
+        raw_pins_present(value)?;
+        raw_writes_present(value, "writes")?;
+        for key in ["definitions", "binding"] {
+            if !raw_member_present(value, &["selections", key]) {
+                return Err(WireError::Shape);
+            }
+        }
+        Ok(())
+    }
     fn validate(&self) -> Result<(), WireError> {
         check_identity(&self.identity, version::CONFIRMATION_PLAN_IDENTITY)?;
         check_pins(&self.pins)?;
@@ -421,6 +603,15 @@ impl ClosedValidate for PatchDocument {
         "scope",
         "files",
     ];
+    fn validate_raw(value: &Json) -> Result<(), WireError> {
+        raw_writes_present(value, "files")?;
+        for key in ["target", "profile"] {
+            if !raw_member_present(value, &["scope", key]) {
+                return Err(WireError::Shape);
+            }
+        }
+        Ok(())
+    }
     fn validate(&self) -> Result<(), WireError> {
         check_identity(&self.identity, version::PATCH_IDENTITY)?;
         check_writes(&self.files, true)?;
@@ -459,6 +650,13 @@ impl ClosedValidate for RefactorPlan {
         "pins",
         "rollback",
     ];
+    fn validate_raw(value: &Json) -> Result<(), WireError> {
+        raw_pins_present(value)?;
+        if !raw_each_member_present(value, &["recommendations"], "uncertainty") {
+            return Err(WireError::Shape);
+        }
+        Ok(())
+    }
     fn validate(&self) -> Result<(), WireError> {
         check_identity(&self.identity, version::REFACTOR_PLAN_IDENTITY)?;
         check_scope(&self.selection)?;
@@ -489,10 +687,58 @@ impl ClosedValidate for VerificationDocument {
         "baseline_source",
         "checks",
         "confinement",
+        "custody",
     ];
+    fn validate_raw(value: &Json) -> Result<(), WireError> {
+        // The nullable-but-nullable digest members are required keys
+        // exactly like the schema demands (X8/R7): a missing `custody`
+        // or `tool.digest` refuses even though the typed value would be
+        // `None`.
+        if let Some(tool) = raw_at(value, &["tool"]) {
+            if !tool.is_null()
+                && !tool
+                    .as_object()
+                    .is_some_and(|object| object.contains_key("digest"))
+            {
+                return Err(WireError::Shape);
+            }
+        }
+        for side in ["baseline", "candidate"] {
+            if !raw_each_member_present(value, &[side, "checks"], "exit") {
+                return Err(WireError::Shape);
+            }
+        }
+        if let Some(custody) = raw_at(value, &["custody"]) {
+            if !custody.is_null()
+                && !custody.as_object().is_some_and(|object| {
+                    object.contains_key("run") && object.contains_key("measured_ms")
+                })
+            {
+                return Err(WireError::Shape);
+            }
+        }
+        Ok(())
+    }
     fn validate(&self) -> Result<(), WireError> {
         check_identity(&self.identity, version::VERIFICATION_IDENTITY)?;
         check_member(&self.variant, &KINDS_VARIANT)?;
+        // The verification id is a bounded non-empty token ($defs/token),
+        // never an empty string (X8/R7 parity).
+        check_token(&self.verification)?;
+        // The nullable digest members carry the exact sha256 grammar
+        // whenever present (X8/R7).
+        if let Some(spec) = &self.spec {
+            check_digest_value(spec)?;
+        }
+        if let Some(plan) = &self.plan {
+            check_digest_value(plan)?;
+        }
+        if let Some(baseline_source) = &self.baseline_source {
+            check_digest_value(baseline_source)?;
+        }
+        if self.confinement.len() > 8 {
+            return Err(WireError::Shape);
+        }
         if self.checks.len() > version::MAX_CHECKS {
             return Err(WireError::Shape);
         }
@@ -518,6 +764,13 @@ impl ClosedValidate for VerificationDocument {
             }
             for outcome in &side.checks {
                 check_member(&outcome.status, &KINDS_OUTCOME_STATUS)?;
+                // The schema's check-outcome bounds: a bounded non-empty
+                // id token, exit within 0..=255, and a bounded detail
+                // (X8/R7 parity).
+                check_token(&outcome.id)?;
+                if outcome.detail.len() > 1024 || outcome.exit.is_some_and(|exit| exit > 255) {
+                    return Err(WireError::Shape);
+                }
             }
         }
         if let Some(oracle) = &self.oracle {
@@ -578,6 +831,11 @@ impl ClosedValidate for AdoptionReceipt {
         "pins",
         "analysis",
     ];
+    fn validate_raw(value: &Json) -> Result<(), WireError> {
+        raw_pins_present(value)?;
+        raw_writes_present(value, "writes")?;
+        Ok(())
+    }
     fn validate(&self) -> Result<(), WireError> {
         check_identity(&self.identity, version::RECEIPT_IDENTITY)?;
         check_member(&self.phase, &KINDS_PHASE)?;
@@ -600,6 +858,23 @@ impl ClosedValidate for CoverageDocument {
         "counts",
         "gaps",
     ];
+    fn validate_raw(value: &Json) -> Result<(), WireError> {
+        // A present `pins` object follows the shared pin presence; the
+        // row members are required-but-nullable exactly like the
+        // schema's rows definition (X8/R7).
+        if let Some(pins) = raw_at(value, &["pins"]) {
+            if !pins.is_null() {
+                let wrapped = serde_json::json!({ "pins": pins.clone() });
+                raw_pins_present(&wrapped)?;
+            }
+        }
+        for key in ["origin", "contract", "binding", "verification"] {
+            if !raw_each_member_present(value, &["rows"], key) {
+                return Err(WireError::Shape);
+            }
+        }
+        Ok(())
+    }
     fn validate(&self) -> Result<(), WireError> {
         check_identity(&self.identity, version::COVERAGE_IDENTITY)?;
         check_scope(&self.scope)?;
@@ -875,6 +1150,14 @@ pub struct RefactorPlan {
     pub preservation: Vec<Preservation>,
     pub pins: Pins,
     pub rollback: RollbackHome,
+    /// The deterministic whole-tree state digest at plan time (F3/R2):
+    /// the complete consumed input closure — every project file except
+    /// VCS, build, and lekalo runtime homes. Verify and apply re-derive
+    /// it before any run and before installation, so a drifted tree —
+    /// including files an argv-pinned runner only reaches through its
+    /// own loader — never executes or installs on stale evidence.
+    #[serde(default)]
+    pub tree: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -922,9 +1205,9 @@ pub struct VerificationDocument {
     pub oracle: Option<OracleVerdict>,
     pub conclusion: Option<String>,
     /// Execution custody: set only by this module's real runs; apply
-    /// refuses an execution that lacks it. Specifications never carry
-    /// one (typed null on the wire for the shared closed member set).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// refuses an execution that lacks it. Specifications carry the
+    /// typed `null` (the closed member is required while nullable —
+    /// X8/R7 parity: emitted documents always spell the member).
     pub custody: Option<super::verification::ExecutionCustody>,
 }
 
@@ -1001,12 +1284,10 @@ pub struct CoverageDocument {
     pub scope: Scope,
     /// The producing scan revision the join was derived from (typed
     /// null without scan evidence) — the first freshness input (X11).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub revision: Option<String>,
     /// The exact consumed input pins of the join (typed null for a
     /// hand-authored document): a consumer can tell a fresh panel from
     /// a stale one by re-fingerprinting this set (X11).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pins: Option<Pins>,
     pub rows: Vec<CoverageRow>,
     pub counts: CoverageCounts,
@@ -1155,9 +1436,14 @@ pub struct RollbackHome {
 
 macro_rules! decode_entry {
     ($name:ident, $ty:ty, $version:expr, $keys:expr) => {
-        /// Decode one closed document from raw bytes.
+        /// Decode one closed document from raw bytes: the raw closed
+        /// value is presence-checked for every required-but-nullable
+        /// member (X8/R7) before typed deserialization, then the typed
+        /// document runs the closed vocabulary and bounds.
         pub fn $name(bytes: &[u8]) -> Result<$ty, WireError> {
-            let document = decode(bytes, $version, $keys)?;
+            let value = decode_value(bytes, $version, $keys)?;
+            <$ty>::validate_raw(&value)?;
+            let document: $ty = serde_json::from_value(value).map_err(|_| WireError::Shape)?;
             ClosedValidate::validate(&document)?;
             Ok(document)
         }
@@ -1280,9 +1566,18 @@ mod tests {
 mod parity_tests {
     use super::*;
 
+    /// The complete valid specification skeleton every probe mutates:
+    /// every required-but-nullable member spelled, exactly like the
+    /// Ajv schemas demand.
+    fn spec_skeleton(extra: &str) -> String {
+        format!(
+            r#"{{"schema_version":"lekalo/adoption-verification/v0.8.0","identity":"dev.lekalo.adoption-verification@0.8.0","variant":"specification","verification":"x","spec":null,"plan":null,"tool":{{"program":"node","args":[],"digest":null}},"baseline_source":null,"checks":[],"confinement":["bounded-output"],"baseline":null,"candidate":null,"oracle":null,"conclusion":null,"custody":null{extra}}}"#
+        )
+    }
+
     /// X8: the closed Rust admission is schema-equivalent for the
-    /// required-key classes — a missing `tool`, `baseline`, or
-    /// `conclusion` key decodes as a Shape error exactly like the Ajv
+    /// required-key classes — a missing `tool`, `baseline_source`, or
+    /// `custody` key decodes as a Shape error exactly like the Ajv
     /// schema's `required` list, and foreign identities stay
     /// version-refusals.
     #[test]
@@ -1297,7 +1592,7 @@ mod parity_tests {
             "checks": [],
             "confinement": ["bounded-output"]
         }"#;
-        // tool/baseline_source/baseline/candidate/oracle/conclusion all
+        // tool/baseline_source/baseline/candidate/oracle/conclusion/custody all
         // missing: the raw-object required-key check refuses before the
         // typed deserialization ever sees the document.
         assert_eq!(
@@ -1309,24 +1604,125 @@ mod parity_tests {
 
     #[test]
     fn complete_document_with_nulls_decodes() {
-        let bytes = br#"{
-            "schema_version": "lekalo/adoption-verification/v0.8.0",
-            "identity": "dev.lekalo.adoption-verification@0.8.0",
-            "variant": "specification",
-            "verification": "x",
-            "spec": null,
-            "plan": null,
-            "tool": null,
-            "baseline_source": null,
-            "checks": [],
-            "confinement": ["bounded-output"],
-            "baseline": null,
-            "candidate": null,
-            "oracle": null,
-            "conclusion": null
-        }"#;
-        let document = verification_of_bytes(bytes).expect("decodes");
+        let bytes = spec_skeleton("").into_bytes();
+        let document = verification_of_bytes(&bytes).expect("decodes");
         assert_eq!(document.variant, "specification");
-        assert!(document.tool.is_none());
+        assert!(document.tool.is_some());
+        assert!(document.custody.is_none());
+    }
+
+    /// A minimal refactor plan whose pin set omits the
+    /// required-but-nullable 'lock' member (R7).
+    fn pins_absent_plan() -> String {
+        r#"{"schema_version":"lekalo/adoption-refactor-plan/v0.8.0","identity":"dev.lekalo.adoption-refactor-plan@0.8.0","plan":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","project":"taskboard","analysis":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","selection":{"kind":"symbol","id":"taskboard.task"},"patch":null,"verification":null,"recommendations":[],"unsupported":[],"read_scope":[],"mutation_scope":[],"preservation":[],"pins":{"model":"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","sources":[]},"rollback":{"journal":"","snapshots":""}}"#.to_owned()
+    }
+
+    /// A minimal patch whose single write omits the
+    /// required-but-nullable 'before' member (R7).
+    fn write_member_absent_patch() -> String {
+        r#"{"schema_version":"lekalo/adoption-patch/v0.8.0","identity":"dev.lekalo.adoption-patch@0.8.0","patch":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","origin":{"kind":"supplied-reviewed","identity":"probe"},"scope":{"symbol":"taskboard.task","target":null,"profile":null},"files":[{"path":"src/a.mjs","action":"create","after":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","content":"x"}]}"#.to_owned()
+    }
+
+    /// R7: every nullable-but-required member admits absence on the
+    /// Rust side no longer — the decoder and the schema agree in both
+    /// directions.
+    #[test]
+    fn nullable_but_required_members_refuse_absence() {
+        // (document, is-verification?) pairs: each mutation removes one
+        // member the closed 0.8.0 schemas require while allowing null.
+        let cases: Vec<(String, bool)> = vec![
+            (
+                spec_skeleton("").replacen(r#","custody":null"#, "", 1),
+                true,
+            ),
+            (
+                spec_skeleton("").replacen(r#""args":[],"digest":null}"#, r#""args":[]}"#, 1),
+                true,
+            ),
+            (
+                spec_skeleton(
+                    r#","baseline":{"checks":[{"id":"x","status":"passed","detail":"ok"}]}"#,
+                )
+                .replacen(r#","baseline":null"#, "", 1),
+                true,
+            ),
+            (pins_absent_plan(), false),
+            (write_member_absent_patch(), false),
+        ];
+        for (document, verification_family) in cases {
+            let bytes = document.as_bytes();
+            let error = if verification_family {
+                verification_of_bytes(bytes).unwrap_err()
+            } else if document.contains("adoption-refactor-plan") {
+                refactor_plan_of_bytes(bytes).unwrap_err()
+            } else {
+                patch_of_bytes(bytes).unwrap_err()
+            };
+            assert_eq!(error, WireError::Shape, "absence must refuse: {document}");
+        }
+    }
+
+    /// R7: the digest grammars and token bounds the schema spells are
+    /// enforced on the Rust side too — a non-digest `spec`/`plan`/`baseline_source`
+    /// and an empty `verification` token refuse.
+    #[test]
+    fn digest_grammars_and_token_bounds_match_the_schema() {
+        for (name, from, to) in [
+            (
+                "spec-not-a-digest",
+                r#""spec":null"#,
+                r#""spec":"not-a-digest""#,
+            ),
+            (
+                "plan-not-a-digest",
+                r#""plan":null"#,
+                r#""plan":"not-a-digest""#,
+            ),
+            (
+                "baseline-not-a-digest",
+                r#""baseline_source":null"#,
+                r#""baseline_source":"not-a-digest""#,
+            ),
+            (
+                "empty-verification",
+                r#""verification":"x""#,
+                "\"verification\":\"\"",
+            ),
+        ] {
+            let document = spec_skeleton("").replace(from, to);
+            let parsed = verification_of_bytes(document.as_bytes());
+            let error = match parsed {
+                Err(error) => error,
+                Ok(_) => panic!("{name} unexpectedly decoded: {document}"),
+            };
+            assert_eq!(error, WireError::Shape, "{name} must refuse");
+        }
+    }
+
+    /// R7: emitted documents always spell the required-but-nullable
+    /// members, so a spec round-trips through the closed decoder.
+    #[test]
+    fn emitted_specifications_carry_the_required_null_members() {
+        let document = VerificationDocument {
+            schema_version: version::VERIFICATION_SCHEMA_VERSION.to_owned(),
+            identity: version::VERIFICATION_IDENTITY.to_owned(),
+            variant: "specification".to_owned(),
+            verification: "x".to_owned(),
+            spec: None,
+            plan: None,
+            tool: None,
+            baseline_source: None,
+            checks: Vec::new(),
+            confinement: vec!["bounded-output".to_owned()],
+            baseline: None,
+            candidate: None,
+            oracle: None,
+            conclusion: None,
+            custody: None,
+        };
+        let bytes = serde_json::to_vec(&document).expect("serializes");
+        let text = String::from_utf8(bytes.clone()).expect("utf8");
+        assert!(text.contains(r#""custody":null"#), "custody is spelled");
+        verification_of_bytes(&bytes).expect("round-trips");
     }
 }

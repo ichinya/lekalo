@@ -481,9 +481,64 @@ fn plan_digest(index: &types::ObservedIndex, entries: &[PlanEntry]) -> String {
     format!("sha256:{:x}", hasher.finalize())
 }
 
+/// Validate that appending definition blocks to an existing canonical
+/// kind document is structure-safe through the admitted canonical
+/// representation (R9): the document parses, its top-level keys are
+/// exactly the canonical `schema_version` + `definitions` pair, the
+/// definitions member is a sequence (or a typed empty null), and every
+/// existing definition carries an `id`. Returns the existing ids so a
+/// duplicate definition refuses instead of silently shadowing. An
+/// ordinary generated document — whose last line is `version: 1` or a
+/// nested list — appends exactly like a list-final one.
+pub(crate) fn validate_append_shape(
+    text: &str,
+) -> Result<std::collections::BTreeSet<String>, &'static str> {
+    let index = crate::loader::source::LineIndex::new(text);
+    let parsed =
+        crate::loader::frontends::parse_document(text, &index).map_err(|_| "document-shape")?;
+    let root = match parsed {
+        crate::loader::frontends::Parsed::Root(root) => root,
+        crate::loader::frontends::Parsed::Empty => return Err("document-shape"),
+    };
+    let entries = root.as_map().ok_or("document-shape")?;
+    if entries.len() != 2
+        || !entries.iter().any(|entry| entry.key == "schema_version")
+        || !entries.iter().any(|entry| entry.key == "definitions")
+    {
+        return Err("document-shape");
+    }
+    let mut ids = std::collections::BTreeSet::new();
+    if let Some(definitions) = root.get("definitions") {
+        // The value must be the typed sequence (or the typed empty
+        // `null` of a bare `definitions:` header); anything else can
+        // never legally receive an appended definition.
+        match &definitions.value {
+            crate::loader::frontends::Value::Seq(_)
+            | crate::loader::frontends::Value::Scalar(crate::loader::frontends::Scalar::Null) => {}
+            _ => return Err("document-shape"),
+        }
+        if let Some(items) = definitions.as_seq() {
+            for item in items {
+                let map = item.as_map().ok_or("document-shape")?;
+                let id = map
+                    .iter()
+                    .find(|entry| entry.key == "id")
+                    .and_then(|entry| entry.value.as_str())
+                    .ok_or("document-shape")?;
+                ids.insert(id.to_owned());
+            }
+        }
+    }
+    Ok(ids)
+}
+
 /// Append planned definition blocks to one canonical kind document,
 /// creating it with the canonical header when absent. The write goes
-/// through the confined store.
+/// through the confined store. An existing document is appended only
+/// through the admitted canonical representation (R9): a document
+/// whose final line is an ordinary definition mapping (`version: 1`)
+/// appends exactly like a list-final one, and a duplicate definition id
+/// refuses instead of shadowing.
 fn append_document(
     ctx: &super::ObservedContext,
     document: &str,
@@ -496,15 +551,18 @@ fn append_document(
     let existing = std::fs::read_to_string(&path).ok();
     let mut text = match existing {
         Some(text) => {
-            let trimmed = text.trim_end_matches(['\n', '\r']);
-            let last = trimmed
-                .lines()
-                .last()
-                .map(|line| line.trim_start())
-                .unwrap_or_default();
-            if !last.starts_with("- ") && !last.starts_with("definitions:") {
-                return Err(diagnostic::promotion_plan_mismatch_set("document-shape"));
+            let ids =
+                validate_append_shape(&text).map_err(diagnostic::promotion_plan_mismatch_set)?;
+            for block in blocks {
+                if let Some(id) = block_id(block) {
+                    if ids.contains(id) {
+                        return Err(diagnostic::promotion_plan_mismatch_set(
+                            "duplicate-definition",
+                        ));
+                    }
+                }
             }
+            let trimmed = text.trim_end_matches(['\n', '\r']);
             format!("{trimmed}\n")
         }
         None => "schema_version: \"0.2.16\"\ndefinitions:\n".to_owned(),
@@ -521,10 +579,52 @@ fn append_document(
     super::store::write_confined(&ctx.root, &dir, name, text.as_bytes())
 }
 
+/// The definition id of one rendered block (its first line,
+/// `  - id: <semantic id>`), for duplicate detection.
+fn block_id(block: &str) -> Option<&str> {
+    block
+        .lines()
+        .next()
+        .and_then(|line| line.trim_start().strip_prefix("- id: "))
+}
+
 /// Keep the bounded history tail (the oldest entries fall off).
 fn trim_history(record: &mut types::SymbolRecord) {
     if record.history.len() > version::MAX_HISTORY {
         let excess = record.history.len() - version::MAX_HISTORY;
         record.history.drain(..excess);
+    }
+}
+
+#[cfg(test)]
+mod append_shape_tests {
+    use super::validate_append_shape;
+
+    /// R9: an ordinary generated canonical document — whose last line is
+    /// `version: 1`, not a list item — is exactly the admitted shape for
+    /// an incremental append, and a duplicate definition id or a foreign
+    /// shape refuses instead of shadowing.
+    #[test]
+    fn ordinary_documents_append_and_foreign_shapes_refuse() {
+        let ordinary = "schema_version: \"0.2.16\"\ndefinitions:\n  - id: taskboard.other_task\n    kind: command\n    version: 1\n";
+        let ids = validate_append_shape(ordinary).expect("ordinary document appends");
+        assert!(ids.contains("taskboard.other_task"));
+
+        // The empty header (typed null definitions) appends legally.
+        assert!(validate_append_shape("schema_version: \"0.2.16\"\ndefinitions:\n").is_ok());
+
+        // A foreign top-level member never receives an appended item.
+        assert!(
+            validate_append_shape("schema_version: \"0.2.16\"\nnotes: x\ndefinitions:\n").is_err()
+        );
+        // A non-sequence definitions value refuses.
+        assert!(validate_append_shape("schema_version: \"0.2.16\"\ndefinitions: 5\n").is_err());
+        // A malformed document refuses.
+        assert!(validate_append_shape("not: [a").is_err());
+        // A definition without an id refuses.
+        assert!(validate_append_shape(
+            "schema_version: \"0.2.16\"\ndefinitions:\n  - kind: command\n"
+        )
+        .is_err());
     }
 }

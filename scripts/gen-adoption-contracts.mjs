@@ -339,7 +339,7 @@ const schemas = {
     "refactor-plan",
     "Lekalo adoption refactor plan (v0.8.0)",
     base +
-      "The exact, revision-bound selective refactor plan for one selected scope: every recommendation names its reason, files, risk, verification obligations, and uncertainty across the contract/API/effect/policy/test/binding discrepancy classes; unsupported transformations stay advice. The plan binds the optional candidate patch digest, the pinned verification specification digest, the read and mutation scopes, the preservation obligations, and the rollback inventory. A plan without a concrete patch is non-applicable advice and cannot apply.",
+      "The exact, revision-bound selective refactor plan for one selected scope: every recommendation names its reason, files, risk, verification obligations, and uncertainty across the contract/API/effect/policy/test/binding discrepancy classes; unsupported transformations stay advice. The plan binds the optional candidate patch digest, the pinned verification specification digest, the read and mutation scopes, the preservation obligations, the whole-tree state digest of the complete consumed input closure, and the rollback inventory. A plan without a concrete patch is non-applicable advice and cannot apply.",
     {
       plan: { $ref: "#/$defs/sha256" },
       project: { $ref: "#/$defs/moduleId" },
@@ -389,6 +389,14 @@ const schemas = {
       },
       pins: { $ref: "#/$defs/pins" },
       rollback: { $ref: "#/$defs/rollback" },
+      // The deterministic whole-tree state digest at plan time (F3/R2):
+      // the complete consumed input closure — every project file except
+      // VCS, build, and lekalo runtime homes — that verify and apply
+      // re-derive before any run and before installation, so a drifted
+      // tree (including files an argv-pinned runner only reaches
+      // through its own loader) never executes or installs. Optional
+      // and nullable: advice-era plans carry the typed null.
+      tree: digestOrNull,
     },
     ["plan", "project", "analysis", "selection", "patch", "verification", "recommendations", "unsupported", "read_scope", "mutation_scope", "preservation", "pins", "rollback"],
   ),

@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "productVersion": "0.8.0",
-  "cliSourceDigest": "sha256:63227bf76b23871c2a28dee3ecfc0b7e3b171799aed7663334d50d8beecabba4",
+  "cliSourceDigest": "sha256:0b43d52f1bd5df151289dee7346b23f0cb36d01a91ff5dc1b53ea1984287ace2",
   "p0Pages": [
     {
       "page": "README.md",
@@ -238,7 +238,7 @@
       "kind": "command",
       "command": "adoption apply",
       "usage": "lekalo adoption apply [OPTIONS] --plan <FILE> --verification <FILE> --confirm <DIGEST>",
-      "helpDigest": "sha256:e131a728230996d891d95eda31179fc3997afc367f49a352a6771874da399d9a",
+      "helpDigest": "sha256:0f7f5cf6736fd73ee1eb508db6e51f3eb62489cb5789a8adeb2c2fadb10cfe7a",
       "summary": "Apply one confirmed refactor plan: snapshots, a durable journal, per-path compare-and-swap writes, and the phase receipt",
       "leaf": true,
       "owner": "docs/adoption.md",
@@ -1899,7 +1899,7 @@
       "kind": "command",
       "command": "trace query",
       "usage": "lekalo trace query [OPTIONS] <PATH> <SELECTOR>",
-      "helpDigest": "sha256:5f92476f3e267fce10bbd2a815e5541a71cbe73b99feaaa5a5032fc39ee157ed",
+      "helpDigest": "sha256:c66caa929023e17b5e36467e0a679e13a9d2e973c5d0b1d59c9cc04cc19d3886",
       "summary": "Run one closed forward/reverse query over a validated manifest. With `--adoption`, the typed issue #136 wrapper joins one saved coverage attachment",
       "leaf": true,
       "owner": "docs/trace-manifest.md",
@@ -2166,7 +2166,7 @@
       "id": "contract:contracts/adoption-refactor-plan.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/adoption-refactor-plan.schema.v0.8.0.json",
-      "sourceDigest": "sha256:95c0358e8ac1662de413e97061ea150a1df2782576c8622c0386a18d1a285c2b",
+      "sourceDigest": "sha256:11f1dd3c94c3f7afa70794ab50e4c67ced2066ff7cb94559bf2cf87ef7547687",
       "owner": "docs/adoption.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

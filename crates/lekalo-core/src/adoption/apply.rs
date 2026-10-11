@@ -1,43 +1,47 @@
 //! Verified selective apply and exact rollback (issue #136, increment
 //! I4): only reviewed bytes of one confirmed refactor plan install, and
-//! only after the pinned verification evidence really passed on both
-//! sides. Failure never records completion; a rollback restores the
-//! exact prior bytes and refuses when later edits conflict.
+//! only after the pinned verification specification really passed on
+//! both sides in a run this boundary executed itself. Failure never
+//! records completion; a rollback restores the exact prior bytes and
+//! refuses when later edits conflict.
 //!
-//! Custody model: apply admits an execution document only through
-//! [`verification::admit_execution`] — the execution binds to this
-//! exact plan, the exact plan-pinned candidate-patch digest, and the
-//! complete consumed input set, and its measured results are re-derived
-//! at admission: outcomes must cover the declared checks 1:1, the
-//! oracle verdict and conclusion must follow from the measurements, the
-//! consumed runner bytes and plan-pinned tree must still hold, and the
-//! run must name this exact candidate. Documents that are internally
-//! inconsistent, measured-empty, stale, swapped, or replayed refuse
-//! before any write; the custody recipe is public, so the guarantee is
-//! binding and consistency, not a checksum-proof of authenticity.
+//! Custody model (F11/X1/R1): verification authority is a run, not a
+//! document. Apply re-executes the pinned specification through the
+//! injected host capability over the exact current tree and the exact
+//! candidate bytes — after every pin and the whole-tree state digest
+//! still match — and admits only its own fresh run's measured
+//! conclusion. An execution document is a derived record of one run;
+//! no caller-authored verification bytes can authorize a write,
+//! however internally consistent they are.
 
 use super::analysis::{compute_pins, AdoptionContext, Outcome};
 use super::diagnostic;
 use super::transaction::{self, Journal, JournalStep, SnapshotRecord};
+use super::verification::{self, VerificationHost};
 use super::version;
 use super::wire::{self, AdoptionReceipt, PatchDocument, RefactorPlan, VerificationDocument};
-use super::{verification, Outcome as AdoptionOutcome};
+use super::Outcome as AdoptionOutcome;
 use crate::observed::types::ObservedIndex;
 use crate::result::DomainResult;
 
-/// Apply one confirmed refactor plan. The verification execution
-/// document must carry admitted execution custody for this exact plan
-/// and candidate, conclude `preserved` from measured results, and still
-/// match the current tree; the candidate patch must still hash to the
-/// plan's pinned digest; the plan digest must name the exact current
-/// plan bytes. Every write is snapshotted, journaled, and installed
-/// through compare-and-swap.
+/// Apply one confirmed refactor plan through trusted verification at
+/// the apply boundary (F11/X1/R1): the pinned specification is really
+/// re-executed here, through the injected host capability, over the
+/// exact current tree and the exact candidate bytes — the measured
+/// result this run produces is the only verification authority, so a
+/// caller-authored execution document, however internally consistent,
+/// never reaches a write. The plan digest must name the exact current
+/// plan bytes; every pinned input and the whole-tree state digest must
+/// still match; the candidate patch must still hash to the plan's
+/// pinned digest. Every write is snapshotted, journaled (with its exact
+/// post-state), and installed through compare-and-swap.
 pub fn apply(
     ctx: &AdoptionContext,
+    host: &dyn VerificationHost,
     index: Option<&ObservedIndex>,
     plan_bytes: &[u8],
     patch_bytes: &[u8],
-    execution_bytes: &[u8],
+    spec_bytes: &[u8],
     confirm_digest: &str,
 ) -> Outcome<AdoptionReceipt> {
     let document =
@@ -67,34 +71,70 @@ pub fn apply(
         )));
     };
 
-    // Execution custody before anything else: the document must decode
-    // as an execution variant whose measurements this tree can accept —
-    // bound to this exact plan, the exact pinned candidate digest, the
-    // complete consumed-input set, and measured results that cover the
-    // declared checks 1:1 with a re-derived oracle and conclusion. An
-    // inconsistent, measured-empty, stale, or replayed `preserved`
-    // never reaches a write.
-    let execution: VerificationDocument =
-        verification::admit_execution(ctx, &document, patch_digest, execution_bytes)?;
+    // The pinned verification specification — the same closed document
+    // the plan bound — is the only verification input this boundary
+    // accepts (F11/X1/R1). An execution document, a specification for
+    // another plan, or a wrong-version file refuses here before any
+    // barrier or run.
+    let spec = wire::verification_of_bytes(spec_bytes).map_err(|error| error.domain_result())?;
+    if spec.variant != "specification" {
+        return Err(DomainResult::invalid(diagnostic::input_invalid_set(
+            "verification",
+            "not-a-specification",
+        )));
+    }
+    let spec_value = serde_json::to_value(&spec).expect("spec serializes");
+    let spec_digest = wire::digest("adoption-verification", &spec_value);
+    if document.verification.as_deref() != Some(spec_digest.as_str()) {
+        return Err(DomainResult::invalid(diagnostic::input_invalid_set(
+            "verification",
+            "plan-mismatch",
+        )));
+    }
 
     // The candidate patch bytes: a closed, scope-contained document
     // revalidated against the plan's pinned digest and mutation scope.
     let patch = load_patch_for(ctx, &document, patch_bytes, patch_digest)?;
 
-    // Re-fingerprint every consumed input before any write: the same
-    // consumed set the plan pinned, recomputed at apply time.
-    let current = compute_pins(ctx, index, &consumed_sources(&document, &patch))?;
-    let changed = transaction::changed_pins(&document.pins, &current);
-    let tree_current = super::refactor::tree_digest(&current);
-    let tree_plan = super::refactor::tree_digest(&document.pins);
-    let mut changed = changed;
-    if tree_current != tree_plan {
+    // Re-fingerprint every consumed input before any run and any
+    // write: the same consumed set the plan pinned — evidence ∪ patch
+    // paths ∪ the specification's argv entries — plus the whole-tree
+    // state digest, so a drifted tree never executes or installs
+    // (F3/R2).
+    let current = compute_pins(ctx, index, &consumed_sources(&document, &patch, &spec))?;
+    let mut changed = transaction::changed_pins(&document.pins, &current);
+    let tree_current = super::verification::tree_state_digest(&ctx.root)?;
+    if document.tree.as_deref() != Some(tree_current.as_str()) {
         changed.push("verification-baseline-source".to_owned());
     }
     if !changed.is_empty() {
         return Err(DomainResult::denied(diagnostic::plan_stale_set(
             &document.plan,
             &changed,
+        )));
+    }
+
+    // Trusted verification (F11/X1/R1): the specification is really
+    // executed, right here, over this exact tree and candidate. Only
+    // this run's measured conclusion can authorize the writes below —
+    // binding the plan, the exact patch, the specification, the
+    // interpreter digest pin, the consumed manifest, and the tree
+    // state the barriers just proved.
+    let execution = verification::execute(ctx, host, index, &document, spec_bytes, Some(&patch))?;
+    if execution.conclusion.as_deref() != Some("preserved") {
+        return Err(DomainResult::invalid(diagnostic::verification_failed_set(
+            execution
+                .oracle
+                .as_ref()
+                .map(|oracle| oracle.detail.as_str())
+                .unwrap_or("conclusion"),
+            &spec_digest,
+        )));
+    }
+    if !run_covers_candidate(&execution, patch_digest) {
+        return Err(DomainResult::invalid(diagnostic::input_invalid_set(
+            "verification",
+            "candidate-mismatch",
         )));
     }
 
@@ -152,6 +192,7 @@ pub fn apply(
             snapshot,
             action: Some(entry.action.clone()),
             before: entry.before.clone(),
+            after: entry.after.clone(),
         });
         transaction::persist_journal(&ctx.root, &home, &journal)?;
         writes.push(entry);
@@ -192,6 +233,7 @@ pub fn apply(
             snapshot: None,
             action: None,
             before: None,
+            after: None,
         });
         let _ = transaction::persist_journal(&ctx.root, &home, &journal);
         return Err(result);
@@ -218,6 +260,7 @@ fn failed_apply(
         snapshot: None,
         action: None,
         before: None,
+        after: None,
     });
     let persisted = transaction::persist_journal(root, home, journal);
     if persisted.is_err() {
@@ -256,13 +299,15 @@ fn load_patch_for(
     Ok(patch)
 }
 
-/// The complete consumed input set of one plan plus its patch files:
-/// read scope ∪ mutation scope ∪ the patch paths. Absent files simply
-/// contribute no pin; the plan pins exactly this set, so plan-time and
-/// apply-time fingerprints can never structurally disagree.
+/// The complete consumed input set of one plan plus its patch files
+/// and the specification's argv entries: read scope ∪ mutation scope ∪
+/// patch paths ∪ argv rel-paths. Absent files simply contribute no
+/// pin; the plan pins exactly this set, so plan-time and apply-time
+/// fingerprints can never structurally disagree.
 fn consumed_sources(
     document: &RefactorPlan,
     patch: &PatchDocument,
+    spec: &VerificationDocument,
 ) -> std::collections::BTreeSet<String> {
     let mut sources: std::collections::BTreeSet<String> = document
         .read_scope
@@ -273,7 +318,24 @@ fn consumed_sources(
     for file in &patch.files {
         sources.insert(file.path.clone());
     }
+    if let Some(tool) = &spec.tool {
+        for arg in &tool.args {
+            if version::is_rel_path(arg) {
+                sources.insert(arg.clone());
+            }
+        }
+    }
     sources
+}
+
+/// Whether the trusted run bound the candidate revision this apply
+/// installs (the same disposable-copy token the run records).
+fn run_covers_candidate(execution: &VerificationDocument, patch_digest: &str) -> bool {
+    execution.confinement.iter().any(|token| {
+        token
+            .strip_prefix("disposable-copy:")
+            .is_some_and(|bound| bound == patch_digest)
+    })
 }
 
 /// Preview the exact files and digests a rollback would restore.
@@ -394,6 +456,7 @@ pub fn rollback(
                 snapshot: None,
                 action: None,
                 before: None,
+                after: None,
             });
             let _ = transaction::persist_journal(&ctx.root, &home, &journal);
             return Err(result);
@@ -404,6 +467,7 @@ pub fn rollback(
             snapshot: Some(record.snapshot.clone()),
             action: None,
             before: None,
+            after: None,
         });
         transaction::persist_journal(&ctx.root, &home, &journal)?;
     }

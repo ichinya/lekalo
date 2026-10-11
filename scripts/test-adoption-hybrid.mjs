@@ -136,7 +136,7 @@ const featureExecution = parse(featureVerify);
 if (featureExecution.conclusion !== "preserved") fail("feature-verify", featureExecution.conclusion);
 if (!featureExecution.custody || !featureExecution.custody.run) fail("feature-custody", featureExecution.custody);
 const featureExecutionPath = save("feature-execution.json", featureVerify);const featureApply = run([
-  "--json", "adoption", "apply", "--plan", featurePlanPath, "--verification", featureExecutionPath,
+  "--json", "adoption", "apply", "--plan", featurePlanPath, "--verification", spec,
   "--candidate", featurePatchPath, "--confirm", featurePlan.plan, "--project", ".",
 ]);
 if (featureApply.status !== 0) fail("feature-apply-exit", featureApply.stderr);
@@ -157,12 +157,12 @@ const forgedApply = run([
   "--candidate", featurePatchPath, "--confirm", featurePlan.plan, "--project", ".",
 ]);
 if (forgedApply.status !== 1) fail("forged-apply-exit", forgedApply.status);
-if (!parse(forgedApply).diagnostics.some((item) => item.code === "LEK-ADOPT-001")) {
+if (!parse(forgedApply).diagnostics.some((item) => item.id === "adoption.input-invalid")) {
   fail("forged-apply-diagnostic", parse(forgedApply).diagnostics);
 }
 if (readFileSync(join(project, "src/audit.mjs"), "utf8") !== featureContent) fail("forged-apply-wrote");
 const replayedApply = run([
-  "--json", "adoption", "apply", "--plan", featurePlanPath, "--verification", featureExecutionPath,
+  "--json", "adoption", "apply", "--plan", featurePlanPath, "--verification", spec,
   "--candidate", featurePatchPath, "--confirm", featurePlan.plan, "--project", ".",
 ]);
 // The replay refuses because the plan's pinned pre-state no longer holds
@@ -228,6 +228,7 @@ const floodSpec = {
   plan: null,
   tool: { program: "node", args: ["tools/flood-verify.mjs"], digest: null },
   baseline_source: null,
+  custody: null,
   checks: [
     { id: "tasks.native-test", kind: "native-test", expect_exit: 0, expect_stdout: ["TASK-TEST-OK"] },
     { id: "complete-task.behavior-oracle", kind: "behavior-oracle", expect_exit: 0, expect_stdout: ["ORACLE-OK"] },
@@ -330,7 +331,7 @@ if (deleteVerify.status !== 0) fail("delete-verify-exit", deleteVerify.stderr);
 if (parse(deleteVerify).conclusion !== "preserved") fail("delete-verify", parse(deleteVerify).conclusion);
 const deleteExecutionPath = save("delete-execution.json", deleteVerify);
 const deleteApply = run([
-  "--json", "adoption", "apply", "--plan", deletePlanPath, "--verification", deleteExecutionPath,
+  "--json", "adoption", "apply", "--plan", deletePlanPath, "--verification", spec,
   "--candidate", deletePatchPath, "--confirm", deletePlan.plan, "--project", ".",
 ]);
 if (deleteApply.status !== 0) fail("delete-apply-exit", deleteApply.stderr);
@@ -421,7 +422,7 @@ const unusedVerify = run([
 if (unusedVerify.status !== 0) fail("unused-verify-exit", unusedVerify.stderr);
 const unusedExecutionPath = save("unused-execution.json", unusedVerify);
 const unusedApply = run([
-  "--json", "adoption", "apply", "--plan", unusedPlanPath, "--verification", unusedExecutionPath,
+  "--json", "adoption", "apply", "--plan", unusedPlanPath, "--verification", spec,
   "--candidate", unusedPatchPath, "--confirm", unusedPlan.plan, "--project", ".",
 ]);
 if (unusedApply.status !== 0) fail("unused-apply-exit", unusedApply.stderr);
@@ -534,6 +535,38 @@ const freshPanels = statusReport.panels.filter((panel) => panel.state === "curre
 if (freshPanels.length === 0 || freshPanels.some((panel) => panel.freshness !== "fresh")) {
   fail("freshness-fresh", statusReport.panels);
 }
+// R8: freshness binds to content, not identity reuse. The new
+// contracted source (src/audit.mjs) was never scanned into the
+// observed index — only the conformed registry names it. Editing it
+// makes the conformance gate refuse, and the SAVED coverage attachment
+// must qualify its rows instead of presenting them fresh.
+const auditBytes = readFileSync(join(project, "src/audit.mjs"));
+writeFileSync(join(project, "src/audit.mjs"), `${auditBytes.toString("utf8")}\n// drifted new-contracted source\n`);
+if (run(["--json", "contract", "check", "--project", "."]).status === 0) {
+  fail("drifted-new-source-check-passed", "contract check must refuse over drifted conformed bytes");
+}
+const driftedNewStatus = runFrom(sandboxBase, ["--json", "status", "--adoption", "coverage.json", "--project", "proj"]);
+if (driftedNewStatus.status !== 0) fail("drifted-new-status-exit", driftedNewStatus.stderr);
+const driftedNewPanels = parse(driftedNewStatus).panels;
+if (driftedNewPanels.some((panel) => panel.state === "current" && panel.freshness === "fresh")) {
+  fail("drifted-new-stale-as-fresh", driftedNewPanels);
+}
+const driftedNewImpact = runFrom(sandboxBase, ["--json", "impact", "taskboard.audit_event", "--adoption", "coverage.json", "--project", "proj"]);
+if (driftedNewImpact.status !== 0) fail("drifted-new-impact-exit", driftedNewImpact.stderr);
+const driftedNewBoundary = parse(driftedNewImpact).boundaries.find((row) => row.symbol === "taskboard.audit_event");
+if (!driftedNewBoundary || driftedNewBoundary.freshness === "fresh") {
+  fail("drifted-new-impact-fresh", driftedNewBoundary);
+}
+// Restoring the exact bytes restores the fresh verdict — the drift was
+// content, not identity.
+writeFileSync(join(project, "src/audit.mjs"), auditBytes);
+const restoredNewStatus = runFrom(sandboxBase, ["--json", "status", "--adoption", "coverage.json", "--project", "proj"]);
+if (restoredNewStatus.status !== 0) fail("restored-new-status-exit", restoredNewStatus.stderr);
+const restoredNewPanels = parse(restoredNewStatus).panels.filter((panel) => panel.state === "current");
+if (restoredNewPanels.length === 0 || restoredNewPanels.some((panel) => panel.freshness !== "fresh")) {
+  fail("restored-new-fresh", parse(restoredNewStatus).panels);
+}
+
 const coverage = JSON.parse(readFileSync(coveragePath, "utf8"));
 if (!coverage.pins || !coverage.revision) fail("coverage-pins", { pins: !!coverage.pins, revision: coverage.revision });
 writeFileSync(join(project, "src/limits.mjs"), `${readFileSync(join(project, "src/limits.mjs"), "utf8")}\n// hybrid drift\n`);
@@ -580,7 +613,7 @@ if (driftVerify.status !== 0) fail("drift-verify-exit", driftVerify.stderr);
 if (parse(driftVerify).conclusion !== "preserved") fail("drift-verify", parse(driftVerify).conclusion);
 const driftExecutionPath = save("drift-execution.json", driftVerify);
 const driftApply = run([
-  "--json", "adoption", "apply", "--plan", driftPlanPath, "--verification", driftExecutionPath,
+  "--json", "adoption", "apply", "--plan", driftPlanPath, "--verification", spec,
   "--candidate", driftCandidatePath, "--confirm", driftPlan.plan, "--project", ".",
 ]);
 if (driftApply.status !== 0) fail("drift-apply-exit", driftApply.stderr);
@@ -623,6 +656,15 @@ if (!traceReport.verification.every((digest) => /^sha256:[0-9a-f]{64}$/.test(dig
 if (!traceReport.stale.some((gap) => gap.subject === "taskboard.complete_task")) {
   fail("trace-stale-row", traceReport.stale);
 }
+
+// F5: trace query --adoption resolves the adoption context from the
+// --project selector exactly like status/impact — never cwd alone.
+const traceOutside = runFrom(sandboxBase, [
+  "--json", "trace", "query", join(root, "tests/fixtures/trace/partial.trace.json"), "gaps",
+  "--adoption", driftedCoveragePath, "--project", "proj",
+]);
+if (traceOutside.status !== 0) fail("trace-project-exit", traceOutside.stderr);
+if (!Array.isArray(parse(traceOutside).verification)) fail("trace-project-join", traceOutside.stdout);
 // The exact rollback restores the conformant state: the declared
 // fingerprint matches the restored bytes again.
 const driftReceiptPath = save("drift-receipt.json", driftApply);

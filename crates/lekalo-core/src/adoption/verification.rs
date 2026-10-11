@@ -12,36 +12,32 @@
 //! conclusion is honestly `unavailable` and no test is reported as
 //! passed. Never a marker, never an environment backdoor.
 //!
-//! Confinement honesty: the disposable copy is the child's working
-//! directory and its environment is scrubbed, but the child keeps the
-//! invoking user's privileges — this is run hygiene, not an
-//! operating-system write or network boundary. A specification that
-//! requests a confinement dimension the executor cannot actually
-//! enforce (`no-network`) is refused with a typed scope refusal, never
-//! silently run while the claim is dropped.
+//! Pure core (X2/R3): this module never spawns a process, reads the
+//! host environment, or resolves PATH. Execution happens exclusively
+//! through an injected [`VerificationHost`] capability — an admitted
+//! host boundary the core only defines and the trusted binary
+//! supplies — so lekalo-core stays offline and spawn-free. The
+//! original-project write boundary is enforced at the seams that
+//! matter: the whole-tree state digest is pinned at plan time,
+//! re-checked before any run, and re-checked after the runs, so a
+//! verification child that writes the original project turns every
+//! downstream boundary (verify's own honesty and apply's admission)
+//! into a typed refusal. A specification that requests a confinement
+//! dimension the executor cannot actually enforce (`no-network`) is
+//! refused with a typed scope refusal, never silently run while the
+//! claim is dropped.
 //!
-//! Custody: [`admit_execution`] is the only path an execution document
-//! takes into apply. It re-derives the execution envelope's binding to
-//! the exact plan, plan-pinned candidate digest, and complete consumed
-//! input set, and demands the measured results be execution custody —
-//! the run digest and measured timestamp this module assembles over the
-//! measured document — with the measured outcomes in exact 1:1
-//! correspondence to the declared checks and the oracle verdict and
-//! conclusion re-derived from them. The custody recipe is public and
-//! recomputable by design, so the stated guarantee is binding and
-//! consistency, not authenticity: a document whose measurements do not
-//! cover the declared checks 1:1, whose oracle or conclusion was not
-//! derived from its own measurements, whose runner bytes or plan-pinned
-//! tree drifted after the run, or that replays another candidate's run
-//! refuses before any write. A deliberate hand-forgery that recomputes
-//! every public member over invented outcomes is not excluded by any
-//! checksum scheme — the honest claim is that nothing but a real run
-//! produces the measured classes this module emits, and every internal,
-//! staleness, coverage, and replay defect is caught at admission.
+//! Trusted apply (F11/X1/R1): an execution document is a derived
+//! record of one run, never install authority. `adoption apply`
+//! re-executes the pinned specification itself through the injected
+//! host capability and admits only its own fresh run's measured
+//! outcome — binding the exact plan, patch, specification,
+//! interpreter, and whole consumed input revision — so a hand-forged
+//! execution document, however internally consistent, cannot
+//! authorize a write.
 
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use super::diagnostic;
 use super::version;
@@ -57,26 +53,117 @@ use crate::result::DomainResult;
 /// bare name resolved through PATH, never a path with separators.
 const QUALIFIED_PROGRAMS: [&str; 7] = ["node", "npm", "npx", "deno", "bun", "python", "python3"];
 
-/// Directories never copied into a disposable candidate copy.
-const COPY_EXCLUDED: [&str; 3] = [".git", "target", ".lekalo"];
-
-/// The bounded child environment: an allow-listed subset of the host
-/// names a runtime genuinely needs, everything else cleared (the same
-/// discipline the native-gate runner owns). Secrets and unrelated host
-/// state never reach a verification child.
-const CHILD_ENV_ALLOWED: [&str; 6] = [
-    "PATH",
-    "PATHEXT",
-    "SYSTEMROOT",
-    "SYSTEMDRIVE",
-    "COMSPEC",
-    "PROGRAMFILES",
-];
+/// Directories never pinned by the whole-tree state digest and never
+/// copied into a disposable candidate copy: VCS, build, and lekalo
+/// runtime state.
+const TREE_EXCLUDED: [&str; 3] = [".git", "target", ".lekalo"];
 
 /// The closed execution-custody marker member: assembled only by this
-/// module's real runs and required by apply's admission. A document
-/// that decodes without it never carries a measured conclusion.
+/// module's real runs and required by the wire document's closed shape.
+/// A document that decodes without it never carries a measured
+/// conclusion.
 pub(crate) const CUSTODY_MEMBER: &str = "custody";
+
+/// The admitted host execution capability (X2/R3): the trusted binary
+/// supplies the process boundary — PATH resolution, spawn, bounded
+/// drained pipes, the scrubbed child environment, the deadline, and
+/// process-tree teardown — while lekalo-core stays pure and offline.
+/// The core defines the contract and enforces every policy decision
+/// (the qualified allow-list, digest pins, bounds, the tree barrier)
+/// around what the host reports; the host reports measurements, never
+/// conclusions.
+pub trait VerificationHost {
+    /// Resolve one qualified bare program name to its executable path
+    /// through the host's PATH. `None` means the tool is honestly
+    /// unavailable; the core records it, never invents a run.
+    fn resolve_program(&self, program: &str) -> Option<PathBuf>;
+    /// Run one command line in the given working directory and return
+    /// `(exit code, bounded stdout)`. An `Err` is a measured refusal
+    /// detail (spawn/timeout class), never a synthesized outcome.
+    fn run(
+        &self,
+        program: &Path,
+        args: &[String],
+        cwd: &Path,
+    ) -> Result<(Option<i32>, String), String>;
+}
+
+/// The deterministic whole-tree state digest (F3/R2): SHA-256 over the
+/// sorted `path US sha256(content)` lines of every file under the
+/// project root except VCS, build, and lekalo runtime homes, under the
+/// same byte/file ceilings as the disposable copy. This pins the
+/// complete consumed input closure — including files an argv-pinned
+/// runner only reaches through its own loader (imports, configs) — so
+/// drift anywhere in the project between plan and verify/apply, or an
+/// original-tree write by a verification child, is a typed refusal.
+pub(crate) fn tree_state_digest(root: &Path) -> Outcome<String> {
+    let mut paths: Vec<String> = Vec::new();
+    collect_tree(root, root, &mut paths, &mut 0usize, &mut 0usize)?;
+    paths.sort();
+    let mut payload = String::new();
+    for path in &paths {
+        let bytes = std::fs::read(root.join(path)).map_err(|_| {
+            DomainResult::invalid(diagnostic::evidence_incomplete_set("tree", "unreadable"))
+        })?;
+        payload.push_str(path);
+        payload.push('\u{1f}');
+        payload.push_str(&crate::digest::sha256_hex(&bytes));
+        payload.push('\n');
+    }
+    Ok(format!(
+        "sha256:{}",
+        crate::digest::sha256_hex(payload.as_bytes())
+    ))
+}
+
+/// Recursively collect the project-relative file set under the shared
+/// exclusion and ceiling rules.
+fn collect_tree(
+    root: &Path,
+    directory: &Path,
+    paths: &mut Vec<String>,
+    total_bytes: &mut usize,
+    total_files: &mut usize,
+) -> Outcome<()> {
+    let entries = std::fs::read_dir(directory).map_err(|_| {
+        DomainResult::invalid(diagnostic::evidence_incomplete_set("tree", "unreadable"))
+    })?;
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if TREE_EXCLUDED.contains(&name) {
+            continue;
+        }
+        let metadata = entry.metadata().map_err(|_| {
+            DomainResult::invalid(diagnostic::evidence_incomplete_set("tree", "unreadable"))
+        })?;
+        if metadata.is_dir() {
+            collect_tree(root, &entry.path(), paths, total_bytes, total_files)?;
+        } else if metadata.is_file() {
+            *total_bytes += metadata.len() as usize;
+            *total_files += 1;
+            if *total_bytes > version::COPY_TOTAL_BYTES || *total_files > version::COPY_TOTAL_FILES
+            {
+                return Err(DomainResult::invalid(diagnostic::input_invalid_set(
+                    "tree",
+                    "over-limit",
+                )));
+            }
+            let relative = entry
+                .path()
+                .strip_prefix(root)
+                .map(|relative| relative.to_string_lossy().replace('\\', "/"))
+                .unwrap_or_default();
+            if version::is_rel_path(&relative) {
+                paths.push(relative);
+            }
+        }
+        // Reparse points, symlinks, and junctions are skipped on sight.
+    }
+    Ok(())
+}
 
 /// The private custody envelope of one real execution. It serializes
 /// into the closed wire document under [`CUSTODY_MEMBER`]; it is never
@@ -182,11 +269,17 @@ fn consumed_manifest(root: &Path, tool: &super::wire::ToolRef) -> ConsumedInputs
 
 /// Execute one specification against the current tree: baseline and
 /// candidate runs happen in disposable copies — the copy is the child's
-/// working directory, never a claimed operating-system write boundary —
-/// and no report or cache home is written. A requested `no-network`
-/// confinement is refused as unenforceable before any process exists.
+/// working directory — and no report or cache home is written. Runs
+/// happen only through the injected [`VerificationHost`] capability
+/// (X2/R3); a requested `no-network` confinement is refused as
+/// unenforceable before any process exists. The whole-tree state digest
+/// is compared against the plan before any run and re-checked after
+/// the runs, so a drifted plan never executes and a child that writes
+/// the original project is a typed refusal, never a laundered run.
 pub fn execute(
     ctx: &super::analysis::AdoptionContext,
+    host: &dyn VerificationHost,
+    index: Option<&crate::observed::types::ObservedIndex>,
     plan: &RefactorPlan,
     spec_bytes: &[u8],
     patch: Option<&PatchDocument>,
@@ -219,16 +312,20 @@ pub fn execute(
             "plan-mismatch",
         )));
     }
-    // F3/X3 pre-execution barrier: the plan's pinned *source* set is
+    // Pre-execution barrier (F3/X3/R2): the plan's complete pin set —
+    // model, lock, observed index, adapter, every pinned source
+    // (evidence ∪ patch paths ∪ the specification's argv files) — is
     // re-fingerprinted against the live tree before any process
-    // exists (sources only — the observed-index/adapter/model pins are
-    // scan evidence the verify path does not re-scan, exactly like the
-    // apply path's source re-fingerprint). A drifted plan never
-    // executes; the same staleness class the apply path enforces,
-    // moved in front of the run.
+    // exists, and the whole-tree state digest must still match the
+    // plan's. A drifted plan never executes; the same staleness class
+    // the apply path enforces, moved in front of the run.
+    let tree_before = tree_state_digest(&ctx.root)?;
     {
-        let current = super::analysis::compute_pins(ctx, None, &pin_paths(plan))?;
-        let changed: Vec<String> = source_drift(&plan.pins, &current);
+        let current = super::analysis::compute_pins(ctx, index, &plan_input_paths(plan, &spec))?;
+        let mut changed = super::transaction::changed_pins(&plan.pins, &current);
+        if plan.tree.as_deref() != Some(tree_before.as_str()) {
+            changed.push("project-tree".to_owned());
+        }
         if !changed.is_empty() {
             return Err(DomainResult::denied(diagnostic::plan_stale_set(
                 &plan.plan, &changed,
@@ -253,7 +350,7 @@ pub fn execute(
     // The pinned tool digest is enforced when the specification carries
     // one: the resolved program's bytes must hash to the pin, so a
     // swapped interpreter can never silently serve a pinned run.
-    let Some(program) = resolve_program(&tool.program) else {
+    let Some(program) = host.resolve_program(&tool.program) else {
         // An unresolvable tool is honestly unavailable; the consumed
         // manifest of the (absent) argv script still travels so the
         // document records what the run would have measured.
@@ -273,8 +370,8 @@ pub fn execute(
     verify_tool_digest(&program, tool)?;
     // The consumed-input manifest of the tool argv script, taken from
     // the live tree before the runs (F3/X3): the exact runner bytes are
-    // pinned into the execution and revalidated at apply, so a
-    // trivialized runner can never serve a run it did not measure.
+    // pinned into the execution record, so a trivialized runner can
+    // never serve a run it did not measure.
     let consumed = consumed_manifest(&ctx.root, tool);
     if !consumed.bounded() {
         return Err(DomainResult::invalid(diagnostic::input_invalid_set(
@@ -286,14 +383,14 @@ pub fn execute(
     let started = Instant::now();
     // Baseline: a pristine disposable copy.
     let (baseline_copy, baseline_guard) = copy_tree(&ctx.root)?;
-    let baseline = run_checks(&program, &tool.args, &spec.checks, &baseline_copy);
+    let baseline = run_checks(host, &program, &tool.args, &spec.checks, &baseline_copy);
 
     // Candidate: a second disposable copy with the exact patch applied.
     let candidate_result = match patch {
         Some(document) => {
             let (candidate_copy, candidate_guard) = copy_tree(&ctx.root)?;
             let checks = match apply_patch(&candidate_copy, document) {
-                Ok(()) => run_checks(&program, &tool.args, &spec.checks, &candidate_copy),
+                Ok(()) => run_checks(host, &program, &tool.args, &spec.checks, &candidate_copy),
                 Err(_) => CheckResults {
                     checks: spec
                         .checks
@@ -328,6 +425,17 @@ pub fn execute(
     // Both disposable temp homes are removed on every exit path: the
     // baseline guard drops here, the candidate guard at its scope end.
     drop(baseline_guard);
+    // The original-tree write boundary (X2/R3): the runs happened in
+    // disposable copies, so the original project must be byte-identical
+    // to the barrier image. A child that escaped its copy — an absolute
+    // path write, a host-state mutation — refuses here; the run is
+    // never laundered into a conclusion over a tree it changed.
+    if tree_state_digest(&ctx.root)? != tree_before {
+        return Err(DomainResult::denied(diagnostic::scope_refused_set(
+            "verification",
+            "original-tree-write",
+        )));
+    }
 
     // The behavior oracle: the kind=behavior-oracle checks must pass on
     // both sides. A shallow happy-path test passing beside a broken
@@ -410,15 +518,28 @@ pub fn execute(
     Ok(execution)
 }
 
-/// The plan-time source-pin path set (the same consumed set apply
-/// re-fingerprints): read scope ∪ mutation scope, so the pre-execution
-/// barrier and the apply barrier cannot disagree structurally.
-fn pin_paths(plan: &RefactorPlan) -> std::collections::BTreeSet<String> {
-    plan.read_scope
+/// The plan-time consumed set (the same set apply re-fingerprints):
+/// read scope ∪ mutation scope ∪ the specification's rel-path argv
+/// entries, so the pre-execution barrier and the apply barrier cannot
+/// disagree structurally (F3/R2).
+fn plan_input_paths(
+    plan: &RefactorPlan,
+    spec: &VerificationDocument,
+) -> std::collections::BTreeSet<String> {
+    let mut paths: std::collections::BTreeSet<String> = plan
+        .read_scope
         .iter()
         .chain(plan.mutation_scope.iter())
         .cloned()
-        .collect()
+        .collect();
+    if let Some(tool) = &spec.tool {
+        for arg in &tool.args {
+            if version::is_rel_path(arg) {
+                paths.insert(arg.clone());
+            }
+        }
+    }
+    paths
 }
 
 /// The private custody envelope of one measured execution: the
@@ -431,341 +552,6 @@ fn custody_of(execution: &VerificationDocument, measured_ms: u64) -> ExecutionCu
         &wire::without_member(&value, CUSTODY_MEMBER),
     );
     ExecutionCustody { run, measured_ms }
-}
-
-/// Admit one execution document for apply (X1/X2): the document must
-/// decode as an execution variant bound to the exact plan and the
-/// exact plan-pinned candidate digest, must pin the complete consumed
-/// input set the plan pinned (or typed absence), and must carry the
-/// execution custody this module assembles over measured results — the
-/// run digest must match the admitted document's own bytes and the
-/// measured duration must be present and bounded. A forged, stale, or
-/// replayed conclusion refuses before any write.
-pub(crate) fn admit_execution(
-    ctx: &super::analysis::AdoptionContext,
-    plan: &RefactorPlan,
-    patch_digest: &str,
-    execution_bytes: &[u8],
-) -> Outcome<VerificationDocument> {
-    let execution =
-        wire::execution_of_bytes(execution_bytes).map_err(|error| error.domain_result())?;
-    if execution.variant != "execution" {
-        return Err(DomainResult::invalid(diagnostic::input_invalid_set(
-            "verification",
-            "not-an-execution",
-        )));
-    }
-    if execution.spec.as_deref() != plan.verification.as_deref()
-        || execution.plan.as_deref() != Some(plan.plan.as_str())
-    {
-        return Err(DomainResult::invalid(diagnostic::input_invalid_set(
-            "verification",
-            "plan-mismatch",
-        )));
-    }
-    // The declared obligations are the plan's, never the document's: a
-    // forged execution could otherwise substitute its own check set (and
-    // with it the demanded coverage and the oracle ids) while keeping the
-    // pinned spec digest string. The envelope's checks must be the exact
-    // plan-time image of the specification's checks — same obligations,
-    // same kinds, same order (X1/F11).
-    if execution.checks.len() != plan.preservation.len()
-        || !execution
-            .checks
-            .iter()
-            .zip(plan.preservation.iter())
-            .all(|(check, obligation)| {
-                check.id == obligation.obligation && check.kind == obligation.check
-            })
-    {
-        return Err(DomainResult::invalid(diagnostic::input_invalid_set(
-            "verification",
-            "checks-mismatch",
-        )));
-    }
-    // Custody first: a conclusion without this module's run digest and
-    // a bounded measured duration is never evidence of passing.
-    let Some(custody) = &execution.custody else {
-        return Err(DomainResult::invalid(diagnostic::input_invalid_set(
-            "verification",
-            "custody-missing",
-        )));
-    };
-    let value = serde_json::to_value(&execution).expect("execution serializes");
-    let expected = wire::digest(
-        "adoption-verification-run",
-        &wire::without_member(&value, CUSTODY_MEMBER),
-    );
-    if custody.run != expected || !version::is_sha256(&custody.run) {
-        return Err(DomainResult::invalid(diagnostic::input_invalid_set(
-            "verification",
-            "custody-mismatch",
-        )));
-    }
-    if custody.measured_ms == 0 || custody.measured_ms > 60_000_000 {
-        return Err(DomainResult::invalid(diagnostic::input_invalid_set(
-            "verification",
-            "custody-bounds",
-        )));
-    }
-    // A self-consistent envelope can still be assembled by hand, so
-    // admission re-derives the consumed-input manifest from the live
-    // tree and demands exact agreement with the recorded binding: a
-    // swapped or trivialized runner, a tree that drifted after the run,
-    // or a stale plan refuses here before any measurement is read
-    // (F3/X3). The remaining admission duties — measured coverage,
-    // oracle and conclusion re-derivation, candidate replay — run
-    // below; the custody checksum itself is a consistency envelope,
-    // never an authenticity proof.
-    validate_consumed_binding(&execution, &ctx.root)?;
-    // The measured conclusion must be preserved: conclusions are
-    // checked before candidate coverage so a failed run is honestly
-    // classified verification-failed (LEK-ADOPT-007), never laundered
-    // through an unrelated mismatch.
-    if execution.conclusion.as_deref() != Some("preserved") {
-        return Err(DomainResult::invalid(diagnostic::verification_failed_set(
-            execution
-                .oracle
-                .as_ref()
-                .map(|oracle| oracle.detail.as_str())
-                .unwrap_or("conclusion"),
-            &execution.spec.clone().unwrap_or_default(),
-        )));
-    }
-    // The admitted run must cover this exact candidate revision: a
-    // genuine preserved execution for any other patch bytes is a
-    // replay, never evidence for this apply.
-    if !run_covers_candidate(&execution, patch_digest) {
-        return Err(DomainResult::invalid(diagnostic::input_invalid_set(
-            "verification",
-            "candidate-mismatch",
-        )));
-    }
-    // The recorded per-check outcomes must really support `preserved`:
-    // outcomes are measured 1:1 against the declared checks (same ids,
-    // same order, no unmeasured inventions, none missing), the oracle
-    // verdict is re-derived from the behavior-oracle measurements (a
-    // caller-supplied verdict is never accepted), and the conclusion is
-    // re-derived from the whole envelope — the exact derivation the
-    // real run performs. A hand-written envelope that skips a check,
-    // invents a passing id, or asserts an oracle that never held
-    // refuses here (X1/F11).
-    let spec_checks = &execution.checks;
-    measured_1to1(&execution.baseline, spec_checks, "baseline")?;
-    measured_1to1(&execution.candidate, spec_checks, "candidate")?;
-    if !oracle_holds(&execution) {
-        return Err(DomainResult::invalid(diagnostic::verification_failed_set(
-            "behavior-oracle",
-            &execution.spec.clone().unwrap_or_default(),
-        )));
-    }
-    if derived_conclusion(&execution) != Some("preserved") {
-        return Err(DomainResult::invalid(diagnostic::verification_failed_set(
-            "measured-outcomes",
-            &execution.spec.clone().unwrap_or_default(),
-        )));
-    }
-    // The plan's pinned consumed *source* set must still match the
-    // tree at admission time (the stale-plan barrier at apply, mirrored
-    // from the execution path; sources only, as above), so a plan
-    // drifted after its verification never installs.
-    {
-        let current = super::analysis::compute_pins(ctx, None, &pin_paths(plan))?;
-        let changed: Vec<String> = source_drift(&plan.pins, &current);
-        if !changed.is_empty() {
-            return Err(DomainResult::denied(diagnostic::plan_stale_set(
-                &plan.plan, &changed,
-            )));
-        }
-    }
-    Ok(execution)
-}
-
-/// The changed members between two pin sets, restricted to the source
-/// pins: the verify/admission barrier re-fingerprints the plan's
-/// pinned sources against the live tree without an observed-index
-/// rescan, so scan-evidence members (adapter/index/model/lock) are out
-/// of scope here while every source drift is caught.
-fn source_drift(expected: &super::wire::Pins, current: &super::wire::Pins) -> Vec<String> {
-    use std::collections::BTreeMap;
-    let expected_sources: BTreeMap<&str, &str> = expected
-        .sources
-        .iter()
-        .map(|source| (source.path.as_str(), source.sha256.as_str()))
-        .collect();
-    let current_sources: BTreeMap<&str, &str> = current
-        .sources
-        .iter()
-        .map(|source| (source.path.as_str(), source.sha256.as_str()))
-        .collect();
-    let mut changed: Vec<String> = expected_sources
-        .iter()
-        .filter_map(|(path, digest)| match current_sources.get(path) {
-            Some(found) if found == digest => None,
-            _ => Some((*path).to_string()),
-        })
-        .collect();
-    for path in current_sources.keys() {
-        if !expected_sources.contains_key(path) {
-            changed.push((*path).to_owned());
-        }
-    }
-    changed.sort();
-    changed.dedup();
-    changed
-}
-
-/// The consumed-input binding of one execution (F3/X3): the recorded
-/// baseline-source tree line must be exactly the digest of the recorded
-/// manifest members, the manifest must be bounded and well-formed, and
-/// the manifest must cover exactly the specification's rel-path argv
-/// entries (runner, tests, oracle — or their typed absence),
-/// re-derived from the current project tree, so a drifted or swapped
-/// runner refuses before any write. An execution
-/// without the binding (or one whose tree line does not re-derive)
-/// never admits.
-fn validate_consumed_binding(execution: &VerificationDocument, root: &Path) -> Outcome<()> {
-    let Some(recorded) = &execution.baseline_source else {
-        return Err(DomainResult::invalid(diagnostic::input_invalid_set(
-            "verification",
-            "consumed-missing",
-        )));
-    };
-    // The manifest travels in the run digest; the tree line is the
-    // content address of the manifest members. Reconstruct the
-    // manifest from the argv entries consumed now and compare.
-    let Some(tool) = &execution.tool else {
-        return Err(DomainResult::invalid(diagnostic::input_invalid_set(
-            "verification",
-            "tool-missing",
-        )));
-    };
-    let current = consumed_manifest(root, tool);
-    if !current.bounded() {
-        return Err(DomainResult::invalid(diagnostic::input_invalid_set(
-            "consumed",
-            "over-limit",
-        )));
-    }
-    if current.tree_digest() != *recorded {
-        return Err(DomainResult::invalid(diagnostic::input_invalid_set(
-            "verification",
-            "consumed-drift",
-        )));
-    }
-    Ok(())
-}
-
-/// The measured side must cover the declared checks 1:1: exactly the
-/// declared ids in declaration order, every outcome `passed`, and no
-/// invented or missing measurements (X1/F11).
-fn measured_1to1(
-    side: &Option<CheckResults>,
-    spec_checks: &[super::wire::CheckSpec],
-    name: &str,
-) -> Outcome<()> {
-    let Some(side) = side else {
-        return Err(DomainResult::invalid(diagnostic::input_invalid_set(
-            "verification",
-            name,
-        )));
-    };
-    if side.checks.len() != spec_checks.len() {
-        return Err(DomainResult::invalid(diagnostic::verification_failed_set(
-            name,
-            "measurement-coverage",
-        )));
-    }
-    for (measured, declared) in side.checks.iter().zip(spec_checks.iter()) {
-        if measured.id != declared.id {
-            return Err(DomainResult::invalid(diagnostic::verification_failed_set(
-                name,
-                "measurement-identity",
-            )));
-        }
-        if measured.status != "passed" {
-            return Err(DomainResult::invalid(diagnostic::verification_failed_set(
-                &measured.id,
-                name,
-            )));
-        }
-    }
-    Ok(())
-}
-
-/// Re-derive the behavior-oracle verdict from the measurements (X1):
-/// the recorded oracle must be `passed` exactly when every declared
-/// behavior-oracle check passed on both sides; with no oracle checks
-/// declared, the recorded verdict must be `unavailable`.
-fn oracle_holds(execution: &VerificationDocument) -> bool {
-    let oracle = execution
-        .oracle
-        .as_ref()
-        .map(|oracle| oracle.status.as_str());
-    let oracle_ids: Vec<&str> = execution
-        .checks
-        .iter()
-        .filter(|check| check.kind == "behavior-oracle")
-        .map(|check| check.id.as_str())
-        .collect();
-    let both_passed = |side: &Option<CheckResults>| {
-        oracle_ids.iter().all(|id| {
-            side.as_ref()
-                .map(|side| {
-                    side.checks
-                        .iter()
-                        .any(|check| check.id == *id && check.status == "passed")
-                })
-                .unwrap_or(false)
-        })
-    };
-    if oracle_ids.is_empty() {
-        return oracle == Some("unavailable");
-    }
-    oracle == Some("passed")
-        && both_passed(&execution.baseline)
-        && both_passed(&execution.candidate)
-}
-
-/// The conclusion re-derived from the whole envelope — the exact
-/// derivation the real run performs (X1/F11).
-fn derived_conclusion(execution: &VerificationDocument) -> Option<&str> {
-    let any_unavailable = execution
-        .baseline
-        .iter()
-        .chain(execution.candidate.iter())
-        .flat_map(|side| side.checks.iter())
-        .any(|check| check.status == "unavailable");
-    let any_failed = execution
-        .baseline
-        .iter()
-        .chain(execution.candidate.iter())
-        .flat_map(|side| side.checks.iter())
-        .any(|check| check.status == "failed");
-    let oracle = execution
-        .oracle
-        .as_ref()
-        .map(|oracle| oracle.status.as_str());
-    Some(if any_unavailable && !any_failed {
-        "unavailable"
-    } else if any_failed || oracle == Some("failed") {
-        "failed"
-    } else if oracle == Some("unavailable") {
-        "unavailable"
-    } else {
-        "preserved"
-    })
-}
-
-/// Whether the executed run bound the candidate revision this apply
-/// installs. Real runs record the patched candidate-copy digest under
-/// the `disposable-copy` confinement token; admission requires it.
-fn run_covers_candidate(execution: &VerificationDocument, patch_digest: &str) -> bool {
-    execution.confinement.iter().any(|token| {
-        token
-            .strip_prefix("disposable-copy:")
-            .is_some_and(|bound| bound == patch_digest)
-    })
 }
 
 /// Verify the resolved program's bytes against the pinned tool digest.
@@ -829,28 +615,18 @@ fn shell(
     }
 }
 
-/// Resolve one qualified program name through PATH.
-fn resolve_program(name: &str) -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
-    let executable = if cfg!(windows) {
-        format!("{name}.exe")
-    } else {
-        name.to_owned()
-    };
-    std::env::split_paths(&path)
-        .map(|directory| directory.join(&executable))
-        .find(|candidate| candidate.is_file())
-}
-
-/// Run every check once against one disposable copy.
+/// Run every check once against one disposable copy, through the
+/// injected host capability: the core measures and classifies what the
+/// host reports, never spawning anything itself (X2/R3).
 fn run_checks(
+    host: &dyn VerificationHost,
     program: &Path,
     args: &[String],
     checks: &[super::wire::CheckSpec],
     copy: &Path,
 ) -> CheckResults {
     let mut outcomes = Vec::new();
-    let run = execute_command(program, args, copy);
+    let run = host.run(program, args, copy);
     for check in checks {
         let outcome = match &run {
             Err(detail) => CheckOutcome {
@@ -889,140 +665,6 @@ fn run_checks(
         outcomes.push(outcome);
     }
     CheckResults { checks: outcomes }
-}
-
-/// One bounded run: `(exit code, bounded stdout)`. Both pipes drain on
-/// dedicated threads for the whole child lifetime — a tool emitting
-/// more than the pipe buffer can never deadlock the deadline — the
-/// child gets its own process group on unix, teardown kills the whole
-/// process tree, and the child environment is cleared down to the
-/// bounded runtime allow-list. A timeout, a spawn failure, or a signal
-/// exit is measured, never invented.
-fn execute_command(
-    program: &Path,
-    args: &[String],
-    cwd: &Path,
-) -> Result<(Option<i32>, String), String> {
-    let mut command = Command::new(program);
-    command
-        .args(args)
-        .current_dir(cwd)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    // Cleared environment plus the bounded runtime allow-list; nothing
-    // else of the host — secrets, proxies, unrelated state — leaks in.
-    command.env_clear();
-    for name in CHILD_ENV_ALLOWED {
-        if let Some(value) = std::env::var_os(name) {
-            command.env(name, value);
-        }
-    }
-    // The child gets its own process group on unix so the teardown
-    // reaps descendants (the same discipline the house runner owns).
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        command.process_group(0);
-    }
-    let mut child = command
-        .spawn()
-        .map_err(|error| format!("spawn-refused:{}", error.kind()))?;
-    let stdout_handle = child.stdout.take();
-    let stderr_handle = child.stderr.take();
-    // Dedicated drain threads: both streams are consumed for the whole
-    // child lifetime (bounded capture, unbounded discard), so a chatty
-    // tool can never fill the OS pipe buffer and wedge the deadline.
-    let stdout_thread = std::thread::spawn(move || drain_bounded(stdout_handle));
-    let stderr_thread = std::thread::spawn(move || drain_bounded(stderr_handle));
-    let started = Instant::now();
-    let mut timed_out = false;
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break Some(status),
-            Ok(None) => {
-                if started.elapsed() > Duration::from_millis(version::CHECK_TIMEOUT_MS) {
-                    timed_out = true;
-                    break None;
-                }
-                std::thread::sleep(Duration::from_millis(25));
-            }
-            Err(_) => {
-                kill_tree(child.id());
-                let _ = child.wait();
-                return Err("spawn-failed".to_owned());
-            }
-        }
-    };
-    if timed_out {
-        // Process-tree teardown: descendants never survive the deadline.
-        kill_tree(child.id());
-        let _ = child.wait();
-    }
-    let (stdout, _) = stdout_thread.join().unwrap_or_default();
-    let _ = stderr_thread.join();
-    if timed_out {
-        return Err("timeout".to_owned());
-    }
-    Ok((status.and_then(|status| status.code()), stdout))
-}
-
-/// Drain one pipe on a worker thread: capture up to the bounded output
-/// ceiling, then keep draining (and discarding) so the child never
-/// blocks on a full pipe while the run continues.
-fn drain_bounded(pipe: Option<impl std::io::Read + Send + 'static>) -> (String, bool) {
-    let mut pipe = match pipe {
-        Some(pipe) => pipe,
-        None => return (String::new(), false),
-    };
-    let mut bytes = Vec::new();
-    let mut flooded = false;
-    let mut chunk = [0u8; 8192];
-    loop {
-        match pipe.read(&mut chunk) {
-            Ok(0) => break,
-            Ok(n) => {
-                let remaining = version::CHECK_OUTPUT_BYTES.saturating_sub(bytes.len());
-                if remaining == 0 {
-                    flooded = true;
-                    continue;
-                }
-                let take = n.min(remaining);
-                bytes.extend_from_slice(&chunk[..take]);
-                if take < n {
-                    flooded = true;
-                }
-            }
-            Err(_) => break,
-        }
-    }
-    (String::from_utf8_lossy(&bytes).to_string(), flooded)
-}
-
-/// Process-tree teardown: the same kill discipline the house runner
-/// owns — the unix child sits in its own process group; Windows walks
-/// the tree with the platform tool.
-fn kill_tree(pid: u32) {
-    #[cfg(unix)]
-    {
-        if let Some(pid) = rustix::process::Pid::from_raw(pid as i32) {
-            if pid != rustix::process::Pid::INIT {
-                let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::KILL);
-            }
-        }
-    }
-    #[cfg(windows)]
-    {
-        let _ = std::process::Command::new("taskkill")
-            .args(["/PID", &pid.to_string(), "/T", "/F"])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        let _ = pid;
-    }
 }
 
 /// Copy the project into a fresh disposable directory, skipping VCS,
@@ -1120,7 +762,7 @@ fn copy_recursive(
         let Some(name) = name.to_str() else {
             continue;
         };
-        if COPY_EXCLUDED.contains(&name) {
+        if TREE_EXCLUDED.contains(&name) {
             continue;
         }
         let metadata = entry.metadata().map_err(|_| {
@@ -1193,146 +835,93 @@ mod tests {
         }
     }
 
-    fn outcome(id: &str, status: &str) -> CheckOutcome {
-        CheckOutcome {
-            id: id.to_owned(),
-            status: status.to_owned(),
-            exit: Some(0),
-            detail: "ok".to_owned(),
+    /// A stub host: it resolves nothing and never runs — the pure-core
+    /// contract is that no code path can reach a process through it.
+    struct OfflineHost;
+
+    impl VerificationHost for OfflineHost {
+        fn resolve_program(&self, _program: &str) -> Option<PathBuf> {
+            None
+        }
+        fn run(
+            &self,
+            _program: &Path,
+            _args: &[String],
+            _cwd: &Path,
+        ) -> Result<(Option<i32>, String), String> {
+            Err("offline-host".to_owned())
         }
     }
 
-    fn side(checks: Vec<CheckOutcome>) -> Option<CheckResults> {
-        Some(CheckResults { checks })
-    }
-
-    fn execution(
-        spec_checks: Vec<wire::CheckSpec>,
-        baseline: Vec<CheckOutcome>,
-        candidate: Vec<CheckOutcome>,
-        oracle: Option<OracleVerdict>,
-    ) -> VerificationDocument {
-        let mut execution = VerificationDocument {
-            schema_version: String::new(),
-            identity: String::new(),
-            variant: "execution".to_owned(),
-            verification: "spec".to_owned(),
-            spec: Some("sha256:spec".to_owned()),
-            plan: Some("sha256:plan".to_owned()),
-            tool: None,
-            baseline_source: None,
-            checks: spec_checks,
-            confinement: Vec::new(),
-            baseline: side(baseline),
-            candidate: side(candidate),
-            oracle,
-            conclusion: None,
-            custody: None,
+    #[test]
+    fn unresolvable_tools_conclude_unavailable_never_passed() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir(dir.path().join("src")).expect("dir");
+        std::fs::write(dir.path().join("src/tasks.mjs"), b"task").expect("write");
+        let ctx = super::super::analysis::AdoptionContext {
+            model: crate::loader::NormalizedModel {
+                model_version: crate::loader::project_docs::ModelVersion::Current,
+                project: None,
+                modules: Vec::new(),
+                definitions: Vec::new(),
+            },
+            root: dir.path().to_path_buf(),
         };
-        execution.conclusion = derived_conclusion(&execution).map(str::to_owned);
-        execution
-    }
-
-    const NATIVE: &str = "tasks.native-test";
-    const ORACLE: &str = "complete-task.behavior-oracle";
-
-    #[test]
-    fn measured_coverage_is_one_to_one_or_refused() {
-        let spec_checks = vec![
-            check(NATIVE, "native-test"),
-            check(ORACLE, "behavior-oracle"),
-        ];
-        // Exact 1:1 coverage on both sides supports the measurements.
-        let passed = vec![outcome(NATIVE, "passed"), outcome(ORACLE, "passed")];
-        let document = execution(
-            spec_checks.clone(),
-            passed.clone(),
-            passed.clone(),
-            Some(OracleVerdict {
-                status: "passed".to_owned(),
-                detail: "declared-obligations-held".to_owned(),
-            }),
+        let spec = specification(&["tasks.native-test"], "node", vec!["tools/verify.mjs"]);
+        let bytes = serde_json::to_vec(&spec).expect("spec serializes");
+        let spec_digest = {
+            let value = serde_json::to_value(&spec).expect("spec serializes");
+            wire::digest("adoption-verification", &value)
+        };
+        let tree = tree_state_digest(dir.path()).expect("tree digest");
+        let mut plan = plan_over("src/tasks.mjs", Some(spec_digest), Some(tree));
+        let mut paths = std::collections::BTreeSet::new();
+        paths.insert("src/tasks.mjs".to_owned());
+        plan.pins = super::super::analysis::compute_pins(&ctx, None, &paths).expect("pins");
+        let execution =
+            execute(&ctx, &OfflineHost, None, &plan, &bytes, None).expect("honest unavailable");
+        assert_eq!(execution.conclusion.as_deref(), Some("unavailable"));
+        assert!(
+            execution
+                .baseline
+                .iter()
+                .chain(execution.candidate.iter())
+                .flat_map(|side| side.checks.iter())
+                .all(|outcome| outcome.status == "unavailable"),
+            "no test is ever reported passed without a run"
         );
-        assert!(measured_1to1(&document.baseline, &document.checks, "baseline").is_ok());
-        assert!(oracle_holds(&document));
-        assert_eq!(derived_conclusion(&document), Some("preserved"));
-
-        // The empty-measurement forgery (X1/F11): empty arrays never
-        // pass an exact 1:1 coverage demand.
-        let mut empty = document.clone();
-        empty.baseline = side(Vec::new());
-        empty.candidate = side(Vec::new());
-        assert!(measured_1to1(&empty.baseline, &empty.checks, "baseline").is_err());
-
-        // A dropped check refuses on coverage; an invented id refuses on
-        // identity.
-        let mut missing = document.clone();
-        missing.baseline = side(vec![outcome(NATIVE, "passed")]);
-        assert!(measured_1to1(&missing.baseline, &missing.checks, "baseline").is_err());
-        let mut invented = document.clone();
-        invented.baseline = side(vec![
-            outcome(NATIVE, "passed"),
-            outcome("invented", "passed"),
-        ]);
-        assert!(measured_1to1(&invented.baseline, &invented.checks, "baseline").is_err());
     }
 
     #[test]
-    fn oracle_verdict_is_rederived_not_accepted() {
-        let spec_checks = vec![
-            check(NATIVE, "native-test"),
-            check(ORACLE, "behavior-oracle"),
-        ];
-        let native_passed_oracle_failed =
-            vec![outcome(NATIVE, "passed"), outcome(ORACLE, "failed")];
-        // A caller-supplied passed verdict beside a failed oracle
-        // measurement is never accepted (X1).
-        let document = execution(
-            spec_checks.clone(),
-            native_passed_oracle_failed.clone(),
-            native_passed_oracle_failed,
-            Some(OracleVerdict {
-                status: "passed".to_owned(),
-                detail: "invented".to_owned(),
-            }),
-        );
-        assert!(!oracle_holds(&document));
-        assert_eq!(derived_conclusion(&document), Some("failed"));
-
-        // With no oracle checks declared, the verdict must be the
-        // unavailable spelling, never an asserted pass.
-        let no_oracle = vec![check(NATIVE, "native-test")];
-        let passed = vec![outcome(NATIVE, "passed")];
-        let document = execution(
-            no_oracle,
-            passed.clone(),
-            passed,
-            Some(OracleVerdict {
-                status: "passed".to_owned(),
-                detail: "invented".to_owned(),
-            }),
-        );
-        assert!(!oracle_holds(&document));
-    }
-
-    #[test]
-    fn conclusion_follows_measurements() {
-        let spec_checks = vec![
-            check(NATIVE, "native-test"),
-            check(ORACLE, "behavior-oracle"),
-        ];
-        let unavailable = vec![outcome(NATIVE, "passed"), outcome(ORACLE, "unavailable")];
-        let document = execution(
-            spec_checks,
-            unavailable.clone(),
-            unavailable,
-            Some(OracleVerdict {
-                status: "unavailable".to_owned(),
-                detail: "no-oracle-declared".to_owned(),
-            }),
-        );
-        assert_eq!(derived_conclusion(&document), Some("unavailable"));
-        assert_eq!(document.conclusion.as_deref(), Some("unavailable"));
+    fn tree_state_digest_pins_every_consumed_file_and_refuses_oversized_trees() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("src.mjs"), b"one").expect("write");
+        std::fs::create_dir_all(dir.path().join("src")).expect("dir");
+        std::fs::create_dir_all(dir.path().join("tools")).expect("dir");
+        std::fs::create_dir(dir.path().join(".lekalo")).expect("dir");
+        std::fs::write(dir.path().join(".lekalo/runtime.json"), b"excluded").expect("write");
+        let first = tree_state_digest(dir.path()).expect("digest");
+        let again = tree_state_digest(dir.path()).expect("digest");
+        assert_eq!(first, again, "deterministic");
+        // Runtime state never moves the digest.
+        std::fs::write(dir.path().join(".lekalo/runtime.json"), b"changed").expect("write");
+        assert_eq!(tree_state_digest(dir.path()).expect("digest"), first);
+        // An unlisted import moved after the run does.
+        std::fs::write(dir.path().join("src/limits.mjs"), b"imported").expect("write");
+        assert_ne!(tree_state_digest(dir.path()).expect("digest"), first);
+        // A second new file is a new state too (typed absence pinned).
+        std::fs::write(dir.path().join("tools/oracle.mjs"), b"oracle").expect("write");
+        let second = tree_state_digest(dir.path()).expect("digest");
+        assert_ne!(second, first);
+        // The shared copy ceilings refuse oversized trees with the
+        // typed over-limit class, exactly like copy preparation.
+        std::fs::write(
+            dir.path().join("big.mjs"),
+            vec![0u8; version::COPY_TOTAL_BYTES + 1],
+        )
+        .expect("write");
+        let refused = tree_state_digest(dir.path()).expect_err("over-limit");
+        assert_eq!(refused.status(), crate::result::Status::Invalid);
     }
 
     #[test]
@@ -1362,5 +951,63 @@ mod tests {
         std::fs::write(dir.path().join("oracle.mjs"), b"drifted").expect("write");
         let drifted = consumed_manifest(dir.path(), &tool);
         assert_ne!(manifest.tree_digest(), drifted.tree_digest());
+    }
+
+    /// A minimal plan bound to one pinned source path.
+    fn plan_over(path: &str, verification: Option<String>, tree: Option<String>) -> RefactorPlan {
+        RefactorPlan {
+            schema_version: version::REFACTOR_PLAN_SCHEMA_VERSION.to_owned(),
+            identity: version::REFACTOR_PLAN_IDENTITY.to_owned(),
+            plan: "sha256:".to_owned() + &"a".repeat(64),
+            project: "taskboard".to_owned(),
+            analysis: "sha256:".to_owned() + &"b".repeat(64),
+            selection: wire::Scope {
+                kind: "symbol".to_owned(),
+                id: "taskboard.complete_task".to_owned(),
+            },
+            patch: None,
+            verification,
+            recommendations: Vec::new(),
+            unsupported: Vec::new(),
+            read_scope: vec![path.to_owned()],
+            mutation_scope: Vec::new(),
+            preservation: Vec::new(),
+            pins: super::wire::Pins {
+                model: "sha256:".to_owned() + &"c".repeat(64),
+                lock: None,
+                observed_index: None,
+                adapter: None,
+                sources: Vec::new(),
+            },
+            rollback: wire::RollbackHome {
+                journal: String::new(),
+                snapshots: String::new(),
+            },
+            tree,
+        }
+    }
+
+    fn specification(checks: &[&str], program: &str, args: Vec<&str>) -> VerificationDocument {
+        VerificationDocument {
+            schema_version: version::VERIFICATION_SCHEMA_VERSION.to_owned(),
+            identity: version::VERIFICATION_IDENTITY.to_owned(),
+            variant: "specification".to_owned(),
+            verification: "probe".to_owned(),
+            spec: None,
+            plan: None,
+            tool: Some(wire::ToolRef {
+                program: program.to_owned(),
+                args: args.into_iter().map(str::to_owned).collect(),
+                digest: None,
+            }),
+            baseline_source: None,
+            checks: checks.iter().map(|id| check(id, "native-test")).collect(),
+            confinement: vec!["disposable-copy".to_owned()],
+            baseline: None,
+            candidate: None,
+            oracle: None,
+            conclusion: None,
+            custody: None,
+        }
     }
 }

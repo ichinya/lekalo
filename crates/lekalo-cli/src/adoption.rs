@@ -6,9 +6,190 @@
 //! maps exits per the result contract.
 
 use clap::Subcommand;
+use lekalo_core::adoption::version::{CHECK_OUTPUT_BYTES, CHECK_TIMEOUT_MS};
+use lekalo_core::adoption::VerificationHost;
 use lekalo_core::result::DomainResult;
 
 use crate::selection_for;
+
+/// The admitted host execution capability (X2/R3): lekalo-core stays
+/// pure and offline — it defines the verification contract and never
+/// spawns — while this trusted binary supplies the process boundary:
+/// PATH resolution, the bounded drained pipes, the scrubbed child
+/// environment, the deadline with process-tree teardown, and the
+/// qualified allow-list's runtime half. Every policy decision (which
+/// program is qualified, which digest is pinned, which bounds hold)
+/// stays in the core; this layer only reports measurements.
+struct ProcessHost;
+
+impl VerificationHost for ProcessHost {
+    fn resolve_program(&self, program: &str) -> Option<std::path::PathBuf> {
+        let path = std::env::var_os("PATH")?;
+        let executable = if cfg!(windows) {
+            format!("{program}.exe")
+        } else {
+            program.to_owned()
+        };
+        std::env::split_paths(&path)
+            .map(|directory| directory.join(&executable))
+            .find(|candidate| candidate.is_file())
+    }
+
+    fn run(
+        &self,
+        program: &std::path::Path,
+        args: &[String],
+        cwd: &std::path::Path,
+    ) -> Result<(Option<i32>, String), String> {
+        execute_command(program, args, cwd)
+    }
+}
+
+/// The bounded child environment: an allow-listed subset of the host
+/// names a runtime genuinely needs, everything else cleared. Secrets
+/// and unrelated host state never reach a verification child.
+const CHILD_ENV_ALLOWED: [&str; 6] = [
+    "PATH",
+    "PATHEXT",
+    "SYSTEMROOT",
+    "SYSTEMDRIVE",
+    "COMSPEC",
+    "PROGRAMFILES",
+];
+
+/// One bounded run: `(exit code, bounded stdout)`. Both pipes drain on
+/// dedicated threads for the whole child lifetime — a tool emitting
+/// more than the pipe buffer can never deadlock the deadline — the
+/// child gets its own process group on unix, teardown kills the whole
+/// process tree, and the child environment is cleared down to the
+/// bounded runtime allow-list. A timeout, a spawn failure, or a signal
+/// exit is measured, never invented.
+fn execute_command(
+    program: &std::path::Path,
+    args: &[String],
+    cwd: &std::path::Path,
+) -> Result<(Option<i32>, String), String> {
+    use std::process::{Command, Stdio};
+    let mut command = Command::new(program);
+    command
+        .args(args)
+        .current_dir(cwd)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    // Cleared environment plus the bounded runtime allow-list; nothing
+    // else of the host — secrets, proxies, unrelated state — leaks in.
+    command.env_clear();
+    for name in CHILD_ENV_ALLOWED {
+        if let Some(value) = std::env::var_os(name) {
+            command.env(name, value);
+        }
+    }
+    // The child gets its own process group on unix so the teardown
+    // reaps descendants.
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("spawn-refused:{}", error.kind()))?;
+    let stdout_handle = child.stdout.take();
+    let stderr_handle = child.stderr.take();
+    // Dedicated drain threads: both streams are consumed for the whole
+    // child lifetime (bounded capture, unbounded discard), so a chatty
+    // tool can never fill the OS pipe buffer and wedge the deadline.
+    let stdout_thread = std::thread::spawn(move || drain_bounded(stdout_handle));
+    let stderr_thread = std::thread::spawn(move || drain_bounded(stderr_handle));
+    let started = std::time::Instant::now();
+    let mut timed_out = false;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Some(status),
+            Ok(None) => {
+                if started.elapsed() > std::time::Duration::from_millis(CHECK_TIMEOUT_MS) {
+                    timed_out = true;
+                    break None;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(25));
+            }
+            Err(_) => {
+                kill_tree(child.id());
+                let _ = child.wait();
+                return Err("spawn-failed".to_owned());
+            }
+        }
+    };
+    if timed_out {
+        // Process-tree teardown: descendants never survive the deadline.
+        kill_tree(child.id());
+        let _ = child.wait();
+    }
+    let (stdout, _) = stdout_thread.join().unwrap_or_default();
+    let _ = stderr_thread.join();
+    if timed_out {
+        return Err("timeout".to_owned());
+    }
+    Ok((status.and_then(|status| status.code()), stdout))
+}
+
+/// Drain one pipe on a worker thread: capture up to the bounded output
+/// ceiling, then keep draining (and discarding) so the child never
+/// blocks on a full pipe while the run continues.
+fn drain_bounded(pipe: Option<impl std::io::Read + Send + 'static>) -> (String, bool) {
+    let mut pipe = match pipe {
+        Some(pipe) => pipe,
+        None => return (String::new(), false),
+    };
+    let mut bytes = Vec::new();
+    let mut flooded = false;
+    let mut chunk = [0u8; 8192];
+    loop {
+        match pipe.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(n) => {
+                let remaining = CHECK_OUTPUT_BYTES.saturating_sub(bytes.len());
+                if remaining == 0 {
+                    flooded = true;
+                    continue;
+                }
+                let take = n.min(remaining);
+                bytes.extend_from_slice(&chunk[..take]);
+                if take < n {
+                    flooded = true;
+                }
+            }
+            Err(_) => break,
+        }
+    }
+    (String::from_utf8_lossy(&bytes).to_string(), flooded)
+}
+
+/// Process-tree teardown: the unix child sits in its own process group;
+/// Windows walks the tree with the platform tool.
+fn kill_tree(pid: u32) {
+    #[cfg(unix)]
+    {
+        if let Some(pid) = rustix::process::Pid::from_raw(pid as i32) {
+            if pid != rustix::process::Pid::INIT {
+                let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::KILL);
+            }
+        }
+    }
+    #[cfg(windows)]
+    {
+        let _ = std::process::Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = pid;
+    }
+}
 
 /// The `adoption` subcommands.
 #[derive(Debug, Subcommand)]
@@ -120,7 +301,9 @@ pub enum AdoptionCommands {
         /// The saved refactor plan.
         #[arg(long, value_name = "FILE")]
         plan: String,
-        /// The saved execution evidence concluding `preserved`.
+        /// The pinned verification specification. Apply executes it
+        /// itself through the admitted host capability — an execution
+        /// document is a derived record and never install authority.
         #[arg(long, value_name = "FILE")]
         verification: String,
         /// The reviewed candidate patch bytes (required when the plan
@@ -564,6 +747,15 @@ fn run_verify(
         Ok(context) => context,
         Err(result) => return result,
     };
+    // The observed index rides along for the full pre-execution pin
+    // barrier: model/lock/index/adapter members are compared against
+    // the plan exactly like apply does (R2).
+    let index = match lekalo_core::observed::context(&selection) {
+        Ok(observed) => lekalo_core::observed::index::load_index(&observed)
+            .ok()
+            .flatten(),
+        Err(_) => None,
+    };
     let plan_bytes = match read_input("plan", plan_path) {
         Ok(bytes) => bytes,
         Err(result) => return result,
@@ -597,7 +789,15 @@ fn run_verify(
         Ok(bytes) => bytes,
         Err(result) => return result,
     };
-    match lekalo_core::adoption::verify(&context, &plan, &verification_bytes, patch.as_ref()) {
+    let host = ProcessHost;
+    match lekalo_core::adoption::verify(
+        &context,
+        &host,
+        index.as_ref(),
+        &plan,
+        &verification_bytes,
+        patch.as_ref(),
+    ) {
         Ok(execution) => emit(
             serde_json::to_string_pretty(&execution).expect("verification serializes"),
             format!(
@@ -626,7 +826,7 @@ fn run_verify(
 
 fn run_apply(
     plan_path: &str,
-    execution_path: &str,
+    verification: &str,
     candidate: Option<&str>,
     confirm: &str,
     project: &Option<String>,
@@ -648,7 +848,11 @@ fn run_apply(
         Ok(bytes) => bytes,
         Err(result) => return result,
     };
-    let execution_bytes = match read_input("verification", execution_path) {
+    // The pinned verification specification — not an execution record:
+    // apply executes the specification itself through the admitted
+    // host capability, so caller-authored evidence can never authorize
+    // a write (F11/X1/R1).
+    let spec_bytes = match read_input("verification", verification) {
         Ok(bytes) => bytes,
         Err(result) => return result,
     };
@@ -672,12 +876,14 @@ fn run_apply(
         (None, _) => None,
     };
     let empty: Vec<u8> = Vec::new();
+    let host = ProcessHost;
     match lekalo_core::adoption::apply_refactor(
         &context,
+        &host,
         index.as_ref(),
         &plan_bytes,
         patch_bytes.as_deref().unwrap_or(&empty),
-        &execution_bytes,
+        &spec_bytes,
         confirm,
     ) {
         Ok(receipt) => emit(

@@ -1330,6 +1330,11 @@ enum TraceCommands {
         /// The saved adoption coverage attachment.
         #[arg(long, value_name = "FILE")]
         adoption: Option<String>,
+        /// Project root selector, relative to the invocation directory,
+        /// honored exactly like the sibling `--adoption` consumers
+        /// (F5).
+        #[arg(long, value_name = "DIR", requires = "adoption")]
+        project: Option<String>,
     },
     /// Rebuild the scenario → test → gate manifest from the adjudicated
     /// run-record ingest home and persist the canonical document under
@@ -6267,13 +6272,15 @@ fn run_trace(command: TraceCommands) -> DomainResult {
             path,
             selector,
             adoption: Some(adoption),
-        } => return trace_query_adoption(&path, &selector, &adoption),
+            project,
+        } => return trace_query_adoption(&path, &selector, &adoption, &project),
         TraceCommands::Validate { path } => (path, TraceStep::Validate),
         TraceCommands::Export { path } => (path, TraceStep::Export),
         TraceCommands::Query {
             path,
             selector,
             adoption: None,
+            project: _,
         } => (path, TraceStep::Query(selector)),
     };
     let bytes = match std::fs::read(&path) {
@@ -6396,8 +6403,15 @@ fn trace_export(manifest: &lekalo_core::trace::TraceManifest) -> DomainResult {
 /// the explicit gap list.
 /// The typed issue #136 trace projection: the exact manifest and query
 /// result plus the coverage join. An upstream failure surfaces
-/// untouched.
-fn trace_query_adoption(path: &str, selector: &str, adoption: &str) -> DomainResult {
+/// untouched. The adoption context resolves from the same
+/// `--project`/cwd selection the sibling `status`/`impact` consumers
+/// honor (F5), never cwd alone.
+fn trace_query_adoption(
+    path: &str,
+    selector: &str,
+    adoption: &str,
+    project: &Option<String>,
+) -> DomainResult {
     let bytes = match std::fs::read(path) {
         Ok(bytes) => bytes,
         Err(error) => {
@@ -6416,7 +6430,7 @@ fn trace_query_adoption(path: &str, selector: &str, adoption: &str) -> DomainRes
     if base.status() != lekalo_core::Status::Valid {
         return base;
     }
-    let selection = selection_for(&None);
+    let selection = selection_for(project);
     let context = match lekalo_core::adoption::context(&selection) {
         Ok(context) => context,
         Err(result) => return result,

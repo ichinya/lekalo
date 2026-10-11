@@ -349,11 +349,19 @@ pub fn coverage(
         .as_ref()
         .map(|project| project.id.clone())
         .unwrap_or_default();
-    // Conformance freshness (X11): the join binds to the exact consumed
-    // input revisions it was derived from, so a later consumer can tell
-    // a fresh panel from a stale one instead of presenting drift as
-    // current.
-    let pins = compute_pins(ctx, index, &scope_paths_of_rows(index, &rows))?;
+    // Conformance freshness (X11) and the conformed closure (R8): the
+    // join binds to the exact consumed input revisions it was derived
+    // from — the observed evidence paths, every conformed source the
+    // registry records, and the registry bytes themselves — so a later
+    // consumer tells a fresh panel from a stale one by content, never
+    // by identity reuse: a changed new-contracted source, a
+    // re-declared registry revision, or a drifted observed path all
+    // qualify the attachment.
+    let mut pin_paths = scope_paths_of_rows(index, &rows);
+    for path in conformed_paths(ctx) {
+        pin_paths.insert(path);
+    }
+    let pins = compute_pins(ctx, index, &pin_paths)?;
     let revision = index
         .map(|index| index.revision.clone())
         .unwrap_or_else(|| "none".to_owned());
@@ -368,6 +376,29 @@ pub fn coverage(
         counts,
         gaps,
     })
+}
+
+/// The conformed closure of one coverage join (R8): every source path
+/// the persisted conformed registry records plus the exact registry
+/// bytes themselves. Freshness binds to content — a changed
+/// new-contracted implementation that was never scanned by the
+/// observed index still moves the digest, and a re-declared registry
+/// (any revision or fingerprint change) moves it too.
+fn conformed_paths(ctx: &AdoptionContext) -> BTreeSet<String> {
+    let mut paths = BTreeSet::new();
+    if let Some(registry) = super::refactor::conformed_registry(ctx) {
+        for symbol in &registry.symbols {
+            if version::is_rel_path(&symbol.source.path) {
+                paths.insert(symbol.source.path.clone());
+            }
+        }
+        paths.insert(format!(
+            "{}/{}",
+            crate::contracted::REGISTRY_DIR,
+            crate::contracted::REGISTRY_NAME
+        ));
+    }
+    paths
 }
 
 /// The consumed source set of one coverage join: every evidence path
@@ -430,10 +461,13 @@ pub fn load_coverage(bytes: &[u8], project: &str) -> Outcome<(CoverageDocument, 
 }
 
 /// The freshness verdict of one saved coverage attachment against the
-/// live tree (X11): `fresh` only when the attachment's pinned
-/// revisions and every pinned source digest still match the consumed
-/// inputs; `stale` names the drifted members; `unknown` when the
-/// attachment carries no pins (a hand-authored document).
+/// live tree (X11/R8): `fresh` only when the attachment's pinned
+/// revisions, every pinned source digest, the conformed source
+/// closure, and the registry bytes still match the consumed inputs;
+/// `stale` names the drifted members; `unknown` when the attachment
+/// carries no pins (a hand-authored document). Freshness binds to
+/// content: a changed new-contracted source — never seen by the
+/// observed index — no longer presents the row as fresh.
 pub fn coverage_freshness(
     ctx: &AdoptionContext,
     index: Option<&ObservedIndex>,
@@ -442,7 +476,10 @@ pub fn coverage_freshness(
     let Some(pins) = &coverage.pins else {
         return Ok(("unknown".to_owned(), Vec::new()));
     };
-    let scope_paths = scope_paths_of_rows(index, &coverage.rows);
+    let mut scope_paths = scope_paths_of_rows(index, &coverage.rows);
+    for path in conformed_paths(ctx) {
+        scope_paths.insert(path);
+    }
     let current: Pins = compute_pins(ctx, index, &scope_paths)?;
     let changed = super::transaction::changed_pins(pins, &current);
     if changed.is_empty() {

@@ -198,17 +198,34 @@ pub fn plan(
         .collect();
 
     // The exact pins: the full consumed set apply re-fingerprints —
-    // the evidence read scope plus every patch path (F4). A patch
-    // mutating a scanned file outside the use-case evidence set plans
-    // and applies cleanly; absent files contribute no pin on either
-    // side, so plan-time and apply-time sets agree structurally.
+    // the evidence read scope, every patch path (F4), and every
+    // rel-path argv entry of the pinned verification specification
+    // (runner, tests, oracle — F3/R2: the specification's argv is the
+    // closed declaration of what a run consumes, and a drifted tool
+    // never serves a plan approved over other bytes). A patch mutating
+    // a scanned file outside the use-case evidence set plans and
+    // applies cleanly; absent files contribute no pin on either side,
+    // so plan-time and apply-time sets agree structurally.
     let mut pin_paths = scope_source_paths(index, &records);
+    if let Some(tool) = &spec.tool {
+        for arg in &tool.args {
+            if version::is_rel_path(arg) {
+                pin_paths.insert(arg.clone());
+            }
+        }
+    }
     if let Some(document) = &patch {
         for file in &document.files {
             pin_paths.insert(file.path.clone());
         }
     }
     let pins = compute_pins(ctx, index, &pin_paths)?;
+    // The whole-tree state digest (F3/R2): pin the complete consumed
+    // closure — every project file except VCS, build, and runtime
+    // homes — so a drift the argv pins cannot see (an import reached
+    // only through the runner's own loader) still refuses at verify
+    // and at apply.
+    let tree = super::verification::tree_state_digest(&ctx.root)?;
     let project = analysis.project.clone();
     let partial = RefactorPlan {
         schema_version: version::REFACTOR_PLAN_SCHEMA_VERSION.to_owned(),
@@ -229,6 +246,7 @@ pub fn plan(
             journal: String::new(),
             snapshots: String::new(),
         },
+        tree: Some(tree),
     };
     let value = serde_json::to_value(&partial).expect("plan serializes");
     let digest = wire::digest(
@@ -362,19 +380,6 @@ pub(crate) fn validate_patch(
         }
     }
     Ok(document)
-}
-
-/// Re-fingerprint the tree digest the verification specification pins:
-/// the sorted `path US sha256` lines of every source file in the pins.
-pub(crate) fn tree_digest(pins: &super::wire::Pins) -> String {
-    let mut payload = String::new();
-    for source in &pins.sources {
-        payload.push_str(&source.path);
-        payload.push('\u{1f}');
-        payload.push_str(&source.sha256);
-        payload.push('\n');
-    }
-    format!("sha256:{}", crate::digest::sha256_hex(payload.as_bytes()))
 }
 
 /// The scope selector re-export for the CLI.

@@ -45,7 +45,7 @@ pub fn diagnostic_input_invalid(field: &str, reason: &str) -> crate::diagnostics
     diagnostic::input_invalid_set(field, reason)
 }
 pub use refactor::{plan as refactor_plan, RefactorRequest};
-pub use verification::execute as verify;
+pub use verification::{execute as verify, VerificationHost};
 pub use version::{RECEIPTS_DIR, RECOVERY_DIR, USE_CASES_DIR, VERSION};
 pub use wire::{
     AdoptionReceipt, AnalysisDocument, ConfirmationPlan, CoverageDocument, PatchDocument,
