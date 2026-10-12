@@ -150,12 +150,21 @@ pub struct NativeExecutionReceipt {
     pub identity: String,
     /// The `sha256:<64 hex>` digest of the lane bytes.
     pub digest: String,
-    /// The exact `(scenario, status)` assertion rows the lane
-    /// produced.
+    /// The exact `(scenario, status)` assertion rows the engine
+    /// derived from the executed battery, never the lane's
+    /// self-reported labels.
     pub assertions: Vec<(String, String)>,
     /// The exact `(capability, support, approval, blocking)` tuples
     /// the lane declared.
     pub capabilities: Vec<(String, String, Option<String>, bool)>,
+    /// The engine-side execution-battery failure: `None` when the
+    /// lane satisfied the engine-supplied battery (fresh nonce
+    /// probe, corpus identity, arrange verification, invocation
+    /// binding, assertion evaluation); otherwise the stable failure
+    /// detail that refuses the target whatever the report claims —
+    /// executed output that cannot be bound to the battery is
+    /// self-asserted output, not trusted execution.
+    pub battery_failure: Option<&'static str>,
 }
 
 // ---------------------------------------------------------------------------
@@ -276,9 +285,13 @@ fn id_text(raw: &str) -> Result<(), DiagnosticSet> {
 }
 
 /// 1..=2000 scalar units, the exact published control exclusion
-/// (C0 plus DEL only — the schemas deliberately allow C1).
+/// (C0 plus DEL only — the schemas deliberately allow C1). The
+/// bound counts Unicode scalars exactly like the published
+/// `maxLength` (Ajv counts code points, not UTF-8 bytes), so a
+/// valid non-ASCII note is never refused for its encoding width;
+/// the byte-level document bound stays independent.
 fn note_text(raw: &str) -> Result<(), DiagnosticSet> {
-    let ok = !raw.is_empty() && raw.len() <= 2000 && !super::types::schema_control(raw);
+    let ok = !raw.is_empty() && raw.chars().count() <= 2000 && !super::types::schema_control(raw);
     if ok {
         Ok(())
     } else {
@@ -1013,6 +1026,26 @@ pub fn admit(
     // must equal the oracle's graph subjects — a drifted oracle is
     // itself a blocker. Every reported triple is verified; every
     // expected consumer must be reported.
+    //
+    // The required FILE-witness inventory is closed by the published
+    // contract itself, never by the oracle: the public DTO schema
+    // projection and the composition allowlist are obligations of
+    // every report, so pruning those rows from the oracle (and the
+    // evidence with it) cannot prune the obligation — the oracle is
+    // checked against this floor exactly like the report is checked
+    // against the oracle.
+    const REQUIRED_FILE_WITNESSES: &[(&str, &str, &str)] = &[
+        (
+            "taskhub.dto/public-entry",
+            "projects",
+            "public/changelog-entry.schema.json",
+        ),
+        (
+            "taskhub.composition/public-allowlist",
+            "allowlists",
+            "attachments/pilot.json",
+        ),
+    ];
     let mut consumer_blockers: Vec<String> = Vec::new();
     match expected_consumers {
         None => {
@@ -1033,6 +1066,17 @@ pub fn admit(
                     .is_some()
                 {
                     consumer_blockers.push("consumers:oracle:unique".to_owned());
+                }
+            }
+            // The contract's required file witnesses must be present
+            // in the oracle with exactly the declared relation and
+            // witness: an oracle that dropped them is an oracle that
+            // erased a required consumer obligation.
+            for (consumer, relation, witness) in REQUIRED_FILE_WITNESSES {
+                match expected_map.get(consumer) {
+                    Some((row_relation, row_witness, _))
+                        if *row_relation == *relation && *row_witness == *witness => {}
+                    _ => consumer_blockers.push("consumers:oracle:file-witness".to_owned()),
                 }
             }
             // The oracle's graph subjects must be exactly the
@@ -1183,6 +1227,18 @@ pub fn admit(
         }
     }
 
+    // Completeness gaps are retained under every profile: an
+    // incomplete closure degrades permissive admission instead of
+    // passing it. The closure obligation is report-level, so it is
+    // attributed to every reported target BEFORE the per-target
+    // verdicts are finalized — no target row can stay `pass` under a
+    // closure the report itself declares incomplete.
+    if !report.closure_complete {
+        let blocker = "consumers:closure:incomplete".to_owned();
+        all_targets(&mut attributed, blocker.clone());
+        blockers.push(blocker);
+    }
+
     let mut receipt_targets = Vec::with_capacity(report.targets.len());
     for target in &report.targets {
         let mut target_blockers: Vec<String> = Vec::new();
@@ -1292,6 +1348,13 @@ pub fn admit(
             Some(receipt) => {
                 if target.execution != "executed" {
                     target_blockers.push(format!("{}:execution:unverified", target.target));
+                } else if let Some(failure) = receipt.battery_failure {
+                    // The engine executed the lane but could not bind
+                    // the run to the engine-supplied battery: the
+                    // printed rows are self-asserted output, whatever
+                    // they claim. The derived assertion rows are not
+                    // comparable in this state and are not joined.
+                    target_blockers.push(format!("{}:execution:{failure}", target.target));
                 } else {
                     let mut claimed: Vec<(String, String)> = target
                         .assertions
@@ -1403,30 +1466,39 @@ pub fn admit(
     }
     receipt_targets.sort_by(|left, right| left.target.cmp(&right.target));
 
-    // Completeness gaps are retained under every profile: an
-    // incomplete closure degrades permissive admission instead of
-    // passing it.
-    if !report.closure_complete {
-        let blocker = "consumers:closure:incomplete".to_owned();
-        all_targets(&mut attributed, blocker.clone());
-        blockers.push(blocker);
-    }
-
     // The report's own verdict claims cannot contradict the derived
     // rows: a claimed pass with open blockers (or a claimed refusal
-    // with none) is itself a blocker.
+    // with none) is itself a blocker. The claims are evaluated
+    // against the complete blocker set — row blockers plus the
+    // closure obligation above — and, like every report-level
+    // obligation, they apply to every reported target: a final pass
+    // merges them into the already-built target rows so a late
+    // report-level blocker can never leave a selected target
+    // passing while the aggregate verdict refuses.
     let derived_success = blockers.is_empty();
+    let mut late_report_blockers: Vec<String> = Vec::new();
     let strict_claim_pass = report.strict_claim == "pass";
     let permissive_claim_pass = report.permissive_claim == "pass";
     if strict_claim_pass != derived_success {
-        let blocker = "verdict:strict-claim".to_owned();
-        all_targets(&mut attributed, blocker.clone());
-        blockers.push(blocker);
+        late_report_blockers.push("verdict:strict-claim".to_owned());
     }
     if permissive_claim_pass != derived_success {
-        let blocker = "verdict:permissive-claim".to_owned();
+        late_report_blockers.push("verdict:permissive-claim".to_owned());
+    }
+    for blocker in &late_report_blockers {
         all_targets(&mut attributed, blocker.clone());
-        blockers.push(blocker);
+        blockers.push(blocker.clone());
+    }
+    if !late_report_blockers.is_empty() {
+        for row in &mut receipt_targets {
+            if row.verdict == "pass" {
+                row.verdict = if profile == AdmissionProfile::Strict {
+                    "unsupported"
+                } else {
+                    "degraded"
+                };
+            }
+        }
     }
 
     let has_blockers = !blockers.is_empty();
@@ -1526,6 +1598,12 @@ mod tests {
         .is_err());
         assert!(note_text("plain sentence").is_ok());
         assert!(note_text("control\u{0007}bell").is_err());
+        // The published maxLength counts Unicode scalars (Ajv counts
+        // code points, not UTF-8 bytes): a 2000-scalar non-ASCII note
+        // is inside the bound even at 4000 bytes, and 2001 scalars is
+        // outside it.
+        assert!(note_text(&"é".repeat(2000)).is_ok());
+        assert!(note_text(&"é".repeat(2001)).is_err());
     }
 
     #[test]

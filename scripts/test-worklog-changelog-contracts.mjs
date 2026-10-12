@@ -582,6 +582,189 @@ if (engine) {
   }
 }
 
+// 10. Admission-boundary regression probes (r5 fixes): the
+// production `pilot admit` joins beyond the wire layer — path-form
+// independence, root-level custody, the oracle's unique-key and
+// file-witness floor, and Unicode scalar bounds — each asserted
+// against a staged fixture copy so the committed bytes never move.
+{
+  const runCliCapture = (args) => {
+    try {
+      const stdout = execFileSync(binary, args, {
+        cwd: root,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      return { exit: 0, stdout };
+    } catch (error) {
+      return {
+        exit: typeof error.status === "number" ? error.status : -1,
+        stdout: String(error.stdout ?? ""),
+      };
+    }
+  };
+  const stage = mkdtempSync(join(tmpdir(), "lekalo-admit-probe-"));
+  const stagedRoot = join(stage, "fixture");
+  cpSync(resolve(root, "tests/fixtures/pilot/worklog-changelog"), stagedRoot, {
+    recursive: true,
+  });
+  const stagedComposition = join(stagedRoot, "attachments", "pilot.json");
+  const admitStaged = (evidencePath) =>
+    runCliCapture([
+      "--json",
+      "--no-cache",
+      "pilot",
+      "admit",
+      evidencePath,
+      stagedComposition,
+      "--profile",
+      "strict",
+      "--project",
+      project,
+    ]);
+  const phpVerdictOf = (stdout) => {
+    const envelope = JSON.parse(String(stdout).trim());
+    const pilot = envelope.pilot ?? envelope.payload?.pilot;
+    return pilot?.targets?.find((row) => row.target === "php")?.verdict ?? "unknown";
+  };
+
+  // a. Path-form independence (r5-4): a RELATIVE composition argument
+  //    must admit identically — the lane spawn receives absolute
+  //    paths, so the php target passes instead of an unverified
+  //    execution claim from an unlaunchable relative lane path.
+  {
+    const evidencePath = join(stagedRoot, "evidence", "evidence.json");
+    const relativeComposition = "tests/fixtures/pilot/worklog-changelog/attachments/pilot.json";
+    const run = runCliCapture([
+      "--json",
+      "--no-cache",
+      "pilot",
+      "admit",
+      evidencePath,
+      relativeComposition,
+      "--profile",
+      "strict",
+      "--project",
+      project,
+    ]);
+    if (run.exit !== 4) {
+      fail(
+        "admission-path-form",
+        `relative composition admitted with exit ${run.exit}, expected the honest strict refusal 4`,
+      );
+    }
+    const php = phpVerdictOf(run.stdout);
+    if (php !== "pass") {
+      fail("admission-path-form", `relative composition left php ${php}, not pass`);
+    }
+  }
+
+  // b. Root-level custody (r5-7): a directory junction AT the fixture
+  //    root mounts the whole tree from anywhere while every below-root
+  //    component stays physical — validation through the junction must
+  //    refuse. POSIX has no junctions; the leg skips loudly there.
+  if (process.platform === "win32") {
+    const junction = join(stage, "fixture-junction");
+    execFileSync("cmd", ["/c", "mklink", "/J", junction, stagedRoot], {
+      cwd: stage,
+      stdio: "ignore",
+    });
+    const run = runCliCapture([
+      "--json",
+      "--no-cache",
+      "pilot",
+      "validate",
+      join(junction, "attachments", "pilot.json"),
+      "--project",
+      project,
+    ]);
+    if (run.exit === 0) {
+      fail("admission-root-custody", "a junction at the fixture root validated");
+    }
+  } else {
+    process.stderr.write(
+      `${JSON.stringify({ warning: "root-junction-leg-skipped", detail: "posix host has no junctions" })}\n`,
+    );
+  }
+
+  // c. The oracle's unique-key and file-witness floor (r5-6): duplicate
+  //    oracle keys refuse (the unique-key decoder), and pruning the
+  //    required file-witness rows from BOTH the oracle and the
+  //    evidence cannot erase the contract's consumer obligation.
+  {
+    const oraclePath = join(stagedRoot, "evidence", "consumer-oracle.json");
+    const originalOracle = readFileSync(oraclePath, "utf8");
+    writeFileSync(
+      oraclePath,
+      originalOracle.replace(
+        /"identity":/,
+        '"identity":"dev.lekalo.invented@9.9.9","identity":',
+      ),
+    );
+    const dupRun = admitStaged(join(stagedRoot, "evidence", "evidence.json"));
+    if (dupRun.exit === 0 || phpVerdictOf(dupRun.stdout) === "pass") {
+      fail("admission-oracle-unique", "duplicate oracle identity keys admitted");
+    }
+    writeFileSync(oraclePath, originalOracle);
+    // Prune the file-witness rows from both sides.
+    const oracle = JSON.parse(originalOracle);
+    oracle.expectedConsumers = oracle.expectedConsumers.filter(
+      (row) => !row.consumer.startsWith("taskhub."),
+    );
+    writeFileSync(oraclePath, JSON.stringify(oracle));
+    const prunedEvidence = join(stage, "evidence-pruned.json");
+    const prunedDoc = structuredClone(evidenceDoc);
+    prunedDoc.consumers = prunedDoc.consumers.filter(
+      (row) => !row.consumer.startsWith("taskhub."),
+    );
+    writeFileSync(prunedEvidence, JSON.stringify(prunedDoc));
+    const prunedRun = admitStaged(prunedEvidence);
+    const prunedEnvelope = JSON.parse(prunedRun.stdout.trim());
+    const prunedPilot = prunedEnvelope.pilot ?? prunedEnvelope.payload?.pilot;
+    const fileWitness = (prunedPilot?.blockers ?? []).includes(
+      "consumers:oracle:file-witness",
+    );
+    if (prunedRun.exit === 0 || !fileWitness) {
+      fail("admission-oracle-floor", {
+        detail: "pruned file-witness rows erased the consumer obligation",
+        exit: prunedRun.exit,
+        blockers: prunedPilot?.blockers ?? [],
+      });
+    }
+  }
+
+  // d. Unicode scalar bounds (r5-7/9): a 2000-scalar non-ASCII note is
+  //    schema-valid AND admitted by the production decoder; 2001
+  //    scalars is refused by both.
+  {
+    const bounded = structuredClone(evidenceDoc);
+    bounded.targets[0].capabilities[0].note = "\u00e9".repeat(2000);
+    if (!validateEvidence(bounded)) {
+      fail("differential-unicode-bound", "schema refused a 2000-scalar note");
+    }
+    const boundedPath = join(stage, "evidence-unicode.json");
+    writeFileSync(boundedPath, JSON.stringify(bounded));
+    const boundedRun = admitStaged(boundedPath);
+    if (boundedRun.exit !== 4 || String(boundedRun.stdout).includes("note-text")) {
+      fail("differential-unicode-bound", {
+        detail: "production refused the schema-valid 2000-scalar note",
+        exit: boundedRun.exit,
+      });
+    }
+    const over = structuredClone(evidenceDoc);
+    over.targets[0].capabilities[0].note = "\u00e9".repeat(2001);
+    if (validateEvidence(over)) {
+      fail("differential-unicode-bound", "schema accepted a 2001-scalar note");
+    }
+    const overPath = join(stage, "evidence-unicode-over.json");
+    writeFileSync(overPath, JSON.stringify(over));
+    const overRun = admitStaged(overPath);
+    if (overRun.exit === 0) {
+      fail("differential-unicode-bound", "production admitted a 2001-scalar note");
+    }
+  }
+}
+
 process.stdout.write(
   `${JSON.stringify({
     ok: true,

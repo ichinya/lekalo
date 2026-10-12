@@ -314,6 +314,65 @@ if (target === "php") {
     );
     process.exit(1);
   }
+  // The lane's arrange echo (r5): the committed `given` preconditions
+  // of every scenario document must equal the lane's echoed arrange
+  // contract row for row and carry its verified flag — a mutated
+  // `given` the lane does not arrange refuses the gate, closing the
+  // arrange gap at the gate itself (admission re-verifies through the
+  // execution battery).
+  const canonical = (value) => {
+    if (Array.isArray(value)) return value.map(canonical);
+    if (value !== null && typeof value === "object") {
+      const sorted = {};
+      for (const key of Object.keys(value).sort()) sorted[key] = canonical(value[key]);
+      return sorted;
+    }
+    return value === undefined ? null : value;
+  };
+  const sameJson = (left, right) =>
+    JSON.stringify(canonical(left)) === JSON.stringify(canonical(right));
+  for (const name of scenarioFiles) {
+    const doc = read(`${scenarioDir}/${name}`);
+    if (scenario !== "all" && doc.scenarioId !== scenario) continue;
+    const echoed = lane.arrangements?.[doc.scenarioId];
+    if (!echoed || echoed.verified !== true || !sameJson(echoed.given, doc.given)) {
+      process.stderr.write(
+        JSON.stringify(
+          { ok: false, reason: "scenario-arrange-mismatch", scenario: doc.scenarioId },
+          null,
+          2,
+        ) + "\n",
+      );
+      process.exit(1);
+    }
+  }
+  // The scenario documents pin the exact Model and IR bytes: the
+  // pilot gate verifies those pins itself (not only the contracts
+  // gate), so a corpus pointing at other bytes never reaches the
+  // lane verdict here either.
+  {
+    const modelEnvelope = runJson(["--json", "--no-cache", "load", "--project", project]);
+    const irEnvelope = runJson(["--json", "--no-cache", "load", "--ir", "--project", project]);
+    const { createHash: pinHash } = await import("node:crypto");
+    const pinSha = (bytes) =>
+      "sha256:" + pinHash("sha256").update(bytes).digest("hex");
+    const modelDigest = pinSha(Buffer.from(JSON.stringify(modelEnvelope)));
+    const irDigest = pinSha(Buffer.from(JSON.stringify(irEnvelope.ir)));
+    for (const name of scenarioFiles) {
+      const doc = read(`${scenarioDir}/${name}`);
+      if (scenario !== "all" && doc.scenarioId !== scenario) continue;
+      if (doc.modelRef?.digest !== modelDigest || doc.irRef?.digest !== irDigest) {
+        process.stderr.write(
+          JSON.stringify(
+            { ok: false, reason: "scenario-pin-drift", scenario: doc.scenarioId },
+            null,
+            2,
+          ) + "\n",
+        );
+        process.exit(1);
+      }
+    }
+  }
   // The lane's own assertions are not trusted by name alone: the
   // committed Scenario IR is bound to the lane's structured runtime
   // facts in two directions.

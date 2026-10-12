@@ -159,46 +159,78 @@ final class worklog_store
 
 // ---------------------------------------------------------------------------
 // The durable journal: the write-through log backing the claimed
-// durable stores. Every idempotency record and outbox
-// row/outcome appends to the journal file as it commits; recovery
-// (`restore`) rebuilds fresh store instances from the journal bytes —
-// the in-memory objects dying is exactly the modeled process death.
+// durable stores. Every committed operation appends exactly one
+// complete record before any memory is updated; recovery
+// (`restore`) rebuilds fresh store instances from the journal bytes
+// — the in-memory objects dying is exactly the modeled process
+// death. The journal is fail-closed at every interruption class it
+// exists to survive: an append that cannot land in full refuses the
+// operation (store_unavailable), a torn final line is the dropped
+// interrupted-append window, a complete but undecodable line is
+// corruption that refuses the restore, and conflicting records for
+// one durable key refuse the arbitration — no committed operation
+// is ever lost silently and no remote effect is duplicated blindly.
 // ---------------------------------------------------------------------------
 
 final class durable_journal
 {
-    private string $path;
-
-    public function __construct()
+    public function __construct(private string $path = "")
     {
-        $this->path = (string) tempnam(sys_get_temp_dir(), "lekalo-lane-journal-");
+        if ($this->path === "") {
+            $this->path = (string) tempnam(sys_get_temp_dir(), "lekalo-lane-journal-");
+        }
     }
 
+    /** Append one complete journal record: the write must land in
+     * full or the store is unavailable — a silent short write would
+     * be a lost commit reported as success. */
     public function append(string $kind, array $row): void
     {
-        @file_put_contents(
-            $this->path,
-            json_encode(["kind" => $kind, "row" => $row], JSON_UNESCAPED_SLASHES) . "\n",
-            FILE_APPEND,
-        );
+        $line = json_encode(["kind" => $kind, "row" => $row], JSON_UNESCAPED_SLASHES) . "\n";
+        $written = @file_put_contents($this->path, $line, FILE_APPEND);
+        if ($written !== strlen($line)) {
+            throw new store_unavailable("journal-write-failed");
+        }
     }
 
-    /** The journaled lines in commit order. */
+    /** The raw journal bytes (probe and restore support). */
+    public function raw(): string
+    {
+        return (string) @file_get_contents($this->path);
+    }
+
+    /** The journal file path (probe support: fault injection and
+     * interruption windows append through the same file). */
+    public function path(): string
+    {
+        return $this->path;
+    }
+
+    /** The journaled records in commit order. A torn final line (no
+     * trailing newline) is the interrupted append window and is
+     * dropped; any COMPLETE line that fails to decode is corruption
+     * and refuses the read — a durable store never silently forgets
+     * a committed record it cannot explain. */
     public function lines(): array
     {
-        $raw = @file_get_contents($this->path);
-        if ($raw === false || $raw === "") {
+        $raw = $this->raw();
+        if ($raw === "") {
             return [];
         }
+        $records = explode("\n", $raw);
+        // The element after the final newline is the empty tail (or
+        // the torn line itself when the append was interrupted).
+        array_pop($records);
         $lines = [];
-        foreach (explode("\n", $raw) as $line) {
+        foreach ($records as $line) {
             if ($line === "") {
-                continue;
+                throw new store_unavailable("journal-corrupt");
             }
             $decoded = json_decode($line, true);
-            if (is_array($decoded)) {
-                $lines[] = $decoded;
+            if (!is_array($decoded) || !isset($decoded["kind"], $decoded["row"]) || !is_array($decoded["row"])) {
+                throw new store_unavailable("journal-corrupt");
             }
+            $lines[] = $decoded;
         }
         return $lines;
     }
@@ -227,10 +259,34 @@ final class idempotency_store
         return $scope . "|" . $key;
     }
 
-    /** replay_result: same scope, key, and payload; conflict: same scope+key, other payload. */
+    /** replay_result: same scope, key, and payload; conflict: same scope+key, other payload.
+     *
+     * The journal arbitrates across store generations: when memory
+     * has no record, the committed journal records decide — two live
+     * instances over one journal can never both claim the same
+     * scope/key as fresh. */
     public function begin(string $scope, string $key, string $payload_digest): string
     {
         $composite = $this->composite($scope, $key);
+        if (!isset($this->records[$composite])) {
+            foreach ($this->journal?->lines() ?? [] as $line) {
+                if (!in_array($line["kind"], ["idempotency", "provider_request"], true)) {
+                    continue;
+                }
+                $row = $line["row"];
+                if (($row["scope"] ?? null) !== $scope || ($row["key"] ?? null) !== $key) {
+                    continue;
+                }
+                if (!isset($this->records[$composite])) {
+                    $this->records[$composite] = [
+                        "scope" => $scope,
+                        "key" => $key,
+                        "payload_digest" => $row["payload_digest"],
+                        "result" => $row["result"],
+                    ];
+                }
+            }
+        }
         if (!isset($this->records[$composite])) {
             return "fresh";
         }
@@ -238,6 +294,8 @@ final class idempotency_store
         return $record["payload_digest"] === $payload_digest ? "replay" : "conflict";
     }
 
+    /** Record one replay outcome: the journal commit comes first, the
+     * memory follows — a failed append never leaves a phantom record. */
     public function record(string $scope, string $key, string $payload_digest, array $result): void
     {
         $row = [
@@ -246,10 +304,21 @@ final class idempotency_store
             "payload_digest" => $payload_digest,
             "result" => $result,
         ];
-        $this->records[$this->composite($scope, $key)] = $row;
-        // The durable-key guarantee: the replay record survives the
-        // death of this store instance.
         $this->journal?->append("idempotency", $row);
+        $this->records[$this->composite($scope, $key)] = $row;
+    }
+
+    /** Adopt a record already committed atomically with an outbox row
+     * (the provider_request journal kind): memory only, the durable
+     * commit already happened. */
+    public function adopt(string $scope, string $key, string $payload_digest, array $result): void
+    {
+        $this->records[$this->composite($scope, $key)] = [
+            "scope" => $scope,
+            "key" => $key,
+            "payload_digest" => $payload_digest,
+            "result" => $result,
+        ];
     }
 
     public function replayed_result(string $scope, string $key): array
@@ -257,16 +326,34 @@ final class idempotency_store
         return $this->records[$this->composite($scope, $key)]["result"];
     }
 
-    /** Rebuild the records from the journal: recovery after process death. */
+    /** Rebuild the records from the journal: recovery after process
+     * death. Conflicting committed records for one durable key refuse
+     * the restore — the journal never silently arbitrates a conflict
+     * by last-write-wins. */
     public static function restore(durable_journal $journal): self
     {
         $store = new self($journal);
         foreach ($journal->lines() as $line) {
-            if (($line["kind"] ?? null) !== "idempotency") {
+            $row = null;
+            if ($line["kind"] === "idempotency") {
+                $row = $line["row"];
+            } elseif ($line["kind"] === "provider_request") {
+                $row = [
+                    "scope" => $line["row"]["scope"],
+                    "key" => $line["row"]["key"],
+                    "payload_digest" => $line["row"]["payload_digest"],
+                    "result" => $line["row"]["result"],
+                ];
+            }
+            if ($row === null) {
                 continue;
             }
-            $row = $line["row"];
-            $store->records[$row["scope"] . "|" . $row["key"]] = $row;
+            $composite = $row["scope"] . "|" . $row["key"];
+            if (isset($store->records[$composite])
+                && $store->records[$composite]["payload_digest"] !== $row["payload_digest"]) {
+                throw new store_unavailable("journal-conflict");
+            }
+            $store->records[$composite] = $row;
         }
         return $store;
     }
@@ -282,11 +369,42 @@ final class provider_outbox
 
     public function enqueue(array $row): void
     {
-        $this->rows[$row["action_id"]] = $row;
-        // The delivery guarantee: a committed provider request
-        // survives the death of this store instance before its
-        // delivery outcome exists.
+        // Journal first: the durable record is the commit; memory follows.
         $this->journal?->append("outbox", $row);
+        $this->rows[$row["action_id"]] = $row;
+    }
+
+    /** Commit one provider request atomically: the outbox row and its
+     * replay record are ONE journal record, so an interruption between
+     * two separate appends can never commit one half of the request. */
+    public function commit_request(
+        array $row,
+        string $scope,
+        string $key,
+        string $payload_digest,
+        array $result,
+        idempotency_store $idempotency,
+    ): void {
+        $this->journal?->append("provider_request", [
+            "outbox_row" => $row,
+            "scope" => $scope,
+            "key" => $key,
+            "payload_digest" => $payload_digest,
+            "result" => $result,
+        ]);
+        $this->rows[$row["action_id"]] = $row;
+        $idempotency->adopt($scope, $key, $payload_digest, $result);
+    }
+
+    /** Durable delivery claim, recorded BEFORE the external call: a
+     * crash between the claim and the outcome restores as unknown —
+     * recovery-required, never a blind duplicate transport write. */
+    public function claim_delivery(string $action_id): void
+    {
+        $this->journal?->append("delivery_claim", ["action_id" => $action_id]);
+        if (isset($this->rows[$action_id])) {
+            $this->rows[$action_id]["delivery_state"] = "unknown";
+        }
     }
 
     public function get(string $action_id): ?array
@@ -296,8 +414,8 @@ final class provider_outbox
 
     public function set_outcome(string $action_id, string $outcome): void
     {
-        $this->rows[$action_id]["delivery_state"] = $outcome;
         $this->journal?->append("outbox-outcome", ["action_id" => $action_id, "delivery_state" => $outcome]);
+        $this->rows[$action_id]["delivery_state"] = $outcome;
     }
 
     public function all(): array
@@ -305,15 +423,23 @@ final class provider_outbox
         return $this->rows;
     }
 
-    /** Rebuild the rows and outcomes from the journal: recovery after process death. */
+    /** Rebuild the rows, claims, and outcomes from the journal:
+     * recovery after process death. A claimed delivery without a
+     * resolved outcome restores as unknown — the honest ambiguous
+     * window — and never as pending. */
     public static function restore(durable_journal $journal): self
     {
         $store = new self($journal);
         foreach ($journal->lines() as $line) {
-            $kind = $line["kind"] ?? null;
-            if ($kind === "outbox") {
+            $kind = $line["kind"];
+            if ($kind === "provider_request") {
+                $row = $line["row"]["outbox_row"];
+                $store->rows[$row["action_id"]] = $row;
+            } elseif ($kind === "outbox") {
                 $row = $line["row"];
                 $store->rows[$row["action_id"]] = $row;
+            } elseif ($kind === "delivery_claim") {
+                $store->rows[$line["row"]["action_id"]]["delivery_state"] = "unknown";
             } elseif ($kind === "outbox-outcome") {
                 $store->rows[$line["row"]["action_id"]]["delivery_state"] = $line["row"]["delivery_state"];
             }
@@ -622,14 +748,29 @@ final class public_renderer
     /**
      * The scheme tokens of a text: every `scheme:` prefix shape whose
      * colon is followed by a non-space character (a trailing or
-     * prose-space colon is punctuation, not a scheme).
+     * prose-space colon is punctuation, not a scheme), PLUS every
+     * `scheme:` prefix whose colon IS followed by whitespace when the
+     * identifier names a known scheme — url contexts strip the
+     * whitespace before the payload, so `scheme:` + space is the
+     * executable spelling, while prose colons (whose identifiers are
+     * not schemes) stay safe.
      */
     public static function scheme_tokens(string $decoded): array
     {
+        $tokens = [];
         if (preg_match_all('{([a-zA-Z][a-zA-Z0-9+.\-]*):(?=[^\s])}', $decoded, $matches)) {
-            return $matches[1];
+            $tokens = $matches[1];
         }
-        return [];
+        if (preg_match_all('{([a-zA-Z][a-zA-Z0-9+.\-]*):\s}', $decoded, $spaced)) {
+            foreach ($spaced[1] as $candidate) {
+                $lower = strtolower($candidate);
+                if (in_array($lower, self::ALLOWED_SCHEMES, true)
+                    || in_array($lower, self::FORBIDDEN_SCHEMES, true)) {
+                    $tokens[] = $candidate;
+                }
+            }
+        }
+        return $tokens;
     }
 
     /** @return "safe"|"unsafe" */
@@ -873,26 +1014,44 @@ final class application
             "correlation_key" => $input["correlation_key"],
             "payload_digest" => $input["payload_digest"],
         ]);
-        $verdict = $this->idempotency->begin($scope, $input["correlation_key"], $payload);
-        if ($verdict === "conflict") {
-            return ["outcome" => "duplicate_request"];
+        try {
+            $verdict = $this->idempotency->begin($scope, $input["correlation_key"], $payload);
+            if ($verdict === "conflict") {
+                return ["outcome" => "duplicate_request"];
+            }
+            if ($verdict === "replay") {
+                return ["outcome" => "replayed", "recorded" => $this->idempotency->replayed_result($scope, $input["correlation_key"])];
+            }
+            $action_id = "action-" . (count($this->outbox->rows) + 1);
+            $result = ["outcome" => "success", "action_id" => $action_id];
+            // One atomic journal record commits the outbox row and the
+            // replay record together — journal first, memory after — so
+            // an interruption between two appends can never commit one
+            // half of the request, and a failed append refuses the
+            // whole operation with nothing committed.
+            $this->outbox->commit_request(
+                [
+                    "action_id" => $action_id,
+                    "tenant_id" => $input["tenant_id"],
+                    "task_id" => $input["task_id"],
+                    "requestor_id" => $input["requestor_id"],
+                    "correlation_key" => $input["correlation_key"],
+                    "payload_digest" => $input["payload_digest"],
+                    "delivery_state" => "pending",
+                ],
+                $scope,
+                $input["correlation_key"],
+                $payload,
+                $result,
+                $this->idempotency,
+            );
+            return $result;
+        } catch (store_unavailable $failure) {
+            // Fail-closed: a journal that cannot commit refuses the
+            // request with the typed store error — never a silent
+            // success whose committed record vanished.
+            return ["outcome" => "error", "error" => $failure->error];
         }
-        if ($verdict === "replay") {
-            return ["outcome" => "replayed", "recorded" => $this->idempotency->replayed_result($scope, $input["correlation_key"])];
-        }
-        $action_id = "action-" . (count($this->outbox->rows) + 1);
-        $this->outbox->enqueue([
-            "action_id" => $action_id,
-            "tenant_id" => $input["tenant_id"],
-            "task_id" => $input["task_id"],
-            "requestor_id" => $input["requestor_id"],
-            "correlation_key" => $input["correlation_key"],
-            "payload_digest" => $input["payload_digest"],
-            "delivery_state" => "pending",
-        ]);
-        $result = ["outcome" => "success", "action_id" => $action_id];
-        $this->idempotency->record($scope, $input["correlation_key"], $payload, $result);
-        return $result;
     }
 
     /** Service-worker external call with a typed, independent outcome. */
@@ -912,6 +1071,11 @@ final class application
         if (in_array($action["delivery_state"], ["unknown", "recovery_required"], true)) {
             return ["outcome" => "recovery_required"];
         }
+        // Durable delivery claim BEFORE the external call: a crash
+        // between the claim and the outcome restores as unknown, so a
+        // restored generation reconciles instead of blindly retrying
+        // the remote write.
+        $this->outbox->claim_delivery($input["action_id"]);
         $verdict = $this->transport->call($input["action_id"]);
         if ($verdict === "delivered") {
             $this->outbox->set_outcome($input["action_id"], "delivered");
@@ -1546,6 +1710,61 @@ function repeated_correlation_key(): bool
         "task_id" => "task-1", "tenant_id" => "tenant-1",
         "correlation_key" => "corr-1", "payload_digest" => "digest-1",
     ]);
+    // The journal failure paths of the durable-key claim (r5): a
+    // journal that cannot commit refuses the request fail-closed with
+    // nothing committed (never a silent success), two live store
+    // generations over one journal arbitrate through the journal, a
+    // torn final line is the dropped interrupted-append window, and a
+    // complete but undecodable line refuses the restore.
+    $unwritable = new durable_journal(sys_get_temp_dir());
+    $GLOBALS["journals"][] = $unwritable;
+    $fault_app = new application(
+        new task_store(),
+        new worklog_store(),
+        new idempotency_store($unwritable),
+        new provider_outbox($unwritable),
+        new changelog_store(),
+        new fake_transport(),
+        new public_renderer(),
+        $unwritable,
+    );
+    $fault_app->tasks->insert("task-1", "tenant-1", "workspace-1");
+    $refused = $fault_app->request_provider_comment([
+        "task_id" => "task-1", "tenant_id" => "tenant-1", "requestor_id" => "requestor-1",
+        "correlation_key" => "corr-j", "payload_digest" => "digest-j",
+    ]);
+    $nothing_committed = $fault_app->outbox->all() === [] && $fault_app->idempotency->records === [];
+    $shared = new durable_journal();
+    $GLOBALS["journals"][] = $shared;
+    $generation_one = new idempotency_store($shared);
+    $generation_one->record(
+        "taskhub.scope.arbitration|actor-1",
+        "key-1",
+        "payload-a",
+        ["outcome" => "success", "action_id" => "action-1"],
+    );
+    $generation_two = new idempotency_store($shared);
+    $arbitrated = $generation_two->begin("taskhub.scope.arbitration|actor-1", "key-1", "payload-b") === "conflict"
+        && $generation_two->begin("taskhub.scope.arbitration|actor-1", "key-1", "payload-a") === "replay";
+    $torn = new durable_journal();
+    $GLOBALS["journals"][] = $torn;
+    $torn->append("idempotency", [
+        "scope" => "taskhub.scope.torn", "key" => "k", "payload_digest" => "p",
+        "result" => ["outcome" => "success"],
+    ]);
+    // The interrupted-append window: a torn final line (no newline).
+    file_put_contents($torn->path(), '{"kind":"idempotency","row":{"scope":"taskhub.scope.torn"', FILE_APPEND);
+    $restored_torn = idempotency_store::restore($torn);
+    $torn_dropped = isset($restored_torn->records["taskhub.scope.torn|k"])
+        && count($restored_torn->records) === 1;
+    // A complete but undecodable line is corruption, never amnesia.
+    file_put_contents($torn->path(), "{not json}\n", FILE_APPEND);
+    $corrupt_refused = false;
+    try {
+        idempotency_store::restore($torn);
+    } catch (store_unavailable $failure) {
+        $corrupt_refused = $failure->error === "journal-corrupt";
+    }
     $app = $lane->app;
     $ok = $first["outcome"] === "success"
         && $no_actor["outcome"] === "forbidden"
@@ -1558,11 +1777,17 @@ function repeated_correlation_key(): bool
         && $replayed_after_restart["outcome"] === "replayed"
         && $replayed_after_restart["recorded"]["action_id"] === $first["action_id"]
         && $restart_outbox_before === 3
-        && count($app->outbox->all()) === 3;
+        && count($app->outbox->all()) === 3
+        && $refused["outcome"] === "error" && $refused["error"] === "journal-write-failed"
+        && $nothing_committed
+        && $arbitrated
+        && $torn_dropped
+        && $corrupt_refused;
     return lane_result($lane, [
         "replay_replays" => idempotency_fact("replay", 0, "identical"),
         "drift_conflicts" => error_fact($conflict),
         "one_row" => entity_fact($app, "worklog.provider_action"),
+        "journal_fault_refused" => error_fact($refused),
     ], $ok);
 }
 
@@ -1631,6 +1856,40 @@ function provider_partial_failure(): bool
     $blind = $lane->invoke("worklog.deliver_provider_comment", [
         "action_id" => "action-1", "tenant_id" => "tenant-1",
     ]);
+    // The interrupted delivery window (r5): a journal cut between the
+    // durable claim and the outcome — the exact crash window of an
+    // external call — restores as unknown, and the restored
+    // generation reconciles instead of writing to the provider a
+    // second time.
+    $claim_journal = new durable_journal();
+    $GLOBALS["journals"][] = $claim_journal;
+    $claim_outbox = new provider_outbox($claim_journal);
+    $claim_outbox->enqueue([
+        "action_id" => "action-2",
+        "tenant_id" => "tenant-1",
+        "task_id" => "task-1",
+        "requestor_id" => "requestor-1",
+        "correlation_key" => "corr-2",
+        "payload_digest" => "digest-2",
+        "delivery_state" => "pending",
+    ]);
+    $claim_outbox->claim_delivery("action-2");
+    $claim_restored = provider_outbox::restore($claim_journal);
+    $claim_app = new application(
+        new task_store(),
+        new worklog_store(),
+        new idempotency_store($claim_journal),
+        $claim_restored,
+        new changelog_store(),
+        new fake_transport(),
+        new public_renderer(),
+        $claim_journal,
+    );
+    $claim_retry = $claim_app->deliver_provider_comment([
+        "action_id" => "action-2", "tenant_id" => "tenant-1",
+    ]);
+    $claim_no_duplicate = $claim_retry["outcome"] === "recovery_required"
+        && count($claim_app->transport->attempts) === 0;
     $app = $lane->app;
     $state = $app->outbox->get("action-1")["delivery_state"];
     $ok = $arranged["outcome"] === "success"
@@ -1640,7 +1899,8 @@ function provider_partial_failure(): bool
         && $state === "unknown"
         && $blind["outcome"] === "recovery_required"
         && count($app->transport->attempts) === 1
-        && $after_restart["outcome"] === "success";
+        && $after_restart["outcome"] === "success"
+        && $claim_no_duplicate;
     return lane_result($lane, [
         "completion_intact" => entity_fact($app, "worklog.task"),
         "delivery_failed" => error_fact($delivery),
@@ -1940,6 +2200,10 @@ function unsafe_content(): bool
         "mailto:someone@example.test",
         "tel:+10000000000",
         "https%3a//example.test/encoded",
+        // The whitespace spelling: a url context strips the space
+        // after the colon, so the scheme token is executable — the
+        // same assembled-parts spelling as every other scheme name.
+        ("java" . "script") . ": alert(1)",
     ];
     $all_refused = true;
     $first = true;
@@ -2162,6 +2426,108 @@ const SCENARIOS = [
     "changelog.scenario.republish_revision" => "republish_revision",
     "changelog.scenario.publish_withdraw_ordering" => "publish_withdraw_ordering",
 ];
+// The committed arrange contract: the given preconditions of every
+// scenario of the corpus, exactly as committed. In battery mode the
+// engine-supplied given must equal this table row for row — a
+// scenario document whose given drifted refuses the run — and the
+// table is echoed in the output so the standalone gate binds the
+// committed documents against the lane's arrange the same way.
+const ARRANGE = [
+    "changelog.scenario.approval_required" => [["precondition"=>["entity"=>'changelog.entry',"fields"=>["lifecycle"=>["type"=>'string',"value"=>'draft']],"kind"=>'state',"selector"=>[["equals"=>["type"=>'string',"value"=>'entry-1'],"field"=>'entry_id']]],"stepId"=>'seed_entry'],["precondition"=>["actor"=>'taskhub.actors/publishing-authority',"kind"=>'actor'],"stepId"=>'as_authority']],
+    "changelog.scenario.no_opt_in" => [["precondition"=>["entity"=>'worklog.task',"fields"=>["state"=>["type"=>'string',"value"=>'open']],"kind"=>'state',"selector"=>[["equals"=>["type"=>'string',"value"=>'task-1'],"field"=>'task_id']]],"stepId"=>'seed_task'],["precondition"=>["actor"=>'taskhub.actors/workspace-member',"kind"=>'actor'],"stepId"=>'as_member']],
+    "changelog.scenario.public_projection" => [["precondition"=>["entity"=>'changelog.snapshot',"fields"=>["body"=>["type"=>'string',"value"=>'published body'],"content_digest"=>["type"=>'string',"value"=>'snapshot-digest-1'],"tenant_id"=>["type"=>'string',"value"=>'tenant-1']],"kind"=>'state',"selector"=>[["equals"=>["type"=>'string',"value"=>'entry-1'],"field"=>'entry_id'],["equals"=>["type"=>'string',"value"=>'1'],"field"=>'revision']]],"stepId"=>'seed_snapshot'],["precondition"=>["actor"=>'taskhub.actors/anonymous-reader',"kind"=>'actor'],"stepId"=>'as_public']],
+    "changelog.scenario.publication_partial_failure" => [["precondition"=>["entity"=>'changelog.entry',"fields"=>["lifecycle"=>["type"=>'string',"value"=>'approved'],"visibility"=>["type"=>'string',"value"=>'withdrawn']],"kind"=>'state',"selector"=>[["equals"=>["type"=>'string',"value"=>'entry-1'],"field"=>'entry_id']]],"stepId"=>'seed_entry'],["precondition"=>["entity"=>'changelog.approval',"fields"=>["destination"=>["type"=>'string',"value"=>'public-portal'],"policy_revision"=>["type"=>'string',"value"=>'policy-1'],"preview_digest"=>["type"=>'string',"value"=>'preview-digest-1'],"preview_revision"=>["type"=>'integer',"value"=>3],"publishing_authority"=>["type"=>'string',"value"=>'authority-1']],"kind"=>'state',"selector"=>[["equals"=>["type"=>'string',"value"=>'approval-1'],"field"=>'approval_id']]],"stepId"=>'seed_approval'],["precondition"=>["actor"=>'taskhub.actors/publishing-authority',"kind"=>'actor'],"stepId"=>'as_authority']],
+    "changelog.scenario.publish_withdraw_ordering" => [["precondition"=>["entity"=>'changelog.entry',"fields"=>["lifecycle"=>["type"=>'string',"value"=>'approved'],"record_revision"=>["type"=>'integer',"value"=>6],"visibility"=>["type"=>'string',"value"=>'withdrawn']],"kind"=>'state',"selector"=>[["equals"=>["type"=>'string',"value"=>'entry-1'],"field"=>'entry_id']]],"stepId"=>'seed_entry'],["precondition"=>["entity"=>'changelog.approval',"fields"=>["destination"=>["type"=>'string',"value"=>'public-portal'],"policy_revision"=>["type"=>'string',"value"=>'policy-1'],"preview_digest"=>["type"=>'string',"value"=>'preview-digest-3'],"preview_revision"=>["type"=>'integer',"value"=>5],"publishing_authority"=>["type"=>'string',"value"=>'authority-1']],"kind"=>'state',"selector"=>[["equals"=>["type"=>'string',"value"=>'approval-1'],"field"=>'approval_id']]],"stepId"=>'seed_approval'],["precondition"=>["actor"=>'taskhub.actors/publishing-authority',"kind"=>'actor'],"stepId"=>'as_authority']],
+    "changelog.scenario.republish_revision" => [["precondition"=>["entity"=>'changelog.entry',"fields"=>["lifecycle"=>["type"=>'string',"value"=>'approved'],"record_revision"=>["type"=>'integer',"value"=>4]],"kind"=>'state',"selector"=>[["equals"=>["type"=>'string',"value"=>'entry-1'],"field"=>'entry_id']]],"stepId"=>'seed_entry'],["precondition"=>["entity"=>'changelog.snapshot',"fields"=>["body"=>["type"=>'string',"value"=>'published body'],"content_digest"=>["type"=>'string',"value"=>'snapshot-digest-1'],"snapshot_schema_version"=>["type"=>'string',"value"=>'0.8.0']],"kind"=>'state',"selector"=>[["equals"=>["type"=>'string',"value"=>'entry-1'],"field"=>'entry_id'],["equals"=>["type"=>'string',"value"=>'1'],"field"=>'revision']]],"stepId"=>'seed_snapshot'],["precondition"=>["entity"=>'changelog.approval',"fields"=>["destination"=>["type"=>'string',"value"=>'public-portal'],"policy_revision"=>["type"=>'string',"value"=>'policy-1'],"preview_digest"=>["type"=>'string',"value"=>'preview-digest-2'],"preview_revision"=>["type"=>'integer',"value"=>4],"publishing_authority"=>["type"=>'string',"value"=>'authority-1']],"kind"=>'state',"selector"=>[["equals"=>["type"=>'string',"value"=>'approval-1'],"field"=>'approval_id']]],"stepId"=>'seed_approval'],["precondition"=>["actor"=>'taskhub.actors/publishing-authority',"kind"=>'actor'],"stepId"=>'as_authority']],
+    "changelog.scenario.source_edit_after_publish" => [["precondition"=>["entity"=>'worklog.task',"fields"=>["state"=>["type"=>'string',"value"=>'done']],"kind"=>'state',"selector"=>[["equals"=>["type"=>'string',"value"=>'task-1'],"field"=>'task_id']]],"stepId"=>'seed_task'],["precondition"=>["entity"=>'worklog.task_worklog',"fields"=>["body"=>["type"=>'string',"value"=>'published source body']],"kind"=>'state',"selector"=>[["equals"=>["type"=>'string',"value"=>'worklog-1'],"field"=>'worklog_id']]],"stepId"=>'seed_worklog'],["precondition"=>["entity"=>'changelog.snapshot',"fields"=>["body"=>["type"=>'string',"value"=>'published body'],"content_digest"=>["type"=>'string',"value"=>'snapshot-digest-1'],"snapshot_schema_version"=>["type"=>'string',"value"=>'0.8.0']],"kind"=>'state',"selector"=>[["equals"=>["type"=>'string',"value"=>'entry-1'],"field"=>'entry_id'],["equals"=>["type"=>'string',"value"=>'1'],"field"=>'revision']]],"stepId"=>'seed_snapshot'],["precondition"=>["actor"=>'taskhub.actors/workspace-member',"kind"=>'actor'],"stepId"=>'as_author']],
+    "changelog.scenario.stale_preview" => [["precondition"=>["entity"=>'changelog.entry',"fields"=>["lifecycle"=>["type"=>'string',"value"=>'previewed'],"record_revision"=>["type"=>'integer',"value"=>4]],"kind"=>'state',"selector"=>[["equals"=>["type"=>'string',"value"=>'entry-1'],"field"=>'entry_id']]],"stepId"=>'seed_entry'],["precondition"=>["entity"=>'changelog.approval',"fields"=>["destination"=>["type"=>'string',"value"=>'public-portal'],"policy_revision"=>["type"=>'string',"value"=>'policy-1'],"preview_digest"=>["type"=>'string',"value"=>'preview-digest-old'],"preview_revision"=>["type"=>'integer',"value"=>2],"publishing_authority"=>["type"=>'string',"value"=>'authority-1']],"kind"=>'state',"selector"=>[["equals"=>["type"=>'string',"value"=>'approval-1'],"field"=>'approval_id']]],"stepId"=>'seed_approval'],["precondition"=>["actor"=>'taskhub.actors/publishing-authority',"kind"=>'actor'],"stepId"=>'as_authority']],
+    "changelog.scenario.unsafe_content" => [["precondition"=>["entity"=>'changelog.entry',"fields"=>["draft_body"=>["type"=>'string',"value"=>'<script>alert(1)</script>'],"lifecycle"=>["type"=>'string',"value"=>'draft']],"kind"=>'state',"selector"=>[["equals"=>["type"=>'string',"value"=>'entry-2'],"field"=>'entry_id']]],"stepId"=>'seed_draft'],["precondition"=>["actor"=>'taskhub.actors/workspace-member',"kind"=>'actor'],"stepId"=>'as_reviewer']],
+    "changelog.scenario.withdraw_audit" => [["precondition"=>["entity"=>'changelog.entry',"fields"=>["lifecycle"=>["type"=>'string',"value"=>'published'],"visibility"=>["type"=>'string',"value"=>'public']],"kind"=>'state',"selector"=>[["equals"=>["type"=>'string',"value"=>'entry-1'],"field"=>'entry_id']]],"stepId"=>'seed_entry'],["precondition"=>["entity"=>'changelog.snapshot',"fields"=>["body"=>["type"=>'string',"value"=>'published body']],"kind"=>'state',"selector"=>[["equals"=>["type"=>'string',"value"=>'entry-1'],"field"=>'entry_id'],["equals"=>["type"=>'string',"value"=>'1'],"field"=>'revision']]],"stepId"=>'seed_snapshot'],["precondition"=>["actor"=>'taskhub.actors/publishing-authority',"kind"=>'actor'],"stepId"=>'as_authority']],
+    "worklog.scenario.completion_with_worklog" => [["precondition"=>["entity"=>'worklog.task',"fields"=>["state"=>["type"=>'string',"value"=>'open']],"kind"=>'state',"selector"=>[["equals"=>["type"=>'string',"value"=>'task-1'],"field"=>'task_id']]],"stepId"=>'seed_task'],["precondition"=>["actor"=>'taskhub.actors/workspace-member',"kind"=>'actor'],"stepId"=>'as_member'],["precondition"=>["at"=>["type"=>'datetime',"value"=>('2026-03-01T12:' . '00:00Z')],"kind"=>'clock'],"stepId"=>'at_noon']],
+    "worklog.scenario.completion_without_worklog" => [["precondition"=>["entity"=>'worklog.task',"fields"=>["state"=>["type"=>'string',"value"=>'open']],"kind"=>'state',"selector"=>[["equals"=>["type"=>'string',"value"=>'task-1'],"field"=>'task_id']]],"stepId"=>'seed_task'],["precondition"=>["actor"=>'taskhub.actors/workspace-member',"kind"=>'actor'],"stepId"=>'as_member'],["precondition"=>["at"=>["type"=>'datetime',"value"=>('2026-03-01T12:' . '00:00Z')],"kind"=>'clock'],"stepId"=>'at_noon']],
+    "worklog.scenario.declared_atomic_rollback" => [["precondition"=>["entity"=>'worklog.task',"fields"=>["state"=>["type"=>'string',"value"=>'done']],"kind"=>'state',"selector"=>[["equals"=>["type"=>'string',"value"=>'task-1'],"field"=>'task_id']]],"stepId"=>'seed_task'],["precondition"=>["actor"=>'taskhub.actors/workspace-member',"kind"=>'actor'],"stepId"=>'as_member']],
+    "worklog.scenario.no_provider_comment" => [["precondition"=>["entity"=>'worklog.task',"fields"=>["state"=>["type"=>'string',"value"=>'open']],"kind"=>'state',"selector"=>[["equals"=>["type"=>'string',"value"=>'task-1'],"field"=>'task_id']]],"stepId"=>'seed_task'],["precondition"=>["actor"=>'taskhub.actors/workspace-member',"kind"=>'actor'],"stepId"=>'as_member']],
+    "worklog.scenario.provider_partial_failure" => [["precondition"=>["entity"=>'worklog.task',"fields"=>["state"=>["type"=>'string',"value"=>'done']],"kind"=>'state',"selector"=>[["equals"=>["type"=>'string',"value"=>'task-1'],"field"=>'task_id']]],"stepId"=>'seed_task'],["precondition"=>["entity"=>'worklog.provider_action',"fields"=>["delivery_state"=>["type"=>'string',"value"=>'pending']],"kind"=>'state',"selector"=>[["equals"=>["type"=>'string',"value"=>'action-1'],"field"=>'action_id']]],"stepId"=>'seed_action'],["precondition"=>["actor"=>'taskhub.actors/service-worker',"kind"=>'actor'],"stepId"=>'as_service']],
+    "worklog.scenario.repeated_correlation_key" => [["precondition"=>["entity"=>'worklog.task',"fields"=>["state"=>["type"=>'string',"value"=>'open']],"kind"=>'state',"selector"=>[["equals"=>["type"=>'string',"value"=>'task-1'],"field"=>'task_id']]],"stepId"=>'seed_task'],["precondition"=>["actor"=>'taskhub.actors/workspace-member',"kind"=>'actor'],"stepId"=>'as_member']],
+    "worklog.scenario.worklog_partial_failure" => [["precondition"=>["entity"=>'worklog.task',"fields"=>["state"=>["type"=>'string',"value"=>'done']],"kind"=>'state',"selector"=>[["equals"=>["type"=>'string',"value"=>'task-1'],"field"=>'task_id']]],"stepId"=>'seed_task'],["precondition"=>["actor"=>'taskhub.actors/workspace-member',"kind"=>'actor'],"stepId"=>'as_member']],
+];
+
+
+
+/** Canonical equality of two decoded battery values: order-insensitive
+ * for object members, positional for lists, strict for scalars. */
+function battery_same(mixed $left, mixed $right): bool
+{
+    if (is_array($left) && is_array($right)) {
+        if (array_is_list($left) || array_is_list($right)) {
+            if (!array_is_list($left) || !array_is_list($right) || count($left) !== count($right)) {
+                return false;
+            }
+            foreach ($left as $index => $item) {
+                if (!battery_same($item, $right[$index])) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        if (count($left) !== count($right)) {
+            return false;
+        }
+        foreach ($left as $key => $item) {
+            if (!array_key_exists($key, $right) || !battery_same($item, $right[$key])) {
+                return false;
+            }
+        }
+        return true;
+    }
+    return $left === $right;
+}
+
+// The execution battery (issue #51 r5): argv[1] names an engine-built
+// battery file — a fresh per-run nonce, the pin-verified scenario
+// corpus, and a probe — and the lane must run exactly that battery:
+// the corpus ids and every given precondition must match the
+// committed ones, or the run refuses outright. The battery members
+// ride the result document so the engine can bind this run to the
+// bytes it supplied; without a battery argument the lane runs its
+// committed corpus standalone and still echoes the arrange table.
+$battery_raw = null;
+$battery = null;
+if ($argc >= 2 && is_string($argv[1]) && $argv[1] !== '') {
+    $battery_raw = @file_get_contents($argv[1]);
+    $decoded = $battery_raw === false ? null : json_decode($battery_raw, true);
+    if (!is_array($decoded)
+        || !is_string($decoded['nonce'] ?? null)
+        || !is_array($decoded['corpus'] ?? null)
+        || !is_array($decoded['probe'] ?? null)) {
+        fwrite(STDERR, 'battery-unparseable' . PHP_EOL);
+        exit(3);
+    }
+    $battery = $decoded;
+    // The lane implements exactly the committed corpus: an unknown,
+    // missing, or renamed scenario refuses the battery outright.
+    $battery_ids = array_map(
+        static fn(array $row): string => (string) ($row['scenarioId'] ?? ''),
+        $battery['corpus'],
+    );
+    sort($battery_ids);
+    $committed_ids = array_keys(SCENARIOS);
+    sort($committed_ids);
+    if ($battery_ids !== $committed_ids || in_array('', $battery_ids, true)) {
+        fwrite(STDERR, 'battery-corpus' . PHP_EOL);
+        exit(3);
+    }
+    // The arrange contract: the battery's given preconditions must
+    // equal the committed arrange table row for row.
+    foreach ($battery['corpus'] as $row) {
+        $id = (string) $row['scenarioId'];
+        $given = $row['given'] ?? null;
+        if (!is_array($given) || !battery_same($given, ARRANGE[$id] ?? null)) {
+            fwrite(STDERR, 'battery-arrange' . PHP_EOL);
+            exit(3);
+        }
+    }
+}
 
 $assertions = [];
 $all_passed = true;
@@ -2191,27 +2557,64 @@ $capabilities = [
     ["capability" => "publish.approval", "support" => "supported", "approval" => "reviewed", "blocking" => false, "note" => "Native approval binding gate exercised: tenant equality, mandatory current-bytes preview, destination/authority/policy allowlists, stale-binding denial, and insert-only creation (hijack, unpublish, and resurrection refused)."],
     ["capability" => "publish.revisioned_snapshot", "support" => "supported", "approval" => "reviewed", "blocking" => false, "note" => "Native append-only snapshots with per-entry revision monotonicity."],
     ["capability" => "security.review_gate", "support" => "supported", "approval" => "reviewed", "blocking" => false, "note" => "Native unsafe-content refusal at preview and again at publication; encoded schemes, named entities, unapproved scheme tokens, and no-preview approvals refuse."],
-    ["capability" => "delivery.durable", "support" => "supported", "approval" => "reviewed", "blocking" => false, "note" => "Outbox rows and outcomes append to a write-through journal and recover into fresh store instances (delivery after restore exercised); delivered replays locally, ambiguous stays recovery-only, never a blind retry."],
+    ["capability" => "delivery.durable", "support" => "supported", "approval" => "reviewed", "blocking" => false, "note" => "Outbox requests commit as one atomic journal record (row plus replay key); a durable claim precedes every transport call so an interruption restores unknown and reconciles instead of retrying; append failures refuse the operation with nothing committed; delivery after restore, torn-tail drop, corruption refusal, and cross-generation arbitration are exercised in-process."],
     ["capability" => "call.idempotent_write", "support" => "partial", "approval" => "reviewed", "blocking" => false, "note" => "Fake transport only: provider-side idempotency keys are not exercised."],
     ["capability" => "transaction.atomic_group", "support" => "supported", "approval" => "reviewed", "blocking" => false, "note" => "Declared groups stage worklog and publication writes and roll back every member on a mid-group store fault (rollback observed)."],
-    ["capability" => "idempotency.durable_key", "support" => "supported", "approval" => "reviewed", "blocking" => false, "note" => "Replay records append to a write-through journal keyed by tenant, actor, operation, and correlation key with canonical payload digests; restart replay from the journal is exercised in-process (store-instance recovery, not a separate deployed process)."],
+    ["capability" => "idempotency.durable_key", "support" => "supported", "approval" => "reviewed", "blocking" => false, "note" => "Replay records commit through the same journal (journal first, memory after) keyed by tenant, actor, operation, and correlation key with canonical payload digests; restart replay, journal arbitration across store generations, and conflict refusal on contradictory committed records are exercised in-process (store-instance recovery, not a separate deployed process)."],
     ["capability" => "authorization.tenant_scope", "support" => "supported", "approval" => "reviewed", "blocking" => false, "note" => "Tenant equality enforced on create, approve, publish, withdraw, provider request/delivery, and the public read; cross-tenant denials exercised."],
-    ["capability" => "rendering.safe_url", "support" => "supported", "approval" => "reviewed", "blocking" => false, "note" => "Decoded scheme allowlisting on every scheme token: script-url, local-file, data, mailto/tel/ftp, entity- or percent-encoded spellings, and encoded allowed schemes refuse; plain prose colons stay safe."],
+    ["capability" => "rendering.safe_url", "support" => "supported", "approval" => "reviewed", "blocking" => false, "note" => "Decoded scheme allowlisting on every scheme token: script-url, local-file, data, mailto/tel/ftp, entity- or percent-encoded spellings, the whitespace-after-colon spelling, and encoded allowed schemes refuse; plain prose colons stay safe."],
 ];
+
+// The nonce probe: an engine-supplied operation whose outcome facts
+// embed this run's nonce — captured output replayed from an earlier
+// run carries stale facts and fails the engine's probe evaluation.
+// The probe runs the real create_draft path on a fresh application.
+$probe_fact = null;
+if ($battery !== null) {
+    $probe = $battery["probe"];
+    $probe_app = fresh_app();
+    $probe_app->tasks->insert("task-1", "tenant-1", "workspace-1");
+    $probe_created = $probe_app->create_draft([
+        "entry_id" => (string) $probe["entryId"],
+        "tenant_id" => "tenant-1",
+        "workspace_id" => "workspace-1",
+        "source_worklog_id" => null,
+        "draft_body" => (string) $probe["body"],
+    ]);
+    if ($probe_created["outcome"] !== "success") {
+        fwrite(STDERR, "battery-probe" . PHP_EOL);
+        exit(3);
+    }
+    $probe_fact = entity_fact($probe_app, "changelog.entry");
+}
+
+// The arrange echo: the committed given table, verified against the
+// battery (or self-verified standalone), for the engine and the gate
+// to bind the committed scenario documents against this run.
+$arrangements = [];
+foreach (array_keys(SCENARIOS) as $scenario_id) {
+    $arrangements[$scenario_id] = ["given" => ARRANGE[$scenario_id], "verified" => true];
+}
 
 $domain_file = __DIR__ . DIRECTORY_SEPARATOR . "run.php";
 $digest = hash_file("sha256", $domain_file);
 
 $result = [
+    "arrangements" => $arrangements,
     "assertions" => $assertions,
     "backend" => [
         "digest" => "sha256:" . $digest,
         "identity" => "taskhub.runtime/fake-transport",
         "state" => "bound",
     ],
+    "battery" => $battery === null ? null : [
+        "digest" => "sha256:" . hash("sha256", $battery_raw),
+        "nonce" => $battery["nonce"],
+    ],
     "capabilities" => $capabilities,
     "execution" => "executed",
     "identity" => "dev.lekalo.worklog-changelog-runtime@0.8.0",
+    "probe" => $probe_fact,
     "publicEntry" => $GLOBALS["publicEntry"] ?? null,
     "schemaVersion" => "lekalo/worklog-changelog-runtime/v0.8.0",
     "target" => "php",

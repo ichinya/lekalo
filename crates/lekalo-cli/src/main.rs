@@ -31,6 +31,7 @@ mod doctor_git;
 mod evaluation;
 mod git_input;
 mod metrics_export;
+mod pilot_battery;
 mod report_git;
 pub(crate) mod report_output;
 mod waivers;
@@ -6503,6 +6504,22 @@ fn confined_read(root: &std::path::Path, file: &std::path::Path) -> Result<Vec<u
     };
     let root = absolute(root);
     let file = absolute(file);
+    // The confinement root itself is custody, not just the components
+    // below it: a directory junction or symlink AT the root (or at any
+    // ancestor the path traverses) mounts the whole "fixture" tree
+    // from anywhere while every below-root check stays physical, so
+    // the root is canonicalized and must resolve to exactly its
+    // lexical spelling — any difference means the path reached these
+    // bytes through a reparse point. (The check-then-read sequence is
+    // deterministic confinement, not a claim of race safety.)
+    let physical_root = std::fs::canonicalize(&root).map_err(|_| denial("custody-path"))?;
+    if !same_physical_path(&physical_root, &root) {
+        return Err(denial("custody-root-link"));
+    }
+    let root_metadata = std::fs::symlink_metadata(&root).map_err(|_| denial("custody-path"))?;
+    if is_link(&root_metadata) || !root_metadata.is_dir() {
+        return Err(denial("custody-root-link"));
+    }
     let mut walk = root.clone();
     for component in file
         .strip_prefix(&root)
@@ -6530,6 +6547,49 @@ fn confined_read(root: &std::path::Path, file: &std::path::Path) -> Result<Vec<u
         return Err(denial("custody-hardlink"));
     }
     std::fs::read(&file)
+}
+
+/// Whether two path spellings name the same physical location for
+/// custody comparison: the canonicalized root against its lexical
+/// spelling. Windows canonicalization returns a verbatim `\\?\\`
+/// prefix (and normalizes case), so the verbatim prefix is stripped
+/// and the comparison is case-insensitive there; POSIX compares
+/// byte-exact.
+fn same_physical_path(canonical: &std::path::Path, lexical: &std::path::Path) -> bool {
+    let physical = |path: &std::path::Path| {
+        let text = path.to_string_lossy().into_owned();
+        if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+            std::path::PathBuf::from(format!(r"\\{rest}"))
+        } else if let Some(rest) = text.strip_prefix(r"\\?\") {
+            std::path::PathBuf::from(rest)
+        } else {
+            std::path::PathBuf::from(text)
+        }
+    };
+    // Component-wise comparison: a joined relative path keeps the
+    // argument's forward slashes while canonicalization emits host
+    // separators, so raw string comparison would misreport every
+    // relative composition argument as a link traversal.
+    let left: Vec<String> = physical(canonical)
+        .components()
+        .map(|component| component.as_os_str().to_string_lossy().into_owned())
+        .collect();
+    let right: Vec<String> = physical(lexical)
+        .components()
+        .map(|component| component.as_os_str().to_string_lossy().into_owned())
+        .collect();
+    #[cfg(windows)]
+    {
+        left.len() == right.len()
+            && left
+                .iter()
+                .zip(right.iter())
+                .all(|(a, b)| a.to_lowercase() == b.to_lowercase())
+    }
+    #[cfg(unix)]
+    {
+        left == right
+    }
 }
 
 /// The inner Model pin of one consumed attachment document: the
@@ -6857,21 +6917,48 @@ fn native_lane_for(target: &str) -> Option<(&'static str, &'static str)> {
 }
 
 /// The trusted execution receipts (issue #51 r5): the engine shell
-/// itself executes every declared native lane for this admission and
-/// hands the exact executed rows to the pure core. A static hash of
-/// the backend file is provenance, not execution: the receipt is what
-/// the lane actually printed and exited with. A lane that cannot run
-/// (no interpreter, nonzero exit, unparseable output) produces no
-/// receipt, and a report claiming execution without one is refused.
+/// itself executes every declared native lane for this admission
+/// under an engine-built execution battery and hands the
+/// engine-derived rows to the pure core. The battery is derived from
+/// the custody-read, pin-verified scenario corpus of the pinned
+/// compilation — never from the lane's own output — and a fresh
+/// per-run nonce probe defeats captured-output replay, so a program
+/// that only prints pass text cannot qualify as trusted execution.
+/// A lane that cannot launch at all is recorded as an engine-side
+/// failure, never mislabeled as an unverified execution claim, and
+/// the absolute lane path makes the admission verdict independent of
+/// the composition argument's path spelling.
 fn native_execution_receipts(
-    selection: &LoadSelection,
+    compilation: &lekalo_core::ir::Compilation,
+    model_digest: &str,
+    composition: &lekalo_core::worklog_changelog::Composition,
     composition_dir: &std::path::Path,
 ) -> BTreeMap<String, lekalo_core::worklog_changelog::NativeExecutionReceipt> {
     let mut receipts = BTreeMap::new();
-    let Ok((_, compilation)) = lekalo_core::cache::load_compiled(selection, false) else {
-        return receipts;
-    };
-    let fixture_root = composition_dir.parent().unwrap_or(composition_dir);
+    // The fixture root is resolved to its absolute physical form
+    // before any spawn: a relative composition argument can never
+    // change what the child interpreter resolves (issue #51 r5 F4).
+    let fixture_root =
+        pilot_battery::physical_absolute(composition_dir.parent().unwrap_or(composition_dir));
+    // The compilation's scenario catalog is the required corpus; the
+    // IR digest is the exact canonical IR bytes the scenario
+    // documents' irRef pins must name.
+    let mut catalog = std::collections::BTreeSet::new();
+    for definition in &compilation.project.definitions {
+        if let lekalo_core::ir::Definition::Scenario(scenario) = definition {
+            catalog.insert(scenario.id.as_str().to_owned());
+        }
+    }
+    let ir_digest = format!(
+        "sha256:{}",
+        lekalo_core::digest::sha256_hex(compilation.project.to_canonical_json().as_bytes())
+    );
+    let allowlist: Vec<String> = composition
+        .public_allowlist()
+        .fields()
+        .iter()
+        .map(|field| field.name().to_owned())
+        .collect();
     for definition in &compilation.project.definitions {
         let lekalo_core::ir::Definition::TargetBinding(binding) = definition else {
             continue;
@@ -6880,9 +6967,38 @@ fn native_execution_receipts(
             continue;
         };
         let lane_path = fixture_root.join(lane).join("run.php");
-        let Ok(bytes) = confined_read(fixture_root, &lane_path) else {
+        let Ok(bytes) = confined_read(&fixture_root, &lane_path) else {
             continue;
         };
+        let digest = format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes));
+        let mut fail_closed = |failure: &'static str| {
+            receipts.insert(
+                lane.to_owned(),
+                lekalo_core::worklog_changelog::NativeExecutionReceipt {
+                    target: lane.to_owned(),
+                    identity: identity.to_owned(),
+                    digest: digest.clone(),
+                    assertions: Vec::new(),
+                    capabilities: Vec::new(),
+                    battery_failure: Some(failure),
+                },
+            );
+        };
+        // The battery: the custody-read scenario corpus, pin-verified
+        // against the exact compilation the composition pinned, with
+        // a fresh nonce. Corpus or pin drift refuses the target.
+        let documents = pilot_battery::read_scenario_documents(&fixture_root, &confined_read);
+        let battery =
+            match pilot_battery::build_battery(&documents, model_digest, &ir_digest, &catalog) {
+                Ok(battery) => battery,
+                Err(detail) => {
+                    fail_closed(detail);
+                    continue;
+                }
+            };
+        let battery_path =
+            std::env::temp_dir().join(format!("lekalo-battery-{}.json", battery.nonce));
+        let writable = std::fs::write(&battery_path, &battery.bytes).is_ok();
         // The interpreter resolves exactly the way the harness
         // resolves it: LEKALO_PHP first, then the PATH default.
         let interpreters: Vec<String> = std::env::var("LEKALO_PHP")
@@ -6896,118 +7012,38 @@ fn native_execution_receipts(
                     .collect()
             })
             .unwrap_or_else(|| vec!["php".to_owned()]);
-        let mut output = None;
-        for interpreter in &interpreters {
-            let attempted = std::process::Command::new(interpreter)
-                .arg(&lane_path)
-                .current_dir(fixture_root)
-                .output();
-            let Ok(attempted) = attempted else {
-                continue;
-            };
-            if attempted.status.success() {
-                output = Some(attempted.stdout);
-                break;
-            }
-        }
-        let Some(stdout) = output else {
-            continue;
-        };
-        let text = String::from_utf8_lossy(&stdout);
-        let lane_json = text
-            .lines()
-            .rev()
-            .find_map(|line| serde_json::from_str::<serde_json::Value>(line.trim()).ok());
-        let Some(lane_json) = lane_json else {
-            continue;
-        };
-        // The closed runtime surface: a lane output that does not
-        // declare this contract is not a receipt.
-        if lane_json.get("target").and_then(serde_json::Value::as_str) != Some(lane)
-            || lane_json
-                .get("execution")
-                .and_then(serde_json::Value::as_str)
-                != Some("executed")
-            || lane_json
-                .get("identity")
-                .and_then(serde_json::Value::as_str)
-                != Some("dev.lekalo.worklog-changelog-runtime@0.8.0")
-        {
-            continue;
-        }
-        let mut assertions = Vec::new();
-        let mut capabilities = Vec::new();
-        let mut ok = true;
-        if let Some(rows) = lane_json
-            .get("assertions")
-            .and_then(serde_json::Value::as_array)
-        {
-            for row in rows {
-                let Some(scenario) = row.get("scenario").and_then(serde_json::Value::as_str) else {
-                    ok = false;
-                    break;
-                };
-                let Some(status) = row.get("status").and_then(serde_json::Value::as_str) else {
-                    ok = false;
-                    break;
-                };
-                assertions.push((scenario.to_owned(), status.to_owned()));
-            }
+        let outcome = if writable {
+            let outcome = pilot_battery::run_battery(
+                &interpreters,
+                &lane_path,
+                &fixture_root,
+                &battery_path,
+                &battery,
+                &allowlist,
+            );
+            let _ = std::fs::remove_file(&battery_path);
+            outcome
         } else {
-            ok = false;
-        }
-        if let Some(rows) = lane_json
-            .get("capabilities")
-            .and_then(serde_json::Value::as_array)
-        {
-            for row in rows {
-                let Some(capability) = row.get("capability").and_then(serde_json::Value::as_str)
-                else {
-                    ok = false;
-                    break;
-                };
-                let Some(support) = row.get("support").and_then(serde_json::Value::as_str) else {
-                    ok = false;
-                    break;
-                };
-                let approval = row
-                    .get("approval")
-                    .and_then(serde_json::Value::as_str)
-                    .map(str::to_owned);
-                let Some(blocking) = row.get("blocking").and_then(serde_json::Value::as_bool)
-                else {
-                    ok = false;
-                    break;
-                };
-                capabilities.push((
-                    capability.to_owned(),
-                    support.to_owned(),
-                    approval,
-                    blocking,
-                ));
+            pilot_battery::BatteryOutcome {
+                failure: Some("engine-unavailable"),
+                assertions: Vec::new(),
+                capabilities: Vec::new(),
             }
-        } else {
-            ok = false;
-        }
-        if !ok {
-            continue;
-        }
-        let digest = format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes));
+        };
         receipts.insert(
             lane.to_owned(),
             lekalo_core::worklog_changelog::NativeExecutionReceipt {
                 target: lane.to_owned(),
                 identity: identity.to_owned(),
                 digest,
-                assertions,
-                capabilities,
+                assertions: outcome.assertions,
+                capabilities: outcome.capabilities,
+                battery_failure: outcome.failure,
             },
         );
     }
     receipts
 }
-
-/// The expected consumer witnesses of the committed consumer oracle:
 /// the shell reads the oracle that rides beside the composition's
 /// fixture root and hands the closed set to the pure core. The oracle
 /// is the report's expected witness inventory — the impact gate
@@ -7019,7 +7055,13 @@ fn expected_consumer_witnesses(
     let fixture_root = composition_dir.parent().unwrap_or(composition_dir);
     let oracle_path = fixture_root.join("evidence").join("consumer-oracle.json");
     let bytes = confined_read(fixture_root, &oracle_path).ok()?;
-    let oracle: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    let text = std::str::from_utf8(&bytes).ok()?;
+    // The oracle is parsed through the same unique-key decoder as
+    // every other consumed JSON document: a forged first spelling
+    // behind a duplicate key refuses instead of silently
+    // last-winning.
+    let oracle: serde_json::Value =
+        lekalo_core::worklog_changelog::parse_unique_consumed(text).ok()?;
     if oracle.get("identity").and_then(serde_json::Value::as_str)
         != Some("dev.lekalo.worklog-changelog-consumer-oracle@0.8.0")
     {
@@ -7252,7 +7294,12 @@ fn run_pilot(command: PilotCommands, no_cache: bool) -> DomainResult {
             // consumer witnesses of the committed oracle: the engine
             // executes the lanes itself, so admission can never
             // certify execution claims the backend never ran.
-            let execution_receipts = native_execution_receipts(&selection, &composition_dir);
+            let execution_receipts = native_execution_receipts(
+                &compilation,
+                &model_digest,
+                &composition,
+                &composition_dir,
+            );
             let expected_consumers = expected_consumer_witnesses(&composition_dir);
             match lekalo_core::worklog_changelog::admit(
                 &bytes,

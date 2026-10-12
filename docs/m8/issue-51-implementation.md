@@ -301,6 +301,87 @@ round; every numbered finding is fixed and probe-verified:
     over curated mutation vectors in both directions so the two
     grammars cannot drift apart again.
 
+## Review round 6 resolutions
+
+The devin and codex round-5 reviews (both CHANGES-REQUESTED) drove this
+round; every union finding is fixed and probe-verified:
+
+1. **Late report-level blockers reach every target verdict.** The
+   incomplete-closure obligation is attributed to every reported
+   target *before* the per-target rows are finalized, and the
+   verdict-claim obligations — evaluated against the complete blocker
+   set — are merged into the already-built rows in a final pass, so a
+   selected target can never stay `pass` under report-level refusal
+   (regression: `late_report_level_blockers_reach_every_target_verdict`).
+2. **Execution trust binds to an engine-supplied battery, not
+   self-asserted output.** `pilot admit` now executes each native lane
+   under a battery the engine builds itself: the custody-read,
+   pin-verified scenario corpus (`modelRef`/`irRef` against the exact
+   pinned compilation), a committed arrange contract the lane must
+   equal row for row, engine-side evaluation of every `when`
+   invocation binding and `then` assertion against the lane's
+   structured facts, and a fresh per-run nonce probe whose outcome
+   facts must embed the nonce — a captured-output printer replays
+   stale facts and refuses (`php:execution:battery-echo`/
+   `battery-probe`), whatever digest it prints. A lane that cannot
+   launch is an engine-side failure, never a mislabeled
+   `execution:unverified` (regression:
+   `refused_battery_refuses_whatever_the_report_claims`).
+3. **The durable journal is fail-closed at every interruption class
+   it claims to survive.** Appends must land in full or the operation
+   refuses (`journal-write-failed`) with nothing committed; a provider
+   request commits as ONE atomic record (outbox row plus replay key)
+   so no interruption can commit half of it; a durable delivery claim
+   precedes every transport call so a crash between claim and outcome
+   restores as `unknown`/recovery-required instead of a duplicate
+   remote write; a torn final line is the dropped interrupted-append
+   window while a complete undecodable line refuses the restore
+   (`journal-corrupt`); and `begin()` arbitrates through the journal,
+   so two live store generations over one journal can never both
+   claim one scope/key as fresh. The committed scenarios exercise
+   every one of these paths in-process and the capability notes state
+   exactly that recovery model.
+4. **Admission is path-form independent.** The fixture root is
+   resolved to its absolute physical form before any spawn, so a
+   relative composition argument admits identically to an absolute
+   one (contracts gate leg `admission-path-form`).
+5. **Scenario custody is complete at gate and admission.** The pilot
+   gate now verifies each scenario document's `modelRef`/`irRef` pins
+   itself and binds the committed `given` preconditions against the
+   lane's echoed, verified arrange contract; admission reads the
+   corpus documents through the same confined reader, verifies their
+   pins, and executes them through the battery — a mutated `given`, a
+   stale pin, or a mutated `then` expectation refuses at both
+   boundaries (gate legs `scenario-arrange-mismatch`/
+   `scenario-pin-drift`; admission blockers `battery-arrange`/
+   `battery-pins`/`battery-assertions`).
+6. **The consumer oracle cannot prune or forge.** The oracle parses
+   through the same unique-key decoder as every consumed document
+   (duplicate keys refuse), and the required file-witness consumers
+   (the public DTO schema projection and the composition allowlist)
+   are a contract floor checked against the oracle — pruning them
+   from both the oracle and the evidence refuses
+   (`consumers:oracle:file-witness`; contracts legs
+   `admission-oracle-unique`/`admission-oracle-floor`).
+7. **Physical custody covers the root.** `confined_read` canonicalizes
+   the confinement root and requires it to resolve to exactly its
+   lexical spelling — a junction or symlink at the root (or any
+   ancestor) refuses `custody-root-link` even though every below-root
+   component is physical (contracts leg `admission-root-custody`,
+   win32; loud skip elsewhere).
+8. **The URL policy refuses the whitespace scheme spelling.** A
+   scheme identifier followed by `:` + whitespace is a scheme token
+   when it names a known scheme — `scheme:` + space is the executable
+   spelling in url contexts — while prose colons stay safe; the
+   vector is in `unsafe_content`.
+9. **Unicode text bounds count scalars like the published schema.**
+   The note and bounded-text members count Unicode scalars exactly as
+   Ajv's `maxLength` does (code points, not UTF-8 bytes), with the
+   byte-level document bound unchanged; the differential gate covers
+   the valid-Unicode boundary in both directions
+   (`differential-unicode-bound`, regression
+   `unicode_text_bounds_count_scalars_like_the_published_schema`).
+
 ## Boundary
 
 Real provider integration, live publication, private requirement

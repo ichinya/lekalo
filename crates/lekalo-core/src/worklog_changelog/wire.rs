@@ -209,8 +209,11 @@ pub(crate) fn digest_pin(
 
 fn bounded_text(raw: &str, max: usize) -> Result<String, DiagnosticSet> {
     // The exact published control exclusion: C0 plus DEL only (the
-    // schemas deliberately allow the C1 range).
-    if raw.is_empty() || raw.len() > max || super::types::schema_control(raw) {
+    // schemas deliberately allow the C1 range). The bound counts
+    // Unicode scalars, exactly like the published `maxLength` (Ajv
+    // counts code points, not UTF-8 bytes): a valid non-ASCII text
+    // is never refused for its encoding width.
+    if raw.is_empty() || raw.chars().count() > max || super::types::schema_control(raw) {
         return Err(diagnostic::input_invalid("bounded-text"));
     }
     Ok(raw.to_owned())

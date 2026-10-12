@@ -395,6 +395,18 @@ fn duplicate_json_keys_are_rejected_before_any_semantics() {
 fn evidence_admission_target(
     mutation: impl FnOnce(&mut serde_json::Value),
 ) -> Result<lekalo_core::worklog_changelog::AdmissionReceipt, lekalo_core::result::DomainResult> {
+    evidence_admission_with(mutation, oracle_consumers(), engine_receipts())
+}
+
+/// The admission seam with explicit oracle and execution receipts:
+/// the regression tests of the r5 mechanisms pin the joins the shell
+/// produces (pruned oracles, refused batteries) without spawning a
+/// lane.
+fn evidence_admission_with(
+    mutation: impl FnOnce(&mut serde_json::Value),
+    oracle: Vec<lekalo_core::worklog_changelog::ExpectedConsumer>,
+    receipts: std::collections::BTreeMap<String, NativeExecutionReceipt>,
+) -> Result<lekalo_core::worklog_changelog::AdmissionReceipt, lekalo_core::result::DomainResult> {
     with_workspace_cwd(|| {
         let compilation = compilation();
         let composition_bytes = composition_bytes();
@@ -409,8 +421,8 @@ fn evidence_admission_target(
             &composition_bytes,
             &compilation.project,
             &admitted_backends(),
-            Some(&oracle_consumers()),
-            &engine_receipts(),
+            Some(&oracle),
+            &receipts,
             lekalo_core::worklog_changelog::AdmissionProfile::Strict,
         )
     })
@@ -468,6 +480,10 @@ fn engine_receipts() -> std::collections::BTreeMap<String, NativeExecutionReceip
                 .as_str()
                 .expect("digest")
                 .to_owned(),
+            // The engine-side battery verification: the mirrored
+            // receipt stands for a lane that satisfied the battery
+            // (the real shell derives it by execution).
+            battery_failure: None,
             assertions: php["assertions"]
                 .as_array()
                 .expect("assertions")
@@ -946,4 +962,136 @@ fn fabricated_execution_without_a_receipt_is_refused() {
         .blockers
         .iter()
         .any(|b| b == "php:execution:assertions"));
+}
+
+#[test]
+fn late_report_level_blockers_reach_every_target_verdict() {
+    // Finding r5-1: report-level obligations that are attributed after
+    // the per-target rows are finalized (an incomplete consumer
+    // closure, contradictory verdict claims) must still refuse every
+    // reported target — the strict gate reads the selected target's
+    // verdict, so a passing php row under a refused report is the
+    // certification hole.
+    let receipt = evidence_admission_target(|report| {
+        report["completeness"]["consumerClosure"] = serde_json::json!("incomplete");
+    })
+    .expect("receipt");
+    assert!(receipt
+        .blockers
+        .iter()
+        .any(|b| b == "consumers:closure:incomplete"));
+    let php = receipt
+        .targets
+        .iter()
+        .find(|row| row.target == "php")
+        .expect("php row");
+    assert_ne!(
+        php.verdict, "pass",
+        "an incomplete closure refuses the php row"
+    );
+    assert_eq!(receipt.verdict, "unsupported");
+
+    // A report claiming strict/permissive pass while the derived rows
+    // refuse is itself a blocker — and it applies to every target.
+    let receipt = evidence_admission_target(|report| {
+        report["verdict"] = serde_json::json!({
+            "strict": "pass",
+            "permissive": "pass",
+            "degraded": false,
+        });
+    })
+    .expect("receipt");
+    assert!(receipt.blockers.iter().any(|b| b == "verdict:strict-claim"));
+    assert!(receipt
+        .blockers
+        .iter()
+        .any(|b| b == "verdict:permissive-claim"));
+    let php = receipt
+        .targets
+        .iter()
+        .find(|row| row.target == "php")
+        .expect("php row");
+    assert_ne!(
+        php.verdict, "pass",
+        "a lying verdict claim refuses the php row"
+    );
+}
+
+#[test]
+fn required_file_witnesses_survive_oracle_pruning() {
+    // Finding r5-6: the required file-witness consumers (the public
+    // DTO schema projection and the composition allowlist) are a
+    // contract floor, not an oracle donation — pruning them from the
+    // oracle AND the evidence cannot erase the obligation.
+    let mut pruned = oracle_consumers();
+    pruned.retain(|consumer| !consumer.consumer.starts_with("taskhub."));
+    let receipt = evidence_admission_with(
+        |report| {
+            report["consumers"].as_array_mut().unwrap().retain(|row| {
+                row["consumer"]
+                    .as_str()
+                    .map_or(true, |c| !c.starts_with("taskhub."))
+            });
+        },
+        pruned,
+        engine_receipts(),
+    )
+    .expect("receipt");
+    assert!(receipt
+        .blockers
+        .iter()
+        .any(|b| b == "consumers:oracle:file-witness"));
+    let php = receipt
+        .targets
+        .iter()
+        .find(|row| row.target == "php")
+        .expect("php row");
+    assert_ne!(
+        php.verdict, "pass",
+        "a pruned file-witness floor refuses the php row"
+    );
+}
+
+#[test]
+fn refused_battery_refuses_whatever_the_report_claims() {
+    // Finding r5-2/5: an executed lane whose output cannot be bound to
+    // the engine-supplied battery (fresh nonce probe, corpus, arrange,
+    // invocations, assertions) is self-asserted output — the battery
+    // failure refuses the target even when every printed row matches
+    // the report exactly.
+    let mut receipts = engine_receipts();
+    receipts
+        .get_mut("php")
+        .expect("php receipt")
+        .battery_failure = Some("battery-probe");
+    let receipt =
+        evidence_admission_with(|_report| {}, oracle_consumers(), receipts).expect("receipt");
+    assert!(receipt
+        .blockers
+        .iter()
+        .any(|b| b == "php:execution:battery-probe"));
+    let php = receipt
+        .targets
+        .iter()
+        .find(|row| row.target == "php")
+        .expect("php row");
+    assert_ne!(php.verdict, "pass", "a refused battery refuses the php row");
+}
+
+#[test]
+fn unicode_text_bounds_count_scalars_like_the_published_schema() {
+    // Finding r5-7/9: the published `maxLength` counts Unicode code
+    // points (Ajv semantics); the production decoder counts scalars
+    // too, so a valid 2000-character non-ASCII note admits and a
+    // 2001-character one refuses.
+    let receipt = evidence_admission_target(|report| {
+        report["targets"][0]["capabilities"][0]["note"] = serde_json::json!("é".repeat(2000));
+    })
+    .expect("the 2000-scalar note decodes");
+    assert_ne!(receipt.verdict, "unknown");
+
+    let result = evidence_admission_target(|report| {
+        report["targets"][0]["capabilities"][0]["note"] = serde_json::json!("é".repeat(2001));
+    });
+    assert!(result.is_err(), "the 2001-scalar note is over the bound");
 }
