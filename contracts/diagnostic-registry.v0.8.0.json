@@ -447,6 +447,225 @@
       "lifecycle": "active"
     },
     {
+      "id": "adoption.confirmation-required",
+      "code": "LEK-ADOPT-005",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "adoption.confirmation-required",
+      "default_message": "A reviewed plan confirmation is missing or mismatched.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "plan",
+          "type": "token"
+        },
+        {
+          "name": "reason",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "adoption.evidence-incomplete",
+      "code": "LEK-ADOPT-006",
+      "category": "infrastructure",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied",
+        "unsupported",
+        "unavailable"
+      ],
+      "message_id": "adoption.evidence-incomplete",
+      "default_message": "Required behavior or verification evidence is missing, stale, or unknown.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "check",
+          "type": "token"
+        },
+        {
+          "name": "reason",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "adoption.input-invalid",
+      "code": "LEK-ADOPT-001",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "adoption.input-invalid",
+      "default_message": "A closed adoption input is malformed, duplicate, foreign-scoped, or over limit.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "field",
+          "type": "token"
+        },
+        {
+          "name": "reason",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "adoption.plan-stale",
+      "code": "LEK-ADOPT-004",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "adoption.plan-stale",
+      "default_message": "A pinned source, model, lock, adapter, profile, gate, or evidence input changed.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "plan",
+          "type": "token"
+        },
+        {
+          "name": "inputs",
+          "type": "records"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "adoption.recovery-required",
+      "code": "LEK-ADOPT-008",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "adoption.recovery-required",
+      "default_message": "An interrupted installation, failed rollback, or journal defect demands recovery.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "plan",
+          "type": "token"
+        },
+        {
+          "name": "phase",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "adoption.rollback-conflict",
+      "code": "LEK-ADOPT-009",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "adoption.rollback-conflict",
+      "default_message": "Current bytes differ from the applied plan expected post-state; rollback is refused.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "receipt",
+          "type": "token"
+        },
+        {
+          "name": "paths",
+          "type": "records"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "adoption.scope-refused",
+      "code": "LEK-ADOPT-003",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "adoption.scope-refused",
+      "default_message": "The requested adoption scope is unresolved, ambiguous, or outside write authority.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "scope",
+          "type": "token"
+        },
+        {
+          "name": "reason",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "adoption.verification-failed",
+      "code": "LEK-ADOPT-007",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "adoption.verification-failed",
+      "default_message": "An executed required native, semantic, or behavioral check failed.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "check",
+          "type": "token"
+        },
+        {
+          "name": "receipt",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "adoption.version-unsupported",
+      "code": "LEK-ADOPT-002",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unsupported-version"
+      ],
+      "message_id": "adoption.version-unsupported",
+      "default_message": "An adoption contract family or recipe version is unsupported.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "version",
+          "type": "token"
+        },
+        {
+          "name": "supported",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "ai-lint.baseline-incomparable",
       "code": "LEK-AILINT-005",
       "category": "compatibility",

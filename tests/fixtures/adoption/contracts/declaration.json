@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "lekalo/contracted-declaration/v0.4.0",
+  "adapter": {
+    "id": "lekalo-target-node-typescript",
+    "version": "0.2.16",
+    "digest": null
+  },
+  "project": "taskboard",
+  "revision": "sha256:1361a56d4a5b8e7c1c9f0d2a3b4c5d6e7f8091a2b3c4d5e6f70819a2b3c4d5e6",
+  "symbols": [
+    {
+      "id": "taskboard.complete_task",
+      "kind": "command",
+      "source": {
+        "path": "src/tasks.mjs",
+        "line": 11
+      },
+      "fingerprint": "sha256:c4d6f08c6de053ab779d969eae99e46f2f13a031a6f8b813008595e9e8087870",
+      "signature": {
+        "inputs": [],
+        "output": null,
+        "reads": []
+      },
+      "effects": []
+    }
+  ],
+  "artifacts": []
+}

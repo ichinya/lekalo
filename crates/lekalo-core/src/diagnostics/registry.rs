@@ -24,7 +24,13 @@ pub const SUCCESSOR_REGISTRY_BYTES: &[u8] =
 
 /// The issue #94 union successor: the current successor plus the closed
 /// `format.*` family. Predecessor producers keep their exact pins.
+///
+/// After the milestone integration merge this file also carries the
+/// issue #136 `adoption.*` family (the grand union registry).
 pub const FORMAT_REGISTRY_BYTES: &[u8] =
+    include_bytes!("../../../../contracts/diagnostic-registry.v0.8.0.json");
+
+pub const ADOPTION_REGISTRY_BYTES: &[u8] =
     include_bytes!("../../../../contracts/diagnostic-registry.v0.8.0.json");
 
 /// Why the embedded registry could not be trusted.
@@ -165,6 +171,9 @@ impl DiagnosticRegistry {
     }
 
     /// The issue #94 union successor (successor + `format.*` family).
+    ///
+    /// After the milestone integration merge this registry also carries
+    /// the issue #136 `adoption.*` family.
     pub fn format_successor() -> Result<&'static Self, RegistryError> {
         static REGISTRY: LazyLock<Result<DiagnosticRegistry, RegistryError>> =
             LazyLock::new(|| {
@@ -176,11 +185,29 @@ impl DiagnosticRegistry {
         REGISTRY.as_ref().map_err(Clone::clone)
     }
 
+    /// The issue #136 union successor (the merged `format.*` + `adoption.*`
+    /// registry since the milestone integration merge).
+    pub fn adoption() -> Result<&'static Self, RegistryError> {
+        static REGISTRY: LazyLock<Result<DiagnosticRegistry, RegistryError>> =
+            LazyLock::new(|| {
+                DiagnosticRegistry::parse_version(
+                    ADOPTION_REGISTRY_BYTES,
+                    super::version::ADOPTION_REGISTRY_VERSION,
+                )
+            });
+        REGISTRY.as_ref().map_err(Clone::clone)
+    }
+
     pub fn for_version(version: &str) -> Result<&'static Self, RegistryError> {
         match version {
             REGISTRY_VERSION => Self::embedded(),
             super::version::SUCCESSOR_REGISTRY_VERSION => Self::successor(),
-            super::version::FORMAT_REGISTRY_VERSION => Self::format_successor(),
+            // Both family constants name the merged 0.8.0 union registry.
+            v if v == super::version::FORMAT_REGISTRY_VERSION
+                || v == super::version::ADOPTION_REGISTRY_VERSION =>
+            {
+                Self::format_successor()
+            }
             _ => Err(RegistryError::Unsupported),
         }
     }

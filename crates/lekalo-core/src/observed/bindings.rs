@@ -160,7 +160,7 @@ pub struct BatchReceipt {
 /// by native identity and ranked by (confidence descending, native
 /// ascending). The top of the ranking is the only candidate an
 /// unambiguous confirmation may resolve to.
-fn ranked_candidates(record: &SymbolRecord) -> Vec<CandidateRecord> {
+pub(crate) fn ranked_candidates(record: &SymbolRecord) -> Vec<CandidateRecord> {
     let mut candidates: Vec<CandidateRecord> = Vec::new();
     if let Some(location) = &record.location {
         let native = record
@@ -265,7 +265,7 @@ fn proposal_of(index: &ObservedIndex, record: &SymbolRecord) -> Option<Proposal>
 
 /// Derive every current proposal from the recorded index. Pure: the same
 /// index always produces the same proposals with the same identifiers.
-fn proposals_of(index: &ObservedIndex) -> Vec<Proposal> {
+pub(crate) fn proposals_of(index: &ObservedIndex) -> Vec<Proposal> {
     let mut proposals: Vec<Proposal> = Vec::new();
     for record in &index.symbols {
         if record.status != BindingStatus::Inferred || record.promoted {
@@ -328,7 +328,7 @@ fn resolve_candidate<'a>(
 
 /// Apply one confirmation to the recorded index: the binding becomes
 /// user-confirmed at the chosen native identity, provenance preserved.
-fn apply_confirmation(
+pub(crate) fn apply_confirmation(
     index: &mut ObservedIndex,
     proposal: &Proposal,
     chosen: &CandidateRecord,

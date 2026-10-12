@@ -1140,6 +1140,15 @@ Status: **Implemented** command handlers for product 0.8.0. Handler existence do
 | `lekalo adapter test` | `lekalo adapter test [OPTIONS] [PROGRAM_ARGS]...` | [reference](adapter-conformance.md) |
 | `lekalo adapter trust` | `lekalo adapter trust [OPTIONS] --level <LEVEL> <ID>` | [reference](adapter-install.md) |
 | `lekalo adapter update` | `lekalo adapter update [OPTIONS] <ID>` | [reference](adapter-install.md) |
+| `lekalo adoption` | `lekalo adoption [OPTIONS] <COMMAND>` | [reference](adoption.md) |
+| `lekalo adoption analyze` | `lekalo adoption analyze [OPTIONS]` | [reference](adoption.md) |
+| `lekalo adoption apply` | `lekalo adoption apply [OPTIONS] --plan <FILE> --verification <FILE> --confirm <DIGEST>` | [reference](adoption.md) |
+| `lekalo adoption confirm` | `lekalo adoption confirm [OPTIONS]` | [reference](adoption.md) |
+| `lekalo adoption coverage` | `lekalo adoption coverage [OPTIONS]` | [reference](adoption.md) |
+| `lekalo adoption recovery` | `lekalo adoption recovery [OPTIONS]` | [reference](adoption.md) |
+| `lekalo adoption refactor` | `lekalo adoption refactor [OPTIONS] --verification <FILE>` | [reference](adoption.md) |
+| `lekalo adoption rollback` | `lekalo adoption rollback [OPTIONS] --receipt <FILE>` | [reference](adoption.md) |
+| `lekalo adoption verify` | `lekalo adoption verify [OPTIONS] --plan <FILE> --verification <FILE>` | [reference](adoption.md) |
 | `lekalo ai-lint` | `lekalo ai-lint [OPTIONS]` | [reference](ai-lint.md) |
 | `lekalo architecture-profile` | `lekalo architecture-profile [OPTIONS] <COMMAND>` | [reference](architecture-profile.md) |
 | `lekalo architecture-profile assess` | `lekalo architecture-profile assess [OPTIONS] <--module <MODULE>\|--all>` | [reference](architecture-profile.md) |

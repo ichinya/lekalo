@@ -1,0 +1,6 @@
+{
+  "name": "taskboard",
+  "version": "0.2.16",
+  "private": true,
+  "type": "module"
+}

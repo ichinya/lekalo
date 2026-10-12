@@ -23,6 +23,7 @@ type StorageAttachment = lekalo_core::storage_projection::StorageProjectionAttac
 /// storage-profile` commands (issue #117).
 type ProfileAttachment = lekalo_core::storage_engine_profile::StorageEngineProfile;
 
+mod adoption;
 mod ai_lint;
 mod architecture_profile;
 mod coupling;
@@ -88,6 +89,9 @@ struct ImpactArgs {
     /// The closed impact profile.
     #[arg(long, value_name = "PROFILE", default_value = "default")]
     profile: String,
+    /// The saved adoption coverage attachment (issue #136 wrapper).
+    #[arg(long, value_name = "FILE")]
+    adoption: Option<String>,
     /// Project root selector, relative to the invocation directory.
     #[arg(long, value_name = "DIR")]
     project: Option<String>,
@@ -628,11 +632,15 @@ enum Commands {
         traces: Vec<String>,
     },
     /// Report the freshness panel — lock, cache, bindings, artifacts —
-    /// plus the exact git/model/lock revisions.
+    /// plus the exact git/model/lock revisions. With `--adoption`, the
+    /// typed issue #136 wrapper joins one saved coverage attachment.
     Status {
         /// Project root selector, relative to the invocation directory.
         #[arg(long, value_name = "DIR")]
         project: Option<String>,
+        /// The saved adoption coverage attachment.
+        #[arg(long, value_name = "FILE")]
+        adoption: Option<String>,
     },
     /// Report phase readiness with required and optional checks.
     Readiness {
@@ -721,6 +729,14 @@ enum Commands {
     Nfr {
         #[command(subcommand)]
         command: NfrCommands,
+    },
+    /// Scoped brownfield adoption, selective refactoring, and hybrid
+    /// mode (issue #136): read-only analysis, selective confirmation,
+    /// exact refactor plans, verified apply with rollback, and the
+    /// hybrid coverage join.
+    Adoption {
+        #[command(subcommand)]
+        command: crate::adoption::AdoptionCommands,
     },
 }
 
@@ -1310,6 +1326,8 @@ enum TraceCommands {
         path: String,
     },
     /// Run one closed forward/reverse query over a validated manifest.
+    /// With `--adoption`, the typed issue #136 wrapper joins one saved
+    /// coverage attachment.
     Query {
         /// Path to the trace manifest JSON document.
         path: String,
@@ -1317,6 +1335,14 @@ enum TraceCommands {
         /// `artifacts-for:ID`, `tests-for:ID`, `gates-for:ID`,
         /// `diagnostics-for:ID`, or `gaps`.
         selector: String,
+        /// The saved adoption coverage attachment.
+        #[arg(long, value_name = "FILE")]
+        adoption: Option<String>,
+        /// Project root selector, relative to the invocation directory,
+        /// honored exactly like the sibling `--adoption` consumers
+        /// (F5).
+        #[arg(long, value_name = "DIR", requires = "adoption")]
+        project: Option<String>,
     },
     /// Rebuild the scenario → test → gate manifest from the adjudicated
     /// run-record ingest home and persist the canonical document under
@@ -2526,6 +2552,7 @@ fn runtime() -> u8 {
             Commands::Graph { command } => run_graph(command, cli.no_cache),
             Commands::Effects { command } => run_effects(command, cli.no_cache),
             Commands::Trace { command } => run_trace(command),
+            Commands::Adoption { command } => crate::adoption::run(command),
             Commands::Requirements { command } => run_requirements(command),
             Commands::Generate {
                 project,
@@ -2608,7 +2635,7 @@ fn runtime() -> u8 {
                 fix,
                 traces,
             } => run_doctor(project, fix, traces),
-            Commands::Status { project } => run_status(project),
+            Commands::Status { project, adoption } => run_status(project, adoption),
             Commands::Readiness {
                 phase,
                 project,
@@ -5177,7 +5204,75 @@ fn run_doctor(project: Option<String>, fix: bool, traces: Vec<String>) -> Domain
 }
 
 /// `lekalo status`: the freshness panel plus the exact revisions.
-fn run_status(project: Option<String>) -> DomainResult {
+fn run_status(project: Option<String>, adoption: Option<String>) -> DomainResult {
+    let base = run_status_envelope(project.clone());
+    let Some(path) = adoption else {
+        return base;
+    };
+    // The wrapper never hides an upstream failure: invalid, denied, and
+    // unsupported upstreams surface untouched.
+    if base.status() != lekalo_core::Status::Valid {
+        return base;
+    }
+    // The adoption context resolves from the exact project selection the
+    // invocation named — never silently from the cwd (F5/X10). The
+    // observed index rides along for the freshness re-fingerprint
+    // (X11); unreadable evidence degrades to the typed unknown panel.
+    let selection = selection_for(&project);
+    let context = match lekalo_core::adoption::context(&selection) {
+        Ok(context) => context,
+        Err(result) => return result,
+    };
+    let index = lekalo_core::observed::context(&selection)
+        .ok()
+        .and_then(|observed| lekalo_core::observed::index::load_index(&observed).ok())
+        .flatten();
+    let project_id = context
+        .model
+        .project
+        .as_ref()
+        .map(|project| project.id.clone())
+        .unwrap_or_default();
+    let bytes = match std::fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            return DomainResult::invalid(lekalo_core::adoption::diagnostic_input_invalid(
+                "adoption",
+                "file-missing",
+            ))
+        }
+    };
+    let coverage = match lekalo_core::adoption::load_coverage(&bytes, &project_id) {
+        Ok((document, _)) => document,
+        Err(result) => return result,
+    };
+    let upstream: serde_json::Value = match serde_json::from_str(&base.to_json_string()) {
+        Ok(value) => value,
+        Err(_) => {
+            return DomainResult::invalid(lekalo_core::adoption::diagnostic_input_invalid(
+                "upstream",
+                "unreadable",
+            ))
+        }
+    };
+    let report =
+        match lekalo_core::adoption::status_report(&context, index.as_ref(), upstream, &coverage) {
+            Ok(report) => report,
+            Err(result) => return result,
+        };
+    DomainResult::receipt(
+        serde_json::to_string_pretty(&report).expect("status report serializes"),
+        format!(
+            "status : adoption coverage {} ({} panels, {} gaps)",
+            report.coverage,
+            report.panels.len(),
+            report.gaps.len()
+        ),
+    )
+}
+
+/// The upstream freshness panel without the adoption wrapper.
+fn run_status_envelope(project: Option<String>) -> DomainResult {
     let selection = selection_for(&project);
     let git = doctor_git_facts(&selection);
     let options = lekalo_core::doctor::Options {
@@ -6182,9 +6277,20 @@ fn run_trace(command: TraceCommands) -> DomainResult {
             let selection = selection_for(&project);
             return lekalo_core::orchestration::collect_scenario_trace(&selection);
         }
+        TraceCommands::Query {
+            path,
+            selector,
+            adoption: Some(adoption),
+            project,
+        } => return trace_query_adoption(&path, &selector, &adoption, &project),
         TraceCommands::Validate { path } => (path, TraceStep::Validate),
         TraceCommands::Export { path } => (path, TraceStep::Export),
-        TraceCommands::Query { path, selector } => (path, TraceStep::Query(selector)),
+        TraceCommands::Query {
+            path,
+            selector,
+            adoption: None,
+            project: _,
+        } => (path, TraceStep::Query(selector)),
     };
     let bytes = match std::fs::read(&path) {
         Ok(bytes) => bytes,
@@ -6304,6 +6410,105 @@ fn trace_export(manifest: &lekalo_core::trace::TraceManifest) -> DomainResult {
 /// `lekalo trace query PATH SELECTOR`: the closed forward/reverse
 /// selectors answered from the normalized relation index; `gaps` projects
 /// the explicit gap list.
+/// The typed issue #136 trace projection: the exact manifest and query
+/// result plus the coverage join. An upstream failure surfaces
+/// untouched. The adoption context resolves from the same
+/// `--project`/cwd selection the sibling `status`/`impact` consumers
+/// honor (F5), never cwd alone.
+fn trace_query_adoption(
+    path: &str,
+    selector: &str,
+    adoption: &str,
+    project: &Option<String>,
+) -> DomainResult {
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let detail = match error.kind() {
+                io::ErrorKind::NotFound => "file-missing",
+                _ => "file-unreadable",
+            };
+            return DomainResult::invalid(lekalo_core::trace::io_failure(detail));
+        }
+    };
+    let manifest = match lekalo_core::trace::TraceManifest::parse(&bytes) {
+        Ok(manifest) => manifest,
+        Err(diagnostics) => return DomainResult::invalid(diagnostics),
+    };
+    let base = trace_query(&manifest, selector);
+    if base.status() != lekalo_core::Status::Valid {
+        return base;
+    }
+    let selection = selection_for(project);
+    let context = match lekalo_core::adoption::context(&selection) {
+        Ok(context) => context,
+        Err(result) => return result,
+    };
+    // The observed index rides along for the freshness re-fingerprint;
+    // unreadable evidence degrades to the typed unknown obligation.
+    let index = lekalo_core::observed::context(&selection)
+        .ok()
+        .and_then(|observed| lekalo_core::observed::index::load_index(&observed).ok())
+        .flatten();
+    let project_id = context
+        .model
+        .project
+        .as_ref()
+        .map(|project| project.id.clone())
+        .unwrap_or_default();
+    let coverage_bytes = match std::fs::read(adoption) {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            return DomainResult::invalid(lekalo_core::adoption::diagnostic_input_invalid(
+                "adoption",
+                "file-missing",
+            ))
+        }
+    };
+    let coverage = match lekalo_core::adoption::load_coverage(&coverage_bytes, &project_id) {
+        Ok((document, _)) => document,
+        Err(result) => return result,
+    };
+    let manifest_json: serde_json::Value = match serde_json::from_slice(&bytes) {
+        Ok(value) => value,
+        Err(_) => {
+            return DomainResult::invalid(lekalo_core::adoption::diagnostic_input_invalid(
+                "manifest",
+                "unreadable",
+            ))
+        }
+    };
+    let query_json: serde_json::Value = match serde_json::from_str(&base.to_json_string()) {
+        Ok(value) => value,
+        Err(_) => {
+            return DomainResult::invalid(lekalo_core::adoption::diagnostic_input_invalid(
+                "query",
+                "unreadable",
+            ))
+        }
+    };
+    let report = match lekalo_core::adoption::trace_report(
+        &context,
+        index.as_ref(),
+        manifest_json,
+        query_json,
+        &coverage,
+        Vec::new(),
+    ) {
+        Ok(report) => report,
+        Err(result) => return result,
+    };
+    DomainResult::receipt(
+        serde_json::to_string_pretty(&report).expect("trace report serializes"),
+        format!(
+            "trace query : adoption coverage {} ({} uncovered, {} stale)",
+            report.coverage,
+            report.uncovered.len(),
+            report.stale.len()
+        ),
+    )
+}
+
 fn trace_query(manifest: &lekalo_core::trace::TraceManifest, selector: &str) -> DomainResult {
     let selection = match lekalo_core::trace::QuerySelection::parse(selector) {
         Ok(selection) => selection,
@@ -10159,6 +10364,75 @@ fn source_paths_of(
 /// decision — traversal, risks, gates, limits, diagnostics — lives in the
 /// core; this binary only selects, renders, and maps exits.
 fn run_impact(args: ImpactArgs) -> DomainResult {
+    let adoption = args.adoption.clone();
+    let project = args.project.clone();
+    let base = run_impact_base(args);
+    let Some(path) = adoption else {
+        return base;
+    };
+    // The wrapper never hides an upstream failure.
+    if base.status() != lekalo_core::Status::Valid {
+        return base;
+    }
+    // The adoption context resolves from the exact project selection the
+    // invocation named — never silently from the cwd (F5/X10). The
+    // observed index rides along for the freshness re-fingerprint
+    // (X11); unreadable evidence degrades to the typed boundary only.
+    let selection = selection_for(&project);
+    let context = match lekalo_core::adoption::context(&selection) {
+        Ok(context) => context,
+        Err(result) => return result,
+    };
+    let index = lekalo_core::observed::context(&selection)
+        .ok()
+        .and_then(|observed| lekalo_core::observed::index::load_index(&observed).ok())
+        .flatten();
+    let project_id = context
+        .model
+        .project
+        .as_ref()
+        .map(|project| project.id.clone())
+        .unwrap_or_default();
+    let bytes = match std::fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            return DomainResult::invalid(lekalo_core::adoption::diagnostic_input_invalid(
+                "adoption",
+                "file-missing",
+            ))
+        }
+    };
+    let coverage = match lekalo_core::adoption::load_coverage(&bytes, &project_id) {
+        Ok((document, _)) => document,
+        Err(result) => return result,
+    };
+    let upstream: serde_json::Value = match serde_json::from_str(&base.to_json_string()) {
+        Ok(value) => value,
+        Err(_) => {
+            return DomainResult::invalid(lekalo_core::adoption::diagnostic_input_invalid(
+                "upstream",
+                "unreadable",
+            ))
+        }
+    };
+    let report =
+        match lekalo_core::adoption::impact_report(&context, index.as_ref(), upstream, &coverage) {
+            Ok(report) => report,
+            Err(result) => return result,
+        };
+    DomainResult::receipt(
+        serde_json::to_string_pretty(&report).expect("impact report serializes"),
+        format!(
+            "impact : adoption coverage {} ({} boundaries, {} gaps)",
+            report.coverage,
+            report.boundaries.len(),
+            report.gaps.len()
+        ),
+    )
+}
+
+/// The upstream impact envelope without the adoption wrapper.
+fn run_impact_base(args: ImpactArgs) -> DomainResult {
     let ImpactArgs {
         symbol,
         changed,
@@ -10170,6 +10444,7 @@ fn run_impact(args: ImpactArgs) -> DomainResult {
         target,
         relation,
         profile,
+        adoption: _,
         project,
     } = args;
     // Selector semantics the flags alone cannot express.

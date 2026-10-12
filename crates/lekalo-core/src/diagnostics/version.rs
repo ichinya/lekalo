@@ -61,6 +61,15 @@ pub const SUCCESSOR_REGISTRY_VERSION: &str = "0.6.5";
 /// their exact pins.
 pub const FORMAT_REGISTRY_VERSION: &str = "0.8.0";
 
+/// Opt-in issue #136 union successor: the brownfield adoption service's
+/// nine `adoption.*` rules join the full 0.6.5 union. Predecessor
+/// producer pins (the 0.6.4 default and the 0.6.5 architecture union)
+/// are preserved verbatim; the diagnostic item wire stays 0.2.16.
+///
+/// After the milestone integration merge, this is the same merged
+/// `format.*` + `adoption.*` union registry as `FORMAT_REGISTRY_VERSION`.
+pub const ADOPTION_REGISTRY_VERSION: &str = "0.8.0";
+
 /// The closed diagnostic schema version.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DiagnosticSchemaVersion {
