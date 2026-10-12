@@ -402,6 +402,68 @@ fn repeated_runs_emit_byte_identical_envelopes() {
 }
 
 #[test]
+fn an_overlong_targets_selector_is_refused_and_the_bound_emits() {
+    // The report echoes the pinned `--targets` selector verbatim as
+    // `inputs.targetsConfig.path` (published at most 256 characters):
+    // a grammar-legal but over-long selector is an admission refusal,
+    // and the exact published bound still assesses and echoes — never
+    // a schema-invalid emission on legal input.
+    let sandbox = std::env::temp_dir().join("lekalo-portability-targets-path-bound");
+    let _ = std::fs::remove_dir_all(&sandbox);
+    copy_dir(&fixture_path(), &sandbox);
+    let selector = |segments: &[String]| {
+        segments
+            .iter()
+            .cloned()
+            .chain(["targets.json".to_owned()])
+            .collect::<Vec<_>>()
+            .join("/")
+    };
+    let at_bound_dirs: Vec<String> = vec!["d".repeat(60); 4];
+    let over_dirs: Vec<String> = vec![
+        "d".repeat(60),
+        "d".repeat(60),
+        "d".repeat(60),
+        "d".repeat(61),
+    ];
+    let at_bound = selector(&at_bound_dirs);
+    let over = selector(&over_dirs);
+    assert_eq!(at_bound.len(), 256);
+    assert_eq!(over.len(), 257);
+    for segments in [&at_bound_dirs, &over_dirs] {
+        let mut dir = sandbox.clone();
+        for segment in segments {
+            dir = dir.join(segment);
+        }
+        std::fs::create_dir_all(&dir).expect("create the deep config dir");
+        std::fs::copy(
+            sandbox.join("config/portability-targets.json"),
+            dir.join("targets.json"),
+        )
+        .expect("copy the config");
+    }
+    let refused = lekalo_in(&sandbox, &["--json", "portability", "--targets", &over]);
+    assert_eq!(
+        exit_code(&refused),
+        1,
+        "an over-long selector is an admission refusal"
+    );
+    assert!(stderr_text(&refused).contains("portability.input-invalid"));
+    assert!(stderr_text(&refused).contains("targets-path-bound"));
+    let emitted = lekalo_in(&sandbox, &["--json", "portability", "--targets", &at_bound]);
+    assert_eq!(exit_code(&emitted), 0, "the exact bound still assesses");
+    let document = document(&emitted);
+    assert_eq!(
+        document["portability"]["inputs"]["targetsConfig"]["path"]
+            .as_str()
+            .map(str::len),
+        Some(256),
+        "the maximum legal selector is echoed verbatim, inside the bound"
+    );
+    std::fs::remove_dir_all(&sandbox).ok();
+}
+
+#[test]
 fn the_analysis_never_writes_into_the_project() {
     let project = fixture_path();
     let before = dir_fingerprint(&project);

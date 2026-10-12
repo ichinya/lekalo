@@ -12,7 +12,7 @@
 import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -412,6 +412,9 @@ const controls = [
   ["invalid/policy-null-precision.evidence.json", "policy-shape", 1, false],
   ["invalid/duplicate-hooks.evidence.json", "duplicate-hook", 1, false],
   ["invalid/absent-adapter-bad-version.evidence.json", "adapter-snapshot", 1, false],
+  ["invalid/receipt-ref-trailing-dash.evidence.json", "artifact-ref", 1, false],
+  ["invalid/receipt-ref-device-stem.evidence.json", "artifact-ref", 1, false],
+  ["invalid/storage-ref-over-length.targets.json", "artifact-ref", 1, false],
 ];
 for (const [relative, reason, expectedExit, schemaValid] of controls) {
   const temp = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
@@ -1700,6 +1703,155 @@ const withEvidence = (temp, mutate) => {
       } finally {
         rmSync(temp, { recursive: true, force: true });
       }
+    }
+  }
+}
+
+// 10e. Round-5 fix probes: the typed-verbatim strict-gate verdict under
+//      a crowded diagnostics channel, the disclosed `diagnostics-bound`
+//      marker, the maximum-legal-length emit bounds for storage
+//      references and the targets selector, and the receipt provenance
+//      grammar at admission.
+{
+  // R5-1 — a schema-legal crowd cannot green the strict gate: thousands
+  // of unqualified scenario claims fill the ordinary diagnostics region
+  // while no gate record covers the affected scenarios. The verdict is
+  // the typed `migrationSurface.complete` flag, the coverage indication
+  // is pinned inside the reserved tail, and the bound is disclosed.
+  {
+    const temp = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
+    try {
+      cpSync(project, temp, { recursive: true });
+      withEvidence(temp, (manifest) => {
+        manifest.gates = [];
+        const digest = manifest.scenarios[0].receiptDigest;
+        for (let i = 0; i < 4200; i += 1) {
+          manifest.scenarios.push({
+            scenario: `planner.crowd-${i}`,
+            targetId: "php-laravel",
+            state: "recorded-pass",
+            receiptRef: "reports/receipts/focus-flow.json",
+            receiptDigest: digest,
+          });
+        }
+      });
+      const args = ["--json", "portability", "--to", "php-laravel", "--symbol", "planner.focus_task", "--evidence", "reports/portability-evidence.json"];
+      const control = tryRun(args, temp);
+      if (control.code !== 0) fail("r5-1-advisory-exit", String(control.code));
+      const controlReport = JSON.parse(control.stdout).portability;
+      if (!validate.report(controlReport)) fail("r5-1-advisory-schema", validate.report.errors);
+      const denied = tryRun([...args, "--check"], temp);
+      if (denied.code !== 3) fail("r5-1-crowd-green", `crowded --check must deny, got ${denied.code}`);
+      const report = JSON.parse(denied.stdout).payload.portability;
+      if (!validate.report(report)) fail("r5-1-denied-schema", validate.report.errors);
+      if (report.migrationSurface.complete) fail("r5-1-complete", "the coverage gap must mark the surface incomplete");
+      if (report.diagnostics.length > 4096) fail("r5-1-bound", String(report.diagnostics.length));
+      const unqualified = report.diagnostics.filter((d) => d.detail === "receipt-unqualified").length;
+      if (unqualified !== 4088) fail("r5-1-crowd-fill", `expected the ordinary region full (4088), got ${unqualified}`);
+      const last = report.diagnostics[report.diagnostics.length - 1];
+      if (!last || last.detail !== "diagnostics-bound") fail("r5-1-marker", JSON.stringify(last));
+      if (!report.diagnostics.some((d) => d.detail === "gate-coverage-unknown")) {
+        fail("r5-1-pin", "the coverage gap must stay pinned above the crowd");
+      }
+    } finally {
+      rmSync(temp, { recursive: true, force: true });
+    }
+  }
+
+  // R5-4 — the storage-reference emit-composition bound: a 252-character
+  // reference (the exact legal maximum) emits a 324-character verified
+  // member — inside the published bound by construction, and the report
+  // stays schema-valid.
+  {
+    const temp = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
+    try {
+      cpSync(project, temp, { recursive: true });
+      const ref = ["s".repeat(63), "s".repeat(63), "s".repeat(63), `t${"t".repeat(54)}.json`].join("/");
+      if (ref.length !== 252) fail("r5-4-ref-length", String(ref.length));
+      let dir = temp;
+      for (const segment of ref.split("/").slice(0, -1)) {
+        dir = join(dir, segment);
+        mkdirSync(dir, { recursive: true });
+      }
+      copyFileSync(join(root, "tests/fixtures/storage-engine-profile/valid/mysql-8.0.json"), join(dir, "t".repeat(55) + ".json"));
+      const config = JSON.parse(readFileSync(join(temp, "config/portability-targets.json"), "utf8"));
+      config.targets.find((t) => t.targetId === "php-laravel").storageProfileRefs = [ref];
+      writeFileSync(join(temp, "config/portability-targets.json"), JSON.stringify(config, null, 2) + "\n");
+      const run = tryRun(["--json", "portability", "--to", "php-laravel", "--symbol", "planner.focus_task", "--evidence", "reports/portability-evidence.json"], temp);
+      if (run.code !== 0) fail("r5-4-exit", `${run.code}: ${run.stderr.slice(0, 200)}`);
+      const report = JSON.parse(run.stdout).portability;
+      if (!validate.report(report)) fail("r5-4-schema", validate.report.errors);
+      const emitted = report.destinations.find((d) => d.targetId === "php-laravel").storageProfileRefs[0];
+      // Exact bound: 252 + len("#sha256:") + 64 = 324.
+      if (!emitted || emitted.length !== 324 || !/#sha256:[0-9a-f]{64}$/.test(emitted)) {
+        fail("r5-4-emit-bound", JSON.stringify(emitted));
+      }
+    } finally {
+      rmSync(temp, { recursive: true, force: true });
+    }
+  }
+
+  // R5-5 — the targets-selector echo bound: the exact 256-character
+  // maximum still assesses and emits a schema-valid report; one
+  // character more is an explicit admission refusal.
+  {
+    const temp = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
+    try {
+      cpSync(project, temp, { recursive: true });
+      const atBound = ["d".repeat(60), "d".repeat(60), "d".repeat(60), "d".repeat(60), "targets.json"].join("/");
+      const over = ["d".repeat(60), "d".repeat(60), "d".repeat(60), "d".repeat(61), "targets.json"].join("/");
+      if (atBound.length !== 256 || over.length !== 257) fail("r5-5-length", `${atBound.length}/${over.length}`);
+      for (const relative of [atBound, over]) {
+        let dir = temp;
+        for (const segment of relative.split("/").slice(0, -1)) {
+          dir = join(dir, segment);
+          mkdirSync(dir, { recursive: true });
+        }
+        copyFileSync(join(temp, "config/portability-targets.json"), join(dir, "targets.json"));
+      }
+      const emitted = tryRun(["--json", "portability", "--targets", atBound, "--to", "php-laravel", "--symbol", "planner.focus_task"], temp);
+      if (emitted.code !== 0) fail("r5-5-emit-exit", `${emitted.code}: ${emitted.stderr.slice(0, 200)}`);
+      const report = JSON.parse(emitted.stdout).portability;
+      if (!validate.report(report)) fail("r5-5-emit-schema", validate.report.errors);
+      const echoed = report.inputs.targetsConfig.path;
+      if (echoed !== atBound || echoed.length !== 256) fail("r5-5-echo", JSON.stringify(echoed));
+      const refused = tryRun(["--json", "portability", "--targets", over], temp);
+      if (refused.code !== 1) fail("r5-5-refuse-exit", String(refused.code));
+      if (!(refused.stderr + refused.stdout).includes('"targets-path-bound"')) fail("r5-5-refuse-reason", refused.stderr.slice(0, 200));
+    } finally {
+      rmSync(temp, { recursive: true, force: true });
+    }
+  }
+
+  // R5-6 — the receipt provenance grammar at admission: a referenced
+  // receipt with malformed provenance members refuses at decode (the
+  // schema-invalid bytes never qualify or demote silently).
+  {
+    const temp = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
+    try {
+      cpSync(project, temp, { recursive: true });
+      const malformations = [
+        (receipt) => { receipt.profileRef.resolvedDigest = "not-a-digest"; },
+        (receipt) => { receipt.projectRef.projectId = "INVALID"; },
+        (receipt) => { receipt.projectRef.modelVersion = "m".repeat(33); },
+        (receipt) => { receipt.projectRef.irDigest = "sha256:zz"; },
+      ];
+      for (const [index, malform] of malformations.entries()) {
+        cpSync(project, temp, { recursive: true, force: true });
+        const receipt = JSON.parse(readFileSync(join(temp, "reports/receipts/focus-flow.json"), "utf8"));
+        malform(receipt);
+        const bytes = Buffer.from(JSON.stringify(receipt, null, 2) + "\n");
+        writeFileSync(join(temp, "reports/receipts/bad-grammar.json"), bytes);
+        withEvidence(temp, (manifest) => {
+          manifest.scenarios[0].receiptRef = "reports/receipts/bad-grammar.json";
+          manifest.scenarios[0].receiptDigest = `sha256:${sha256(bytes)}`;
+        });
+        const refused = tryRun(["--json", "portability", "--to", "php-laravel", "--symbol", "planner.focus_task", "--evidence", "reports/portability-evidence.json"], temp);
+        if (refused.code !== 1) fail(`r5-6-exit-${index}`, String(refused.code));
+        if (!(refused.stderr + refused.stdout).includes('"receipt-shape"')) fail(`r5-6-reason-${index}`, refused.stderr.slice(0, 200));
+      }
+    } finally {
+      rmSync(temp, { recursive: true, force: true });
     }
   }
 }

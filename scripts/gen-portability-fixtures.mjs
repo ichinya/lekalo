@@ -306,6 +306,9 @@ const invalidControls = [
   ["invalid/policy-null-precision.evidence.json", "policy-shape"],
   ["invalid/duplicate-hooks.evidence.json", "duplicate-hook"],
   ["invalid/absent-adapter-bad-version.evidence.json", "adapter-snapshot"],
+  ["invalid/receipt-ref-trailing-dash.evidence.json", "artifact-ref"],
+  ["invalid/receipt-ref-device-stem.evidence.json", "artifact-ref"],
+  ["invalid/storage-ref-over-length.targets.json", "artifact-ref"],
 ];
 
 // The invalid controls are authored here, exactly like the manifests:
@@ -458,6 +461,23 @@ const controlAuthors = [
   // an `absent` record may not carry a malformed version either.
   ["invalid/absent-adapter-bad-version.evidence.json", "evidence", (m) => {
     m.adapters[0].version = "bad";
+  }],
+  // The `artifactRef` grammar mirrors the published pattern in both
+  // directions: a trailing dash segment is schema-invalid, and so is a
+  // DOS-device stem segment the pattern excludes.
+  ["invalid/receipt-ref-trailing-dash.evidence.json", "evidence", (m) => {
+    m.scenarios[0].receiptRef = "reports/x-/r.json";
+  }],
+  ["invalid/receipt-ref-device-stem.evidence.json", "evidence", (m) => {
+    m.scenarios[0].receiptRef = "reports/nul/r.json";
+  }],
+  // A storage-profile reference above 252 characters is schema-invalid:
+  // the report composes `<ref>#sha256:<digest>` into a member published
+  // at 324, so the input bound holds the emitted bound by construction.
+  ["invalid/storage-ref-over-length.targets.json", "targets", (m) => {
+    m.targets[1].storageProfileRefs = [
+      ["a".repeat(63), "a".repeat(63), "a".repeat(63), `b${"b".repeat(55)}.json`].join("/"),
+    ];
   }],
 ];
 

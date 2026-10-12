@@ -1905,3 +1905,312 @@ mod round4_semantics {
             .any(|d| d.detail == "witnesses-clipped"));
     }
 }
+
+/// Round-5 semantics: the typed-verbatim strict-gate verdict (never the
+/// bounded diagnostics channel), pinned verdict diagnostics with a
+/// disclosed `diagnostics-bound` marker, `artifactRef` decoder/schema
+/// parity in both directions, the storage-reference emit-composition
+/// bound, and the custody provenance grammar of receipts and family
+/// envelopes.
+mod round5_semantics {
+    use super::*;
+    use lekalo_core::portability::planning;
+    use lekalo_core::portability::version;
+
+    /// Decode the fixture evidence with one mutation applied to the raw
+    /// JSON: the refusal seam of the manifest decoder.
+    fn evidence_decodes_with(
+        mutate: &mut dyn FnMut(&mut serde_json::Value),
+    ) -> Result<wire::EvidenceDocument, DiagnosticSet> {
+        let compilation = compilation();
+        let recipe = embedded_recipe().expect("embedded recipe");
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&read(EVIDENCE)).expect("evidence JSON");
+        mutate(&mut value);
+        parse_evidence(
+            &serde_json::to_vec(&value).expect("serialize"),
+            &compilation,
+            &recipe,
+        )
+    }
+
+    /// Decode the fixture targets with one mutation applied to the raw
+    /// JSON: the refusal seam of the targets decoder.
+    fn targets_decodes_with(
+        mutate: &mut dyn FnMut(&mut serde_json::Value),
+    ) -> Result<wire::TargetsDocument, DiagnosticSet> {
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&read(&format!("{FIXTURE}/config/portability-targets.json")))
+                .expect("targets JSON");
+        mutate(&mut value);
+        parse_targets(&serde_json::to_vec(&value).expect("serialize"))
+    }
+
+    fn refused_with(detail: &str, result: Result<(), DiagnosticSet>) {
+        let error = result.expect_err("the mutated document must refuse");
+        assert!(
+            error.as_slice().iter().any(|d| {
+                d.id() == "portability.input-invalid"
+                    && d.data()
+                        .get("detail")
+                        .map(|value| {
+                            matches!(value, lekalo_core::diagnostics::DataValue::Token(token) if token == detail)
+                        })
+                        .unwrap_or(false)
+            }),
+            "expected refusal {detail}, got: {error:?}"
+        );
+    }
+
+    #[test]
+    fn the_surface_verdict_denies_without_the_diagnostics_channel() {
+        let _guard = CWD_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        // The mechanism of the crowd-out false green: the denial reads
+        // the typed migration-surface verdict, so an incomplete surface
+        // denies even when the diagnostics channel carries no
+        // gate-coverage indication at all.
+        let (_, mut report) = fixture_assessment();
+        for subject in &mut report.subjects {
+            for row in &mut subject.rows {
+                row.blocking = false;
+            }
+        }
+        report.coverage.complete = true;
+        report.coverage.truncated = false;
+        report.diagnostics.clear();
+        report.migration_surface.complete = false;
+        assert!(
+            planning::denial(&report),
+            "an incomplete surface must deny with an empty diagnostics channel"
+        );
+        // The control: the same green report with a complete surface
+        // passes — the surface flag is the deciding input, not noise.
+        report.migration_surface.complete = true;
+        assert!(
+            !planning::denial(&report),
+            "a complete green surface must not deny"
+        );
+    }
+
+    #[test]
+    fn a_crowded_manifest_cannot_green_the_coverage_gap() {
+        let _guard = CWD_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        // A schema-legal manifest crowds the diagnostics list with
+        // thousands of unqualified gate claims while no gate record
+        // covers the affected scenarios: the surface stays incomplete,
+        // the verdict diagnostic stays pinned, the bound is disclosed,
+        // and the strict gate denies.
+        let (_, report) = fixture_assessment_with(
+            Some(&mut |value: &mut serde_json::Value| {
+                let mut gates = Vec::new();
+                for index in 0..4200 {
+                    gates.push(serde_json::json!({
+                        "gate": format!("planner.crowd-gate-{index}"),
+                        "scenarios": [],
+                        "state": "executed",
+                        "targetId": "php-laravel",
+                        "receiptRef": "reports/receipts/focus-flow.json",
+                        "receiptDigest": format!("sha256:{}", "0".repeat(64)),
+                    }));
+                }
+                value["gates"] = serde_json::json!(gates);
+            }),
+            None,
+            BTreeMap::new(),
+            None,
+        )
+        .expect("assessment succeeds");
+        assert!(
+            !report.migration_surface.complete,
+            "the coverage gap must mark the surface incomplete"
+        );
+        assert!(planning::denial(&report));
+        assert!(
+            report.diagnostics.len() <= 4096,
+            "the published bound holds: {}",
+            report.diagnostics.len()
+        );
+        assert_eq!(
+            report
+                .diagnostics
+                .iter()
+                .filter(|d| d.detail == "gate-unqualified")
+                .count(),
+            4088,
+            "the ordinary crowd fills exactly the unreserved region (4096 - 8)"
+        );
+        assert_eq!(
+            report.diagnostics.last().expect("non-empty").detail,
+            "diagnostics-bound",
+            "the terminal marker discloses the clipping as the last entry"
+        );
+        assert!(
+            report
+                .diagnostics
+                .iter()
+                .any(|d| d.detail == "gate-coverage-unknown"),
+            "the coverage gap stays pinned above the crowd"
+        );
+    }
+
+    #[test]
+    fn artifact_ref_parity_refuses_schema_invalid_references() {
+        let _guard = CWD_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        // Decoder-refuses / schema-invalid: trailing dash and underscore
+        // segments the published pattern rejects.
+        for reference in ["reports/x-/r.json", "reports/x_/r.json"] {
+            refused_with(
+                "artifact-ref",
+                evidence_decodes_with(&mut |value: &mut serde_json::Value| {
+                    value["scenarios"][0]["receiptRef"] = reference.into();
+                })
+                .map(|_| ()),
+            );
+        }
+        // Device stems: the published pattern now excludes them too, so
+        // the decoder and the schema describe the same space.
+        for reference in [
+            "reports/nul/r.json",
+            "reports/con.json",
+            "reports/com1.d/r.json",
+        ] {
+            refused_with(
+                "artifact-ref",
+                evidence_decodes_with(&mut |value: &mut serde_json::Value| {
+                    value["scenarios"][0]["receiptRef"] = reference.into();
+                })
+                .map(|_| ()),
+            );
+        }
+        // Decoder-admits / schema-valid: the fixture spelling and a
+        // legal neighbor still decode.
+        evidence_decodes_with(&mut |value: &mut serde_json::Value| {
+            value["scenarios"][0]["receiptRef"] = "reports/receipts/focus-flow-2.json".into();
+        })
+        .expect("a schema-valid artifact reference decodes");
+    }
+
+    #[test]
+    fn storage_profile_refs_hold_the_emit_composition_bound() {
+        let _guard = CWD_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        // The report composes `<ref>#sha256:<digest>` (72 more
+        // characters) into a member published at 324: a 253-character
+        // reference is refused at decode and a 252-character one is the
+        // exact legal maximum.
+        let segment = "a".repeat(63);
+        let tail = |length: usize| format!("{}{}", "b".repeat(length), ".json");
+        let over = [segment.as_str(), &segment, &segment, &tail(56)].join("/");
+        assert_eq!(over.len(), 253);
+        refused_with(
+            "artifact-ref",
+            targets_decodes_with(&mut |value: &mut serde_json::Value| {
+                value["targets"][0]["storageProfileRefs"] = serde_json::json!([over]);
+            })
+            .map(|_| ()),
+        );
+        let at_bound = [segment.as_str(), &segment, &segment, &tail(55)].join("/");
+        assert_eq!(at_bound.len(), 252);
+        targets_decodes_with(&mut |value: &mut serde_json::Value| {
+            value["targets"][0]["storageProfileRefs"] = serde_json::json!([at_bound]);
+        })
+        .expect("the 252-character maximum legal reference decodes");
+    }
+
+    #[test]
+    fn receipt_provenance_grammar_refuses_at_decode() {
+        // Every provenance member of the closed receipt contract is
+        // grammar-checked at admission, exactly like the adapter
+        // snapshot decoder: a schema-invalid receipt never decodes
+        // cleanly only to demote later.
+        let base: serde_json::Value = serde_json::from_slice(&read(&format!(
+            "{FIXTURE}/reports/receipts/focus-flow.json"
+        )))
+        .expect("receipt JSON");
+        assert!(
+            wire::decode_receipt(&serde_json::to_vec(&base).expect("serialize")).is_ok(),
+            "the fixture receipt decodes"
+        );
+        for (path, malformed) in [
+            (
+                vec!["profileRef", "resolvedDigest"],
+                serde_json::json!("not-a-digest"),
+            ),
+            (
+                vec!["projectRef", "projectId"],
+                serde_json::json!("INVALID"),
+            ),
+            (
+                vec!["projectRef", "modelVersion"],
+                serde_json::json!("m".repeat(33)),
+            ),
+            (
+                vec!["projectRef", "irDigest"],
+                serde_json::json!("sha256:zz"),
+            ),
+        ] {
+            let mut receipt = base.clone();
+            let mut cursor = &mut receipt;
+            for key in &path[..path.len() - 1] {
+                cursor = &mut cursor[key];
+            }
+            cursor[path[path.len() - 1]] = malformed;
+            assert!(
+                wire::decode_receipt(&serde_json::to_vec(&receipt).expect("serialize")).is_err(),
+                "malformed {:?} must refuse at decode",
+                path
+            );
+        }
+    }
+
+    #[test]
+    fn family_owner_envelopes_pin_their_project_ref_grammar() {
+        // The closed family owner envelope refuses malformed provenance
+        // members (project id token, bounded model version, exact ir
+        // digest spelling) instead of certifying bytes it cannot name.
+        let evidence: serde_json::Value =
+            serde_json::from_slice(&read(EVIDENCE)).expect("evidence JSON");
+        let project_ref = evidence["projectRef"].clone();
+        let artifact = |project_ref: serde_json::Value| {
+            serde_json::json!({
+                "schemaVersion": version::FAMILY_SCHEMA_VERSION,
+                "identity": version::FAMILY_IDENTITY,
+                "family": "scenario",
+                "projectRef": project_ref,
+            })
+        };
+        assert!(
+            wire::decode_family_artifact(
+                &serde_json::to_vec(&artifact(project_ref.clone())).expect("serialize"),
+                wire::EvidenceFamily::Scenario,
+            )
+            .is_ok(),
+            "the fixture project pin decodes"
+        );
+        for malformed in [
+            serde_json::json!({
+                "projectId": "INVALID",
+                "modelVersion": project_ref["modelVersion"],
+                "irDigest": project_ref["irDigest"],
+            }),
+            serde_json::json!({
+                "projectId": project_ref["projectId"],
+                "modelVersion": "m".repeat(33),
+                "irDigest": project_ref["irDigest"],
+            }),
+            serde_json::json!({
+                "projectId": project_ref["projectId"],
+                "modelVersion": project_ref["modelVersion"],
+                "irDigest": "sha256:not-a-digest",
+            }),
+        ] {
+            assert!(
+                wire::decode_family_artifact(
+                    &serde_json::to_vec(&artifact(malformed)).expect("serialize"),
+                    wire::EvidenceFamily::Scenario,
+                )
+                .is_err(),
+                "a malformed family projectRef must refuse at decode"
+            );
+        }
+    }
+}
