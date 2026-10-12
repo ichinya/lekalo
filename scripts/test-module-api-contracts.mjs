@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // Issue #113: the module API boundary family gate. Closed schema checks
-// for the seven new 0.8.0 families plus the union registry successor, real
+// for the eight 0.8.0 families plus the union registry successor, real
 // CLI grammar/status/exit probes, independent boundary oracles, exact
-// consumer diff partitions, public-only context bounds, lock denial, and
-// determinism. Read-only against the checkout; every mutation is a
-// temporary probe under the OS temp dir.
+// consumer diff partitions, public-only context bounds, lock denial,
+// mapping conformance, and determinism. Read-only against the checkout;
+// every mutation is a temporary probe under the OS temp dir.
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
@@ -34,6 +34,7 @@ const families = [
   'module-api-diff',
   'module-api-lock',
   'module-consumer-context',
+  'module-mapping-evidence',
 ];
 const validators = new Map(families.map((family) => [family, compile(family)]));
 const validates = (family, value) => {
@@ -71,6 +72,46 @@ function run(args, { exit = 0, cwd = root } = {}) {
 }
 const codes = (document) => (document.diagnostics ?? []).map((d) => d.code);
 const payload = (document, name) => document[name] ?? document.payload?.[name];
+
+// Canonical JSON exactly as the core wire module spells it (compact,
+// byte-sorted keys, RFC 8259 escapes) plus the family digest seal.
+const canonical = (value) => {
+  const escape = (text) => {
+    let out = '"';
+    for (const character of text) {
+      if (character === '"') out += '\\"';
+      else if (character === '\\') out += '\\\\';
+      else if (character === '\n') out += '\\n';
+      else if (character === '\r') out += '\\r';
+      else if (character === '\t') out += '\\t';
+      else if (character === '\b') out += '\\b';
+      else if (character === '\f') out += '\\f';
+      else if (character < ' ') out += `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`;
+      else out += character;
+    }
+    return out + '"';
+  };
+  const write = (node) => {
+    if (node === null) return 'null';
+    if (node === true) return 'true';
+    if (node === false) return 'false';
+    if (typeof node === 'number') return node.toString();
+    if (typeof node === 'string') return escape(node);
+    if (Array.isArray(node)) return `[${node.map(write).join(',')}]`;
+    const keys = Object.keys(node).sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+    return `{${keys.map((key) => `${escape(key)}:${write(node[key])}`).join(',')}}`;
+  };
+  return write(value);
+};
+const seal = (document, domain) => `sha256:${createHash('sha256').update(`${domain}\n${canonical(document)}`).digest('hex')}`;
+/// Seal one standalone document over its digest domain in place.
+const reseal = (document, domain) => {
+  const digest = document.digest;
+  document.digest = '';
+  const value = seal(document, domain);
+  document.digest = value;
+  return digest;
+};
 
 // 1. Union registry successor: exact identity, sorted-unique ids, the
 // fourteen new rules, and the full 0.6.5 union preserved entry-for-entry.
@@ -149,6 +190,7 @@ const payload = (document, name) => document[name] ?? document.payload?.[name];
   validates('module-api-diff', read(`${fixture}/diff/golden-diff.json`).moduleApiDiff);
   validates('module-consumer-context', read(`${fixture}/standalone/golden-context.json`));
   validates('module-consumer-context', read(`${fixture}/standalone/golden-context-tiny.json`));
+  for (const side of ['in-process', 'service']) validates('module-mapping-evidence', read(`${fixture}/mapping/${side}/mapping-evidence.json`));
   checked.push('closed-schemas');
 }
 // 4. Reference check: advisory pass, deterministic bytes, digest pins.
@@ -365,41 +407,63 @@ const payload = (document, name) => document[name] ?? document.payload?.[name];
   rmSync(isolated, { recursive: true, force: true });
   checked.push('public-only-context');
 }
-// 14. Mapping conformance (r3 review finding 15/codex): the same
-// portable digest and typed operation set back the in-process mapping
-// and the extracted-service port; the two mappings agree on every
-// operation signature, and a port that maps a non-operation export or
-// leaks an unexported symbol refuses.
+// 14. Mapping conformance (r4 review finding 10/codex): two
+// independently authored evidence documents — one in-process author, one
+// extracted-service author, each hand-written against one public digest —
+// prove the implementation conformance through the real CLI. Divergent
+// observations, unsupported required capabilities, and malformed rows
+// refuse; the old same-bundle two-list comparison is gone.
 {
   const bundle = read(`${fixture}/standalone/golden-bundle.json`);
   const capsule = read(`${fixture}/standalone/golden-context.json`);
   assert.equal(bundle.digest, capsule.producerDigest, 'context capsule binds the same digest');
-  const lock = `${fixture}/lock`;
-  const current = run(['module', 'api', 'export', 'tasks', '--project', lock, '--api', 'module-api.json']).document.modulePublicContract;
-  assert.equal(current.digest, read(`${lock}/golden-lock.json`).digest, 'lock pins the current portable digest');
-  const inProcess = bundle.ports.find((p) => p.port === 'tasks.inprocess');
-  const service = bundle.ports.find((p) => p.port === 'tasks.api');
-  assert.ok(inProcess, 'in-process mapping descriptor present');
-  assert.ok(service, 'extracted-service mapping descriptor present');
-  // Both mappings expose the same typed operations: identical public
-  // semantics — signature, errors, effects — per operation by identity.
-  const byExport = Object.fromEntries(bundle.exports.map((e) => [e.export, e]));
-  const signaturesOf = (port) => port.operations.map((op) => {
-    const export_ = byExport[op];
-    assert.ok(export_, `mapping operation ${op} resolves to a typed export`);
-    return JSON.stringify([export_.kind, export_.input ?? export_.fields ?? export_.payload ?? [], export_.errors ?? [], export_.effects ?? []]);
-  });
-  assert.deepEqual(signaturesOf(inProcess).sort(), signaturesOf(service).sort(), 'the two mappings agree on every operation signature');
-  assert.equal(JSON.stringify(inProcess.operations.slice().sort()), JSON.stringify(service.operations.slice().sort()), 'identical operation membership');
-  assert.ok(bundle.capabilities.some((c) => c.capability === 'http' && c.obligation === 'required'), 'capability obligation retained');
-  // Unsupported mapping vectors: a port mapping a non-operation export
-  // (a value object) refuses admission.
+  const inProcessDoc = read(`${fixture}/mapping/in-process/mapping-evidence.json`);
+  const serviceDoc = read(`${fixture}/mapping/service/mapping-evidence.json`);
+  // The two documents are independently authored: different ports,
+  // different implementations, separately stated observations.
+  assert.equal(inProcessDoc.implementation, 'in-process');
+  assert.equal(serviceDoc.implementation, 'extracted-service');
+  assert.equal(inProcessDoc.port, 'tasks.inprocess');
+  assert.equal(serviceDoc.port, 'tasks.api');
+  assert.notEqual(inProcessDoc.digest, serviceDoc.digest, 'independently sealed documents');
+  assert.deepEqual(inProcessDoc.publicDigest, serviceDoc.publicDigest, 'one public digest');
+  const mappingArgs = [
+    'module', 'api', 'mapping', `${fixture}/standalone/golden-bundle.json`,
+    '--in-process', `${fixture}/mapping/in-process/mapping-evidence.json`,
+    '--service', `${fixture}/mapping/service/mapping-evidence.json`,
+  ];
+  const proven = run(mappingArgs);
+  const conformance = payload(proven.document, 'moduleMappingConformance');
+  assert.equal(conformance.conforms, true);
+  assert.equal(conformance.observations, 4);
+  assert.equal(conformance.publicDigest, bundle.digest);
+  // Unsupported mapping vectors: a divergent observation (the service
+  // author saw a different error union), correctly resealed, is an
+  // unproven conformance — exit 4 with the typed evidence gap.
+  const divergent = structuredClone(serviceDoc);
+  divergent.observations.find((o) => o.operation === 'tasks.get_task').errors = ['tasks.public_error'];
+  reseal(divergent, 'lekalo/module-mapping-evidence/1');
+  const divergence = run(['module', 'api', 'mapping', `${fixture}/standalone/golden-bundle.json`, '--in-process', `${fixture}/mapping/in-process/mapping-evidence.json`, '--service', temp('mapping-divergent.json', divergent)], { exit: 4 });
+  assert.ok(codes(divergence.document).includes('LEK-MODULE-012'), 'divergence is a required evidence gap');
+  // An implementation that cannot provide a required capability diverges
+  // from the certified contract explicitly.
+  const unsupported = structuredClone(serviceDoc);
+  unsupported.unsupported = ['http'];
+  reseal(unsupported, 'lekalo/module-mapping-evidence/1');
+  const refused = run(['module', 'api', 'mapping', `${fixture}/standalone/golden-bundle.json`, '--in-process', `${fixture}/mapping/in-process/mapping-evidence.json`, '--service', temp('mapping-unsupported.json', unsupported)], { exit: 4 });
+  assert.ok(codes(refused.document).includes('LEK-MODULE-012'), 'capability refusal is explicit');
+  // A malformed row is invalid input.
+  const malformed = structuredClone(serviceDoc);
+  malformed.implementation = 'frankenstein';
+  reseal(malformed, 'lekalo/module-mapping-evidence/1');
+  run(['module', 'api', 'mapping', `${fixture}/standalone/golden-bundle.json`, '--in-process', `${fixture}/mapping/in-process/mapping-evidence.json`, '--service', temp('mapping-malformed.json', malformed)], { exit: 1 });
+  // The integrity controls stay: a port mapping a non-operation export
+  // (a value object) or leaking an unexported symbol refuses admission.
   const mappingRoot = scratchProject(reference, 'mapping');
   const badPort = JSON.parse(JSON.stringify(read(`${reference}/module-api.json`)));
   badPort.modules.find((m) => m.moduleId === 'tasks').ports = [{ port: 'tasks.api', operations: ['tasks.task_view'] }];
   const portRefused = run(['module', 'api', 'export', 'tasks', '--project', mappingRoot, '--api', tempAttachment(mappingRoot, 'bad-port.json', badPort)], { exit: 1, cwd: probeRoot });
   assert.ok(codes(portRefused.document).some((code) => ['LEK-MODULE-001', 'LEK-MODULE-003'].includes(code)), 'a port mapping a non-operation export refuses');
-  // A leaking mapping: an operation the module does not export refuses.
   const leakPort = JSON.parse(JSON.stringify(read(`${reference}/module-api.json`)));
   leakPort.modules.find((m) => m.moduleId === 'tasks').ports = [{ port: 'tasks.api', operations: ['tasks.task'] }];
   run(['module', 'api', 'export', 'tasks', '--project', mappingRoot, '--api', tempAttachment(mappingRoot, 'leak-port.json', leakPort)], { exit: 1, cwd: probeRoot });
@@ -463,6 +527,122 @@ const payload = (document, name) => document[name] ?? document.payload?.[name];
   assert.deepEqual(after, before, 'no file, lock, cache, or baseline writes');
   for (const project of projects) assert.ok(!existsSync(join(root, project, '.lekalo')), 'no runtime cache in the corpus');
   checked.push('read-only-producer');
+}
+
+// 18. r4 review probes: digest-valid-but-schema-invalid inputs refuse at
+// every admission seam (forged snapshots, tampered standalone bundles,
+// malformed attachments), version downgrades deny, and the consumer
+// selector grammar holds at the pure context seam.
+{
+  // A canonical-JSON bundle reseal that mirrors the exact digest
+  // projection (zeroed revisions, excluded pins, set order).
+  const resealBundle = (bundle) => {
+    const pins = bundle.pins;
+    bundle.digest = '';
+    bundle.pins = { modelVersion: '', irDigest: '', sourceRevision: { state: 'unknown' } };
+    for (const export_ of bundle.exports) {
+      export_.version = 0;
+      const operation = export_.kind === 'command' || export_.kind === 'query';
+      for (const key of Object.keys(export_)) {
+        const value = export_[key];
+        if (value === null || (Array.isArray(value) && value.length === 0 && !(operation && key === 'errors'))) delete export_[key];
+      }
+    }
+    bundle.exports.sort((a, b) => (a.export < b.export ? -1 : a.export > b.export ? 1 : 0));
+    const sortKeys = { publicDependencies: 'moduleId', ports: 'port', capabilities: 'capability', deprecations: 'export' };
+    for (const key of Object.keys(sortKeys)) {
+      if (!Array.isArray(bundle[key])) continue;
+      bundle[key].sort((a, b) => (a[sortKeys[key]] < b[sortKeys[key]] ? -1 : a[sortKeys[key]] > b[sortKeys[key]] ? 1 : 0));
+    }
+    for (const dependency of bundle.publicDependencies ?? []) dependency.exports.sort();
+    for (const port of bundle.ports ?? []) port.operations.sort();
+    const digest = seal(bundle, 'lekalo/module-public-contract/1');
+    bundle.digest = digest;
+    bundle.pins = pins;
+    return digest;
+  };
+  const standalone = read(`${fixture}/standalone/golden-bundle.json`);
+  const snapshotBefore = read(`${fixture}/diff/golden-consumers-before.json`);
+  const diffPair = (afterPath, beforeSnapshotPath, afterSnapshotPath) => [
+    'module', 'api', 'diff', `${fixture}/diff/golden-bundle-before.json`, afterPath,
+    ...(beforeSnapshotPath && afterSnapshotPath ? ['--consumers-before', beforeSnapshotPath, '--consumers-after', afterSnapshotPath] : []),
+  ];
+  // r4 finding 3/codex + 1/devin: forged snapshots with grammar
+  // violations, correctly resealed and digest-valid, refuse at the diff
+  // seam; the control passes.
+  const forgeSnapshot = (mutate) => {
+    const forged = structuredClone(snapshotBefore);
+    mutate(forged);
+    reseal(forged, 'lekalo/module-api-consumers/1');
+    return temp('snapshot-forged.json', forged);
+  };
+  run(diffPair(`${fixture}/diff/golden-bundle-after.json`, forgeSnapshot((s) => { s.consumers[0].consumer = 'BAD ID'; }), `${fixture}/diff/golden-consumers-after.json`), { exit: 1 });
+  run(diffPair(`${fixture}/diff/golden-bundle-after.json`, forgeSnapshot((s) => { s.consumers[0].uses[0].origin = 'divined'; }), `${fixture}/diff/golden-consumers-after.json`), { exit: 1 });
+  run(diffPair(`${fixture}/diff/golden-bundle-after.json`, forgeSnapshot((s) => { s.consumers[0].policy = { type: 'exact-version', version: 'garbage' }; }), `${fixture}/diff/golden-consumers-after.json`), { exit: 1 });
+  run(diffPair(`${fixture}/diff/golden-bundle-after.json`, forgeSnapshot((s) => { s.consumers[0].uses.push({ export: 'tasks.nonexistent', member: null, origin: 'declared', sensitivity: 'whole-shape', transitive: false, edges: [] }); }), `${fixture}/diff/golden-consumers-after.json`), { exit: 1 });
+  run(diffPair(`${fixture}/diff/golden-bundle-after.json`, forgeSnapshot(() => {}), `${fixture}/diff/golden-consumers-after.json`));
+  // r4 finding 4/codex: a resealed bundle without the query owner facts
+  // or the explicit operation error union never passes standalone
+  // admission; the schema rejects it too.
+  const withoutQueryFacts = structuredClone(standalone);
+  for (const export_ of withoutQueryFacts.exports) {
+    if (export_.kind === 'query') {
+      delete export_.cardinality;
+      delete export_.consistency;
+      delete export_.pagination;
+    }
+  }
+  resealBundle(withoutQueryFacts);
+  assert.ok(!validators.get('module-public-contract')(withoutQueryFacts), 'the published schema rejects the stripped query');
+  run(['module', 'api', 'context', temp('bundle-no-query-facts.json', withoutQueryFacts), '--consumer', 'planner', '--uses', 'tasks.get_task', '--budget', '4000'], { exit: 1 });
+  const withoutUnion = structuredClone(standalone);
+  for (const export_ of withoutUnion.exports) {
+    if (export_.kind === 'command' || export_.kind === 'query') delete export_.errors;
+  }
+  resealBundle(withoutUnion);
+  assert.ok(!validators.get('module-public-contract')(withoutUnion), 'the published schema rejects the silent union');
+  run(['module', 'api', 'context', temp('bundle-no-union.json', withoutUnion), '--consumer', 'planner', '--uses', 'tasks.get_task', '--budget', '4000'], { exit: 1 });
+  // r4 finding 2/devin: producer.project and the pin patterns are
+  // admission even in a resealed bundle.
+  const badProject = structuredClone(standalone);
+  badProject.producer.project = '!!!';
+  resealBundle(badProject);
+  run(['module', 'api', 'context', temp('bundle-bad-project.json', badProject), '--consumer', 'planner', '--uses', 'tasks.get_task', '--budget', '4000'], { exit: 1 });
+  // r4 finding 2/codex: attachment admission enforces the published
+  // grammar — ids, capability versions — before any policy runs.
+  const grammarRoot = scratchProject(reference, 'grammar');
+  for (const [label, mutate] of [
+    ['bad-port-id', (a) => { a.modules[0].ports[0].port = '!'; }],
+    ['bad-capability-id', (a) => { a.modules[0].capabilities[0].capability = '!nope'; }],
+    ['bad-capability-version', (a) => { a.modules[0].capabilities[0].version = 'garbage'; }],
+    ['bad-consumer-id', (a) => { a.modules[0].consumers[0].consumer = 'BAD ID'; }],
+  ]) {
+    const hostile = JSON.parse(JSON.stringify(read(`${reference}/module-api.json`)));
+    mutate(hostile);
+    const refused = run(['module', 'api', 'check', '--project', grammarRoot, '--api', tempAttachment(grammarRoot, `${label}.json`, hostile)], { exit: 1, cwd: probeRoot });
+    assert.ok(codes(refused.document).includes('LEK-MODULE-001'), `${label} refuses admission`);
+  }
+  run(['module', 'api', 'check', '--project', grammarRoot, '--api', 'module-api.json'], { cwd: probeRoot });
+  // r4 finding 8/codex: a version downgrade denies under strict — the
+  // wire break moved the version backwards.
+  const downgrade = structuredClone(read(`${fixture}/diff/golden-bundle-after.json`));
+  downgrade.apiVersion = '0.1.0';
+  const downgradeDigest = resealBundle(downgrade);
+  const downgradeSnapshot = structuredClone(read(`${fixture}/diff/golden-consumers-after.json`));
+  downgradeSnapshot.pins.apiDigest = downgradeDigest;
+  reseal(downgradeSnapshot, 'lekalo/module-api-consumers/1');
+  const downgradeArgs = diffPair(temp('bundle-downgrade.json', downgrade), `${fixture}/diff/golden-consumers-before.json`, temp('snapshot-downgrade.json', downgradeSnapshot));
+  const downgraded = run(downgradeArgs);
+  assert.equal(payload(downgraded.document, 'moduleApiDiff').versionPolicy.decision, 'violation');
+  assert.equal(payload(downgraded.document, 'moduleApiDiff').versionPolicy.detail, 'version-moved-backwards');
+  const downgradedStrict = run([...downgradeArgs, '--strict'], { exit: 3 });
+  assert.ok(codes(downgradedStrict.document).includes('LEK-MODULE-010'), 'the downgrade is a version-policy violation');
+  // r4 finding 9/codex: invalid consumer selectors refuse at the pure
+  // context seam; a valid control passes.
+  for (const bad of ['!', 'Bad_ID', '']) {
+    run(['module', 'api', 'context', `${fixture}/standalone/golden-bundle.json`, '--consumer', bad, '--uses', 'tasks.task_view', '--budget', '4000'], { exit: 1 });
+  }
+  checked.push('r4-admission-and-policy-probes');
 }
 
 process.stdout.write(JSON.stringify({ ok: true, gate: 'module-api-contracts', ajv: '8.17.1', schemas: families.length, checks: checked.length, checked }) + '\n');

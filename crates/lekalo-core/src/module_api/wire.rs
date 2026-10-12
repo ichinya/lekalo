@@ -38,12 +38,17 @@ pub const LOCK_SCHEMA: &str = "lekalo/module-api-lock";
 /// The consumer context family identities.
 pub const CONTEXT_IDENTITY: &str = "dev.lekalo.module-consumer-context";
 pub const CONTEXT_SCHEMA: &str = "lekalo/module-consumer-context";
+/// The mapping-evidence family identities (r4 review finding 10/codex:
+/// the in-process/service-port conformance seam).
+pub const MAPPING_IDENTITY: &str = "dev.lekalo.module-mapping-evidence";
+pub const MAPPING_SCHEMA: &str = "lekalo/module-mapping-evidence";
 
 /// The distinct digest domains of the family.
 pub const DIGEST_DOMAIN_API: &str = "lekalo/module-api/1";
 pub const DIGEST_DOMAIN_PUBLIC: &str = "lekalo/module-public-contract/1";
 pub const DIGEST_DOMAIN_CONSUMERS: &str = "lekalo/module-api-consumers/1";
 pub const DIGEST_DOMAIN_CONTEXT: &str = "lekalo/module-consumer-context/1";
+pub const DIGEST_DOMAIN_MAPPING: &str = "lekalo/module-mapping-evidence/1";
 
 /// Recorded hard bounds of the family (issue #113 proposal).
 pub const MAX_BYTES: usize = 8 * 1024 * 1024;
@@ -424,7 +429,7 @@ impl<T> State<T> {
 }
 
 /// One exported member of a public bundle: the closed export surface.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PublicExport {
     pub export: String,
@@ -469,7 +474,11 @@ pub struct PublicExport {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub emits: Vec<String>,
     /// The public error union of an exported command or query (the #62
-    /// owner seam; r3 review finding 14/codex).
+    /// owner seam; r3 review finding 14/codex). A present `errors`
+    /// member is required evidence for every exported command and query
+    /// — an explicitly empty union is a known-empty union, never an
+    /// inferred one (r4 review finding 4/codex) — so command/query rows
+    /// always serialize the member; other kinds carry it only when set.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub errors: Vec<String>,
     /// The public query owner facts of an exported query: `one`,
@@ -525,6 +534,98 @@ impl PublicExport {
             alias_of: None,
             since: None,
         }
+    }
+}
+
+/// The per-kind required-member serialization of one export row (r4
+/// review finding 4/codex): commands and queries always carry their
+/// public `errors` union — an explicit empty array is a known-empty
+/// union — while every other kind keeps the closed branch shape of the
+/// published schema. The derived deserialization stays closed.
+impl Serialize for PublicExport {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let operation = matches!(self.kind.as_str(), "command" | "query");
+        let mut map = serializer.serialize_map(Some(30))?;
+        map.serialize_entry("export", &self.export)?;
+        map.serialize_entry("kind", &self.kind)?;
+        map.serialize_entry("version", &self.version)?;
+        if let Some(base) = &self.base {
+            map.serialize_entry("base", base)?;
+        }
+        if !self.values.is_empty() {
+            map.serialize_entry("values", &self.values)?;
+        }
+        if !self.fields.is_empty() {
+            map.serialize_entry("fields", &self.fields)?;
+        }
+        if !self.identity.is_empty() {
+            map.serialize_entry("identity", &self.identity)?;
+        }
+        if let Some(returns) = &self.returns {
+            map.serialize_entry("returns", returns)?;
+        }
+        if !self.reads.is_empty() {
+            map.serialize_entry("reads", &self.reads)?;
+        }
+        if !self.input.is_empty() {
+            map.serialize_entry("input", &self.input)?;
+        }
+        if !self.payload.is_empty() {
+            map.serialize_entry("payload", &self.payload)?;
+        }
+        if !self.effects.is_empty() {
+            map.serialize_entry("effects", &self.effects)?;
+        }
+        if let Some(code) = &self.code {
+            map.serialize_entry("code", code)?;
+        }
+        if let Some(retryable) = &self.retryable {
+            map.serialize_entry("retryable", retryable)?;
+        }
+        if !self.operations.is_empty() {
+            map.serialize_entry("operations", &self.operations)?;
+        }
+        if let Some(invokes) = &self.invokes {
+            map.serialize_entry("invokes", invokes)?;
+        }
+        if let Some(method) = &self.method {
+            map.serialize_entry("method", method)?;
+        }
+        if let Some(path) = &self.path {
+            map.serialize_entry("path", path)?;
+        }
+        if let Some(decision) = &self.decision {
+            map.serialize_entry("decision", decision)?;
+        }
+        if let Some(operation_kind) = &self.operation {
+            map.serialize_entry("operation", operation_kind)?;
+        }
+        if let Some(entity) = &self.entity {
+            map.serialize_entry("entity", entity)?;
+        }
+        if !self.emits.is_empty() {
+            map.serialize_entry("emits", &self.emits)?;
+        }
+        if operation || !self.errors.is_empty() {
+            map.serialize_entry("errors", &self.errors)?;
+        }
+        if let Some(cardinality) = &self.cardinality {
+            map.serialize_entry("cardinality", cardinality)?;
+        }
+        if let Some(consistency) = &self.consistency {
+            map.serialize_entry("consistency", consistency)?;
+        }
+        if let Some(pagination) = &self.pagination {
+            map.serialize_entry("pagination", pagination)?;
+        }
+        if let Some(alias_of) = &self.alias_of {
+            map.serialize_entry("aliasOf", alias_of)?;
+        }
+        if let Some(since) = &self.since {
+            map.serialize_entry("since", since)?;
+        }
+        map.end()
     }
 }
 
@@ -820,8 +921,14 @@ pub struct ExportFacts {
     pub kind: String,
     pub signature: String,
     pub errors: Vec<String>,
-    pub effects: Vec<String>,
-    pub capabilities: Vec<String>,
+    /// The complete observable effect obligations with their emitted
+    /// event ids (r4 review finding 5/codex: emissions are preserved
+    /// losslessly, never reduced to a count).
+    pub effects: Vec<EffectObligation>,
+    /// The complete module-level capability obligations of the producer
+    /// (r4 review finding 5/codex: required/optional, owner, and version
+    /// are retained, never reduced to a bare name).
+    pub capabilities: Vec<CapabilityPolicy>,
     pub deprecation: Option<DeprecationPolicy>,
     pub api_version: Option<String>,
 }
@@ -832,6 +939,80 @@ pub struct ExportFacts {
 pub struct Omission {
     pub subject: String,
     pub reason: String,
+}
+
+/// One independently authored mapping-evidence document (r4 review
+/// finding 10/codex): a single implementation — in-process or
+/// extracted-service — states, per public operation, the exact IDs,
+/// input/result shapes, error unions, effect obligations, read/write
+/// meaning, and capability demands it observes against one pinned
+/// public digest, plus the capabilities it explicitly cannot provide.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MappingEvidence {
+    pub schema_version: String,
+    pub identity: String,
+    /// `in-process` or `extracted-service`.
+    pub implementation: String,
+    /// The bundle port this implementation maps.
+    pub port: String,
+    pub producer: ProducerPin,
+    /// The certified public bundle digest this evidence pins.
+    pub public_digest: String,
+    #[serde(default)]
+    pub observations: Vec<MappingObservation>,
+    /// Capability ids this implementation explicitly cannot provide.
+    #[serde(default)]
+    pub unsupported: Vec<String>,
+    pub digest: String,
+}
+
+/// One observed public operation of one implementation.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MappingObservation {
+    pub operation: String,
+    /// `command` or `query`.
+    pub kind: String,
+    #[serde(default)]
+    pub inputs: Vec<PublicField>,
+    pub results: Option<TypeExpr>,
+    #[serde(default)]
+    pub errors: Vec<String>,
+    #[serde(default)]
+    pub effects: Vec<EffectObligation>,
+    /// `read` or `write` — the observed access meaning.
+    pub access: String,
+    #[serde(default)]
+    pub capabilities: Vec<String>,
+}
+
+/// The conformance verdict of the mapping seam: both implementations
+/// against one public digest.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MappingConformance {
+    pub schema_version: String,
+    pub identity: String,
+    pub producer: ProducerPin,
+    pub public_digest: String,
+    pub in_process: String,
+    pub service: String,
+    pub conforms: bool,
+    pub observations: u64,
+    pub unsupported: Vec<String>,
+    pub divergences: Vec<MappingDivergence>,
+}
+
+/// One typed divergence row of a non-conforming mapping pair.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MappingDivergence {
+    pub implementation: String,
+    pub operation: String,
+    pub aspect: String,
+    pub expected: Option<String>,
+    pub actual: Option<String>,
 }
 
 /// BTree convenience alias for the resolved attachment map.

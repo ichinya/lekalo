@@ -172,6 +172,11 @@ pub fn parse_snapshot(bytes: &[u8]) -> Result<ConsumerSnapshot, DiagnosticSet> {
     if !super::version::is_digest(&snapshot.digest) {
         return Err(invalid("snapshot-digest"));
     }
+    // The typed closed grammar (r4 review finding 3/codex + finding
+    // 1/devin): row grammars, vocabularies, policies, and bounds are
+    // enforced before the checksum — a digest proves canonical bytes,
+    // never input validity.
+    super::admission::admit_snapshot(&snapshot)?;
     let mut without_digest = snapshot.clone();
     without_digest.digest = String::new();
     let expected = wire::digest(

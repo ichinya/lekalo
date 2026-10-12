@@ -129,6 +129,19 @@ pub enum ApiCommands {
         #[arg(long, value_name = "TOKENS")]
         budget: u64,
     },
+    /// Prove the in-process and extracted-service mapping conformance of
+    /// one public bundle from two independently authored evidence
+    /// documents (issue #113 AC7).
+    Mapping {
+        /// The standalone public bundle document.
+        public: String,
+        /// The independently authored in-process mapping evidence.
+        #[arg(long, value_name = "PATH")]
+        in_process: String,
+        /// The independently authored extracted-service mapping evidence.
+        #[arg(long, value_name = "PATH")]
+        service: String,
+    },
 }
 
 /// Read one bounded standalone input file (diff bundles, snapshots,
@@ -319,6 +332,24 @@ pub fn run_validate_seam(seam: ValidateSeam) -> DomainResult {
             let set = lekalo_core::module_api::diagnostic::set(&evidence, Status::Invalid)?;
             return Ok(DomainResult::invalid(set));
         }
+        // Required evidence gaps compose exactly like the dedicated
+        // check command (r4 review finding 1/codex): under strict, an
+        // incomplete report is unavailable/4 with LEK-MODULE-012 — the
+        // same complete-evidence decision as `module api check --strict`,
+        // never a valid base with the gap demoted to a warning.
+        if seam.strict
+            && evidence
+                .iter()
+                .any(|finding| finding.rule == "module-api.evidence-incomplete")
+        {
+            let gaps: Vec<_> = evidence
+                .iter()
+                .filter(|finding| finding.rule == "module-api.evidence-incomplete")
+                .cloned()
+                .collect();
+            let set = lekalo_core::module_api::diagnostic::set(&gaps, Status::Unavailable)?;
+            return Ok(DomainResult::unavailable(set));
+        }
         if lock_stale {
             let all = lekalo_core::module_api::diagnostic::denied_set(
                 &evidence,
@@ -343,6 +374,10 @@ pub fn run_validate_seam(seam: ValidateSeam) -> DomainResult {
 }
 
 /// Re-emit a valid base result with additional advisory diagnostics.
+/// The receipt counts track the appended evidence (r4 review finding
+/// 1/codex): the base payload's severity counts are recomputed from the
+/// merged diagnostic set so the JSON receipt never under-reports the
+/// warnings it carries.
 fn base_with_diagnostics(
     base: DomainResult,
     diagnostics: Vec<lekalo_core::diagnostics::Diagnostic>,
@@ -354,7 +389,28 @@ fn base_with_diagnostics(
         } => {
             let mut merged = existing;
             merged.extend(diagnostics);
-            DomainResult::validation(json, human, merged)
+            let mut document: serde_json::Value =
+                serde_json::from_str(&json).unwrap_or(serde_json::Value::Null);
+            if let Some(validation) = document.get_mut("validation") {
+                let mut error = 0u32;
+                let mut warning = 0u32;
+                let mut info = 0u32;
+                for diagnostic in &merged {
+                    match diagnostic.severity() {
+                        lekalo_core::diagnostics::Severity::Error => error += 1,
+                        lekalo_core::diagnostics::Severity::Warning => warning += 1,
+                        lekalo_core::diagnostics::Severity::Info => info += 1,
+                    }
+                }
+                if let Some(counts) = validation.get_mut("counts") {
+                    if let Some(object) = counts.as_object_mut() {
+                        object.insert("error".to_owned(), error.into());
+                        object.insert("warning".to_owned(), warning.into());
+                        object.insert("info".to_owned(), info.into());
+                    }
+                }
+            }
+            DomainResult::validation(document.to_string(), human, merged)
         }
         other => other,
     }
@@ -528,13 +584,14 @@ fn execute(command: ApiCommands) -> Result<DomainResult, Failure> {
             // Strict verdicts require all declared evidence (r3 review
             // finding 7/codex): a diff without the consumer inventory is
             // explicitly unknown coverage and never silently approves —
-            // the contracted unavailable outcome with typed evidence.
+            // the contracted unavailable outcome with typed evidence. The
+            // same gate covers every required-evidence gap of the report,
+            // including a required-capability change whose consumer
+            // mapping is unknown (r4 review finding 7/codex).
             if strict
-                && report
-                    .coverage
-                    .unknown_reasons
+                && evidence
                     .iter()
-                    .any(|reason| reason == "consumer-snapshots-missing")
+                    .any(|finding| finding.rule == "module-api.evidence-incomplete")
             {
                 let coverage_evidence: Vec<_> = evidence
                     .iter()
@@ -608,6 +665,42 @@ fn execute(command: ApiCommands) -> Result<DomainResult, Failure> {
             Ok(envelope(
                 "moduleConsumerContext",
                 serde_json::to_value(&capsule).expect("typed payload serializes"),
+                human,
+            ))
+        }
+        ApiCommands::Mapping {
+            public,
+            in_process,
+            service,
+        } => {
+            let bundle_bytes = read(&public)?;
+            let in_process_bytes = read(&in_process)?;
+            let service_bytes = read(&service)?;
+            let (conformance, evidence) = module_api::check_mapping_conformance(
+                &bundle_bytes,
+                &in_process_bytes,
+                &service_bytes,
+            )?;
+            let human = format!(
+                "Module API mapping: {} observations, conformance {}.",
+                conformance.observations,
+                if conformance.conforms {
+                    "proven"
+                } else {
+                    "divergent"
+                }
+            );
+            // An unproven conformance is a required evidence gap (r4
+            // review finding 10/codex): AC7 stays uncovered — the typed
+            // unavailable outcome — until both implementations match one
+            // public digest.
+            if !conformance.conforms {
+                let set = lekalo_core::module_api::diagnostic::set(&evidence, Status::Unavailable)?;
+                return Ok(DomainResult::unavailable(set));
+            }
+            Ok(envelope(
+                "moduleMappingConformance",
+                serde_json::to_value(&conformance).expect("typed payload serializes"),
                 human,
             ))
         }

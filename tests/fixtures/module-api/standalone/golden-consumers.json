@@ -1,66 +1,66 @@
 {
-  "schemaVersion": "lekalo/module-api-consumers/v0.8.0",
-  "identity": "dev.lekalo.module-api-consumers@0.8.0",
-  "producer": {
-    "project": "tasks",
-    "module": "tasks"
-  },
-  "pins": {
-    "project": "tasks",
-    "modelVersion": "0.2.16",
-    "irDigest": "sha256:f60bad30f53d2b660eaeeafcc4cabb55a529f5baa0e69e7cf9a4160199a8614e",
-    "apiDigest": "sha256:dd02bc7d30d9894c01707851627477e83e360004c872fdc89b9a841fccf30136"
-  },
+  "complete": false,
   "consumers": [
     {
       "consumer": "planner",
       "declared": true,
       "mode": "source",
       "policy": {
-        "type": "version-range",
         "lower": "1.0.0",
         "lowerInclusive": true,
+        "type": "version-range",
         "upper": "2.0.0",
         "upperInclusive": false
       },
       "uses": [
         {
+          "edges": [],
           "export": "tasks.get_task",
           "member": null,
           "origin": "declared",
           "sensitivity": "whole-shape",
-          "transitive": false,
-          "edges": []
+          "transitive": false
         },
         {
+          "edges": [],
           "export": "tasks.task_id",
           "member": null,
           "origin": "declared",
           "sensitivity": "whole-shape",
-          "transitive": false,
-          "edges": []
+          "transitive": false
         },
         {
+          "edges": [],
           "export": "tasks.task_view",
           "member": null,
           "origin": "declared",
           "sensitivity": "whole-shape",
-          "transitive": false,
-          "edges": []
+          "transitive": false
         },
         {
+          "edges": [
+            "planner.focus->tasks.title"
+          ],
           "export": "tasks.title",
           "member": null,
           "origin": "resolved",
           "sensitivity": "whole-shape",
-          "transitive": false,
-          "edges": [
-            "planner.focus->tasks.title"
-          ]
+          "transitive": false
         }
       ]
     }
   ],
-  "complete": false,
-  "digest": "sha256:52b527b93478df324080a9c79c7bd4336fabecd4d7cd882f4aa7fb3def96578f"
+  "digest": "sha256:49f74428948ee7cec5ab7c67c0c1caf96c5163cee4e621a4c9e255fcc5c6c256",
+  "identity": "dev.lekalo.module-api-consumers@0.8.0",
+  "pins": {
+    "apiDigest": "sha256:0c595c2b61babe2533d798f0067635b9a53775637bc607e691750429471cd8f2",
+    "irDigest": "sha256:f60bad30f53d2b660eaeeafcc4cabb55a529f5baa0e69e7cf9a4160199a8614e",
+    "modelVersion": "0.2.16",
+    "project": "tasks"
+  },
+  "producer": {
+    "module": "tasks",
+    "project": "tasks"
+  },
+  "schemaVersion": "lekalo/module-api-consumers/v0.8.0"
 }

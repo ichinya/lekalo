@@ -1,14 +1,15 @@
 {
+  "status": "valid",
   "moduleApiDiff": {
     "after": {
       "apiVersion": "1.2.0",
-      "digest": "sha256:d4207dc7b8ad77e61b3e41ca760c886cd95222c74165f1284f443f8656999a65",
+      "digest": "sha256:7a8574c6e8c0bee7b8209018a441e77abde07c017ed699b4242b88bb3cf4f0df",
       "module": "tasks",
       "project": "tasks"
     },
     "before": {
       "apiVersion": "1.2.0",
-      "digest": "sha256:fa6aa835e57adec514652203707a2beb786819a88421af8d486dc2be58dc78cc",
+      "digest": "sha256:627c700a3a95cd7bd9312ffc218cc16abeed283ebf4287b03057bdbf48e93621",
       "module": "tasks",
       "project": "tasks"
     },
@@ -67,6 +68,5 @@
       "detail": "bump-missing",
       "expected": "major"
     }
-  },
-  "status": "valid"
+  }
 }

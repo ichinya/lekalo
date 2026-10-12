@@ -64,6 +64,22 @@ pub fn compare_public(
         if !bound {
             return Err(super::diagnostic::invalid("snapshot-binding"));
         }
+        // Selected-export membership (r4 review finding 3/codex): every
+        // declared use of a bound snapshot names an exact export of the
+        // bundle it is pinned to — a use of a symbol the producer never
+        // exported is invalid inventory, never a phantom impact row.
+        let exports: std::collections::BTreeSet<&str> = bundle
+            .exports
+            .iter()
+            .map(|export| export.export.as_str())
+            .collect();
+        for consumer in &snapshot.consumers {
+            for use_row in &consumer.uses {
+                if !exports.contains(use_row.export.as_str()) {
+                    return Err(super::diagnostic::invalid("snapshot-use-not-exported"));
+                }
+            }
+        }
     }
     let module = before.producer.module.clone();
     let before_map: std::collections::BTreeMap<&str, &super::wire::PublicExport> = before
@@ -159,7 +175,27 @@ pub fn compare_public(
     // Bundle-level public policy facts: ports, capabilities, and
     // deprecation declarations are public semantics the diff must never
     // ignore (finding 6).
+    //
+    // Port obligations connect to their operations (r4 review finding
+    // 7/codex): an operation that leaves the callable surface — present
+    // on at least one before-port, absent from every after-port — is a
+    // wire break of that operation itself, so consumers using it are
+    // exactly affected, never silently unaffected.
+    let mut required_capability_gap = false;
     {
+        let before_callable = callable_surface(&before.ports);
+        let after_callable = callable_surface(&after.ports);
+        for operation in before_callable.difference(&after_callable) {
+            changes.push(DiffChange {
+                export: (*operation).to_owned(),
+                member: None,
+                class: "wire-breaking".to_owned(),
+                reason: "port-operation-removed".to_owned(),
+                before: Some("callable".to_owned()),
+                after: None,
+            });
+            breaking = true;
+        }
         let before_ports: std::collections::BTreeMap<&str, &super::wire::PortPolicy> = before
             .ports
             .iter()
@@ -214,15 +250,35 @@ pub fn compare_public(
         for capability in &after.capabilities {
             match before_capabilities.get(capability.capability.as_str()) {
                 None => {
+                    // A newly required capability is a demand on every
+                    // consumer of the module, and the mapping from a
+                    // capability to the affected operations is not part
+                    // of the public bundle (r4 review finding 7/codex):
+                    // the change is behavioral — never purely additive —
+                    // and the exact consumer impact stays an explicit
+                    // evidence gap instead of an exact unaffected claim.
+                    let required = capability.obligation == "required";
                     changes.push(DiffChange {
                         export: capability.capability.clone(),
                         member: None,
-                        class: "additive".to_owned(),
-                        reason: "capability-added".to_owned(),
+                        class: if required {
+                            "behavioral".to_owned()
+                        } else {
+                            "additive".to_owned()
+                        },
+                        reason: if required {
+                            "required-capability-added".to_owned()
+                        } else {
+                            "capability-added".to_owned()
+                        },
                         before: None,
                         after: Some(capability.obligation.clone()),
                     });
-                    additive = true;
+                    if required {
+                        required_capability_gap = true;
+                    } else {
+                        additive = true;
+                    }
                 }
                 Some(before_capability) => {
                     if before_capability.obligation != capability.obligation {
@@ -234,6 +290,9 @@ pub fn compare_public(
                             before: Some(before_capability.obligation.clone()),
                             after: Some(capability.obligation.clone()),
                         });
+                        if capability.obligation == "required" {
+                            required_capability_gap = true;
+                        }
                     }
                     // The capability version pin is public semantics (r3
                     // review finding 8/codex): a changed version is a
@@ -402,6 +461,16 @@ pub fn compare_public(
                 actual: after.api_version.clone(),
                 detail: "bump-satisfied".to_owned(),
             },
+            // A version that moved backwards is a violation independent
+            // of the change classification (r4 review finding 8/codex).
+            RequiredBump::Backwards => VersionDecision {
+                decision: "violation".to_owned(),
+                expected: before_version
+                    .as_ref()
+                    .map(|version| format!("> {version}")),
+                actual: after.api_version.clone(),
+                detail: "version-moved-backwards".to_owned(),
+            },
             needed => VersionDecision {
                 decision: "violation".to_owned(),
                 expected: Some(needed.as_str().to_owned()),
@@ -415,7 +484,7 @@ pub fn compare_public(
     }
     // Consumer impact over the union inventory; dependency changes
     // propagate through the used-export transitive closure.
-    let (consumers, coverage) = consumer_impact(
+    let (consumers, mut coverage) = consumer_impact(
         &before_map,
         &after_map,
         &changes,
@@ -423,6 +492,16 @@ pub fn compare_public(
         &after_snapshot,
         &after,
     );
+    // A new or newly-required capability has no operation mapping in the
+    // public bundle, so its exact consumer impact is explicitly unknown —
+    // never an exact unaffected claim (r4 review finding 7/codex).
+    if required_capability_gap {
+        coverage
+            .unknown_reasons
+            .push("required-capability-impact-unknown".to_owned());
+        coverage.unknown_reasons.sort();
+        coverage.unknown_reasons.dedup();
+    }
     let policy_denied = strict_denial(&consumers) || deprecation_denial;
     let verdict = if policy_denied {
         "policy-denied"
@@ -454,14 +533,15 @@ pub fn compare_public(
     };
     let mut evidence = deprecation_evidence;
     if report.version_policy.decision == "violation" {
+        let detail = report.version_policy.detail.clone();
         let mut finding = Evidence::new(
             "module-api.version-policy-violation",
             &report.after.module,
-            "bump-missing",
+            detail.clone(),
         );
         finding.expected = report.version_policy.expected.clone();
         finding.actual = report.version_policy.actual.clone();
-        finding.path = vec!["bump-missing".to_owned()];
+        finding.path = vec![detail];
         evidence.push(finding);
     }
     for consumer in &report.consumers {
@@ -484,20 +564,27 @@ pub fn compare_public(
     // 7/codex): a strict gate can never silently approve a diff whose
     // consumer inventory is missing. The permanently unknown external
     // caller surface stays a coverage note; the missing-snapshot gap is
-    // the required-evidence denial seam.
-    if report
-        .coverage
-        .unknown_reasons
-        .iter()
-        .any(|reason| reason == "consumer-snapshots-missing")
-    {
-        let mut gap = Evidence::new(
-            "module-api.evidence-incomplete",
-            &report.after.module,
-            "consumer-coverage-unknown",
-        );
-        gap.gaps = vec!["consumer-snapshots-missing".to_owned()];
-        evidence.push(gap);
+    // the required-evidence denial seam. A required-capability change
+    // without an operation mapping is the same class of explicit
+    // unknown (r4 review finding 7/codex).
+    for reason in [
+        "consumer-snapshots-missing",
+        "required-capability-impact-unknown",
+    ] {
+        if report
+            .coverage
+            .unknown_reasons
+            .iter()
+            .any(|kept| kept == reason)
+        {
+            let mut gap = Evidence::new(
+                "module-api.evidence-incomplete",
+                &report.after.module,
+                "consumer-coverage-unknown",
+            );
+            gap.gaps = vec![reason.to_owned()];
+            evidence.push(gap);
+        }
     }
     Ok((report, evidence))
 }
@@ -593,6 +680,15 @@ fn strict_denial(consumers: &[ConsumerImpact]) -> bool {
 /// The wire kind spelling of one export for evidence text.
 fn export_kind(export: &super::wire::PublicExport) -> String {
     export.kind.clone()
+}
+
+/// The callable surface of one side: every operation present on at
+/// least one port (r4 review finding 7/codex).
+fn callable_surface(ports: &[super::wire::PortPolicy]) -> std::collections::BTreeSet<String> {
+    ports
+        .iter()
+        .flat_map(|port| port.operations.iter().cloned())
+        .collect()
 }
 
 /// The field list of one export by kind (error payloads are error-kind

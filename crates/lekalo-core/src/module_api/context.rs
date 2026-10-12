@@ -36,6 +36,12 @@ pub fn plan_consumer_context(
     if budget == 0 || budget > MAX_CONTEXT_TOKENS {
         return Err(invalid("budget-bound"));
     }
+    // The consumer selector obeys the same closed grammar the capsule
+    // schema declares (r4 review finding 9/codex): an invalid id refuses
+    // at the pure seam, never an output-contract violation downstream.
+    if !super::admission::is_module_id(consumer) {
+        return Err(invalid("consumer-id"));
+    }
     if uses.is_empty() || uses.len() > MAX_CONTEXT_ROOTS {
         return Err(invalid("selection-bound"));
     }
@@ -84,7 +90,10 @@ pub fn plan_consumer_context(
     // fitting capsule materializes and budgets every local public shape
     // the selected exports' signatures actually reach, not just the
     // selected roots — a selected query's result DTO and its scalar
-    // domains are required facts of the same task.
+    // domains are required facts of the same task. The declared public
+    // error unions of operations close the same way (r4 review finding
+    // 5/codex): a reachable public error export carries its own code,
+    // retryability, and payload shape as required facts.
     let mut closure: Vec<&PublicExport> = selected.clone();
     let mut queued: std::collections::BTreeSet<&str> = selected
         .iter()
@@ -92,7 +101,10 @@ pub fn plan_consumer_context(
         .collect();
     let mut work: Vec<&PublicExport> = selected.clone();
     while let Some(export) = work.pop() {
-        for leaf in shape_leaves(export) {
+        for leaf in shape_leaves(export)
+            .into_iter()
+            .chain(export_errors(export))
+        {
             if let Some(local) = by_id.get(leaf.as_str()) {
                 if queued.insert(local.export.as_str()) {
                     closure.push(local);
@@ -102,6 +114,12 @@ pub fn plan_consumer_context(
         }
     }
     closure.sort_by(|left, right| left.export.cmp(&right.export));
+    // The published capsule bounds its fact rows; a closure beyond the
+    // bound can never drop required facts to fit, so it refuses with the
+    // explicit bound instead of emitting a schema-invalid capsule.
+    if closure.len() > MAX_CONTEXT_ROOTS {
+        return Err(invalid("closure-bound"));
+    }
     // Required public dependencies of the closure: the transitive
     // reference set (shapes and identity obligations) decides which
     // pins are required.
@@ -138,23 +156,15 @@ pub fn plan_consumer_context(
     // Required facts: signatures, typed errors, effect obligations,
     // capability and version/deprecation obligations, and the query
     // owner facts (r3 review finding 14/codex: the capsule never claims
-    // known-empty operation errors from absence).
+    // known-empty operation errors from absence). Effect obligations
+    // preserve their emitted event ids and capabilities their full
+    // required/optional/owner/version obligations — lossless public
+    // facts, never counts or bare names (r4 review finding 5/codex).
     let mut facts = Vec::new();
     for export in &closure {
         let signature = signature_text(export);
         let errors = export_errors(export);
-        let effects = export
-            .effects
-            .iter()
-            .map(|obligation| {
-                format!(
-                    "{}|{}|{}",
-                    obligation.entity,
-                    obligation.operation,
-                    obligation.emits.len()
-                )
-            })
-            .collect();
+        let effects = export.effects.clone();
         let deprecation = bundle
             .deprecations
             .iter()
@@ -166,11 +176,7 @@ pub fn plan_consumer_context(
             signature,
             errors,
             effects,
-            capabilities: bundle
-                .capabilities
-                .iter()
-                .map(|capability| capability.capability.clone())
-                .collect(),
+            capabilities: bundle.capabilities.clone(),
             deprecation,
             api_version: bundle.api_version.clone(),
         });
@@ -226,7 +232,9 @@ pub fn plan_consumer_context(
 
 /// Every semantic reference one export carries: the shared reference
 /// collector for lock dependency extraction, consumer-impact propagation,
-/// and capsule planning.
+/// and capsule planning. The declared public error unions are edges of
+/// the same closure (r4 review finding 6/codex): an error-code change
+/// reaches every consumer of the operation that can raise it.
 pub(crate) fn export_references(export: &PublicExport) -> Vec<String> {
     let mut references: Vec<String> = Vec::new();
     let push_type = |expression: &super::wire::TypeExpr, references: &mut Vec<String>| {
@@ -258,6 +266,7 @@ pub(crate) fn export_references(export: &PublicExport) -> Vec<String> {
     if let Some(invokes) = &export.invokes {
         references.push(invokes.clone());
     }
+    references.extend(export.errors.iter().cloned());
     references
 }
 

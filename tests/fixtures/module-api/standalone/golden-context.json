@@ -1,86 +1,111 @@
 {
-  "schemaVersion": "lekalo/module-consumer-context/v0.8.0",
-  "identity": "dev.lekalo.module-consumer-context@0.8.0",
-  "consumer": "planner",
-  "producer": {
-    "project": "tasks",
-    "module": "tasks"
-  },
-  "producerDigest": "sha256:dd02bc7d30d9894c01707851627477e83e360004c872fdc89b9a841fccf30136",
   "apiVersion": "1.2.0",
   "budget": 4000,
+  "consumer": "planner",
+  "dependencies": [],
+  "digest": "sha256:585f2ee7057d322429d6c7ac9b57cec0e9ce5a7c2d7d08e5a92c3a5cb3cf51c2",
   "estimator": {
     "id": "module-context-estimator",
     "recipe": "public-facts-chars4/1",
     "version": "1"
   },
-  "fits": true,
-  "requiredCost": 235,
-  "selectedCost": 235,
   "exports": [
     {
+      "apiVersion": "1.2.0",
+      "capabilities": [
+        {
+          "capability": "http",
+          "obligation": "required",
+          "owner": null,
+          "version": null
+        }
+      ],
+      "deprecation": null,
+      "effects": [],
+      "errors": [],
       "export": "tasks.get_task",
       "kind": "query",
-      "signature": "query -> tasks.task_view cardinality one consistency strong pagination none",
-      "errors": [],
-      "effects": [],
-      "capabilities": [
-        "http"
-      ],
-      "deprecation": null,
-      "apiVersion": "1.2.0"
+      "signature": "query -> tasks.task_view cardinality one consistency strong pagination none"
     },
     {
+      "apiVersion": "1.2.0",
+      "capabilities": [
+        {
+          "capability": "http",
+          "obligation": "required",
+          "owner": null,
+          "version": null
+        }
+      ],
+      "deprecation": null,
+      "effects": [],
+      "errors": [],
       "export": "tasks.task_id",
       "kind": "scalar",
-      "signature": "scalar uuid",
-      "errors": [],
-      "effects": [],
-      "capabilities": [
-        "http"
-      ],
-      "deprecation": null,
-      "apiVersion": "1.2.0"
+      "signature": "scalar uuid"
     },
     {
+      "apiVersion": "1.2.0",
+      "capabilities": [
+        {
+          "capability": "http",
+          "obligation": "required",
+          "owner": null,
+          "version": null
+        }
+      ],
+      "deprecation": null,
+      "effects": [],
+      "errors": [],
       "export": "tasks.task_state",
       "kind": "enum",
-      "signature": "enum { open active done }",
-      "errors": [],
-      "effects": [],
-      "capabilities": [
-        "http"
-      ],
-      "deprecation": null,
-      "apiVersion": "1.2.0"
+      "signature": "enum { open active done }"
     },
     {
+      "apiVersion": "1.2.0",
+      "capabilities": [
+        {
+          "capability": "http",
+          "obligation": "required",
+          "owner": null,
+          "version": null
+        }
+      ],
+      "deprecation": null,
+      "effects": [],
+      "errors": [],
       "export": "tasks.task_view",
       "kind": "value-object",
-      "signature": "value-object { task_id!: tasks.task_id title!: tasks.title state!: tasks.task_state }",
-      "errors": [],
-      "effects": [],
-      "capabilities": [
-        "http"
-      ],
-      "deprecation": null,
-      "apiVersion": "1.2.0"
+      "signature": "value-object { task_id!: tasks.task_id title!: tasks.title state!: tasks.task_state }"
     },
     {
-      "export": "tasks.title",
-      "kind": "scalar",
-      "signature": "scalar string",
-      "errors": [],
-      "effects": [],
+      "apiVersion": "1.2.0",
       "capabilities": [
-        "http"
+        {
+          "capability": "http",
+          "obligation": "required",
+          "owner": null,
+          "version": null
+        }
       ],
       "deprecation": null,
-      "apiVersion": "1.2.0"
+      "effects": [],
+      "errors": [],
+      "export": "tasks.title",
+      "kind": "scalar",
+      "signature": "scalar string"
     }
   ],
-  "dependencies": [],
-  "omissions": [],
+  "fits": true,
   "gaps": [],
-  "digest": "sha256:647487a3524c729cfd9718971687e4c103da889df92bb10f50f8c3ef52a9bb4b"
+  "identity": "dev.lekalo.module-consumer-context@0.8.0",
+  "omissions": [],
+  "producer": {
+    "module": "tasks",
+    "project": "tasks"
+  },
+  "producerDigest": "sha256:0c595c2b61babe2533d798f0067635b9a53775637bc607e691750429471cd8f2",
+  "requiredCost": 319,
+  "schemaVersion": "lekalo/module-consumer-context/v0.8.0",
+  "selectedCost": 319
 }

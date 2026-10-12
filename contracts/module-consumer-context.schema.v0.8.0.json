@@ -153,20 +153,14 @@
         "effects": {
           "type": "array",
           "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 512,
-            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#|<>-]*$"
+            "$ref": "#/$defs/effectObligation"
           },
-          "maxItems": 1024
+          "maxItems": 256
         },
         "capabilities": {
           "type": "array",
           "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128,
-            "pattern": "^[a-z][a-z0-9._-]*$"
+            "$ref": "#/$defs/capabilityObligation"
           },
           "maxItems": 256,
           "uniqueItems": true
@@ -257,6 +251,84 @@
         }
       },
       "required": ["moduleId", "digest", "apiVersion", "exports"]
+    },
+    "effectObligation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "entity": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "operation": {
+          "enum": [
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "emits": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          },
+          "maxItems": 1024,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "entity",
+        "operation",
+        "emits"
+      ]
+    },
+    "capabilityObligation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "capability": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9._-]*$"
+        },
+        "obligation": {
+          "enum": [
+            "required",
+            "optional"
+          ]
+        },
+        "owner": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 192,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+            }
+          ]
+        },
+        "version": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "maxLength": 32,
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+            }
+          ]
+        }
+      },
+      "required": [
+        "capability",
+        "obligation",
+        "owner",
+        "version"
+      ]
     },
     "omission": {
       "type": "object",

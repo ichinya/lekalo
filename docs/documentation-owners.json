@@ -1063,7 +1063,7 @@
       "kind": "command",
       "command": "module api",
       "usage": "lekalo module api [OPTIONS] <COMMAND>",
-      "helpDigest": "sha256:ab324f8284cd221870719a3b79e0d8d07813ce3391c0b243d2b21e4142864a8d",
+      "helpDigest": "sha256:82970e45a318407d258d08b47049027b2595cf5bc50ed4951a5f15497595d689",
       "summary": "The public API boundary family (issue #113): check, export, consumers, lock, and context over the exact attachment and typed compilation. Read-only: no file, lock, cache, or Git writes and no adapter or network activity",
       "leaf": false,
       "owner": "docs/bootstrap.md",
@@ -1131,6 +1131,17 @@
       "usage": "lekalo module api lock [OPTIONS] --api <PATH> --module <MODULE> --consumer <MODULE>",
       "helpDigest": "sha256:647504d86bde11ba2f01bf6d2b0260579c21dbf8dde9713a895d1a84d1103738",
       "summary": "Print a candidate consumer lock payload (never a file), or check an existing lock against the current resolution",
+      "leaf": true,
+      "owner": "docs/bootstrap.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:module api mapping",
+      "kind": "command",
+      "command": "module api mapping",
+      "usage": "lekalo module api mapping [OPTIONS] --in-process <PATH> --service <PATH> <PUBLIC>",
+      "helpDigest": "sha256:b3f21c57de77326aad3b8d7edcddaa520a011fcebba9bf408335aa33c2d1e34d",
+      "summary": "Prove the in-process and extracted-service mapping conformance of one public bundle from two independently authored evidence documents (issue #113 AC7)",
       "leaf": true,
       "owner": "docs/bootstrap.md",
       "status": "implemented"
@@ -2828,7 +2839,16 @@
       "id": "contract:contracts/module-consumer-context.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/module-consumer-context.schema.v0.8.0.json",
-      "sourceDigest": "sha256:fa583debbbb59757606dbeac51c92eb1142482620c9c49a6e350b89584908988",
+      "sourceDigest": "sha256:3d180cb4e917b273b795a8e319f39ab2761a031c59ea6ca13ea9d7364de1e00b",
+      "owner": "docs/module-api.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/module-mapping-evidence.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/module-mapping-evidence.schema.v0.8.0.json",
+      "sourceDigest": "sha256:a1f12e89e348b921f2a5f0971ad2ce607a96445a6ca229c0c299cbbbbf937444",
       "owner": "docs/module-api.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2837,7 +2857,7 @@
       "id": "contract:contracts/module-public-contract.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/module-public-contract.schema.v0.8.0.json",
-      "sourceDigest": "sha256:600d6382728633500b00a7569f5b08f5dfe711f2049bffe9c7d41d2497709a82",
+      "sourceDigest": "sha256:e1605c8ed5cd2161e0a334c043ec17f88a56487470fa5b9d77eb71b3ca8e3c31",
       "owner": "docs/module-api.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

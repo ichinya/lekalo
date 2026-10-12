@@ -23,6 +23,7 @@ pub mod diff;
 pub mod effects;
 pub mod graph;
 pub mod lock;
+pub mod mapping;
 pub mod public;
 pub mod resolve;
 pub mod validate;
@@ -33,11 +34,12 @@ pub use consumers::{consumer_snapshot, parse_snapshot};
 pub use context::{estimate, plan_consumer_context};
 pub use diff::compare_public;
 pub use lock::{check_lock, parse_lock, resolve_lock};
+pub use mapping::{check_mapping_conformance, parse_mapping_evidence};
 pub use public::{export_public, parse_bundle};
 pub use resolve::resolve;
 pub use validate::{check, FindingClass, Verdict};
 pub use version::{ApiVersion, ConsumerPolicy, RequiredBump, VersionInterval};
 pub use wire::{
-    Attachment, ConsumerLock, ConsumerSnapshot, ContextCapsule, DiffReport, PublicBundle, Report,
-    VersionPolicyWire,
+    Attachment, ConsumerLock, ConsumerSnapshot, ContextCapsule, DiffReport, MappingConformance,
+    MappingEvidence, PublicBundle, Report, VersionPolicyWire,
 };

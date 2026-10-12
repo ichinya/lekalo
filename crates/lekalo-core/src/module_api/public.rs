@@ -388,6 +388,14 @@ impl<'a> ExportSession<'a> {
             &wire::canonical(&digest_projection),
         );
         let bundle = PublicBundle { digest, ..partial };
+        // The outgoing public projection is certified against the same
+        // published grammar as incoming bundles (r4 review finding
+        // 2/codex): the typed admission and semantic closure invariants
+        // run on the exact emitted object, so export can never certify a
+        // schema-invalid bundle even from a malformed-but-decodable
+        // attachment.
+        super::admission::admit_bundle(&bundle).map_err(ExportFailure::Invalid)?;
+        super::admission::admit_bundle_semantics(&bundle).map_err(ExportFailure::Invalid)?;
         self.bundles.insert(module.to_owned(), bundle.clone());
         Ok(bundle)
     }

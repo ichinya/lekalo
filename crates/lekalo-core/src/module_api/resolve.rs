@@ -57,6 +57,10 @@ pub fn resolve(bytes: &[u8], compilation: &Compilation) -> Result<Resolved, Diag
             &attachment.schema_version,
         ));
     }
+    // The typed closed grammar (r4 review finding 2/codex): ids,
+    // capability versions, vocabularies, and bounds are admission — a
+    // schema-invalid attachment never becomes accepted policy.
+    super::admission::admit_attachment(&attachment)?;
     if attachment.modules.len() > MAX_MODULES {
         return Err(invalid("module-bound"));
     }

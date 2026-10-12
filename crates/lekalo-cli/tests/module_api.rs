@@ -1001,3 +1001,331 @@ fn r3_owner_evidence_gaps_exit_unavailable() {
     assert_eq!(export.status.code(), Some(4));
     assert!(codes(&export).contains(&"LEK-MODULE-012".to_owned()));
 }
+
+#[test]
+fn r4_validate_seam_requires_complete_evidence() {
+    // r4 finding 1/codex: the strict validate seam composes required
+    // evidence gaps as unavailable/4 with LEK-MODULE-012 — the same
+    // complete-evidence decision as `module api check --strict` — never a
+    // valid base with the gap demoted to a warning.
+    let reference = scratch_project("reference/tasks");
+    let dir = alias_free_path(reference.path());
+    let mut attachment: Value =
+        serde_json::from_slice(&fs::read(dir.join("module-api.json")).unwrap()).unwrap();
+    for module in attachment["modules"].as_array_mut().unwrap().iter_mut() {
+        module.as_object_mut().unwrap().remove("operationErrors");
+        module.as_object_mut().unwrap().remove("queryFacts");
+    }
+    fs::write(
+        dir.join("no-owner-evidence.json"),
+        serde_json::to_vec(&attachment).unwrap(),
+    )
+    .unwrap();
+    let control = lekalo_in(
+        &dir,
+        &[
+            "validate",
+            "--project",
+            ".",
+            "--module-api",
+            "module-api.json",
+        ],
+    );
+    assert_eq!(control.status.code(), Some(0), "intact control stays valid");
+    let gap = lekalo_in(
+        &dir,
+        &[
+            "validate",
+            "--project",
+            ".",
+            "--strict",
+            "--module-api",
+            "no-owner-evidence.json",
+        ],
+    );
+    assert_eq!(
+        gap.status.code(),
+        Some(4),
+        "the gap is unavailable, not valid"
+    );
+    assert!(codes(&gap).contains(&"LEK-MODULE-012".to_owned()));
+}
+
+#[test]
+fn r4_validate_seam_receipt_counts_track_appended_evidence() {
+    // r4 finding 1/codex: the advisory receipt's severity counts report
+    // the appended boundary evidence instead of warning=0.
+    let reference = scratch_project("reference/tasks");
+    let dir = alias_free_path(reference.path());
+    let output = lekalo_in(
+        &dir,
+        &[
+            "validate",
+            "--project",
+            ".",
+            "--module-api",
+            "module-api.json",
+        ],
+    );
+    assert_eq!(output.status.code(), Some(0));
+    let document = envelope(&output);
+    let counts = &document["validation"]["counts"];
+    assert_eq!(counts["error"].as_u64(), Some(0));
+    let warning = counts["warning"].as_u64().unwrap_or(0);
+    let info = counts["info"].as_u64().unwrap_or(0);
+    let reported = document["diagnostics"]
+        .as_array()
+        .map(Vec::len)
+        .unwrap_or(0);
+    assert!(
+        (warning + info) as usize >= reported.min(1),
+        "the receipt counts the appended evidence (warning={warning} info={info})"
+    );
+}
+
+#[test]
+fn r4_context_rejects_invalid_consumer_selectors() {
+    // r4 finding 9/codex: an invalid consumer selector refuses at the
+    // pure seam — never a capsule the published schema rejects.
+    let family = scratch_family();
+    let dir = alias_free_path(family.path());
+    let bundle = dir.join("standalone/golden-bundle.json");
+    for bad in ["!", "Bad_ID", ""] {
+        let output = lekalo_in(
+            &dir,
+            &[
+                "module",
+                "api",
+                "context",
+                bundle.to_str().unwrap(),
+                "--consumer",
+                bad,
+                "--uses",
+                "tasks.task_view",
+                "--budget",
+                "4000",
+            ],
+        );
+        assert_eq!(output.status.code(), Some(1), "consumer {bad:?} refuses");
+        assert!(codes(&output).contains(&"LEK-MODULE-001".to_owned()));
+    }
+}
+
+#[test]
+fn r4_mapping_conformance_proves_the_two_implementations() {
+    // r4 finding 10/codex: the in-process and extracted-service mapping
+    // evidence — independently authored documents against one public
+    // digest — prove conformance through the real CLI.
+    let family = scratch_family();
+    let dir = alias_free_path(family.path());
+    let args = [
+        "module",
+        "api",
+        "mapping",
+        "standalone/golden-bundle.json",
+        "--in-process",
+        "mapping/in-process/mapping-evidence.json",
+        "--service",
+        "mapping/service/mapping-evidence.json",
+    ];
+    let proven = lekalo_in(&dir, &args);
+    assert_eq!(proven.status.code(), Some(0));
+    let document = envelope(&proven);
+    assert_eq!(document["moduleMappingConformance"]["conforms"], true);
+    assert_eq!(document["moduleMappingConformance"]["observations"], 4);
+
+    // A divergent observation (the service author saw a different error
+    // union), correctly resealed, is an unproven conformance: exit 4
+    // with the typed evidence gap, never a silent pass.
+    let mut service: Value = serde_json::from_slice(
+        &fs::read(dir.join("mapping/service/mapping-evidence.json")).unwrap(),
+    )
+    .unwrap();
+    service["observations"][0]["errors"] = serde_json::json!(["tasks.public_error"]);
+    seal_evidence(&mut service);
+    fs::write(
+        dir.join("mapping/service/divergent.json"),
+        serde_json::to_vec(&service).unwrap(),
+    )
+    .unwrap();
+    let divergent = lekalo_in(
+        &dir,
+        &[
+            "module",
+            "api",
+            "mapping",
+            "standalone/golden-bundle.json",
+            "--in-process",
+            "mapping/in-process/mapping-evidence.json",
+            "--service",
+            "mapping/service/divergent.json",
+        ],
+    );
+    assert_eq!(divergent.status.code(), Some(4));
+    assert!(codes(&divergent).contains(&"LEK-MODULE-012".to_owned()));
+
+    // An implementation that cannot provide a required capability
+    // diverges from the certified contract explicitly.
+    let mut unsupported: Value = serde_json::from_slice(
+        &fs::read(dir.join("mapping/service/mapping-evidence.json")).unwrap(),
+    )
+    .unwrap();
+    unsupported["unsupported"] = serde_json::json!(["http"]);
+    seal_evidence(&mut unsupported);
+    fs::write(
+        dir.join("mapping/service/unsupported.json"),
+        serde_json::to_vec(&unsupported).unwrap(),
+    )
+    .unwrap();
+    let refused = lekalo_in(
+        &dir,
+        &[
+            "module",
+            "api",
+            "mapping",
+            "standalone/golden-bundle.json",
+            "--in-process",
+            "mapping/in-process/mapping-evidence.json",
+            "--service",
+            "mapping/service/unsupported.json",
+        ],
+    );
+    assert_eq!(refused.status.code(), Some(4));
+    assert!(codes(&refused).contains(&"LEK-MODULE-012".to_owned()));
+
+    // A malformed row (unknown implementation) is invalid input.
+    let mut malformed: Value = serde_json::from_slice(
+        &fs::read(dir.join("mapping/service/mapping-evidence.json")).unwrap(),
+    )
+    .unwrap();
+    malformed["implementation"] = serde_json::json!("frankenstein");
+    seal_evidence(&mut malformed);
+    fs::write(
+        dir.join("mapping/service/malformed.json"),
+        serde_json::to_vec(&malformed).unwrap(),
+    )
+    .unwrap();
+    let invalid = lekalo_in(
+        &dir,
+        &[
+            "module",
+            "api",
+            "mapping",
+            "standalone/golden-bundle.json",
+            "--in-process",
+            "mapping/in-process/mapping-evidence.json",
+            "--service",
+            "mapping/service/malformed.json",
+        ],
+    );
+    assert_eq!(invalid.status.code(), Some(1));
+    assert!(codes(&invalid).contains(&"LEK-MODULE-001".to_owned()));
+}
+
+/// Seal one mapping-evidence document over its canonical bytes (the exact
+/// digest domain of the family).
+fn seal_evidence(value: &mut Value) {
+    let original = value.clone();
+    value["digest"] = serde_json::Value::String(String::new());
+    let canonical = lekalo_core::module_api::wire::canonical(value);
+    let digest = format!(
+        "sha256:{}",
+        lekalo_core::digest::sha256_hex(
+            format!("lekalo/module-mapping-evidence/1\n{canonical}").as_bytes()
+        )
+    );
+    *value = original;
+    value["digest"] = serde_json::Value::String(digest);
+}
+
+#[test]
+fn r4_strict_diff_denies_required_capability_gap() {
+    // r4 finding 7/codex: an added required capability has no operation
+    // mapping in the bundle, so strict diff treats its consumer impact as
+    // an explicit required evidence gap (exit 4), never an exa
+    // unaffected claim.
+    let family = scratch_family();
+    let dir = alias_free_path(family.path());
+    let mut after: Value =
+        serde_json::from_slice(&fs::read(dir.join("diff/golden-bundle-after.json")).unwrap())
+            .unwrap();
+    after["capabilities"] = serde_json::json!([
+        { "capability": "audit.sink", "obligation": "required", "owner": "compliance", "version": "1.0.0" },
+        { "capability": "http", "obligation": "required", "owner": null, "version": null }
+    ]);
+    seal_bundle(&mut after);
+    // Re-pin the after snapshot to the resealed bundle so the pair binds.
+    let mut snapshot: Value =
+        serde_json::from_slice(&fs::read(dir.join("diff/golden-consumers-after.json")).unwrap())
+            .unwrap();
+    snapshot["pins"]["apiDigest"] = after["digest"].clone();
+    seal_snapshot(&mut snapshot);
+    fs::write(
+        dir.join("diff/required-capability-consumers.json"),
+        serde_json::to_vec(&snapshot).unwrap(),
+    )
+    .unwrap();
+    fs::write(
+        dir.join("diff/required-capability.json"),
+        serde_json::to_vec(&after).unwrap(),
+    )
+    .unwrap();
+    let strict = lekalo_in(
+        &dir,
+        &[
+            "module",
+            "api",
+            "diff",
+            "diff/golden-bundle-before.json",
+            "diff/required-capability.json",
+            "--consumers-before",
+            "diff/golden-consumers-before.json",
+            "--consumers-after",
+            "diff/required-capability-consumers.json",
+            "--strict",
+        ],
+    );
+    assert_eq!(strict.status.code(), Some(4));
+    assert!(codes(&strict).contains(&"LEK-MODULE-012".to_owned()));
+}
+
+/// Seal one public bundle over its canonical projection (the exact digest
+/// domain of the family: zeroed revisions, excluded pins).
+fn seal_bundle(value: &mut Value) {
+    let original_pins = value["pins"].clone();
+    value["digest"] = serde_json::Value::String(String::new());
+    value["pins"] = serde_json::json!({
+        "modelVersion": "",
+        "irDigest": "",
+        "sourceRevision": { "state": "unknown" }
+    });
+    if let Some(exports) = value["exports"].as_array_mut() {
+        for export in exports.iter_mut() {
+            export["version"] = serde_json::Value::from(0);
+        }
+    }
+    let canonical = lekalo_core::module_api::wire::canonical(value);
+    let digest = format!(
+        "sha256:{}",
+        lekalo_core::digest::sha256_hex(
+            format!("lekalo/module-public-contract/1\n{canonical}").as_bytes()
+        )
+    );
+    value["digest"] = digest.into();
+    value["pins"] = original_pins;
+}
+
+/// Seal one consumer snapshot over its canonical bytes.
+fn seal_snapshot(value: &mut Value) {
+    let original = value.clone();
+    value["digest"] = serde_json::Value::String(String::new());
+    let canonical = lekalo_core::module_api::wire::canonical(value);
+    let digest = format!(
+        "sha256:{}",
+        lekalo_core::digest::sha256_hex(
+            format!("lekalo/module-api-consumers/1\n{canonical}").as_bytes()
+        )
+    );
+    *value = original;
+    value["digest"] = serde_json::Value::String(digest);
+}

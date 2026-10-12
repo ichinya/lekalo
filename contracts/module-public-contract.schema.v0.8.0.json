@@ -344,7 +344,8 @@
       "required": [
         "export",
         "kind",
-        "version"
+        "version",
+        "errors"
       ]
     },
     "queryExport": {
@@ -415,7 +416,11 @@
       "required": [
         "export",
         "kind",
-        "version"
+        "version",
+        "errors",
+        "cardinality",
+        "consistency",
+        "pagination"
       ]
     },
     "eventExport": {

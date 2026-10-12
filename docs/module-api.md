@@ -3,7 +3,9 @@
 `module api` validates the explicit public boundary of a versioned module,
 exports its standalone public contract, inventories its consumers, pins and
 checks consumer locks, diffs two public revisions with exact affected
-consumers, and plans a bounded consumer capsule from the public bundle alone.
+consumers, plans a bounded consumer capsule from the public bundle alone,
+and proves the in-process/extracted-service mapping conformance from two
+independently authored evidence documents.
 It is read-only: no file, lock, report, baseline, or cache writes, no adapter
 execution, no network, and no Git state change. Capture stdout explicitly when
 a reviewed artifact is needed.
@@ -27,6 +29,7 @@ lekalo --json --no-cache module api lock --project DIR --api PATH --module tasks
 lekalo --json --no-cache module api lock --project DIR --api PATH --module tasks --consumer planner --check --lock PATH
 lekalo --json module api diff BASE_PUBLIC CANDIDATE_PUBLIC --consumers-before SNAP --consumers-after SNAP [--strict]
 lekalo --json module api context PUBLIC --consumer planner --uses a.b,c.d --budget 4000
+lekalo --json module api mapping PUBLIC --in-process IN_PROCESS_EVIDENCE --service SERVICE_EVIDENCE
 lekalo --json validate --project DIR --strict --module-api PATH [--module-api-lock PATH]
 ```
 
@@ -69,14 +72,27 @@ from its own domain). The same digest backs the consumer snapshot
 (`module-api-consumers`), the consumer lock (`module-api-lock`), and the
 public-only context capsule (`module-consumer-context`), so an in-process
 consumer and an extracted-service port conform to the identical portable
-contract.
+contract. Admission is symmetric in both directions: the published schemas
+are the exact grammar of attachments, standalone bundles, and consumer
+snapshots (ids, vocabularies, versions, bounds), a recomputed checksum never
+admits a schema-invalid document, and every exported command and query
+carries its public error union — an explicitly empty array is a known-empty
+union — plus its query owner facts (cardinality, consistency, pagination).
 
 The diff classifies changes (additive, behavioral, source-breaking,
 wire-breaking, policy) with exact reasons, joins the union before/after
 consumer inventory, partitions affected/compatible/unaffected consumers, and
 evaluates the independent version policy: stable majors need a major bump for
 breaking changes, pre-1.0 modules pin minor-breaking behavior explicitly, and
-digest-only modules never claim SemVer compatibility. Coverage stays honest:
+digest-only modules never claim SemVer compatibility. Backwards movement is
+rejected independently of the classification — a downgrade is always a
+version-policy violation — and the required segment must strictly increase.
+An operation that leaves the callable surface (present on at least one
+before-port, absent from every after-port) is a wire break of that operation;
+a new or newly-required capability has no operation mapping in the bundle, so
+its exact consumer impact is an explicit coverage gap, never an exact
+unaffected claim. Error-code changes propagate through the operation error
+unions to every consumer that can raise them. Coverage stays honest:
 unknown external callers are reported, never merged into a purported exact
 total.
 
@@ -85,7 +101,29 @@ provider checkout may be absent. Required facts (inputs, results, errors,
 effect obligations, capability/version/deprecation obligations) are protected
 against budget drops: an over-budget capsule keeps `fits:false`, the minimum
 required cost, and the omission reasons, with the pinned offline estimator
-(`module-context-estimator`, `public-facts-chars4/1`).
+(`module-context-estimator`, `public-facts-chars4/1`). The capsule closes the
+declared public error unions of the selected operations — a reachable public
+error export carries its own code, retryability, and payload shape — and its
+effect facts preserve the emitted event ids and full capability obligations
+(required/optional, owner, version), never counts or bare names.
+
+## Mapping conformance
+
+`module api mapping` proves the boundary's implementation criterion (AC7):
+the same public bundle must serve an in-process consumer and an
+extract-service port identically. Two **independently authored** evidence
+documents (`module-mapping-evidence.schema.v0.8.0.json` — one per
+implementation, each stating per public operation of its mapped port the
+exact IDs, input/result shapes, error unions, effect obligations,
+read/write meaning, and capability demands it observes, plus the
+capabilities it explicitly cannot provide) are checked against one pinned
+public digest and against each other. A conforming pair is valid (exit 0);
+every divergence — a wrong signature, error union, effect set, access
+meaning, missing observation, digest rebinding, or an unsupported required
+capability — is a typed required-evidence gap (`LEK-MODULE-012`, exit 4), so
+the criterion stays uncovered until both implementations match. Synthetic
+mapping evidence is the research contract's local proof level; deployment
+and real adapter execution are not claimed.
 
 ## Diagnostics and registry
 

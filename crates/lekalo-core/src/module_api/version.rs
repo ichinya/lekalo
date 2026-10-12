@@ -182,13 +182,18 @@ impl ConsumerPolicy {
 /// public change demands a major bump, additive public surface at least a
 /// minor bump, and compatible behavior a patch bump. Pre-1.0 modules
 /// explicitly pin minor-breaking behavior; digest-only modules carry no
-/// version claim at all.
+/// version claim at all. Backwards movement is rejected independently of
+/// the change classification (r4 review finding 8/codex): a version that
+/// decreases is never a compliant bump, and the required segment must
+/// strictly increase.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RequiredBump {
     None,
     Patch,
     Minor,
     Major,
+    /// The candidate version moved backwards; never compliant.
+    Backwards,
 }
 
 impl RequiredBump {
@@ -199,6 +204,7 @@ impl RequiredBump {
             Self::Patch => "patch",
             Self::Minor => "minor",
             Self::Major => "major",
+            Self::Backwards => "forward",
         }
     }
 
@@ -206,7 +212,12 @@ impl RequiredBump {
     /// declared policy kind of the module. `changed` reports whether any
     /// semantic change exists at all: identical bundles demand no bump
     /// regardless of version equality (finding: identical bundles diffed
-    /// as breaking with a phantom patch requirement).
+    /// as breaking with a phantom patch requirement). A version that
+    /// moved backwards is a violation even on an unchanged surface (r4
+    /// review finding 8/codex), and a satisfying bump must strictly
+    /// increase the appropriate segment: a major bump means the major
+    /// segment grew, a minor bump means the minor segment grew under a
+    /// stable major, and lower segments are never reused to fake progress.
     pub fn evaluate(
         before: Option<&ApiVersion>,
         after: Option<&ApiVersion>,
@@ -218,37 +229,46 @@ impl RequiredBump {
             // Digest-only or newly versioned: no SemVer claim to evaluate.
             return Self::None;
         };
+        // Backwards movement is a violation on its own, independent of
+        // the classification and of whether anything changed at all.
+        if *after < *before {
+            return Self::Backwards;
+        }
         if !changed {
             return Self::None;
         }
-        if after.major != before.major {
-            return Self::None; // the major segment changed; compliant
+        // A strictly increased major segment satisfies every requirement.
+        if after.major > before.major {
+            return Self::None;
         }
         if breaking {
             if before.major >= 1 {
+                // Stable major: only a major bump covers a break.
                 return Self::Major;
             }
             // Pre-1.0 minor-breaking policy: a breaking change must move
-            // the minor segment.
-            return if after.minor != before.minor {
+            // the minor segment strictly up.
+            return if after.minor > before.minor {
                 Self::None
             } else {
                 Self::Minor
             };
         }
         if additive {
-            // Additive public surface needs at least a minor bump on
-            // stable majors; pre-1.0 modules may ship additive surface in
-            // a patch (finding: patch bump accepted additive change).
-            return if after.minor != before.minor {
+            // Additive public surface needs at least a strictly increased
+            // minor bump on stable majors; pre-1.0 modules may ship
+            // additive surface in a patch (finding: patch bump accepted
+            // additive change).
+            return if after.minor > before.minor {
                 Self::None
-            } else if after.major >= 1 {
+            } else if before.major >= 1 {
                 Self::Minor
             } else {
                 Self::None
             };
         }
-        if after.patch != before.patch || after.minor != before.minor {
+        // Compatible behavior needs a strictly increased segment.
+        if after.minor > before.minor || after.patch > before.patch {
             Self::None
         } else {
             Self::Patch
@@ -375,6 +395,44 @@ mod tests {
         assert_eq!(
             RequiredBump::evaluate(None, None, true, true, false),
             RequiredBump::None
+        );
+        // Backwards movement is a violation independent of the change
+        // classification and of an unchanged surface (r4 review finding
+        // 8/codex).
+        assert_eq!(
+            RequiredBump::evaluate(Some(&v("1.2.0")), Some(&v("0.1.0")), true, true, false),
+            RequiredBump::Backwards
+        );
+        assert_eq!(
+            RequiredBump::evaluate(Some(&v("1.2.0")), Some(&v("1.1.0")), true, true, false),
+            RequiredBump::Backwards
+        );
+        assert_eq!(
+            RequiredBump::evaluate(Some(&v("1.2.3")), Some(&v("1.2.2")), true, false, false),
+            RequiredBump::Backwards
+        );
+        assert_eq!(
+            RequiredBump::evaluate(Some(&v("1.2.0")), Some(&v("1.1.9")), false, false, false),
+            RequiredBump::Backwards
+        );
+        // A strictly increased major satisfies every requirement.
+        assert_eq!(
+            RequiredBump::evaluate(Some(&v("1.2.0")), Some(&v("2.0.0")), true, true, false),
+            RequiredBump::None
+        );
+        assert_eq!(
+            RequiredBump::evaluate(Some(&v("1.2.0")), Some(&v("1.3.0")), true, false, false),
+            RequiredBump::None
+        );
+        assert_eq!(
+            RequiredBump::evaluate(Some(&v("1.2.0")), Some(&v("1.2.1")), true, false, false),
+            RequiredBump::None
+        );
+        // Pre-1.0: a minor decrease is still backwards even when the
+        // change only needs a patch.
+        assert_eq!(
+            RequiredBump::evaluate(Some(&v("0.3.2")), Some(&v("0.2.9")), true, false, false),
+            RequiredBump::Backwards
         );
     }
 }

@@ -12,7 +12,7 @@ use crate::diagnostics::DiagnosticSet;
 
 /// Whether `text` matches the closed `semanticId` grammar
 /// (`^[A-Za-z0-9][A-Za-z0-9._:/#-]*$`, length 3..=192).
-fn is_semantic_id(text: &str) -> bool {
+pub(crate) fn is_semantic_id(text: &str) -> bool {
     (3..=192).contains(&text.len())
         && text
             .chars()
@@ -25,7 +25,7 @@ fn is_semantic_id(text: &str) -> bool {
 
 /// Whether `text` matches the closed module id grammar
 /// (`^[a-z][a-z0-9-]*$`, length 1..=192).
-fn is_module_id(text: &str) -> bool {
+pub(crate) fn is_module_id(text: &str) -> bool {
     (1..=192).contains(&text.len())
         && text
             .chars()
@@ -34,6 +34,62 @@ fn is_module_id(text: &str) -> bool {
         && text
             .chars()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+/// Whether `text` matches the closed project id grammar
+/// (`^[A-Za-z0-9][A-Za-z0-9._-]*$`, length 1..=192) — the published
+/// pattern of `producer.project` and the attachment `project` pin (r4
+/// review finding 2/devin).
+pub(crate) fn is_project_id(text: &str) -> bool {
+    (1..=192).contains(&text.len())
+        && text
+            .chars()
+            .next()
+            .is_some_and(|first| first.is_ascii_alphanumeric())
+        && text
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+}
+
+/// Whether `text` matches the closed capability id grammar
+/// (`^[a-z][a-z0-9._-]*$`, length 1..=128).
+pub(crate) fn is_capability_id(text: &str) -> bool {
+    (1..=128).contains(&text.len())
+        && text
+            .chars()
+            .next()
+            .is_some_and(|first| first.is_ascii_lowercase())
+        && text
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '.' | '_' | '-'))
+}
+
+/// Whether `text` matches the closed grant id grammar
+/// (`^[a-z][a-z0-9-]*$`, length 1..=128).
+pub(crate) fn is_grant_id(text: &str) -> bool {
+    (1..=128).contains(&text.len())
+        && text
+            .chars()
+            .next()
+            .is_some_and(|first| first.is_ascii_lowercase())
+        && text
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+/// Whether `text` matches the closed mapping-edge grammar
+/// (`^[A-Za-z0-9][A-Za-z0-9._:/#|<>-]*$`, length 1..=512) — the
+/// consumer-use `edges` vocabulary of the snapshot schema.
+pub(crate) fn is_edge_key(text: &str) -> bool {
+    (1..=512).contains(&text.len())
+        && text
+            .chars()
+            .next()
+            .is_some_and(|first| first.is_ascii_alphanumeric())
+        && text.chars().all(|c| {
+            c.is_ascii_alphanumeric()
+                || matches!(c, '.' | '_' | ':' | '/' | '#' | '|' | '<' | '>' | '-')
+        })
 }
 
 /// Whether `text` matches the closed field-name grammar
@@ -180,6 +236,19 @@ pub(crate) fn admit_bundle_presence(raw: &serde_json::Value) -> Result<(), Diagn
                             }
                         }
                     }
+                    // The per-kind required semantics (r4 review finding
+                    // 4/codex): every exported command and query carries
+                    // its public error union — an explicitly empty union
+                    // is known-empty evidence, never an inferred one — and
+                    // every exported query its owner facts.
+                    match kind {
+                        "command" => require(item, &["errors"])?,
+                        "query" => require(
+                            item,
+                            &["errors", "cardinality", "consistency", "pagination"],
+                        )?,
+                        _ => {}
+                    }
                     for field_key in ["fields", "input", "payload"] {
                         if let Some(fields) = item[field_key].as_array() {
                             for field in fields {
@@ -209,12 +278,15 @@ pub(crate) fn admit_bundle_presence(raw: &serde_json::Value) -> Result<(), Diagn
 }
 
 /// The typed closed-grammar admission of one decoded bundle: kinds,
-/// vocabularies, bounds, uniqueness, IDs, and versions.
+/// vocabularies, bounds, uniqueness, IDs, versions, and the freshness
+/// pin shapes the published schema declares (r4 review finding
+/// 2/devin: project ids, the model-version pin, and a known source
+/// revision value are pattern-checked, never taken on faith).
 pub(crate) fn admit_bundle(bundle: &PublicBundle) -> Result<(), DiagnosticSet> {
     if !is_module_id(&bundle.producer.module) {
         return Err(invalid("producer-module"));
     }
-    if bundle.producer.project.is_empty() || bundle.producer.project.len() > 192 {
+    if !is_project_id(&bundle.producer.project) {
         return Err(invalid("producer-project"));
     }
     if let Some(version) = &bundle.api_version {
@@ -222,8 +294,20 @@ pub(crate) fn admit_bundle(bundle: &PublicBundle) -> Result<(), DiagnosticSet> {
             return Err(invalid("api-version"));
         }
     }
+    if bundle.pins.model_version != wire::MODEL_VERSION {
+        return Err(invalid("pins-model-version"));
+    }
     if !super::version::is_digest(&bundle.pins.ir_digest) {
         return Err(invalid("pins-ir-digest"));
+    }
+    if let super::wire::State::Known { value } = &bundle.pins.source_revision {
+        let well_formed = (8..=64).contains(&value.len())
+            && value
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase());
+        if !well_formed {
+            return Err(invalid("pins-source-revision"));
+        }
     }
     if bundle.exports.len() > wire::MAX_EXPORTS_PER_MODULE
         || bundle.public_dependencies.len() > wire::MAX_DEPENDENCY_NESTING
@@ -245,6 +329,25 @@ pub(crate) fn admit_bundle(bundle: &PublicBundle) -> Result<(), DiagnosticSet> {
             .collect::<Vec<_>>(),
     ) {
         return Err(invalid("duplicate-export"));
+    }
+    let mut port_ids: Vec<&str> = Vec::new();
+    for port in &bundle.ports {
+        port_ids.push(port.port.as_str());
+    }
+    if !is_unique(&port_ids.iter().map(|id| id.to_string()).collect::<Vec<_>>()) {
+        return Err(invalid("duplicate-port"));
+    }
+    let mut capability_ids: Vec<&str> = Vec::new();
+    for capability in &bundle.capabilities {
+        capability_ids.push(capability.capability.as_str());
+    }
+    if !is_unique(
+        &capability_ids
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>(),
+    ) {
+        return Err(invalid("duplicate-capability"));
     }
     let mut dependency_ids: Vec<&str> = Vec::new();
     for dependency in &bundle.public_dependencies {
@@ -293,18 +396,16 @@ pub(crate) fn admit_bundle(bundle: &PublicBundle) -> Result<(), DiagnosticSet> {
         }
     }
     for capability in &bundle.capabilities {
-        let well_formed = (1..=128).contains(&capability.capability.len())
-            && capability
-                .capability
-                .chars()
-                .next()
-                .is_some_and(|first| first.is_ascii_lowercase())
-            && capability.capability.chars().all(|c| {
-                c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '.' | '_' | '-')
-            })
-            && matches!(capability.obligation.as_str(), "required" | "optional");
-        if !well_formed {
+        if !is_capability_id(&capability.capability) {
             return Err(invalid("capability-shape"));
+        }
+        if !matches!(capability.obligation.as_str(), "required" | "optional") {
+            return Err(invalid("capability-shape"));
+        }
+        if let Some(owner) = &capability.owner {
+            if !is_project_id(owner) {
+                return Err(invalid("capability-owner"));
+            }
         }
         if let Some(version) = &capability.version {
             if super::version::ApiVersion::parse(version).is_none() {
@@ -769,6 +870,251 @@ pub(crate) fn admit_lock_presence(raw: &serde_json::Value) -> Result<(), Diagnos
     require(&raw["producer"], &["project", "module"])?;
     for dependency in raw["publicDependencies"].as_array().unwrap_or(&Vec::new()) {
         require(dependency, &["moduleId", "digest", "apiVersion", "exports"])?;
+    }
+    Ok(())
+}
+
+/// The typed closed-grammar admission of one decoded consumer snapshot
+/// (r4 review finding 3/codex + finding 1/devin): a verified checksum
+/// never substitutes for the published grammar — ids, enums, member
+/// patterns, policy shapes, and every recorded bound are enforced before
+/// the snapshot enters impact calculation.
+pub(crate) fn admit_snapshot(
+    snapshot: &super::wire::ConsumerSnapshot,
+) -> Result<(), DiagnosticSet> {
+    if !is_project_id(&snapshot.producer.project) || !is_module_id(&snapshot.producer.module) {
+        return Err(invalid("snapshot-producer"));
+    }
+    if !is_project_id(&snapshot.pins.project) {
+        return Err(invalid("snapshot-pins-project"));
+    }
+    if snapshot.pins.model_version != wire::MODEL_VERSION {
+        return Err(invalid("snapshot-model-version"));
+    }
+    if !super::version::is_digest(&snapshot.pins.ir_digest)
+        || !super::version::is_digest(&snapshot.pins.api_digest)
+    {
+        return Err(invalid("snapshot-pins-digest"));
+    }
+    if snapshot.consumers.len() > 4096 {
+        return Err(invalid("snapshot-consumer-bound"));
+    }
+    let mut consumer_ids: Vec<&str> = Vec::new();
+    for consumer in &snapshot.consumers {
+        if !is_module_id(&consumer.consumer) {
+            return Err(invalid("snapshot-consumer-id"));
+        }
+        consumer_ids.push(consumer.consumer.as_str());
+        if let Some(mode) = &consumer.mode {
+            if !matches!(mode.as_str(), "source" | "wire") {
+                return Err(invalid("snapshot-consumer-mode"));
+            }
+        }
+        // A declared policy that does not parse is invalid input, never
+        // a silently absent policy (r4 review finding 3/codex).
+        if let Some(policy) = &consumer.policy {
+            if super::version::ConsumerPolicy::parse(policy).is_none() {
+                return Err(invalid("snapshot-consumer-policy"));
+            }
+        }
+        if consumer.uses.len() > 8192 {
+            return Err(invalid("snapshot-use-bound"));
+        }
+        for use_row in &consumer.uses {
+            if !is_semantic_id(&use_row.export) {
+                return Err(invalid("snapshot-use-export"));
+            }
+            if let Some(member) = &use_row.member {
+                if !is_field_name(member) {
+                    return Err(invalid("snapshot-use-member"));
+                }
+            }
+            if !matches!(use_row.origin.as_str(), "declared" | "resolved") {
+                return Err(invalid("snapshot-use-origin"));
+            }
+            if !matches!(use_row.sensitivity.as_str(), "whole-shape" | "member") {
+                return Err(invalid("snapshot-use-sensitivity"));
+            }
+            if use_row.edges.len() > 256 {
+                return Err(invalid("snapshot-edge-bound"));
+            }
+            for edge in &use_row.edges {
+                if !is_edge_key(edge) {
+                    return Err(invalid("snapshot-edge-key"));
+                }
+            }
+        }
+    }
+    if !is_unique(
+        &consumer_ids
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>(),
+    ) {
+        return Err(invalid("duplicate-consumer"));
+    }
+    Ok(())
+}
+
+/// The typed closed-grammar admission of one decoded attachment (r4
+/// review finding 2/codex): the published schema — id patterns,
+/// capability versions, vocabularies, and every recorded bound — is the
+/// exact admission grammar, so a schema-invalid attachment never
+/// becomes accepted policy or exported output.
+pub(crate) fn admit_attachment(attachment: &super::wire::Attachment) -> Result<(), DiagnosticSet> {
+    if !is_project_id(&attachment.project) {
+        return Err(invalid("project-pin"));
+    }
+    if attachment.modules.len() > wire::MAX_MODULES {
+        return Err(invalid("module-bound"));
+    }
+    let mut module_ids: Vec<&str> = Vec::new();
+    for module in &attachment.modules {
+        if !is_module_id(&module.module_id) {
+            return Err(invalid("module-id"));
+        }
+        module_ids.push(module.module_id.as_str());
+        if module.exports.len() > wire::MAX_EXPORTS_PER_MODULE
+            || module.imports.len() > wire::MAX_DEPENDENCY_NESTING
+            || module.consumers.len() > wire::MAX_EXPORTS_PER_MODULE
+            || module.ports.len() > wire::MAX_DEPENDENCY_NESTING
+            || module.capabilities.len() > wire::MAX_DEPENDENCY_NESTING
+            || module.grants.len() > wire::MAX_DEPENDENCY_NESTING
+            || module.deprecations.len() > 1024
+            || module.operation_errors.len() > wire::MAX_EXPORTS_PER_MODULE
+            || module.query_facts.len() > wire::MAX_EXPORTS_PER_MODULE
+        {
+            return Err(invalid("attachment-bound"));
+        }
+        for entry in &module.exports {
+            if !is_semantic_id(&entry.export) {
+                return Err(invalid("export-id"));
+            }
+            if let Some(since) = &entry.since {
+                if super::version::ApiVersion::parse(since).is_none() {
+                    return Err(invalid("alias-since"));
+                }
+            }
+            if let Some(alias) = &entry.alias_of {
+                if !is_semantic_id(alias) {
+                    return Err(invalid("alias-target"));
+                }
+            }
+        }
+        for declared in &module.imports {
+            if !is_module_id(&declared.module_id) {
+                return Err(invalid("import-module-id"));
+            }
+            if declared.uses.len() > wire::MAX_EXPORTS_PER_MODULE || !is_unique(&declared.uses) {
+                return Err(invalid("use-bound"));
+            }
+            for use_id in &declared.uses {
+                if !is_semantic_id(use_id) {
+                    return Err(invalid("import-use-id"));
+                }
+            }
+        }
+        for consumer in &module.consumers {
+            if !is_module_id(&consumer.consumer) {
+                return Err(invalid("consumer-id"));
+            }
+            if consumer.uses.len() > wire::MAX_USES_PER_CONSUMER || !is_unique(&consumer.uses) {
+                return Err(invalid("consumer-use-bound"));
+            }
+            for use_id in &consumer.uses {
+                if !is_semantic_id(use_id) {
+                    return Err(invalid("consumer-use-id"));
+                }
+            }
+        }
+        for port in &module.ports {
+            if !is_semantic_id(&port.port)
+                || port.operations.len() > wire::MAX_EXPORTS_PER_MODULE
+                || !is_unique(&port.operations)
+                || port
+                    .operations
+                    .iter()
+                    .any(|operation| !is_semantic_id(operation))
+            {
+                return Err(invalid("port-shape"));
+            }
+        }
+        for capability in &module.capabilities {
+            if !is_capability_id(&capability.capability)
+                || !matches!(capability.obligation.as_str(), "required" | "optional")
+            {
+                return Err(invalid("capability-shape"));
+            }
+            if let Some(owner) = &capability.owner {
+                if !is_project_id(owner) {
+                    return Err(invalid("capability-owner"));
+                }
+            }
+            if let Some(version) = &capability.version {
+                if super::version::ApiVersion::parse(version).is_none() {
+                    return Err(invalid("capability-version"));
+                }
+            }
+        }
+        for grant in &module.grants {
+            if !is_grant_id(&grant.grant)
+                || !is_module_id(&grant.consumer)
+                || !is_semantic_id(&grant.aggregate)
+                || grant.operations.len() > 3
+                || !is_unique(
+                    &grant
+                        .operations
+                        .iter()
+                        .map(|operation| operation.to_string())
+                        .collect::<Vec<_>>(),
+                )
+                || grant.fields.len() > 256
+                || grant.rationale.is_empty()
+                || grant.rationale.len() > 512
+                || grant.invariant.len() > 512
+                || !grant
+                    .fields
+                    .iter()
+                    .all(|field| field == "*" || is_field_name(field))
+            {
+                return Err(invalid("grant-shape"));
+            }
+        }
+        for deprecation in &module.deprecations {
+            if !is_semantic_id(&deprecation.export) || deprecation.hint.len() > 512 {
+                return Err(invalid("deprecation-shape"));
+            }
+            if let Some(replacement) = &deprecation.replacement {
+                if !is_semantic_id(replacement) {
+                    return Err(invalid("replacement-target"));
+                }
+            }
+        }
+        for union in &module.operation_errors {
+            if !is_semantic_id(&union.operation)
+                || union.errors.len() > wire::MAX_EXPORTS_PER_MODULE
+                || !is_unique(&union.errors)
+                || union
+                    .errors
+                    .iter()
+                    .any(|error_id| !is_semantic_id(error_id))
+            {
+                return Err(invalid("operation-errors-shape"));
+            }
+        }
+        for facts in &module.query_facts {
+            if !is_semantic_id(&facts.query) {
+                return Err(invalid("query-facts-shape"));
+            }
+        }
+    }
+    if !is_unique(
+        &module_ids
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>(),
+    ) {
+        return Err(invalid("duplicate-module"));
     }
     Ok(())
 }

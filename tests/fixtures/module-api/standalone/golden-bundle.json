@@ -1,189 +1,5 @@
 {
-  "schemaVersion": "lekalo/module-public-contract/v0.8.0",
-  "identity": "dev.lekalo.module-public-contract@0.8.0",
-  "producer": {
-    "project": "tasks",
-    "module": "tasks"
-  },
   "apiVersion": "1.2.0",
-  "digest": "sha256:dd02bc7d30d9894c01707851627477e83e360004c872fdc89b9a841fccf30136",
-  "pins": {
-    "modelVersion": "0.2.16",
-    "irDigest": "sha256:f60bad30f53d2b660eaeeafcc4cabb55a529f5baa0e69e7cf9a4160199a8614e",
-    "sourceRevision": {
-      "state": "unknown"
-    }
-  },
-  "exports": [
-    {
-      "export": "tasks.complete_task_cmd",
-      "kind": "command",
-      "version": 1,
-      "input": [
-        {
-          "name": "task_id",
-          "type": {
-            "ref": "tasks.task_id"
-          },
-          "required": true
-        }
-      ],
-      "effects": [
-        {
-          "entity": "tasks.task",
-          "operation": "update",
-          "emits": []
-        }
-      ],
-      "since": "1.0.0"
-    },
-    {
-      "export": "tasks.create_task_cmd",
-      "kind": "command",
-      "version": 1,
-      "input": [
-        {
-          "name": "title",
-          "type": {
-            "ref": "tasks.title"
-          },
-          "required": true
-        }
-      ],
-      "effects": [
-        {
-          "entity": "tasks.task",
-          "operation": "create",
-          "emits": [
-            "tasks.task_created"
-          ]
-        }
-      ],
-      "since": "1.0.0"
-    },
-    {
-      "export": "tasks.get_task",
-      "kind": "query",
-      "version": 1,
-      "returns": {
-        "ref": "tasks.task_view"
-      },
-      "reads": [
-        "tasks.task"
-      ],
-      "cardinality": "one",
-      "consistency": "strong",
-      "pagination": "none",
-      "since": "1.0.0"
-    },
-    {
-      "export": "tasks.list_tasks",
-      "kind": "query",
-      "version": 1,
-      "returns": {
-        "list": {
-          "ref": "tasks.task_view"
-        }
-      },
-      "reads": [
-        "tasks.task"
-      ],
-      "cardinality": "list",
-      "consistency": "strong",
-      "pagination": "none",
-      "since": "1.0.0"
-    },
-    {
-      "export": "tasks.task_created",
-      "kind": "event",
-      "version": 1,
-      "payload": [
-        {
-          "name": "task_id",
-          "type": {
-            "ref": "tasks.task_id"
-          },
-          "required": true
-        }
-      ],
-      "since": "1.0.0"
-    },
-    {
-      "export": "tasks.task_id",
-      "kind": "scalar",
-      "version": 1,
-      "base": "uuid",
-      "since": "1.0.0"
-    },
-    {
-      "export": "tasks.task_state",
-      "kind": "enum",
-      "version": 1,
-      "values": [
-        "open",
-        "active",
-        "done"
-      ],
-      "since": "1.0.0"
-    },
-    {
-      "export": "tasks.task_view",
-      "kind": "value-object",
-      "version": 1,
-      "fields": [
-        {
-          "name": "task_id",
-          "type": {
-            "ref": "tasks.task_id"
-          },
-          "required": true
-        },
-        {
-          "name": "title",
-          "type": {
-            "ref": "tasks.title"
-          },
-          "required": true
-        },
-        {
-          "name": "state",
-          "type": {
-            "ref": "tasks.task_state"
-          },
-          "required": true
-        }
-      ],
-      "since": "1.0.0"
-    },
-    {
-      "export": "tasks.title",
-      "kind": "scalar",
-      "version": 1,
-      "base": "string",
-      "since": "1.0.0"
-    }
-  ],
-  "publicDependencies": [],
-  "ports": [
-    {
-      "port": "tasks.api",
-      "operations": [
-        "tasks.complete_task_cmd",
-        "tasks.create_task_cmd",
-        "tasks.get_task",
-        "tasks.list_tasks"
-      ]
-    },
-    {
-      "port": "tasks.inprocess",
-      "operations": [
-        "tasks.complete_task_cmd",
-        "tasks.create_task_cmd",
-        "tasks.get_task",
-        "tasks.list_tasks"
-      ]
-    }
-  ],
   "capabilities": [
     {
       "capability": "http",
@@ -192,5 +8,193 @@
       "version": null
     }
   ],
-  "deprecations": []
+  "deprecations": [],
+  "digest": "sha256:0c595c2b61babe2533d798f0067635b9a53775637bc607e691750429471cd8f2",
+  "exports": [
+    {
+      "effects": [
+        {
+          "emits": [],
+          "entity": "tasks.task",
+          "operation": "update"
+        }
+      ],
+      "errors": [],
+      "export": "tasks.complete_task_cmd",
+      "input": [
+        {
+          "name": "task_id",
+          "required": true,
+          "type": {
+            "ref": "tasks.task_id"
+          }
+        }
+      ],
+      "kind": "command",
+      "since": "1.0.0",
+      "version": 1
+    },
+    {
+      "effects": [
+        {
+          "emits": [
+            "tasks.task_created"
+          ],
+          "entity": "tasks.task",
+          "operation": "create"
+        }
+      ],
+      "errors": [],
+      "export": "tasks.create_task_cmd",
+      "input": [
+        {
+          "name": "title",
+          "required": true,
+          "type": {
+            "ref": "tasks.title"
+          }
+        }
+      ],
+      "kind": "command",
+      "since": "1.0.0",
+      "version": 1
+    },
+    {
+      "cardinality": "one",
+      "consistency": "strong",
+      "errors": [],
+      "export": "tasks.get_task",
+      "kind": "query",
+      "pagination": "none",
+      "reads": [
+        "tasks.task"
+      ],
+      "returns": {
+        "ref": "tasks.task_view"
+      },
+      "since": "1.0.0",
+      "version": 1
+    },
+    {
+      "cardinality": "list",
+      "consistency": "strong",
+      "errors": [],
+      "export": "tasks.list_tasks",
+      "kind": "query",
+      "pagination": "none",
+      "reads": [
+        "tasks.task"
+      ],
+      "returns": {
+        "list": {
+          "ref": "tasks.task_view"
+        }
+      },
+      "since": "1.0.0",
+      "version": 1
+    },
+    {
+      "export": "tasks.task_created",
+      "kind": "event",
+      "payload": [
+        {
+          "name": "task_id",
+          "required": true,
+          "type": {
+            "ref": "tasks.task_id"
+          }
+        }
+      ],
+      "since": "1.0.0",
+      "version": 1
+    },
+    {
+      "base": "uuid",
+      "export": "tasks.task_id",
+      "kind": "scalar",
+      "since": "1.0.0",
+      "version": 1
+    },
+    {
+      "export": "tasks.task_state",
+      "kind": "enum",
+      "since": "1.0.0",
+      "values": [
+        "open",
+        "active",
+        "done"
+      ],
+      "version": 1
+    },
+    {
+      "export": "tasks.task_view",
+      "fields": [
+        {
+          "name": "task_id",
+          "required": true,
+          "type": {
+            "ref": "tasks.task_id"
+          }
+        },
+        {
+          "name": "title",
+          "required": true,
+          "type": {
+            "ref": "tasks.title"
+          }
+        },
+        {
+          "name": "state",
+          "required": true,
+          "type": {
+            "ref": "tasks.task_state"
+          }
+        }
+      ],
+      "kind": "value-object",
+      "since": "1.0.0",
+      "version": 1
+    },
+    {
+      "base": "string",
+      "export": "tasks.title",
+      "kind": "scalar",
+      "since": "1.0.0",
+      "version": 1
+    }
+  ],
+  "identity": "dev.lekalo.module-public-contract@0.8.0",
+  "pins": {
+    "irDigest": "sha256:f60bad30f53d2b660eaeeafcc4cabb55a529f5baa0e69e7cf9a4160199a8614e",
+    "modelVersion": "0.2.16",
+    "sourceRevision": {
+      "state": "unknown"
+    }
+  },
+  "ports": [
+    {
+      "operations": [
+        "tasks.complete_task_cmd",
+        "tasks.create_task_cmd",
+        "tasks.get_task",
+        "tasks.list_tasks"
+      ],
+      "port": "tasks.api"
+    },
+    {
+      "operations": [
+        "tasks.complete_task_cmd",
+        "tasks.create_task_cmd",
+        "tasks.get_task",
+        "tasks.list_tasks"
+      ],
+      "port": "tasks.inprocess"
+    }
+  ],
+  "producer": {
+    "module": "tasks",
+    "project": "tasks"
+  },
+  "publicDependencies": [],
+  "schemaVersion": "lekalo/module-public-contract/v0.8.0"
 }
