@@ -31,6 +31,7 @@
 //! incomplete gate, and only a fully supported matching corpus passes.
 //! Timing metrics and raw sources are never part of it.
 
+use super::canonical::output_paths;
 use super::diagnostic;
 use super::wire::{ArtifactRole, Equivalence, EquivalenceVerdict, ScenarioOutcome};
 use super::{detail, DomainResult, EQUIVALENCE_FAILED, EQUIVALENCE_INCOMPLETE, INPUT_INVALID};
@@ -49,6 +50,116 @@ pub struct EquivalenceReceipt {
 
 fn invalid(reason: &str) -> DomainResult {
     diagnostic::failure(INPUT_INVALID, &detail(reason))
+}
+
+/// Verify one execution-evidence document against the exact staged
+/// generation it claims to have executed (r6 codex F4): for every rendered
+/// requirement of the coverage, the document must pin the digest of that
+/// requirement's **exact generated test bytes** (the resolver supplies the
+/// staged inventory's digest — at apply time the rendered inventory, at
+/// consume time the committed record's outputs) and carry an
+/// executed-outcome receipt whose observed digest equals the reviewed
+/// sample expectation — the assertion the generated test itself makes, so
+/// a natively-failing artifact cannot honestly produce it. This defines
+/// and consumes the independently produced execution evidence the
+/// `bound-execution` refusal requires: publication of a bound generation
+/// is gated on it, and the equivalence gate accepts it when retained by
+/// the apply that committed the generation.
+pub fn verify_execution_evidence(
+    plan: &super::wire::GenerationPlan,
+    coverage: &super::wire::Coverage,
+    generated_root: &str,
+    resolve_test_digest: &dyn Fn(&str) -> Option<String>,
+    evidence: &Equivalence,
+) -> Result<(), DomainResult> {
+    if evidence.module != plan.modules[0] || evidence.target != plan.targets[0] {
+        return Err(invalid("execution-subject"));
+    }
+    if evidence.verdict != EquivalenceVerdict::Match || !evidence.gaps.is_empty() {
+        return Err(invalid("execution-verdict"));
+    }
+    let mut rendered = 0usize;
+    for requirement in &coverage.requirements {
+        if !requirement.kind.renders() {
+            continue;
+        }
+        let sample = requirement
+            .sample
+            .value()
+            .ok_or_else(|| invalid("execution-corpus"))?;
+        let Some((_, test_path)) = output_paths(generated_root, &coverage.module, requirement)
+        else {
+            return Err(invalid("execution-corpus"));
+        };
+        let Some(test_digest) = resolve_test_digest(&test_path) else {
+            return Err(invalid("execution-corpus"));
+        };
+        let Some(row) = evidence
+            .scenarios
+            .iter()
+            .find(|row| row.scenario == requirement.id)
+        else {
+            return Err(invalid("execution-corpus"));
+        };
+        if row.digest != test_digest || row.verdict != ScenarioOutcome::Match {
+            return Err(invalid("execution-evidence"));
+        }
+        let Some(receipt) = evidence
+            .execution
+            .iter()
+            .find(|row| row.scenario == requirement.id)
+        else {
+            return Err(invalid("execution-receipt"));
+        };
+        // The observed output must be the reviewed expectation — exactly
+        // what the generated test asserts against the bound handler.
+        if receipt.observed != super::digest(super::canonical_bytes(&sample.output).as_bytes()) {
+            return Err(invalid("execution-observed"));
+        }
+        rendered += 1;
+    }
+    // The corpus is exact, never padded: every row binds a rendered
+    // requirement of this exact generation.
+    if evidence.scenarios.len() != rendered || evidence.execution.len() != rendered {
+        return Err(invalid("execution-corpus"));
+    }
+    Ok(())
+}
+
+/// The retained execution evidence of one committed bound generation, if
+/// the apply that committed it retained one (r6 codex F4): a custody
+/// object that parses as an equivalence document and passes
+/// [`verify_execution_evidence`] against the committed record's own
+/// generated test digests. Retention happened inside the confirmed
+/// transaction, so this is the machinery-bound record of native execution
+/// — the offline gate consumes it instead of refusing `bound-execution`
+/// forever.
+fn retained_execution_evidence(
+    root: &std::path::Path,
+    record: &super::wire::GenerationRecord,
+    plan: &super::wire::GenerationPlan,
+    coverage: &super::wire::Coverage,
+    generated_root: &str,
+) -> Option<Equivalence> {
+    let resolve = |test_path: &str| {
+        record
+            .outputs
+            .iter()
+            .find(|output| output.path == test_path)
+            .map(|output| output.digest.clone())
+    };
+    for candidate in super::history::objects_for_probe(root) {
+        let Ok(bytes) = super::history::object(root, &candidate) else {
+            continue;
+        };
+        let Ok(evidence) = super::parse_equivalence(&bytes) else {
+            continue;
+        };
+        if verify_execution_evidence(plan, coverage, generated_root, &resolve, &evidence).is_ok() {
+            return Some(evidence);
+        }
+    }
+    None
 }
 
 /// The digest over the **live** implementation inventory of one module:
@@ -239,6 +350,30 @@ pub fn adjudicate_for(root: &std::path::Path, bytes: &[u8]) -> DomainResult {
     adjudicate_checked(evidence)
 }
 
+/// The generated root the committed record rendered under, derived from
+/// its own test outputs (`<root>/test/<stem>.test.ts`): the coordinate
+/// [`verify_execution_evidence`] resolves test digests for.
+fn generated_root_of(
+    record: &super::wire::GenerationRecord,
+    module: &str,
+    target: &str,
+) -> Option<String> {
+    record
+        .outputs
+        .iter()
+        .filter(|output| {
+            output.owner_module == module
+                && output.owner_target == target
+                && output.role == ArtifactRole::Test
+        })
+        .find_map(|output| {
+            output
+                .path
+                .rsplit_once("/test/")
+                .map(|(root, _)| root.to_owned())
+        })
+}
+
 /// Recompute every rendered scenario's executed output from the retained
 /// reviewed coverage and verify the evidence's executed-outcome receipts
 /// against it (r4 finding 2). The retained coverage is reached only
@@ -264,10 +399,38 @@ fn verify_executed_outcomes(
     // produced execution evidence exists for those scenarios. The gate
     // stops claiming executed-outcome equivalence it cannot recompute.
     if coverage.extensions.iter().any(|check| check.validated) {
-        return Err(diagnostic::failure(
-            EQUIVALENCE_INCOMPLETE,
-            &detail("bound-execution"),
-        ));
+        // A bound coverage's handlers invoke the maintained hook — a hook
+        // that throws fails natively while the projection recomputation
+        // still "matches" — so the offline gate cannot recompute executed
+        // outcomes. Since r6-r7 (codex F4) the gate consumes the execution
+        // evidence the confirmed apply retained when it committed this
+        // generation: the document is verified against the record's own
+        // generated test digests, and the submitted receipts must equal
+        // the retained ones — a caller cannot upgrade a bound verdict with
+        // receipts no committed transaction vouched for. Without retained
+        // evidence the verdict stays incomplete.
+        let Some(generated_root) = generated_root_of(record, &evidence.module, &evidence.target)
+        else {
+            return Err(diagnostic::failure(
+                EQUIVALENCE_INCOMPLETE,
+                &detail("bound-execution"),
+            ));
+        };
+        let Some(retained) =
+            retained_execution_evidence(root, record, &plan, &coverage, &generated_root)
+        else {
+            return Err(diagnostic::failure(
+                EQUIVALENCE_INCOMPLETE,
+                &detail("bound-execution"),
+            ));
+        };
+        if retained.execution != evidence.execution || retained.scenarios != evidence.scenarios {
+            return Err(diagnostic::failure(
+                EQUIVALENCE_INCOMPLETE,
+                &detail("bound-execution"),
+            ));
+        }
+        return Ok(());
     }
     for requirement in &coverage.requirements {
         if !requirement.kind.renders() {

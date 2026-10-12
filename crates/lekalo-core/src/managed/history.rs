@@ -176,6 +176,13 @@ pub fn coverage(
     Err(refused("retained-coverage"))
 }
 
+/// The retained object names, exposed for read-only evidence probes
+/// (equivalence's retained execution-evidence lookup): every name is
+/// verified by [`object`] on read.
+pub(crate) fn objects_for_probe(root: &std::path::Path) -> Vec<String> {
+    objects(root).unwrap_or_default()
+}
+
 /// The object names (64 lowercase hex) currently retained in custody.
 fn objects(root: &std::path::Path) -> Result<Vec<String>, DomainResult> {
     let directory = custody_logical(OBJECTS);

@@ -152,14 +152,19 @@ fn validate_chain(root: &std::path::Path, relative: &str) -> std::io::Result<()>
     Ok(())
 }
 
-/// Validate one leaf file: a regular file, never a link or reparse alias.
+/// Validate one leaf file: a plain, exclusively owned regular file —
+/// never a link, a reparse alias, or a shared inode (r6 codex F6: the
+/// read path now applies the same exclusivity the write path always
+/// required, so an in-root hardlink can never source bytes that live
+/// outside the project). An unreadable link count refuses.
 fn validate_leaf(root: &std::path::Path, relative: &str) -> std::io::Result<()> {
-    let metadata = match std::fs::symlink_metadata(root.join(relative)) {
+    let path = root.join(relative);
+    let metadata = match std::fs::symlink_metadata(&path) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(error) => return Err(error),
     };
-    if metadata.is_symlink() || is_reparse(&metadata) || !metadata.is_file() {
+    if !exclusive_leaf(&path, &metadata) {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             "leaf",

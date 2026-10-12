@@ -80,15 +80,27 @@ pub(crate) struct Surface {
     pub code: String,
     pub top_level: String,
     pub literals: Vec<String>,
+    /// Every string/template literal's `[start, end)` span in `code`
+    /// coordinates (the blanking is one-to-one, so code indices are text
+    /// indices): the conformance probe can ask WHERE a literal sits, not
+    /// only what it says (r6, devin F4 / codex F5 — a literal inside a
+    /// call argument is not a protocol document row).
+    pub literal_spans: Vec<(usize, usize)>,
 }
 
 /// Scan pinned bytes into the [`Surface`] surfaces. Shared by the binding
 /// callable qualifier and the adapter-entry conformance probe.
+///
+/// Regex literals are blanked like strings (r6, devin F3): `/function
+/// hook(x)/` is pattern text, not a declaration, and a `/` that starts a
+/// regex (no preceding value token) never leaks its body onto either
+/// surface. A regex left open at EOF fails closed like an open string.
 pub(crate) fn scan_surface(bytes: &[u8]) -> Option<Surface> {
     let text = std::str::from_utf8(bytes).ok()?;
     let mut code = String::with_capacity(text.len());
     let mut top_level = String::with_capacity(text.len());
     let mut literals = Vec::new();
+    let mut literal_spans = Vec::new();
     let mut characters = text.chars().peekable();
     #[derive(PartialEq)]
     enum Span {
@@ -96,11 +108,16 @@ pub(crate) fn scan_surface(bytes: &[u8]) -> Option<Surface> {
         Line,
         Block,
         Str(char),
+        Regex,
+        RegexClass,
     }
     let mut span = Span::Code;
     let mut depth = 0usize;
     let mut literal = String::new();
     let mut unterminated = false;
+    // The last significant code character (strings count as their closing
+    // quote): decides whether a `/` divides or opens a regex literal.
+    let mut last_significant: Option<char> = None;
     while let Some(character) = characters.next() {
         let mut string_char = false; // blank on BOTH surfaces
         let mut nested = false; // blank on the top-level surface only
@@ -116,9 +133,14 @@ pub(crate) fn scan_surface(bytes: &[u8]) -> Option<Surface> {
                     span = Span::Block;
                     unterminated = true;
                     continue;
+                } else if character == '/' && opens_regex(last_significant) {
+                    span = Span::Regex;
+                    unterminated = true;
+                    string_char = true;
                 } else if character == '"' || character == '\'' || character == '`' {
                     span = Span::Str(character);
                     literal.clear();
+                    literal_spans.push((code.len(), code.len()));
                     unterminated = true;
                     string_char = true;
                 } else {
@@ -159,10 +181,60 @@ pub(crate) fn scan_surface(bytes: &[u8]) -> Option<Surface> {
                     span = Span::Code;
                     unterminated = false;
                     literals.push(literal.clone());
+                    if let Some((_, end)) = literal_spans.last_mut() {
+                        *end = code.len() + character.len_utf8();
+                    }
                 } else {
                     literal.push(character);
                 }
             }
+            Span::Regex => {
+                // Pattern text is never executable surface.
+                string_char = true;
+                if character == '\\' {
+                    let _ = characters.next();
+                } else if character == '[' {
+                    span = Span::RegexClass;
+                } else if character == ']' {
+                    // Unbalanced `]` outside a class: stays pattern text.
+                } else if character == '/' {
+                    // Closing delimiter: trailing flag letters stay on the
+                    // surface as identifier characters.
+                    while characters
+                        .peek()
+                        .is_some_and(|next| next.is_ascii_alphabetic())
+                    {
+                        let flag = characters.next().expect("flag");
+                        code.push(flag);
+                        top_level.push(flag);
+                        last_significant = Some(flag);
+                    }
+                    span = Span::Code;
+                    unterminated = false;
+                } else if character == '\n' {
+                    // A regex literal never spans lines: this was not a
+                    // regex after all, but the scan cannot rewind — fail
+                    // closed instead of trusting the surface.
+                    return None;
+                }
+            }
+            Span::RegexClass => {
+                string_char = true;
+                if character == '\\' {
+                    let _ = characters.next();
+                } else if character == ']' {
+                    span = Span::Regex;
+                } else if character == '\n' {
+                    return None;
+                }
+            }
+        }
+        if !string_char && span == Span::Code && !character.is_whitespace() {
+            last_significant = Some(character);
+        } else if string_char && span == Span::Code {
+            // A completed literal or regex counts as a value token for the
+            // next `/` decision.
+            last_significant = Some('"');
         }
         code.push(if string_char { ' ' } else { character });
         top_level.push(if string_char || nested {
@@ -171,8 +243,8 @@ pub(crate) fn scan_surface(bytes: &[u8]) -> Option<Surface> {
             character
         });
     }
-    // A comment or literal left open at EOF fails closed: the surface is
-    // not provably the executable source.
+    // A comment, literal, or regex left open at EOF fails closed: the
+    // surface is not provably the executable source.
     if unterminated {
         return None;
     }
@@ -180,7 +252,23 @@ pub(crate) fn scan_surface(bytes: &[u8]) -> Option<Surface> {
         code,
         top_level,
         literals,
+        literal_spans,
     })
+}
+
+/// Whether a `/` at this position opens a regex literal rather than a
+/// division: a regex follows start-of-file, an opening bracket, an
+/// operator, or a keyword separator — never a value token (identifier,
+/// literal, `)`, `]`) that a division would follow.
+fn opens_regex(last_significant: Option<char>) -> bool {
+    match last_significant {
+        None => true,
+        Some(
+            '(' | '[' | '{' | ',' | ';' | ':' | '=' | '!' | '?' | '&' | '|' | '+' | '-' | '*' | '/'
+            | '%' | '~' | '^' | '<' | '>' | '\n',
+        ) => true,
+        Some(_) => false,
+    }
 }
 
 /// Whether `text[at..]` starts a word at `at`: the preceding character is
@@ -279,16 +367,67 @@ fn callable_initializer(init: &str) -> bool {
     }
 }
 
+/// Whether the identifier keyword occurrence at `at` sits in statement
+/// position on the surface (r6, devin F3): the preceding non-whitespace
+/// character must be nothing (start of the surface), `;`, or `}` — or one
+/// of the reserved modifier words `async`/`export`/`default`, themselves
+/// recursively in statement position. A `function` inside a parenthesized
+/// expression, an argument list, an array, or after an assignment never
+/// declares a module-scope binding: its name binds inside the expression
+/// only, so the emitted test's named import cannot resolve.
+fn statement_position(text: &str, at: usize) -> bool {
+    let mut cursor = at;
+    loop {
+        // Skip whitespace backward.
+        let mut start = cursor;
+        while start > 0
+            && text[..start]
+                .chars()
+                .next_back()
+                .is_some_and(|c| c.is_whitespace())
+        {
+            start -= text[..start].chars().next_back().expect("char").len_utf8();
+        }
+        if start == 0 {
+            return true;
+        }
+        let previous = text[..start].chars().next_back().expect("char");
+        if previous == ';' || previous == '}' {
+            return true;
+        }
+        if !previous.is_ascii_alphabetic() {
+            return false;
+        }
+        // A reserved modifier word may stand between the statement start
+        // and the keyword; anything else (an identifier, `=`, `(`, `,`,
+        // `return`, …) is expression context.
+        let word_start = text[..start]
+            .char_indices()
+            .rev()
+            .find(|(_, c)| !c.is_ascii_alphanumeric() && *c != '_')
+            .map(|(index, _)| index + text[index..].chars().next().expect("char").len_utf8())
+            .unwrap_or(0);
+        match &text[word_start..start] {
+            "async" | "export" | "default" => cursor = word_start,
+            _ => return false,
+        }
+    }
+}
+
 /// Whether the executable source declares `name` as a callable binding in
 /// a **top-level executable position** (finding 3; r6 devin F2 / codex
-/// F7): a `function`/`async function` declaration of that exact name, or a
-/// `const/let/var name = <callable initializer>` whose initializer is a
-/// function/arrow expression — a plain value initializer (`const hook =
-/// 7`, `const hook = (7)`) never qualifies, a class declaration never
-/// qualifies (the emitted test invokes plain calls), a declaration nested
-/// inside another scope's braces never qualifies, and text inside a string
-/// literal never qualifies: the scan runs over the top-level surface of
-/// [`scan_surface`], where nested bodies and literal contents are blank.
+/// F7): a `function`/`async function` declaration of that exact name in
+/// *statement position* (r6, devin F3 — a named function expression
+/// inside parentheses, an argument list, or an assignment never declares
+/// a module-scope binding, and regex-literal bodies are blanked by
+/// [`scan_surface`]), or a `const/let/var name = <callable initializer>`
+/// whose initializer is a function/arrow expression — a plain value
+/// initializer (`const hook = 7`, `const hook = (7)`) never qualifies, a
+/// class declaration never qualifies (the emitted test invokes plain
+/// calls), a declaration nested inside another scope's braces never
+/// qualifies, and text inside a string literal never qualifies: the scan
+/// runs over the top-level surface of [`scan_surface`], where nested
+/// bodies and literal contents are blank.
 fn declares_callable(text: &str, name: &str) -> bool {
     for keyword in ["function"] {
         let mut from = 0usize;
@@ -296,6 +435,11 @@ fn declares_callable(text: &str, name: &str) -> bool {
             let at = from + found;
             from = at + keyword.len();
             if !word_boundary_before(text, at) {
+                continue;
+            }
+            // Statement position only: expression contexts (a named
+            // function expression) never declare the name in module scope.
+            if !statement_position(text, at) {
                 continue;
             }
             // Generators spell `function* name`.

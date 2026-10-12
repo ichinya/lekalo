@@ -574,49 +574,117 @@ pub fn ledger_complete(
 }
 
 /// The bounded structural conformance probe of one locked adapter entry
-/// (findings 8, r4-4, and r6 devin F3 / codex F8): the entry's scanned
-/// executable surface must carry the complete adapter handshake surface —
-/// every lifecycle operation and the protocol negotiation parameter — as
-/// *structural* forms, never as inert text:
+/// (findings 8, r4-4, r6 devin F3 / codex F8, and r6-r7 devin F4 / codex
+/// F5): the entry's scanned executable surface must carry the complete
+/// adapter handshake surface as *invocable or protocol-declared* forms,
+/// never as inert structure:
 ///
-/// - an identifier occurrence (word-bounded) followed by `(` or `:` — a
-///   function identifier or a property key on the code surface, where
-///   comments are stripped and string contents are blank; or
-/// - a *standalone quoted key*: a string/template literal whose entire
-///   content is exactly the token (the protocol-document spelling of an
-///   operation name, e.g. `operations: ["describe", …]`).
+/// - every lifecycle operation (`describe`, `validate`, `verify`,
+///   `generate`) occurs as an invocable identifier — word-bounded and
+///   followed by `(` on the code surface (a function identifier, a method
+///   definition `describe() {}`, or a method access) — **or** as a
+///   standalone quoted literal inside the operations array a
+///   word-bounded `operations` key opens (the protocol-document spelling
+///   `operations: ["describe", …]`). A bare property key with an inert
+///   value (`{ describe: 1 }`) and a literal bound to any other name
+///   (`const ops = ["describe", …]`, `console.log("describe")`) are
+///   exactly as non-behavioral as the string soup and never qualify;
+/// - the negotiation parameter (`protocol_version`) is a value, not an
+///   operation: a word-bounded occurrence followed by `(`, `:`, or a
+///   standalone quoted literal qualifies.
 ///
 /// This is a source-surface check, not execution: the planning lane never
-/// launches processes. But a token soup inside one string literal — the
-/// r6 confirmed spoof (`const s = "describe validate verify generate
-/// protocol_version"`) — has no structural occurrence and no standalone
-/// literal, and never qualifies.
+/// launches processes. But every inert structural form reported in the
+/// r6 reviews is refused.
 pub(crate) fn adapter_entry_conformance(entry: &[u8]) -> Result<(), DomainResult> {
     let Some(surface) = super::bindings::scan_surface(entry) else {
         return Err(stale("adapter", "entry-encoding"));
     };
-    for token in [
-        "describe",
-        "validate",
-        "verify",
-        "generate",
-        "protocol_version",
-    ] {
-        let structural = surface.code.match_indices(token).any(|(at, _)| {
+    for token in ["describe", "validate", "verify", "generate"] {
+        let invocable = surface.code.match_indices(token).any(|(at, _)| {
             word_boundaries(&surface.code, at, token.len())
                 && surface.code[at + token.len()..]
                     .trim_start()
-                    .starts_with(['(', ':'])
+                    .starts_with('(')
         });
-        let quoted = surface
-            .literals
-            .iter()
-            .any(|literal| literal.trim() == token);
-        if !structural && !quoted {
+        if !invocable && !operations_array_literal(&surface, token) {
             return Err(stale("adapter", "entry-surface"));
         }
     }
+    // The negotiation parameter is a declared value: any structural
+    // occurrence (key, call, or standalone literal) is honest.
+    let version = surface
+        .code
+        .match_indices("protocol_version")
+        .any(|(at, _)| {
+            word_boundaries(&surface.code, at, "protocol_version".len())
+                && surface.code[at + "protocol_version".len()..]
+                    .trim_start()
+                    .starts_with(['(', ':'])
+        })
+        || surface
+            .literals
+            .iter()
+            .any(|literal| literal.trim() == "protocol_version");
+    if !version {
+        return Err(stale("adapter", "entry-surface"));
+    }
     Ok(())
+}
+
+/// Whether one token appears as a standalone quoted literal inside an
+/// operations array: a `[` opened directly after a word-bounded
+/// `operations` key (`operations:` or `operations =`), with the literal's
+/// span fully inside the bracketed extent (r6, devin F4 / codex F5 — the
+/// protocol-document row is the only literal shape that proves the entry
+/// declares its operation set).
+fn operations_array_literal(surface: &super::bindings::Surface, token: &str) -> bool {
+    let code = surface.code.as_str();
+    let mut from = 0usize;
+    while let Some(found) = code[from..].find("operations") {
+        let at = from + found;
+        from = at + "operations".len();
+        if !word_boundaries(code, at, "operations".len()) {
+            continue;
+        }
+        let tail = code[at + "operations".len()..].trim_start();
+        let Some(after_key) = tail.strip_prefix(':').or_else(|| tail.strip_prefix('=')) else {
+            continue;
+        };
+        let Some(open) = after_key.find('[') else {
+            continue;
+        };
+        let open_at = at + "operations".len() + (tail.len() - after_key.len()) + open;
+        // Bracket-balanced extent over the blanked surface (literal bodies
+        // are spaces, so brackets inside strings never nest).
+        let mut depth = 0usize;
+        let mut end = None;
+        for (index, character) in code[open_at..].char_indices() {
+            match character {
+                '[' => depth += 1,
+                ']' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = Some(open_at + index + 1);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let Some(end) = end else { continue };
+        let found = surface
+            .literal_spans
+            .iter()
+            .zip(surface.literals.iter())
+            .any(|((start, stop), literal)| {
+                *start >= open_at && *stop <= end && literal.trim() == token
+            });
+        if found {
+            return true;
+        }
+    }
+    false
 }
 
 fn classify(error: DomainResult) -> DomainResult {

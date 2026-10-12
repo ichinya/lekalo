@@ -1019,7 +1019,7 @@
       "kind": "command",
       "command": "managed apply",
       "usage": "lekalo managed apply [OPTIONS] --plan <FILE> --coverage <FILE> --ownership <FILE>",
-      "helpDigest": "sha256:7816d1f4633b859dccfe479431e0f18c0ebc12515499e4e4f7f8f58f08cd684c",
+      "helpDigest": "sha256:21b8a6d66885847d88d17f412e5fb43482acceca218d28affd1f43e9e028f7c0",
       "summary": "Consume a caller-saved plan with its exact digest confirmation",
       "leaf": true,
       "owner": "docs/managed-mode.md",

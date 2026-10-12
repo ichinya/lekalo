@@ -162,7 +162,9 @@ fn target<'a>(
 /// `coverage_bytes` is the pinned adapter evidence the plan was derived
 /// from; its canonical digest must equal the plan's `coverageDigest`. The
 /// ownership document rechecks every output against its exact declared
-/// generated root before publication.
+/// generated root before publication. `execution` is the execution
+/// evidence a bound generation requires to commit (r6 codex F4).
+#[allow(clippy::too_many_arguments)]
 pub fn apply(
     root: &std::path::Path,
     plan_bytes: &[u8],
@@ -171,6 +173,7 @@ pub fn apply(
     confirm: Option<&str>,
     dry_run: bool,
     authority: Option<&super::authority::Authority>,
+    execution: Option<&[u8]>,
 ) -> DomainResult {
     let plan = match verify_plan(plan_bytes) {
         Ok(plan) => plan,
@@ -230,6 +233,42 @@ pub fn apply(
     };
     if let Err(error) = inventory_matches(&plan, &inventory) {
         return error;
+    }
+    // The behavioral gate of a bound generation (r6 codex F4): a coverage
+    // with validated extensions renders handlers that invoke maintained
+    // hooks the offline lane cannot execute, so publication may not
+    // proceed on no behavioral evidence at all. The caller supplies the
+    // execution evidence — the exact generated test digests of this
+    // staged inventory with their observed outcomes — and the evidence is
+    // verified against the staged bytes and the reviewed sample
+    // expectations here, then retained in custody inside the transaction.
+    // Previews stay free; only the commit is gated.
+    let mut execution_retained: Option<Vec<u8>> = None;
+    if !dry_run && !plan.extensions.is_empty() {
+        let bytes = match execution {
+            Some(bytes) => bytes,
+            None => return invalid("execution-evidence-missing"),
+        };
+        let evidence = match super::parse_equivalence(bytes) {
+            Ok(evidence) => evidence,
+            Err(error) => return error,
+        };
+        let resolve = |test_path: &str| {
+            inventory
+                .iter()
+                .find(|artifact| artifact.path == test_path)
+                .map(|artifact| super::digest(&artifact.bytes))
+        };
+        if let Err(error) = super::equivalence::verify_execution_evidence(
+            &plan,
+            &coverage,
+            &admission.generated_root,
+            &resolve,
+            &evidence,
+        ) {
+            return error;
+        }
+        execution_retained = Some(bytes.to_vec());
     }
     // Whole-custody gates: unresolved journals block any further mutation.
     if let Err(error) = history::assert_reconciled(root) {
@@ -327,6 +366,7 @@ pub fn apply(
             &coverage,
             coverage_bytes,
             &admission.generated_root,
+            execution_retained.as_deref(),
         )
     })();
     drop(guard);
@@ -437,6 +477,7 @@ fn staged_apply(
     coverage: &super::wire::Coverage,
     coverage_bytes: &[u8],
     generated_root: &str,
+    execution_evidence: Option<&[u8]>,
 ) -> Result<String, DomainResult> {
     // Preflight the public manifest destination before any application
     // byte moves (finding 10): a blocked coordinate refuses the run while
@@ -545,6 +586,12 @@ fn staged_apply(
     // never to caller-supplied bytes.
     history::write_object(root, &serde_json::to_vec_pretty(plan).expect("typed plan"))?;
     history::write_object(root, coverage_bytes)?;
+    // The execution evidence of a bound generation rides the transaction
+    // (r6 codex F4): retained before any byte moves, so recovery can
+    // require it and the equivalence gate can consume it.
+    if let Some(evidence) = execution_evidence {
+        history::write_object(root, evidence)?;
+    };
     // Content-addressed snapshots: exact before bytes of every replaced or
     // deleted file, exact after bytes of every published file.
     let bytes_of: BTreeMap<&str, &[u8]> = inventory

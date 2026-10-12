@@ -110,13 +110,15 @@ function plan(project, coverage, input, name = 'plan.json') {
   return plan;
 }
 
-function apply(project, status, planFile = 'plan.json', coverage = 'coverage.json') {
+function apply(project, status, planFile = 'plan.json', coverage = 'coverage.json', execution) {
   const plan = JSON.parse(readFileSync(join(project, planFile), 'utf8'));
-  return invoke(project, [
+  const args = [
     'apply', '--plan', planFile, '--coverage', coverage,
     '--ownership', 'ownership.json',
     '--confirm', plan.planDigest,
-  ], status);
+  ];
+  if (execution) args.push('--execution', execution);
+  return invoke(project, args, status);
 }
 
 // ---- 1. Read-only surfaces never write: check, plan, and dry-run apply.
@@ -655,7 +657,11 @@ function sha256(bytes) {
     schemaVersion: `lekalo/managed-transaction/v${version}`,
     identity: `dev.lekalo.managed-transaction@${version}`,
     transactionId: 'blocked-7777',
-    state: 'publishing',
+    // The genuine no-disk-effect journal shape `staged_apply` writes
+    // first: `prepared` with an empty pending set (never-emitted state/
+    // pending combinations — `publishing` with an empty set — are refused
+    // outright since r6-r7, devin F1c).
+    state: 'prepared',
     action: 'apply',
     planDigest: { state: 'absent' },
     generationDigest: { state: 'absent' },
@@ -716,18 +722,75 @@ function sha256(bytes) {
   ], 'invalid');
   assert.equal(unresolved.reasonCodes[0], 'managed.extension-unresolved');
   assert.equal(unresolved.diagnostics[0].data.reason, 'missing');
-  // The resolved binding plans, applies, and the generated test invokes it.
+  // The resolved binding plans; the bound apply is gated on execution
+  // evidence (r6-r7, codex F4): no evidence, no commit — the preview
+  // stays free, and the evidence pins the exact staged generated-test
+  // digests with their observed (reviewed-expectation) outcomes.
   const built = plan(project, 'coverage-bound.json');
   writeFileSync(join(project, 'plan-bound.json'), JSON.stringify(built, null, 2) + '\n');
-  invoke(project, ['apply', '--plan', 'plan-bound.json', '--coverage', 'coverage-bound.json', '--ownership', 'ownership.json', '--confirm', built.planDigest], 'valid');
+  const coverageBound = JSON.parse(read(`${wire}/planner/coverage.json`));
+  coverageBound.extensions.push({
+    symbol: 'legacy_hook',
+    binding: 'src/extensions/legacy_hook.ts',
+    contractDigest: `sha256:${bindingDigest}`,
+    validated: true,
+  });
+  const sha256 = (text) => 'sha256:' + createHash('sha256').update(text).digest('hex');
+  const canonical = (value) => JSON.stringify(Object.fromEntries(Object.entries(value).sort()));
+  const testDigestOf = (scenario, ofPlan = built) => {
+    const stem = scenario.replace('planner.', '').replaceAll('_', '-');
+    const output = ofPlan.outputs.find((row) => row.path === `apps/planner/gen/test/${stem}.test.ts`);
+    assert.ok(output, `planned test for ${scenario}`);
+    return output.afterDigest.state === 'known' ? output.afterDigest.value : output.afterDigest;
+  };
+  const executionEvidence = {
+    schemaVersion: 'lekalo/managed-equivalence/v0.8.0',
+    identity: 'dev.lekalo.managed-equivalence@0.8.0',
+    module: 'planner',
+    target: 'node-typescript',
+    implementationDigest: sha256('bound staging attestation'),
+    referenceDigest: { state: 'absent' },
+    scenarios: coverageBound.requirements
+      .filter(() => true)
+      .map((requirement) => ({
+        scenario: requirement.id,
+        digest: testDigestOf(requirement.id),
+        verdict: 'match',
+      })),
+    execution: coverageBound.requirements.map((requirement) => ({
+      scenario: requirement.id,
+      observed: sha256(canonical(requirement.sample.value.output)),
+    })),
+    gaps: [],
+    verdict: 'match',
+  };
+  writeFileSync(join(project, 'execution-bound.json'), JSON.stringify(executionEvidence, null, 2) + '\n');
+  // The preview needs no evidence (the gate is commit-only).
+  invoke(project, ['apply', '--plan', 'plan-bound.json', '--coverage', 'coverage-bound.json', '--ownership', 'ownership.json', '--confirm', built.planDigest, '--dry-run'], 'valid');
+  // The commit without evidence refuses.
+  const ungated = invoke(project, ['apply', '--plan', 'plan-bound.json', '--coverage', 'coverage-bound.json', '--ownership', 'ownership.json', '--confirm', built.planDigest], 'invalid');
+  assert.equal(ungated.diagnostics[0].data.reason, 'execution-evidence-missing', 'the bound generation never commits without execution evidence');
+  // The evidence with a lying observed outcome refuses too.
+  const lying = JSON.parse(JSON.stringify(executionEvidence));
+  lying.execution[0].observed = sha256('never observed');
+  writeFileSync(join(project, 'execution-lying.json'), JSON.stringify(lying, null, 2) + '\n');
+  invoke(project, ['apply', '--plan', 'plan-bound.json', '--coverage', 'coverage-bound.json', '--ownership', 'ownership.json', '--confirm', built.planDigest, '--execution', 'execution-lying.json'], 'invalid');
+  invoke(project, ['apply', '--plan', 'plan-bound.json', '--coverage', 'coverage-bound.json', '--ownership', 'ownership.json', '--confirm', built.planDigest, '--execution', 'execution-bound.json'], 'valid');
   const test = readFileSync(join(project, 'apps/planner/gen/test/focus-task.test.ts'), 'utf8');
   assert.ok(test.includes('src/extensions/legacy_hook.ts'), 'the generated test imports the bound implementation');
   assert.ok(test.includes('legacyHook({})'), 'the generated test invokes the binding');
   execFileSync(process.execPath, [join(project, 'apps/planner/gen/test/focus-task.test.ts')], { timeout: 60000, stdio: 'pipe' });
   // The bound implementation is maintained source: regeneration keeps it.
+  // A bound regeneration is equally gated (codex F4): the rebuilt plan's
+  // evidence pins its own staged test digests.
   const rebuilt = plan(project, 'coverage-bound.json');
   writeFileSync(join(project, 'plan-rebound.json'), JSON.stringify(rebuilt, null, 2) + '\n');
-  apply(project, 'valid', 'plan-rebound.json', 'coverage-bound.json');
+  const reboundEvidence = JSON.parse(JSON.stringify(executionEvidence));
+  for (const row of reboundEvidence.scenarios) {
+    row.digest = testDigestOf(row.scenario, rebuilt);
+  }
+  writeFileSync(join(project, 'execution-rebound.json'), JSON.stringify(reboundEvidence, null, 2) + '\n');
+  apply(project, 'valid', 'plan-rebound.json', 'coverage-bound.json', 'execution-rebound.json');
   assert.equal(readFileSync(join(project, 'src/extensions/legacy_hook.ts'), 'utf8'), bindingBytes, 'custom source is preserved');
   rmSync(project, { recursive: true, force: true });
 }

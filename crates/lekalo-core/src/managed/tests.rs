@@ -184,6 +184,15 @@ fn test_authority() -> super::authority::Authority {
     }
 }
 
+/// The recovery-time authority derivation of unit tests: the same fixture
+/// authority every test apply stamped (the real CLI derives the live
+/// project's authority through the accepted loader pipeline).
+fn test_authority_of(
+    _module: &str,
+) -> Result<super::authority::Authority, crate::result::DomainResult> {
+    Ok(test_authority())
+}
+
 /// Create a directory junction (Windows test helper).
 #[cfg(windows)]
 fn junction(target: &std::path::Path, link: &std::path::Path) {
@@ -526,6 +535,7 @@ fn apply_transaction_is_recoverable_and_exact() {
         None,
         false,
         Some(&test_authority()),
+        None,
     );
     assert_eq!(refused.status(), Status::Invalid);
     assert!(!history::exists(&root));
@@ -538,6 +548,7 @@ fn apply_transaction_is_recoverable_and_exact() {
         Some(PIN_A),
         false,
         Some(&test_authority()),
+        None,
     );
     assert_eq!(refused.status(), Status::Invalid);
     // Dry run writes nothing but previews the inventory.
@@ -549,6 +560,7 @@ fn apply_transaction_is_recoverable_and_exact() {
         Some(built.plan_digest.as_str()),
         true,
         Some(&test_authority()),
+        None,
     );
     assert_eq!(preview.status(), Status::Valid, "{preview:?}");
     assert!(!history::exists(&root));
@@ -561,6 +573,7 @@ fn apply_transaction_is_recoverable_and_exact() {
         Some(built.plan_digest.as_str()),
         false,
         Some(&test_authority()),
+        None,
     );
     assert_eq!(applied.status(), Status::Valid, "{applied:?}");
     let generation = history::current(&root)
@@ -583,6 +596,7 @@ fn apply_transaction_is_recoverable_and_exact() {
         Some(built.plan_digest.as_str()),
         false,
         Some(&test_authority()),
+        None,
     );
     assert_eq!(stale.status(), Status::Denied);
     assert_eq!(
@@ -646,6 +660,7 @@ fn apply_transaction_is_recoverable_and_exact() {
         Some(rebuilt.plan_digest.as_str()),
         false,
         Some(&test_authority()),
+        None,
     );
     assert_eq!(drifted.status(), Status::Invalid);
     assert_eq!(
@@ -714,6 +729,7 @@ fn apply_transaction_is_recoverable_and_exact() {
         Some(rebuilt.plan_digest.as_str()),
         false,
         Some(&test_authority()),
+        None,
     );
     assert_eq!(
         blocked.reason_codes().first().map(|code| code.as_str()),
@@ -785,6 +801,7 @@ fn rollback_restores_the_exact_previous_generation() {
         Some(first.plan_digest.as_str()),
         false,
         Some(&test_authority()),
+        None,
     );
     assert_eq!(applied.status(), Status::Valid, "{applied:?}");
     let first_generation = history::current(&root)
@@ -835,6 +852,7 @@ fn rollback_restores_the_exact_previous_generation() {
         Some(second.plan_digest.as_str()),
         false,
         Some(&test_authority()),
+        None,
     );
     assert_eq!(applied.status(), Status::Valid, "{applied:?}");
     let second_generation = history::current(&root)
@@ -1049,6 +1067,7 @@ fn tampered_records_are_refused_without_touching_files() {
         Some(built.plan_digest.as_str()),
         false,
         Some(&test_authority()),
+        None,
     );
     assert_eq!(applied.status(), Status::Valid, "{applied:?}");
     let generation = history::current(&root)
@@ -1132,9 +1151,13 @@ fn interrupted_publication_recovers_to_a_defined_state() {
         Some(built.plan_digest.as_str()),
         false,
         Some(&test_authority()),
+        None,
     );
     assert_eq!(applied.status(), Status::Valid, "{applied:?}");
-    // A prepared journal with no disk effect abandons cleanly.
+    // A prepared journal with no disk effect abandons cleanly (the exact
+    // shape `staged_apply` writes first: `prepared`, empty pending set,
+    // no generation pin — never-emitted state/pending combinations are
+    // refused outright since r6-r7, devin F1c).
     let generation = history::current(&root)
         .expect("custody")
         .expect("generation");
@@ -1142,13 +1165,10 @@ fn interrupted_publication_recovers_to_a_defined_state() {
         schema_version: header("managed-transaction").0,
         identity: header("managed-transaction").1,
         transaction_id: "interrupted-0001".to_owned(),
-        state: TransactionState::Publishing,
+        state: TransactionState::Prepared,
         action: TransactionAction::Apply,
         plan_digest: State::known(built.plan_digest.clone()),
-        generation_digest: State::known(GenerationDigest {
-            generation_digest:
-                "sha256:9999999999999999999999999999999999999999999999999999999999999999".to_owned(),
-        }),
+        generation_digest: State::Absent,
         before_manifest_digest: State::Absent,
         after_manifest_digest: State::Absent,
         pending: Vec::new(),
@@ -1166,6 +1186,7 @@ fn interrupted_publication_recovers_to_a_defined_state() {
         Some(built.plan_digest.as_str()),
         false,
         Some(&test_authority()),
+        None,
     );
     assert_eq!(blocked.status(), Status::Invalid);
     assert_eq!(
@@ -1173,7 +1194,7 @@ fn interrupted_publication_recovers_to_a_defined_state() {
         Some("managed.recovery-required")
     );
     // The defined recovery path reconciles the journal.
-    let receipt = recovery::run(&root);
+    let receipt = recovery::run(&root, &test_authority_of);
     assert_eq!(receipt.status(), Status::Valid, "{receipt:?}");
     assert!(history::unresolved(&root).expect("custody").is_empty());
     // The committed generation is untouched by the abandoned journal.
@@ -1217,6 +1238,7 @@ fn resolve_confirmation_binds_the_drifted_before_state() {
         Some(built.plan_digest.as_str()),
         false,
         Some(&test_authority()),
+        None,
     );
     assert_eq!(applied.status(), Status::Valid, "{applied:?}");
     let path = "apps/planner/gen/src/focus-task.ts";
@@ -1304,6 +1326,7 @@ fn forged_recovery_journal_never_deletes_maintained_files() {
         Some(built.plan_digest.as_str()),
         false,
         Some(&test_authority()),
+        None,
     );
     assert_eq!(applied.status(), Status::Valid, "{applied:?}");
     write_input(&root, "maintained/keep.ts", b"export const keep = 1;\n");
@@ -1326,7 +1349,7 @@ fn forged_recovery_journal_never_deletes_maintained_files() {
         before_digest: State::Absent,
     };
     history::write_transaction(&root, &blocker).expect("journal");
-    let receipt = recovery::run(&root);
+    let receipt = recovery::run(&root, &test_authority_of);
     assert_eq!(receipt.status(), Status::Invalid, "{receipt:?}");
     assert_eq!(
         std::fs::read(root.join("maintained/keep.ts")).expect("maintained bytes"),
@@ -1421,6 +1444,7 @@ fn rehashed_records_never_authorize_restore_outside_ownership() {
         Some(built.plan_digest.as_str()),
         false,
         Some(&test_authority()),
+        None,
     );
     assert_eq!(applied.status(), Status::Valid, "{applied:?}");
     let generation = history::current(&root).expect("custody").expect("gen");
@@ -1501,6 +1525,7 @@ fn zero_hash_equivalence_scenarios_are_missing_evidence_never_match() {
         Some(built.plan_digest.as_str()),
         false,
         Some(&test_authority()),
+        None,
     );
     assert_eq!(applied.status(), Status::Valid, "{applied:?}");
     // The implementation pin is the digest of the **live** generated
@@ -1645,6 +1670,7 @@ fn broken_or_missing_live_authority_refuses_rollback() {
         Some(built.plan_digest.as_str()),
         false,
         Some(&test_authority()),
+        None,
     );
     assert_eq!(applied.status(), Status::Valid, "{applied:?}");
     let destination = history::current(&root).expect("custody").expect("gen");
@@ -1692,6 +1718,7 @@ fn broken_or_missing_live_authority_refuses_rollback() {
         Some(second.plan_digest.as_str()),
         false,
         Some(&test_authority()),
+        None,
     );
     assert_eq!(applied.status(), Status::Valid, "{applied:?}");
     let destination_inputs_restored = || {
@@ -1808,6 +1835,7 @@ fn recovery_keeps_the_committed_public_manifest() {
         Some(built.plan_digest.as_str()),
         false,
         Some(&test_authority()),
+        None,
     );
     assert_eq!(applied.status(), Status::Valid, "{applied:?}");
     let committed_manifest =
@@ -1828,7 +1856,7 @@ fn recovery_keeps_the_committed_public_manifest() {
         before_digest: State::Absent,
     };
     history::write_transaction(&root, &blocker).expect("journal");
-    let receipt = recovery::run(&root);
+    let receipt = recovery::run(&root, &test_authority_of);
     assert_eq!(receipt.status(), Status::Valid, "{receipt:?}");
     assert_eq!(
         std::fs::read(root.join(super::custody::MANIFEST_LOGICAL)).expect("manifest"),
@@ -1878,6 +1906,7 @@ fn stale_recovery_lock_clear_never_escapes_the_project() {
         Some(built.plan_digest.as_str()),
         false,
         Some(&test_authority()),
+        None,
     );
     assert_eq!(applied.status(), Status::Valid, "{applied:?}");
     let _ = std::fs::remove_dir_all(root.join(".lekalo"));
@@ -1889,7 +1918,7 @@ fn stale_recovery_lock_clear_never_escapes_the_project() {
     )
     .expect("sentinel");
     junction(&outside, &root.join(".lekalo"));
-    let receipt = recovery::run(&root);
+    let receipt = recovery::run(&root, &test_authority_of);
     assert_ne!(receipt.status(), Status::Valid, "{receipt:?}");
     assert!(
         outside
@@ -1909,6 +1938,11 @@ fn apply_first_generation(root: &std::path::Path) -> super::wire::GenerationPlan
     let coverage_bytes = serde_json::to_vec(&coverage).expect("wire");
     let model = b"{ \"planner\": true }\n";
     write_input(root, "model/planner.model.json", model);
+    // The ownership document is a pinned closure input of every CLI plan;
+    // recovery's ownership binding (r6-r7 devin F2) requires exactly this
+    // pin, so the fixture apply carries it too.
+    let ownership_bytes = serde_json::to_vec(&ownership).expect("wire");
+    write_input(root, "ownership.json", &ownership_bytes);
     let assignment = &ownership.modules[0];
     let target = &assignment.targets[0];
     let admitted = coverage::admit(assignment, target, &coverage).expect("admission");
@@ -1916,10 +1950,16 @@ fn apply_first_generation(root: &std::path::Path) -> super::wire::GenerationPlan
         PlanAction::Promotion,
         &admitted,
         &coverage,
-        vec![InputPin {
-            path: "model/planner.model.json".to_owned(),
-            digest: digest(model),
-        }],
+        vec![
+            InputPin {
+                path: "model/planner.model.json".to_owned(),
+                digest: digest(model),
+            },
+            InputPin {
+                path: "ownership.json".to_owned(),
+                digest: digest(&ownership_bytes),
+            },
+        ],
         &empty_before(),
         None,
         None,
@@ -1935,6 +1975,7 @@ fn apply_first_generation(root: &std::path::Path) -> super::wire::GenerationPlan
         Some(built.plan_digest.as_str()),
         false,
         Some(&test_authority()),
+        None,
     );
     assert_eq!(applied.status(), Status::Valid, "{applied:?}");
     built
@@ -1997,7 +2038,7 @@ fn recovery_clears_the_lock_only_after_proving_it_stale() {
   "beforeDigest": { "state": "absent" }
 }"#,
     );
-    let blocked = recovery::run(&root);
+    let blocked = recovery::run(&root, &test_authority_of);
     assert_eq!(blocked.status(), Status::Invalid, "{blocked:?}");
     assert!(
         root.join(history::custody_logical(history::MUTATION_LOCK))
@@ -2005,7 +2046,7 @@ fn recovery_clears_the_lock_only_after_proving_it_stale() {
         "the live lock survives",
     );
     drop(guard);
-    let cleared = recovery::run(&root);
+    let cleared = recovery::run(&root, &test_authority_of);
     assert_eq!(cleared.status(), Status::Valid, "{cleared:?}");
     assert!(
         !root
@@ -2047,7 +2088,7 @@ fn forged_journal_cannot_delete_unclaimed_paths() {
         before_digest: State::Absent,
     };
     history::write_transaction(&root, &journal).expect("journal");
-    let receipt = recovery::run(&root);
+    let receipt = recovery::run(&root, &test_authority_of);
     assert_ne!(receipt.status(), Status::Valid, "{receipt:?}");
     assert_eq!(
         std::fs::read(&victim).expect("victim"),
@@ -2123,7 +2164,7 @@ fn first_publication_journal_converges_to_absence_and_retries() {
         before_digest: State::Absent,
     };
     history::write_transaction(&root, &journal).expect("journal");
-    let receipt = recovery::run(&root);
+    let receipt = recovery::run(&root, &test_authority_of);
     assert_eq!(receipt.status(), Status::Valid, "{receipt:?}");
     assert!(
         !root.join("apps/planner/gen/src/focus-task.ts").exists(),
@@ -2142,6 +2183,7 @@ fn first_publication_journal_converges_to_absence_and_retries() {
         Some(built.plan_digest.as_str()),
         false,
         Some(&test_authority()),
+        None,
     );
     assert_eq!(applied.status(), Status::Valid, "{applied:?}");
     let _ = std::fs::remove_dir_all(&root);
@@ -2212,6 +2254,7 @@ fn rollback_recreates_outputs_deleted_by_a_later_generation() {
         Some(second.plan_digest.as_str()),
         false,
         Some(&test_authority()),
+        None,
     );
     assert_eq!(applied.status(), Status::Valid, "{applied:?}");
     assert!(
@@ -2404,7 +2447,7 @@ fn minted_plan_object_never_deletes_unclaimed_files() {
         before_digest: State::Absent,
     };
     history::write_transaction(&root, &journal).expect("journal");
-    let receipt = recovery::run(&root);
+    let receipt = recovery::run(&root, &test_authority_of);
     assert_eq!(receipt.status(), Status::Invalid, "{receipt:?}");
     assert_eq!(
         std::fs::read(root.join(victim)).expect("victim"),
@@ -2456,7 +2499,7 @@ fn forged_before_digest_never_overwrites_manual_drift() {
             before_digest: State::known(digest(drift_bytes)),
         };
         history::write_transaction(&root, &journal).expect("journal");
-        let receipt = recovery::run(&root);
+        let receipt = recovery::run(&root, &test_authority_of);
         assert_eq!(receipt.status(), Status::Invalid, "{receipt:?}");
         assert_eq!(
             std::fs::read(root.join(path)).expect("drift"),
@@ -2508,7 +2551,7 @@ fn forged_manifest_pin_never_swaps_the_public_manifest() {
         before_digest: State::Absent,
     };
     history::write_transaction(&root, &journal).expect("journal");
-    let receipt = recovery::run(&root);
+    let receipt = recovery::run(&root, &test_authority_of);
     assert_eq!(receipt.status(), Status::Invalid, "{receipt:?}");
     assert_eq!(
         std::fs::read(root.join(super::custody::MANIFEST_LOGICAL)).expect("manifest"),
@@ -2574,6 +2617,7 @@ fn minted_rollback_plan_never_bounds_recovery() {
         Some(second.plan_digest.as_str()),
         false,
         Some(&test_authority()),
+        None,
     );
     assert_eq!(applied.status(), Status::Valid, "{applied:?}");
     let victim = "apps/planner/gen/maintained.ts";
@@ -2614,7 +2658,7 @@ fn minted_rollback_plan_never_bounds_recovery() {
         before_digest: State::Absent,
     };
     history::write_transaction(&root, &journal).expect("journal");
-    let receipt = recovery::run(&root);
+    let receipt = recovery::run(&root, &test_authority_of);
     assert_eq!(receipt.status(), Status::Invalid, "{receipt:?}");
     assert_eq!(
         std::fs::read(root.join(victim)).expect("victim"),
@@ -2624,16 +2668,15 @@ fn minted_rollback_plan_never_bounds_recovery() {
     let _ = std::fs::remove_dir_all(&root);
 }
 
-/// A legitimate interrupted resolve journal still converges: the resolve
-/// action's confirmed drift bound remains the accepted live state (r4
-/// finding 1b refuses forged *apply* pins, not the confirmed resolve
-/// transaction itself). Since r6 (codex F2) the confirmed flow retains
-/// the exact confirmed intent — the transaction document in its
-/// `prepared` shape — as a custody object before journaling anything, and
-/// recovery accepts the journal only when that retained intent matches it
-/// exactly; the test simulates the machinery's full output.
+/// An interrupted resolve journal converges *behaviorally* (r6-r7, devin
+/// F1 / codex F3): recovery never restores a byte on the journal's own
+/// word — the retained-intent object of r6 was a deterministic function
+/// of the journal itself and anchored nothing. When the confirmed
+/// restore never landed (live bytes are still the pinned drift), the
+/// journal closes `abandoned` with the drift preserved and the caller
+/// re-runs `managed resolve --confirm` for the exact recorded bytes.
 #[test]
-fn interrupted_resolve_journal_converges_from_its_confirmed_drift() {
+fn interrupted_resolve_journal_preserves_the_confirmed_drift() {
     let root = project_root("r5-resolve-recovery");
     apply_first_generation(&root);
     let generation = history::current(&root).expect("custody").expect("gen");
@@ -2663,7 +2706,9 @@ fn interrupted_resolve_journal_converges_from_its_confirmed_drift() {
     };
     transaction.plan_digest = State::known(plan_digest(&transaction));
     // The retained confirmed intent, exactly as `staged_resolve` writes
-    // it: the same document in its `prepared` shape (r6, codex F2).
+    // it: the same document in its `prepared` shape. Since r6-r7 this is
+    // an audit object only — the anchor below must hold even when a
+    // forger plants or omits it.
     let mut intent = transaction.clone();
     intent.state = TransactionState::Prepared;
     history::write_object(
@@ -2672,8 +2717,23 @@ fn interrupted_resolve_journal_converges_from_its_confirmed_drift() {
     )
     .expect("retained intent");
     history::write_transaction(&root, &transaction).expect("journal");
-    let receipt = recovery::run(&root);
+    let receipt = recovery::run(&root, &test_authority_of);
     assert_eq!(receipt.status(), Status::Valid, "{receipt:?}");
+    // The resolve never landed: recovery closes the journal abandoned and
+    // preserves the drift — the caller re-runs the confirmed resolve.
+    assert_eq!(
+        std::fs::read(root.join(path)).expect("drift"),
+        drift_bytes.to_vec(),
+        "recovery never restores on a resolve journal's own word",
+    );
+    assert!(history::unresolved(&root).expect("custody").is_empty());
+    // The caller's re-run is the only path to the recorded bytes: the
+    // exact confirmation of a fresh preview restores them.
+    let preview = rollback::resolve(&root, path, None, true);
+    assert_eq!(preview.status(), Status::Valid, "{preview:?}");
+    let fresh = resolve_plan_digest(&preview);
+    let restored = rollback::resolve(&root, path, Some(&format!("sha256:{fresh}")), false);
+    assert_eq!(restored.status(), Status::Valid, "{restored:?}");
     let expected = history::object(
         &root,
         record
@@ -2689,7 +2749,7 @@ fn interrupted_resolve_journal_converges_from_its_confirmed_drift() {
     assert_eq!(
         std::fs::read(root.join(path)).expect("restored"),
         expected,
-        "the confirmed resolve converges to the committed bytes",
+        "the re-run confirmed resolve converges to the committed bytes",
     );
     let _ = std::fs::remove_dir_all(&root);
 }
@@ -2727,7 +2787,7 @@ fn blocked_manifest_destination_refuses_without_finalizing() {
         before_digest: State::Absent,
     };
     history::write_transaction(&root, &journal).expect("journal");
-    let receipt = recovery::run(&root);
+    let receipt = recovery::run(&root, &test_authority_of);
     assert_eq!(receipt.status(), Status::Invalid, "{receipt:?}");
     assert!(
         manifest_path.is_dir(),
@@ -2953,6 +3013,7 @@ fn forged_provenance_pins_never_commit() {
         Some(recipe_plan.plan_digest.as_str()),
         false,
         Some(&test_authority()),
+        None,
     );
     assert_eq!(refused.status(), Status::Invalid, "{refused:?}");
     assert_eq!(
@@ -2971,6 +3032,7 @@ fn forged_provenance_pins_never_commit() {
         Some(plan.plan_digest.as_str()),
         false,
         Some(&test_authority()),
+        None,
     );
     assert_eq!(refused.status(), Status::Invalid, "{refused:?}");
     assert_eq!(
@@ -3058,6 +3120,7 @@ fn equivalence_lying_verdicts_over_failing_samples_refuse() {
         Some(built.plan_digest.as_str()),
         false,
         Some(&test_authority()),
+        None,
     );
     assert_eq!(
         failed_apply.status(),
@@ -3219,6 +3282,7 @@ fn under_lock_model_source_drift_refuses_the_apply() {
         Some(built.plan_digest.as_str()),
         false,
         Some(&authority),
+        None,
     );
     assert_eq!(refused.status(), Status::Invalid, "{refused:?}");
     assert_eq!(
@@ -3292,6 +3356,7 @@ fn apply_changed_generation(root: &std::path::Path, title: &str) -> String {
         Some(built.plan_digest.as_str()),
         false,
         Some(&test_authority()),
+        None,
     );
     assert_eq!(applied.status(), Status::Valid, "{applied:?}");
     history::current(root).expect("custody").expect("gen")
@@ -3368,7 +3433,7 @@ fn interrupted_mid_chain_rollback_recovers() {
     // Phase A: the rollback was killed before any byte moved — the live
     // tree still carries the committed generation's bytes.
     history::write_transaction(&root, &journal_of(TransactionState::Restoring)).expect("journal");
-    let receipt = recovery::run(&root);
+    let receipt = recovery::run(&root, &test_authority_of);
     assert_eq!(receipt.status(), Status::Valid, "{receipt:?}");
     assert_eq!(
         history::current(&root).expect("custody").expect("gen"),
@@ -3391,7 +3456,7 @@ fn interrupted_mid_chain_rollback_recovers() {
     // the destination's exact bytes, manifest included.
     history::write_current(&root, &third).expect("pointer");
     history::write_transaction(&root, &journal_of(TransactionState::Restoring)).expect("journal");
-    let receipt = recovery::run(&root);
+    let receipt = recovery::run(&root, &test_authority_of);
     assert_eq!(receipt.status(), Status::Valid, "{receipt:?}");
     assert_eq!(
         history::current(&root).expect("custody").expect("gen"),
@@ -3517,7 +3582,7 @@ fn forged_successor_record_never_deletes_unclaimed_files() {
         before_digest: State::Absent,
     };
     history::write_transaction(&root, &journal).expect("journal");
-    let receipt = recovery::run(&root);
+    let receipt = recovery::run(&root, &test_authority_of);
     assert_eq!(receipt.status(), Status::Invalid, "{receipt:?}");
     assert_eq!(
         std::fs::read(root.join(victim)).expect("victim"),
@@ -3532,8 +3597,11 @@ fn forged_successor_record_never_deletes_unclaimed_files() {
 }
 
 /// A resolve journal without its retained confirmed intent never overwrites
-/// a manual edit (r6, codex F2): a caller-authored journal whose
-/// `beforeDigest` merely describes the live drift is not reviewed evidence.
+/// a manual edit (r6, codex F2 → r6-r7 devin F1 / codex F3): the r6 check
+/// anchored to an object whose name a journal forger could always mint,
+/// so recovery now converges resolve journals *behaviorally* — the drift
+/// is preserved whatever objects sit in the store, the journal closes
+/// `abandoned`, and the caller re-runs the confirmed resolve.
 #[test]
 fn forged_resolve_journal_never_overwrites_unreviewed_drift() {
     let root = project_root("r6-forged-resolve");
@@ -3563,19 +3631,27 @@ fn forged_resolve_journal_never_overwrites_unreviewed_drift() {
         before_digest: State::known(digest(drift)),
     };
     transaction.plan_digest = State::known(plan_digest(&transaction));
-    // No retained confirmed intent object exists — exactly the externally
-    // created journal of the confirmed exploit.
+    // The caller-mintable "retained intent" object: byte-identical to the
+    // genuine flow's audit object, planted exactly as the r6 exploit did
+    // (its content address is a deterministic function of this journal).
+    let mut intent = transaction.clone();
+    intent.state = TransactionState::Prepared;
+    history::write_object(
+        &root,
+        &serde_json::to_vec_pretty(&intent).expect("typed intent"),
+    )
+    .expect("planted intent");
     history::write_transaction(&root, &transaction).expect("journal");
-    let receipt = recovery::run(&root);
-    assert_eq!(receipt.status(), Status::Invalid, "{receipt:?}");
+    let receipt = recovery::run(&root, &test_authority_of);
+    assert_eq!(receipt.status(), Status::Valid, "{receipt:?}");
     assert_eq!(
         std::fs::read(root.join(path)).expect("drift"),
         drift.to_vec(),
-        "the unreviewed drift is never overwritten",
+        "the unreviewed drift is never overwritten — planted intent or not",
     );
     assert!(
-        !history::unresolved(&root).is_ok_and(|unresolved| unresolved.is_empty()),
-        "the journal stays unresolved: recovery remains owed"
+        history::unresolved(&root).expect("custody").is_empty(),
+        "the journal converged to a defined (abandoned) state"
     );
     let _ = std::fs::remove_dir_all(&root);
 }
@@ -3632,7 +3708,7 @@ fn invalid_manifest_pin_refuses_before_any_byte_moves() {
         before_digest: State::Absent,
     };
     history::write_transaction(&root, &journal).expect("journal");
-    let receipt = recovery::run(&root);
+    let receipt = recovery::run(&root, &test_authority_of);
     assert_eq!(receipt.status(), Status::Invalid, "{receipt:?}");
     assert!(
         !root.join(missing).exists(),
@@ -3680,7 +3756,7 @@ fn partial_pending_journal_never_completes_with_missing_output() {
         before_digest: State::Absent,
     };
     history::write_transaction(&root, &journal).expect("journal");
-    let receipt = recovery::run(&root);
+    let receipt = recovery::run(&root, &test_authority_of);
     assert_eq!(receipt.status(), Status::Invalid, "{receipt:?}");
     assert!(
         !root
@@ -3872,6 +3948,83 @@ fn equivalence_refuses_repinned_drift_phantom_rows_and_bound_coverage() {
         &test_semantics(),
     )
     .expect("plan");
+    // The bound apply is gated on execution evidence (r6-r7, codex F4):
+    // no evidence, no commit — the behavioral gate a binding makes
+    // structurally incomplete offline is never skipped.
+    let bound_evidence_of =
+        |test_digest_of: &dyn Fn(&str) -> String, implementation: String, reference: String| {
+            Equivalence {
+                schema_version: header("managed-equivalence").0,
+                identity: header("managed-equivalence").1,
+                module: "planner".to_owned(),
+                target: "node-typescript".to_owned(),
+                implementation_digest: implementation,
+                reference_digest: State::known(reference),
+                scenarios: vec![
+                    ScenarioVerdict {
+                        scenario: "planner.complete_task".to_owned(),
+                        digest: test_digest_of("planner.complete_task"),
+                        verdict: ScenarioOutcome::Match,
+                    },
+                    ScenarioVerdict {
+                        scenario: "planner.focus_task".to_owned(),
+                        digest: test_digest_of("planner.focus_task"),
+                        verdict: ScenarioOutcome::Match,
+                    },
+                ],
+                execution: vec![
+                    ScenarioExecution {
+                        scenario: "planner.complete_task".to_owned(),
+                        observed: recomputed.to_owned(),
+                    },
+                    ScenarioExecution {
+                        scenario: "planner.focus_task".to_owned(),
+                        observed: recomputed.to_owned(),
+                    },
+                ],
+                gaps: Vec::new(),
+                verdict: EquivalenceVerdict::Match,
+            }
+        };
+    let plan_test_digest = |scenario: &str| {
+        built
+            .outputs
+            .iter()
+            .find(|output| {
+                output.path
+                    == format!(
+                        "apps/planner/gen/test/{}.test.ts",
+                        scenario.replace("planner.", "").replace('_', "-")
+                    )
+            })
+            .and_then(|output| output.after_digest.value().cloned())
+            .expect("planned test digest")
+    };
+    let refused_apply = apply::apply(
+        &bound_root,
+        &serde_json::to_vec(&built).expect("wire"),
+        &serde_json::to_vec(&coverage).expect("wire"),
+        &ownership,
+        Some(built.plan_digest.as_str()),
+        false,
+        Some(&test_authority()),
+        None,
+    );
+    assert_eq!(refused_apply.status(), Status::Invalid, "{refused_apply:?}");
+    assert_eq!(
+        refused_apply
+            .reason_codes()
+            .first()
+            .map(|code| code.as_str()),
+        Some("managed.input-invalid"),
+        "a bound generation never commits without execution evidence"
+    );
+    let execution_bytes = serde_json::to_vec(&bound_evidence_of(
+        &plan_test_digest,
+        PIN_A.to_owned(),
+        PIN_A.to_owned(),
+    ))
+    .expect("wire");
     let applied = apply::apply(
         &bound_root,
         &serde_json::to_vec(&built).expect("wire"),
@@ -3880,6 +4033,7 @@ fn equivalence_refuses_repinned_drift_phantom_rows_and_bound_coverage() {
         Some(built.plan_digest.as_str()),
         false,
         Some(&test_authority()),
+        Some(&execution_bytes),
     );
     assert_eq!(applied.status(), Status::Valid, "{applied:?}");
     let bound_generation = history::current(&bound_root)
@@ -3893,48 +4047,43 @@ fn equivalence_refuses_repinned_drift_phantom_rows_and_bound_coverage() {
         "node-typescript",
     )
     .expect("inventory");
-    let evidence = Equivalence {
-        schema_version: header("managed-equivalence").0,
-        identity: header("managed-equivalence").1,
-        module: "planner".to_owned(),
-        target: "node-typescript".to_owned(),
-        implementation_digest: bound_inventory,
-        reference_digest: State::known(
-            bound_record.outputs[0]
-                .after_ref
-                .value()
-                .expect("ref")
-                .clone(),
-        ),
-        scenarios: vec![
-            ScenarioVerdict {
-                scenario: "planner.complete_task".to_owned(),
-                digest: scenario_digest("apps/planner/gen/test/complete-task.test.ts"),
-                verdict: ScenarioOutcome::Match,
-            },
-            ScenarioVerdict {
-                scenario: "planner.focus_task".to_owned(),
-                digest: scenario_digest("apps/planner/gen/test/focus-task.test.ts"),
-                verdict: ScenarioOutcome::Match,
-            },
-        ],
-        execution: vec![
-            ScenarioExecution {
-                scenario: "planner.complete_task".to_owned(),
-                observed: recomputed.to_owned(),
-            },
-            ScenarioExecution {
-                scenario: "planner.focus_task".to_owned(),
-                observed: recomputed.to_owned(),
-            },
-        ],
-        gaps: Vec::new(),
-        verdict: EquivalenceVerdict::Match,
+    let record_test_digest = |scenario: &str| {
+        bound_record
+            .outputs
+            .iter()
+            .find(|output| {
+                output.path
+                    == format!(
+                        "apps/planner/gen/test/{}.test.ts",
+                        scenario.replace("planner.", "").replace('_', "-")
+                    )
+            })
+            .map(|output| output.digest.clone())
+            .expect("recorded test digest")
     };
-    let refused = super::equivalence::adjudicate_for(
-        &bound_root,
-        &serde_json::to_vec(&evidence).expect("wire"),
+    // The consumed verdict of a bound generation (r6-r7, codex F4): with
+    // the apply-retained execution evidence and receipts that equal it,
+    // the gate adjudicates `match` instead of refusing `bound-execution`
+    // forever; receipts no committed transaction vouched for stay
+    // incomplete evidence.
+    let matched = bound_evidence_of(
+        &record_test_digest,
+        bound_inventory.clone(),
+        bound_record.outputs[0]
+            .after_ref
+            .value()
+            .expect("ref")
+            .clone(),
     );
+    let accepted = super::equivalence::adjudicate_for(
+        &bound_root,
+        &serde_json::to_vec(&matched).expect("wire"),
+    );
+    assert_eq!(accepted.status(), Status::Valid, "{accepted:?}");
+    let mut lying = matched.clone();
+    lying.execution[0].observed = PIN_B.to_owned();
+    let refused =
+        super::equivalence::adjudicate_for(&bound_root, &serde_json::to_vec(&lying).expect("wire"));
     assert_eq!(refused.status(), Status::Unsupported, "{refused:?}");
     assert_eq!(
         refused.reason_codes().first().map(|code| code.as_str()),
@@ -4143,14 +4292,25 @@ fn planted_custody_records_and_manifests_are_conflicts() {
     let target_assignment = &assignment.targets[0];
     let admitted =
         coverage::admit(assignment, target_assignment, &coverage_doc()).expect("admission");
+    // The predicted generation identity reproduces the source apply's own
+    // closure (the ownership document is a pinned closure input of every
+    // CLI plan — see `apply_first_generation`).
+    let ownership_bytes = serde_json::to_vec(&ownership).expect("wire");
+    write_input(&target, "ownership.json", &ownership_bytes);
     let built = plan::build(
         PlanAction::Promotion,
         &admitted,
         &coverage_doc(),
-        vec![InputPin {
-            path: "model/planner.model.json".to_owned(),
-            digest: digest(b"{ \"planner\": true }\n"),
-        }],
+        vec![
+            InputPin {
+                path: "model/planner.model.json".to_owned(),
+                digest: digest(b"{ \"planner\": true }\n"),
+            },
+            InputPin {
+                path: "ownership.json".to_owned(),
+                digest: digest(&ownership_bytes),
+            },
+        ],
         &empty_before(),
         None,
         None,
@@ -4166,6 +4326,7 @@ fn planted_custody_records_and_manifests_are_conflicts() {
         Some(built.plan_digest.as_str()),
         false,
         Some(&test_authority()),
+        None,
     );
     assert_eq!(refused.status(), Status::Invalid, "{refused:?}");
     assert!(
@@ -4181,6 +4342,7 @@ fn planted_custody_records_and_manifests_are_conflicts() {
         "model/planner.model.json",
         b"{ \"planner\": true }\n",
     );
+    write_input(&manifest_target, "ownership.json", &ownership_bytes);
     write_test_lock(&manifest_target);
     let mut forged_manifest: serde_json::Value =
         serde_json::from_slice(&manifest_bytes).expect("manifest wire");
@@ -4204,6 +4366,7 @@ fn planted_custody_records_and_manifests_are_conflicts() {
         Some(built.plan_digest.as_str()),
         false,
         Some(&test_authority()),
+        None,
     );
     assert_eq!(refused.status(), Status::Invalid, "{refused:?}");
     assert!(
@@ -4279,4 +4442,589 @@ fn single_snapshot_authority_pins_the_exact_model_digest() {
         ],
         "entity field types resolve through the compiled project"
     );
+}
+
+// ---------------------------------------------------------------------------
+// r6→r7 regression tests: devin F1–F4 / codex F1–F7 (round-6 review union).
+// ---------------------------------------------------------------------------
+
+/// A resolve journal in a state the resolve writer never emits (`publishing`)
+/// never anchors (devin F1c): recovery stays owed and no byte moves.
+#[test]
+fn resolve_journal_in_never_emitted_state_never_anchors() {
+    let root = project_root("r7-resolve-state");
+    apply_first_generation(&root);
+    let generation = history::current(&root).expect("custody").expect("gen");
+    let path = "apps/planner/gen/src/focus-task.ts";
+    let drift = b"// drift\n";
+    write_input(&root, path, drift);
+    let mut transaction = Transaction {
+        schema_version: header("managed-transaction").0,
+        identity: header("managed-transaction").1,
+        transaction_id: "r7-res-state-0001".to_owned(),
+        state: TransactionState::Publishing,
+        action: TransactionAction::Resolve,
+        plan_digest: State::Absent,
+        generation_digest: State::known(GenerationDigest {
+            generation_digest: generation.clone(),
+        }),
+        before_manifest_digest: State::Absent,
+        after_manifest_digest: State::Absent,
+        pending: vec![Pending {
+            path: path.to_owned(),
+            op: PendingOp::Restore,
+        }],
+        affected_files: vec![path.to_owned()],
+        conflict: State::Absent,
+        before_digest: State::known(digest(drift)),
+    };
+    transaction.plan_digest = State::known(plan_digest(&transaction));
+    history::write_transaction(&root, &transaction).expect("journal");
+    let receipt = recovery::run(&root, &test_authority_of);
+    assert_eq!(receipt.status(), Status::Invalid, "{receipt:?}");
+    assert_eq!(
+        std::fs::read(root.join(path)).expect("drift"),
+        drift.to_vec(),
+    );
+    assert!(
+        !history::unresolved(&root).is_ok_and(|unresolved| unresolved.is_empty()),
+        "recovery stays owed on a never-emitted journal shape"
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// A resolve journal whose plan digest is not its own self digest never
+/// anchors (devin F1a): `staged_resolve` pins `planDigest =
+/// plan_digest(transaction)`, so a forged `sha256:99…` value is a shape the
+/// confirmed flow could never write.
+#[test]
+fn forged_resolve_plan_digest_never_anchors() {
+    let root = project_root("r7-resolve-digest");
+    apply_first_generation(&root);
+    let generation = history::current(&root).expect("custody").expect("gen");
+    let path = "apps/planner/gen/src/focus-task.ts";
+    let drift = b"// drift\n";
+    write_input(&root, path, drift);
+    let transaction = Transaction {
+        schema_version: header("managed-transaction").0,
+        identity: header("managed-transaction").1,
+        transaction_id: "r7-res-digest-0001".to_owned(),
+        state: TransactionState::Restoring,
+        action: TransactionAction::Resolve,
+        plan_digest: State::known(
+            "sha256:9999999999999999999999999999999999999999999999999999999999999999".to_owned(),
+        ),
+        generation_digest: State::known(GenerationDigest {
+            generation_digest: generation.clone(),
+        }),
+        before_manifest_digest: State::Absent,
+        after_manifest_digest: State::Absent,
+        pending: vec![Pending {
+            path: path.to_owned(),
+            op: PendingOp::Restore,
+        }],
+        affected_files: vec![path.to_owned()],
+        conflict: State::Absent,
+        before_digest: State::known(digest(drift)),
+    };
+    history::write_transaction(&root, &transaction).expect("journal");
+    let receipt = recovery::run(&root, &test_authority_of);
+    assert_eq!(receipt.status(), Status::Invalid, "{receipt:?}");
+    assert_eq!(
+        std::fs::read(root.join(path)).expect("drift"),
+        drift.to_vec(),
+    );
+    assert!(
+        !history::unresolved(&root).is_ok_and(|unresolved| unresolved.is_empty()),
+        "recovery stays owed while the confirmation digest is forged"
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// A self-consistent forged successor with replace rows over unchanged
+/// bytes never hijacks the committed pointer through the completion path
+/// (codex F1): the plan's action/before-state classification must be the
+/// apply machinery's own — `Replace` where recorded == after is a
+/// classification `classify` never produces — and the closure pin the
+/// record mints must resolve against live bytes.
+#[test]
+fn forged_completion_never_hijacks_the_pointer() {
+    let root = project_root("r7-forged-completion");
+    apply_first_generation(&root);
+    let committed = history::current(&root).expect("custody").expect("gen");
+    let record = history::record(&root, &committed).expect("record");
+    let plan = history::plan(&root, &record.plan_digest).expect("retained plan");
+    // The forged successor: the genuine outputs as Replace rows with
+    // before = after = the live (committed) digests — the r6 codex F1
+    // reproduction — plus one extra closure pin riding the record.
+    let mut minted = plan.clone();
+    for output in &mut minted.outputs {
+        output.action = OutputAction::Replace;
+        output.before_digest = output.after_digest.clone();
+    }
+    minted.plan_digest = plan_digest(&minted);
+    history::write_object(&root, &serde_json::to_vec_pretty(&minted).expect("wire"))
+        .expect("minted plan object");
+    let mut forged = record.clone();
+    forged.previous_generation = State::known(GenerationDigest {
+        generation_digest: committed.clone(),
+    });
+    forged.plan_digest = minted.plan_digest.clone();
+    forged.input_closure.push(InputPin {
+        path: "zz-extra.yaml".to_owned(),
+        digest: digest(b"attacker-chosen"),
+    });
+    forged.generation_digest = super::generation_digest(&forged);
+    forged.record_digest = super::record_identity(&forged);
+    let forged_hex = forged
+        .generation_digest
+        .strip_prefix("sha256:")
+        .expect("digest")
+        .to_owned();
+    write_input(
+        &root,
+        &history::custody_logical(&format!("objects/{forged_hex}")),
+        &serde_json::to_vec(&forged).expect("wire"),
+    );
+    let mut pending: Vec<Pending> = minted
+        .outputs
+        .iter()
+        .map(|output| Pending {
+            path: output.path.clone(),
+            op: PendingOp::Publish,
+        })
+        .collect();
+    pending.push(Pending {
+        path: super::custody::MANIFEST_LOGICAL.to_owned(),
+        op: PendingOp::Publish,
+    });
+    pending.sort_by(|left, right| (&left.path, &left.op).cmp(&(&right.path, &right.op)));
+    let mut affected: Vec<String> = minted
+        .outputs
+        .iter()
+        .map(|output| output.path.clone())
+        .collect();
+    affected.push("zz-extra.yaml".to_owned());
+    affected.sort();
+    let journal = Transaction {
+        schema_version: header("managed-transaction").0,
+        identity: header("managed-transaction").1,
+        transaction_id: "r7-forged-comp-0001".to_owned(),
+        state: TransactionState::Publishing,
+        action: TransactionAction::Apply,
+        plan_digest: State::known(minted.plan_digest.clone()),
+        generation_digest: State::known(GenerationDigest {
+            generation_digest: forged.generation_digest.clone(),
+        }),
+        before_manifest_digest: State::Absent,
+        after_manifest_digest: State::Absent,
+        pending,
+        affected_files: affected,
+        conflict: State::Absent,
+        before_digest: State::Absent,
+    };
+    history::write_transaction(&root, &journal).expect("journal");
+    let receipt = recovery::run(&root, &test_authority_of);
+    assert_eq!(receipt.status(), Status::Invalid, "{receipt:?}");
+    assert_eq!(
+        history::current(&root).expect("custody"),
+        Some(committed),
+        "the committed pointer never advances to caller-minted lineage"
+    );
+    assert!(
+        !history::unresolved(&root).is_ok_and(|unresolved| unresolved.is_empty()),
+        "recovery stays owed"
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// A forged first-publication journal never deletes an unclaimed file
+/// outside the caller-declared generated roots (devin F2): with nothing
+/// committed, every r6 binding was vacuous — the confinement now derives
+/// from the closure-pinned ownership document (hash-bound to the record's
+/// `ownershipDigest`) and the deterministic render, so even a forged
+/// record/plan pair carrying the *real* ownership pin and a retained
+/// coverage object cannot name a maintained file as an output.
+#[test]
+fn forged_first_publication_never_deletes_outside_declared_roots() {
+    let root = project_root("r7-forged-first-publication");
+    let ownership = ownership_doc();
+    let coverage = coverage_doc();
+    let model = b"{ \"planner\": true }\n";
+    write_input(&root, "model/planner.model.json", model);
+    let ownership_bytes = serde_json::to_vec(&ownership).expect("wire");
+    write_input(&root, "ownership.json", &ownership_bytes);
+    // Retain the genuine coverage and a victim snapshot as objects.
+    let coverage_bytes = serde_json::to_vec(&coverage).expect("wire");
+    history::write_object(&root, &coverage_bytes).expect("coverage object");
+    let victim = "maintained/victim.ts";
+    let victim_bytes = b"// HAND MAINTAINED\n";
+    write_input(&root, victim, victim_bytes);
+    history::write_object(&root, victim_bytes).expect("victim object");
+    // The forged plan: the genuine closure pins (which resolve live) plus
+    // a "create" for the victim with after = the victim's live digest.
+    let assignment = &ownership.modules[0];
+    let target = &assignment.targets[0];
+    let admitted = coverage::admit(assignment, target, &coverage).expect("admission");
+    let mut minted = plan::build(
+        PlanAction::Promotion,
+        &admitted,
+        &coverage,
+        vec![
+            InputPin {
+                path: "model/planner.model.json".to_owned(),
+                digest: digest(model),
+            },
+            InputPin {
+                path: "ownership.json".to_owned(),
+                digest: digest(&ownership_bytes),
+            },
+        ],
+        &empty_before(),
+        None,
+        None,
+        hash(&coverage),
+        &test_semantics(),
+    )
+    .expect("plan");
+    minted.outputs.push(PlanOutput {
+        path: victim.to_owned(),
+        action: OutputAction::Create,
+        role: ArtifactRole::Implementation,
+        owner_module: "planner".to_owned(),
+        owner_target: "node-typescript".to_owned(),
+        before_digest: State::Absent,
+        after_digest: State::known(digest(victim_bytes)),
+    });
+    minted
+        .outputs
+        .sort_by(|left, right| left.path.cmp(&right.path));
+    minted.plan_digest = plan_digest(&minted);
+    history::write_object(&root, &serde_json::to_vec_pretty(&minted).expect("wire"))
+        .expect("minted plan object");
+    // The forged record: no previous link, the real ownership hash, and
+    // every minted output with its content-addressed snapshot.
+    let outputs: Vec<RecordOutput> = minted
+        .outputs
+        .iter()
+        .map(|output| RecordOutput {
+            path: output.path.clone(),
+            role: output.role,
+            owner_module: output.owner_module.clone(),
+            owner_target: output.owner_target.clone(),
+            digest: output.after_digest.value().expect("after").clone(),
+            before_ref: State::Absent,
+            after_ref: State::known(output.after_digest.value().expect("after").clone()),
+        })
+        .collect();
+    let mut forged = GenerationRecord {
+        schema_version: header("managed-generation-record").0,
+        identity: header("managed-generation-record").1,
+        plan_digest: minted.plan_digest.clone(),
+        generation_digest: String::new(),
+        previous_generation: State::Absent,
+        input_closure: minted.input_closure.clone(),
+        outputs,
+        ownership_digest: hash(&ownership),
+        lock_pin: State::known(test_authority().lock_digest),
+        record_digest: String::new(),
+    };
+    forged.generation_digest = super::generation_digest(&forged);
+    forged.record_digest = super::record_identity(&forged);
+    let forged_hex = forged
+        .generation_digest
+        .strip_prefix("sha256:")
+        .expect("digest")
+        .to_owned();
+    write_input(
+        &root,
+        &history::custody_logical(&format!("objects/{forged_hex}")),
+        &serde_json::to_vec(&forged).expect("wire"),
+    );
+    let mut pending: Vec<Pending> = minted
+        .outputs
+        .iter()
+        .map(|output| Pending {
+            path: output.path.clone(),
+            op: PendingOp::Publish,
+        })
+        .collect();
+    pending.push(Pending {
+        path: super::custody::MANIFEST_LOGICAL.to_owned(),
+        op: PendingOp::Publish,
+    });
+    pending.sort_by(|left, right| (&left.path, &left.op).cmp(&(&right.path, &right.op)));
+    let mut affected: Vec<String> = minted
+        .outputs
+        .iter()
+        .map(|output| output.path.clone())
+        .collect();
+    affected.sort();
+    let journal = Transaction {
+        schema_version: header("managed-transaction").0,
+        identity: header("managed-transaction").1,
+        transaction_id: "r7-forged-first-0001".to_owned(),
+        state: TransactionState::Publishing,
+        action: TransactionAction::Apply,
+        plan_digest: State::known(minted.plan_digest.clone()),
+        generation_digest: State::known(GenerationDigest {
+            generation_digest: forged.generation_digest.clone(),
+        }),
+        before_manifest_digest: State::Absent,
+        after_manifest_digest: State::Absent,
+        pending,
+        affected_files: affected,
+        conflict: State::Absent,
+        before_digest: State::Absent,
+    };
+    history::write_transaction(&root, &journal).expect("journal");
+    let receipt = recovery::run(&root, &test_authority_of);
+    assert_eq!(receipt.status(), Status::Invalid, "{receipt:?}");
+    assert!(
+        root.join(victim).is_file(),
+        "the unclaimed file outside every declared generated root survives"
+    );
+    assert!(
+        !history::unresolved(&root).is_ok_and(|unresolved| unresolved.is_empty()),
+        "recovery stays owed"
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// An unclaimed file *inside* the generated root survives a forged
+/// successor whose single "create" names it (codex F2): the deterministic
+/// render never produced the path, so deletion authority never derives
+/// from a caller-authored plan row — the apply machinery itself would
+/// have refused the create on live bytes.
+#[test]
+fn unclaimed_file_inside_generated_root_survives_forged_create() {
+    let root = project_root("r7-forged-inside-root");
+    apply_first_generation(&root);
+    let committed = history::current(&root).expect("custody").expect("gen");
+    let record = history::record(&root, &committed).expect("record");
+    let plan = history::plan(&root, &record.plan_digest).expect("retained plan");
+    let victim = "apps/planner/gen/NOTES.md";
+    let victim_bytes = b"dropped by a user inside the generated root\n";
+    write_input(&root, victim, victim_bytes);
+    history::write_object(&root, victim_bytes).expect("victim object");
+    let mut minted = plan.clone();
+    minted.outputs.push(PlanOutput {
+        path: victim.to_owned(),
+        action: OutputAction::Create,
+        role: ArtifactRole::Implementation,
+        owner_module: "planner".to_owned(),
+        owner_target: "node-typescript".to_owned(),
+        before_digest: State::Absent,
+        after_digest: State::known(digest(victim_bytes)),
+    });
+    minted
+        .outputs
+        .sort_by(|left, right| left.path.cmp(&right.path));
+    minted.plan_digest = plan_digest(&minted);
+    history::write_object(&root, &serde_json::to_vec_pretty(&minted).expect("wire"))
+        .expect("minted plan object");
+    let mut outputs = record.outputs.clone();
+    outputs.push(RecordOutput {
+        path: victim.to_owned(),
+        role: ArtifactRole::Implementation,
+        owner_module: "planner".to_owned(),
+        owner_target: "node-typescript".to_owned(),
+        digest: digest(victim_bytes),
+        before_ref: State::Absent,
+        after_ref: State::known(digest(victim_bytes)),
+    });
+    outputs.sort_by(|left, right| left.path.cmp(&right.path));
+    let mut forged = record.clone();
+    forged.previous_generation = State::known(GenerationDigest {
+        generation_digest: committed.clone(),
+    });
+    forged.plan_digest = minted.plan_digest.clone();
+    forged.outputs = outputs;
+    forged.generation_digest = super::generation_digest(&forged);
+    forged.record_digest = super::record_identity(&forged);
+    let forged_hex = forged
+        .generation_digest
+        .strip_prefix("sha256:")
+        .expect("digest")
+        .to_owned();
+    write_input(
+        &root,
+        &history::custody_logical(&format!("objects/{forged_hex}")),
+        &serde_json::to_vec(&forged).expect("wire"),
+    );
+    let mut pending: Vec<Pending> = minted
+        .outputs
+        .iter()
+        .map(|output| Pending {
+            path: output.path.clone(),
+            op: PendingOp::Publish,
+        })
+        .collect();
+    pending.push(Pending {
+        path: super::custody::MANIFEST_LOGICAL.to_owned(),
+        op: PendingOp::Publish,
+    });
+    pending.sort_by(|left, right| (&left.path, &left.op).cmp(&(&right.path, &right.op)));
+    let mut affected: Vec<String> = minted
+        .outputs
+        .iter()
+        .map(|output| output.path.clone())
+        .collect();
+    affected.sort();
+    let journal = Transaction {
+        schema_version: header("managed-transaction").0,
+        identity: header("managed-transaction").1,
+        transaction_id: "r7-forged-inside-001".to_owned(),
+        state: TransactionState::Publishing,
+        action: TransactionAction::Apply,
+        plan_digest: State::known(minted.plan_digest.clone()),
+        generation_digest: State::known(GenerationDigest {
+            generation_digest: forged.generation_digest.clone(),
+        }),
+        before_manifest_digest: State::Absent,
+        after_manifest_digest: State::Absent,
+        pending,
+        affected_files: affected,
+        conflict: State::Absent,
+        before_digest: State::Absent,
+    };
+    history::write_transaction(&root, &journal).expect("journal");
+    let receipt = recovery::run(&root, &test_authority_of);
+    assert_eq!(receipt.status(), Status::Invalid, "{receipt:?}");
+    assert_eq!(
+        std::fs::read(root.join(victim)).expect("victim"),
+        victim_bytes.to_vec(),
+        "an unclaimed file inside the generated root is never deleted on a forged word",
+    );
+    assert!(
+        !history::unresolved(&root).is_ok_and(|unresolved| unresolved.is_empty()),
+        "recovery stays owed"
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// Named function expressions and regex bodies never qualify as callable
+/// declarations (devin F3): the name of `(function phook(){})` binds
+/// inside the expression only, and a regex literal's body is pattern
+/// text — `export { phook }` resolves to nothing the generated test
+/// could import.
+#[test]
+fn named_function_expressions_and_regexes_never_declare() {
+    // A parenthesized named function expression (call argument).
+    let paren = b"const g = (function phook(x){ return x; });\nexport { phook };\n";
+    assert!(
+        !super::bindings::exports_symbol(paren, "phook"),
+        "a named function expression inside parentheses never declares module scope"
+    );
+    // A plain assignment-position named function expression.
+    let assigned = b"const g = function nfehook(x){ return x; };\nexport { nfehook };\n";
+    assert!(
+        !super::bindings::exports_symbol(assigned, "nfehook"),
+        "an assignment-position named function expression never declares module scope"
+    );
+    // A regex literal carrying the declaration shape in its body.
+    let regex = b"const r = /function reghook(x)/g;\nexport { reghook };\n";
+    assert!(
+        !super::bindings::exports_symbol(regex, "reghook"),
+        "regex-literal bodies are blank, never declarations"
+    );
+    // A regex in return position (division-lookalike) is backstopped by
+    // statement position: `return` never precedes a declaration.
+    let returned = b"function f(){ return /function bshook(x)/; }\nexport { bshook };\n";
+    assert!(
+        !super::bindings::exports_symbol(returned, "bshook"),
+        "`return` is expression context, never statement position"
+    );
+    // Controls: genuine statement-position declarations still qualify.
+    assert!(super::bindings::exports_symbol(
+        b"function realhook(x) { return x; }\nexport { realhook };\n",
+        "realhook"
+    ));
+    assert!(super::bindings::exports_symbol(
+        b"export async function asyncHook(x) { return x; }\n",
+        "asyncHook"
+    ));
+    assert!(super::bindings::exports_symbol(
+        b"export const arrowhook = (input) => input ?? null;\n",
+        "arrowhook"
+    ));
+}
+
+/// Inert adapter structures never prove capability (devin F4 / codex F5):
+/// object keys with inert values, a literal array bound to any other
+/// name, and literals inside call arguments are exactly as non-behavioral
+/// as the string soup.
+#[test]
+fn inert_adapter_structures_never_prove_capability() {
+    let keys = b"const ops = { describe: 1, validate: 1, verify: 1, generate: 1, protocol_version: 1 };\nexport {};\n";
+    assert!(
+        super::authority::adapter_entry_conformance(keys).is_err(),
+        "inert object keys never qualify the operations"
+    );
+    let array = b"export const ops = [\"describe\", \"validate\", \"verify\", \"generate\"];\nconst handshake = { protocol_version: \"0.8.0\" };\nexport {};\n";
+    assert!(
+        super::authority::adapter_entry_conformance(array).is_err(),
+        "a literal array bound to a non-operations name never qualifies"
+    );
+    let logged = b"console.log(\"describe\");\nconst capabilities = { operations: [\"validate\", \"verify\", \"generate\"], protocol_version: \"0.8.0\" };\n";
+    assert!(
+        super::authority::adapter_entry_conformance(logged).is_err(),
+        "a literal inside a call argument never qualifies"
+    );
+    // Controls: the protocol-document row and invocable identifiers pass.
+    let quoted = b"const capabilities = { operations: [\"describe\", \"validate\", \"verify\", \"generate\"], protocol_version: \"0.3.2\" };\nexport {};\n";
+    assert!(super::authority::adapter_entry_conformance(quoted).is_ok());
+    let structural = b"export function describe() {}\nexport function validate() {}\nexport function verify() {}\nexport function generate() {}\nconst handshake = { protocol_version: \"0.3.2\" };\n";
+    assert!(super::authority::adapter_entry_conformance(structural).is_ok());
+}
+
+/// The confined read path refuses shared-inode leaves (codex F6): an
+/// in-root hardlink to a file outside the project never sources bytes
+/// through `read_file` — the same exclusivity the write path always
+/// required.
+#[test]
+fn read_path_refuses_a_shared_inode_leaf() {
+    let root = project_root("r7-hardlink-read");
+    let outside = std::env::temp_dir().join(format!(
+        "lekalo-managed-outside-{}-hardlink.ts",
+        std::process::id()
+    ));
+    std::fs::write(&outside, b"// bytes outside the project\n").expect("outside");
+    let directory = root.join("src/extensions");
+    std::fs::create_dir_all(&directory).expect("mkdir");
+    let inside = directory.join("hardlinked-binding.ts");
+    std::fs::hard_link(&outside, &inside).expect("hardlink");
+    let read = super::fs::read_file(&root, "src/extensions/hardlinked-binding.ts");
+    assert!(
+        read.is_err(),
+        "an in-root hardlink (shared inode) never reads through the confined capability"
+    );
+    assert_eq!(
+        std::fs::read(&outside).expect("outside"),
+        b"// bytes outside the project\n".to_vec(),
+        "the outside alias is untouched"
+    );
+    let _ = std::fs::remove_file(&outside);
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// Credential-shaped caller values never enter the receipt stream (codex
+/// F7): the screening is spelling-canonical — any case spelling of the
+/// `gh[pousr]_` prefix — and refuses the ownership project id and the
+/// coverage subject ids at parse time.
+#[test]
+fn credential_shaped_caller_values_never_enter_receipts() {
+    assert!(!super::credential_free("ghp_ABC123def456GHI789jkl"));
+    assert!(!super::credential_free("GHP_ABC123def456GHI789jkl"));
+    assert!(!super::credential_free("project GhS_abcdef0123456789abcd"));
+    assert!(super::credential_free("planner-demo"));
+    assert!(super::credential_free("ghp_short"));
+    let mut ownership = ownership_doc();
+    ownership.project = "GHP_ABC123def456GHI789jkl".to_owned();
+    let refused = super::parse_ownership(&serde_json::to_vec(&ownership).expect("wire"));
+    assert!(refused.is_err(), "a credential-shaped project id refuses");
+    let mut coverage = coverage_doc();
+    coverage.module = "ghu_ABC123def456GHI789jkl".to_owned();
+    let refused = super::parse_coverage(&serde_json::to_vec(&coverage).expect("wire"));
+    assert!(refused.is_err(), "a credential-shaped module id refuses");
 }

@@ -311,6 +311,13 @@ pub fn parse_ownership(bytes: &[u8]) -> Result<Ownership, DomainResult> {
     if document.project.is_empty() || !token(&document.project) {
         return Err(invalid("project"));
     }
+    // Receipt-echoed caller values are screened (r6 codex F7): the
+    // project id rides every managed receipt verbatim, so a value that
+    // is spelling-canonical credential material — a GitHub-style token
+    // prefix in any case spelling — never enters the receipt stream.
+    if !credential_free(&document.project) {
+        return Err(invalid("project-credential"));
+    }
     if document.modules.is_empty()
         || document.modules.len() > 64
         || !sorted(
@@ -365,12 +372,42 @@ pub fn parse_ownership(bytes: &[u8]) -> Result<Ownership, DomainResult> {
     Ok(document)
 }
 
+/// Whether one bounded string is free of spelling-canonical credential
+/// material (r6 codex F7): a GitHub-style token — `gh[pousr]_` followed by
+/// at least twenty identifier characters — in ANY case spelling of the
+/// prefix. Managed receipts echo caller-owned string fields verbatim;
+/// values that are credential-shaped refuse at parse time instead of
+/// being echoed. Purely structural, never a secrecy claim.
+pub fn credential_free(text: &str) -> bool {
+    let lowered = text.to_ascii_lowercase();
+    for prefix in ["ghp_", "gho_", "ghu_", "ghs_", "ghr_"] {
+        let mut from = 0usize;
+        while let Some(found) = lowered[from..].find(prefix) {
+            let at = from + found;
+            from = at + prefix.len();
+            let body = lowered[from..]
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                .count();
+            if body >= 20 {
+                return false;
+            }
+        }
+    }
+    true
+}
+
 /// Validate the closed coverage document structure (semantic admission is
 /// [`coverage::admit`]).
 pub fn parse_coverage(bytes: &[u8]) -> Result<Coverage, DomainResult> {
     let document: Coverage = decode(bytes, "managed-coverage")?;
     if !token(&document.module) || !token(&document.target) {
         return Err(invalid("subject"));
+    }
+    // Receipt-echoed caller values are screened (r6 codex F7): module and
+    // target ids ride plan/apply/equivalence receipts verbatim.
+    if !credential_free(&document.module) || !credential_free(&document.target) {
+        return Err(invalid("subject-credential"));
     }
     if !reference(&document.recipe) || !adapter(&document.adapter) {
         return Err(invalid("coverage-pins"));
@@ -521,6 +558,14 @@ pub fn verify_plan(bytes: &[u8]) -> Result<GenerationPlan, DomainResult> {
 /// committed generation carries. Derived pins name no project file; they
 /// are revalidated against the live derived authority at every consume.
 pub const AUTHORITY_PIN_PREFIX: &str = ".lekalo/managed-authority/";
+
+/// The derived authority name of a reserved pin path (`model`/`ir`/
+/// `lock`), when `text` is one (recovery revalidates the pinned authority
+/// closure against a live derivation).
+pub fn authority_pin_name(text: &str) -> Option<&str> {
+    let rest = text.strip_prefix(AUTHORITY_PIN_PREFIX)?;
+    matches!(rest, "model" | "ir" | "lock").then_some(rest)
+}
 
 /// Whether `text` is a valid committed input-closure pin path: either a
 /// project-relative coordinate or a reserved derived authority pin under

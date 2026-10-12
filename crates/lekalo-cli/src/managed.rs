@@ -79,6 +79,11 @@ pub struct ApplyArgs {
     /// Preview the transaction without writing anything.
     #[arg(long)]
     pub dry_run: bool,
+    /// The execution evidence of a bound generation (required to commit a
+    /// plan with validated extensions): the pinned generated-test digests
+    /// with their observed outcomes.
+    #[arg(long, value_name = "FILE")]
+    pub execution: Option<String>,
     #[command(flatten)]
     pub project: ProjectArgs,
 }
@@ -524,6 +529,13 @@ fn run_apply(args: ApplyArgs) -> Outcome {
     } else {
         return Err(invalid("module"));
     }
+    // The execution evidence of a bound generation (r6 codex F4): the
+    // behavioral gate a binding makes structurally incomplete offline —
+    // supplied, verified, and retained by the core before the commit.
+    let execution = match &args.execution {
+        Some(path) => Some(read(path)?),
+        None => None,
+    };
     Err(core::apply::apply(
         &root(&args.project.project),
         &plan,
@@ -532,6 +544,7 @@ fn run_apply(args: ApplyArgs) -> Outcome {
         args.confirm.as_deref(),
         args.dry_run,
         Some(&authority),
+        execution.as_deref(),
     ))
 }
 
@@ -765,7 +778,16 @@ fn execute(command: ManagedCommands) -> Outcome {
         ManagedCommands::UpgradePlan(args) => run_upgrade_plan(args),
         ManagedCommands::Rollback(args) => run_rollback(args),
         ManagedCommands::Resolve(args) => run_resolve(args),
-        ManagedCommands::Recover { project } => Err(core::recovery::run(&root(&project.project))),
+        ManagedCommands::Recover { project } => {
+            let selection = selection(&project.project);
+            let project_root = root(&project.project);
+            // Apply journals anchor only against a live derivation of the
+            // exact generation authority (r6-r7, codex F1): the module id
+            // comes from each journal's retained plan, and the derivation
+            // runs the accepted loader pipeline against the live project.
+            let derive = |module: &str| core::authority::derive(&selection, module);
+            Err(core::recovery::run(&project_root, &derive))
+        }
         ManagedCommands::Authority { module, project } => {
             let authority = core::authority::derive(&selection(&project.project), &module)?;
             Ok(core::render(&AuthorityReceipt {

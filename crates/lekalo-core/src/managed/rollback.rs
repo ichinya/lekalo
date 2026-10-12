@@ -815,13 +815,13 @@ pub fn resolve(
 }
 
 fn staged_resolve(root: &std::path::Path, transaction: &Transaction, bytes: &[u8]) -> DomainResult {
-    // Retain the exact confirmed intent before anything is journaled (r6,
-    // codex F2): the resolve transaction document, in its confirmed
-    // `prepared` shape, becomes a content-addressed custody object.
-    // Recovery accepts a resolve journal only when this retained intent
-    // exists and matches the journal exactly — a bare caller-authored
-    // journal whose `beforeDigest` merely describes live drift is not
-    // reviewed evidence and never overwrites a manual edit.
+    // Retain the confirmed transaction document as an audit object (r6,
+    // codex F2): the exact `prepared` shape the confirmation covered.
+    // Since r6-r7 this object is deliberately NOT recovery's anchor — its
+    // content address is a deterministic function of the journal itself,
+    // so a journal forger could always mint it; recovery instead converges
+    // a resolve journal behaviorally and never restores a byte on the
+    // journal's own word (see recovery.rs).
     let mut intent = transaction.clone();
     intent.state = TransactionState::Prepared;
     if let Err(error) = history::write_object(
