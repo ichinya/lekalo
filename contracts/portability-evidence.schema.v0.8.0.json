@@ -125,8 +125,8 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 256,
-      "pattern": "^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?(?:/(?:[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?))*$",
-      "description": "Bounded project-relative artifact reference; never an absolute path, glob, traversal segment, empty or dot segment, or segment with a leading/trailing dot, or command. Every segment already satisfies the closed project path grammar (lowercase, at most 64 characters, portable characters)."
+      "pattern": "^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\\.[a-z0-9._-]*)?(?:/|$))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?(?:/(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\\.[a-z0-9._-]*)?(?:/|$))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?)*$",
+      "description": "Bounded project-relative artifact reference; never an absolute path, glob, traversal segment, empty or dot segment, a segment with a leading or trailing dot/dash/underscore, or command. Every segment starts and ends with a lowercase alphanumeric, spans at most 64 portable characters, and is never a DOS-device stem (device name with any extension) — exactly the closed grammar the decoder enforces."
     },
     "digest": {
       "type": "string",

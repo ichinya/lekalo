@@ -53,6 +53,11 @@ pub struct Args {
 /// The default project-relative configuration home, outside the
 /// reserved `lekalo/**` trees.
 const DEFAULT_TARGETS: &str = "config/portability-targets.json";
+/// The published bound of `inputs.targetsConfig.path` in the report
+/// contract: the pinned selector is echoed verbatim, so an over-long
+/// selector is an admission refusal, never a schema-invalid emission.
+/// The same check covers the default constant for defense in depth.
+const MAX_TARGETS_PATH: usize = 256;
 /// The canonical lock custody file of the project (`lekalo.lock` at the
 /// resolved project root), when present.
 const LOCK_PATH: &str = "lekalo.lock";
@@ -437,6 +442,13 @@ fn execute(args: Args) -> Result<DomainResult, DiagnosticSet> {
         .targets
         .clone()
         .unwrap_or_else(|| DEFAULT_TARGETS.to_owned());
+    // The report echoes the pinned selector as `inputs.targetsConfig.path`
+    // (published at most 256 characters): a grammar-legal but over-long
+    // selector is refused here, so legal input can never emit a member
+    // a conforming consumer must reject.
+    if targets_path.len() > MAX_TARGETS_PATH {
+        return Err(invalid("targets-path-bound"));
+    }
     let targets_bytes = read_bounded_opt(&fs, &targets_path)?;
     let (targets, targets_input) = match targets_bytes {
         Some(bytes) => {

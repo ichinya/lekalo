@@ -54,8 +54,15 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 256,
-      "pattern": "^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?(?:/(?:[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?))*$",
-      "description": "Bounded project-relative artifact reference; never an absolute path, glob, traversal segment, empty or dot segment, or segment with a leading/trailing dot, or command. Every segment already satisfies the closed project path grammar (lowercase, at most 64 characters, portable characters)."
+      "pattern": "^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\\.[a-z0-9._-]*)?(?:/|$))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?(?:/(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\\.[a-z0-9._-]*)?(?:/|$))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?)*$",
+      "description": "Bounded project-relative artifact reference; never an absolute path, glob, traversal segment, empty or dot segment, a segment with a leading or trailing dot/dash/underscore, or command. Every segment starts and ends with a lowercase alphanumeric, spans at most 64 portable characters, and is never a DOS-device stem (device name with any extension) — exactly the closed grammar the decoder enforces."
+    },
+    "storageRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 252,
+      "pattern": "^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\\.[a-z0-9._-]*)?(?:/|$))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?(?:/(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\\.[a-z0-9._-]*)?(?:/|$))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?)*$",
+      "description": "A storage-profile artifact reference. The report composes `<ref>#sha256:<digest>` (72 more characters) into `destinations[].storageProfileRefs` (published at most 324 characters), so the maximum legal input reference is exactly 252 characters — the bound that keeps every emitted member inside its schema by construction."
     },
     "digest": {
       "type": "string",
@@ -120,7 +127,7 @@
           "maxItems": 16,
           "uniqueItems": true,
           "items": {
-            "$ref": "#/$defs/artifactRef"
+            "$ref": "#/$defs/storageRef"
           }
         }
       },

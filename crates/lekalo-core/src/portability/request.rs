@@ -146,22 +146,30 @@ pub fn parse_targets(bytes: &[u8]) -> Result<TargetsDocument, DiagnosticSet> {
         if !wire::is_target_id(&binding.target_id) || !ids.insert(binding.target_id.as_str()) {
             return Err(diagnostic::invalid("target-binding"));
         }
+        // Every declared reference obeys the closed `artifactRef`
+        // grammar of the targets contract exactly. Storage-profile
+        // references are additionally bounded to 252 characters: the
+        // report composes `<ref>#sha256:<digest>` (72 more characters)
+        // into `destinations[].storageProfileRefs` (published ≤324),
+        // so the maximum legal input is exactly 252 and every emitted
+        // member stays inside its schema by construction.
+        let mut unique_refs = std::collections::BTreeSet::new();
+        for reference in &binding.storage_profile_refs {
+            if reference.len() > 252
+                || crate::project_fs::artifact_ref_violation(reference).is_some()
+            {
+                return Err(diagnostic::invalid("artifact-ref"));
+            }
+            if !unique_refs.insert(reference.as_str()) {
+                return Err(diagnostic::invalid("duplicate-storage-ref"));
+            }
+        }
         for reference in [&binding.profile_document_ref]
             .into_iter()
             .chain(binding.adapter_evidence_ref.iter())
-            .chain(binding.storage_profile_refs.iter())
         {
-            if reference.len() > 256 || crate::project_fs::path_violation(reference).is_some() {
+            if crate::project_fs::artifact_ref_violation(reference).is_some() {
                 return Err(diagnostic::invalid("artifact-ref"));
-            }
-        }
-        // The contract's `uniqueItems` on `storageProfileRefs`: repeated
-        // references would double-count one artifact and duplicate its
-        // digest pin in the report.
-        let mut unique_refs = std::collections::BTreeSet::new();
-        for reference in &binding.storage_profile_refs {
-            if !unique_refs.insert(reference.as_str()) {
-                return Err(diagnostic::invalid("duplicate-storage-ref"));
             }
         }
         if binding.storage_profile_refs.len() > 16 {
@@ -272,7 +280,7 @@ pub fn parse_evidence(
             return Err(diagnostic::invalid("gate-identity"));
         }
         if let Some(reference) = gate.get("receiptRef").and_then(|r| r.as_str()) {
-            if reference.len() > 256 || crate::project_fs::path_violation(reference).is_some() {
+            if crate::project_fs::artifact_ref_violation(reference).is_some() {
                 return Err(diagnostic::invalid("artifact-ref"));
             }
         }
@@ -369,7 +377,7 @@ pub fn parse_evidence(
             return Err(diagnostic::invalid("duplicate-family"));
         }
         if let Some(reference) = &family.artifact_ref {
-            if reference.len() > 256 || crate::project_fs::path_violation(reference).is_some() {
+            if crate::project_fs::artifact_ref_violation(reference).is_some() {
                 return Err(diagnostic::invalid("artifact-ref"));
             }
         }
@@ -579,8 +587,10 @@ pub fn parse_evidence(
             if !qualified {
                 return Err(diagnostic::invalid("gate-custody"));
             }
-            if crate::project_fs::path_violation(gate.receipt_ref.as_deref().unwrap_or_default())
-                .is_some()
+            if crate::project_fs::artifact_ref_violation(
+                gate.receipt_ref.as_deref().unwrap_or_default(),
+            )
+            .is_some()
             {
                 return Err(diagnostic::invalid("artifact-ref"));
             }
@@ -644,7 +654,7 @@ pub fn parse_evidence(
                 if !qualified {
                     return Err(diagnostic::invalid("receipt-ref"));
                 }
-                if crate::project_fs::path_violation(
+                if crate::project_fs::artifact_ref_violation(
                     record.receipt_ref.as_deref().unwrap_or_default(),
                 )
                 .is_some()
