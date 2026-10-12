@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
-  "productVersion": "0.6.5",
-  "cliSourceDigest": "sha256:181e7cef1d85b55aa87f8984546ea4a9ee294082b60a6c4f4dbeb8667f05f6e3",
+  "productVersion": "0.8.0",
+  "cliSourceDigest": "sha256:35edb040ef4b64853a2ecd923eaa06c843118eeda09c86a89b7fc3b76b689d03",
   "p0Pages": [
     {
       "page": "README.md",
@@ -704,6 +704,17 @@
       "summary": "Validate one attachment: exhaustive static typing, canonical bytes, and the required capability set",
       "leaf": true,
       "owner": "docs/expressions.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:format",
+      "kind": "command",
+      "command": "format",
+      "usage": "lekalo format [OPTIONS] [PATH]",
+      "helpDigest": "sha256:88e84569ceee829c97c638699ab25a643590d629cd8be4f06f746970b8311342",
+      "summary": "Format admitted YAML/JSON sources into the pinned canonical text form (issue #94): deterministic ordering, comment preservation, and a read-only `--check` gate; apply is transactional",
+      "leaf": true,
+      "owner": "docs/format.md",
       "status": "implemented"
     },
     {
@@ -2397,6 +2408,15 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/diagnostic-registry.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/diagnostic-registry.schema.v0.8.0.json",
+      "sourceDigest": "sha256:825ad37b829f38264e265e551e706609a9598dbe41a295ebe6071b4446b07979",
+      "owner": "docs/diagnostics.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/diagnostic-registry.v0.2.16.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.2.16.json",
@@ -2428,6 +2448,15 @@
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.6.5.json",
       "sourceDigest": "sha256:7b2be768be48050057682980b240f109d33adc56b1b4cb4b27848507df22b130",
+      "owner": "docs/diagnostics.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/diagnostic-registry.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/diagnostic-registry.v0.8.0.json",
+      "sourceDigest": "sha256:01337ff7b3156edc81c8d50cee3233ef655c06b7639371ab93c9a7ca9214f0cd",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2528,6 +2557,33 @@
       "source": "contracts/extended-effects.schema.v0.2.16.json",
       "sourceDigest": "sha256:57619a7ef4a8dc2e4fb2a2dbd5427421df399634d3a74642cae1f8eed3860197",
       "owner": "docs/extended-effects.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/format-policy.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/format-policy.schema.v0.8.0.json",
+      "sourceDigest": "sha256:b12a63bbad4d497d5f8d61149ba4750bab4aa6693e7e8ce2241021eaa82a951f",
+      "owner": "docs/format.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/format-policy.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/format-policy.v0.8.0.json",
+      "sourceDigest": "sha256:99add9a4c360250ea4ca0f539562859284e87a091abfcebf07a78beb46f4a03e",
+      "owner": "docs/format.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/format-report.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/format-report.schema.v0.8.0.json",
+      "sourceDigest": "sha256:cc2aebb1ae7562c0f871d46869d24434f15f790bd75b58256ca5e00832f01e53",
+      "owner": "docs/format.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },

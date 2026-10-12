@@ -178,8 +178,11 @@ impl CacheHome {
     }
 
     /// Remove every cache entry except the migration home (issue #9
-    /// custody: journals and immutable backups stay). Returns the number
-    /// of top-level entries removed.
+    /// custody: journals and immutable backups stay) and the formatter
+    /// transaction home `.lekalo/cache/format` (issue #94 custody: the
+    /// journal is the fail-closed reader signal; clearing it would
+    /// defeat recovery and unblock readers mid-transaction). Returns the
+    /// number of top-level entries removed.
     pub(crate) fn clear(&self) -> Result<usize, HomeFailure> {
         let cache = self.physical(".lekalo/cache")?;
         let entries = std::fs::read_dir(&cache).map_err(|_| HomeFailure::Io)?;
@@ -187,7 +190,7 @@ impl CacheHome {
         for entry in entries.flatten() {
             let name = entry.file_name();
             let Some(name) = name.to_str() else { continue };
-            if name == "migrations" {
+            if name == "migrations" || name == "format" {
                 continue;
             }
             let metadata = match entry.metadata() {
@@ -237,7 +240,9 @@ impl CacheHome {
                 continue;
             };
             let name = entry.file_name();
-            if name.to_str() == Some("migrations") {
+            // Custody homes are excluded from the disposable-bytes
+            // projection exactly as they are from `clear`.
+            if name.to_str() == Some("migrations") || name.to_str() == Some("format") {
                 continue;
             }
             if metadata.is_dir() {

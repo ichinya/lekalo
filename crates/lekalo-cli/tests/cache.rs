@@ -141,9 +141,22 @@ fn cache_clear_yes_removes_the_home_but_not_migrations() {
     let dir = fixture_copy("clear-yes");
     let load = lekalo_in(&dir, &["load", "--project", "."]);
     assert_eq!(exit_code(&load), 0);
-    // Migration custody (#9) lives under the same runtime tree and stays.
+    // Migration custody (#9) and formatter custody (#94) live under the
+    // same runtime tree and stay.
     std::fs::create_dir_all(dir.join(".lekalo/cache/migrations")).expect("migration home");
     std::fs::write(dir.join(".lekalo/cache/migrations/journal"), b"x").expect("journal");
+    std::fs::create_dir_all(dir.join(".lekalo/cache/format/plan-home/before"))
+        .expect("format home");
+    std::fs::write(
+        dir.join(".lekalo/cache/format/plan-home/manifest.json"),
+        b"{}\n",
+    )
+    .expect("formatter manifest");
+    std::fs::write(
+        dir.join(".lekalo/cache/format/plan-home/before/module.yaml"),
+        b"kept: true\n",
+    )
+    .expect("formatter backup");
 
     let cleared = lekalo_in(&dir, &["cache", "clear", "--yes", "--project", "."]);
     assert_eq!(exit_code(&cleared), 0, "{}", stdout_text(&cleared));
@@ -154,6 +167,16 @@ fn cache_clear_yes_removes_the_home_but_not_migrations() {
     );
     assert!(!dir.join(".lekalo/cache/cache.sqlite").exists());
     assert!(dir.join(".lekalo/cache/migrations/journal").exists());
+    assert!(
+        dir.join(".lekalo/cache/format/plan-home/manifest.json")
+            .exists(),
+        "formatter custody is never cleared"
+    );
+    assert!(
+        dir.join(".lekalo/cache/format/plan-home/before/module.yaml")
+            .exists(),
+        "formatter backups survive the clear"
+    );
 
     let status = lekalo_in(&dir, &["--json", "cache", "status", "--project", "."]);
     assert!(stdout_text(&status).contains("\"state\":\"missing\""));

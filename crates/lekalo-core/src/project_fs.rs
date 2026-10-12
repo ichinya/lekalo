@@ -697,7 +697,7 @@ impl Fs {
 }
 
 /// The closed set of canonical `lekalo/` root entries.
-const CANONICAL_ROOT_ENTRIES: [&str; 13] = [
+pub(crate) const CANONICAL_ROOT_ENTRIES: [&str; 13] = [
     "project.yaml",
     "modules",
     "targets",

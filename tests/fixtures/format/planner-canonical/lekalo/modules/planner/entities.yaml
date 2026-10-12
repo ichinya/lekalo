@@ -1,0 +1,28 @@
+# Entities: deliberately unsorted definitions and keys.
+"definitions":
+  # A later semantic id placed first on purpose.
+  - "base": "string"
+    "description": "Free-form state note"
+    "id": "planner.zz_state"
+    "kind": "scalar"
+    "version": 1
+
+  - "base": "uuid"
+    "description": "Stable task identifier"
+    "id": "planner.task_id"
+    "kind": "scalar"
+    "portability": "portable"
+    "version": 1
+    "visibility": "project"
+  - "description": "Task lifecycle state"
+    "id": "planner.task_state"
+    "kind": "enum"
+    "values":
+      - "description": "Not started"
+        "value": "backlog"
+      - "description": "Currently focused"
+        "value": "focused"
+      - "description": "Completed"
+        "value": "done"
+    "version": 1
+"schema_version": "0.2.16"

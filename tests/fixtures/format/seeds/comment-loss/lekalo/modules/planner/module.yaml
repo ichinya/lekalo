@@ -1,0 +1,9 @@
+# Task focus module (declares the import set).
+schema_version: "0.2.16"
+definitions:
+- id: planner
+  kind: module
+  version: 1
+  description: Task focus module
+  imports:
+  - scheduling

@@ -1122,7 +1122,7 @@ the redaction diff contract and never writes.
 <!-- issue-105-command-index -->
 ## Command index
 
-Status: **Implemented** command handlers for product 0.6.5. Handler existence does not imply every target capability, migration or native execution is available. Each row comes from recursive CLI help and has one owner in [the checked ownership inventory](documentation-owners.json). `init --adopt` is described in [adopt](adopt.md); native execution remains a typed refusal in the production CLI.
+Status: **Implemented** command handlers for product 0.8.0. Handler existence does not imply every target capability, migration or native execution is available. Each row comes from recursive CLI help and has one owner in [the checked ownership inventory](documentation-owners.json). `init --adopt` is described in [adopt](adopt.md); native execution remains a typed refusal in the production CLI.
 
 | Command | Synopsis from this binary | Reference owner |
 | --- | --- | --- |
@@ -1185,6 +1185,7 @@ Status: **Implemented** command handlers for product 0.6.5. Handler existence do
 | `lekalo expressions eval` | `lekalo expressions eval [OPTIONS] --vectors <FILE> <PATH>` | [reference](expressions.md) |
 | `lekalo expressions render` | `lekalo expressions render [OPTIONS] --target <TARGET> <PATH>` | [reference](expressions.md) |
 | `lekalo expressions validate` | `lekalo expressions validate [OPTIONS] <PATH>` | [reference](expressions.md) |
+| `lekalo format` | `lekalo format [OPTIONS] [PATH]` | [reference](format.md) |
 | `lekalo generate` | `lekalo generate [OPTIONS] [PROGRAM_ARGS]...` | [reference](orchestration.md) |
 | `lekalo graph` | `lekalo graph [OPTIONS] <COMMAND>` | [reference](graph.md) |
 | `lekalo graph callers` | `lekalo graph callers [OPTIONS] <SYMBOL>` | [reference](graph.md) |
