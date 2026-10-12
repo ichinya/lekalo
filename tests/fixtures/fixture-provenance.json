@@ -21,6 +21,11 @@
       "origin": "synthetic"
     },
     {
+      "family": "adoption",
+      "origin": "synthetic",
+      "note": "Issue #136: authored synthetic brownfield taskboard app, scanner, refactor candidates, verification spec and invalid inputs; no private code or executed application behavior claims."
+    },
+    {
       "family": "ai-lint",
       "origin": "synthetic",
       "note": "Issue #76: authored Model, target source, evidence, policy, waiver and revision fixtures; no private code or executed application behavior."
@@ -141,6 +146,11 @@
     {
       "family": "extended-effects",
       "origin": "synthetic"
+    },
+    {
+      "family": "format",
+      "origin": "synthetic",
+      "note": "Issue #94: authored noncanonical seeds, reviewed canonical golden bytes, negative and portability fixtures for the canonical YAML/JSON formatter. No private code or executed application behavior."
     },
     {
       "family": "framework-lift-arm",

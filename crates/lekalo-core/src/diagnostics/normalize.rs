@@ -54,10 +54,13 @@ pub(crate) fn build(
     let registry = if predecessor.entry(id).is_some() {
         predecessor
     } else {
-        let first_successor = DiagnosticRegistry::successor().map_err(|_| BuildError::Registry)?;
-        if first_successor.entry(id).is_some() {
-            first_successor
+        let successor = DiagnosticRegistry::successor().map_err(|_| BuildError::Registry)?;
+        if successor.entry(id).is_some() {
+            successor
         } else {
+            // The merged 0.8.0 union registry covers the format, adoption,
+            // and module-api families; every successor accessor parses
+            // the same bytes.
             DiagnosticRegistry::module_successor().map_err(|_| BuildError::Registry)?
         }
     };

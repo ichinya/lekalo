@@ -58,8 +58,11 @@ still a successful status: the command reports, it never repairs.
 
 Clears every cache entry under `.lekalo/cache/**` — the store, its
 WAL/SHM sidecars, and the quarantine home — after path containment and
-reparse/link checks, with one standing exception: `.lekalo/cache/migrations/`
-stays under issue #9's custody and is never touched. `--yes` is required
+reparse/link checks, with two standing custody exceptions:
+`.lekalo/cache/migrations/` (issue #9) and `.lekalo/cache/format/`
+(issue #94, the formatter transaction home: its journal is the
+fail-closed reader signal and its backups are the only recovery
+material) are never touched. `--yes` is required
 (the CI-safe explicit confirmation); without it the command is a
 `cli.usage` failure (exit 1). A denied or unreadable cache home is a
 `structure.*` denial (exit 3). There is no hidden repair, install, or
@@ -73,6 +76,8 @@ update.
   quarantine/             whole-file quarantine of corrupt stores
   migrations/             issue #9 custody: journals and immutable
                           backups; never written or cleared here
+  format/                 issue #94 custody: formatter journals and
+                          immutable backups; never written or cleared here
 ```
 
 The historical `.lekalo/cache.sqlite` placement is denied, as is any cache

@@ -1,0 +1,10 @@
+"definitions":
+  - "covers":
+      - "planner.focus_task"
+      - "planner.effect_task_created"
+    "description": "Owner focuses one task end to end"
+    "id": "planner.focus_one_task"
+    "kind": "scenario"
+    "summary": "Given one backlog task, the owner focuses it and the task becomes focused."
+    "version": 1
+"schema_version": "0.2.16"

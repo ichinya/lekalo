@@ -447,6 +447,225 @@
       "lifecycle": "active"
     },
     {
+      "id": "adoption.confirmation-required",
+      "code": "LEK-ADOPT-005",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "adoption.confirmation-required",
+      "default_message": "A reviewed plan confirmation is missing or mismatched.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "plan",
+          "type": "token"
+        },
+        {
+          "name": "reason",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "adoption.evidence-incomplete",
+      "code": "LEK-ADOPT-006",
+      "category": "infrastructure",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied",
+        "unsupported",
+        "unavailable"
+      ],
+      "message_id": "adoption.evidence-incomplete",
+      "default_message": "Required behavior or verification evidence is missing, stale, or unknown.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "check",
+          "type": "token"
+        },
+        {
+          "name": "reason",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "adoption.input-invalid",
+      "code": "LEK-ADOPT-001",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "adoption.input-invalid",
+      "default_message": "A closed adoption input is malformed, duplicate, foreign-scoped, or over limit.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "field",
+          "type": "token"
+        },
+        {
+          "name": "reason",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "adoption.plan-stale",
+      "code": "LEK-ADOPT-004",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "adoption.plan-stale",
+      "default_message": "A pinned source, model, lock, adapter, profile, gate, or evidence input changed.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "plan",
+          "type": "token"
+        },
+        {
+          "name": "inputs",
+          "type": "records"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "adoption.recovery-required",
+      "code": "LEK-ADOPT-008",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "adoption.recovery-required",
+      "default_message": "An interrupted installation, failed rollback, or journal defect demands recovery.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "plan",
+          "type": "token"
+        },
+        {
+          "name": "phase",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "adoption.rollback-conflict",
+      "code": "LEK-ADOPT-009",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "adoption.rollback-conflict",
+      "default_message": "Current bytes differ from the applied plan expected post-state; rollback is refused.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "receipt",
+          "type": "token"
+        },
+        {
+          "name": "paths",
+          "type": "records"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "adoption.scope-refused",
+      "code": "LEK-ADOPT-003",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "adoption.scope-refused",
+      "default_message": "The requested adoption scope is unresolved, ambiguous, or outside write authority.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "scope",
+          "type": "token"
+        },
+        {
+          "name": "reason",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "adoption.verification-failed",
+      "code": "LEK-ADOPT-007",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "adoption.verification-failed",
+      "default_message": "An executed required native, semantic, or behavioral check failed.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "check",
+          "type": "token"
+        },
+        {
+          "name": "receipt",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "adoption.version-unsupported",
+      "code": "LEK-ADOPT-002",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unsupported-version"
+      ],
+      "message_id": "adoption.version-unsupported",
+      "default_message": "An adoption contract family or recipe version is unsupported.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "version",
+          "type": "token"
+        },
+        {
+          "name": "supported",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "ai-lint.baseline-incomparable",
       "code": "LEK-AILINT-005",
       "category": "compatibility",
@@ -3842,6 +4061,270 @@
       "data_fields": [
         {
           "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "format.comments-loss",
+      "code": "LEK-FORMAT-002",
+      "category": "model",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "denied",
+        "valid"
+      ],
+      "message_id": "format.comments-loss",
+      "default_message": "Comment preservation could not be guaranteed; losses are enumerated before any write.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "losses",
+          "type": "count"
+        },
+        {
+          "name": "disposition",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "format.diff",
+      "code": "LEK-FORMAT-001",
+      "category": "model",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "format.diff",
+      "default_message": "Valid source requires canonical formatting (formatting-gate disposition, not a model invalidity).",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "policyDigest",
+          "type": "token"
+        },
+        {
+          "name": "changedFiles",
+          "type": "count"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "format.limit-exceeded",
+      "code": "LEK-FORMAT-008",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "format.limit-exceeded",
+      "default_message": "A formatter-specific bound was reached; the whole plan was refused.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "limit",
+          "type": "token"
+        },
+        {
+          "name": "measured",
+          "type": "count"
+        },
+        {
+          "name": "allowed",
+          "type": "count"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "format.locked",
+      "code": "LEK-FORMAT-010",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "format.locked",
+      "default_message": "Another mutating formatter holds the runtime ownership lock; the run was refused without any recovery or write.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "format.recovery-required",
+      "code": "LEK-FORMAT-007",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "format.recovery-required",
+      "default_message": "An interrupted formatter transaction blocks normal reads until explicit recovery.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "planId",
+          "type": "token"
+        },
+        {
+          "name": "reason",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "format.selection-invalid",
+      "code": "LEK-FORMAT-004",
+      "category": "model",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "format.selection-invalid",
+      "default_message": "The formatter selector does not resolve to an admitted Model source.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "selectorKind",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "format.semantic-change",
+      "code": "LEK-FORMAT-003",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "format.semantic-change",
+      "default_message": "A formatting candidate changed the normalized Model or IR; nothing was written.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "stage",
+          "type": "token"
+        },
+        {
+          "name": "reason",
+          "type": "token"
+        },
+        {
+          "name": "path",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "format.source-changed",
+      "code": "LEK-FORMAT-005",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "format.source-changed",
+      "default_message": "A pinned source preimage changed before commit; no source was mutated.",
+      "location_requirement": "path",
+      "data_fields": [
+        {
+          "name": "expectedDigest",
+          "type": "token"
+        },
+        {
+          "name": "currentDigest",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "format.stdin-loss",
+      "code": "LEK-FORMAT-011",
+      "category": "model",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "format.stdin-loss",
+      "default_message": "Editor mode returned no replacement: the enumerated comment losses would drop buffer content irrecoverably.",
+      "location_requirement": "span",
+      "data_fields": [
+        {
+          "name": "losses",
+          "type": "count"
+        },
+        {
+          "name": "disposition",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "format.unsupported-surface",
+      "code": "LEK-FORMAT-009",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unsupported"
+      ],
+      "message_id": "format.unsupported-surface",
+      "default_message": "The selected source family or editor context is outside the admitted formatter surface.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "family",
+          "type": "token"
+        },
+        {
+          "name": "reason",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "format.write-failed",
+      "code": "LEK-FORMAT-006",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "format.write-failed",
+      "default_message": "A formatter replacement-stage failure occurred; verified rollback or fail-closed recovery applies.",
+      "location_requirement": "path",
+      "data_fields": [
+        {
+          "name": "stage",
+          "type": "token"
+        },
+        {
+          "name": "rollback",
           "type": "token"
         }
       ],

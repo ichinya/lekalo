@@ -1,0 +1,23 @@
+{
+  "schema_version": "lekalo/adoption-patch/v0.8.0",
+  "identity": "dev.lekalo.adoption-patch@0.8.0",
+  "patch": "sha256:57cc05eaf473ea2975c7bb1d731f2da7360ce1c3c709e45432524f816e9b0965",
+  "origin": {
+    "kind": "supplied-reviewed",
+    "identity": "issue-136-tutorial-reviewed-patch"
+  },
+  "scope": {
+    "symbol": "taskboard.complete_task",
+    "target": "node-typescript",
+    "profile": "default"
+  },
+  "files": [
+    {
+      "path": "src/tasks.mjs",
+      "action": "replace",
+      "before": "sha256:c4d6f08c6de053ab779d969eae99e46f2f13a031a6f8b813008595e9e8087870",
+      "after": "sha256:17fcaa71772723b43521537e712c2a48ec55bd832ed513d5bf137ea1fd5f9857",
+      "content": "// Synthetic legacy implementation for the issue #136 adoption fixture.\n// Behavior contract (the oracle obligations): completeTask is idempotent,\n// rejects a non-string or empty id with TypeError(\"invalid-task-id\"),\n// rejects an unknown id with RangeError(\"unknown-task:<id>\"), and never\n// mutates its input map.\nimport { MAX_TASKS } from \"./limits.mjs\";\n\nexport function registerTask(tasks, task) {\n  if (tasks.size >= MAX_TASKS) {\n    throw new RangeError(\"task-limit\");\n  }\n  tasks.set(task.id, task);\n  return tasks;\n}\n\nfunction validTaskId(id) {\n  return typeof id === \"string\" && id.length > 0;\n}\n\nfunction unknownTask(id) {\n  return new RangeError(\"unknown-task:\" + id);\n}\n\nexport function completeTask(tasks, id) {\n  if (!validTaskId(id)) {\n    throw new TypeError(\"invalid-task-id\");\n  }\n  if (!tasks.has(id)) {\n    throw unknownTask(id);\n  }\n  const task = tasks.get(id);\n  if (task.state === \"done\") {\n    return task;\n  }\n  const done = { ...task, state: \"done\" };\n  return done;\n}\n"
+    }
+  ]
+}

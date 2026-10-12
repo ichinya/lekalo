@@ -1,0 +1,8 @@
+# Planner model root (synthetic issue #94 fixture).
+"schema_version": "9.9.9"
+
+"definitions":
+  - "description": "Focus planner formatting fixture"
+    "id": "planner"
+    "kind": "project"
+    "version": 1

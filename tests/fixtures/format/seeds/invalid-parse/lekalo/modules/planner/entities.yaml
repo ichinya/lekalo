@@ -1,0 +1,3 @@
+# Entities: malformed YAML for the parse-error path.
+definitions: [
+  {"id": "planner.task_id"

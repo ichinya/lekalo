@@ -1,0 +1,788 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/verification.schema.v0.8.0.json",
+  "title": "Lekalo adoption verification (v0.8.0)",
+  "description": "Issue #136 scoped brownfield adoption, selective refactoring, and hybrid mode. Closed Draft 2020-12 contract at the 0.8.0 product generation; the exact discriminator is lekalo/adoption-{family}/v0.8.0 and the schema identity is dev.lekalo.adoption-{family}@0.8.0. The closed verification specification and execution evidence variants. The specification pins the baseline source, the confirmed literal tool argv, every check with its independent expected outcome, and the enforced confinement dimensions. The execution variant records the actual baseline and candidate outcomes per check plus the behavior-oracle verdict; a specification or test id never decodes as an execution receipt, and preservation means exactly the stated obligations passed.",
+  "type": "object",
+  "additionalProperties": false,
+  "unevaluatedProperties": false,
+  "required": [
+    "schema_version",
+    "identity",
+    "variant",
+    "verification",
+    "spec",
+    "plan",
+    "tool",
+    "baseline_source",
+    "checks",
+    "confinement",
+    "custody"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "lekalo/adoption-verification/v0.8.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.adoption-verification@0.8.0"
+    },
+    "variant": {
+      "enum": [
+        "specification",
+        "execution"
+      ]
+    },
+    "verification": {
+      "$ref": "#/$defs/token"
+    },
+    "spec": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "oneOf": [
+        {
+          "$ref": "#/$defs/sha256"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "plan": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "oneOf": [
+        {
+          "$ref": "#/$defs/sha256"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "tool": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "program",
+            "args",
+            "digest"
+          ],
+          "properties": {
+            "program": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "args": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "string",
+                "maxLength": 256
+              }
+            },
+            "digest": {
+              "$ref": "#/$defs/digestOrNull"
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "baseline_source": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "oneOf": [
+        {
+          "$ref": "#/$defs/sha256"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "checks": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "kind",
+          "expect_exit",
+          "expect_stdout"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/token"
+          },
+          "kind": {
+            "enum": [
+              "native-test",
+              "behavior-oracle",
+              "semantic"
+            ]
+          },
+          "expect_exit": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 255
+          },
+          "expect_stdout": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "string",
+              "maxLength": 1024
+            }
+          }
+        }
+      }
+    },
+    "confinement": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "anyOf": [
+          {
+            "enum": [
+              "disposable-copy",
+              "bounded-output",
+              "no-network"
+            ]
+          },
+          {
+            "type": "string",
+            "pattern": "^disposable-copy:sha256:[0-9a-f]{64}$"
+          }
+        ]
+      }
+    },
+    "baseline": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "checks"
+          ],
+          "properties": {
+            "checks": {
+              "$ref": "#/$defs/checkOutcomes"
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "candidate": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "checks"
+          ],
+          "properties": {
+            "checks": {
+              "$ref": "#/$defs/checkOutcomes"
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "oracle": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "detail"
+          ],
+          "properties": {
+            "status": {
+              "enum": [
+                "passed",
+                "failed",
+                "unavailable"
+              ]
+            },
+            "detail": {
+              "$ref": "#/$defs/token"
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "conclusion": {
+      "enum": [
+        "preserved",
+        "failed",
+        "unavailable",
+        null
+      ]
+    },
+    "custody": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "run",
+            "measured_ms"
+          ],
+          "properties": {
+            "run": {
+              "$ref": "#/$defs/sha256"
+            },
+            "measured_ms": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 60000000
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "digestOrNull": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "semanticId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z0-9_]+)*$"
+    },
+    "moduleId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,62}$"
+    },
+    "relPath": {
+      "allOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^[a-z0-9.][a-z0-9._-]*(/[a-z0-9.][a-z0-9._-]*)*$"
+        },
+        {
+          "not": {
+            "type": "string",
+            "pattern": "(^|/)\\.\\.?(/|$)"
+          }
+        }
+      ]
+    },
+    "nativeId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+    },
+    "confidence": {
+      "enum": [
+        "exact",
+        "high",
+        "medium",
+        "low",
+        "unknown"
+      ]
+    },
+    "target": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z][a-z0-9_-]{0,62}$"
+    },
+    "profile": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9-]{0,63}$"
+    },
+    "adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "digest"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "adapterOrNull": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "version",
+            "digest"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[a-z0-9][a-z0-9._-]*$"
+            },
+            "version": {
+              "type": "string",
+              "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+            },
+            "digest": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "symbol",
+            "module",
+            "use-case"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9_.-]*$"
+        }
+      }
+    },
+    "pins": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "lock",
+        "observed_index",
+        "adapter",
+        "sources"
+      ],
+      "properties": {
+        "model": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "lock": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "observed_index": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "adapter": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "version",
+                "digest"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                },
+                "version": {
+                  "type": "string",
+                  "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+                },
+                "digest": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sources": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "sha256"
+            ],
+            "properties": {
+              "path": {
+                "allOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024,
+                    "pattern": "^[a-z0-9.][a-z0-9._-]*(/[a-z0-9.][a-z0-9._-]*)*$"
+                  },
+                  {
+                    "not": {
+                      "type": "string",
+                      "pattern": "(^|/)\\.\\.?(/|$)"
+                    }
+                  }
+                ]
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              }
+            }
+          }
+        }
+      }
+    },
+    "sourcePins": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "sha256"
+        ],
+        "properties": {
+          "path": {
+            "allOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024,
+                "pattern": "^[a-z0-9.][a-z0-9._-]*(/[a-z0-9.][a-z0-9._-]*)*$"
+              },
+              {
+                "not": {
+                  "type": "string",
+                  "pattern": "(^|/)\\.\\.?(/|$)"
+                }
+              }
+            ]
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    "writeEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "action",
+        "before",
+        "after",
+        "content"
+      ],
+      "properties": {
+        "path": {
+          "allOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^[a-z0-9.][a-z0-9._-]*(/[a-z0-9.][a-z0-9._-]*)*$"
+            },
+            {
+              "not": {
+                "type": "string",
+                "pattern": "(^|/)\\.\\.?(/|$)"
+              }
+            }
+          ]
+        },
+        "action": {
+          "enum": [
+            "create",
+            "replace"
+          ]
+        },
+        "before": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "after": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "content": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 1048576
+        }
+      }
+    },
+    "rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "journal",
+        "snapshots"
+      ],
+      "properties": {
+        "journal": {
+          "allOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^[a-z0-9.][a-z0-9._-]*(/[a-z0-9.][a-z0-9._-]*)*$"
+            },
+            {
+              "not": {
+                "type": "string",
+                "pattern": "(^|/)\\.\\.?(/|$)"
+              }
+            }
+          ]
+        },
+        "snapshots": {
+          "allOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^[a-z0-9.][a-z0-9._-]*(/[a-z0-9.][a-z0-9._-]*)*$"
+            },
+            {
+              "not": {
+                "type": "string",
+                "pattern": "(^|/)\\.\\.?(/|$)"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "token": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "gap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subject",
+        "detail"
+      ],
+      "properties": {
+        "subject": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "effectiveMode": {
+      "enum": [
+        "observed",
+        "contracted-legacy",
+        "contracted-new",
+        "unbound",
+        "conflicting"
+      ]
+    },
+    "bindingRef": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "proposal",
+            "candidate"
+          ],
+          "properties": {
+            "proposal": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+            },
+            "candidate": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "checkOutcomes": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "status",
+          "exit",
+          "detail"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/token"
+          },
+          "status": {
+            "enum": [
+              "passed",
+              "failed",
+              "unavailable"
+            ]
+          },
+          "exit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 255
+          },
+          "detail": {
+            "type": "string",
+            "maxLength": 1024
+          }
+        }
+      }
+    }
+  }
+}
