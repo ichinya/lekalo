@@ -99,6 +99,19 @@ pub(crate) fn is_lower_token(value: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
+/// The closed `projectRef` grammar shared by the custody artifacts
+/// (`portability-receipt/v0.8.0`, `portability-family/v0.8.0`): a
+/// lowercase-token project id, a bounded non-empty model version, and
+/// the exact ir-digest spelling — so a referenced custody artifact with
+/// malformed provenance members refuses at decode exactly like its
+/// published schema, never demotes silently.
+pub(crate) fn is_project_ref(reference: &ProjectRef) -> bool {
+    is_lower_token(&reference.project_id)
+        && !reference.model_version.is_empty()
+        && reference.model_version.len() <= 32
+        && is_digest(&reference.ir_digest)
+}
+
 /// Whether one policy value satisfies the closed policy grammar: enum
 /// kind, bounded token value, and the exact numeric bounds.
 pub(crate) fn valid_policy(policy: &Policy) -> bool {
@@ -929,6 +942,12 @@ pub fn decode_family_artifact(
     {
         return Err(diagnostic::invalid("family-envelope"));
     }
+    // The closed owner envelope pins the exact project: a malformed
+    // provenance member (project id, model version, ir digest) refuses
+    // at decode instead of certifying bytes it cannot name.
+    if !is_project_ref(&artifact.project_ref) {
+        return Err(diagnostic::invalid("family-shape"));
+    }
     if wants_inventory {
         // The published policy members are integers-or-absent, never
         // explicit nulls: an authored `null` precision inside the
@@ -1245,7 +1264,17 @@ pub fn decode_receipt(bytes: &[u8]) -> Result<ReceiptArtifact, DiagnosticSet> {
     if !is_semantic_id(&receipt.subject) || !is_target_id(&receipt.target_id) {
         return Err(diagnostic::invalid("receipt-shape"));
     }
-    if !is_target_id(&receipt.profile_ref.id) || !is_semver(&receipt.profile_ref.version) {
+    // Field-complete provenance grammar, mirroring the adapter decoder:
+    // the exact project pin and the destination's profile pin — every
+    // digest spelling, the project-id token, and the bounded model
+    // version — so a schema-invalid receipt never decodes cleanly.
+    if !is_project_ref(&receipt.project_ref) {
+        return Err(diagnostic::invalid("receipt-shape"));
+    }
+    if !is_target_id(&receipt.profile_ref.id)
+        || !is_semver(&receipt.profile_ref.version)
+        || !is_digest(&receipt.profile_ref.resolved_digest)
+    {
         return Err(diagnostic::invalid("receipt-shape"));
     }
     Ok(receipt)
