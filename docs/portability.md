@@ -152,7 +152,20 @@ fabricated, and the strict gate denies the empty join.
   member under any state, and a malformed gate custody member under
   any state are all decode refusals. The manifest pins the exact project
   IR revision and the exact reviewed recipe; anything stale is refused
-  before assessment.
+  before assessment. Every `artifactRef`-typed member (family
+  artifacts, scenario and gate receipt references, profile documents,
+  adapter evidence, storage profiles) obeys the published
+  `artifactRef` pattern exactly: each segment starts and ends with a
+  lowercase alphanumeric, spans at most 64 portable characters, and is
+  never a DOS-device stem — decoder and schema admit the same space in
+  both directions, so a schema-invalid reference can never steer a
+  qualified custody join. Storage-profile references are bounded to
+  252 characters: the report composes `<ref>#sha256:<digest>` into a
+  member published at 324, so the emitted member is inside its schema
+  by construction. Receipt and family custody artifacts check every
+  provenance member at admission — the project-id token, the bounded
+  model version, the exact digest spellings — exactly like the adapter
+  snapshot decoder.
 - **Profile documents**: resolved through the existing target-profile
   resolver; the report carries the exact id, version, declaration digest,
   effective digest, component versions, and composed capabilities of every
@@ -182,10 +195,14 @@ lekalo portability --check
 obligation is unresolved: unsupported or missing hooks, lossy, partial, or
 explicitly unsupported storage policies, unresolved target-specific
 replacement work, unknown evidence, an unproved reviewed precondition, a
-truncated extraction, an empty assessment, or an affected scenario with no
-gate coverage. A pass means the assessed scope has no known unresolved
-obligation — it is never a claim that two native implementations behave
-equivalently.
+truncated extraction, an empty assessment, an incomplete migration surface
+(a clipped planning list or an affected scenario with no gate coverage), or
+any blocking obligation. The verdict is computed from the typed members of
+the report — never from the bounded diagnostics presentation channel — so
+a schema-legal evidence manifest crowded with thousands of ordinary
+findings can never green a surface the report itself marks incomplete. A
+pass means the assessed scope has no known unresolved obligation — it is
+never a claim that two native implementations behave equivalently.
 
 ## Emit-side conformance
 
@@ -196,14 +213,23 @@ construction: `requirements`, `witnesses`, `evidenceRefs`, `prerequisites`,
 subjects and per-subject row lists, the diagnostics list, and the planning
 rows are each capped at their schema maxima with an explicit named
 diagnostic (`*-clipped`, `diagnostics-bound`) — never a silent truncation,
-never an overflow a conforming consumer must reject. Planning-row ids that
+never an overflow a conforming consumer must reject. The diagnostics list
+reserves the tail of its published bound: ordinary findings stop eight
+slots before the maximum, verdict-bearing diagnostics (every
+truncation disclosure and each `gate-coverage-unknown` gap) land inside
+the reserve, and the terminal `diagnostics-bound` marker always occupies
+the reserved final slot whenever anything was dropped — a crowded report
+discloses its own clipping as the last entry. Planning-row ids that
 would exceed the published `semanticId` bound (192) keep a bounded readable
 prefix plus a 16-hex digest of the full obligation tuple, so legal input
 maxima — a 128-character target id, a 122-character requirement — can never
 collide or overflow. Typed subject ids reserve the longest kind prefix
 against the same bound: a legal Model id whose typed id would exceed it is
 an explicit `subject-id-bound` refusal, never a truncated or schema-invalid
-emission.
+emission. Member strings composed at emit — `storageProfileRefs` items
+(`<ref>#sha256:<digest>`) and the echoed `targetsConfig.path` — are held
+inside their published lengths by construction through the corresponding
+input admission bounds.
 
 ## Contracts
 

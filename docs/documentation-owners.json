@@ -2906,7 +2906,7 @@
       "id": "contract:contracts/portability-evidence.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/portability-evidence.schema.v0.8.0.json",
-      "sourceDigest": "sha256:5c46da60790c268eb02b24ffa3d0a15fe21026c1c05cdeca0dbd9de083bb822e",
+      "sourceDigest": "sha256:7a5a8b2196ae60b132fc4205ea8d969eba59cbb116b9312aeb0c767ccaf47d0c",
       "owner": "docs/portability.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2960,7 +2960,7 @@
       "id": "contract:contracts/portability-targets.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/portability-targets.schema.v0.8.0.json",
-      "sourceDigest": "sha256:9d69a87509a471327b0e2b8ce54c56b81a142da219717e4ac087cdaf88196917",
+      "sourceDigest": "sha256:d6346833e22ba680831a1485a18b5963b95383e787c7692573f1e717345e095c",
       "owner": "docs/portability.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
