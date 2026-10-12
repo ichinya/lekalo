@@ -129,11 +129,22 @@ pub mod codes {
     pub const CHECK_DENIED: &str = "portability.check-denied";
 }
 
+/// The verdict reserve of the published diagnostics bound: ordinary
+/// findings stop this many slots before the schema maximum, so
+/// verdict-bearing diagnostics always land and the terminal
+/// `diagnostics-bound` marker always fits. An untrusted manifest can
+/// legally push thousands of ordinary findings (one per scenario or
+/// gate record) before the verdict diagnostics are computed; without
+/// the reserve those findings would crowd the verdict out of its own
+/// report.
+const PINNED_RESERVE: usize = 8;
+
 pub(super) struct Sink {
     diagnostics: Vec<ReportDiagnostic>,
     seen: BTreeSet<(String, Option<String>, Option<Dimension>, &'static str)>,
-    /// Whether the published diagnostics bound was reached: the final
-    /// marker names the clipping instead of silently dropping findings.
+    /// Whether any diagnostic was refused because the published bound
+    /// was reached: the final marker names the clipping instead of
+    /// silently dropping findings.
     capped: bool,
 }
 
@@ -152,10 +163,49 @@ impl Sink {
         dimension: Option<Dimension>,
         detail: &'static str,
     ) {
+        // Every analysis-incomplete diagnostic discloses a truncation,
+        // so it is verdict-bearing by construction: it lands inside the
+        // reserved tail of the bound that ordinary findings can never
+        // fill, because a truncation disclosure that is itself silently
+        // truncated is exactly the silence the marker exists to prevent.
+        let bound = if code == codes::ANALYSIS_INCOMPLETE {
+            EMIT_BOUNDS.diagnostics - 1
+        } else {
+            EMIT_BOUNDS.diagnostics - PINNED_RESERVE
+        };
+        self.push_bounded(bound, code, subject, dimension, detail);
+    }
+    /// Push one verdict-bearing diagnostic into the reserved tail of
+    /// the published bound: an untrusted manifest cannot crowd it out
+    /// of its own report, no matter how many legal ordinary findings
+    /// precede it.
+    pub(super) fn push_pinned(
+        &mut self,
+        code: &str,
+        subject: Option<String>,
+        dimension: Option<Dimension>,
+        detail: &'static str,
+    ) {
+        self.push_bounded(
+            EMIT_BOUNDS.diagnostics - 1,
+            code,
+            subject,
+            dimension,
+            detail,
+        );
+    }
+    fn push_bounded(
+        &mut self,
+        bound: usize,
+        code: &str,
+        subject: Option<String>,
+        dimension: Option<Dimension>,
+        detail: &'static str,
+    ) {
         // The report contract bounds the diagnostics array; reaching
         // the bound is an explicit analysis-incomplete marker, never a
         // silent drop.
-        if self.diagnostics.len() >= EMIT_BOUNDS.diagnostics {
+        if self.diagnostics.len() >= bound {
             self.capped = true;
             return;
         }
@@ -170,8 +220,11 @@ impl Sink {
         }
     }
     /// The bounded diagnostics list with its explicit terminal marker.
+    /// The last slot of the published bound is reserved for exactly
+    /// this marker, so the disclosure of the clipping can never itself
+    /// be the finding that is clipped away.
     fn finish(mut self) -> Vec<ReportDiagnostic> {
-        if self.capped && self.diagnostics.len() < EMIT_BOUNDS.diagnostics {
+        if self.capped {
             self.diagnostics.push(ReportDiagnostic {
                 code: codes::ANALYSIS_INCOMPLETE.to_owned(),
                 subject: None,
@@ -756,8 +809,10 @@ fn report_unqualified_gates(
 /// never from the manifest's own scenario records — so a scoped or
 /// evidence-light report cannot silently lose its gate coverage: each
 /// uncovered affected scenario is an explicit `gate-coverage-unknown`
-/// indication, carries collect-evidence planning work, and denies the
-/// strict gate.
+/// indication, carries collect-evidence planning work, marks the
+/// surface incomplete, and denies the strict gate. The indication is
+/// pushed pinned: a manifest crowded with ordinary findings can never
+/// crowd the coverage gap out of the diagnostics channel either.
 fn report_gate_coverage_gaps(
     evidence: Option<&EvidenceDocument>,
     affected: &[wire::AffectedScenario],
@@ -773,7 +828,7 @@ fn report_gate_coverage_gaps(
         .unwrap_or_default();
     for scenario in affected {
         if !covered.contains(scenario.scenario.as_str()) {
-            sink.push(
+            sink.push_pinned(
                 codes::EVIDENCE_INCOMPLETE,
                 Some(scenario.scenario.clone()),
                 None,

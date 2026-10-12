@@ -596,11 +596,23 @@ fn planning_row(
 
 /// Whether the strict `--check` gate must deny this report: any blocking
 /// obligation (unsupported, partial/lossy, or unknown) denies, and so do
-/// coverage gaps — a truncated extraction, an empty assessment, or an
-/// affected scenario with no gate coverage is a false green, never a
-/// pass.
+/// coverage gaps — a truncated extraction, an empty assessment, a clipped
+/// planning surface, or an affected scenario with no gate coverage is a
+/// false green, never a pass.
+///
+/// Every verdict input here is a typed member of the report, never the
+/// bounded diagnostics presentation channel: a schema-legal evidence
+/// manifest can push thousands of ordinary findings into the
+/// diagnostics list, and a verdict that lived there would be crowdable
+/// by exactly the untrusted input this feature exists to distrust.
 pub fn denial(report: &super::wire::Report) -> bool {
     if report.coverage.truncated || !report.coverage.complete {
+        return true;
+    }
+    // The typed migration-surface verdict: an incomplete surface (a
+    // gate-coverage gap or a clipped planning list) denies even when
+    // the presentation channel has been crowded.
+    if !report.migration_surface.complete {
         return true;
     }
     if report.destinations.is_empty() || report.subjects.is_empty() {
@@ -611,16 +623,6 @@ pub fn denial(report: &super::wire::Report) -> bool {
         .iter()
         .any(|subject| !subject.rows.is_empty());
     if !any_rows {
-        return true;
-    }
-    // Missing gate coverage is required work, not a presentation gap:
-    // the assessment cannot claim a complete surface while an affected
-    // scenario has no gate record at all.
-    if report
-        .diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.detail == "gate-coverage-unknown")
-    {
         return true;
     }
     report
