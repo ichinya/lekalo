@@ -30,6 +30,11 @@ type parser struct {
 	bytes []byte
 	index int
 	depth int
+	// allowDuplicate (issue #106 review r5 #9) receives the member-name
+	// path of the CONTAINING object and decides whether a duplicate key
+	// there keeps the last value (map-typed member positions) instead of
+	// refusing — production's serde `BTreeMap` members take last-wins.
+	allowDuplicate func([]string, Value, Value) bool
 }
 
 // The maximum container nesting depth, matching the host parser's
@@ -63,12 +68,19 @@ func hex4(window []byte) (int, bool) {
 
 // StrictParse parses one complete JSON document with closed admission.
 func StrictParse(text string) (Value, ParseReason) {
-	p := &parser{bytes: []byte(text)}
+	return StrictParseWith(text, nil)
+}
+
+// StrictParseWith is [`StrictParse`] with a duplicate-key policy:
+// map-typed member positions keep last-wins; every struct position
+// still refuses.
+func StrictParseWith(text string, allowDuplicate func([]string, Value, Value) bool) (Value, ParseReason) {
+	p := &parser{bytes: []byte(text), allowDuplicate: allowDuplicate}
 	if len(p.bytes) >= 3 && p.bytes[0] == 0xEF && p.bytes[1] == 0xBB && p.bytes[2] == 0xBF {
 		return nil, ReasonNotJSON
 	}
 	p.skipWhitespace()
-	value, reason := p.parseValue()
+	value, reason := p.parseValue(nil)
 	if reason != "" {
 		return nil, reason
 	}
@@ -81,10 +93,16 @@ func StrictParse(text string) (Value, ParseReason) {
 
 // ReadSingleObject reads exactly one bounded JSON object document.
 func ReadSingleObject(text string, maxBytes int) (Value, ParseReason) {
+	return ReadSingleObjectWith(text, maxBytes, nil)
+}
+
+// ReadSingleObjectWith is [`ReadSingleObject`] with a duplicate-key
+// policy (map-typed member positions keep last-wins).
+func ReadSingleObjectWith(text string, maxBytes int, allowDuplicate func([]string, Value, Value) bool) (Value, ParseReason) {
 	if len(text) > maxBytes {
 		return nil, ReasonOversize
 	}
-	value, reason := StrictParse(text)
+	value, reason := StrictParseWith(text, allowDuplicate)
 	if reason != "" {
 		return nil, reason
 	}
@@ -112,16 +130,16 @@ func (p *parser) peek() (byte, bool) {
 	return 0, false
 }
 
-func (p *parser) parseValue() (Value, ParseReason) {
+func (p *parser) parseValue(path []string) (Value, ParseReason) {
 	c, ok := p.peek()
 	if !ok {
 		return nil, ReasonNotJSON
 	}
 	switch {
 	case c == '{':
-		return p.parseObject()
+		return p.parseObject(path)
 	case c == '[':
-		return p.parseArray()
+		return p.parseArray(path)
 	case c == '"':
 		text, reason := p.parseString()
 		if reason != "" {
@@ -149,18 +167,18 @@ func (p *parser) parseLiteral(literal string, value Value) (Value, ParseReason) 
 	return nil, ReasonNotJSON
 }
 
-func (p *parser) parseObject() (Value, ParseReason) {
+func (p *parser) parseObject(path []string) (Value, ParseReason) {
 	p.index++
 	p.depth++
 	if p.depth > maxNestingDepth {
 		return nil, ReasonNotJSON
 	}
-	result, reason := p.parseObjectMembers()
+	result, reason := p.parseObjectMembers(path)
 	p.depth--
 	return result, reason
 }
 
-func (p *parser) parseObjectMembers() (Value, ParseReason) {
+func (p *parser) parseObjectMembers(path []string) (Value, ParseReason) {
 	members := map[string]any{}
 	p.skipWhitespace()
 	if c, _ := p.peek(); c == '}' {
@@ -182,12 +200,18 @@ func (p *parser) parseObjectMembers() (Value, ParseReason) {
 		}
 		p.index++
 		p.skipWhitespace()
-		value, reason := p.parseValue()
+		memberPath := append(append([]string{}, path...), key)
+		value, reason := p.parseValue(memberPath)
 		if reason != "" {
 			return nil, reason
 		}
 		if _, duplicate := members[key]; duplicate {
-			return nil, ReasonDuplicateKey
+			// Map-typed member positions take last-wins exactly like
+			// production's serde `BTreeMap` (issue #106 review r5 #9);
+			// every struct position keeps the hard refusal.
+			if p.allowDuplicate == nil || !p.allowDuplicate(path, members[key], value) {
+				return nil, ReasonDuplicateKey
+			}
 		}
 		members[key] = value
 		p.skipWhitespace()
@@ -204,18 +228,18 @@ func (p *parser) parseObjectMembers() (Value, ParseReason) {
 	}
 }
 
-func (p *parser) parseArray() (Value, ParseReason) {
+func (p *parser) parseArray(path []string) (Value, ParseReason) {
 	p.index++
 	p.depth++
 	if p.depth > maxNestingDepth {
 		return nil, ReasonNotJSON
 	}
-	result, reason := p.parseArrayItems()
+	result, reason := p.parseArrayItems(path)
 	p.depth--
 	return result, reason
 }
 
-func (p *parser) parseArrayItems() (Value, ParseReason) {
+func (p *parser) parseArrayItems(path []string) (Value, ParseReason) {
 	items := []any{}
 	p.skipWhitespace()
 	if c, _ := p.peek(); c == ']' {
@@ -224,7 +248,7 @@ func (p *parser) parseArrayItems() (Value, ParseReason) {
 	}
 	for {
 		p.skipWhitespace()
-		value, reason := p.parseValue()
+		value, reason := p.parseValue(path)
 		if reason != "" {
 			return nil, reason
 		}

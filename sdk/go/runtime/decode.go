@@ -194,7 +194,7 @@ func admitLimits(value Value) *Refusal {
 	// production's validate: timeout_ms first, so a zero timeout still
 	// refuses `bounds` before the missing-member `shape` is reached.
 	for _, bound := range []struct {
-		member      string
+		member   string
 		min, max int64
 	}{
 		{"timeout_ms", generated.LIMITS_TIMEOUT_MIN, generated.LIMITS_TIMEOUT_MAX},
@@ -219,7 +219,11 @@ func admitLimits(value Value) *Refusal {
 
 func admitProfileCapabilities(value Value) *Refusal {
 	items, ok := value.([]any)
-	if !ok || len(items) > generated.MAX_DECLARED_CAPABILITIES {
+	// Production requires a present, non-empty, strictly-sorted list
+	// (wire.rs profile-capabilities: `!capabilities.is_empty()` is part
+	// of the sorted-unique verdict) — an empty list is admission
+	// `bounds`, never an empty default (issue #106 review r5 #1).
+	if !ok || len(items) == 0 || len(items) > generated.MAX_DECLARED_CAPABILITIES {
 		return refuse(stageDecode, "bounds")
 	}
 	previous := ""
@@ -249,8 +253,7 @@ func admitContentRef(value Value) *Refusal {
 	if !IsSha256Digest(GetString(value, "digest")) {
 		return refuse(stageDecode, "bounds")
 	}
-	// `revision` keeps its separate bounded-string contract (≤128), but
-	// the optional adapter identity carries the production adapter token
+	// Revision is an unbounded wire string; the optional adapter identity carries the production adapter token
 	// grammar (issue #106 review r4 #2, core wire.rs validate:
 	// `!scopes::is_token(adapter)` refuses `native-request`): a present,
 	// non-token identity must never reach dispatch.
@@ -263,8 +266,13 @@ func admitContentRef(value Value) *Refusal {
 	if IsNull(value, "revision") {
 		return refuse(stageDecode, "explicit-null")
 	}
-	if Has(value, "revision") && !boundedText(value.(map[string]any)["revision"], 128) {
-		return refuse(stageDecode, "bounds")
+	// Production types `revision` `Option<String>` with no bound beyond
+	// the member type (issue #106 review r5 #9): only the type is
+	// checked, never a length the wire does not declare.
+	if Has(value, "revision") {
+		if _, ok := value.(map[string]any)["revision"].(string); !ok {
+			return refuse(stageDecode, "shape")
+		}
 	}
 	return nil
 }
@@ -283,6 +291,13 @@ func admitNativeRequest(value Value) *Refusal {
 		}
 	}
 	changes := value.(map[string]any)["changes"]
+	// All-default struct: production deserializes `changes` from a
+	// positional seq too (`[]` decodes with both lists defaulted),
+	// exactly like serde struct-from-seq (issue #106 review r5 #9).
+	changes, refusal := seqAsMembers(changes, []string{"files", "symbols"})
+	if refusal != nil {
+		return refusal
+	}
 	if !isClosedObject(changes, []string{"files", "symbols"}) {
 		return refuse(stageDecode, "shape")
 	}
@@ -297,7 +312,9 @@ func admitNativeRequest(value Value) *Refusal {
 	if len(files) > 1024 || len(symbols) > 1024 {
 		return refuse(stageDecode, "bounds")
 	}
-	previous := ""
+	// Production validates the changed files without any ordering rule
+	// (wire.rs native-request: member checks only) — the SDK's old
+	// ascending-path requirement refused legal documents (review r5 #9).
 	for _, change := range files {
 		if !isClosedObject(change, []string{"after_digest", "before_digest", "change", "path"}) {
 			return refuse(stageDecode, "shape")
@@ -316,15 +333,12 @@ func admitNativeRequest(value Value) *Refusal {
 				return refuse(stageDecode, "bounds")
 			}
 		}
-		path := GetString(change, "path")
-		if previous != "" && path <= previous {
-			return refuse(stageDecode, "bounds")
-		}
-		previous = path
 	}
+	// Symbols carry no per-item bound on the wire (only the count is
+	// bounded) — empty and long strings are both legal (review r5 #9).
 	for _, symbol := range symbols {
-		if !boundedText(symbol, int(generated.ERROR_DETAIL_MAX)) {
-			return refuse(stageDecode, "bounds")
+		if _, ok := symbol.(string); !ok {
+			return refuse(stageDecode, "shape")
 		}
 	}
 	if refusal := admitContentRef(changesOf(value, "scan_ref")); refusal != nil {
@@ -352,6 +366,27 @@ func changesOf(value Value, key string) Value {
 // #3): absent means the empty default; a present member must be a JSON
 // array — an object, string, number, or explicit null refuses instead
 // of collapsing to the empty default like GetArray did.
+// All-default struct members accepted from a positional JSON sequence
+// (serde `visit_seq` parity, issue #106 review r5 #9): production
+// deserializes every `#[serde(default)]` struct from a seq positionally,
+// so `[]` (and any shorter prefix) decodes with the defaults filling
+// the tail; a longer seq refuses `shape` exactly like serde's
+// invalid-length error.
+func seqAsMembers(value Value, fields []string) (Value, *Refusal) {
+	items, ok := value.([]any)
+	if !ok {
+		return value, nil
+	}
+	if len(items) > len(fields) {
+		return nil, refuse(stageDecode, "shape")
+	}
+	members := map[string]any{}
+	for index, item := range items {
+		members[fields[index]] = item
+	}
+	return members, nil
+}
+
 func optionalArray(object Value, member string) ([]any, *Refusal) {
 	if !Has(object, member) {
 		return nil, nil
@@ -371,7 +406,14 @@ func admitLintRequest(value Value) *Refusal {
 	if !isClosedObject(value, allowed) {
 		return refuse(stageDecode, "shape")
 	}
-	for _, member := range []string{"scope", "files", "bindings"} {
+	// Every lint member is required on the wire (production's LintRequest
+	// has no serde defaults): a missing member is `shape` exactly like
+	// serde's missing-field error — only an explicit null gets its own
+	// token (issue #106 review r5 #8).
+	for _, member := range []string{"scope", "files", "bindings", "pins"} {
+		if !Has(value, member) {
+			return refuse(stageDecode, "shape")
+		}
 		if IsNull(value, member) {
 			return refuse(stageDecode, "explicit-null")
 		}
@@ -397,7 +439,15 @@ func admitLintRequest(value Value) *Refusal {
 		}
 	}
 	for _, file := range files {
-		if !IsLogicalPath(file.(string)) {
+		// Comma-ok at every element access (issue #106 review r5 #3): a
+		// wrong-typed list element is a refusal, never a panic — the same
+		// `bounds` token the grammar check would emit for a string (the
+		// cross-language codec vocabulary must agree byte-for-byte).
+		text, ok := file.(string)
+		if !ok {
+			return refuse(stageDecode, "bounds")
+		}
+		if !IsLogicalPath(text) {
 			return refuse(stageDecode, "bounds")
 		}
 	}
@@ -464,8 +514,16 @@ func admitStateString(value Value) *Refusal {
 }
 
 // AdmitResponse decodes one response document (structural admission).
+// AdmitResponse decodes one response document (structural admission
+// only). Duplicate keys are refused everywhere except map-typed member
+// positions: production's `capabilities.capabilities` is a serde
+// `BTreeMap` whose duplicates take last-wins (issue #106 review r5 #9).
 func AdmitResponse(text string) (Value, *Refusal) {
-	value, reason := ReadSingleObject(text, generated.DEFAULT_MAX_OUTPUT_BYTES)
+	value, reason := ReadSingleObjectWith(text, generated.DEFAULT_MAX_OUTPUT_BYTES, func(path []string, previous, next Value) bool {
+		before, okBefore := previous.(string)
+		after, okAfter := next.(string)
+		return len(path) == 2 && path[0] == "capabilities" && path[1] == "capabilities" && okBefore && okAfter && containsString(GeneratedEnums("supportState"), before) && containsString(GeneratedEnums("supportState"), after)
+	})
 	if reason != "" {
 		return nil, refuse(stageDecode, string(reason))
 	}
@@ -514,8 +572,14 @@ func admitWriteEntry(value Value) *Refusal {
 	if IsNull(value, "sha256") {
 		return refuse(stageDecode, "explicit-null")
 	}
-	if Has(value, "sha256") && !IsSha256Digest(GetString(value, "sha256")) {
-		return refuse(stageDecode, "bounds")
+	// `sha256` is a free-form `Option<String>` on the wire (production
+	// has no digest grammar here — the action/digest pairing is the
+	// client's semantic layer): any string is admissible, only the type
+	// and the explicit-null refusal remain (issue #106 review r5 #9).
+	if Has(value, "sha256") {
+		if _, ok := value.(map[string]any)["sha256"].(string); !ok {
+			return refuse(stageDecode, "shape")
+		}
 	}
 	return nil
 }
@@ -537,7 +601,13 @@ func admitScanEntry(value Value) *Refusal {
 		return refuse(stageDecode, "explicit-null")
 	}
 	if Has(value, "evidence") {
-		evidence := value.(map[string]any)["evidence"]
+		// All-default evidence: `{}` and the positional `[]` both decode
+		// (signature/references default) exactly like production's serde
+		// struct-from-seq (issue #106 review r5 #9).
+		evidence, refusal := seqAsMembers(value.(map[string]any)["evidence"], []string{"signature", "references"})
+		if refusal != nil {
+			return refusal
+		}
 		if !isClosedObject(evidence, []string{"references", "signature"}) {
 			return refuse(stageDecode, "shape")
 		}
@@ -546,6 +616,11 @@ func admitScanEntry(value Value) *Refusal {
 		}
 		if Has(evidence, "signature") && !IsSha256Digest(GetString(evidence, "signature")) {
 			return refuse(stageDecode, "bounds")
+		}
+		// `references` is a `#[serde(default)] Vec`: absent defaults
+		// empty; an explicit null is a typed refusal, never a default.
+		if IsNull(evidence, "references") {
+			return refuse(stageDecode, "explicit-null")
 		}
 		references, refusal := optionalArray(evidence, "references")
 		if refusal != nil {
@@ -557,9 +632,6 @@ func admitScanEntry(value Value) *Refusal {
 		for _, reference := range references {
 			if !isClosedObject(reference, []string{"confidence", "role", "target"}) {
 				return refuse(stageDecode, "shape")
-			}
-			if !boundedText(reference.(map[string]any)["target"], 192) {
-				return refuse(stageDecode, "bounds")
 			}
 			// The target carries the manifest-local semantic-id grammar
 			// (core trace::id::is_semantic_id, issue #106 review r3 #8):
@@ -615,7 +687,14 @@ func admitNativePlan(value Value) *Refusal {
 	return nil
 }
 
-func admitResult(value Value) *Refusal {
+func admitResult(memberValue Value) *Refusal {
+	// All-default operation result: production deserializes it from a
+	// positional seq too (`result:[]` is the all-default value), exactly
+	// like serde struct-from-seq (issue #106 review r5 #9).
+	value, refusal := seqAsMembers(memberValue, []string{"ok", "truncated", "entries", "findings", "bindings", "native_plan", "lint_evidence"})
+	if refusal != nil {
+		return refusal
+	}
 	allowed := []string{"bindings", "entries", "findings", "lint_evidence", "native_plan", "ok", "truncated"}
 	if !isClosedObject(value, allowed) {
 		return refuse(stageDecode, "shape")
@@ -741,7 +820,13 @@ func lintStringArray(value Value, max int, unique bool) bool {
 			return false
 		}
 		if unique {
-			key := item.(string)
+			// Comma-ok at every element access (issue #106 review r5 #3):
+			// lintBounded256 already refuses non-strings, but the key
+			// extraction must not trust it — a panic here kills the process.
+			key, ok := item.(string)
+			if !ok {
+				return false
+			}
 			if seen[key] {
 				return false
 			}
@@ -845,15 +930,18 @@ func lintSpan(value Value) bool {
 	if !isClosedObject(value, allowed) {
 		return false
 	}
-	bounded := func(member string, min int64) bool {
+	// Every span member is an unbounded `u64` in production (0 is a
+	// legal line/column; the SDK's old min-1 refused legal evidence —
+	// review r5 #9).
+	bounded := func(member string) bool {
 		number, ok := GetNumber(value, member)
-		return ok && number >= min && number <= generatedBounds.MaxRequestBytes
+		return ok && number >= 0 && number <= generatedBounds.MaxRequestBytes
 	}
 	return lintBounded256(value.(map[string]any)["id"]) &&
 		lintBounded256(value.(map[string]any)["source"]) &&
-		bounded("start", 0) && bounded("end", 0) &&
-		bounded("line", 1) && bounded("column", 1) &&
-		bounded("endLine", 1) && bounded("endColumn", 1)
+		bounded("start") && bounded("end") &&
+		bounded("line") && bounded("column") &&
+		bounded("endLine") && bounded("endColumn")
 }
 
 func lintCoverage(value Value) bool {
@@ -1150,7 +1238,7 @@ func uniqueBounded(items []any, max int) bool {
 	return true
 }
 
-func admitCapabilities(value Value) *Refusal {
+func admitCapabilities(value Value, protocolVersion string) *Refusal {
 	allowed := []string{"adapter", "capabilities", "constraints", "ir_versions", "operations", "profiles", "progress", "protocol_versions", "read_scopes", "targets", "transports", "write_scopes"}
 	if !isClosedObject(value, allowed) {
 		return refuse(stageDecode, "shape")
@@ -1158,9 +1246,12 @@ func admitCapabilities(value Value) *Refusal {
 	if refusal := admitIdentity(value.(map[string]any)["adapter"]); refusal != nil {
 		return refusal
 	}
+	// min-1 is part of admission for the required declared lists
+	// (production `unique(…, 1, …)`, issue #106 review r5 #1): an empty
+	// declaration is `bounds`, never an empty default.
 	requiredList := func(member string, max int, check func(string) bool) *Refusal {
 		items, ok := value.(map[string]any)[member].([]any)
-		if !ok || !uniqueBounded(items, max) {
+		if !ok || len(items) == 0 || !uniqueBounded(items, max) {
 			return refuse(stageDecode, "bounds")
 		}
 		for _, item := range items {
@@ -1194,8 +1285,16 @@ func admitCapabilities(value Value) *Refusal {
 	if refusal := requiredList("protocol_versions", int(generated.PROTOCOL_VERSIONS_MAX), isContract); refusal != nil {
 		return refusal
 	}
-	if refusal := requiredList("operations", int(generated.OPERATIONS_MAX_LINT), func(op string) bool {
-		return containsString(generated.LatestOperations, op)
+	// Operation set gating mirrors production validate_bounds exactly
+	// (issue #106 review r5 #1): `lint` is legal only on a 0.6.4
+	// describe, and the closed operation ceiling is 10 there, 9 on
+	// every other version.
+	operationsMax := int(generated.OPERATIONS_MAX_LINT)
+	if protocolVersion != "0.6.4" {
+		operationsMax = int(generated.OPERATIONS_MAX_BASE)
+	}
+	if refusal := requiredList("operations", operationsMax, func(op string) bool {
+		return containsString(generated.LatestOperations, op) && (protocolVersion == "0.6.4" || op != "lint")
 	}); refusal != nil {
 		return refusal
 	}
@@ -1220,8 +1319,13 @@ func admitCapabilities(value Value) *Refusal {
 	if refusal := optionalList("ir_versions", int(generated.MAX_IR_VERSIONS), isContract); refusal != nil {
 		return refusal
 	}
-	if _, ok := GetBool(value, "progress"); !ok {
-		return refuse(stageDecode, "shape")
+	// `progress` is a `#[serde(default)] bool` in production: absent is
+	// legal (defaults false); a present non-boolean is a typed refusal
+	// (review r5 #9).
+	if Has(value, "progress") {
+		if _, ok := GetBool(value, "progress"); !ok {
+			return refuse(stageDecode, "shape")
+		}
 	}
 	if IsNull(value, "capabilities") {
 		return refuse(stageDecode, "explicit-null")
@@ -1238,25 +1342,38 @@ func admitCapabilities(value Value) *Refusal {
 			if !IsCapabilityID(id) {
 				return refuse(stageDecode, "bounds")
 			}
+			// Registry membership is part of admission (production
+			// consults `capability::definition(id)`), not a
+			// discovery-time nicety (issue #106 review r5 #1).
+			known := false
+			for _, definition := range generated.CapabilityDefinitions {
+				if definition.ID == id {
+					known = true
+				}
+			}
+			if !known {
+				return refuse(stageDecode, "bounds")
+			}
 			text, ok := support.(string)
 			if !ok || !containsString(GeneratedEnums("supportState"), text) {
 				return refuse(stageDecode, "shape")
 			}
 		}
 	}
-	if IsNull(value, "constraints") {
-		return refuse(stageDecode, "explicit-null")
-	}
-	if Has(value, "constraints") {
-		constraints := value.(map[string]any)["constraints"]
+	// `constraints` is a plain `Option` in production: absent and
+	// explicit null are both legal, the members are `1..=MAX` when
+	// present, and the all-default struct deserializes from `{}` or a
+	// positional `[]` (issue #106 review r5 #1/#9).
+	if Has(value, "constraints") && !IsNull(value, "constraints") {
+		constraints, refusal := seqAsMembers(value.(map[string]any)["constraints"], []string{"max_entries", "max_writes"})
+		if refusal != nil {
+			return refusal
+		}
 		if !isClosedObject(constraints, []string{"max_entries", "max_writes"}) {
 			return refuse(stageDecode, "shape")
 		}
 		for _, member := range []string{"max_entries", "max_writes"} {
-			if IsNull(constraints, member) {
-				return refuse(stageDecode, "explicit-null")
-			}
-			if Has(constraints, member) && !numberInRange(constraints.(map[string]any)[member], 0, generated.MAX_CONSTRAINT_VALUE) {
+			if Has(constraints, member) && !IsNull(constraints, member) && !numberInRange(constraints.(map[string]any)[member], 1, generated.MAX_CONSTRAINT_VALUE) {
 				return refuse(stageDecode, "bounds")
 			}
 		}
@@ -1296,11 +1413,12 @@ func AdmitResponseValue(value Value) *Refusal {
 	if refusal := admitEvidence(value.(map[string]any)["evidence"]); refusal != nil {
 		return refusal
 	}
+	protocolVersion := GetString(value, "protocol_version")
 	if IsNull(value, "capabilities") {
 		return refuse(stageDecode, "explicit-null")
 	}
 	if Has(value, "capabilities") {
-		if refusal := admitCapabilities(value.(map[string]any)["capabilities"]); refusal != nil {
+		if refusal := admitCapabilities(value.(map[string]any)["capabilities"], protocolVersion); refusal != nil {
 			return refusal
 		}
 	}
@@ -1310,6 +1428,19 @@ func AdmitResponseValue(value Value) *Refusal {
 	if Has(value, "result") {
 		if refusal := admitResult(value.(map[string]any)["result"]); refusal != nil {
 			return refusal
+		}
+		// Lint evidence is version-gated exactly like production
+		// validate_bounds (issue #106 review r5 #1): the member is legal
+		// only on a 0.6.4 `lint` response.
+		resultMember := value.(map[string]any)["result"]
+		carriesLintEvidence := false
+		if object, ok := resultMember.(map[string]any); ok {
+			_, carriesLintEvidence = object["lint_evidence"]
+		} else if items, ok := resultMember.([]any); ok {
+			carriesLintEvidence = len(items) >= 7
+		}
+		if carriesLintEvidence && (protocolVersion != "0.6.4" || GetString(value, "operation") != "lint") {
+			return refuse(stageDecode, "shape")
 		}
 	}
 	if IsNull(value, "writes") {
@@ -1380,7 +1511,13 @@ func ValidateRequest(value Value) *Refusal {
 			}
 		}
 		for _, file := range files {
-			if !IsLogicalPath(file.(string)) {
+			// Comma-ok at every element access (issue #106 review r5 #3):
+			// a wrong-typed list element is a refusal, never a panic.
+			text, ok := file.(string)
+			if !ok {
+				return refuse(stageValidate, "lint-request")
+			}
+			if !IsLogicalPath(text) {
 				return refuse(stageValidate, "lint-request")
 			}
 		}
@@ -1392,7 +1529,7 @@ func ValidateRequest(value Value) *Refusal {
 			}
 			found := false
 			for _, file := range files {
-				if file.(string) == path {
+				if text, ok := file.(string); ok && text == path {
 					found = true
 				}
 			}
@@ -1510,6 +1647,18 @@ func ValidateResponseIdentity(response Value, expectedProtocolVersion, expectedO
 	if GetString(response, "request_id") != expectedRequestID {
 		return refuse(stageValidate, "echo-request-id")
 	}
+	// The describe handshake binds the evidence identity to the declared
+	// capabilities identity exactly like the production client
+	// (`evidence.adapter != capabilities.adapter` → `Evidence`
+	// invalidity, issue #106 review r5 #10) — an SDK consumer must never
+	// accept a response a host session would refuse.
+	if Has(response, "capabilities") {
+		evidenceAdapter := valueOf(valueOf(response, "evidence"), "adapter")
+		declaredAdapter := valueOf(valueOf(response, "capabilities"), "adapter")
+		if Canonical(evidenceAdapter) != Canonical(declaredAdapter) {
+			return refuse(stageValidate, "identity")
+		}
+	}
 	return nil
 }
 
@@ -1522,6 +1671,24 @@ func ValidateResponsePayload(request, response Value) *Refusal {
 	}
 	if operation == "describe" && GetString(response, "status") == "ok" && !Has(response, "capabilities") {
 		return refuse(stageValidate, "member")
+	}
+	if operation == "describe" && Has(response, "capabilities") {
+		caps := valueOf(response, "capabilities")
+		evidence := valueOf(response, "evidence")
+		if Canonical(valueOf(evidence, "adapter")) != Canonical(valueOf(caps, "adapter")) {
+			return refuse(stageValidate, "identity")
+		}
+		contains := func(key, expected string) bool {
+			for _, item := range GetArray(caps, key) {
+				if text, ok := item.(string); ok && text == expected {
+					return true
+				}
+			}
+			return false
+		}
+		if !contains("operations", "describe") || !contains("protocol_versions", GetString(request, "protocol_version")) || Has(response, "progress") {
+			return refuse(stageValidate, "member")
+		}
 	}
 	apply := operation == "clean" || (operation == "generate" && requestHasDryRun(request, false))
 	evidencePlan := planIDOf(response)
@@ -1596,7 +1763,7 @@ func ValidateResponsePayload(request, response Value) *Refusal {
 				if Has(entry, "sha256") {
 					return refuse(stageValidate, "write-digest")
 				}
-			} else if !Has(entry, "sha256") {
+			} else if !IsSha256Digest(GetString(entry, "sha256")) {
 				return refuse(stageValidate, "write-digest")
 			}
 		}

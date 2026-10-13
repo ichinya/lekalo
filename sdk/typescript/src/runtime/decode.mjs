@@ -7,12 +7,36 @@
  * refusal carries one closed safe reason token — never payload content.
  */
 import { WIRE_TOKEN, SUPPORTED_PROTOCOL_VERSIONS, LATEST_OPERATIONS, BOUNDS, ENUMS } from "../generated/protocol.mjs";
+import { CAPABILITY_DEFINITIONS } from "../generated/capabilities.mjs";
 import { JsonFloat, canonicalJson, readSingleObject } from "./json.mjs";
 import { isPlanId, isRequestId, isSha256Digest } from "./ids.mjs";
 import { isCapabilityId, isContractVersion, isLogicalPath, isSemanticId, isToken } from "./paths.mjs";
 
 const SUPPORT_STATES = ENUMS.supportState;
 const TRANSPORTS = ENUMS.transport;
+const LINT_VERSION = "0.6.4";
+
+/** Whether a capability id is a member of the generated registry —
+ * production admission consults `capability::definition(id).is_some()`
+ * for every describe map key (issue #106 review r5 #1), so the generated
+ * per-SDK table is authoritative here, not just the grammar. */
+const isKnownCapabilityId = (id) => CAPABILITY_DEFINITIONS.some((entry) => entry.id === id);
+
+/** All-default struct members accepted from a positional JSON sequence
+ * (serde `visit_seq` parity, issue #106 review r5 #9): production
+ * deserializes every `#[serde(default)]` struct from a seq positionally,
+ * so `[]` (and any shorter prefix) decodes with the defaults filling
+ * the tail. The SDK maps the prefix onto the declared field order and
+ * refuses a longer seq exactly like serde's `invalid length` error. */
+function seqAsMembers(value, fields, reason = "shape") {
+  if (!Array.isArray(value)) return { ok: true, value };
+  if (value.length > fields.length) return failure(reason);
+  const members = {};
+  fields.forEach((field, index) => {
+    if (index < value.length) members[field] = value[index];
+  });
+  return { ok: true, value: members };
+}
 
 /** The closed safe reason tokens an SDK decoder refuses with. */
 export const DECODE_REASONS = [
@@ -99,7 +123,11 @@ function decodeProfileCapabilities(value) {
   const absent = optional(value);
   if (absent) return absent;
   if (value === undefined) return { ok: true, value: undefined };
-  if (!Array.isArray(value) || value.length > BOUNDS.MAX_DECLARED_CAPABILITIES) return failure("bounds");
+  // Production requires a present, non-empty, strictly-sorted list
+  // (wire.rs profile_capabilities: `!capabilities.is_empty()` is part
+  // of the sorted_unique verdict) — an empty list is admission `bounds`,
+  // never an empty default (issue #106 review r5 #1).
+  if (!Array.isArray(value) || value.length === 0 || value.length > BOUNDS.MAX_DECLARED_CAPABILITIES) return failure("bounds");
   let previous = null;
   for (const capability of value) {
     const closed = closeObject(capability, ["id", "support"]);
@@ -116,8 +144,7 @@ function decodeContentRef(value) {
   const closed = closeObject(value, ["adapter", "digest", "revision"]);
   if (closed) return closed;
   if (!isSha256Digest(value.digest)) return failure("bounds");
-  // `revision` keeps its separate bounded-string contract (≤128), but
-  // the optional adapter identity carries the production adapter token
+  // Revision is an unbounded wire string; the optional adapter identity carries the production adapter token
   // grammar (issue #106 review r4 #2, core wire.rs validate:
   // `!scopes::is_token(adapter)` refuses `native-request`): a present,
   // non-token identity must never reach dispatch.
@@ -127,19 +154,30 @@ function decodeContentRef(value) {
   for (const member of ["revision"]) {
     const absent = optional(value[member]);
     if (absent) return absent;
-    if (value[member] !== undefined && (typeof value[member] !== "string" || value[member].length > 128)) return failure("bounds");
+    // Production types `revision` `Option<String>` with no bound beyond
+    // serde's own string admission (issue #106 review r5 #9): only the
+    // member type is checked, never a length the wire does not declare.
+    if (value[member] !== undefined && typeof value[member] !== "string") return failure("shape");
   }
   return { ok: true, value };
 }
 
-function decodeNativeChanges(value) {
+function decodeNativeChanges(rawValue) {
+  // All-default struct: accepted from `{}` and from a positional seq
+  // (`[]` decodes with both lists defaulted) exactly like production's
+  // serde struct-from-seq (issue #106 review r5 #9).
+  const seq = seqAsMembers(rawValue, ["files", "symbols"]);
+  if (!seq.ok) return seq;
+  const value = seq.value;
   const closed = closeObject(value, ["files", "symbols"]);
   if (closed) return closed;
   const files = value.files === undefined ? [] : value.files;
   const symbols = value.symbols === undefined ? [] : value.symbols;
   if (!Array.isArray(files) || files.length > 1024) return failure("bounds");
   if (!Array.isArray(symbols) || symbols.length > 1024) return failure("bounds");
-  let previous = null;
+  // Production validates the changed files without any ordering rule
+  // (wire.rs native-request: member checks only) — the SDK's old
+  // ascending-path requirement refused legal documents (review r5 #9).
   for (const change of files) {
     const inner = closeObject(change, ["after_digest", "before_digest", "change", "path"]);
     if (inner) return inner;
@@ -150,11 +188,11 @@ function decodeNativeChanges(value) {
       if (absent) return absent;
       if (change[member] !== undefined && !isSha256Digest(change[member])) return failure("bounds");
     }
-    if (previous !== null && change.path <= previous) return failure("bounds");
-    previous = change.path;
   }
+  // Symbols carry no per-item bound on the wire (only the count is
+  // bounded) — empty and long strings are both legal (review r5 #9).
   for (const symbol of symbols) {
-    if (typeof symbol !== "string" || symbol === "" || symbol.length > BOUNDS.ERROR_DETAIL_MAX) return failure("bounds");
+    if (typeof symbol !== "string") return failure("shape");
   }
   return { ok: true, value: { files, symbols } };
 }
@@ -216,7 +254,12 @@ function decodeLintBinding(value) {
 function decodeLintRequest(value) {
   const closed = closeObject(value, ["bindings", "files", "pins", "scope"]);
   if (closed) return closed;
-  for (const member of ["scope", "files", "bindings"]) {
+  // Every lint member is required on the wire (production's LintRequest
+  // has no serde defaults): a missing member is `shape` exactly like
+  // serde's missing-field error — only a null gets its own token
+  // (issue #106 review r5 #8).
+  for (const member of ["scope", "files", "bindings", "pins"]) {
+    if (value[member] === undefined) return failure("shape");
     const absent = optional(value[member]);
     if (absent) return absent;
   }
@@ -312,8 +355,7 @@ export function decodeRequest(text, maxBytes = BOUNDS.MAX_REQUEST_BYTES) {
   if (value.lint_request !== undefined) {
     const lint = decodeLintRequest(value.lint_request);
     if (!lint.ok) return lint;
-  }
-  return { ok: true, value };
+  }  return { ok: true, value };
 }
 
 function decodeWriteEntry(value) {
@@ -321,13 +363,23 @@ function decodeWriteEntry(value) {
   if (closed) return closed;
   if (!isLogicalPath(value.path)) return failure("bounds");
   if (!ENUMS.writeAction.includes(value.action)) return failure("shape");
+  // `sha256` is a free-form `Option<String>` on the wire (production
+  // has no digest grammar here — the action/digest pairing is the
+  // client's semantic layer): any string is admissible, only the type
+  // and the explicit-null refusal remain (issue #106 review r5 #9).
   const absent = optional(value.sha256);
   if (absent) return absent;
-  if (value.sha256 !== undefined && !isSha256Digest(value.sha256)) return failure("bounds");
+  if (value.sha256 !== undefined && typeof value.sha256 !== "string") return failure("shape");
   return { ok: true, value };
 }
 
-function decodeResult(value) {
+function decodeResult(rawValue) {
+  // All-default operation result: production deserializes it from a
+  // positional seq too (`result:[]` is the all-default value), exactly
+  // like serde struct-from-seq (issue #106 review r5 #9).
+  const seq = seqAsMembers(rawValue, ["ok", "truncated", "entries", "findings", "bindings", "native_plan", "lint_evidence"]);
+  if (!seq.ok) return seq;
+  const value = seq.value;
   const closed = closeObject(value, ["bindings", "entries", "findings", "lint_evidence", "native_plan", "ok", "truncated"]);
   if (closed) return closed;
   for (const member of ["ok", "truncated"]) {
@@ -455,15 +507,18 @@ const lintSource = (value) => {
 const lintSpan = (value) => {
   const closed = closeObject(value, ["column", "end", "endColumn", "endLine", "id", "line", "source", "start"]);
   if (closed) return false;
-  const bounded = (member, min) => isInt(value[member]) && value[member] >= min && value[member] <= BOUNDS.MAX_REQUEST_BYTES;
+  // Every span member is an unbounded `u64` in production (0 is a legal
+  // line/column; the SDK's old min-1 refused legal evidence — review
+  // r5 #9).
+  const bounded = (member) => isInt(value[member]) && value[member] <= BOUNDS.MAX_REQUEST_BYTES;
   return lintBounded256(value.id)
     && lintBounded256(value.source)
-    && bounded("start", 0)
-    && bounded("end", 0)
-    && bounded("line", 1)
-    && bounded("column", 1)
-    && bounded("endLine", 1)
-    && bounded("endColumn", 1);
+    && bounded("start")
+    && bounded("end")
+    && bounded("line")
+    && bounded("column")
+    && bounded("endLine")
+    && bounded("endColumn");
 };
 
 const lintCoverage = (value) => {
@@ -577,12 +632,21 @@ function decodeScanEntry(value) {
   const absentEvidence = optional(value.evidence);
   if (absentEvidence) return absentEvidence;
   if (value.evidence !== undefined) {
-    const inner = closeObject(value.evidence, ["references", "signature"]);
+    // All-default evidence: `{}` and the positional `[]` both decode
+    // (signature/references default) exactly like production's serde
+    // struct-from-seq (issue #106 review r5 #9).
+    const seq = seqAsMembers(value.evidence, ["signature", "references"]);
+    if (!seq.ok) return seq;
+    const evidence = seq.value;
+    const inner = closeObject(evidence, ["references", "signature"]);
     if (inner) return inner;
-    const absentSignature = optional(value.evidence.signature);
+    const absentSignature = optional(evidence.signature);
     if (absentSignature) return absentSignature;
-    if (value.evidence.signature !== undefined && !isSha256Digest(value.evidence.signature)) return failure("bounds");
-    const references = value.evidence.references === undefined ? [] : value.evidence.references;
+    if (evidence.signature !== undefined && !isSha256Digest(evidence.signature)) return failure("bounds");
+    // `references` is a `#[serde(default)] Vec`: absent defaults empty;
+    // an explicit null is a typed refusal, never an empty default.
+    if (evidence.references === null) return failure("explicit-null");
+    const references = evidence.references === undefined ? [] : evidence.references;
     if (!Array.isArray(references) || references.length > BOUNDS.REFERENCES_MAX) return failure("bounds");
     for (const reference of references) {
       const refClosed = closeObject(reference, ["confidence", "role", "target"]);
@@ -595,6 +659,7 @@ function decodeScanEntry(value) {
       if (!ENUMS.scanEntryReferenceRole.includes(reference.role)) return failure("shape");
       if (!ENUMS.scanEntryConfidence.includes(reference.confidence)) return failure("shape");
     }
+    value = { ...value, evidence };
   }
   return { ok: true, value };
 }
@@ -665,7 +730,7 @@ function decodeError(value) {
   return { ok: true, value };
 }
 
-function decodeCapabilities(value) {
+function decodeCapabilities(value, protocolVersion) {
   const closed = closeObject(value, [
     "adapter", "capabilities", "constraints", "ir_versions", "operations",
     "profiles", "progress", "protocol_versions", "read_scopes", "targets",
@@ -674,9 +739,10 @@ function decodeCapabilities(value) {
   if (closed) return closed;
   const identity = decodeIdentity(value.adapter);
   if (!identity.ok) return identity;
-  // Required with a non-empty closed bound on the wire (core: unique).
+  // Required with a non-empty closed bound on the wire (core: unique(…, 1,
+  // …) — min-1 is part of admission, issue #106 review r5 #1).
   const requiredList = (member, max, check) => {
-    if (!Array.isArray(value[member]) || value[member].length > max) return false;
+    if (!Array.isArray(value[member]) || value[member].length === 0 || value[member].length > max) return false;
     const unique = new Set(value[member]);
     if (unique.size !== value[member].length) return false;
     return value[member].every((entry) => check(entry));
@@ -691,15 +757,24 @@ function decodeCapabilities(value) {
     if (unique.size !== value[member].length) return false;
     return value[member].every((entry) => check(entry));
   };
+  // Operation set gating mirrors production validate_bounds exactly
+  // (issue #106 review r5 #1): `lint` is legal only on a 0.6.4 describe,
+  // and the closed operation ceiling is 10 there, 9 on every other
+  // version.
+  const operationsMax = protocolVersion === LINT_VERSION ? BOUNDS.OPERATIONS_MAX_LINT : BOUNDS.OPERATIONS_MAX_BASE;
+  const isOperation = (op) => LATEST_OPERATIONS.includes(op) && (protocolVersion === LINT_VERSION || op !== "lint");
   if (!requiredList("protocol_versions", BOUNDS.PROTOCOL_VERSIONS_MAX, isContractVersion)) return failure("bounds");
-  if (!requiredList("operations", BOUNDS.OPERATIONS_MAX_LINT, (op) => LATEST_OPERATIONS.includes(op))) return failure("bounds");
+  if (!requiredList("operations", operationsMax, isOperation)) return failure("bounds");
   if (!requiredList("transports", BOUNDS.TRANSPORTS_MAX, (t) => TRANSPORTS.includes(t))) return failure("bounds");
   if (!optionalList("targets", BOUNDS.TARGETS_MAX, isToken)) return failure("bounds");
   if (!optionalList("profiles", BOUNDS.PROFILES_MAX, isToken)) return failure("bounds");
   if (!optionalList("read_scopes", BOUNDS.MAX_SCOPES, (s) => typeof s === "string" && s.length > 0 && s.length <= BOUNDS.PATH_MAX)) return failure("bounds");
   if (!optionalList("write_scopes", BOUNDS.MAX_SCOPES, (s) => typeof s === "string" && s.length > 0 && s.length <= BOUNDS.PATH_MAX)) return failure("bounds");
   if (!optionalList("ir_versions", BOUNDS.MAX_IR_VERSIONS, isContractVersion)) return failure("bounds");
-  if (typeof value.progress !== "boolean") return failure("shape");
+  // `progress` is a `#[serde(default)] bool` in production: absent is
+  // legal (defaults false); a present non-boolean is a typed refusal
+  // (review r5 #9).
+  if (value.progress !== undefined && typeof value.progress !== "boolean") return failure("shape");
   if (value.capabilities !== undefined) {
     const absentMap = optional(value.capabilities);
     if (absentMap) return absentMap;
@@ -708,18 +783,26 @@ function decodeCapabilities(value) {
     if (ids.length > BOUNDS.MAX_DECLARED_CAPABILITIES) return failure("bounds");
     for (const id of ids) {
       if (!isCapabilityId(id)) return failure("bounds");
+      // Registry membership is part of admission (production consults
+      // `capability::definition(id)`), not a discovery-time nicety
+      // (issue #106 review r5 #1).
+      if (!isKnownCapabilityId(id)) return failure("bounds");
       if (!SUPPORT_STATES.includes(value.capabilities[id])) return failure("shape");
     }
   }
-  if (value.constraints !== undefined) {
-    const absent = optional(value.constraints);
-    if (absent) return absent;
-    const inner = closeObject(value.constraints, ["max_entries", "max_writes"]);
+  // `constraints` is a plain `Option` in production: absent and explicit
+  // null are both legal, the members are `1..=MAX` when present, and the
+  // all-default struct deserializes from `{}` or a positional `[]`
+  // (issue #106 review r5 #1/#9).
+  if (value.constraints !== undefined && value.constraints !== null) {
+    const seq = seqAsMembers(value.constraints, ["max_entries", "max_writes"]);
+    if (!seq.ok) return seq;
+    const constraints = seq.value;
+    const inner = closeObject(constraints, ["max_entries", "max_writes"]);
     if (inner) return inner;
     for (const member of ["max_entries", "max_writes"]) {
-      const absentValue = optional(value.constraints[member]);
-      if (absentValue) return absentValue;
-      if (value.constraints[member] !== undefined && (!isInt(value.constraints[member]) || value.constraints[member] > BOUNDS.MAX_CONSTRAINT_VALUE)) return failure("bounds");
+      if (constraints[member] === null || constraints[member] === undefined) continue;
+      if (!isInt(constraints[member]) || constraints[member] < 1 || constraints[member] > BOUNDS.MAX_CONSTRAINT_VALUE) return failure("bounds");
     }
   }
   return { ok: true, value };
@@ -728,9 +811,13 @@ function decodeCapabilities(value) {
 /**
  * Decode one strict response envelope from raw text (the conformance
  * client and the validate-before-write path both use this admission).
+ * Duplicate keys are refused everywhere except map-typed member
+ * positions: production's `capabilities.capabilities` is a serde
+ * `BTreeMap` whose duplicates take last-wins (issue #106 review r5 #9).
  */
 export function decodeResponse(text, maxBytes = BOUNDS.DEFAULT_MAX_OUTPUT_BYTES) {
-  const document = readSingleObject(text, maxBytes);
+  const document = readSingleObject(text, maxBytes, (path, previous, next) =>
+    path.join(".") === "capabilities.capabilities" && ENUMS.supportState.includes(previous) && ENUMS.supportState.includes(next));
   if (!document.ok) return document;
   const value = document.value;
   const closed = closeObject(value, [
@@ -752,7 +839,7 @@ export function decodeResponse(text, maxBytes = BOUNDS.DEFAULT_MAX_OUTPUT_BYTES)
   const absentCapabilities = optional(value.capabilities);
   if (absentCapabilities) return absentCapabilities;
   if (value.capabilities !== undefined) {
-    const capabilities = decodeCapabilities(value.capabilities);
+    const capabilities = decodeCapabilities(value.capabilities, value.protocol_version);
     if (!capabilities.ok) return capabilities;
   }
   const absentResult = optional(value.result);
@@ -760,6 +847,12 @@ export function decodeResponse(text, maxBytes = BOUNDS.DEFAULT_MAX_OUTPUT_BYTES)
   if (value.result !== undefined) {
     const result = decodeResult(value.result);
     if (!result.ok) return result;
+    // Lint evidence is version-gated exactly like production
+    // validate_bounds (issue #106 review r5 #1): the member is legal
+    // only on a 0.6.4 `lint` response.
+    if (result.value.lint_evidence !== undefined && (value.protocol_version !== LINT_VERSION || value.operation !== "lint")) {
+      return failure("shape");
+    }
   }
   if (value.writes !== undefined) {
     const absent = optional(value.writes);

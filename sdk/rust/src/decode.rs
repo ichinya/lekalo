@@ -6,7 +6,7 @@
 
 use crate::generated::protocol;
 use crate::ids::{is_plan_id, is_request_id, is_sha256_digest};
-use crate::json::{canonical, read_single_object, ParseReason, Value};
+use crate::json::{canonical, read_single_object, read_single_object_with, ParseReason, Value};
 use crate::paths::{
     is_capability_id, is_contract_version, is_logical_path, is_semantic_id, is_token,
 };
@@ -44,10 +44,23 @@ pub fn admit_request(text: &str) -> Result<Value, Refusal> {
     Ok(value)
 }
 
-/// Decode a response document (structural admission only).
+/// Decode a response document (structural admission only). Duplicate
+/// keys are refused everywhere except map-typed member positions:
+/// production's `capabilities.capabilities` is a serde `BTreeMap`
+/// whose duplicates take last-wins (issue #106 review r5 #9).
 pub fn admit_response(text: &str) -> Result<Value, Refusal> {
-    let value = read_single_object(text, protocol::bounds::DEFAULT_MAX_OUTPUT_BYTES as usize)
-        .map_err(|reason| Refusal::new("decode", parse_reason(&reason)))?;
+    let value = read_single_object_with(
+        text,
+        protocol::bounds::DEFAULT_MAX_OUTPUT_BYTES as usize,
+        &|path, previous, next| {
+            path == ["capabilities", "capabilities"]
+                && [previous, next].iter().all(|v| {
+                    v.as_str()
+                        .is_some_and(|state| protocol::enums::SUPPORTSTATE.contains(&state))
+                })
+        },
+    )
+    .map_err(|reason| Refusal::new("decode", parse_reason(&reason)))?;
     admit_response_value(&value)?;
     Ok(value)
 }
@@ -148,10 +161,10 @@ pub fn admit_request_value(value: &Value) -> Result<(), Refusal> {
     if !protocol::LATEST_OPERATIONS.contains(&operation) {
         return refuse("operation");
     }
-    if value
+    if !value
         .get("request_id")
         .and_then(Value::as_str)
-        .is_some_and(|value| !is_request_id(value))
+        .is_some_and(is_request_id)
     {
         return refuse("request-id");
     }
@@ -269,7 +282,11 @@ fn admit_profile_capabilities(value: &Value) -> Result<(), Refusal> {
     let Some(items) = value.as_array() else {
         return Err(Refusal::new("decode", "bounds"));
     };
-    if items.len() > protocol::bounds::MAX_DECLARED_CAPABILITIES as usize {
+    // Production requires a present, non-empty, strictly-sorted list
+    // (wire.rs profile-capabilities: `!capabilities.is_empty()` is part
+    // of the sorted-unique verdict) — an empty list is admission
+    // `bounds`, never an empty default (issue #106 review r5 #1).
+    if items.is_empty() || items.len() > protocol::bounds::MAX_DECLARED_CAPABILITIES as usize {
         return Err(Refusal::new("decode", "bounds"));
     }
     let mut previous: Option<String> = None;
@@ -322,6 +339,30 @@ fn optional_array<'a>(container: &'a Value, member: &str) -> Result<&'a [Value],
     }
 }
 
+/// All-default struct members accepted from a positional JSON sequence
+/// (serde `visit_seq` parity, issue #106 review r5 #9): production
+/// deserializes every `#[serde(default)]` struct from a seq positionally,
+/// so `[]` (and any shorter prefix) decodes with the defaults filling
+/// the tail; a longer seq refuses `shape` exactly like serde's
+/// invalid-length error.
+fn seq_as_members<'a>(
+    value: &'a Value,
+    fields: &[&str],
+) -> Result<std::borrow::Cow<'a, Value>, Refusal> {
+    let Some(items) = value.as_array() else {
+        return Ok(std::borrow::Cow::Borrowed(value));
+    };
+    if items.len() > fields.len() {
+        return Err(Refusal::new("decode", "shape"));
+    }
+    let members: Vec<(String, Value)> = fields
+        .iter()
+        .zip(items.iter())
+        .map(|(field, item)| ((*field).to_owned(), item.clone()))
+        .collect();
+    Ok(std::borrow::Cow::Owned(Value::Object(members)))
+}
+
 fn admit_content_ref(value: &Value) -> Result<(), Refusal> {
     if !is_closed_object(value, &["adapter", "digest", "revision"]) {
         return Err(Refusal::new("decode", "shape"));
@@ -333,8 +374,7 @@ fn admit_content_ref(value: &Value) -> Result<(), Refusal> {
     {
         return Err(Refusal::new("decode", "bounds"));
     }
-    // `revision` keeps its separate bounded-string contract (≤128), but
-    // the optional adapter identity carries the production adapter
+    // Revision is an unbounded wire string; the optional adapter identity carries the production adapter
     // token grammar (issue #106 review r4 #2, core wire.rs validate:
     // `!scopes::is_token(adapter)` refuses `native-request`): a
     // present, non-token identity must never reach dispatch.
@@ -350,8 +390,11 @@ fn admit_content_ref(value: &Value) -> Result<(), Refusal> {
         return Err(Refusal::new("decode", "explicit-null"));
     }
     if let Some(member_value) = value.get("revision") {
-        if !bounded_text(member_value, 128) {
-            return Err(Refusal::new("decode", "bounds"));
+        // Production types `revision` `Option<String>` with no bound
+        // beyond serde's own string admission (issue #106 review r5
+        // #9): only the member type is checked.
+        if member_value.as_str().is_none() {
+            return Err(Refusal::new("decode", "shape"));
         }
     }
     Ok(())
@@ -389,6 +432,11 @@ fn admit_native_request(value: &Value) -> Result<(), Refusal> {
     let changes = value
         .get("changes")
         .ok_or_else(|| Refusal::new("decode", "shape"))?;
+    // All-default struct: production deserializes `changes` from a
+    // positional seq too (`[]` decodes with both lists defaulted),
+    // exactly like serde struct-from-seq (issue #106 review r5 #9).
+    let changes = seq_as_members(changes, &["files", "symbols"])?;
+    let changes = changes.as_ref();
     if !is_closed_object(changes, &["files", "symbols"]) {
         return Err(Refusal::new("decode", "shape"));
     }
@@ -402,7 +450,9 @@ fn admit_native_request(value: &Value) -> Result<(), Refusal> {
     if files.len() > 1024 || symbols.len() > 1024 {
         return Err(Refusal::new("decode", "bounds"));
     }
-    let mut previous: Option<String> = None;
+    // Production validates the changed files without any ordering rule
+    // (wire.rs native-request: member checks only) — the SDK's old
+    // ascending-path requirement refused legal documents (review r5 #9).
     for change in files {
         if !is_closed_object(change, &["after_digest", "before_digest", "change", "path"]) {
             return Err(Refusal::new("decode", "shape"));
@@ -428,22 +478,12 @@ fn admit_native_request(value: &Value) -> Result<(), Refusal> {
                 }
             }
         }
-        let path = change
-            .get("path")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_owned();
-        if previous
-            .as_deref()
-            .is_some_and(|previous| path.as_str() <= previous)
-        {
-            return Err(Refusal::new("decode", "bounds"));
-        }
-        previous = Some(path);
     }
+    // Symbols carry no per-item bound on the wire (only the count is
+    // bounded) — empty and long strings are both legal (review r5 #9).
     for symbol in symbols {
-        if !bounded_text(symbol, protocol::bounds::ERROR_DETAIL_MAX as usize) {
-            return Err(Refusal::new("decode", "bounds"));
+        if symbol.as_str().is_none() {
+            return Err(Refusal::new("decode", "shape"));
         }
     }
     admit_content_ref(value.get("scan_ref").unwrap_or(&Value::Null))?;
@@ -462,7 +502,14 @@ fn admit_lint_request(value: &Value) -> Result<(), Refusal> {
     if !is_closed_object(value, &allowed) {
         return Err(Refusal::new("decode", "shape"));
     }
-    for member in ["scope", "files", "bindings"] {
+    // Every lint member is required on the wire (production's LintRequest
+    // has no serde defaults): a missing member is `shape` exactly like
+    // serde's missing-field error — only an explicit null gets its own
+    // token (issue #106 review r5 #8).
+    for member in ["scope", "files", "bindings", "pins"] {
+        if value.get(member).is_none() {
+            return Err(Refusal::new("decode", "shape"));
+        }
         if explicit_null(value, member) {
             return Err(Refusal::new("decode", "explicit-null"));
         }
@@ -634,9 +681,13 @@ fn admit_write_entry(value: &Value) -> Result<(), Refusal> {
     if explicit_null(value, "sha256") {
         return Err(Refusal::new("decode", "explicit-null"));
     }
+    // `sha256` is a free-form `Option<String>` on the wire (production
+    // has no digest grammar here — the action/digest pairing is the
+    // client's semantic layer): any string is admissible, only the type
+    // and the explicit-null refusal remain (issue #106 review r5 #9).
     if let Some(digest) = value.get("sha256") {
-        if !digest.as_str().is_some_and(is_sha256_digest) {
-            return Err(Refusal::new("decode", "bounds"));
+        if digest.as_str().is_none() {
+            return Err(Refusal::new("decode", "shape"));
         }
     }
     Ok(())
@@ -667,11 +718,15 @@ fn admit_scan_entry(value: &Value) -> Result<(), Refusal> {
     if explicit_null(value, "evidence") {
         return Err(Refusal::new("decode", "explicit-null"));
     }
-    if let Some(evidence) = value.get("evidence") {
-        if !is_closed_object(evidence, &["references", "signature"]) {
+    if let Some(evidence_member) = value.get("evidence") {
+        // All-default evidence: `{}` and the positional `[]` both decode
+        // (signature/references default) exactly like production's serde
+        // struct-from-seq (issue #106 review r5 #9).
+        let evidence = seq_as_members(evidence_member, &["signature", "references"])?;
+        if !is_closed_object(&evidence, &["references", "signature"]) {
             return Err(Refusal::new("decode", "shape"));
         }
-        if explicit_null(evidence, "signature") {
+        if explicit_null(&evidence, "signature") {
             return Err(Refusal::new("decode", "explicit-null"));
         }
         if let Some(signature) = evidence.get("signature") {
@@ -679,16 +734,18 @@ fn admit_scan_entry(value: &Value) -> Result<(), Refusal> {
                 return Err(Refusal::new("decode", "bounds"));
             }
         }
-        let references = optional_array(evidence, "references")?;
+        // `references` is a `#[serde(default)] Vec`: absent defaults
+        // empty; an explicit null is a typed refusal, never a default.
+        if evidence.get("references") == Some(&Value::Null) {
+            return Err(Refusal::new("decode", "explicit-null"));
+        }
+        let references = optional_array(&evidence, "references")?;
         if references.len() > protocol::bounds::REFERENCES_MAX as usize {
             return Err(Refusal::new("decode", "bounds"));
         }
         for reference in references {
             if !is_closed_object(reference, &["confidence", "role", "target"]) {
                 return Err(Refusal::new("decode", "shape"));
-            }
-            if !bounded_text(reference.get("target").unwrap_or(&Value::Null), 192) {
-                return Err(Refusal::new("decode", "bounds"));
             }
             // The target carries the manifest-local semantic-id grammar
             // (core trace::id::is_semantic_id, issue #106 review r3 #8):
@@ -769,7 +826,23 @@ fn admit_native_plan(value: &Value) -> Result<(), Refusal> {
     Ok(())
 }
 
-fn admit_result(value: &Value) -> Result<(), Refusal> {
+fn admit_result(member_value: &Value) -> Result<(), Refusal> {
+    // All-default operation result: production deserializes it from a
+    // positional seq too (`result:[]` is the all-default value), exactly
+    // like serde struct-from-seq (issue #106 review r5 #9).
+    let value = seq_as_members(
+        member_value,
+        &[
+            "ok",
+            "truncated",
+            "entries",
+            "findings",
+            "bindings",
+            "native_plan",
+            "lint_evidence",
+        ],
+    )?;
+    let value = value.as_ref();
     let allowed = [
         "bindings",
         "entries",
@@ -1015,20 +1088,23 @@ fn lint_span(value: &Value) -> bool {
     if !is_closed_object(value, &allowed) {
         return false;
     }
-    let bounded = |member: &str, min: u64| {
+    // Every span member is an unbounded `u64` in production (0 is a
+    // legal line/column; the SDK's old min-1 refused legal evidence —
+    // review r5 #9).
+    let bounded = |member: &str| {
         value
             .get(member)
             .and_then(Value::as_u64)
-            .is_some_and(|n| n >= min && n <= protocol::bounds::MAX_REQUEST_BYTES)
+            .is_some_and(|n| n <= protocol::bounds::MAX_REQUEST_BYTES)
     };
     lint_bounded_256(value.get("id").unwrap_or(&Value::Null))
         && lint_bounded_256(value.get("source").unwrap_or(&Value::Null))
-        && bounded("start", 0)
-        && bounded("end", 0)
-        && bounded("line", 1)
-        && bounded("column", 1)
-        && bounded("endLine", 1)
-        && bounded("endColumn", 1)
+        && bounded("start")
+        && bounded("end")
+        && bounded("line")
+        && bounded("column")
+        && bounded("endLine")
+        && bounded("endColumn")
 }
 
 fn lint_coverage(value: &Value) -> bool {
@@ -1346,7 +1422,37 @@ fn admit_error(value: &Value) -> Result<(), Refusal> {
     Ok(())
 }
 
-fn admit_capabilities(value: &Value) -> Result<(), Refusal> {
+/// The shared declared-list verdict: present lists must be unique,
+/// member-valid, and inside `[min, max]`; absent members pass only when
+/// not required. `min = 1` for the required declared lists (production
+/// `unique(…, 1, …)`, issue #106 review r5 #1): an empty declaration is
+/// `bounds`, never an empty default.
+fn unique_bounded(
+    value: &Value,
+    member: &str,
+    min: usize,
+    max: usize,
+    check: &dyn Fn(&Value) -> bool,
+    required: bool,
+) -> bool {
+    match value.get(member) {
+        None => !required,
+        Some(Value::Null) => false,
+        Some(items) => {
+            let Some(items) = items.as_array() else {
+                return false;
+            };
+            items.len() >= min && items.len() <= max && items.iter().all(check) && {
+                let mut seen: Vec<String> = items.iter().map(crate::json::canonical).collect();
+                seen.sort();
+                seen.dedup();
+                seen.len() == items.len()
+            }
+        }
+    }
+}
+
+fn admit_capabilities(value: &Value, protocol_version: &str) -> Result<(), Refusal> {
     let allowed = [
         "adapter",
         "capabilities",
@@ -1365,31 +1471,22 @@ fn admit_capabilities(value: &Value) -> Result<(), Refusal> {
         return Err(Refusal::new("decode", "shape"));
     }
     admit_identity(value.get("adapter").unwrap_or(&Value::Null))?;
-    let unique_bounded =
-        |member: &str, max: usize, check: fn(&Value) -> bool, required: bool| -> bool {
-            match value.get(member) {
-                None => !required,
-                Some(Value::Null) => false,
-                Some(items) => {
-                    let Some(items) = items.as_array() else {
-                        return false;
-                    };
-                    items.len() <= max && items.iter().all(check) && {
-                        let mut seen: Vec<String> =
-                            items.iter().map(crate::json::canonical).collect();
-                        seen.sort();
-                        seen.dedup();
-                        seen.len() == items.len()
-                    }
-                }
-            }
-        };
     let is_contract = |value: &Value| value.as_str().is_some_and(is_contract_version);
     let is_token_value = |value: &Value| value.as_str().is_some_and(is_token);
-    let is_operation = |value: &Value| {
-        value
-            .as_str()
-            .is_some_and(|op| protocol::LATEST_OPERATIONS.contains(&op))
+    // Operation set gating mirrors production validate_bounds exactly
+    // (issue #106 review r5 #1): `lint` is legal only on a 0.6.4
+    // describe, and the closed operation ceiling is 10 there, 9 on
+    // every other version.
+    let operations_max = if protocol_version == LINT_VERSION {
+        protocol::bounds::OPERATIONS_MAX_LINT as usize
+    } else {
+        protocol::bounds::OPERATIONS_MAX_BASE as usize
+    };
+    let is_operation = |value: &Value| -> bool {
+        value.as_str().is_some_and(|op| {
+            protocol::LATEST_OPERATIONS.contains(&op)
+                && (protocol_version == LINT_VERSION || op != "lint")
+        })
     };
     let is_transport = |value: &Value| {
         value
@@ -1402,74 +1499,87 @@ fn admit_capabilities(value: &Value) -> Result<(), Refusal> {
             .is_some_and(|s| !s.is_empty() && s.len() <= 512)
     };
     if !unique_bounded(
+        value,
         "protocol_versions",
+        1,
         protocol::bounds::PROTOCOL_VERSIONS_MAX as usize,
-        is_contract,
+        &is_contract,
         true,
     ) {
         return Err(Refusal::new("decode", "bounds"));
     }
-    if !unique_bounded(
-        "operations",
-        protocol::bounds::OPERATIONS_MAX_LINT as usize,
-        is_operation,
-        true,
-    ) {
+    if !unique_bounded(value, "operations", 1, operations_max, &is_operation, true) {
         return Err(Refusal::new("decode", "bounds"));
     }
     if !unique_bounded(
+        value,
         "transports",
+        1,
         protocol::bounds::TRANSPORTS_MAX as usize,
-        is_transport,
+        &is_transport,
         true,
     ) {
         return Err(Refusal::new("decode", "bounds"));
     }
     if !unique_bounded(
+        value,
         "targets",
+        0,
         protocol::bounds::TARGETS_MAX as usize,
-        is_token_value,
+        &is_token_value,
         false,
     ) {
         return Err(Refusal::new("decode", "bounds"));
     }
     if !unique_bounded(
+        value,
         "profiles",
+        0,
         protocol::bounds::PROFILES_MAX as usize,
-        is_token_value,
+        &is_token_value,
         false,
     ) {
         return Err(Refusal::new("decode", "bounds"));
     }
     if !unique_bounded(
+        value,
         "read_scopes",
+        0,
         protocol::bounds::MAX_SCOPES as usize,
-        is_scope_text,
+        &is_scope_text,
         false,
     ) {
         return Err(Refusal::new("decode", "bounds"));
     }
     if !unique_bounded(
+        value,
         "write_scopes",
+        0,
         protocol::bounds::MAX_SCOPES as usize,
-        is_scope_text,
+        &is_scope_text,
         false,
     ) {
         return Err(Refusal::new("decode", "bounds"));
     }
     if !unique_bounded(
+        value,
         "ir_versions",
+        0,
         protocol::bounds::MAX_IR_VERSIONS as usize,
-        is_contract,
+        &is_contract,
         false,
     ) {
         return Err(Refusal::new("decode", "bounds"));
     }
+    // `progress` is a `#[serde(default)] bool` in production: absent is
+    // legal (defaults false); a present non-boolean is a typed refusal
+    // (review r5 #9).
     match value.get("progress") {
+        None => {}
         Some(progress) if progress.as_bool().is_some() => {}
         _ => return Err(Refusal::new("decode", "shape")),
     }
-    if explicit_null(value, "capabilities") {
+    if value.get("capabilities") == Some(&Value::Null) {
         return Err(Refusal::new("decode", "explicit-null"));
     }
     if let Some(capability_map) = value.get("capabilities") {
@@ -1484,6 +1594,15 @@ fn admit_capabilities(value: &Value) -> Result<(), Refusal> {
             if !is_capability_id(name) {
                 return Err(Refusal::new("decode", "bounds"));
             }
+            // Registry membership is part of admission (production
+            // consults `capability::definition(id)`), not a
+            // discovery-time nicety (issue #106 review r5 #1).
+            if !crate::generated::capabilities::CAPABILITY_DEFINITIONS
+                .iter()
+                .any(|definition| definition.id == *name)
+            {
+                return Err(Refusal::new("decode", "bounds"));
+            }
             let support = capability_map
                 .get(name)
                 .and_then(Value::as_str)
@@ -1493,21 +1612,25 @@ fn admit_capabilities(value: &Value) -> Result<(), Refusal> {
             }
         }
     }
-    if explicit_null(value, "constraints") {
-        return Err(Refusal::new("decode", "explicit-null"));
-    }
-    if let Some(constraints) = value.get("constraints") {
-        if !is_closed_object(constraints, &["max_entries", "max_writes"]) {
-            return Err(Refusal::new("decode", "shape"));
-        }
-        for member in ["max_entries", "max_writes"] {
-            if explicit_null(constraints, member) {
-                return Err(Refusal::new("decode", "explicit-null"));
+    // `constraints` is a plain `Option` in production: absent and
+    // explicit null are both legal, the members are `1..=MAX` when
+    // present, and the all-default struct deserializes from `{}` or a
+    // positional `[]` (issue #106 review r5 #1/#9).
+    if let Some(constraints_member) = value.get("constraints") {
+        if constraints_member != &Value::Null {
+            let constraints = seq_as_members(constraints_member, &["max_entries", "max_writes"])?;
+            let constraints = constraints.as_ref();
+            if !is_closed_object(constraints, &["max_entries", "max_writes"]) {
+                return Err(Refusal::new("decode", "shape"));
             }
-            if let Some(number) = constraints.get(member) {
-                match number.as_u64() {
-                    Some(number) if number <= protocol::bounds::MAX_CONSTRAINT_VALUE => {}
-                    _ => return Err(Refusal::new("decode", "bounds")),
+            for member in ["max_entries", "max_writes"] {
+                match constraints.get(member) {
+                    None | Some(Value::Null) => {}
+                    Some(number) => match number.as_u64() {
+                        Some(number)
+                            if (1..=protocol::bounds::MAX_CONSTRAINT_VALUE).contains(&number) => {}
+                        _ => return Err(Refusal::new("decode", "bounds")),
+                    },
                 }
             }
         }
@@ -1587,17 +1710,36 @@ pub fn admit_response_value(value: &Value) -> Result<(), Refusal> {
         return Err(Refusal::new("decode", "shape"));
     }
     admit_evidence(value.get("evidence").unwrap_or(&Value::Null))?;
-    if explicit_null(value, "capabilities") {
+    let protocol_version = value
+        .get("protocol_version")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_owned();
+    if value.get("capabilities") == Some(&Value::Null) {
         return Err(Refusal::new("decode", "explicit-null"));
     }
     if let Some(capabilities) = value.get("capabilities") {
-        admit_capabilities(capabilities)?;
+        admit_capabilities(capabilities, &protocol_version)?;
     }
     if explicit_null(value, "result") {
         return Err(Refusal::new("decode", "explicit-null"));
     }
-    if let Some(result) = value.get("result") {
-        admit_result(result)?;
+    if let Some(result_member) = value.get("result") {
+        admit_result(result_member)?;
+        // Lint evidence is version-gated exactly like production
+        // validate_bounds (issue #106 review r5 #1): the member is legal
+        // only on a 0.6.4 `lint` response.
+        let carries_lint_evidence = match result_member {
+            Value::Object(members) => members.iter().any(|(k, _)| k == "lint_evidence"),
+            Value::Array(items) => items.len() >= 7,
+            _ => false,
+        };
+        if carries_lint_evidence
+            && (protocol_version != LINT_VERSION
+                || value.get("operation").and_then(Value::as_str) != Some("lint"))
+        {
+            return Err(Refusal::new("decode", "shape"));
+        }
     }
     if explicit_null(value, "writes") {
         return Err(Refusal::new("decode", "explicit-null"));
@@ -1854,6 +1996,19 @@ pub fn validate_response_identity(
     if response.get("request_id").and_then(Value::as_str) != Some(expected.2) {
         return refuse("echo-request-id");
     }
+    // The describe handshake binds the evidence identity to the declared
+    // capabilities identity exactly like the production client
+    // (`evidence.adapter != capabilities.adapter` → `Evidence`
+    // invalidity, issue #106 review r5 #10) — an SDK consumer must
+    // never accept a response a host session would refuse.
+    if let (Some(evidence_adapter), Some(declared_adapter)) = (
+        response.get("evidence").and_then(|e| e.get("adapter")),
+        response.get("capabilities").and_then(|c| c.get("adapter")),
+    ) {
+        if canonical(evidence_adapter) != canonical(declared_adapter) {
+            return refuse("identity");
+        }
+    }
     Ok(())
 }
 
@@ -1873,6 +2028,31 @@ pub fn validate_response_payload(request: &Value, response: &Value) -> Result<()
         && response.get("capabilities").is_none()
     {
         return refuse("member");
+    }
+    if operation == "describe" {
+        if let Some(caps) = response.get("capabilities") {
+            let evidence = response.get("evidence").and_then(|e| e.get("adapter"));
+            if evidence.map(canonical) != caps.get("adapter").map(canonical) {
+                return refuse("identity");
+            }
+            let contains = |key: &str, expected: &str| {
+                caps.get(key)
+                    .and_then(Value::as_array)
+                    .is_some_and(|items| items.iter().any(|v| v.as_str() == Some(expected)))
+            };
+            if !contains("operations", "describe")
+                || !contains(
+                    "protocol_versions",
+                    request
+                        .get("protocol_version")
+                        .and_then(Value::as_str)
+                        .unwrap_or(""),
+                )
+                || response.get("progress").is_some()
+            {
+                return refuse("member");
+            }
+        }
     }
     let apply = operation == "clean"
         || (operation == "generate"
@@ -1950,7 +2130,11 @@ pub fn validate_response_payload(request: &Value, response: &Value) -> Result<()
                 if entry.get("sha256").is_some() {
                     return refuse("write-digest");
                 }
-            } else if entry.get("sha256").is_none() {
+            } else if !entry
+                .get("sha256")
+                .and_then(Value::as_str)
+                .is_some_and(is_sha256_digest)
+            {
                 return refuse("write-digest");
             }
         }

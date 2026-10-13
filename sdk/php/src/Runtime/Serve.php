@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 // The per-exchange process lifetime (issue #106): read exactly one
 // bounded request from stdin or the host-owned --lekalo-request-file
 // coordinate, decode and validate it, dispatch one operation callback,
@@ -32,6 +33,15 @@ final class Serve {
      * message}` for a closed in-envelope refusal.
      */
     public static function serve(array $adapter): int {
+        try {
+            return self::serveInner($adapter);
+        } catch (\Throwable) {
+            Logger::error('adapter', 'callback or runtime refused');
+            return 1;
+        }
+    }
+
+    private static function serveInner(array $adapter): int {
         $identity = $adapter['identity'];
         $tag = $identity['id'] ?? 'adapter';
         $fileRequested = self::hasRequestFileFlag();
@@ -56,17 +66,17 @@ final class Serve {
         $handler = $handlers[$operation] ?? null;
         if (!is_callable($handler)) {
             $response = Build::buildErrorEnvelope($request, $identity, 'unsupported', 'operation-unsupported', 'the operation is not implemented by this adapter');
-            if ($response === null) {
+            if ($response === null || Build::isRefusal($response)) {
                 return 1;
             }
             return self::emit($response, $request);
         }
         $output = $handler($request);
         $response = self::buildResponse($request, $identity, $operation, is_array($output) ? $output : []);
-        if ($response === null) {
+        if ($response === null || Build::isRefusal($response)) {
             Logger::error($tag, 'response refused: builder');
             $response = Build::buildErrorEnvelope($request, $identity, 'infrastructure', 'sdk-build-refused', 'the adapter refused to emit an invalid response');
-            if ($response === null) {
+            if ($response === null || Build::isRefusal($response)) {
                 return 1;
             }
         }
@@ -83,6 +93,9 @@ final class Serve {
      * declared-limit check; null uses the default ceiling only.
      */
     private static function emit(array $response, ?array $request): int {
+        if (Build::isRefusal($response)) {
+            return 1;
+        }
         $bytes = Build::responseBytes($response);
         $ceiling = Protocol::BOUNDS['DEFAULT_MAX_OUTPUT_BYTES'];
         $declared = $request['limits']['max_output_bytes'] ?? null;
@@ -115,7 +128,7 @@ final class Serve {
             $output['payload'] ?? null,
             $output['writes'] ?? null,
             $output['progress'] ?? null,
-            isset($output['planId']) ? (string) $output['planId'] : null
+            $output['planId'] ?? null
         );
     }
 

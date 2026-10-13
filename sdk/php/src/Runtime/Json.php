@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 // Strict JSON admission for the adapter SDK (issue #106): closed
 // parsing with duplicate-key, trailing-document, explicit-null, and
 // non-finite refusals, plus the canonical byte serializer the wire
@@ -7,10 +8,14 @@
 namespace Lekalo\AdapterSdk\Runtime;
 
 final class Json {
-    /** Raw lexer pass: duplicated key spellings, if any. */
-    public static function duplicateKeys(string $text): array {
+    /** Raw lexer pass: duplicated key spellings, if any. Duplicates
+     * inside map-typed member positions (`$allowContainerPaths`, issue
+     * #106 review r5 #9 — production's serde `BTreeMap` takes
+     * last-wins) are not offenders: json_decode already keeps the last
+     * value, exactly like production. */
+    public static function duplicateKeys(string $text, array $allowContainerPaths = []): array {
         $offenders = [];
-        $stack = [null];
+        $stack = [['keys' => null, 'path' => '', 'lastKey' => null]];
         $index = 0;
         $length = strlen($text);
         $skip = function () use (&$index, $text, $length): void {
@@ -41,21 +46,43 @@ final class Json {
                 if ($index < $length && $text[$index] === ':') {
                     $index++;
                     $frame = $stack[count($stack) - 1];
-                    if ($frame !== null) {
-                        if (isset($frame[$key])) {
+                    if ($frame['keys'] !== null) {
+                        $policy = $allowContainerPaths[$frame['path']] ?? null;
+                        $allowed = in_array($frame['path'], $allowContainerPaths, true);
+                        if (is_callable($policy)) {
+                            // Serde validates every map value before inserting it;
+                            // last-wins must not hide a malformed earlier value.
+                            $probe = $index;
+                            self::skipJsonWhitespace($text, $probe);
+                            $startValue = $probe;
+                            $objects = []; $zeros = [];
+                            self::auditValue($text, $probe, '', $objects, $zeros);
+                            $current = json_decode(substr($text, $startValue, $probe - $startValue), true, 128, JSON_THROW_ON_ERROR);
+                            $allowed = $policy($frame['values'][$key] ?? null, $current);
+                            $stack[count($stack) - 1]['values'][$key] = $current;
+                        }
+                        if (isset($frame['keys'][$key]) && !$allowed) {
                             $offenders[] = $key;
                         }
-                        $stack[count($stack) - 1][$key] = true;
+                        $stack[count($stack) - 1]['keys'][$key] = true;
                     }
+                    $stack[count($stack) - 1]['lastKey'] = $key;
                 }
                 continue;
             }
             if ($ch === '{') {
-                $stack[] = [];
+                $parent = $stack[count($stack) - 1];
+                $stack[] = ['keys' => [], 'path' => self::childMemberPath($parent), 'lastKey' => null];
                 $index++;
                 continue;
             }
-            if ($ch === '}') {
+            if ($ch === '[') {
+                $parent = $stack[count($stack) - 1];
+                $stack[] = ['keys' => null, 'path' => self::childMemberPath($parent), 'lastKey' => null];
+                $index++;
+                continue;
+            }
+            if ($ch === '}' || $ch === ']') {
                 if (count($stack) > 1) {
                     array_pop($stack);
                 }
@@ -65,6 +92,16 @@ final class Json {
             $index++;
         }
         return $offenders;
+    }
+
+    /** The member-name path of a child container: object children carry
+     * their key (arrays do not — their elements share the array's
+     * member path). */
+    private static function childMemberPath(array $parent): string {
+        if ($parent['lastKey'] === null) {
+            return $parent['path'];
+        }
+        return $parent['path'] === '' ? $parent['lastKey'] : $parent['path'] . '.' . $parent['lastKey'];
     }
 
     /** The index of the closing bracket of the first document, or -1. */
@@ -111,8 +148,10 @@ final class Json {
      * r4 #3): the member paths whose raw value is a JSON object and
      * whose raw number lexeme is `-0` — the two distinctions
      * json_decode's associative mapping collapses and production's
-     * typed decoder refuses. */
-    public static function strictParse(string $text): array {
+     * typed decoder refuses. `$allowDuplicateContainers` (issue #106
+     * review r5 #9) admits duplicate keys inside map-typed member
+     * positions (last-wins, like production's serde `BTreeMap`). */
+    public static function strictParse(string $text, array $allowDuplicateContainers = []): array {
         if (str_starts_with($text, "\xEF\xBB\xBF")) {
             return ['ok' => false, 'reason' => 'not-json'];
         }
@@ -134,7 +173,7 @@ final class Json {
         } catch (\JsonException $e) {
             return ['ok' => false, 'reason' => 'not-json'];
         }
-        if (count(self::duplicateKeys($document)) > 0) {
+        if (count(self::duplicateKeys($document, $allowDuplicateContainers)) > 0) {
             return ['ok' => false, 'reason' => 'duplicate-key'];
         }
         $objectPaths = [];
@@ -267,11 +306,11 @@ final class Json {
     }
 
     /** Read exactly one bounded JSON object document. */
-    public static function readSingleObject(string $text, int $maxBytes): array {
+    public static function readSingleObject(string $text, int $maxBytes, array $allowDuplicateContainers = []): array {
         if (strlen($text) > $maxBytes) {
             return ['ok' => false, 'reason' => 'oversize'];
         }
-        $parsed = self::strictParse($text);
+        $parsed = self::strictParse($text, $allowDuplicateContainers);
         if (!$parsed['ok']) {
             return $parsed;
         }

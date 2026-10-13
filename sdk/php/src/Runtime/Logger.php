@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 // The bounded, redacted stderr logger (issue #106): logs never touch
 // stdout and never carry raw request, source, or environment content.
 

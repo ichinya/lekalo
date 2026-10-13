@@ -8,6 +8,7 @@
 import { BASE_OPERATIONS, ENUMS, IR_VERSIONS, LATEST_OPERATIONS, SUPPORTED_PROTOCOL_VERSIONS, WIRE_TOKEN } from "../generated/protocol.mjs";
 import { isLogicalPath, isWireToken } from "./paths.mjs";
 import { isPlanId, isSha256Digest } from "./ids.mjs";
+import { canonicalJson } from "./json.mjs";
 
 /** The closed semantic refusal tokens (distinct from decode reasons). */
 export const VALIDATE_REASONS = [
@@ -95,13 +96,22 @@ export function validateRequest(request) {
 /**
  * Validate response identity echo against the exact negotiated session.
  * Protocol deviations are version/token refusals; echo deviations are
- * malformed responses.
+ * malformed responses. The describe handshake additionally binds the
+ * evidence identity to the declared capabilities identity exactly like
+ * the production client (`evidence.adapter != capabilities.adapter` →
+ * `Evidence` invalidity, issue #106 review r5 #10) — an SDK consumer
+ * must never accept a response a host session would refuse.
  */
 export function validateResponseIdentity(response, expected) {
   if (response.protocol !== WIRE_TOKEN) return invalid("version");
   if (response.protocol_version !== expected.protocolVersion) return invalid("echo-version");
   if (response.operation !== expected.operation) return invalid("echo-operation");
   if (response.request_id !== expected.requestId) return invalid("echo-request-id");
+  if (response.capabilities !== undefined) {
+    const evidence = response.evidence?.adapter;
+    const declared = response.capabilities.adapter;
+    if (canonicalJson(evidence) !== canonicalJson(declared)) return invalid("identity");
+  }
   return { ok: true };
 }
 
@@ -114,6 +124,12 @@ export function validateResponseIdentity(response, expected) {
 export function validateResponsePayload(request, response) {
   if (response.capabilities !== undefined && request.operation !== "describe") return invalid("member");
   if (request.operation === "describe" && response.status === "ok" && response.capabilities === undefined) return invalid("member");
+  if (request.operation === "describe" && response.capabilities !== undefined) {
+    const caps = response.capabilities;
+    if (canonicalJson(response.evidence.adapter) !== canonicalJson(caps.adapter)) return invalid("identity");
+    if (!caps.operations.includes("describe") || !caps.protocol_versions.includes(request.protocol_version)) return invalid("member");
+    if (response.progress !== undefined) return invalid("member");
+  }
   const apply = request.operation === "clean" || (request.operation === "generate" && request.dry_run === false);
   if (apply && response.evidence.plan_id !== request.plan_id) return invalid("plan-id");
   if (response.status === "error") {
@@ -141,7 +157,7 @@ export function validateResponsePayload(request, response) {
     for (const entry of response.writes) {
       if (entry.action === "delete") {
         if (entry.sha256 !== undefined) return invalid("write-digest");
-      } else if (entry.sha256 === undefined) return invalid("write-digest");
+      } else if (!isSha256Digest(entry.sha256)) return invalid("write-digest");
     }
   } else if (response.writes !== undefined) {
     return invalid("member");

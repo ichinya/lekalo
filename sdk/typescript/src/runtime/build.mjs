@@ -9,6 +9,7 @@
  * bounded safe stderr line and exits nonzero — never a fabricated success.
  */
 import { BOUNDS, ENUMS, WIRE_TOKEN } from "../generated/protocol.mjs";
+import { CAPABILITY_DEFINITIONS } from "../generated/capabilities.mjs";
 import { canonicalJson } from "./json.mjs";
 import { decodeResponse } from "./decode.mjs";
 import { isContractVersion, isToken } from "./paths.mjs";
@@ -46,13 +47,13 @@ export function buildCapabilities({ adapter, constraints, capabilities, irVersio
     capabilities: sortedCapabilityMap(capabilities),
     constraints: constraints ?? undefined,
     ir_versions: boundedUnique(irVersions ?? [], BOUNDS.MAX_IR_VERSIONS, isContractVersion, "ir_versions"),
-    operations: boundedUnique(operations, BOUNDS.OPERATIONS_MAX_LINT, (op) => typeof op === "string", "operations"),
+    operations: boundedUnique(operations, BOUNDS.OPERATIONS_MAX_LINT, (op) => typeof op === "string", "operations", 1),
     profiles: boundedUnique(profiles ?? [], BOUNDS.PROFILES_MAX, isToken, "profiles"),
     progress: progress === true,
-    protocol_versions: boundedUnique(protocolVersions, BOUNDS.PROTOCOL_VERSIONS_MAX, isContractVersion, "protocol_versions"),
+    protocol_versions: boundedUnique(protocolVersions, BOUNDS.PROTOCOL_VERSIONS_MAX, isContractVersion, "protocol_versions", 1),
     read_scopes: boundedUnique(readScopes ?? [], BOUNDS.MAX_SCOPES, (scope) => typeof scope === "string" && scope.length > 0, "read_scopes"),
     targets: boundedUnique(targets ?? [], BOUNDS.TARGETS_MAX, isToken, "targets"),
-    transports: boundedUnique(transports, BOUNDS.TRANSPORTS_MAX, (t) => ENUMS.transport.includes(t), "transports"),
+    transports: boundedUnique(transports, BOUNDS.TRANSPORTS_MAX, (t) => ENUMS.transport.includes(t), "transports", 1),
     write_scopes: boundedUnique(writeScopes ?? [], BOUNDS.MAX_SCOPES, (scope) => typeof scope === "string" && scope.length > 0, "write_scopes"),
   };
   for (const key of Object.keys(declared)) {
@@ -72,13 +73,23 @@ function sortedCapabilityMap(capabilities) {
   const sorted = {};
   for (const key of Object.keys(capabilities).sort()) {
     if (!ENUMS.supportState.includes(capabilities[key])) throw new SdkBuildError("capabilities", key);
+    // The declared ids must be registry members — production admission
+    // consults `capability::definition(id)` for every describe key
+    // (issue #106 review r5 #1), so a hostile callback cannot mint an
+    // unknown capability even as `unknown`.
+    if (!CAPABILITY_DEFINITIONS.some((entry) => entry.id === key)) throw new SdkBuildError("capabilities", key);
     sorted[key] = capabilities[key];
   }
   return sorted;
 }
 
-function boundedUnique(values, max, check, label) {
-  if (!Array.isArray(values) || values.length > max) throw new SdkBuildError("bounds", label);
+function boundedUnique(values, max, check, label, min = 0) {
+  // `min = 1` for the required declared lists (protocol versions,
+  // operations, transports): production's `unique(…, 1, …)` bounds
+  // make an empty declaration an admission refusal, so a hostile
+  // describe callback cannot build an empty-capability envelope
+  // (issue #106 review r5 #1).
+  if (!Array.isArray(values) || values.length < min || values.length > max) throw new SdkBuildError("bounds", label);
   const unique = [...new Set(values)].sort();
   for (const value of unique) {
     if (!check(value)) throw new SdkBuildError("bounds", label);
@@ -102,6 +113,15 @@ export function buildSuccess({ adapter, capabilities, payload, planId, progress,
   };
   if (request.operation === "describe") {
     envelope.capabilities = capabilities;
+    // The handshake identity is the configured adapter identity — a
+    // describe callback that declares a different adapter block would
+    // emit a document the production client refuses at the handshake
+    // (evidence equality, issue #106 review r5 #10); the builder
+    // refuses before a single stdout byte.
+    const declared = capabilities?.adapter;
+    if (declared !== undefined && canonicalJson(declared) !== canonicalJson(adapter)) {
+      throw new SdkBuildError("identity", "capabilities.adapter");
+    }
   }
   if (payload !== undefined) {
     envelope.result = payload;

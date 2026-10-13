@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 // Deterministic identifiers and digest grammar (issue #106).
 
 namespace Lekalo\AdapterSdk\Runtime;
@@ -17,7 +18,10 @@ final class Ids {
         return 'sha256:' . self::sha256Hex($text);
     }
 
-    private static function prefixedHex(string $value, string $prefix): bool {
+    private static function prefixedHex(mixed $value, string $prefix): bool {
+        if (!is_string($value)) {
+            return false;
+        }
         $hex = substr($value, 0, strlen($prefix)) === $prefix ? substr($value, strlen($prefix)) : null;
         if ($hex === null || strlen($hex) !== 64) {
             return false;
@@ -25,15 +29,15 @@ final class Ids {
         return preg_match('/^[0-9a-f]{64}$/', $hex) === 1;
     }
 
-    public static function isSha256Digest(string $value): bool {
+    public static function isSha256Digest(mixed $value): bool {
         return self::prefixedHex($value, 'sha256:');
     }
 
-    public static function isRequestId(string $value): bool {
+    public static function isRequestId(mixed $value): bool {
         return self::prefixedHex($value, self::REQUEST_ID_PREFIX);
     }
 
-    public static function isPlanId(string $value): bool {
+    public static function isPlanId(mixed $value): bool {
         return self::prefixedHex($value, self::PLAN_ID_PREFIX);
     }
 

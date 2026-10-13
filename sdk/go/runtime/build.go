@@ -142,6 +142,14 @@ func BuildSuccess(request, adapter Value, capabilities Value, payload Value, wri
 	members := envelopeBase(request, "ok")
 	members["evidence"] = evidence
 	if capabilities != nil && GetString(request, "operation") == "describe" {
+		// The handshake identity is the configured adapter identity — a
+		// describe callback that declares a different adapter block would
+		// emit a document the production client refuses at the handshake
+		// (evidence equality, issue #106 review r5 #10); the builder
+		// refuses before a single stdout byte.
+		if declared := valueOf(capabilities, "adapter"); declared != nil && Canonical(declared) != Canonical(adapter) {
+			return nil, buildRefuse("identity")
+		}
 		members["capabilities"] = capabilities
 	}
 	if payload != nil {

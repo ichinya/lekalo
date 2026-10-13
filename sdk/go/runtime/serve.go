@@ -47,8 +47,23 @@ func DeadlineTokenFromRequest(request Value) DeadlineToken {
 	return DeadlineToken{DeadlineMs: deadline}
 }
 
-// Serve runs exactly one exchange and returns the process exit code.
-func Serve(adapter Adapter) int {
+// Serve runs one exchange with a last-line panic barrier: hostile-input
+// and callback panics become bounded stderr and a nonzero, empty-stdout
+// refusal, never a panic payload or a fabricated success.
+func Serve(adapter Adapter) (exit int) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			// Do not call user code again from the recovery boundary, and
+			// never include the panic payload in diagnostics.
+			Error("adapter", "callback or runtime refused")
+			exit = 1
+		}
+	}()
+	return serveInner(adapter)
+}
+
+// serveInner runs the ordinary read/decode/dispatch/build/emit path.
+func serveInner(adapter Adapter) int {
 	identity := adapter.Identity()
 	tag := GetString(identity, "id")
 	raw, err := readRequestText()

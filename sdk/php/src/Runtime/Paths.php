@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 // Logical path, scope, and protected-home helpers (issue #106):
 // defense in depth mirroring the host's closed grammar. The NFC table
 // check stays host-owned; vectors mark it requiresNfc and PHP runtimes
@@ -112,8 +113,8 @@ final class Paths {
     }
 
     /** @return list<string>|null */
-    private static function segments(string $value): ?array {
-        if ($value === '' || strlen($value) > self::MAX_VALUE_BYTES || $value[0] === '/') {
+    private static function segments(mixed $value): ?array {
+        if (!is_string($value) || $value === '' || strlen($value) > self::MAX_VALUE_BYTES || $value[0] === '/') {
             return null;
         }
         $parts = explode('/', $value);
@@ -125,7 +126,7 @@ final class Paths {
         return $parts;
     }
 
-    public static function isLogicalPath(string $value): bool {
+    public static function isLogicalPath(mixed $value): bool {
         $parts = self::segments($value);
         if ($parts === null) {
             return false;
@@ -138,7 +139,7 @@ final class Paths {
         return true;
     }
 
-    public static function isScope(string $value): bool {
+    public static function isScope(mixed $value): bool {
         $parts = self::segments($value);
         if ($parts === null) {
             return false;
@@ -229,8 +230,8 @@ final class Paths {
         return true;
     }
 
-    public static function isToken(string $value): bool {
-        if ($value === '' || strlen($value) > 64) {
+    public static function isToken(mixed $value): bool {
+        if (!is_string($value) || $value === '' || strlen($value) > 64) {
             return false;
         }
         return preg_match('/^[a-z][a-z0-9-]*\z/', $value) === 1;
@@ -242,8 +243,8 @@ final class Paths {
      * alphanumeric or `_.:-`, starting alphanumeric or underscore. The
      * SDK used to enforce a length bound only, admitting slash-path
      * targets the production response decoder refuses. */
-    public static function isSemanticId(string $value): bool {
-        if ($value === '' || strlen($value) > 192) {
+    public static function isSemanticId(mixed $value): bool {
+        if (!is_string($value) || $value === '' || strlen($value) > 192) {
             return false;
         }
         return preg_match('/^[A-Za-z0-9_][A-Za-z0-9_.:-]*\z/', $value) === 1;
@@ -255,15 +256,15 @@ final class Paths {
      * non-empty, at most 256 bytes, ASCII alphanumeric or
      * `_.:/#@\\-`, starting alphanumeric. The SDK used to enforce a
      * length bound only. */
-    public static function isWireToken(string $value): bool {
-        if ($value === '' || strlen($value) > 256) {
+    public static function isWireToken(mixed $value): bool {
+        if (!is_string($value) || $value === '' || strlen($value) > 256) {
             return false;
         }
         return preg_match('/^[A-Za-z0-9][A-Za-z0-9_.:\/#@\\\\-]*\z/', $value) === 1;
     }
 
-    public static function isCapabilityId(string $value): bool {
-        if ($value === '' || strlen($value) > 128) {
+    public static function isCapabilityId(mixed $value): bool {
+        if (!is_string($value) || $value === '' || strlen($value) > 128) {
             return false;
         }
         foreach (explode('.', $value) as $segment) {
@@ -281,8 +282,8 @@ final class Paths {
         return true;
     }
 
-    public static function isContractVersion(string $value): bool {
-        if ($value === '' || strlen($value) > 32) {
+    public static function isContractVersion(mixed $value): bool {
+        if (!is_string($value) || $value === '' || strlen($value) > 32) {
             return false;
         }
         $parts = explode('.', $value);

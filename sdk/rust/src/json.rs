@@ -107,6 +107,7 @@ struct Parser<'a> {
     bytes: &'a [u8],
     index: usize,
     depth: usize,
+    allow_duplicate: &'a dyn Fn(&[&str], &Value, &Value) -> bool,
 }
 
 /// The maximum container nesting depth, matching serde_json's default
@@ -117,6 +118,19 @@ const MAX_NESTING_DEPTH: usize = 128;
 
 /// Strict parse of one complete JSON document.
 pub fn strict_parse(text: &str) -> Result<Value, ParseReason> {
+    strict_parse_with(text, &|_, _, _| false)
+}
+
+/// Strict parse with a duplicate-key policy (issue #106 review r5 #9):
+/// production's typed wire structs refuse every duplicate, but a
+/// map-typed member (`capabilities.capabilities` is a serde `BTreeMap`,
+/// last-wins) admits them — `allow_duplicate` receives the member-name
+/// path of the CONTAINING object and decides whether a duplicate there
+/// keeps the last value instead of refusing.
+pub fn strict_parse_with(
+    text: &str,
+    allow_duplicate: &dyn Fn(&[&str], &Value, &Value) -> bool,
+) -> Result<Value, ParseReason> {
     let bytes = text.as_bytes();
     if bytes.first() == Some(&0xEF) && bytes.len() >= 3 && bytes[1] == 0xBB && bytes[2] == 0xBF {
         return Err(ParseReason::NotJson);
@@ -125,9 +139,10 @@ pub fn strict_parse(text: &str) -> Result<Value, ParseReason> {
         bytes,
         index: 0,
         depth: 0,
+        allow_duplicate,
     };
     parser.skip_whitespace();
-    let value = parser.parse_value()?;
+    let value = parser.parse_value(&[])?;
     parser.skip_whitespace();
     if parser.index != bytes.len() {
         return Err(ParseReason::TrailingDocument);
@@ -137,10 +152,20 @@ pub fn strict_parse(text: &str) -> Result<Value, ParseReason> {
 
 /// Read exactly one bounded JSON object document.
 pub fn read_single_object(text: &str, max_bytes: usize) -> Result<Value, ParseReason> {
+    read_single_object_with(text, max_bytes, &|_, _, _| false)
+}
+
+/// [`read_single_object`] with a duplicate-key policy (map-typed member
+/// positions keep last-wins; every struct position still refuses).
+pub fn read_single_object_with(
+    text: &str,
+    max_bytes: usize,
+    allow_duplicate: &dyn Fn(&[&str], &Value, &Value) -> bool,
+) -> Result<Value, ParseReason> {
     if text.len() > max_bytes {
         return Err(ParseReason::Oversize);
     }
-    let value = strict_parse(text)?;
+    let value = strict_parse_with(text, allow_duplicate)?;
     if !value.is_object() {
         return Err(ParseReason::NotJson);
     }
@@ -160,10 +185,10 @@ impl<'a> Parser<'a> {
         self.bytes.get(self.index).copied()
     }
 
-    fn parse_value(&mut self) -> Result<Value, ParseReason> {
+    fn parse_value(&mut self, path: &[&str]) -> Result<Value, ParseReason> {
         match self.peek() {
-            Some(b'{') => self.parse_object(),
-            Some(b'[') => self.parse_array(),
+            Some(b'{') => self.parse_object(path),
+            Some(b'[') => self.parse_array(path),
             Some(b'"') => Ok(Value::Str(self.parse_string()?)),
             Some(b't') => self.parse_literal("true", Value::Bool(true)),
             Some(b'f') => self.parse_literal("false", Value::Bool(false)),
@@ -182,17 +207,17 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_object(&mut self) -> Result<Value, ParseReason> {
+    fn parse_object(&mut self, path: &[&str]) -> Result<Value, ParseReason> {
         self.depth += 1;
         if self.depth > MAX_NESTING_DEPTH {
             return Err(ParseReason::NotJson);
         }
-        let result = self.parse_object_members();
+        let result = self.parse_object_members(path);
         self.depth -= 1;
         result
     }
 
-    fn parse_object_members(&mut self) -> Result<Value, ParseReason> {
+    fn parse_object_members(&mut self, path: &[&str]) -> Result<Value, ParseReason> {
         self.index += 1;
         let mut members: Vec<(String, Value)> = Vec::new();
         let mut seen: BTreeSet<String> = BTreeSet::new();
@@ -213,9 +238,22 @@ impl<'a> Parser<'a> {
             }
             self.index += 1;
             self.skip_whitespace();
-            let value = self.parse_value()?;
+            let mut member_path: Vec<&str> = path.to_vec();
+            member_path.push(key.as_str());
+            let value = self.parse_value(&member_path)?;
             if !seen.insert(key.clone()) {
-                return Err(ParseReason::DuplicateKey);
+                // Map-typed member positions take last-wins exactly like
+                // production's serde `BTreeMap` (issue #106 review r5
+                // #9); every struct position keeps the hard refusal.
+                let previous = members
+                    .iter()
+                    .find(|(name, _)| name == &key)
+                    .map(|(_, value)| value)
+                    .unwrap_or(&Value::Null);
+                if !(self.allow_duplicate)(path, previous, &value) {
+                    return Err(ParseReason::DuplicateKey);
+                }
+                members.retain(|(existing, _)| existing != &key);
             }
             members.push((key, value));
             self.skip_whitespace();
@@ -230,17 +268,17 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_array(&mut self) -> Result<Value, ParseReason> {
+    fn parse_array(&mut self, path: &[&str]) -> Result<Value, ParseReason> {
         self.depth += 1;
         if self.depth > MAX_NESTING_DEPTH {
             return Err(ParseReason::NotJson);
         }
-        let result = self.parse_array_items();
+        let result = self.parse_array_items(path);
         self.depth -= 1;
         result
     }
 
-    fn parse_array_items(&mut self) -> Result<Value, ParseReason> {
+    fn parse_array_items(&mut self, path: &[&str]) -> Result<Value, ParseReason> {
         self.index += 1;
         let mut items = Vec::new();
         self.skip_whitespace();
@@ -250,7 +288,7 @@ impl<'a> Parser<'a> {
         }
         loop {
             self.skip_whitespace();
-            items.push(self.parse_value()?);
+            items.push(self.parse_value(path)?);
             self.skip_whitespace();
             match self.peek() {
                 Some(b',') => self.index += 1,

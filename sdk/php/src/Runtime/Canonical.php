@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 // Deterministic sorting, serialization, and result-building helpers
 // (issue #106).
 

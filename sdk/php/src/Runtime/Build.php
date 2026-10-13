@@ -1,9 +1,11 @@
 <?php
+declare(strict_types=1);
 // Response builders and the validate-before-write boundary (issue #106).
 
 namespace Lekalo\AdapterSdk\Runtime;
 
 use Lekalo\AdapterSdk\Generated\Protocol;
+use Lekalo\AdapterSdk\Generated\Capabilities;
 
 final class Build {
     /** Build and validate one adapter identity block. */
@@ -43,6 +45,9 @@ final class Build {
             }
             return $sorted;
         };
+        if ($protocolVersions === [] || $operations === [] || $transports === []) {
+            return self::refuse('bounds');
+        }
         $members = [
             'adapter' => $adapter,
             'ir_versions' => $bounded($irVersions, Protocol::BOUNDS['MAX_IR_VERSIONS']),
@@ -69,7 +74,7 @@ final class Build {
             sort($keys, SORT_STRING);
             foreach ($keys as $id) {
                 $state = $capabilities[$id];
-                if (!Paths::isCapabilityId((string) $id) || !in_array($state, Protocol::ENUMS['supportState'], true)) {
+                if (!in_array($id, array_column(Capabilities::DEFINITIONS, 'id'), true) || !in_array($state, Protocol::ENUMS['supportState'], true)) {
                     return self::refuse('capabilities');
                 }
                 $sorted[$id] = $state;
@@ -168,6 +173,10 @@ final class Build {
         $admitted = Decode::admitResponse(Json::canonicalJson($envelope));
         if (!$admitted['ok']) {
             return self::refuse($admitted['reason']);
+        }
+        $identity = Decode::validateResponseIdentity($admitted['value'], $request['protocol_version'], $request['operation'], $request['request_id']);
+        if ($identity !== null) {
+            return self::refuse($identity['reason']);
         }
         $payload = Decode::validateResponsePayload($request, $admitted['value']);
         if ($payload !== null) {

@@ -250,6 +250,21 @@ fn finish_envelope(mut envelope: Value, request: &Value) -> Result<Value, BuildE
     }
     let value = admit_envelope(&envelope).map_err(BuildError::from)?;
     validate_response_payload(request, &value).map_err(BuildError::from)?;
+    // The handshake identity is the configured adapter identity — a
+    // describe callback that declares a different adapter block would
+    // emit a document the production client refuses at the handshake
+    // (evidence equality, issue #106 review r5 #10); the builder refuses
+    // before a single stdout byte.
+    if let (Some(evidence_adapter), Some(declared_adapter)) = (
+        envelope.get("evidence").and_then(|e| e.get("adapter")),
+        envelope.get("capabilities").and_then(|c| c.get("adapter")),
+    ) {
+        if canonical(evidence_adapter) != canonical(declared_adapter) {
+            return Err(BuildError {
+                reason: "identity".to_owned(),
+            });
+        }
+    }
     if let Some(plan) = envelope
         .get("evidence")
         .and_then(|evidence| evidence.get("plan_id"))

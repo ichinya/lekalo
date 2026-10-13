@@ -48,8 +48,14 @@ const MAX_NESTING_DEPTH = 128;
  * and refuses malformed number spellings positionally. Refusal
  * precedence matches the old JSON.parse-based pass: any syntax error
  * anywhere is `not-json`, duplicates only surface for otherwise-valid
- * documents. */
-export function parseDocument(text) {
+ * documents. Duplicate positions are tracked as member-name paths
+ * (issue #106 review r5): production's typed wire structs refuse every
+ * duplicate, but a map-typed member (`capabilities.capabilities` is a
+ * serde `BTreeMap`, last-wins) admits them — the caller decides which
+ * object positions are map positions through `allowDuplicatePaths`,
+ * which receives the CONTAINING object's path. */
+export function parseDocument(text, allowDuplicatePaths) {
+  const allows = (path, previous, next) => allowDuplicatePaths === undefined ? false : allowDuplicatePaths(path, previous, next);
   let index = 0;
   let depth = 0;
   const length = text.length;
@@ -143,11 +149,11 @@ export function parseDocument(text) {
     if (integral && Object.is(value, -0)) return { ok: true, value: new JsonFloat(raw) };
     return { ok: true, value: integral ? value : new JsonFloat(raw) };
   };
-  const parseValue = () => {
+  const parseValue = (path) => {
     skipWhitespace();
     const ch = text[index];
-    if (ch === "{") return parseObject();
-    if (ch === "[") return parseArray();
+    if (ch === "{") return parseObject(path);
+    if (ch === "[") return parseArray(path);
     if (ch === '"') {
       index += 1;
       const value = parseString();
@@ -168,15 +174,15 @@ export function parseDocument(text) {
     if (ch === "-" || (ch >= "0" && ch <= "9")) return parseNumber();
     return notJson();
   };
-  const parseObject = () => {
+  const parseObject = (path) => {
     index += 1;
     depth += 1;
     if (depth > MAX_NESTING_DEPTH) return notJson();
-    const result = parseObjectMembers();
+    const result = parseObjectMembers(path);
     depth -= 1;
     return result;
   };
-  const parseObjectMembers = () => {
+  const parseObjectMembers = (path) => {
     const members = {};
     const seen = new Set();
     skipWhitespace();
@@ -193,9 +199,9 @@ export function parseDocument(text) {
       skipWhitespace();
       if (text[index] !== ":") return notJson();
       index += 1;
-      const member = parseValue();
+      const member = parseValue([...path, key]);
       if (!member.ok) return member;
-      duplicated = duplicated || seen.has(key);
+      if (seen.has(key) && !allows(path, members[key], member.value)) duplicated = true;
       seen.add(key);
       // Keep the last duplicate's value (JSON.parse semantics); defineProperty
       // keeps `__proto__` an ordinary own member exactly like JSON.parse.
@@ -212,15 +218,15 @@ export function parseDocument(text) {
       return notJson();
     }
   };
-  const parseArray = () => {
+  const parseArray = (path) => {
     index += 1;
     depth += 1;
     if (depth > MAX_NESTING_DEPTH) return notJson();
-    const result = parseArrayItems();
+    const result = parseArrayItems(path);
     depth -= 1;
     return result;
   };
-  const parseArrayItems = () => {
+  const parseArrayItems = (path) => {
     const items = [];
     skipWhitespace();
     if (text[index] === "]") {
@@ -228,7 +234,7 @@ export function parseDocument(text) {
       return { ok: true, value: items };
     }
     for (;;) {
-      const item = parseValue();
+      const item = parseValue(path);
       if (!item.ok) return item;
       items.push(item.value);
       skipWhitespace();
@@ -243,7 +249,7 @@ export function parseDocument(text) {
       return notJson();
     }
   };
-  const value = parseValue();
+  const value = parseValue([]);
   if (!value.ok) return value;
   skipWhitespace();
   if (index !== length) return { ok: false, reason: "trailing-document" };
@@ -310,14 +316,17 @@ export function duplicateKeys(text) {
 /**
  * Strict parse of one complete JSON document: refuses BOM, trailing
  * documents, duplicate keys (including escaped spellings), malformed
- * number spellings, and non-finite numbers.
+ * number spellings, and non-finite numbers. `allowDuplicatePaths`
+ * (issue #106 review r5) admits duplicate keys at map-typed member
+ * positions — production's serde `BTreeMap` members take last-wins —
+ * while every struct-position duplicate still refuses.
  */
-export function strictParse(text) {
+export function strictParse(text, allowDuplicatePaths) {
   if (typeof text !== "string") return { ok: false, reason: "not-json" };
   if (text.startsWith("\uFEFF")) return { ok: false, reason: "not-json" };
   const first = text.replace(/^[\s]+/, "")[0];
   if (first !== "{" && first !== "[") return { ok: false, reason: "not-json" };
-  return parseDocument(text);
+  return parseDocument(text, allowDuplicatePaths);
 }
 
 /** Byte length of a UTF-8 encoding of the text. */
@@ -327,11 +336,12 @@ export function utf8Length(text) {
 
 /**
  * Read exactly one bounded UTF-8 JSON object document; oversize input is
- * refused before parsing.
+ * refused before parsing. `allowDuplicatePaths` propagates to the
+ * parser's duplicate-key policy (map-typed member positions only).
  */
-export function readSingleObject(text, maxBytes) {
+export function readSingleObject(text, maxBytes, allowDuplicatePaths) {
   if (utf8Length(text) > maxBytes) return { ok: false, reason: "oversize" };
-  const parsed = strictParse(text);
+  const parsed = strictParse(text, allowDuplicatePaths);
   if (!parsed.ok) return parsed;
   if (parsed.value === null || typeof parsed.value !== "object" || Array.isArray(parsed.value)) {
     return { ok: false, reason: "shape" };
