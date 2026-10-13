@@ -25,7 +25,17 @@ or stores reports.
 - Reverse impact: `lekalo task-links impact CONTRACT` derives the
   consumer set (capabilities, bindings, action policies, commands,
   effects, verification scenarios) from the attachment and the
-  compilation - never a prewritten list.
+  compilation - never a prewritten list - together with the exact
+  member paths: every request/response/error field of the referenced
+  schemas carries its own derived reverse chain (request members
+  through operation -> policy -> command -> the delivery-surface
+  worker -> every declared target binding -> covering verification
+  scenarios; response/error members through the delivery surface),
+  and bounded static coverage is complete only when member schemas,
+  consuming operations, actual outbox-writing workers, module target
+  bindings and covering scenarios all resolve. The boundary is
+  `declared-schema-consumers`, not verified implementation execution;
+  missing witnesses remain explicit gaps.
 - Diagnostics: `LEK-TASKLINK-001`..`008` live in the additive
   diagnostic-registry union successor
   (`dev.lekalo.diagnostic-registry@0.8.0`); predecessor producers keep
@@ -91,8 +101,21 @@ never constant — a declared fact without admitted execution evidence
 is honestly `unknown`, an undeclared fact is `unsupported` — and the
 shared semantic validation runs before any report. A provider-only
 change preserves the pinned core fact rows while the adapter rows
-move; target guarantees without native evidence stay explicitly
-`unknown` and are refused under `strict` instead of being claimed.
+move. File-origin evidence is a producer declaration, even when its
+steps, digests and SQLite run rows agree: it cannot authenticate
+execution. Core execution facts and target guarantees therefore stay
+`unknown` and are refused under `strict`; `executed` remains empty in
+file-admitted summaries. The native gate records its observed battery
+execution separately and never re-labels mock steps as native runs.
+
+Detected effects are capped at `extracted` confidence. Their content
+hash covers compact recursively key-sorted envelope JSON excluding
+`evidenceDigest` itself; it detects tampering, not producer authenticity.
+Typed local groups must join real canonical writes, network calls stay
+outside them, and partial-failure records require mixed recipient
+results with exactly the failed-only retry set. These sections explicitly
+carry `basis: envelope-declaration`: authoritative transaction/case owner
+admission and executed atomic/partial traces remain pending.
 
 ## Guarantees and limits
 
@@ -105,10 +128,13 @@ acceptance-pending-ack uncertainty, bounded retry with durable
 attempt accounting, echo suppression, crash recovery) is exercised by
 the Rust battery and the six family gates under
 `scripts/test-task-links-*.mjs`, and the qualified native legs run a
-pinned transactional DB runner with process-restart failpoints under
-provisioning. Mock evidence never satisfies the durable/race
-assertions: native coverage stays unclaimed until a qualified
-environment runs the native gate with provisioning. The external
+pinned bundled-SQLite runner under provisioning. Its four legs cover
+identity races, in-process acknowledgement recovery, durable attempts
+and a real child-process kill during an uncommitted transaction. This
+is not maintained Laravel execution or full worker-context recovery;
+those native acceptance obligations remain pending. Mock/file evidence
+never satisfies durable/race qualification, and a co-located receipt
+alone cannot establish authenticated execution provenance. The external
 identity tuple is `(workspace_id, installation_id, provider_id,
 object_type, external_id)`, compared as exact text; detach retains
 history and the external object; the network call is declared outside

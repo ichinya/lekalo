@@ -8,7 +8,9 @@
 // network call is declared outside every local transaction.
 
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -152,19 +154,76 @@ if (rust.error) {
       if (!byKind("enqueue-job").some((edge) => edge.resource.id === "tasklinks.queue/outbox")) {
         fail("detected-worker-job", "dispatch_outbox durable outbox worker job missing");
       }
-      const groups = new Set(
-        effects.edges.filter((edge) => edge.transactionGroup !== null).map((edge) => edge.transactionGroup),
-      );
-      if (!groups.has("tasklinks/tx-intent-dispatch")) {
-        fail("detected-atomic-group", "the dispatch atomic intent group is not declared");
+      // Network calls sit OUTSIDE local atomic groups: no external
+      // call may carry a transaction group (the contract excludes
+      // them), and the local dispatch group is a TYPED declaration
+      // over the durable enqueue only — never a name over the call.
+      if (effects.edges.some((edge) => edge.kind === "external-call" && edge.transactionGroup !== null)) {
+        fail("detected-network-in-group", "an external call was enclosed in a transaction group");
+      }
+      const tx = effects.transactions.find((row) => row.groupId === "tasklinks/tx-intent-dispatch");
+      if (!tx) {
+        fail("detected-atomic-group", "the dispatch local transaction is not declared");
+      } else if (
+        JSON.stringify(tx.members) !== JSON.stringify([
+          { kind: "enqueue-job", operation: "tasklinks.dispatch_outbox", subject: "job:tasklinks.queue/outbox" },
+        ])
+      ) {
+        fail("detected-atomic-group-members", JSON.stringify(tx.members));
+      }
+      // Caller-asserted trust never mints verified confidence: the
+      // envelope ASSERTS verified, the join caps it at extracted (an
+      // envelope operand is adapter-extracted evidence, never an
+      // owner confirmation).
+      if (!effects.edges.every((edge) => edge.confidence !== "verified" && edge.confidence !== "current")) {
+        fail("detected-trust-clamp", "a caller-asserted envelope minted owner-level confidence");
+      }
+      if (!byKind("external-call").some((edge) => edge.confidence === "extracted")) {
+        fail("detected-clamped-confidence", "the detected edges must render as extracted");
+      }
+      // The typed partial-failure trace: a two-recipient dispatch with
+      // per-recipient results and failed-only retry, realizing the
+      // declared partial-delivery case of the same fixture family.
+      const record = effects.partialFailures[0];
+      if (record && record.basis !== "envelope-declaration") {
+        fail("detected-partial-basis", "file-origin traces are not verified execution");
+      }
+      if (!record) {
+        fail("detected-partial-failure", "the typed partial-failure trace is missing");
+      } else {
+        const declared = read("tests/fixtures/task-external-links/contracts/extended-effects.json");
+        const declaredCase = declared.partialFailureCases.find((row) => row.caseId === record.caseRef);
+        if (!declaredCase) {
+          fail("detected-partial-failure-case", `case ${record.caseRef} is not a declared case`);
+        } else if (declaredCase.scenarioRef.scenarioId !== "tasklinks.scenario.partial_delivery") {
+          fail("detected-partial-failure-scenario", declaredCase.scenarioRef.scenarioId);
+        }
+        const delivered = record.recipients.filter((row) => row.result === "delivered");
+        const failed = record.recipients.filter((row) => row.result === "failed");
+        if (record.recipients.length !== 2 || delivered.length !== 1 || failed.length !== 1) {
+          fail("detected-partial-failure-recipients", JSON.stringify(record.recipients));
+        }
+        if (delivered[0]?.receiptDigest === null || delivered[0]?.errorClass !== null) {
+          fail("detected-partial-failure-receipt", JSON.stringify(delivered[0]));
+        }
+        if (failed[0]?.errorClass === null || failed[0]?.receiptDigest !== null) {
+          fail("detected-partial-failure-error", JSON.stringify(failed[0]));
+        }
+        if (
+          JSON.stringify(record.retryEligible) !== JSON.stringify([failed[0]?.provider])
+          || record.retryEligible.includes(delivered[0]?.provider)
+        ) {
+          fail("detected-partial-failure-retry", JSON.stringify(record.retryEligible));
+        }
       }
     }
   }
   {
     const effects = detected("tasklinks.request_action");
     if (effects) {
-      // The canonical local write and the durable outbox commit are one
-      // atomic local unit: both carry the SAME explicit group.
+      // The typed extracted group names two real local writes of this
+      // compilation. It is a caller declaration, not proof of atomic
+      // execution; authoritative transaction-owner admission is pending.
       const grouped = effects.edges.filter((edge) => edge.transactionGroup === "tasklinks/tx-intent-local");
       const groupedKinds = grouped.map((edge) => edge.kind + ":" + edge.resource.id).sort();
       if (
@@ -173,21 +232,47 @@ if (rust.error) {
       ) {
         fail("detected-local-group", "the request_action atomic pair must share one group: " + JSON.stringify(groupedKinds));
       }
+      const tx = effects.transactions.find((row) => row.groupId === "tasklinks/tx-intent-local");
+      if (tx && tx.basis !== "envelope-declaration") {
+        fail("detected-transaction-basis", "file-origin groups are not verified atomicity");
+      }
+      if (!tx) {
+        fail("detected-local-declaration", "the request_action local transaction is not declared");
+      } else {
+        const members = tx.members
+          .map((member) => member.kind + ":" + member.subject)
+          .sort();
+        if (
+          JSON.stringify(members) !== JSON.stringify([
+            "create:canonical:tasklinks.outbox_item",
+            "update:canonical:planner.task",
+          ])
+        ) {
+          fail("detected-local-declaration-members", JSON.stringify(tx.members));
+        }
+      }
     }
   }
   {
     const effects = detected("tasklinks.ack_delivery");
     if (effects) {
-      // The partial-failure path is a public edge: the receipt
-      // reconciliation call exists and is grouped distinctly from the
-      // local ack group.
+      // The receipt reconciliation call is a public edge that sits
+      // OUTSIDE the local ack transaction (network calls are never
+      // atomic-group members), and the durable receipt event carries
+      // the typed local ack group.
       const reconcile = effects.edges.find(
         (edge) => edge.kind === "external-call"
-          && edge.transactionGroup === "tasklinks/tx-partial-failure-reconcile",
+          && edge.resource.id === "tasklinks.provider/github-issues",
       );
-      if (!reconcile) fail("detected-partial-failure", "the partial-failure reconciliation edge is missing");
-      if (!effects.edges.some((edge) => edge.kind === "emit-event" && edge.resource.id === "tasklinks.delivery_recorded")) {
+      if (!reconcile) fail("detected-partial-failure", "the receipt reconciliation edge is missing");
+      if (reconcile && reconcile.transactionGroup !== null) {
+        fail("detected-reconcile-in-group", "the reconciliation network call is enclosed in a transaction group");
+      }
+      if (!effects.edges.some((edge) => edge.kind === "emit-event" && edge.resource.id === "tasklinks.delivery_recorded" && edge.transactionGroup === "tasklinks/tx-intent-ack")) {
         fail("detected-receipt-event", "the durable delivery receipt event is missing");
+      }
+      if (!effects.transactions.some((row) => row.groupId === "tasklinks/tx-intent-ack")) {
+        fail("detected-ack-declaration", "the ack local transaction is not declared");
       }
     }
   }
@@ -203,6 +288,99 @@ if (rust.error) {
     );
     if (run.error || run.status === 0 || !(run.stdout + run.stderr).includes("effects-stale-pin")) {
       fail("detected-stale-pin", "a stale envelope must refuse with effects-stale-pin");
+    }
+  }
+  // Typed semantics refuse their forgeries: a network call inside a
+  // transaction group, an undeclared group string, a transaction
+  // declaration that does not match its grouped entries, and a
+  // partial-failure trace whose retry set re-targets a delivered
+  // recipient are each one typed refusal — meaningful-looking names
+  // never stand in for the semantics.
+  {
+    const work = mkdtempSync(join(tmpdir(), "lekalo-detected-"));
+    try {
+      const base = JSON.parse(readFileSync(join(root, detectedEnvelope), "utf8"));
+      const refuse = (name, mutate, expected) => {
+        const mutated = JSON.parse(JSON.stringify(base));
+        mutate(mutated);
+        const path = join(work, `${name}.json`);
+        if (name !== "tampered-digest") {
+          delete mutated.evidenceDigest;
+          const sort = (value) => Array.isArray(value) ? value.map(sort)
+            : value && typeof value === "object" ? Object.fromEntries(
+              Object.keys(value).sort().map((key) => [key, sort(value[key])])) : value;
+          mutated.evidenceDigest = "sha256:" + createHash("sha256")
+            .update(JSON.stringify(sort(mutated))).digest("hex");
+        }
+        writeFileSync(path, JSON.stringify(mutated));
+        const run = spawnSync(
+          resolvedBinary,
+          ["--no-cache", "--json", "effects", "show", "tasklinks.dispatch_outbox",
+           "--project", "tests/fixtures/task-external-links/project",
+           "--evidence", path],
+          { cwd: root, encoding: "utf8", timeout: 120000 },
+        );
+        if (run.error || run.status === 0 || !(run.stdout + run.stderr).includes(expected)) {
+          fail(`detected-${name}`, `expected refusal ${expected}`);
+        }
+      };
+      refuse("tampered-digest", (doc) => {
+        doc.entries[0].subject = "external-service:arbitrary/recipient";
+      }, "evidence-digest-mismatch");
+      refuse("omitted-failed-retry", (doc) => {
+        doc.entries[0].partialFailure.retryEligible = [];
+      }, "partial-failure-retry");
+      refuse("all-recipients-failed", (doc) => {
+        const recipient = doc.entries[0].partialFailure.recipients[0];
+        recipient.result = "failed";
+        delete recipient.receiptDigest;
+        recipient.errorClass = "timeout";
+      }, "partial-failure-shape");
+      refuse("invented-local-write", (doc) => {
+        doc.transactions[1].members[0].subject = "canonical:tasklinks.conflict";
+        doc.entries[2].subject = "canonical:tasklinks.conflict";
+      }, "group-member-undeclared");
+      refuse("duplicate-local-member", (doc) => {
+        doc.transactions[1].members.push(structuredClone(doc.transactions[1].members[0]));
+      }, "group-member-mismatch");
+      refuse("network-in-group", (doc) => {
+        doc.entries[1].transactionGroup = "tasklinks/tx-intent-dispatch";
+        doc.entries[0].transactionGroup = "tasklinks/tx-intent-dispatch";
+        doc.transactions[0].members.push({
+          operation: "tasklinks.dispatch_outbox",
+          kind: "external-call",
+          subject: "external-service:tasklinks.provider/github-issues",
+        });
+      }, "network-in-group");
+      refuse("group-undeclared", (doc) => {
+        delete doc.entries[1].transactionGroup;
+        doc.transactions = [];
+        doc.entries = doc.entries.map((entry) => {
+          if (entry.kind === "enqueue-job") entry.transactionGroup = "tasklinks/tx-undeclared";
+          if (entry.transactionGroup && entry.transactionGroup !== "tasklinks/tx-undeclared") {
+            delete entry.transactionGroup;
+          }
+          return entry;
+        });
+      }, "group-undeclared");
+      refuse("group-member-mismatch", (doc) => {
+        doc.transactions[0].members = [{
+          operation: "tasklinks.dispatch_outbox",
+          kind: "enqueue-job",
+          subject: "job:tasklinks.queue/elsewhere",
+        }];
+      }, "group-member-mismatch");
+      refuse("partial-failure-retry", (doc) => {
+        doc.entries[0].partialFailure.retryEligible = [
+          "tasklinks.provider/github-issues",
+          "tasklinks.provider/mock-secondary",
+        ];
+      }, "partial-failure-retry");
+      refuse("partial-failure-shape", (doc) => {
+        doc.entries[0].partialFailure.recipients = [doc.entries[0].partialFailure.recipients[0]];
+      }, "partial-failure-shape");
+    } finally {
+      rmSync(work, { recursive: true, force: true });
     }
   }
   // The extended-effects declaration joins the same compilation: the

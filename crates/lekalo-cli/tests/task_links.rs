@@ -38,6 +38,21 @@ fn workspace_path(relative: &str) -> PathBuf {
         .join(relative)
 }
 
+/// Separate process/test namespaces avoid collisions with other tests,
+/// concurrent suite invocations and ordinary build/probe artifacts.
+fn scratch_relative(test: &str, file: &str) -> String {
+    format!(
+        "target/task-links-tests/{}/{test}/{file}",
+        std::process::id()
+    )
+}
+
+fn scratch(test: &str, file: &str) -> PathBuf {
+    let path = workspace_path(&scratch_relative(test, file));
+    std::fs::create_dir_all(path.parent().expect("scratch parent")).expect("scratch root");
+    path
+}
+
 fn fixture(relative: &str) -> String {
     format!("{FIXTURES}/{relative}")
 }
@@ -160,7 +175,7 @@ fn canonical_revision(document: &Value) -> String {
 /// broken declaration. Permissive therefore never claims pass here.
 #[test]
 fn declaration_defects_invalidate_under_both_profiles() {
-    let target = workspace_path("target/task-links-defect-copy.json");
+    let target = scratch("declaration-defects", "attachment.json");
     let _ = std::fs::create_dir_all(target.parent().unwrap());
     let original: Value = serde_json::from_str(
         &std::fs::read_to_string(workspace_path(attachment().as_str())).expect("attachment"),
@@ -312,7 +327,7 @@ fn inspect_projects_the_typed_view_and_admits_evidence() {
 /// Stale evidence pins fail closed with LEK-TASKLINK-008.
 #[test]
 fn stale_evidence_fails_closed() {
-    let target = workspace_path("target/task-links-stale-evidence.json");
+    let target = scratch("stale-evidence", "evidence.json");
     let _ = std::fs::create_dir_all(target.parent().unwrap());
     let original =
         std::fs::read_to_string(workspace_path(fixture("evidence/mock-run.json").as_str()))
@@ -390,21 +405,17 @@ fn portability_separates_sections_and_strict_refuses_unknown_required() {
     assert_eq!(report["toProfile"]["profileId"], "node-typescript");
     let core = report["coreSemantics"].as_array().expect("core rows");
     assert_eq!(core.len(), 6);
-    // Evidence is bound to facts: the mock run witnessed the
-    // two_providers scenario (covering request_action), so exactly the
-    // policy and idempotent-intent facts are evidenced; the identity,
-    // detach, and conflict facts stay honestly unknown. No core row is
-    // constant and none claims more than its scenario witnessed.
+    // A producer-authored mock summary, even with coherent typed
+    // witnesses, authenticates no execution-dependent core fact.
     let provided = |fact: &str| -> String {
         core.iter()
             .find(|row| row["fact"] == fact)
             .map(|row| row["provided"].as_str().expect("provided").to_owned())
             .expect("fact row")
     };
-    for fact in ["actor-and-field-policy", "idempotent-intent"] {
-        assert_eq!(provided(fact), "supported", "{fact}");
-    }
     for fact in [
+        "actor-and-field-policy",
+        "idempotent-intent",
         "external-identity-exact-tuple",
         "task-links-0-n",
         "detach-preserves-history",
@@ -421,7 +432,7 @@ fn portability_separates_sections_and_strict_refuses_unknown_required() {
         .expect("target rows")
         .iter()
         .any(|row| row["fact"] == "durable-outbox" && row["provided"] == "unknown"));
-    assert_eq!(report["evidenceCoverage"]["unknownRequired"], 8);
+    assert_eq!(report["evidenceCoverage"]["unknownRequired"], 10);
     // Permissive keeps the envelope valid while naming every gap.
     let gap_rules: Vec<&str> = document["reasonCodes"]
         .as_array()
@@ -450,7 +461,7 @@ fn portability_separates_sections_and_strict_refuses_unknown_required() {
 /// A provider-only revision change preserves every core row byte.
 #[test]
 fn provider_only_change_preserves_core_rows() {
-    let target = workspace_path("target/task-links-provider-changed.json");
+    let target = scratch("provider-changed", "attachment.json");
     let _ = std::fs::create_dir_all(target.parent().unwrap());
     let original: Value = serde_json::from_str(
         &std::fs::read_to_string(workspace_path(attachment().as_str())).expect("attachment"),
@@ -562,7 +573,7 @@ fn missing_attachment_fails_closed() {
 /// exit-5 class (unsupported-version), not plain invalid.
 #[test]
 fn wrong_schema_version_maps_to_unsupported_version() {
-    let target = workspace_path("target/task-links-wrong-version.json");
+    let target = scratch("wrong-version", "attachment.json");
     let _ = std::fs::create_dir_all(target.parent().unwrap());
     let original =
         std::fs::read_to_string(workspace_path(attachment().as_str())).expect("attachment");
@@ -610,7 +621,7 @@ fn wrong_schema_version_maps_to_unsupported_version() {
 /// supported one, so only the identity pair is wrong.
 #[test]
 fn wrong_identity_at_the_accepted_version_is_plain_invalid() {
-    let target = workspace_path("target/task-links-wrong-identity.json");
+    let target = scratch("wrong-identity", "attachment.json");
     let _ = std::fs::create_dir_all(target.parent().unwrap());
     let original =
         std::fs::read_to_string(workspace_path(attachment().as_str())).expect("attachment");
@@ -668,7 +679,7 @@ fn evidence_version_skew_is_coherent_with_the_attachment_family() {
             "evidence-identity",
         ),
     ] {
-        let target = workspace_path("target/task-links-evidence-version.json");
+        let target = scratch("evidence-version", "evidence.json");
         let wrong = original.replace(replacement.0, replacement.1);
         assert_ne!(wrong, original, "the mutation must apply");
         std::fs::write(&target, wrong).expect("write mutated evidence");
@@ -736,7 +747,7 @@ fn forged_pins_fail_closed() {
     }
     // A fabricated attachment revision (any digest that is not the
     // recomputation of this document) is refused.
-    let target = workspace_path("target/task-links-forged-revision.json");
+    let target = scratch("forged-revision", "attachment.json");
     let _ = std::fs::create_dir_all(target.parent().unwrap());
     let original =
         std::fs::read_to_string(workspace_path(attachment().as_str())).expect("attachment");
@@ -773,7 +784,7 @@ fn forged_pins_fail_closed() {
 /// every input path: attachment, evidence, and profile documents.
 #[test]
 fn duplicate_json_keys_are_rejected() {
-    let target = workspace_path("target/task-links-dup-keys.json");
+    let target = scratch("duplicate-keys", "attachment.json");
     let _ = std::fs::create_dir_all(target.parent().unwrap());
     let original =
         std::fs::read_to_string(workspace_path(attachment().as_str())).expect("attachment");
@@ -808,7 +819,7 @@ fn duplicate_json_keys_are_rejected() {
     let _ = std::fs::remove_file(&target);
 
     // Duplicate members inside an evidence document are refused too.
-    let evidence_target = workspace_path("target/task-links-dup-evidence.json");
+    let evidence_target = scratch("duplicate-keys", "evidence.json");
     let evidence_original =
         std::fs::read_to_string(workspace_path(fixture("evidence/mock-run.json").as_str()))
             .expect("evidence");
@@ -870,25 +881,27 @@ fn native_claims_are_qualification_gated() {
     );
 }
 
-/// Native qualification is a real admission path, not an env gate: a
-/// provisioned flag WITHOUT the executed battery's receipt is refused
-/// exactly like no flag at all; a receipt beside a database that does
-/// not exist refuses (custody requires the provisioned DB); a complete
-/// receipt (schemaVersion, identity, database, execution boundary,
-/// runner, every required leg) beside the EXISTING named DB admits the
-/// native claim; and a duplicate-member receipt refuses through the
-/// duplicate-checked decoder. The receipt here simulates the battery's
-/// committed artifact; the battery legs write it for real under the
-/// native gate.
+/// Native file admission requires an internally consistent real DB and
+/// closed receipt. Counterfeit headers, missing/divergent rows and links
+/// refuse. A producer can ALSO write every matching row, as this test
+/// does, so even perfect consistency never promotes execution guarantees.
 #[test]
 fn native_qualification_requires_the_executed_battery_receipt() {
-    let database = workspace_path("target/native-qualification/provisioned.sqlite");
+    let database = scratch("native-qualification", "provisioned.sqlite");
     let _ = std::fs::remove_dir_all(database.parent().unwrap());
     std::fs::create_dir_all(database.parent().unwrap()).expect("provision root");
     let database_str = database.to_string_lossy().into_owned();
     let env = [
         ("LEKALO_TASKLINKS_NATIVE", "1"),
         ("LEKALO_TASKLINKS_NATIVE_DB", database_str.as_str()),
+    ];
+    const BOUNDARY: &str = "same-process-recovery-real-sqlite-process-kill";
+    const RUNNER: &str = "cargo-test-lekalo-core-native_leg";
+    const LEGS: [&str; 4] = [
+        "accepted_before_ack_survives_restart_as_unknown",
+        "attempt_bound_survives_restart",
+        "synchronized_identity_race_binds_one_task",
+        "interrupted_transaction_recovers_durable_state",
     ];
     let run_inspect = |env: &[(&str, &str)]| {
         lekalo_in_with_env(
@@ -908,6 +921,28 @@ fn native_qualification_requires_the_executed_battery_receipt() {
             ],
         )
     };
+    let receipt_for = |run: &str, legs: &[&str]| {
+        serde_json::json!({
+            "schemaVersion": "lekalo/task-links-native-receipt/v0.8.0",
+            "identity": "dev.lekalo.task-links-native-receipt@0.8.0",
+            "database": database_str,
+            "executionBoundary": BOUNDARY,
+            "runner": RUNNER,
+            "runId": run,
+            "targetImplementation": "lekalo-core-bundled-sqlite",
+            "targetProfile": "cargo-test",
+            "legs": legs,
+        })
+    };
+    let receipt_path = database.with_file_name("provisioned.sqlite.qualified.json");
+    let refused_unqualified = |output: &Output, why: &str| {
+        assert_eq!(output.status.code(), Some(1), "{why}");
+        let envelope: Value = serde_json::from_str(stderr_text(output).trim()).expect("envelope");
+        assert_eq!(
+            envelope["diagnostics"][0]["data"]["detail"], "evidence-native-unqualified",
+            "{why}"
+        );
+    };
     // Flag only: refused - the bare env var qualifies nothing.
     let output = run_inspect(&env);
     assert_eq!(output.status.code(), Some(1), "env-only forgery refused");
@@ -918,47 +953,61 @@ fn native_qualification_requires_the_executed_battery_receipt() {
     );
     // A receipt naming a database that does not exist refuses: the
     // provisioned DB itself is part of the custody.
-    let receipt = serde_json::json!({
-        "schemaVersion": "lekalo/task-links-native-receipt/v0.8.0",
-        "identity": "dev.lekalo.task-links-native-receipt@0.8.0",
-        "database": database_str,
-        "executionBoundary": "same-process-recovery-real-sqlite",
-        "runner": "cargo-test-lekalo-core-native_leg",
-        "legs": [
-            "accepted_before_ack_survives_restart_as_unknown",
-            "attempt_bound_survives_restart",
-            "synchronized_identity_race_binds_one_task"
-        ]
-    });
-    let receipt_path = database.with_file_name("provisioned.sqlite.qualified.json");
     std::fs::write(
         &receipt_path,
-        serde_json::to_vec_pretty(&receipt).expect("receipt"),
+        serde_json::to_vec_pretty(&receipt_for("run-1", &LEGS)).expect("receipt"),
     )
     .expect("write receipt");
     let output = run_inspect(&env);
-    assert_eq!(
-        output.status.code(),
-        Some(1),
-        "a receipt without its database refuses"
-    );
-    let envelope: Value = serde_json::from_str(stderr_text(&output).trim()).expect("envelope");
-    assert_eq!(
-        envelope["diagnostics"][0]["data"]["detail"],
-        "evidence-native-unqualified"
-    );
-    // The battery's DB comes into existence; the complete receipt
-    // beside the existing DB admits through the qualification gate.
-    // The battery provisions a real SQLite database (its legs execute
-    // on bundled SQLite and the qualification rows land in this very
-    // file); the simulation here carries the database header the CLI
-    // requires — a bare marker file is not a provisioned database.
+    refused_unqualified(&output, "a receipt without its database refuses");
+    // A header-only counterfeit database plus that hand-written
+    // receipt still refuses: row consistency requires a real DB. The
+    // 16 magic bytes make the file look like SQLite, but no battery
+    // ever wrote qualification rows into it, and the CLI reads the
+    // database's own durable rows back through real SQLite before
+    // believing any receipt.
     let mut header = vec![0u8; 100];
     header[..16].copy_from_slice(b"SQLite format 3\0");
-    // Page size 4096 at offset 16 (big-endian u16).
     header[16] = 0x10;
     header[17] = 0x00;
-    std::fs::write(&database, &header).expect("provisioned db file");
+    std::fs::write(&database, &header).expect("counterfeit db file");
+    let output = run_inspect(&env);
+    refused_unqualified(
+        &output,
+        "a header-only counterfeit database is not executed custody",
+    );
+    // A hand-written real database with forged rows agreeing with the receipt
+    // (boundary, runner, run id, target binding, and the exact leg
+    // set). With the durable rows present the qualification itself
+    // passes, and the evidence refusal moves past the admission gate
+    // (this fixture's injected clock is incoherent for a native
+    // claim - the right reason, a different registered detail).
+    let _ = std::fs::remove_file(&database);
+    {
+        let connection = rusqlite::Connection::open(&database).expect("open provisioned db");
+        connection
+            .execute_batch(
+                "CREATE TABLE qualification (
+                     leg TEXT PRIMARY KEY,
+                     execution_boundary TEXT NOT NULL,
+                     runner TEXT NOT NULL,
+                     run_id TEXT NOT NULL,
+                     target_implementation TEXT NOT NULL,
+                     target_profile TEXT NOT NULL
+                 );",
+            )
+            .expect("qualification table");
+        for leg in LEGS {
+            connection
+                .execute(
+                    "INSERT INTO qualification
+                         (leg, execution_boundary, runner, run_id, target_implementation, target_profile)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    rusqlite::params![leg, BOUNDARY, RUNNER, "run-1", "lekalo-core-bundled-sqlite", "cargo-test"],
+                )
+                .expect("battery-written leg row");
+        }
+    }
     let output = run_inspect(&env);
     assert_eq!(
         output.status.code(),
@@ -970,66 +1019,174 @@ fn native_qualification_requires_the_executed_battery_receipt() {
         envelope["diagnostics"][0]["data"]["detail"], "evidence-native-unqualified",
         "the qualification itself passed: the refusal is the clock policy, not the admission gate"
     );
-    // An incomplete receipt (a missing leg) refuses again.
-    let incomplete = serde_json::json!({
-        "schemaVersion": "lekalo/task-links-native-receipt/v0.8.0",
-        "identity": "dev.lekalo.task-links-native-receipt@0.8.0",
-        "database": database_str,
-        "executionBoundary": "same-process-recovery-real-sqlite",
-        "runner": "cargo-test-lekalo-core-native_leg",
-        "legs": ["attempt_bound_survives_restart"]
-    });
+    // All the rows above were written by THIS TEST, not by any battery.
+    // Correctly shaped native evidence plus an identical receipt must
+    // therefore never promote an execution-dependent guarantee, even
+    // on the target named by the forged receipt.
+    let mut forged: Value = serde_json::from_str(
+        &std::fs::read_to_string(workspace_path(fixture("evidence/mock-run.json").as_str()))
+            .unwrap(),
+    )
+    .unwrap();
+    forged["origin"] = Value::String("native".into());
+    forged["clock"]["policy"] = Value::String("wall-clock-native".into());
+    forged["scenarioId"] = Value::String("tasklinks.scenario.retry_echo_crash".into());
+    let forged_path = scratch("native-qualification", "forged-execution.json");
+    std::fs::write(&forged_path, serde_json::to_vec(&forged).unwrap()).unwrap();
+    for target in ["rust-core", "node", "laravel"] {
+        let output = lekalo_in_with_env(
+            &workspace_path("."),
+            &env,
+            &[
+                "--json",
+                "task-links",
+                "portability",
+                &attachment(),
+                "--project",
+                &project(),
+                "--from-profile",
+                &fixture("profiles/rust-core.json"),
+                "--to-profile",
+                &fixture(&format!("profiles/{target}.json")),
+                "--profile",
+                "permissive",
+                "--evidence",
+                &forged_path.to_string_lossy(),
+            ],
+        );
+        assert_eq!(output.status.code(), Some(0), "{}", stderr_text(&output));
+        let report: Value = serde_json::from_str(&stdout_text(&output)).unwrap();
+        assert_eq!(
+            report["taskLinks"]["evidenceCoverage"]["nativeEvidenceIds"],
+            serde_json::json!([])
+        );
+        for row in report["taskLinks"]["coreSemantics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .chain(
+                report["taskLinks"]["targetGuarantees"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter(|row| row["fact"] != "delivery-uncertainty"),
+            )
+        {
+            assert_eq!(
+                row["provided"], "unknown",
+                "forged execution on {target}: {row}"
+            );
+            assert_eq!(row["evidenceSource"], "attachment-declaration");
+        }
+    }
+    // The native database obeys the same no-follow policy as the other
+    // operands, including ancestor junctions on Windows.
+    #[cfg(windows)]
+    {
+        let alias = scratch_relative("native-qualification", "db-alias");
+        let status = std::process::Command::new("cmd")
+            .args([
+                "/c",
+                "mklink",
+                "/J",
+                &alias.replace('/', "\\"),
+                &scratch_relative("native-qualification", "").replace('/', "\\"),
+            ])
+            .current_dir(workspace_path("."))
+            .output()
+            .expect("mklink");
+        assert!(
+            status.status.success(),
+            "{}",
+            String::from_utf8_lossy(&status.stderr)
+        );
+        let redirected = format!("{alias}/provisioned.sqlite");
+        refused_unqualified(
+            &run_inspect(&[
+                ("LEKALO_TASKLINKS_NATIVE", "1"),
+                ("LEKALO_TASKLINKS_NATIVE_DB", &redirected),
+            ]),
+            "junctioned native DB refuses",
+        );
+        std::fs::remove_dir(workspace_path(&alias)).expect("remove junction");
+    }
+    #[cfg(unix)]
+    {
+        let alias = scratch("native-qualification", "db-alias.sqlite");
+        std::os::unix::fs::symlink(&database, &alias).expect("link database");
+        refused_unqualified(
+            &run_inspect(&[
+                ("LEKALO_TASKLINKS_NATIVE", "1"),
+                ("LEKALO_TASKLINKS_NATIVE_DB", &alias.to_string_lossy()),
+            ]),
+            "linked native DB refuses",
+        );
+        std::fs::remove_file(&alias).expect("remove symlink");
+    }
+    // The durable rows and the receipt must agree EXACTLY: a receipt
+    // claiming a leg the database never recorded (or a run the rows do
+    // not name) is inconsistent and refuses.
     std::fs::write(
         &receipt_path,
-        serde_json::to_vec_pretty(&incomplete).expect("receipt"),
+        serde_json::to_vec_pretty(&receipt_for("run-1", &LEGS[..3])).expect("receipt"),
     )
     .expect("write receipt");
     let output = run_inspect(&env);
-    assert_eq!(output.status.code(), Some(1));
-    let envelope: Value = serde_json::from_str(stderr_text(&output).trim()).expect("envelope");
-    assert_eq!(
-        envelope["diagnostics"][0]["data"]["detail"],
-        "evidence-native-unqualified"
-    );
+    refused_unqualified(&output, "a receipt without the durable leg rows refuses");
+    std::fs::write(
+        &receipt_path,
+        serde_json::to_vec_pretty(&receipt_for("run-other", &LEGS)).expect("receipt"),
+    )
+    .expect("write receipt");
+    let output = run_inspect(&env);
+    refused_unqualified(&output, "a receipt from a different run refuses");
+    // An incomplete receipt (a missing leg) refuses again.
+    std::fs::write(
+        &receipt_path,
+        serde_json::to_vec_pretty(&receipt_for("run-1", &LEGS)).expect("receipt"),
+    )
+    .expect("write receipt");
+    {
+        let connection = rusqlite::Connection::open(&database).expect("open provisioned db");
+        connection
+            .execute(
+                "DELETE FROM qualification WHERE leg = ?1",
+                rusqlite::params![LEGS[3]],
+            )
+            .expect("drop one durable leg");
+    }
+    let output = run_inspect(&env);
+    refused_unqualified(&output, "a receipt over incomplete durable rows refuses");
     // A receipt carrying a wider execution boundary than the battery
     // records is a fabrication.
-    let overclaiming = serde_json::json!({
-        "schemaVersion": "lekalo/task-links-native-receipt/v0.8.0",
-        "identity": "dev.lekalo.task-links-native-receipt@0.8.0",
-        "database": database_str,
-        "executionBoundary": "process-kill-and-maintained-port",
-        "runner": "cargo-test-lekalo-core-native_leg",
-        "legs": [
-            "accepted_before_ack_survives_restart_as_unknown",
-            "attempt_bound_survives_restart",
-            "synchronized_identity_race_binds_one_task"
-        ]
-    });
-    std::fs::write(
-        &receipt_path,
-        serde_json::to_vec_pretty(&overclaiming).expect("receipt"),
-    )
-    .expect("write receipt");
+    {
+        let connection = rusqlite::Connection::open(&database).expect("open provisioned db");
+        connection
+            .execute(
+                "INSERT INTO qualification
+                     (leg, execution_boundary, runner, run_id, target_implementation, target_profile)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                rusqlite::params![LEGS[3], "process-kill-and-maintained-port", RUNNER, "run-1", "lekalo-core-bundled-sqlite", "cargo-test"],
+            )
+            .expect("overclaiming leg row");
+    }
     let output = run_inspect(&env);
-    assert_eq!(output.status.code(), Some(1));
-    let envelope: Value = serde_json::from_str(stderr_text(&output).trim()).expect("envelope");
-    assert_eq!(
-        envelope["diagnostics"][0]["data"]["detail"],
-        "evidence-native-unqualified"
-    );
+    refused_unqualified(&output, "a wider boundary than the battery records refuses");
     // A duplicate-member receipt refuses through the duplicate-checked
     // decoder: last-key-wins parsing is an admission bypass.
-    let duplicate = format!(
-        "{{\"schemaVersion\":\"lekalo/task-links-native-receipt/v0.8.0\",\"identity\":\"dev.lekalo.task-links-native-receipt@0.8.0\",\"database\":\"{database_str}\",\"executionBoundary\":\"wrong\",\"executionBoundary\":\"same-process-recovery-real-sqlite\",\"runner\":\"cargo-test-lekalo-core-native_leg\",\"legs\":[\"accepted_before_ack_survives_restart_as_unknown\",\"attempt_bound_survives_restart\",\"synchronized_identity_race_binds_one_task\"]}}"
-    );
-    std::fs::write(&receipt_path, duplicate).expect("write duplicate receipt");
+    {
+        let leg_list = LEGS
+            .iter()
+            .map(|leg| format!("\"{leg}\""))
+            .collect::<Vec<_>>()
+            .join(",");
+        let duplicate = format!(
+            "{{\"schemaVersion\":\"lekalo/task-links-native-receipt/v0.8.0\",\"identity\":\"dev.lekalo.task-links-native-receipt@0.8.0\",\"database\":\"{database_str}\",\"executionBoundary\":\"wrong\",\"executionBoundary\":\"{BOUNDARY}\",\"runner\":\"{RUNNER}\",\"runId\":\"run-1\",\"targetImplementation\":\"lekalo-core-bundled-sqlite\",\"targetProfile\":\"cargo-test\",\"legs\":[{leg_list}]}}"
+        );
+        std::fs::write(&receipt_path, duplicate).expect("write duplicate receipt");
+    }
     let output = run_inspect(&env);
-    assert_eq!(output.status.code(), Some(1));
-    let envelope: Value = serde_json::from_str(stderr_text(&output).trim()).expect("envelope");
-    assert_eq!(
-        envelope["diagnostics"][0]["data"]["detail"],
-        "evidence-native-unqualified"
-    );
+    refused_unqualified(&output, "a duplicate-member receipt refuses");
     let _ = std::fs::remove_dir_all(database.parent().unwrap());
 }
 
@@ -1110,7 +1267,7 @@ fn inspect_and_portability_join_semantic_validation() {
 fn symlinked_operand_is_refused() {
     #[cfg(unix)]
     {
-        let link = workspace_path("target/task-links-linked-attachment.json");
+        let link = scratch("symlinked-operand", "linked.json");
         let _ = std::fs::remove_file(&link);
         std::os::unix::fs::symlink(workspace_path(attachment().as_str()), &link)
             .expect("create link");
@@ -1140,7 +1297,7 @@ fn symlinked_operand_is_refused() {
     {
         // Reparse points are refused through symlink_metadata; a plain
         // file copy stays admissible (positive control).
-        let copy = workspace_path("target/task-links-copied-attachment.json");
+        let copy = scratch("symlinked-operand", "copy.json");
         std::fs::copy(workspace_path(attachment().as_str()), &copy).expect("copy");
         let copy_path = copy.to_string_lossy().into_owned();
         let output = lekalo_in(
@@ -1169,7 +1326,7 @@ fn symlinked_operand_is_refused() {
 fn unvalidated_evidence_ids_are_refused_and_never_echoed() {
     const MARKER: &str = "SYNTHETIC-PRIVATE-MARKER-R2";
     for member in ["evidenceId", "scenarioId"] {
-        let target = workspace_path("target/task-links-canary-evidence.json");
+        let target = scratch("canary-evidence", "evidence.json");
         let _ = std::fs::create_dir_all(target.parent().unwrap());
         let original =
             std::fs::read_to_string(workspace_path(fixture("evidence/mock-run.json").as_str()))
@@ -1238,6 +1395,11 @@ fn admitted_evidence_summary_carries_only_validated_symbols() {
     let summary = &envelope["taskLinks"]["evidence"];
     assert_eq!(summary["origin"], "mock");
     assert_eq!(summary["pins_match"], true);
+    assert_eq!(
+        summary["executed"],
+        serde_json::json!([]),
+        "file origin is not executed custody"
+    );
     let rendered = serde_json::to_string(&summary).expect("summary");
     // Every rendered id is a qualified symbol: lowercase symbols with
     // dot separators only — no free text can ride along.
@@ -1353,7 +1515,7 @@ fn resolution_preconditions_and_audit_are_enforced_against_the_compilation() {
         }
         let revision_digest = sha256_hex(&canonical(&Value::Object(revision)));
         mutated["attachmentRevision"] = Value::String(format!("sha256:{revision_digest}"));
-        let path = workspace.join(format!("target/task-links-{}", std::process::id()));
+        let path = scratch("resolution-preconditions", "attachment.json");
         std::fs::write(
             &path,
             serde_json::to_string_pretty(&mutated).expect("render"),
@@ -1362,7 +1524,7 @@ fn resolution_preconditions_and_audit_are_enforced_against_the_compilation() {
         path.to_string_lossy().into_owned()
     };
     let copy_project = |name: &str| -> String {
-        let destination = workspace_path(&format!("target/{name}/lekalo"));
+        let destination = scratch("resolution-preconditions", &format!("{name}/lekalo"));
         let _ = std::fs::remove_dir_all(destination.parent().unwrap());
         std::fs::create_dir_all(destination.join("modules/tasklinks")).expect("dirs");
         for entry in ["modules/planner", "modules/tasklinks"] {
@@ -1382,7 +1544,7 @@ fn resolution_preconditions_and_audit_are_enforced_against_the_compilation() {
         .expect("copy");
         // The CLI only accepts project selectors relative to the
         // invocation directory.
-        format!("target/{name}")
+        scratch_relative("resolution-preconditions", name)
     };
     for (name, mutation, expected_detail) in [
         (
@@ -1456,12 +1618,10 @@ fn resolution_preconditions_and_audit_are_enforced_against_the_compilation() {
             "{name}: only resolution findings may fire, got {details:?}"
         );
         let _ = std::fs::remove_file(&mutated_attachment);
-        let _ = std::fs::remove_dir_all(workspace_path(&format!("target/{name}")));
+        let _ = std::fs::remove_dir_all(workspace_path(&project));
     }
 }
 
-/// The no-follow discipline is component-wise: an operand reached
-/// through a junctioned (or symlinked) intermediate directory is
 /// The no-follow discipline is component-wise: an operand reached
 /// through a junctioned (or symlinked) intermediate directory is
 /// refused exactly like a linked leaf, and a real file under a real
@@ -1469,7 +1629,11 @@ fn resolution_preconditions_and_audit_are_enforced_against_the_compilation() {
 #[test]
 fn junctioned_ancestors_are_refused_component_wise() {
     let workspace = workspace_path(".");
-    let link_dir = workspace_path("target/task-links-junction");
+    let link_dir = scratch("junctioned-ancestors", "root");
+    let operand = scratch_relative(
+        "junctioned-ancestors",
+        "root/linked/contracts/integration.json",
+    );
     // Remove any leftover probe root first (a junction inside is
     // dropped as a link, never traversed).
     let _ = std::fs::remove_dir(link_dir.join("linked"));
@@ -1484,7 +1648,7 @@ fn junctioned_ancestors_are_refused_component_wise() {
                 "/c",
                 "mklink",
                 "/J",
-                "target\\task-links-junction\\linked",
+                &scratch_relative("junctioned-ancestors", "root/linked").replace('/', "\\"),
                 "tests\\fixtures\\task-external-links",
             ])
             .current_dir(&workspace)
@@ -1504,7 +1668,7 @@ fn junctioned_ancestors_are_refused_component_wise() {
                 "--json",
                 "task-links",
                 "validate",
-                "target/task-links-junction/linked/contracts/integration.json",
+                &operand,
                 "--project",
                 "tests/fixtures/task-external-links/project",
                 "--profile",
@@ -1534,7 +1698,7 @@ fn junctioned_ancestors_are_refused_component_wise() {
                 "--json",
                 "task-links",
                 "validate",
-                "target/task-links-junction/linked/contracts/integration.json",
+                &operand,
                 "--project",
                 "tests/fixtures/task-external-links/project",
                 "--profile",

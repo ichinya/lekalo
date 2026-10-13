@@ -2704,6 +2704,15 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/inspect.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/inspect.schema.v0.8.0.json",
+      "sourceDigest": "sha256:d7be0d3812f3b3b426013cbb7ea6ee49f58521d250558315d0f4932ed0a47bf9",
+      "owner": "docs/inspect.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/invariant-transition.schema.v0.2.16.json",
       "kind": "contract",
       "source": "contracts/invariant-transition.schema.v0.2.16.json",
@@ -2788,7 +2797,7 @@
       "id": "contract:contracts/model.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/model.schema.v0.8.0.json",
-      "sourceDigest": "sha256:fdd01019955210ab52439843ad5e3f4a7d305b4223b270bcb29fc2f74dc30f8d",
+      "sourceDigest": "sha256:f811ce758c7eb0be88c08a7f52a1490b14482876dc2eec44581b3da958dc9ec6",
       "owner": "docs/model.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3199,6 +3208,15 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/semantic-diff.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/semantic-diff.schema.v0.8.0.json",
+      "sourceDigest": "sha256:4a4caa560aef2f795dc4eddbc831192a525381bd2d7e6f3ffada26bc3cbe6778",
+      "owner": "docs/semantic-diff.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/semantic-ids.v0.2.16.json",
       "kind": "contract",
       "source": "contracts/semantic-ids.v0.2.16.json",
@@ -3310,7 +3328,7 @@
       "id": "contract:contracts/task-links-evidence.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/task-links-evidence.schema.v0.8.0.json",
-      "sourceDigest": "sha256:a41f3b4bd6872955bf7e187f1a74f2ac3780548c7ad747ab77779ab4d175340f",
+      "sourceDigest": "sha256:c36fb111d0d8d21043585ad3de61706e9c9bf1517abd687b07e3faffc45bde4b",
       "owner": "docs/task-external-links.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3319,7 +3337,7 @@
       "id": "contract:contracts/task-links-integration.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/task-links-integration.schema.v0.8.0.json",
-      "sourceDigest": "sha256:448536053d62c60835b1c61f559e5379ea8596dadf13b0d5dade08cbfbd4e464",
+      "sourceDigest": "sha256:f87da68c2584de65e333fd14502385b62de05bb1811ac735685b678214258906",
       "owner": "docs/task-external-links.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

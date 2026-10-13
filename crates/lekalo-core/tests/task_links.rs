@@ -1276,14 +1276,41 @@ mod native_leg {
         path
     }
 
-    /// Record one executed leg in the qualification receipt beside the
-    /// provisioned DB: the receipt is the real admission artifact the
-    /// CLI requires before any native-origin evidence is admitted (a
-    /// bare environment flag never qualifies). The leg is ALSO a real
-    /// durable row in the provisioned base database itself: the DB is
-    /// created and written by this battery run (a genuine SQLite
-    /// database, never a marker file), so the CLI's existence and
-    /// header checks bind qualification to an actually executed run.
+    /// The run identity of THIS battery execution over the provisioned
+    /// database: minted once by the first leg to execute and then
+    /// reused by every later leg of the same battery, so one battery's
+    /// legs share one run id (a battery never splices itself across
+    /// runs). The gate may pin it explicitly through
+    /// `LEKALO_TASKLINKS_NATIVE_RUN_ID`; a battery over a path with no
+    /// recorded receipt mints a fresh identity, and a fresh mint also
+    /// clears any stale rows an earlier battery left behind.
+    fn battery_run_id(receipt_path: &std::path::Path) -> String {
+        if let Ok(run) = std::env::var("LEKALO_TASKLINKS_NATIVE_RUN_ID") {
+            if !run.is_empty() && run.len() <= 128 {
+                return run;
+            }
+        }
+        let recorded = std::fs::read(receipt_path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+            .and_then(|receipt| receipt["runId"].as_str().map(str::to_owned))
+            .filter(|run| !run.is_empty() && run.len() <= 128);
+        recorded.unwrap_or_else(|| {
+            format!(
+                "run-{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|elapsed| elapsed.as_millis())
+                    .unwrap_or_default()
+            )
+        })
+    }
+
+    /// Record the leg observed by this battery, including its declared
+    /// boundary, runner, run and target. The CLI reads back durable rows
+    /// to reject inconsistent/header-only files, but these local files
+    /// are also caller-writable: agreement alone authenticates no run
+    /// and cannot promote execution-dependent portability guarantees.
     fn record_executed_leg(leg: &str) {
         let base = std::path::PathBuf::from(
             std::env::var("LEKALO_TASKLINKS_NATIVE_DB").expect("provisioned db"),
@@ -1294,6 +1321,11 @@ mod native_leg {
                 .map(|name| name.to_string_lossy().to_string())
                 .expect("db file name")
         ));
+        // One battery execution carries ONE run identity: every leg of
+        // this battery reuses the identity the first leg minted, so
+        // the receipt and the durable rows describe the same single
+        // executed battery.
+        let run = battery_run_id(&receipt_path);
         // The durable leg row: the base DB is provisioned by this very
         // run, through the same bundled SQLite every leg executes on.
         {
@@ -1305,18 +1337,40 @@ mod native_leg {
                      CREATE TABLE IF NOT EXISTS qualification (
                          leg TEXT PRIMARY KEY,
                          execution_boundary TEXT NOT NULL,
-                         runner TEXT NOT NULL
+                         runner TEXT NOT NULL,
+                         run_id TEXT NOT NULL,
+                         target_implementation TEXT NOT NULL,
+                         target_profile TEXT NOT NULL
                      );",
                 )
                 .expect("qualification table");
+            // THIS run owns the database's qualification rows: stale
+            // rows from an earlier battery run under the same path
+            // never leak into this run's custody evidence.
             connection
                 .execute(
-                    "INSERT OR IGNORE INTO qualification (leg, execution_boundary, runner)
-                     VALUES (?1, ?2, ?3)",
+                    "DELETE FROM qualification WHERE run_id != ?1",
+                    rusqlite::params![run],
+                )
+                .expect("clear stale run rows");
+            connection
+                .execute(
+                    "INSERT INTO qualification
+                         (leg, execution_boundary, runner, run_id, target_implementation, target_profile)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                     ON CONFLICT(leg) DO UPDATE SET
+                         execution_boundary = excluded.execution_boundary,
+                         runner = excluded.runner,
+                         run_id = excluded.run_id,
+                         target_implementation = excluded.target_implementation,
+                         target_profile = excluded.target_profile",
                     rusqlite::params![
                         leg,
-                        "same-process-recovery-real-sqlite",
-                        "cargo-test-lekalo-core-native_leg"
+                        "same-process-recovery-real-sqlite-process-kill",
+                        "cargo-test-lekalo-core-native_leg",
+                        run,
+                        "lekalo-core-bundled-sqlite",
+                        "cargo-test"
                     ],
                 )
                 .expect("record leg row");
@@ -1331,14 +1385,31 @@ mod native_leg {
                     "database": base.to_string_lossy(),
                     // The executed boundary is recorded, never implied:
                     // these legs run real SQLite with separate
-                    // connections and in-process recovery, and the
-                    // receipt says exactly that — process-restart and
-                    // maintained-port qualification stay pending.
-                    "executionBoundary": "same-process-recovery-real-sqlite",
+                    // connections, in-process recovery, AND one real
+                    // process-kill interruption; maintained-port
+                    // qualification stays pending and the receipt says
+                    // exactly that.
+                    "executionBoundary": "same-process-recovery-real-sqlite-process-kill",
                     "runner": "cargo-test-lekalo-core-native_leg",
+                    "runId": run,
+                    // The executed target binding: the receipt names the
+                    // implementation that actually ran, so a report can
+                    // never splice these legs onto a target that never
+                    // executed.
+                    "targetImplementation": "lekalo-core-bundled-sqlite",
+                    "targetProfile": "cargo-test",
                     "legs": [],
                 })
             });
+        // A receipt from a DIFFERENT run under the same path starts
+        // fresh: its legs describe a battery execution that is not this
+        // one, and qualification binds to exactly one run.
+        if receipt["runId"].as_str() != Some(run.as_str()) {
+            receipt["legs"] = serde_json::Value::Array(Vec::new());
+        }
+        // The receipt stays bound to THIS run: rows from an earlier
+        // battery run under the same DB path never leak in.
+        receipt["runId"] = serde_json::Value::String(run.to_owned());
         let legs = receipt["legs"].as_array().cloned().unwrap_or_default();
         if !legs.iter().any(|entry| entry == leg) {
             receipt["legs"] = serde_json::Value::Array(
@@ -1753,6 +1824,156 @@ mod native_leg {
         );
         record_executed_leg("synchronized_identity_race_binds_one_task");
     }
+
+    /// The real process-interruption leg: a SEPARATE worker process
+    /// opens its own connection, begins a write transaction, records a
+    /// pending intent, signals readiness, and is then TERMINATED
+    /// mid-transaction by this parent. Reopening the database after the
+    /// kill must show the interrupted transaction fully rolled back
+    /// (the killed row never landed) while the committed history stays
+    /// intact. This is a real process-interruption DB rollback probe,
+    /// not full persisted worker/authority reconstruction or execution
+    /// of the maintained Laravel implementation.
+    #[test]
+    #[ignore = "qualified native leg: runs under LEKALO_TASKLINKS_NATIVE=1 only"]
+    fn native_leg_interrupted_transaction_recovers_durable_state() {
+        const CHILD_ENV: &str = "LEKALO_TASKLINKS_NATIVE_CRASH_CHILD";
+        let leg_path = |base: &std::path::Path| {
+            let file_name = base
+                .file_name()
+                .map(|name| name.to_string_lossy().to_string())
+                .expect("db file name");
+            base.with_file_name(format!("{file_name}-kill.sqlite"))
+        };
+        if std::env::var(CHILD_ENV).is_ok() {
+            // The child worker: begin a write transaction, persist a
+            // pending intent, signal readiness, and hold the
+            // transaction open until the parent kills the process.
+            let base = std::path::PathBuf::from(
+                std::env::var("LEKALO_TASKLINKS_NATIVE_DB").expect("provisioned db"),
+            );
+            let path = leg_path(&base);
+            let ready = path.with_file_name(format!(
+                "{}.ready",
+                path.file_name()
+                    .map(|name| name.to_string_lossy().to_string())
+                    .expect("name")
+            ));
+            let _ = std::fs::remove_file(&ready);
+            let connection = open(&path);
+            let link_row = native_link("native-link-kill");
+            let mut intents = BTreeMap::new();
+            let intent = decision::plan_intent(
+                &mut intents,
+                &link_row,
+                decision::DecisionOutcome::Allowed,
+                "tasklinks.request_action",
+                "native-key-kill".to_owned(),
+                0,
+            )
+            .into_intent()
+            .expect("the in-flight intent");
+            connection
+                .execute_batch("BEGIN IMMEDIATE;")
+                .expect("begin the worker transaction");
+            persist(&connection, &intent);
+            std::fs::write(&ready, b"in-flight").expect("signal readiness");
+            // Hold the transaction open until the kill; the timeout
+            // keeps a failed parent from hanging the gate forever.
+            std::thread::sleep(std::time::Duration::from_secs(60));
+            std::process::exit(0);
+        }
+        let base = std::path::PathBuf::from(
+            std::env::var("LEKALO_TASKLINKS_NATIVE_DB").expect("provisioned db"),
+        );
+        let path = leg_path(&base);
+        let ready = path.with_file_name(format!(
+            "{}.ready",
+            path.file_name()
+                .map(|name| name.to_string_lossy().to_string())
+                .expect("name")
+        ));
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(&ready);
+        // Seed the committed history: one durable pending intent a
+        // restarted worker must still find fenced by its attempt bound.
+        let committed_id;
+        {
+            let connection = open(&path);
+            let link_row = native_link("native-link-kill");
+            let mut intents = BTreeMap::new();
+            let intent = decision::plan_intent(
+                &mut intents,
+                &link_row,
+                decision::DecisionOutcome::Allowed,
+                "tasklinks.request_action",
+                "native-key-committed".to_owned(),
+                0,
+            )
+            .into_intent()
+            .expect("the committed intent");
+            committed_id = intent.intent_id.clone();
+            persist(&connection, &intent);
+        }
+        // Spawn the real worker process and terminate it while its
+        // transaction is in flight.
+        let mut child = std::process::Command::new(std::env::current_exe().expect("test binary"))
+            .args([
+                "--exact",
+                "native_leg::native_leg_interrupted_transaction_recovers_durable_state",
+                "--ignored",
+                "--nocapture",
+            ])
+            .env(CHILD_ENV, "1")
+            .env(
+                "LEKALO_TASKLINKS_NATIVE_DB",
+                std::env::var("LEKALO_TASKLINKS_NATIVE_DB").expect("provisioned db"),
+            )
+            .spawn()
+            .expect("spawn the worker process");
+        let mut reached = false;
+        for _ in 0..600 {
+            if ready.exists() {
+                reached = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        // Always reap the child, including a failed readiness probe.
+        let killed = child.kill();
+        let status = child.wait().expect("reap worker");
+        assert!(
+            reached,
+            "the worker reached its in-flight transaction before the kill"
+        );
+        killed.expect("terminate the worker mid-transaction");
+        assert!(
+            !status.success(),
+            "worker was interrupted, not normally exited"
+        );
+        // Reopen after the kill: the interrupted transaction is fully
+        // rolled back — the killed row never landed — and the committed
+        // history is intact. Full worker-context reconstruction is
+        // deliberately not inferred from this limited rollback probe.
+        {
+            let connection = open(&path);
+            let in_flight: i64 = connection
+                .query_row(
+                    "SELECT COUNT(*) FROM intents WHERE idempotency_key = 'native-key-kill'",
+                    [],
+                    |row| row.get(0),
+                )
+                .expect("count the killed row");
+            assert_eq!(
+                in_flight, 0,
+                "the interrupted transaction rolled back completely"
+            );
+            let (state, attempts) = durable_state(&connection, &committed_id);
+            assert_eq!(state, "pending", "the committed history survived");
+            assert_eq!(attempts, 0, "the durable attempt count survived");
+        }
+        record_executed_leg("interrupted_transaction_recovers_durable_state");
+    }
 }
 
 /// Conflict resolution is an enforced transition, not a label: an
@@ -2144,6 +2365,73 @@ fn extended_effects_declare_the_external_write_and_partial_failure() {
                 "tasklinks.outbox_item".to_owned()
             )),
             "the canonical local write and the durable outbox commit share one group"
+        );
+        // Network calls sit OUTSIDE local atomic groups: no detected
+        // external call ever carries a transaction group.
+        assert!(
+            joined.detected().iter().all(|edge| !(edge.key().kind()
+                == lekalo_core::effects::EffectKind::ExternalCall
+                && edge.transaction_group().is_some())),
+            "network calls are never enclosed in a local atomic group"
+        );
+        // Caller-asserted trust never mints owner-level confidence:
+        // the envelope asserts `verified`, the join caps every edge at
+        // `extracted` (adapter-extracted, no current re-verification).
+        assert!(
+            joined
+                .detected()
+                .iter()
+                .all(|edge| edge.confidence() != lekalo_core::effects::Confidence::Verified),
+            "a raw envelope operand cannot mint verified confidence"
+        );
+        // The typed local-atomic declarations ride the joined graph:
+        // the request_action transaction declares exactly the canonical
+        // task write and the durable outbox commit.
+        let local_tx = joined
+            .transactions()
+            .iter()
+            .find(|transaction| transaction.group.as_str() == "tasklinks/tx-intent-local")
+            .expect("the local transaction is declared");
+        assert_eq!(
+            local_tx.members.len(),
+            2,
+            "the local pair is declared by type"
+        );
+        // The typed partial-failure trace realizes the declared
+        // partial-delivery case with per-recipient results and
+        // failed-only retry eligibility.
+        let failure = joined
+            .partial_failures()
+            .iter()
+            .find(|record| record.case_ref == "tasklinks.case/partial-delivery")
+            .expect("the typed partial-failure trace");
+        assert_eq!(failure.recipients.len(), 2, "a two-recipient dispatch");
+        let delivered: Vec<_> = failure
+            .recipients
+            .iter()
+            .filter(|recipient| {
+                recipient.result == lekalo_core::effects::RecipientOutcome::Delivered
+            })
+            .collect();
+        let failed: Vec<_> = failure
+            .recipients
+            .iter()
+            .filter(|recipient| recipient.result == lekalo_core::effects::RecipientOutcome::Failed)
+            .collect();
+        assert_eq!(delivered.len(), 1, "exactly one delivered recipient");
+        assert_eq!(failed.len(), 1, "exactly one failed recipient");
+        assert!(
+            delivered[0].receipt_digest.is_some() && delivered[0].error_class.is_none(),
+            "a delivered recipient carries its receipt"
+        );
+        assert!(
+            failed[0].error_class.is_some() && failed[0].receipt_digest.is_none(),
+            "a failed recipient carries its error class"
+        );
+        assert_eq!(
+            failure.retry_eligible,
+            vec![failed[0].provider.clone()],
+            "only the failed recipient is retry-eligible"
         );
         Ok(())
     })();

@@ -181,9 +181,9 @@ pub struct EvidenceSummary {
     pub scenario_id: String,
     /// Step count.
     pub steps: u64,
-    /// The commands of the successful steps, so a consumer can prove
-    /// what this run actually executed instead of trusting the
-    /// scenario label.
+    /// Owner-attested executed commands. File-origin inputs have no
+    /// authenticated execution channel, so this set is always empty;
+    /// admitted shape and matching source pins do not establish execution.
     pub executed: std::collections::BTreeSet<String>,
     /// Whether the evidence pins match the attachment (always true for
     /// admitted evidence).

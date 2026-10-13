@@ -342,13 +342,23 @@ fn successor_export_is_negotiated_and_matches_the_golden() {
         .filter(|edge| edge["provenance"]["referenceRole"] == "entity-relation-target")
         .cloned()
         .collect();
-    assert_eq!(relation_edges.len(), 2, "every declared relation target");
+    // Both aggregate directions are declared relations since the r4
+    // fixture direction fix: link -> task, task -> links, and the
+    // outbox child -> link join — three declared relation targets.
+    assert_eq!(relation_edges.len(), 3, "every declared relation target");
     assert!(
         relation_edges.iter().any(|edge| {
             edge["from"] == "entity:tasklinks.task_external_link"
                 && edge["to"] == "entity:planner.task"
         }),
         "link -> task join"
+    );
+    assert!(
+        relation_edges.iter().any(|edge| {
+            edge["from"] == "entity:planner.task"
+                && edge["to"] == "entity:tasklinks.task_external_link"
+        }),
+        "task -> links join (the declared aggregate direction)"
     );
     assert!(
         relation_edges.iter().any(|edge| {

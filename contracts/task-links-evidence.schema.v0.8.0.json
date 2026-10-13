@@ -287,6 +287,14 @@
         },
         "capabilityRevision": {
           "$ref": "#/$defs/digest"
+        },
+        "permittedFields": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/token"
+          },
+          "description": "The explicitly witnessed permitted subset; required exactly when capabilityOutcome is partial and the decision is allowed."
         }
       },
       "required": [

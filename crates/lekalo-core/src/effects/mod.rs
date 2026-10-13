@@ -49,7 +49,10 @@ pub use identity::{
     TransactionGroupId,
 };
 pub use kind::{EffectKind, WriteAction};
-pub use provenance::{DeclaredRole, EffectProvenance, EvidenceEntry, EvidenceEnvelope, TrustState};
+pub use provenance::{
+    DeclaredRole, EffectProvenance, EvidenceEntry, EvidenceEnvelope, LocalTransaction,
+    PartialFailure, RecipientOutcome, RecipientResult, TransactionMember, TrustState,
+};
 pub use summary::{EffectSummary, OperationSummary, SummarySpec};
 pub use version::{
     IDENTITY, MAX_CHANGED_OPERATIONS, MAX_COMPARISON_ITEMS, MAX_CONFLICT_ITEMS, MAX_EFFECTS,
@@ -71,12 +74,15 @@ pub struct EffectGraph {
     declared: Vec<EffectEdge>,
     detected: Vec<EffectEdge>,
     envelopes: usize,
+    transactions: Vec<provenance::LocalTransaction>,
+    partial_failures: Vec<provenance::PartialFailure>,
     index: index::EffectIndex,
 }
 
 impl EffectGraph {
     /// Assemble from finished construction parts (crate internal); the
     /// index is built once here.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn assemble(
         project: Option<String>,
         model_version: ModelVersion,
@@ -84,8 +90,21 @@ impl EffectGraph {
         declared: Vec<EffectEdge>,
         detected: Vec<EffectEdge>,
         envelopes: usize,
+        transactions: Vec<provenance::LocalTransaction>,
+        partial_failures: Vec<provenance::PartialFailure>,
     ) -> Self {
         let index = index::EffectIndex::build(&declared, &detected);
+        let mut transactions = transactions;
+        transactions.sort();
+        transactions.dedup();
+        let mut partial_failures = partial_failures;
+        partial_failures.sort_by(|left, right| {
+            (left.operation.as_str(), left.case_ref.as_str())
+                .cmp(&(right.operation.as_str(), right.case_ref.as_str()))
+        });
+        partial_failures.dedup_by(|left, right| {
+            left.operation == right.operation && left.case_ref == right.case_ref
+        });
         Self {
             project,
             model_version,
@@ -93,6 +112,8 @@ impl EffectGraph {
             declared,
             detected,
             envelopes,
+            transactions,
+            partial_failures,
             index,
         }
     }
@@ -136,6 +157,18 @@ impl EffectGraph {
     /// How many evidence envelopes contributed detected edges.
     pub const fn envelope_count(&self) -> usize {
         self.envelopes
+    }
+
+    /// The typed local-atomic transactions the joined envelopes
+    /// declared: the proof that grouped local writes commit together.
+    pub fn transactions(&self) -> &[provenance::LocalTransaction] {
+        &self.transactions
+    }
+
+    /// The typed partial-failure traces the joined envelopes carried:
+    /// per-recipient results with failed-only retry eligibility.
+    pub fn partial_failures(&self) -> &[provenance::PartialFailure] {
+        &self.partial_failures
     }
 
     /// Whether the graph knows one operation (its declared or detected

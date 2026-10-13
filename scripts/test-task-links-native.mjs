@@ -15,7 +15,7 @@
 // recorded gap (the repo's sanctioned runtime-qualification pattern).
 
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,6 +25,7 @@ const gate = "task-links-native";
 const failures = [];
 const fail = (reason, detail) => failures.push({ reason, detail });
 const provisioned = process.env.LEKALO_TASKLINKS_NATIVE === "1";
+const read = (relative) => JSON.parse(readFileSync(join(root, relative), "utf8"));
 
 // 1. The maintained-port fixture roots exist and stay synthetic.
 for (const relative of [
@@ -116,9 +117,15 @@ if (provisioned) {
         String(rust.error ?? (rust.stdout + rust.stderr).slice(0, 400)),
       );
     } else {
-      const ran = rust.stdout.match(/test native_leg\S+ \.\.\. ok/g) ?? [];
-      if (ran.length < 3) {
-        fail("native-battery-empty", "the native_leg_* battery did not fully execute");
+      // Four legs must execute and the battery must pass as a whole:
+      // the process-kill leg legitimately interleaves the child
+      // runner's banner into the parent's per-test output, so the
+      // check anchors on the battery's own summary line (the killed
+      // child never reaches a summary of its own).
+      const passed = Number(rust.stdout.match(/test result: ok\. (\d+) passed/g)?.pop()?.match(/(\d+)/)[1] ?? 0);
+      const started = (rust.stdout.match(/test native_leg\S+/g) ?? []).length;
+      if (passed < 4 || started < 4) {
+        fail("native-battery-empty", `passed=${passed} started=${started}`);
       } else {
         // The qualification receipt is the admission artifact: the CLI
         // admits native-origin evidence only against it. A battery run
@@ -138,25 +145,16 @@ if (provisioned) {
               "accepted_before_ack_survives_restart_as_unknown",
               "attempt_bound_survives_restart",
               "synchronized_identity_race_binds_one_task",
+              "interrupted_transaction_recovers_durable_state",
             ];
-            const legs = Array.isArray(receipt.legs) ? receipt.legs : [];
-            for (const required of requiredLegs) {
-              if (!legs.includes(required)) {
-                fail("native-receipt-leg-missing", required);
-              }
+            const boundary = "same-process-recovery-real-sqlite-process-kill";
+            if (receipt.schemaVersion !== "lekalo/task-links-native-receipt/v0.8.0") {
+              fail("native-receipt-schema", String(receipt.schemaVersion));
             }
             if (receipt.identity !== "dev.lekalo.task-links-native-receipt@0.8.0") {
               fail("native-receipt-identity", String(receipt.identity));
             }
-            // The recorded execution boundary must be honest: this
-            // battery executes real SQLite with separate connections
-            // and in-process recovery. It does NOT terminate processes
-            // and does NOT run the maintained port, and the receipt
-            // says exactly that. A receipt claiming a wider boundary is
-            // a fabrication, not qualification.
-            if (
-              receipt.executionBoundary !== "same-process-recovery-real-sqlite"
-            ) {
+            if (receipt.executionBoundary !== boundary) {
               fail(
                 "native-receipt-boundary",
                 String(receipt.executionBoundary),
@@ -165,10 +163,22 @@ if (provisioned) {
             if (receipt.runner !== "cargo-test-lekalo-core-native_leg") {
               fail("native-receipt-runner", String(receipt.runner));
             }
-            // The provisioned base database is part of the custody: the
-            // battery itself creates it and records every executed leg
-            // as a durable row, so it must exist and carry the real
-            // SQLite header (a marker file is not a provisioned DB).
+            if (receipt.targetImplementation !== "lekalo-core-bundled-sqlite") {
+              fail("native-receipt-target-implementation", String(receipt.targetImplementation));
+            }
+            if (receipt.targetProfile !== "cargo-test") {
+              fail("native-receipt-target-profile", String(receipt.targetProfile));
+            }
+            if (!receipt.runId || receipt.runId.length === 0) {
+              fail("native-receipt-run-id", String(receipt.runId));
+            }
+            const legs = Array.isArray(receipt.legs) ? receipt.legs : [];
+            const legNames = legs.map(l => l.leg || l);
+            for (const required of requiredLegs) {
+              if (!legNames.includes(required)) {
+                fail("native-receipt-leg-missing", required);
+              }
+            }
             const databasePath = resolvePath(root, database);
             if (!existsSync(databasePath)) {
               fail("native-db-missing", databasePath);
@@ -178,8 +188,147 @@ if (provisioned) {
                 fail("native-db-header", databasePath);
               }
             }
+            // Read back the rows after this gate's observed subprocess
+            // completed successfully. The CLI also checks row consistency,
+            // but cannot infer execution from caller-writable rows alone.
+            const { DatabaseSync } = await import("node:sqlite").catch(() => ({}));
+            if (!DatabaseSync) {
+              fail(
+                "node-sqlite-unavailable",
+                "the provisioned gate verifies the battery-written durable rows through node:sqlite (Node >= 22.5)",
+              );
+            } else {
+              const db = new DatabaseSync(databasePath, { readOnly: true });
+              try {
+                const rows = db
+                  .prepare(
+                    "SELECT leg, execution_boundary, runner, run_id, target_implementation, target_profile FROM qualification",
+                  )
+                  .all();
+                if (rows.length !== requiredLegs.length) {
+                  fail(
+                    "native-qualification-row-count",
+                    `expected ${requiredLegs.length}, got ${rows.length}`,
+                  );
+                }
+                for (const row of rows) {
+                  if (!requiredLegs.includes(row.leg)) {
+                    fail("native-qualification-leg", String(row.leg));
+                  }
+                  if (row.execution_boundary !== boundary) {
+                    fail("native-qualification-boundary", String(row.execution_boundary));
+                  }
+                  if (row.runner !== "cargo-test-lekalo-core-native_leg") {
+                    fail("native-qualification-runner", String(row.runner));
+                  }
+                  if (row.run_id !== receipt.runId) {
+                    fail("native-qualification-run-id", `${row.run_id} != ${receipt.runId}`);
+                  }
+                  if (row.target_implementation !== "lekalo-core-bundled-sqlite") {
+                    fail("native-qualification-target-implementation", String(row.target_implementation));
+                  }
+                  if (row.target_profile !== "cargo-test") {
+                    fail("native-qualification-target-profile", String(row.target_profile));
+                  }
+                }
+              } finally {
+                db.close();
+              }
+            }
             if (failures.length === 0) {
               nativeLeg = "local-battery-executed";
+              // Independently check non-promotion on the named battery
+              // target and unexecuted ports. A genuine gate execution is
+              // recorded here; caller-readable files alone still cannot
+              // confer authenticated execution custody on CLI reports.
+              const binary = ["lekalo", "lekalo.exe"]
+                .map((name) => join(root, "target", "debug", name))
+                .find((candidate) => existsSync(candidate));
+              if (!binary) {
+                fail("binary-missing", "build the workspace first: cargo build --workspace --locked");
+              } else {
+                const scratch = mkdtempSync(join(root, "target", "native-gate-"));
+                try {
+                  // Do not re-label mock steps as a native scenario run.
+                  // The battery executed its four tests, not this producer-
+                  // authored trace. Even genuine local rows cannot supply
+                  // authenticated scenario/input/build/result provenance
+                  // to the read-only CLI; its guarantees must stay unknown.
+                  const declaredRun = read("tests/fixtures/task-external-links/evidence/mock-run.json");
+                  const evidencePath = join(scratch, "declared-run.json");
+                  writeFileSync(evidencePath, JSON.stringify(declaredRun, null, 2));
+                  const nativeEnv = {
+                    ...process.env,
+                    LEKALO_TASKLINKS_NATIVE: "1",
+                    LEKALO_TASKLINKS_NATIVE_DB: databasePath,
+                  };
+                  const portability = (toProfile) =>
+                    spawnSync(
+                      binary,
+                      [
+                        "--no-cache",
+                        "--json",
+                        "task-links",
+                        "portability",
+                        "tests/fixtures/task-external-links/contracts/integration.json",
+                        "--project",
+                        "tests/fixtures/task-external-links/project",
+                        "--from-profile",
+                        "tests/fixtures/task-external-links/profiles/rust-core.json",
+                        "--to-profile",
+                        toProfile,
+                        "--profile",
+                        "permissive",
+                        "--evidence",
+                        evidencePath,
+                      ],
+                      { cwd: root, encoding: "utf8", timeout: 120000, env: nativeEnv },
+                    );
+                  const executed = portability("tests/fixtures/task-external-links/profiles/rust-core.json");
+                  if (executed.status !== 0) {
+                    fail("native-portability-executed-exit", String(executed.stderr).slice(0, 300));
+                  } else {
+                    const report = JSON.parse(executed.stdout).taskLinks;
+                    const rowOf = (fact) => report.targetGuarantees.find((row) => row.fact === fact);
+                    for (const fact of ["unique-index", "local-transaction", "durable-outbox"]) {
+                      const row = rowOf(fact);
+                      if (!row || row.provided !== "unknown" || row.evidenceSource !== "attachment-declaration") {
+                        fail("native-file-origin-promotion", `${fact}: ${JSON.stringify(row)}`);
+                      }
+                    }
+                    const cas = rowOf("compare-and-swap");
+                    if (!cas || cas.provided !== "unknown") {
+                      fail("native-cas-overclaimed", JSON.stringify(cas));
+                    }
+                    if (report.evidenceCoverage.nativeEvidenceIds.length !== 0) {
+                      fail("native-evidence-coverage", JSON.stringify(report.evidenceCoverage));
+                    }
+                  }
+                  const unexecuted = portability("tests/fixtures/task-external-links/profiles/node.json");
+                  if (unexecuted.status !== 0) {
+                    fail("native-portability-unexecuted-exit", String(unexecuted.stderr).slice(0, 300));
+                  } else {
+                    const report = JSON.parse(unexecuted.stdout).taskLinks;
+                    // Only the execution-bound facts stay unknown for a
+                    // target that never ran; `delivery-uncertainty` is a
+                    // declared delivery-rule row, not an executed
+                    // guarantee, and may stay supported on both sides.
+                    const executionBound = new Set([
+                      "unique-index",
+                      "compare-and-swap",
+                      "local-transaction",
+                      "durable-outbox",
+                    ]);
+                    for (const row of report.targetGuarantees) {
+                      if (executionBound.has(row.fact) && row.provided !== "unknown") {
+                        fail("native-guarantee-crossed-targets", JSON.stringify(row));
+                      }
+                    }
+                  }
+                } finally {
+                  rmSync(scratch, { recursive: true, force: true });
+                }
+              }
             }
           }
         }
@@ -198,7 +347,7 @@ process.stdout.write(
     gate,
     nativeLeg,
     note: nativeLeg === "local-battery-executed"
-      ? "the local battery executed real SQLite legs (identity race, in-process recovery, attempt bound); process-termination restarts and the maintained Laravel port remain pending qualification and are never claimed"
+      ? "the local battery executed real SQLite legs (identity race, in-process recovery, attempt bound, process-kill interruption); maintained Laravel port remains pending qualification and is never claimed"
       : "mock evidence never satisfies the durable/race assertions; native coverage stays unclaimed until the qualified environment runs this gate with LEKALO_TASKLINKS_NATIVE=1",
   })}\n`,
 );

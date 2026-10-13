@@ -15,6 +15,15 @@ pub(crate) fn is_sha256_digest(text: &str) -> bool {
             .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
 }
 
+/// A bounded wire token (error classes and retry vocabulary).
+pub(crate) fn is_bounded_token(text: &str) -> bool {
+    !text.is_empty()
+        && text.len() <= 64
+        && text
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_')
+}
+
 /// The closed evidence-trust vocabulary (the wire spelling of an
 /// envelope's trust state).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -209,6 +218,91 @@ pub struct EvidenceEntry {
     pub transaction_group: Option<TransactionGroupId>,
     /// The optional bounded sensitivity marker.
     pub sensitivity: Option<super::identity::Sensitivity>,
+    /// The typed partial-failure record for one multi-recipient
+    /// dispatch: never a group name — the exact per-recipient results
+    /// and the failed-only retry set.
+    pub partial_failure: Option<PartialFailure>,
+}
+
+/// One typed per-recipient result of a partial-failure dispatch.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RecipientResult {
+    /// The namespaced provider that was called.
+    pub provider: String,
+    /// The observed result for THIS recipient.
+    pub result: RecipientOutcome,
+    /// The exact receipt digest (delivered recipients only).
+    pub receipt_digest: Option<String>,
+    /// The closed error class (failed recipients only).
+    pub error_class: Option<String>,
+}
+
+/// The closed per-recipient outcome vocabulary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RecipientOutcome {
+    /// The recipient accepted the write; the receipt persists.
+    Delivered,
+    /// The recipient failed; only these are retry-eligible.
+    Failed,
+}
+
+impl RecipientOutcome {
+    /// The wire key.
+    pub const fn key(self) -> &'static str {
+        match self {
+            Self::Delivered => "delivered",
+            Self::Failed => "failed",
+        }
+    }
+
+    /// Parse the closed wire key.
+    pub fn from_key(key: &str) -> Option<Self> {
+        match key {
+            "delivered" => Some(Self::Delivered),
+            "failed" => Some(Self::Failed),
+            _ => None,
+        }
+    }
+}
+
+/// The typed partial-failure record: which declared case the trace
+/// realizes, the per-recipient results, and the failed-only retry set.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PartialFailure {
+    /// The namespaced declared partial-failure case this trace
+    /// realizes (the authoritative typed declaration lives with the
+    /// extended-effects family; the envelope carries the reference).
+    pub case_ref: String,
+    /// The operation whose dispatch partially failed.
+    pub operation: String,
+    /// The per-recipient results (at least two: a partial failure is
+    /// per-recipient, never a single boolean).
+    pub recipients: Vec<RecipientResult>,
+    /// Exactly the failed recipients: a delivered recipient is never
+    /// redelivered as a new action.
+    pub retry_eligible: Vec<String>,
+}
+
+/// One member of a declared local-atomic transaction: the exact edge
+/// (operation, kind, subject) that commits inside the group.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct TransactionMember {
+    /// The operation that owns the member edge.
+    pub operation: String,
+    /// The closed effect kind.
+    pub kind: EffectKind,
+    /// The subject resource in wire spelling (`kind:id`).
+    pub subject: String,
+}
+
+/// A typed caller-declared local transaction group, NOT proof that its
+/// member writes executed atomically. Network calls are never members.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct LocalTransaction {
+    /// The group identity the member edges carry.
+    pub group: TransactionGroupId,
+    /// The exact local member writes, in canonical order.
+    pub members: Vec<TransactionMember>,
 }
 
 /// One typed detected-evidence envelope.
@@ -233,6 +327,10 @@ pub struct EvidenceEnvelope {
     pub source_revision: String,
     /// The envelope-default trust state.
     pub trust: TrustState,
+    /// The declared local-atomic transactions: every grouped entry
+    /// must be a member of exactly one declaration, and no declaration
+    /// may name a network kind.
+    pub transactions: Vec<LocalTransaction>,
     /// The bounded detected-effect records.
     pub entries: Vec<EvidenceEntry>,
 }
@@ -246,6 +344,19 @@ pub(crate) enum EnvelopeViolation {
     OverLimit,
     /// An entry combined an illegal kind/subject pair.
     IllegalEntry { occurrence: u32 },
+    /// An entry tried to enclose a network call inside a local atomic
+    /// group: the contract keeps network calls outside transactions.
+    NetworkInGroup { occurrence: u32 },
+    /// A grouped entry's group has no typed transaction declaration.
+    GroupUndeclared { occurrence: u32 },
+    /// A declared transaction's members do not match the grouped
+    /// entries exactly, in either direction.
+    GroupMemberMismatch,
+    /// A typed partial-failure record is malformed or misplaced.
+    PartialFailureShape { occurrence: u32 },
+    /// A partial-failure trace contradicts per-recipient semantics
+    /// (retry eligibility, delivered receipts, failed error classes).
+    PartialFailureRetry { occurrence: u32 },
 }
 
 impl EnvelopeViolation {
@@ -256,6 +367,11 @@ impl EnvelopeViolation {
             Self::MalformedDigest { field } => (*field).to_owned(),
             Self::OverLimit => "envelope-limit".to_owned(),
             Self::IllegalEntry { .. } => "illegal-entry".to_owned(),
+            Self::NetworkInGroup { .. } => "network-in-group".to_owned(),
+            Self::GroupUndeclared { .. } => "group-undeclared".to_owned(),
+            Self::GroupMemberMismatch => "group-member-mismatch".to_owned(),
+            Self::PartialFailureShape { .. } => "partial-failure-shape".to_owned(),
+            Self::PartialFailureRetry { .. } => "partial-failure-retry".to_owned(),
         }
     }
 }
@@ -289,7 +405,7 @@ pub(crate) fn validate_envelope(
             field: "source-revision",
         });
     }
-    if envelope.entries.len() > max_entries {
+    if envelope.entries.len() > max_entries || envelope.transactions.len() > max_entries {
         return Err(EnvelopeViolation::OverLimit);
     }
     for entry in &envelope.entries {
@@ -297,6 +413,186 @@ pub(crate) fn validate_envelope(
             return Err(EnvelopeViolation::IllegalEntry {
                 occurrence: entry.occurrence,
             });
+        }
+        // Network calls sit OUTSIDE local atomic groups: the contract
+        // excludes them from transactions, so a grouped external call
+        // is a semantic violation, never a rendering choice.
+        if entry.kind == EffectKind::ExternalCall && entry.transaction_group.is_some() {
+            return Err(EnvelopeViolation::NetworkInGroup {
+                occurrence: entry.occurrence,
+            });
+        }
+        // The typed partial-failure record belongs to a multi-recipient
+        // network dispatch only.
+        if let Some(record) = &entry.partial_failure {
+            if entry.kind != EffectKind::ExternalCall {
+                return Err(EnvelopeViolation::PartialFailureShape {
+                    occurrence: entry.occurrence,
+                });
+            }
+            if !is_namespaced_id(&record.case_ref)
+                || !is_semantic_id(&record.operation)
+                || record.operation != entry.operation.semantic_id()
+                || record.recipients.len() < 2
+                || record.recipients.len() > 32
+                || record.retry_eligible.len() > 32
+            {
+                return Err(EnvelopeViolation::PartialFailureShape {
+                    occurrence: entry.occurrence,
+                });
+            }
+            let mut providers = std::collections::BTreeSet::new();
+            let mut failed = std::collections::BTreeSet::new();
+            for recipient in &record.recipients {
+                if !is_namespaced_id(&recipient.provider)
+                    || !providers.insert(recipient.provider.clone())
+                {
+                    return Err(EnvelopeViolation::PartialFailureShape {
+                        occurrence: entry.occurrence,
+                    });
+                }
+                match recipient.result {
+                    RecipientOutcome::Delivered => {
+                        let delivered = recipient
+                            .receipt_digest
+                            .as_deref()
+                            .is_some_and(is_sha256_digest)
+                            && recipient.error_class.is_none();
+                        if !delivered {
+                            return Err(EnvelopeViolation::PartialFailureRetry {
+                                occurrence: entry.occurrence,
+                            });
+                        }
+                    }
+                    RecipientOutcome::Failed => {
+                        let failed_shape = recipient
+                            .error_class
+                            .as_deref()
+                            .is_some_and(is_bounded_token)
+                            && recipient.receipt_digest.is_none();
+                        if !failed_shape {
+                            return Err(EnvelopeViolation::PartialFailureRetry {
+                                occurrence: entry.occurrence,
+                            });
+                        }
+                        failed.insert(recipient.provider.clone());
+                    }
+                }
+            }
+            // A partial failure must contain both delivered and failed
+            // recipients, not a relabelled complete success/failure.
+            if failed.is_empty() || failed.len() == providers.len() {
+                return Err(EnvelopeViolation::PartialFailureShape {
+                    occurrence: entry.occurrence,
+                });
+            }
+            // Exactly the failed recipients retry: no delivered/unknown
+            // recipient and no silently omitted failed recipient.
+            let mut retry_seen = std::collections::BTreeSet::new();
+            for provider in &record.retry_eligible {
+                if !is_namespaced_id(provider)
+                    || !retry_seen.insert(provider.clone())
+                    || !failed.contains(provider)
+                {
+                    return Err(EnvelopeViolation::PartialFailureRetry {
+                        occurrence: entry.occurrence,
+                    });
+                }
+            }
+            if retry_seen != failed {
+                return Err(EnvelopeViolation::PartialFailureRetry {
+                    occurrence: entry.occurrence,
+                });
+            }
+        }
+    }
+    // Typed local-atomic declarations: every grouped entry belongs to
+    // exactly one declared transaction, every declared member matches a
+    // grouped entry of the same group, and no declaration names a
+    // network kind. A group string alone proves nothing.
+    {
+        let mut declared_groups = std::collections::BTreeSet::new();
+        for transaction in &envelope.transactions {
+            if !declared_groups.insert(transaction.group.as_str().to_owned())
+                || transaction.members.is_empty()
+                || transaction.members.len() > super::version::MAX_ENVELOPE_ENTRIES
+                || transaction
+                    .members
+                    .iter()
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .len()
+                    != transaction.members.len()
+            {
+                return Err(EnvelopeViolation::GroupMemberMismatch);
+            }
+            for member in &transaction.members {
+                if member.kind == EffectKind::ExternalCall {
+                    return Err(EnvelopeViolation::NetworkInGroup { occurrence: 0 });
+                }
+                // The member subject uses the entry subject grammar:
+                // `<resource-kind>:<id>` with the kind-checked id below.
+                let Some((kind_key, id)) = member.subject.split_once(':') else {
+                    return Err(EnvelopeViolation::GroupMemberMismatch);
+                };
+                let Some(resource_kind) = super::identity::ResourceKind::from_key(kind_key) else {
+                    return Err(EnvelopeViolation::GroupMemberMismatch);
+                };
+                let Some(resource) = super::identity::ResourceId::new(resource_kind, id) else {
+                    return Err(EnvelopeViolation::GroupMemberMismatch);
+                };
+                let subject = Subject::new(resource);
+                if !is_semantic_id(&member.operation)
+                    || super::kind::check_subject(member.kind, &subject).is_err()
+                {
+                    return Err(EnvelopeViolation::GroupMemberMismatch);
+                }
+            }
+        }
+        for entry in &envelope.entries {
+            let Some(group) = entry.transaction_group.as_ref() else {
+                continue;
+            };
+            let Some(transaction) = envelope
+                .transactions
+                .iter()
+                .find(|transaction| transaction.group.as_str() == group.as_str())
+            else {
+                return Err(EnvelopeViolation::GroupUndeclared {
+                    occurrence: entry.occurrence,
+                });
+            };
+            let member_spelled = TransactionMember {
+                operation: entry.operation.semantic_id().to_owned(),
+                kind: entry.kind,
+                subject: format!(
+                    "{}:{}",
+                    entry.subject.resource().kind().key(),
+                    entry.subject.resource().as_str()
+                ),
+            };
+            if !transaction.members.contains(&member_spelled) {
+                return Err(EnvelopeViolation::GroupMemberMismatch);
+            }
+        }
+        for transaction in &envelope.transactions {
+            for member in &transaction.members {
+                let matched = envelope.entries.iter().any(|entry| {
+                    entry
+                        .transaction_group
+                        .as_ref()
+                        .is_some_and(|group| group.as_str() == transaction.group.as_str())
+                        && entry.operation.semantic_id() == member.operation
+                        && entry.kind == member.kind
+                        && format!(
+                            "{}:{}",
+                            entry.subject.resource().kind().key(),
+                            entry.subject.resource().as_str()
+                        ) == member.subject
+                });
+                if !matched {
+                    return Err(EnvelopeViolation::GroupMemberMismatch);
+                }
+            }
         }
     }
     Ok(())

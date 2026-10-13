@@ -231,6 +231,12 @@ pub struct EvidenceDecisionRef {
     /// The decided field mask.
     #[serde(default)]
     pub fields: Vec<String>,
+    /// The explicitly witnessed permitted subset: required exactly
+    /// when the capability observation is `partial`, mirroring the
+    /// engine's own rule that a partial capability admits only an
+    /// exact permitted subset of the requested fields.
+    #[serde(default)]
+    pub permitted_fields: Option<Vec<String>>,
     /// The policy revision pin.
     #[serde(default)]
     pub policy_revision: Option<String>,
@@ -533,6 +539,16 @@ pub fn admit_evidence(
                 if !is_evidence_digest(digest) {
                     return Err(evidence_invalid("evidence-step-token", None));
                 }
+                // Check consistency with the deterministic mock engine's
+                // receipt algorithm. This is caller-recomputable and is
+                // NOT proof that a provider or scenario executed.
+                let engine_digest = intent
+                    .idempotency_key
+                    .as_ref()
+                    .map(|key| format!("sha256:{}", crate::digest::sha256_hex(key.as_bytes())));
+                if engine_digest.as_deref() != Some(digest.as_str()) {
+                    return Err(evidence_invalid("evidence-receipt-forged", None));
+                }
             }
         }
         if let Some(decision) = &step.decision {
@@ -553,6 +569,33 @@ pub fn admit_evidence(
                     || decision.authorization_outcome.is_none())
             {
                 return Err(evidence_invalid("evidence-observation-missing", None));
+            }
+            // A partial capability admits only an exact permitted
+            // subset, exactly like the engine's own decision function:
+            // an allowed partial observation without its witnessed
+            // permitted subset (or with a decided field outside it) is
+            // fabricated leniency.
+            if decision.outcome == "allowed"
+                && decision.capability_outcome.as_deref() == Some("partial")
+            {
+                let permitted = decision
+                    .permitted_fields
+                    .as_ref()
+                    .filter(|fields| !fields.is_empty());
+                let covers = permitted.is_some_and(|permitted| {
+                    decision
+                        .fields
+                        .iter()
+                        .all(|field| permitted.contains(field))
+                });
+                if !covers {
+                    return Err(evidence_invalid("evidence-permitted-subset-missing", None));
+                }
+            }
+            if let Some(permitted) = &decision.permitted_fields {
+                if permitted.len() > 64 || permitted.iter().any(|field| !is_evidence_token(field)) {
+                    return Err(evidence_invalid("evidence-step-token", None));
+                }
             }
             if !is_decision_consistent(decision)
                 || decision
@@ -591,6 +634,14 @@ pub fn admit_evidence(
             if detail.chars().count() > 512 {
                 return Err(evidence_invalid("evidence-step-token", None));
             }
+        }
+        // Require consistent typed declarations for a successful-looking
+        // step. Attribution/decision/intent fields are still caller
+        // assertions; their presence cannot authenticate execution.
+        if matches!(step.outcome.as_str(), "applied" | "replayed")
+            && (step.attribution.is_none() || step.decision.is_none() || step.intent.is_none())
+        {
+            return Err(evidence_invalid("evidence-witness-missing", None));
         }
     }
     for observation in &evidence.observations {
@@ -654,7 +705,10 @@ pub fn admit_evidence(
         origin: evidence.origin,
         scenario_id: evidence.scenario_id,
         steps: evidence.steps.len() as u64,
-        executed,
+        // No file-origin input has owner-attested execution custody.
+        // Keep the public executed set empty, even when all declared
+        // steps are coherent; portability must not promote their labels.
+        executed: std::collections::BTreeSet::new(),
         pins_match: true,
     })
 }
@@ -808,6 +862,7 @@ mod tests {
             capability_outcome: capability.map(str::to_owned),
             authorization_outcome: authorization.map(str::to_owned),
             fields: vec![],
+            permitted_fields: None,
             policy_revision: None,
             capability_revision: None,
         })

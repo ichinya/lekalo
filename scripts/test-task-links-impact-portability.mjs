@@ -8,9 +8,8 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -56,7 +55,7 @@ if (!binary) {
   // 2. Both sides run through portability (permissive: gaps visible,
   //    exit 0) and the core rows are byte-identical while the pinned
   //    adapter rows move.
-  const work = mkdtempSync(join(tmpdir(), "lekalo-tasklinks-"));
+  const work = mkdtempSync(join(root, "target", "tasklinks-impact-"));
   try {
     const changedPath = join(work, "changed-attachment.json");
     writeFileSync(changedPath, changed);
@@ -199,6 +198,50 @@ if (!binary) {
         if (changedImpact.upstreamPin !== pair.changed.upstreamPin) {
           fail("impact-pin", changedImpact.upstreamPin);
         }
+        // The exact member paths are derived with witnessed
+        // completeness: every request/response/error field of the
+        // referenced schemas carries its own reverse chain — request
+        // fields through operation -> policy -> command -> worker ->
+        // target -> verification, response/error fields through the
+        // delivery surface — and a pin-only change derives the same
+        // paths (the members did not move).
+        if (changedImpact.coverage.complete !== true) {
+          fail("impact-coverage-incomplete", JSON.stringify(changedImpact.coverage));
+        }
+        const requestPaths = changedImpact.memberPaths.filter(
+          (path) => path.kind === "request" && path.resolved === true,
+        );
+        if (requestPaths.length === 0) {
+          fail("impact-member-paths-missing", JSON.stringify(changedImpact.memberPaths.slice(0, 2)));
+        }
+        for (const path of requestPaths) {
+          const pathSymbols = path.consumers.map((consumer) => consumer.symbol);
+          const pathRoles = new Set(path.consumers.map((consumer) => consumer.role));
+          for (const role of ["binding", "action-policy", "command", "worker", "target-binding", "verification"]) {
+            if (!pathRoles.has(role)) {
+              fail("impact-member-role-missing", `${path.kind}.${path.field}: ${role}`);
+            }
+          }
+          if (!pathSymbols.includes("tasklinks.dispatch_outbox")) {
+            fail("impact-member-worker", `${path.kind}.${path.field}: the delivery worker is not derived`);
+          }
+          if (!path.consumers.some((consumer) => consumer.role === "target-binding"
+            && consumer.symbol === "tasklinks.binding_port" && consumer.target === "php-laravel-maintained")) {
+            fail("impact-member-target", `${path.kind}.${path.field}: the maintained port target is not derived`);
+          }
+        }
+        const responsePaths = changedImpact.memberPaths.filter(
+          (path) => path.kind === "response" && path.resolved === true,
+        );
+        for (const path of responsePaths) {
+          const pathRoles = new Set(path.consumers.map((consumer) => consumer.role));
+          if (!pathRoles.has("worker") || !pathRoles.has("verification")) {
+            fail("impact-member-response-route", `${path.kind}.${path.field}: response members route through the delivery surface`);
+          }
+        }
+        if (baseImpact && JSON.stringify(baseImpact.memberPaths) !== JSON.stringify(changedImpact.memberPaths)) {
+          fail("impact-member-paths-moved", "a pin-only change must derive identical member paths");
+        }
       }
       const ghost = run([
         "--json",
@@ -211,6 +254,61 @@ if (!binary) {
         attachmentPath,
       ]);
       if (ghost.status !== 1) fail("impact-ghost-exit", String(ghost.status));
+    }
+
+    // Real exact member mutations, not a pin-only surrogate. Compile
+    // each modified schema and repin the attachment to that compilation;
+    // paths must name the new field and retain the full static join.
+    const projectProbe = (label, file, mutate) => {
+      const probeProject = relative(root, join(work, label)).replaceAll("\\", "/");
+      cpSync(join(root, project), probeProject, { recursive: true });
+      const source = join(probeProject, "lekalo/modules/tasklinks", file);
+      const before = readFileSync(source, "utf8");
+      const after = mutate(before);
+      if (before === after) throw new Error(`no-op impact probe: ${label}`);
+      if (after === null) rmSync(source);
+      else writeFileSync(source, after);
+      const compiled = run(["--json", "load", "--project", probeProject, "--ir"]);
+      if (compiled.status !== 0) throw new Error(`impact probe did not compile: ${compiled.stderr}`);
+      const ir = JSON.parse(compiled.stdout).ir;
+      const digest = "sha256:" + createHash("sha256").update(JSON.stringify(sortDeep(ir))).digest("hex");
+      const doc = read(attachmentPath);
+      doc.irRef.digest = digest;
+      doc.modelRef.irDigest = digest;
+      doc.attachmentRevision = canonicalRevision(doc);
+      const probeAttachment = join(work, `${label}-attachment.json`);
+      writeFileSync(probeAttachment, JSON.stringify(doc));
+      const result = run(["--json", "task-links", "impact", pair.changed.contractId,
+        "--project", probeProject, "--attachment", probeAttachment]);
+      if (result.status !== 0) throw new Error(`impact probe failed: ${result.stderr}`);
+      return JSON.parse(result.stdout).taskLinks;
+    };
+    for (const kind of ["request", "response", "error"]) {
+      const changedField = `changed_${kind}_payload`;
+      const impact = projectProbe(`member-${kind}`, "entities.yaml", (text) => text.replace(
+        new RegExp(`(id: tasklinks\\.primary_${kind}[\\s\\S]*?name: )payload`), `$1${changedField}`));
+      const path = impact.memberPaths.find((path) => path.kind === kind && path.field === changedField);
+      if (!path || impact.memberPaths.some((path) => path.kind === kind && path.field === "payload")) {
+        fail("impact-real-member-mutation", `${kind}: new field absent or stale field remains`);
+      } else {
+        const roles = new Set(path.consumers.map((consumer) => consumer.role));
+        for (const role of ["binding", "action-policy", "command", "worker", "target-binding", "verification"]) {
+          if (!roles.has(role)) fail("impact-mutated-member-witness", `${kind}: ${role}`);
+        }
+      }
+      if (!impact.coverage.complete || impact.coverage.boundary !== "declared-schema-consumers"
+        || impact.coverage.executionVerified !== false) {
+        fail("impact-mutated-member-completeness", JSON.stringify(impact.coverage));
+      }
+    }
+    for (const [label, file, gap] of [
+      ["missing-targets", "bindings.yaml", "native-binding"],
+      ["missing-verification", "scenarios.yaml", "verification-check"],
+    ]) {
+      const impact = projectProbe(label, file, () => null);
+      if (impact.coverage.complete || !impact.coverage.gaps.some((row) => row.consumer === gap)) {
+        fail("impact-missing-witness-overclaimed", JSON.stringify(impact.coverage));
+      }
     }
 
     // 5. Model-surface consumer witnesses via the ordinary inspect

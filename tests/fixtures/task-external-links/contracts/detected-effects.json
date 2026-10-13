@@ -2,16 +2,69 @@
   "adapterId": "tasklinks/engine",
   "targetId": "tasklinks/outbox-worker",
   "protocolVersion": "0.2.16",
-  "evidenceDigest": "sha256:8ff06495d232fb0ceb3aaf66f351b7ebbe0a09a1b6fd426858327543f5d5af57",
-  "sourceRevision": "sha256:534193e7c9c86ef95cda6ea3d2f0c2df6e8cc1e528e8c5627b73fdb9f9682584",
+  "evidenceDigest": "sha256:5a45a5b65ce2477004624c370df9b802a534e42e5473c8db131ff227b180f383",
+  "sourceRevision": "sha256:27757f5015d1bc4b75a9b2e46102c2d6ffdd6eab083528ea2cecc0809cfac552",
   "trust": "verified",
+  "transactions": [
+    {
+      "groupId": "tasklinks/tx-intent-dispatch",
+      "members": [
+        {
+          "operation": "tasklinks.dispatch_outbox",
+          "kind": "enqueue-job",
+          "subject": "job:tasklinks.queue/outbox"
+        }
+      ]
+    },
+    {
+      "groupId": "tasklinks/tx-intent-local",
+      "members": [
+        {
+          "operation": "tasklinks.request_action",
+          "kind": "update",
+          "subject": "canonical:planner.task"
+        },
+        {
+          "operation": "tasklinks.request_action",
+          "kind": "create",
+          "subject": "canonical:tasklinks.outbox_item"
+        }
+      ]
+    },
+    {
+      "groupId": "tasklinks/tx-intent-ack",
+      "members": [
+        {
+          "operation": "tasklinks.ack_delivery",
+          "kind": "emit-event",
+          "subject": "event:tasklinks.delivery_recorded"
+        }
+      ]
+    }
+  ],
   "entries": [
     {
       "occurrence": 0,
       "kind": "external-call",
       "operation": "tasklinks.dispatch_outbox",
       "subject": "external-service:tasklinks.provider/github-issues",
-      "transactionGroup": "tasklinks/tx-intent-dispatch",
+      "partialFailure": {
+        "caseRef": "tasklinks.case/partial-delivery",
+        "operation": "tasklinks.dispatch_outbox",
+        "recipients": [
+          {
+            "provider": "tasklinks.provider/github-issues",
+            "result": "delivered",
+            "receiptDigest": "sha256:c0770974e13db1f738ee74cb58d122f53824a4e3ecbca6d3c2a4a06b563e8d17"
+          },
+          {
+            "provider": "tasklinks.provider/mock-secondary",
+            "result": "failed",
+            "errorClass": "timeout"
+          }
+        ],
+        "retryEligible": ["tasklinks.provider/mock-secondary"]
+      },
       "trust": "verified"
     },
     {
@@ -51,7 +104,6 @@
       "kind": "external-call",
       "operation": "tasklinks.ack_delivery",
       "subject": "external-service:tasklinks.provider/github-issues",
-      "transactionGroup": "tasklinks/tx-partial-failure-reconcile",
       "trust": "current"
     }
   ]

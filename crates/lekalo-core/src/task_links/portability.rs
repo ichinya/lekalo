@@ -5,12 +5,10 @@
 //! shape: `coreSemantics` (unchanged domain facts), `providerAdapters`
 //! (object/field mapping, revision ordering, remote dedup), and
 //! `targetGuarantees` (unique index, compare-and-swap, transaction,
-//! durable outbox). Every claim is bound to the exact facts it
-//! witnessed: evidence promoted to a row must have witnessed a
-//! declared scenario that covers the fact's own symbols, target
-//! guarantees require qualified native evidence of the delivery
-//! surface, and provider rows derive their requirement from the
-//! declared capability requirements. A provider-only change moves
+//! durable outbox). File-origin evidence and native receipt/row
+//! declarations have no authenticated execution channel, so execution-
+//! dependent core and target rows stay unknown. Provider declaration
+//! rows derive their requirements from the declared capabilities. A provider-only change moves
 //! adapter and guarantee rows while every core row stays
 //! byte-identical; missing remote dedup or target isolation visibly
 //! lowers guarantee coverage instead of collapsing into a generic pass.
@@ -126,8 +124,8 @@ pub struct EvidenceCoverage {
 }
 
 /// The admitted-evidence view the portability join consumes: the
-/// summary, the exact scenario the run witnessed, and the commands the
-/// run actually executed successfully.
+/// summary and the producer-declared scenario/command labels. Matching
+/// pins and coherent labels authenticate no execution.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AdmittedEvidence {
     /// Evidence id (the admitted opaque reference).
@@ -136,21 +134,24 @@ pub struct AdmittedEvidence {
     pub origin: String,
     /// The declared scenario the run witnessed.
     pub scenario_id: String,
-    /// The commands of the run's successful steps: a scenario label is
-    /// witnessed only when a successful step executed a covered symbol.
+    /// Owner-attested execution set (empty for file-origin admission).
+    /// Legacy callers may fill this field; it does not confer custody.
     pub executed: std::collections::BTreeSet<String>,
 }
 
-/// The verified native qualification the report consumes: the executed
-/// battery legs and the exact receipt digest. Target-guarantee rows
-/// claim support per executed leg and pin the receipt, never the
-/// selected profile file.
+/// Structurally checked native run/target declarations. Co-located
+/// receipts and database rows are caller-writable and are not an
+/// authenticated execution channel; they cannot promote guarantees.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NativeEvidence {
     /// The executed legs the qualification receipt names.
     pub legs: std::collections::BTreeSet<String>,
     /// The exact `sha256:` digest of the qualification receipt bytes.
     pub receipt_digest: String,
+    /// The implementation that actually executed the battery.
+    pub target_implementation: String,
+    /// The build profile the battery executed under.
+    pub target_profile: String,
 }
 
 /// Build the portability report.
@@ -160,22 +161,19 @@ pub struct NativeEvidence {
 /// runs; `scenario_covers` maps every scenario id declared by the
 /// compilation to the symbols it covers.
 ///
-/// Every row is derived, never constant, and every claim is bound to
-/// the exact facts it witnessed: a core fact says `supported` only
-/// when an admitted evidence run witnessed a declared scenario that
-/// covers the fact's own symbols (an unrelated receipt proves
-/// nothing), target guarantees require qualified native evidence of
-/// the delivery surface, and a fact this attachment does not declare
-/// at all is `unsupported` outright. Labels never outrun their
-/// evidence.
+/// Declared core facts stay unknown until owner-attested execution
+/// provenance is available; absent declarations are unsupported. Native
+/// rows/receipt strings and producer-authored successful steps cannot
+/// promote execution-dependent guarantees. Provider declaration facts
+/// remain explicitly separated from these execution claims.
 pub fn report(
     attachment: &Attachment,
     from_profile: ProfileRef,
     to_profile: ProfileRef,
     profile: &str,
     evidence: &[AdmittedEvidence],
-    scenario_covers: &BTreeMap<String, BTreeSet<String>>,
-    native: Option<&NativeEvidence>,
+    _scenario_covers: &BTreeMap<String, BTreeSet<String>>,
+    _native: Option<&NativeEvidence>,
 ) -> Report {
     let revision = attachment.attachment_revision().as_str().to_owned();
     let project_id = attachment.project_id().to_owned();
@@ -204,120 +202,38 @@ pub fn report(
     let declared_policies =
         !attachment.field_policies().is_empty() && !attachment.action_policies().is_empty();
     let family_pin = super::version::IDENTITY.to_owned();
-    // Evidence is bound to facts: a fact only claims evidence when an
-    // admitted run named the declared scenario AND a successful step of
-    // that run actually executed a covered symbol. A borrowed scenario
-    // label over refused or unrelated steps witnesses nothing.
-    let witnessed = |fact_scenarios: &[&str], native: bool| -> bool {
-        evidence.iter().any(|run| {
-            let origin_matches = if native {
-                run.origin == "native"
-            } else {
-                run.origin == "mock" || run.origin == "reference"
-            };
-            origin_matches
-                && fact_scenarios.iter().any(|required| {
-                    scenario_covers
-                        .get(&run.scenario_id)
-                        .is_some_and(|covered| covered.contains(*required))
-                        && run.executed.contains(*required)
-                })
-        })
-    };
-    let mock_witnessed = |scenarios: &[&str]| witnessed(scenarios, false);
-    let identity_scenarios: &[&str] = &["tasklinks.attach_link", "tasklinks.import_link"];
-    let history_scenarios: &[&str] = &["tasklinks.detach_link", "tasklinks.link_detached"];
-    let policy_scenarios: &[&str] = &["tasklinks.request_action"];
-    let conflict_scenarios: &[&str] = &[
-        "tasklinks.ingest_event",
-        "tasklinks.conflict_recorded",
-        "tasklinks.resolve_conflict",
-    ];
-    let intent_scenarios: &[&str] = &[
-        "tasklinks.dispatch_outbox",
-        "tasklinks.ack_delivery",
-        "tasklinks.request_action",
-    ];
-    let core_row = |declared: bool, fact: &'static str, scenarios: &[&str], pin: String| {
-        // A declared fact with witnessed evidence says `supported`; a
-        // declared fact without any is honestly `unknown` (declaration
-        // alone never proves a run); an undeclared fact is
-        // `unsupported` outright.
-        let seen = mock_witnessed(scenarios);
-        let (provided, source) = match (declared, seen) {
-            (true, true) => (Provided::Supported, EvidenceSource::MockEvidence),
-            (true, false) => (Provided::Unknown, EvidenceSource::AttachmentDeclaration),
-            (false, _) => (Provided::Unsupported, EvidenceSource::AttachmentDeclaration),
-        };
-        Row {
-            fact,
-            requirement: Requirement::Required,
-            provided,
-            pin,
-            evidence_source: source,
-        }
+    // File-origin summaries, including internally consistent decisions,
+    // recomputable receipt digests and co-located SQLite qualification
+    // rows, are producer declarations, not an authenticated execution
+    // channel. There is currently no owner-attested run/input/build/result
+    // receipt in this API. Do not promote execution-dependent guarantees
+    // from any of these caller-writable facts (even for the named target).
+    let core_row = |declared: bool, fact: &'static str, pin: String| Row {
+        fact,
+        requirement: Requirement::Required,
+        provided: if declared {
+            Provided::Unknown
+        } else {
+            Provided::Unsupported
+        },
+        pin,
+        evidence_source: EvidenceSource::AttachmentDeclaration,
     };
     let core_semantics = vec![
         core_row(
             declared_tuple,
             "external-identity-exact-tuple",
-            identity_scenarios,
             family_pin.clone(),
         ),
-        core_row(
-            declared_zero_n,
-            "task-links-0-n",
-            identity_scenarios,
-            family_pin.clone(),
-        ),
+        core_row(declared_zero_n, "task-links-0-n", family_pin.clone()),
         core_row(
             declared_history,
             "detach-preserves-history",
-            history_scenarios,
             family_pin.clone(),
         ),
-        core_row(
-            declared_policies,
-            "actor-and-field-policy",
-            policy_scenarios,
-            family_pin,
-        ),
-        {
-            let seen = mock_witnessed(conflict_scenarios);
-            Row {
-                fact: "version-conflict-detection",
-                requirement: Requirement::Required,
-                provided: if seen {
-                    Provided::Supported
-                } else {
-                    Provided::Unknown
-                },
-                pin: ir_digest.clone(),
-                evidence_source: if seen {
-                    EvidenceSource::MockEvidence
-                } else {
-                    EvidenceSource::AttachmentDeclaration
-                },
-            }
-        },
-        {
-            let seen = mock_witnessed(intent_scenarios);
-            Row {
-                fact: "idempotent-intent",
-                requirement: Requirement::Required,
-                provided: if seen {
-                    Provided::Supported
-                } else {
-                    Provided::Unknown
-                },
-                pin: ir_digest,
-                evidence_source: if seen {
-                    EvidenceSource::MockEvidence
-                } else {
-                    EvidenceSource::AttachmentDeclaration
-                },
-            }
-        },
+        core_row(declared_policies, "actor-and-field-policy", family_pin),
+        core_row(true, "version-conflict-detection", ir_digest.clone()),
+        core_row(true, "idempotent-intent", ir_digest),
     ];
     let mut provider_adapters = Vec::new();
     for contract in attachment.provider_contracts() {
@@ -366,65 +282,23 @@ pub fn report(
         });
     }
     let rules = attachment.delivery_rules();
-    // Target guarantees are target facts: each claims support only from
-    // qualified native evidence of the delivery surface AND the exact
-    // executed battery leg that proves THAT guarantee, pinning the
-    // qualification receipt as provenance. One target-independent
-    // scenario label promotes nothing: an unexecuted guarantee stays
-    // honestly unknown even when a different native runner passed.
-    let native_seen = witnessed(
-        &["tasklinks.dispatch_outbox", "tasklinks.ack_delivery"],
-        true,
-    );
-    let leg_ran = |leg: &str| {
-        native_seen && native.is_some_and(|qualification| qualification.legs.contains(leg))
+    // A battery may genuinely execute in the gate, but a file reader
+    // cannot distinguish its rows from an identical caller-authored DB.
+    // Target qualification remains unknown until an admitted execution
+    // owner supplies provenance; copying a receipt across targets (or
+    // inventing matching rows on the same target) proves no guarantee.
+    let target_row = |fact: &'static str| Row {
+        fact,
+        requirement: Requirement::Required,
+        provided: Provided::Unknown,
+        pin: to_profile.digest.clone(),
+        evidence_source: EvidenceSource::AttachmentDeclaration,
     };
-    let target_row = |fact: &'static str, leg: Option<&str>, pin: String| {
-        let supported = match leg {
-            Some(leg) => leg_ran(leg),
-            None => false,
-        };
-        Row {
-            fact,
-            requirement: Requirement::Required,
-            provided: if supported {
-                Provided::Supported
-            } else {
-                Provided::Unknown
-            },
-            pin,
-            evidence_source: if supported {
-                EvidenceSource::NativeEvidence
-            } else {
-                EvidenceSource::AttachmentDeclaration
-            },
-        }
-    };
-    let identity_race = "synchronized_identity_race_binds_one_task";
-    let receipt_pin = native
-        .map(|qualification| qualification.receipt_digest.clone())
-        .unwrap_or_else(|| to_profile.digest.clone());
     let target_guarantees = vec![
-        // The DB-level identity race executed real competing inserts on
-        // separate connections under the database unique index: it is
-        // the executed proof of the uniqueness and local-transaction
-        // facts, pinned to the exact receipt.
-        target_row("unique-index", Some(identity_race), receipt_pin.clone()),
-        // The battery executes no CAS-specific leg; the fact stays
-        // honestly unknown until one runs.
-        target_row("compare-and-swap", None, to_profile.digest.clone()),
-        target_row(
-            "local-transaction",
-            Some(identity_race),
-            receipt_pin.clone(),
-        ),
-        // The durable outbox facts have their own executed legs: the
-        // ack-window recovery and the durable attempt bound.
-        target_row(
-            "durable-outbox",
-            Some("accepted_before_ack_survives_restart_as_unknown"),
-            receipt_pin,
-        ),
+        target_row("unique-index"),
+        target_row("compare-and-swap"),
+        target_row("local-transaction"),
+        target_row("durable-outbox"),
         Row {
             fact: "delivery-uncertainty",
             requirement: Requirement::Required,
@@ -470,11 +344,9 @@ pub fn report(
                 .filter(|run| run.origin != "native")
                 .map(|run| run.evidence_id.clone())
                 .collect(),
-            native_evidence_ids: evidence
-                .iter()
-                .filter(|run| run.origin == "native")
-                .map(|run| run.evidence_id.clone())
-                .collect(),
+            // A producer's origin label does not establish native
+            // execution coverage. No attested channel exists here yet.
+            native_evidence_ids: Vec::new(),
             unsupported_required,
             unknown_required,
         },

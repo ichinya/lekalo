@@ -4,252 +4,6 @@
     {
       "rule": "tasklink.relation-identity-invalid",
       "code": "LEK-TASKLINK-001",
-      "trigger": "invalid/relation-cardinality.json",
-      "command": "validate",
-      "detailTag": "relation-cardinality"
-    },
-    {
-      "rule": "tasklink.relation-identity-invalid",
-      "code": "LEK-TASKLINK-001",
-      "trigger": "invalid/relation-field-missing.json",
-      "command": "validate",
-      "detailTag": "relation-local-field-missing"
-    },
-    {
-      "rule": "tasklink.relation-identity-invalid",
-      "code": "LEK-TASKLINK-001",
-      "trigger": "invalid/constraint-field-missing.json",
-      "command": "validate",
-      "detailTag": "constraint-field-missing"
-    },
-    {
-      "rule": "tasklink.relation-identity-invalid",
-      "code": "LEK-TASKLINK-001",
-      "trigger": "invalid/identity-member-missing.json",
-      "command": "validate",
-      "detailTag": "identity-member-missing"
-    },
-    {
-      "rule": "tasklink.decision-incomplete",
-      "code": "LEK-TASKLINK-002",
-      "trigger": "invalid/decision-incomplete.json",
-      "command": "validate",
-      "detailTag": "policy-ref-unresolved"
-    },
-    {
-      "rule": "tasklink.fanout-not-admitted",
-      "code": "LEK-TASKLINK-003",
-      "trigger": "invalid/fanout-not-admitted.json",
-      "command": "validate",
-      "detailTag": "binding-effect-unresolved"
-    },
-    {
-      "rule": "tasklink.delivery-contract-invalid",
-      "code": "LEK-TASKLINK-004",
-      "trigger": "invalid/delivery-contract-invalid.json",
-      "command": "validate",
-      "detailTag": "retry-guarantee-missing"
-    },
-    {
-      "rule": "tasklink.conflict-resolution-invalid",
-      "code": "LEK-TASKLINK-005",
-      "trigger": "invalid/conflict-resolution-invalid.json",
-      "command": "validate",
-      "detailTag": "resolution-transition-invalid"
-    },
-    {
-      "rule": "tasklink.history-or-ownership-violation",
-      "code": "LEK-TASKLINK-006",
-      "trigger": "invalid/history-ownership-violation.json",
-      "command": "validate",
-      "detailTag": "protected-planning-field"
-    },
-    {
-      "rule": "tasklink.required-guarantee-unsupported",
-      "code": "LEK-TASKLINK-007",
-      "trigger": "invalid/required-guarantee-unsupported.json",
-      "command": "portability-strict",
-      "control": "portability-permissive",
-      "detailTag": "required-guarantee-unknown"
-    },
-    {
-      "rule": "tasklink.evidence-invalid",
-      "code": "LEK-TASKLINK-008",
-      "trigger": "invalid/evidence-stale.json",
-      "command": "inspect",
-      "detailTag": "evidence-stale-pin"
-    },
-    {
-      "rule": "tasklink.relation-identity-invalid",
-      "code": "LEK-TASKLINK-001",
-      "trigger": "invalid/pin-ir-digest-stale.json",
-      "command": "validate",
-      "detailTag": "ir-digest-stale"
-    },
-    {
-      "rule": "tasklink.relation-identity-invalid",
-      "code": "LEK-TASKLINK-001",
-      "trigger": "invalid/pin-owner-pin-stale.json",
-      "command": "validate",
-      "detailTag": "owner-pin-stale"
-    },
-    {
-      "rule": "tasklink.relation-identity-invalid",
-      "code": "LEK-TASKLINK-001",
-      "trigger": "invalid/constraint-wrong-tuple.json",
-      "command": "validate",
-      "detailTag": "constraint-field-missing"
-    },
-    {
-      "rule": "tasklink.relation-identity-invalid",
-      "code": "LEK-TASKLINK-001",
-      "trigger": "invalid/constraint-scope-declared.json",
-      "command": "validate",
-      "detailTag": "identity-tuple-missing"
-    },
-    {
-      "rule": "tasklink.relation-identity-invalid",
-      "code": "LEK-TASKLINK-001",
-      "trigger": "invalid/relation-local-field-missing.json",
-      "command": "validate",
-      "detailTag": "relation-local-field-missing"
-    },
-    {
-      "rule": "tasklink.evidence-invalid",
-      "code": "LEK-TASKLINK-008",
-      "trigger": "invalid/evidence-native-unqualified.json",
-      "command": "inspect",
-      "detailTag": "evidence-native-unqualified"
-    },
-    {
-      "rule": "tasklink.evidence-invalid",
-      "code": "LEK-TASKLINK-008",
-      "trigger": "invalid/ev-canary-evidenceid.json",
-      "command": "inspect",
-      "detailTag": "evidence-symbol"
-    },
-    {
-      "rule": "tasklink.evidence-invalid",
-      "code": "LEK-TASKLINK-008",
-      "trigger": "invalid/ev-bad-scenarioid.json",
-      "command": "inspect",
-      "detailTag": "evidence-symbol"
-    },
-    {
-      "rule": "tasklink.evidence-invalid",
-      "code": "LEK-TASKLINK-008",
-      "trigger": "invalid/ev-ghost-scenario.json",
-      "command": "inspect",
-      "detailTag": "evidence-scenario-unresolved"
-    },
-    {
-      "rule": "tasklink.evidence-invalid",
-      "code": "LEK-TASKLINK-008",
-      "trigger": "invalid/ev-decision-contradiction.json",
-      "command": "inspect",
-      "detailTag": "evidence-step-token"
-    },
-    {
-      "rule": "tasklink.evidence-invalid",
-      "code": "LEK-TASKLINK-008",
-      "trigger": "invalid/ev-protected-fields.json",
-      "command": "inspect",
-      "detailTag": "evidence-protected-field"
-    },
-    {
-      "rule": "tasklink.evidence-invalid",
-      "code": "LEK-TASKLINK-008",
-      "trigger": "invalid/ev-dup-stepid.json",
-      "command": "inspect",
-      "detailTag": "evidence-step-token"
-    },
-    {
-      "rule": "tasklink.evidence-invalid",
-      "code": "LEK-TASKLINK-008",
-      "trigger": "invalid/ev-attempt-65.json",
-      "command": "inspect",
-      "detailTag": "evidence-step-token"
-    },
-    {
-      "rule": "tasklink.evidence-invalid",
-      "code": "LEK-TASKLINK-008",
-      "trigger": "invalid/ev-count-over.json",
-      "command": "inspect",
-      "detailTag": "evidence-coverage"
-    },
-    {
-      "rule": "tasklink.evidence-invalid",
-      "code": "LEK-TASKLINK-008",
-      "trigger": "invalid/ev-empty-stepid.json",
-      "command": "inspect",
-      "detailTag": "evidence-step-token"
-    },
-    {
-      "rule": "tasklink.evidence-invalid",
-      "code": "LEK-TASKLINK-008",
-      "trigger": "invalid/ev-bad-receiptdigest.json",
-      "command": "inspect",
-      "detailTag": "evidence-step-token"
-    },
-    {
-      "rule": "tasklink.evidence-invalid",
-      "code": "LEK-TASKLINK-008",
-      "trigger": "invalid/ev-fields-65.json",
-      "command": "inspect",
-      "detailTag": "evidence-step-token"
-    },
-    {
-      "rule": "tasklink.decision-incomplete",
-      "code": "LEK-TASKLINK-002",
-      "trigger": "invalid/policy-self-cycle.json",
-      "command": "validate",
-      "detailTag": "policy-ref-cycle"
-    },
-    {
-      "rule": "tasklink.decision-incomplete",
-      "code": "LEK-TASKLINK-002",
-      "trigger": "invalid/policy-mutual-cycle.json",
-      "command": "validate",
-      "detailTag": "policy-ref-cycle"
-    },
-    {
-      "rule": "tasklink.decision-incomplete",
-      "code": "LEK-TASKLINK-002",
-      "trigger": "invalid/ghost-policy-entity.json",
-      "command": "validate",
-      "detailTag": "policy-entity-unresolved"
-    },
-    {
-      "rule": "tasklink.decision-incomplete",
-      "code": "LEK-TASKLINK-002",
-      "trigger": "invalid/ghost-policy-fields.json",
-      "command": "validate",
-      "detailTag": "policy-field-missing"
-    },
-    {
-      "rule": "tasklink.decision-incomplete",
-      "code": "LEK-TASKLINK-002",
-      "trigger": "invalid/ghost-action.json",
-      "command": "validate",
-      "detailTag": "action-unresolved"
-    },
-    {
-      "rule": "tasklink.decision-incomplete",
-      "code": "LEK-TASKLINK-002",
-      "trigger": "invalid/ghost-operation.json",
-      "command": "validate",
-      "detailTag": "binding-action-unresolved"
-    },
-    {
-      "rule": "tasklink.relation-identity-invalid",
-      "code": "LEK-TASKLINK-001",
-      "trigger": "invalid/ghost-schema-ref.json",
-      "command": "validate",
-      "detailTag": "contract-schema-ref-unresolved"
-    },
-    {
-      "rule": "tasklink.relation-identity-invalid",
-      "code": "LEK-TASKLINK-001",
       "trigger": "invalid/card-1of1.json",
       "command": "validate",
       "detailTag": "relation-diverges-from-model"
@@ -267,6 +21,273 @@
       "trigger": "invalid/card-min5-null.json",
       "command": "validate",
       "detailTag": "relation-diverges-from-model"
+    },
+    {
+      "rule": "tasklink.conflict-resolution-invalid",
+      "code": "LEK-TASKLINK-005",
+      "trigger": "invalid/conflict-resolution-invalid.json",
+      "command": "validate",
+      "detailTag": "resolution-transition-invalid"
+    },
+    {
+      "rule": "tasklink.relation-identity-invalid",
+      "code": "LEK-TASKLINK-001",
+      "trigger": "invalid/constraint-field-missing.json",
+      "command": "validate",
+      "detailTag": "constraint-field-missing"
+    },
+    {
+      "rule": "tasklink.relation-identity-invalid",
+      "code": "LEK-TASKLINK-001",
+      "trigger": "invalid/constraint-scope-declared.json",
+      "command": "validate",
+      "detailTag": "identity-tuple-missing"
+    },
+    {
+      "rule": "tasklink.relation-identity-invalid",
+      "code": "LEK-TASKLINK-001",
+      "trigger": "invalid/constraint-wrong-tuple.json",
+      "command": "validate",
+      "detailTag": "constraint-field-missing"
+    },
+    {
+      "rule": "tasklink.decision-incomplete",
+      "code": "LEK-TASKLINK-002",
+      "trigger": "invalid/decision-incomplete.json",
+      "command": "validate",
+      "detailTag": "policy-ref-unresolved"
+    },
+    {
+      "rule": "tasklink.delivery-contract-invalid",
+      "code": "LEK-TASKLINK-004",
+      "trigger": "invalid/delivery-contract-invalid.json",
+      "command": "validate",
+      "detailTag": "retry-guarantee-missing"
+    },
+    {
+      "rule": "tasklink.evidence-invalid",
+      "code": "LEK-TASKLINK-008",
+      "trigger": "invalid/ev-attempt-65.json",
+      "command": "inspect",
+      "detailTag": "evidence-step-token"
+    },
+    {
+      "rule": "tasklink.evidence-invalid",
+      "code": "LEK-TASKLINK-008",
+      "trigger": "invalid/ev-bad-receiptdigest.json",
+      "command": "inspect",
+      "detailTag": "evidence-step-token"
+    },
+    {
+      "rule": "tasklink.evidence-invalid",
+      "code": "LEK-TASKLINK-008",
+      "trigger": "invalid/ev-bad-scenarioid.json",
+      "command": "inspect",
+      "detailTag": "evidence-symbol"
+    },
+    {
+      "rule": "tasklink.evidence-invalid",
+      "code": "LEK-TASKLINK-008",
+      "trigger": "invalid/ev-canary-evidenceid.json",
+      "command": "inspect",
+      "detailTag": "evidence-symbol"
+    },
+    {
+      "rule": "tasklink.evidence-invalid",
+      "code": "LEK-TASKLINK-008",
+      "trigger": "invalid/ev-count-over.json",
+      "command": "inspect",
+      "detailTag": "evidence-coverage"
+    },
+    {
+      "rule": "tasklink.evidence-invalid",
+      "code": "LEK-TASKLINK-008",
+      "trigger": "invalid/ev-decision-contradiction.json",
+      "command": "inspect",
+      "detailTag": "evidence-step-token"
+    },
+    {
+      "rule": "tasklink.evidence-invalid",
+      "code": "LEK-TASKLINK-008",
+      "trigger": "invalid/ev-dup-stepid.json",
+      "command": "inspect",
+      "detailTag": "evidence-step-token"
+    },
+    {
+      "rule": "tasklink.evidence-invalid",
+      "code": "LEK-TASKLINK-008",
+      "trigger": "invalid/ev-empty-stepid.json",
+      "command": "inspect",
+      "detailTag": "evidence-step-token"
+    },
+    {
+      "rule": "tasklink.evidence-invalid",
+      "code": "LEK-TASKLINK-008",
+      "trigger": "invalid/ev-fields-65.json",
+      "command": "inspect",
+      "detailTag": "evidence-step-token"
+    },
+    {
+      "rule": "tasklink.evidence-invalid",
+      "code": "LEK-TASKLINK-008",
+      "trigger": "invalid/ev-ghost-scenario.json",
+      "command": "inspect",
+      "detailTag": "evidence-scenario-unresolved"
+    },
+    {
+      "rule": "tasklink.evidence-invalid",
+      "code": "LEK-TASKLINK-008",
+      "trigger": "invalid/ev-partial-no-subset.json",
+      "command": "inspect",
+      "detailTag": "evidence-permitted-subset-missing"
+    },
+    {
+      "rule": "tasklink.evidence-invalid",
+      "code": "LEK-TASKLINK-008",
+      "trigger": "invalid/ev-protected-fields.json",
+      "command": "inspect",
+      "detailTag": "evidence-protected-field"
+    },
+    {
+      "rule": "tasklink.evidence-invalid",
+      "code": "LEK-TASKLINK-008",
+      "trigger": "invalid/ev-receipt-forged.json",
+      "command": "inspect",
+      "detailTag": "evidence-receipt-forged"
+    },
+    {
+      "rule": "tasklink.evidence-invalid",
+      "code": "LEK-TASKLINK-008",
+      "trigger": "invalid/ev-success-no-witness.json",
+      "command": "inspect",
+      "detailTag": "evidence-witness-missing"
+    },
+    {
+      "rule": "tasklink.evidence-invalid",
+      "code": "LEK-TASKLINK-008",
+      "trigger": "invalid/evidence-native-unqualified.json",
+      "command": "inspect",
+      "detailTag": "evidence-native-unqualified"
+    },
+    {
+      "rule": "tasklink.evidence-invalid",
+      "code": "LEK-TASKLINK-008",
+      "trigger": "invalid/evidence-stale.json",
+      "command": "inspect",
+      "detailTag": "evidence-stale-pin"
+    },
+    {
+      "rule": "tasklink.fanout-not-admitted",
+      "code": "LEK-TASKLINK-003",
+      "trigger": "invalid/fanout-not-admitted.json",
+      "command": "validate",
+      "detailTag": "binding-effect-unresolved"
+    },
+    {
+      "rule": "tasklink.decision-incomplete",
+      "code": "LEK-TASKLINK-002",
+      "trigger": "invalid/ghost-action.json",
+      "command": "validate",
+      "detailTag": "action-unresolved"
+    },
+    {
+      "rule": "tasklink.decision-incomplete",
+      "code": "LEK-TASKLINK-002",
+      "trigger": "invalid/ghost-operation.json",
+      "command": "validate",
+      "detailTag": "binding-action-unresolved"
+    },
+    {
+      "rule": "tasklink.decision-incomplete",
+      "code": "LEK-TASKLINK-002",
+      "trigger": "invalid/ghost-policy-entity.json",
+      "command": "validate",
+      "detailTag": "policy-entity-unresolved"
+    },
+    {
+      "rule": "tasklink.decision-incomplete",
+      "code": "LEK-TASKLINK-002",
+      "trigger": "invalid/ghost-policy-fields.json",
+      "command": "validate",
+      "detailTag": "policy-field-missing"
+    },
+    {
+      "rule": "tasklink.relation-identity-invalid",
+      "code": "LEK-TASKLINK-001",
+      "trigger": "invalid/ghost-schema-ref.json",
+      "command": "validate",
+      "detailTag": "contract-schema-ref-unresolved"
+    },
+    {
+      "rule": "tasklink.history-or-ownership-violation",
+      "code": "LEK-TASKLINK-006",
+      "trigger": "invalid/history-ownership-violation.json",
+      "command": "validate",
+      "detailTag": "protected-planning-field"
+    },
+    {
+      "rule": "tasklink.relation-identity-invalid",
+      "code": "LEK-TASKLINK-001",
+      "trigger": "invalid/identity-member-missing.json",
+      "command": "validate",
+      "detailTag": "identity-member-missing"
+    },
+    {
+      "rule": "tasklink.relation-identity-invalid",
+      "code": "LEK-TASKLINK-001",
+      "trigger": "invalid/pin-ir-digest-stale.json",
+      "command": "validate",
+      "detailTag": "ir-digest-stale"
+    },
+    {
+      "rule": "tasklink.relation-identity-invalid",
+      "code": "LEK-TASKLINK-001",
+      "trigger": "invalid/pin-owner-pin-stale.json",
+      "command": "validate",
+      "detailTag": "owner-pin-stale"
+    },
+    {
+      "rule": "tasklink.decision-incomplete",
+      "code": "LEK-TASKLINK-002",
+      "trigger": "invalid/policy-mutual-cycle.json",
+      "command": "validate",
+      "detailTag": "policy-ref-cycle"
+    },
+    {
+      "rule": "tasklink.decision-incomplete",
+      "code": "LEK-TASKLINK-002",
+      "trigger": "invalid/policy-self-cycle.json",
+      "command": "validate",
+      "detailTag": "policy-ref-cycle"
+    },
+    {
+      "rule": "tasklink.relation-identity-invalid",
+      "code": "LEK-TASKLINK-001",
+      "trigger": "invalid/relation-cardinality.json",
+      "command": "validate",
+      "detailTag": "relation-cardinality"
+    },
+    {
+      "rule": "tasklink.relation-identity-invalid",
+      "code": "LEK-TASKLINK-001",
+      "trigger": "invalid/relation-field-missing.json",
+      "command": "validate",
+      "detailTag": "relation-local-field-missing"
+    },
+    {
+      "rule": "tasklink.relation-identity-invalid",
+      "code": "LEK-TASKLINK-001",
+      "trigger": "invalid/relation-local-field-missing.json",
+      "command": "validate",
+      "detailTag": "relation-local-field-missing"
+    },
+    {
+      "rule": "tasklink.required-guarantee-unsupported",
+      "code": "LEK-TASKLINK-007",
+      "trigger": "invalid/required-guarantee-unsupported.json",
+      "command": "portability-strict",
+      "control": "portability-permissive",
+      "detailTag": "required-guarantee-unknown"
     }
   ]
 }

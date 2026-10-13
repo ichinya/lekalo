@@ -4,10 +4,10 @@
   "evidenceId": "tasklinks.evidence.two_providers",
   "origin": "mock",
   "scenarioId": "tasklinks.scenario.two_providers",
-  "attachmentRevision": "sha256:276bf944b3fea2afe1026621a424d193a181915089ea4577adfcf5c9a57a8b18",
+  "attachmentRevision": "sha256:96c24ab42620ef3e79f11f674b0182ec7a46710ea7c475b1e03b0f514280488e",
   "modelRef": {
     "schemaVersion": "0.8.0",
-    "irDigest": "sha256:534193e7c9c86ef95cda6ea3d2f0c2df6e8cc1e528e8c5627b73fdb9f9682584"
+    "irDigest": "sha256:27757f5015d1bc4b75a9b2e46102c2d6ffdd6eab083528ea2cecc0809cfac552"
   },
   "clock": {
     "policy": "injected",
@@ -17,17 +17,101 @@
     {
       "stepId": "s1",
       "command": "tasklinks.request_action",
-      "outcome": "applied"
+      "outcome": "applied",
+      "attribution": {
+        "workspaceId": "ws-primary",
+        "actor": "identity.user",
+        "installationId": "inst-primary",
+        "providerId": "github-issues",
+        "objectType": "issue",
+        "externalId": "77",
+        "causationId": "causation-two-providers-1"
+      },
+      "decision": {
+        "outcome": "allowed",
+        "action": "tasklinks.request_action",
+        "capabilityOutcome": "supported",
+        "authorizationOutcome": "allowed",
+        "fields": [
+          "state",
+          "title"
+        ],
+        "policyRevision": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "capabilityRevision": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      "intent": {
+        "intentId": "14:link-github-77:19:two-providers-key-1",
+        "state": "pending",
+        "linkId": "link-github-77",
+        "idempotencyKey": "two-providers-key-1",
+        "attempt": 0
+      }
     },
     {
       "stepId": "s2",
       "command": "tasklinks.dispatch_outbox",
-      "outcome": "applied"
+      "outcome": "applied",
+      "attribution": {
+        "workspaceId": "ws-primary",
+        "actor": "system.job",
+        "installationId": "inst-primary",
+        "providerId": "github-issues",
+        "objectType": "issue",
+        "externalId": "77",
+        "causationId": "causation-two-providers-2"
+      },
+      "decision": {
+        "outcome": "allowed",
+        "action": "tasklinks.dispatch_outbox",
+        "capabilityOutcome": "supported",
+        "authorizationOutcome": "allowed",
+        "fields": [
+          "state"
+        ],
+        "policyRevision": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "capabilityRevision": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      "intent": {
+        "intentId": "14:link-github-77:19:two-providers-key-1",
+        "state": "accepted_pending_ack",
+        "linkId": "link-github-77",
+        "idempotencyKey": "two-providers-key-1",
+        "attempt": 0,
+        "leaseToken": "7"
+      }
     },
     {
       "stepId": "s3",
       "command": "tasklinks.ack_delivery",
-      "outcome": "applied"
+      "outcome": "applied",
+      "attribution": {
+        "workspaceId": "ws-primary",
+        "actor": "system.job",
+        "installationId": "inst-primary",
+        "providerId": "github-issues",
+        "objectType": "issue",
+        "externalId": "77",
+        "causationId": "causation-two-providers-3"
+      },
+      "decision": {
+        "outcome": "allowed",
+        "action": "tasklinks.ack_delivery",
+        "capabilityOutcome": "supported",
+        "authorizationOutcome": "allowed",
+        "fields": [
+          "state"
+        ],
+        "policyRevision": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "capabilityRevision": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      "intent": {
+        "intentId": "14:link-github-77:19:two-providers-key-1",
+        "state": "delivered",
+        "linkId": "link-github-77",
+        "idempotencyKey": "two-providers-key-1",
+        "attempt": 0,
+        "receiptDigest": "sha256:c0770974e13db1f738ee74cb58d122f53824a4e3ecbca6d3c2a4a06b563e8d17"
+      }
     }
   ]
 }

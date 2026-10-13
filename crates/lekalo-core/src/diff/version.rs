@@ -11,16 +11,22 @@
 pub const FAMILY: &str = "dev.lekalo.semantic-diff";
 
 /// The exact semantic-diff contract version.
-pub const VERSION: &str = "0.2.16";
+///
+/// The 0.8.0 successor admits Model 0.8.0 snapshots (typed relation
+/// and uniqueness facts, source-dependent IR identities) while keeping
+/// every 0.2.16 comparison valid: each snapshot's modelVersion stays
+/// source-dependent and the predecessor schema stays frozen
+/// byte-for-byte.
+pub const VERSION: &str = "0.8.0";
 
 /// The exact contract identity: family and version joined with `@`.
-pub const IDENTITY: &str = "dev.lekalo.semantic-diff@0.2.16";
+pub const IDENTITY: &str = "dev.lekalo.semantic-diff@0.8.0";
 
 /// The exact wire discriminator of the semantic-diff contract.
-pub const SCHEMA_VERSION: &str = "lekalo/semantic-diff/v0.2.16";
+pub const SCHEMA_VERSION: &str = "lekalo/semantic-diff/v0.8.0";
 
 /// The exact wire discriminator of the built-in profile vocabulary.
-pub const PROFILE_VERSION: &str = "lekalo/diff-profile/v0.2.16";
+pub const PROFILE_VERSION: &str = "lekalo/diff-profile/v0.8.0";
 
 /// The exact policy revision the built-in profiles evaluate.
 pub const POLICY_REVISION: &str = "diff-policy/v1";
@@ -67,9 +73,9 @@ mod tests {
     fn identity_is_family_and_version() {
         assert_eq!(IDENTITY, format!("{FAMILY}@{VERSION}"));
         assert_eq!(FAMILY, "dev.lekalo.semantic-diff");
-        assert_eq!(VERSION, "0.2.16");
-        assert_eq!(SCHEMA_VERSION, "lekalo/semantic-diff/v0.2.16");
-        assert_eq!(PROFILE_VERSION, "lekalo/diff-profile/v0.2.16");
+        assert_eq!(VERSION, "0.8.0");
+        assert_eq!(SCHEMA_VERSION, "lekalo/semantic-diff/v0.8.0");
+        assert_eq!(PROFILE_VERSION, "lekalo/diff-profile/v0.8.0");
         assert_eq!(POLICY_REVISION, "diff-policy/v1");
     }
 

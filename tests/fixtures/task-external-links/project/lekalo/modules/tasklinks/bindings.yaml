@@ -12,3 +12,9 @@ definitions:
     description: "Bind the maintained Laravel port target for the portability comparison"
     portability: target-specific
     target: php-laravel-maintained
+  - id: tasklinks.binding_battery
+    kind: target-binding
+    version: 1
+    description: "Bind the repository's own Rust core over bundled SQLite — the implementation the local qualification battery actually executes"
+    portability: target-specific
+    target: lekalo-core-bundled-sqlite

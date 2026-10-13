@@ -139,6 +139,8 @@ impl<'a> Builder<'a> {
             edges,
             Vec::new(),
             0,
+            Vec::new(),
+            Vec::new(),
         ))
     }
 
@@ -350,10 +352,46 @@ pub(crate) fn attach(
     if envelope.trust == TrustState::Rejected {
         return Err(diagnostic::input_invalid_detail("rejected-trust"));
     }
+    // Local canonical members must be real effects of THIS compilation.
+    // Coherent envelope strings over invented writes are not a Model join.
+    // This still does not prove atomic execution: grouping is extracted
+    // declaration data until a transaction-owner declaration is admitted.
+    for member in envelope
+        .transactions
+        .iter()
+        .flat_map(|transaction| &transaction.members)
+    {
+        if let Some(entity) = member.subject.strip_prefix("canonical:") {
+            if !graph.declared().iter().any(|edge| {
+                edge.key().operation().semantic_id() == member.operation
+                    && edge.key().kind() == member.kind
+                    && edge.key().subject().resource().as_str() == entity
+                    && edge.key().subject().field().is_none()
+            }) {
+                return Err(diagnostic::input_invalid_detail("group-member-undeclared"));
+            }
+        }
+    }
+    // Admission-side trust clamp: an envelope operand is adapter-
+    // extracted evidence. `verified` and `current` mean CONFIRMED by
+    // the accepted typed evidence owner — a state no raw file operand
+    // can confer on itself. The join caps every caller-asserted trust
+    // at `extracted` (extracted without a current re-verification), so
+    // a forged envelope can never mint verified-confidence public
+    // edges; owner confirmation still flows through its own accepted
+    // channel, never this operand.
+    let clamped = |asserted: TrustState| match asserted {
+        TrustState::Verified | TrustState::Current => TrustState::Extracted,
+        other => other,
+    };
     let mut detected = Vec::with_capacity(envelope.entries.len());
+    let mut partial_failures = Vec::new();
     for entry in &envelope.entries {
         if entry.trust == Some(TrustState::Rejected) {
             return Err(diagnostic::input_invalid_detail("rejected-trust"));
+        }
+        if let Some(record) = &entry.partial_failure {
+            partial_failures.push(record.clone());
         }
         detected.push(EffectEdge::new(
             EffectKey::new(
@@ -368,7 +406,7 @@ pub(crate) fn attach(
                 target_id: envelope.target_id.clone(),
                 protocol_version: envelope.protocol_version.clone(),
                 evidence_digest: envelope.evidence_digest.clone(),
-                trust: entry.trust.unwrap_or(envelope.trust),
+                trust: clamped(entry.trust.unwrap_or(envelope.trust)),
             },
             entry.transaction_group.clone(),
             entry.sensitivity.clone(),
@@ -381,6 +419,10 @@ pub(crate) fn attach(
     combined.extend(detected);
     combined.sort_by_key(|edge| edge.sort_key());
     combined.dedup_by(|left, right| left.key() == right.key());
+    let mut transactions = graph.transactions().to_vec();
+    transactions.extend(envelope.transactions.iter().cloned());
+    let mut joined_failures = graph.partial_failures().to_vec();
+    joined_failures.extend(partial_failures);
     Ok(EffectGraph::assemble(
         graph.project_id().map(|project| project.to_owned()),
         graph.model_version(),
@@ -388,5 +430,7 @@ pub(crate) fn attach(
         graph.declared().to_vec(),
         combined,
         graph.envelope_count() + 1,
+        transactions,
+        joined_failures,
     ))
 }

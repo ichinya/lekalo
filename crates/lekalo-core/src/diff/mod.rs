@@ -418,11 +418,15 @@ fn bound_name(bound: usize) -> &'static str {
     }
 }
 
-/// Build the typed reference of one side.
+/// Build the typed reference of one side. The IR identity is
+/// SOURCE-DEPENDENT, never a constant: a 0.2.16 snapshot pins
+/// `dev.lekalo.ir@0.2.16` and a 0.8.0 snapshot pins
+/// `dev.lekalo.ir@0.8.0`, so the published identity and the pinned
+/// digest always describe the same document.
 fn project_ref(compiled: &CompiledProject, projection: &projection::Projection) -> ProjectRef {
     ProjectRef {
         model_version: compiled.model_version.as_str().to_owned(),
-        ir_identity: crate::ir::IDENTITY.to_owned(),
+        ir_identity: crate::ir::version::identity_for(compiled.model_version).to_owned(),
         ir_digest: format!(
             "sha256:{}",
             digest_hex(compiled.to_canonical_json().as_bytes())

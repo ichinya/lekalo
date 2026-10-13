@@ -75,6 +75,11 @@ pub(crate) fn envelope_violation_set(violation: &EnvelopeViolation) -> Diagnosti
         EnvelopeViolation::MalformedDigest { .. } => "malformed-digest",
         EnvelopeViolation::OverLimit => "over-limit",
         EnvelopeViolation::IllegalEntry { .. } => "illegal-entry",
+        EnvelopeViolation::NetworkInGroup { .. } => "network-in-group",
+        EnvelopeViolation::GroupUndeclared { .. } => "group-undeclared",
+        EnvelopeViolation::GroupMemberMismatch => "group-member-mismatch",
+        EnvelopeViolation::PartialFailureShape { .. } => "partial-failure-shape",
+        EnvelopeViolation::PartialFailureRetry { .. } => "partial-failure-retry",
     };
     data.insert("violation".to_owned(), token(name));
     match one(INPUT_INVALID, None, data) {
