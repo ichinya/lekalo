@@ -9,11 +9,6 @@
       "origin": "synthetic"
     },
     {
-      "family": "architecture-profile",
-      "origin": "synthetic",
-      "note": "Issue #84: authored architecture policy, resolution, scope, lock, diff, baseline and adoption goldens over the synthetic context-budget planner. No native runtime or AI task outcome claims."
-    },
-    {
       "family": "adapter-manifest",
       "origin": "synthetic"
     },
@@ -24,6 +19,11 @@
     {
       "family": "adopt",
       "origin": "synthetic"
+    },
+    {
+      "family": "adoption",
+      "origin": "synthetic",
+      "note": "Issue #136: authored synthetic brownfield taskboard app, scanner, refactor candidates, verification spec and invalid inputs; no private code or executed application behavior claims."
     },
     {
       "family": "ai-lint",
@@ -59,6 +59,11 @@
       "family": "ai-workspace",
       "origin": "synthetic",
       "note": "issue #37 ai-workspace integration: the reviewed routing-manifest example and the change-event envelope example are exclusively synthetic, authored in-repo from public contract identities and neutral role aliases; no private checkout content"
+    },
+    {
+      "family": "architecture-profile",
+      "origin": "synthetic",
+      "note": "Issue #84: authored architecture policy, resolution, scope, lock, diff, baseline and adoption goldens over the synthetic context-budget planner. No native runtime or AI task outcome claims."
     },
     {
       "family": "artifacts",
@@ -141,6 +146,11 @@
     {
       "family": "extended-effects",
       "origin": "synthetic"
+    },
+    {
+      "family": "format",
+      "origin": "synthetic",
+      "note": "Issue #94: authored noncanonical seeds, reviewed canonical golden bytes, negative and portability fixtures for the canonical YAML/JSON formatter. No private code or executed application behavior."
     },
     {
       "family": "framework-lift-arm",

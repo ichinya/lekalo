@@ -1,7 +1,8 @@
 {
   "formatVersion": 1,
-  "productVersion": "0.6.5",
-  "cliSourceDigest": "sha256:181e7cef1d85b55aa87f8984546ea4a9ee294082b60a6c4f4dbeb8667f05f6e3",
+  "productVersion": "0.8.0",
+  "cliSourceDigest": "sha256:35edb040ef4b64853a2ecd923eaa06c843118eeda09c86a89b7fc3b76b689d03",
+  "cliSourceDigest": "sha256:0b43d52f1bd5df151289dee7346b23f0cb36d01a91ff5dc1b53ea1984287ace2",
   "p0Pages": [
     {
       "page": "README.md",
@@ -209,6 +210,105 @@
       "summary": "Update one installed package to another immutable version (issue #32). The plan renders the permission/capability diff; a widening diff refuses without `--allow-escalation`",
       "leaf": true,
       "owner": "docs/adapter-install.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:adoption",
+      "kind": "command",
+      "command": "adoption",
+      "usage": "lekalo adoption [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:d514acd2e62021f608b28b9fc8656add306908bc2961b259f6cef74ef9afb276",
+      "summary": "Scoped brownfield adoption, selective refactoring, and hybrid mode (issue #136): read-only analysis, selective confirmation, exact refactor plans, verified apply with rollback, and the hybrid coverage join",
+      "leaf": false,
+      "owner": "docs/adoption.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:adoption analyze",
+      "kind": "command",
+      "command": "adoption analyze",
+      "usage": "lekalo adoption analyze [OPTIONS]",
+      "helpDigest": "sha256:91559d2e614cc22008d97a00146caca117db34054fe6d6717f3f4e4591bf6977",
+      "summary": "Read-only scoped analysis: a minimal starter plan for exactly one use case, module, or symbol, with per-fact provenance and confidence, explicit unknowns and ambiguities, and no writes",
+      "leaf": true,
+      "owner": "docs/adoption.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:adoption apply",
+      "kind": "command",
+      "command": "adoption apply",
+      "usage": "lekalo adoption apply [OPTIONS] --plan <FILE> --verification <FILE> --confirm <DIGEST>",
+      "helpDigest": "sha256:0f7f5cf6736fd73ee1eb508db6e51f3eb62489cb5789a8adeb2c2fadb10cfe7a",
+      "summary": "Apply one confirmed refactor plan: snapshots, a durable journal, per-path compare-and-swap writes, and the phase receipt",
+      "leaf": true,
+      "owner": "docs/adoption.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:adoption confirm",
+      "kind": "command",
+      "command": "adoption confirm",
+      "usage": "lekalo adoption confirm [OPTIONS]",
+      "helpDigest": "sha256:0c1b9a9100dd766ef237ae57772dc6ee0c2eea3dd354d960f6e46e3d3002f215",
+      "summary": "Selective confirmation: preview the canonical write plan from an analysis plus explicit selections, or apply exactly a reviewed plan digest",
+      "leaf": true,
+      "owner": "docs/adoption.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:adoption coverage",
+      "kind": "command",
+      "command": "adoption coverage",
+      "usage": "lekalo adoption coverage [OPTIONS]",
+      "helpDigest": "sha256:bb1f334145f912f3a27d63ba6aaa9dc3a581ac7092c48ebfef2333760405891e",
+      "summary": "The hybrid coverage join: effective mode, freshness, and gaps for exactly one selected scope",
+      "leaf": true,
+      "owner": "docs/adoption.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:adoption recovery",
+      "kind": "command",
+      "command": "adoption recovery",
+      "usage": "lekalo adoption recovery [OPTIONS]",
+      "helpDigest": "sha256:a450d8a87b0fc8ef43737af0c90191a4280d9efd80007be5fe026ab497e319da",
+      "summary": "The durable recovery surface of one plan: the interrupted apply or confirmation phase's journal with every snapshot's integrity classified, so a partial mutation is discoverable instead of invisible. With `--restore`, a stranded installation is actually restored from the journal's snapshots and pre-states — the executable path for a receipt failure after committed writes (no completed receipt required)",
+      "leaf": true,
+      "owner": "docs/adoption.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:adoption refactor",
+      "kind": "command",
+      "command": "adoption refactor",
+      "usage": "lekalo adoption refactor [OPTIONS] --verification <FILE>",
+      "helpDigest": "sha256:1c86c124b78db17e916d308594a43a28ba86ed0d98f172b866f2618fabee0b09",
+      "summary": "Selective refactor preview: recommendations with reason, files, risk, and verification for one scope; a supplied reviewed candidate patch makes the plan applicable",
+      "leaf": true,
+      "owner": "docs/adoption.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:adoption rollback",
+      "kind": "command",
+      "command": "adoption rollback",
+      "usage": "lekalo adoption rollback [OPTIONS] --receipt <FILE>",
+      "helpDigest": "sha256:77298a863579973e9943e1a2c6bf0f12289468335105808b500f6a20115be3ba",
+      "summary": "Roll one completed apply or confirmation back to its exact prior state; later edits refuse as conflicts",
+      "leaf": true,
+      "owner": "docs/adoption.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:adoption verify",
+      "kind": "command",
+      "command": "adoption verify",
+      "usage": "lekalo adoption verify [OPTIONS] --plan <FILE> --verification <FILE>",
+      "helpDigest": "sha256:15f6844f2762fec134aa01ae1704ed05e0ffea6721db12e3047da0a5e51a1942",
+      "summary": "Really execute the pinned verification: baseline and candidate runs in disposable copies with the behavior oracle. Read-only for the project tree",
+      "leaf": true,
+      "owner": "docs/adoption.md",
       "status": "implemented"
     },
     {
@@ -707,6 +807,17 @@
       "status": "implemented"
     },
     {
+      "id": "cli:format",
+      "kind": "command",
+      "command": "format",
+      "usage": "lekalo format [OPTIONS] [PATH]",
+      "helpDigest": "sha256:88e84569ceee829c97c638699ab25a643590d629cd8be4f06f746970b8311342",
+      "summary": "Format admitted YAML/JSON sources into the pinned canonical text form (issue #94): deterministic ordering, comment preservation, and a read-only `--check` gate; apply is transactional",
+      "leaf": true,
+      "owner": "docs/format.md",
+      "status": "implemented"
+    },
+    {
       "id": "cli:generate",
       "kind": "command",
       "command": "generate",
@@ -953,7 +1064,7 @@
       "kind": "command",
       "command": "impact",
       "usage": "lekalo impact [OPTIONS] [SYMBOL]",
-      "helpDigest": "sha256:43879bdb5e21462bb7375a9b89c56cc10c000b551653b99dd46e329595b279e7",
+      "helpDigest": "sha256:ba1750e5dc6684beb7a72c64ef3419090f92dc499f30a6e683428bd55753254e",
       "summary": "Report the impact and change radius of one semantic symbol, or of the changed inputs of a Git revision range or the working tree",
       "leaf": true,
       "owner": "docs/impact.md",
@@ -1525,8 +1636,8 @@
       "kind": "command",
       "command": "status",
       "usage": "lekalo status [OPTIONS]",
-      "helpDigest": "sha256:08cc50720705cfd53784971b12c85c0d67dbd790e47d1c1403adebccd71022fa",
-      "summary": "Report the freshness panel — lock, cache, bindings, artifacts — plus the exact git/model/lock revisions",
+      "helpDigest": "sha256:68ceaf1eeef6623a9ba2724a853afc513de631d10f3bf52c9db9e7ac25bcb521",
+      "summary": "Report the freshness panel — lock, cache, bindings, artifacts — plus the exact git/model/lock revisions. With `--adoption`, the typed issue #136 wrapper joins one saved coverage attachment",
       "leaf": true,
       "owner": "docs/doctor.md",
       "status": "implemented"
@@ -1756,7 +1867,7 @@
       "kind": "command",
       "command": "trace",
       "usage": "lekalo trace [OPTIONS] <COMMAND>",
-      "helpDigest": "sha256:891432dd244b97c7688d8cf8a8cccc9be4ea55d74233f85bf4db548d032fa1f5",
+      "helpDigest": "sha256:cc8fbc4e67f197416f522c97b67d7e59bca4f4e3e31a69a17555ded72d23ac06",
       "summary": "Validate, canonically export, or query one neutral trace manifest",
       "leaf": false,
       "owner": "docs/trace-manifest.md",
@@ -1800,8 +1911,8 @@
       "kind": "command",
       "command": "trace query",
       "usage": "lekalo trace query [OPTIONS] <PATH> <SELECTOR>",
-      "helpDigest": "sha256:9f9818ffc7720a62eae6e6f0072659e95e7264cf386317a6890b4173802ab694",
-      "summary": "Run one closed forward/reverse query over a validated manifest",
+      "helpDigest": "sha256:c66caa929023e17b5e36467e0a679e13a9d2e973c5d0b1d59c9cc04cc19d3886",
+      "summary": "Run one closed forward/reverse query over a validated manifest. With `--adoption`, the typed issue #136 wrapper joins one saved coverage attachment",
       "leaf": true,
       "owner": "docs/trace-manifest.md",
       "status": "implemented"
@@ -2006,6 +2117,96 @@
       "source": "contracts/adapter-manifest.schema.v0.6.4.json",
       "sourceDigest": "sha256:11bf3333146a4023fa0ddd7903ea308e69cc1d96a431290939bd48cf7f3f6daf",
       "owner": "docs/adapter-manifest.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/adoption-analysis.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/adoption-analysis.schema.v0.8.0.json",
+      "sourceDigest": "sha256:6124509a57c077c6c6ea5ba477107d4cfd6bcfeb01be53dcb75ce00df9ed3cc5",
+      "owner": "docs/adoption.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/adoption-confirmation-plan.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/adoption-confirmation-plan.schema.v0.8.0.json",
+      "sourceDigest": "sha256:1fca677f7d3f724bff18241f693a7e3c1a3c1603a0249336af346560eb4ed324",
+      "owner": "docs/adoption.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/adoption-coverage.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/adoption-coverage.schema.v0.8.0.json",
+      "sourceDigest": "sha256:75480b06e45df5400612b078dc0b3f7493fae9be3b8e1683ee6eb3b8af0b9dc8",
+      "owner": "docs/adoption.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/adoption-impact-report.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/adoption-impact-report.schema.v0.8.0.json",
+      "sourceDigest": "sha256:f0f24161af15883a4f0ffe65932d47868ba8d336b4454843569f1206ba0c449a",
+      "owner": "docs/adoption.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/adoption-patch.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/adoption-patch.schema.v0.8.0.json",
+      "sourceDigest": "sha256:b1b31c837e42a9aa27b6c049be5b30a16eca84c186f919ca8f1d0b9a3d61fb79",
+      "owner": "docs/adoption.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/adoption-receipt.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/adoption-receipt.schema.v0.8.0.json",
+      "sourceDigest": "sha256:6d2c238a3c04583f653207caa42e6768f4f296217c0299a4765293d10d409f21",
+      "owner": "docs/adoption.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/adoption-refactor-plan.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/adoption-refactor-plan.schema.v0.8.0.json",
+      "sourceDigest": "sha256:11f1dd3c94c3f7afa70794ab50e4c67ced2066ff7cb94559bf2cf87ef7547687",
+      "owner": "docs/adoption.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/adoption-status-report.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/adoption-status-report.schema.v0.8.0.json",
+      "sourceDigest": "sha256:45956aeb7d52fa15500a75776ab4faf9134f23b8b222c499758ddfb833ff798b",
+      "owner": "docs/adoption.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/adoption-trace-report.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/adoption-trace-report.schema.v0.8.0.json",
+      "sourceDigest": "sha256:65f1e505c8130184fd980f9a303f083d886af9c777d6220d290f162cb423641e",
+      "owner": "docs/adoption.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/adoption-verification.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/adoption-verification.schema.v0.8.0.json",
+      "sourceDigest": "sha256:c4dfcd84b6e022c62fd6b4b301e34cded12547d1e8d1c7586c5e24f1a5f1fe9a",
+      "owner": "docs/adoption.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
@@ -2397,6 +2598,16 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/diagnostic-registry.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/diagnostic-registry.schema.v0.8.0.json",
+      "sourceDigest": "sha256:825ad37b829f38264e265e551e706609a9598dbe41a295ebe6071b4446b07979",
+      "sourceDigest": "sha256:6b6b7b7f6f6fea0efceb5de717be66b3d5ec1a96d0280b187e2ed8c45b29d811",
+      "owner": "docs/diagnostics.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/diagnostic-registry.v0.2.16.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.2.16.json",
@@ -2428,6 +2639,16 @@
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.6.5.json",
       "sourceDigest": "sha256:7b2be768be48050057682980b240f109d33adc56b1b4cb4b27848507df22b130",
+      "owner": "docs/diagnostics.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/diagnostic-registry.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/diagnostic-registry.v0.8.0.json",
+      "sourceDigest": "sha256:01337ff7b3156edc81c8d50cee3233ef655c06b7639371ab93c9a7ca9214f0cd",
+      "sourceDigest": "sha256:0c300ecb05e59b6b0db2f261967b9542121a5216b3513bea16e7b9a4f22687c3",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2528,6 +2749,33 @@
       "source": "contracts/extended-effects.schema.v0.2.16.json",
       "sourceDigest": "sha256:57619a7ef4a8dc2e4fb2a2dbd5427421df399634d3a74642cae1f8eed3860197",
       "owner": "docs/extended-effects.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/format-policy.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/format-policy.schema.v0.8.0.json",
+      "sourceDigest": "sha256:b12a63bbad4d497d5f8d61149ba4750bab4aa6693e7e8ce2241021eaa82a951f",
+      "owner": "docs/format.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/format-policy.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/format-policy.v0.8.0.json",
+      "sourceDigest": "sha256:99add9a4c360250ea4ca0f539562859284e87a091abfcebf07a78beb46f4a03e",
+      "owner": "docs/format.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/format-report.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/format-report.schema.v0.8.0.json",
+      "sourceDigest": "sha256:cc2aebb1ae7562c0f871d46869d24434f15f790bd75b58256ca5e00832f01e53",
+      "owner": "docs/format.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
