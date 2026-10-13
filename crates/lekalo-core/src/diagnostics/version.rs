@@ -67,8 +67,8 @@ pub const FORMAT_REGISTRY_VERSION: &str = "0.8.0";
 /// are preserved verbatim; the diagnostic item wire stays 0.2.16.
 ///
 /// After the milestone integration merges, this is the same merged
-/// `format.*` + `adoption.*` + `portability.*` union registry as the
-/// other 0.8.0 family constants.
+/// `format.*` + `adoption.*` + `portability.*` + `worklog-changelog.*`
+/// + `managed.*` union registry as the other 0.8.0 family constants.
 pub const ADOPTION_REGISTRY_VERSION: &str = "0.8.0";
 
 /// The issue #19 M8 union successor: the merged registry plus the nine
@@ -81,6 +81,11 @@ pub const M8_REGISTRY_VERSION: &str = "0.8.0";
 /// (`worklog-changelog.*`, LEK-WC-001..007) on top of the merged union.
 /// Predecessor producers keep their exact pins.
 pub const PILOT_REGISTRY_VERSION: &str = "0.8.0";
+
+/// Issue #41 managed union successor: the full integrated allocation union
+/// plus the closed `managed.*` family. Predecessor producer pins are
+/// unchanged; managed producers pin this registry.
+pub const MANAGED_REGISTRY_VERSION: &str = "0.8.0";
 
 /// The closed diagnostic schema version.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

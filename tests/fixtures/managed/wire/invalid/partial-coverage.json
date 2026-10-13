@@ -1,0 +1,92 @@
+{
+  "schemaVersion": "lekalo/managed-coverage/v0.8.0",
+  "identity": "dev.lekalo.managed-coverage@0.8.0",
+  "module": "planner",
+  "target": "node-typescript",
+  "recipe": {
+    "id": "planner-basic",
+    "version": "1",
+    "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+  },
+  "adapter": {
+    "entry": "adapters/managed.mjs",
+    "packageDigest": "sha256:44445a814f38c9eb06c74ca97b5b29afe44d09da2b7aa221c611587f6f5c45f8",
+    "protocol": "0.8.0"
+  },
+  "requirements": [
+    {
+      "id": "planner.complete_task",
+      "kind": "command",
+      "support": "full",
+      "witness": {
+        "state": "known",
+        "value": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+      },
+      "projection": [
+        {
+          "from": "done",
+          "to": "done"
+        },
+        {
+          "from": "id",
+          "to": "id"
+        }
+      ],
+      "sample": {
+        "state": "known",
+        "value": {
+          "input": {
+            "id": "t-2",
+            "done": true
+          },
+          "output": {
+            "id": "t-2",
+            "done": true
+          }
+        }
+      }
+    },
+    {
+      "id": "planner.focus_task",
+      "kind": "query",
+      "support": "partial",
+      "witness": {
+        "state": "known",
+        "value": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+      },
+      "projection": [
+        {
+          "from": "id",
+          "to": "id"
+        },
+        {
+          "from": "title",
+          "to": "title"
+        }
+      ],
+      "sample": {
+        "state": "known",
+        "value": {
+          "input": {
+            "id": "t-1",
+            "title": "Focus"
+          },
+          "output": {
+            "id": "t-1",
+            "title": "Focus"
+          }
+        }
+      }
+    }
+  ],
+  "extensions": [],
+  "complete": true,
+  "authority": {
+    "state": "known",
+    "value": {
+      "model": "sha256:b561d35065f35bbd698ead7cf7e555d6d013ebfc5e8363a6fa1449769925db8f",
+      "ir": "sha256:6cbff5265471303429a667bb8c8c61939601524cc8bc90f8827b45bee9ac1882",
+      "lock": "sha256:7ef11bfe5df256991ea482c2831f4c99ec45db5bce63d76bffe5e47ff1113062"
+    }
+  }
+}

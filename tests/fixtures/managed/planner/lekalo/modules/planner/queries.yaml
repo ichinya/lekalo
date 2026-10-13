@@ -1,0 +1,10 @@
+schema_version: "0.2.16"
+definitions:
+  - id: planner.focus_task
+    kind: query
+    version: 1
+    description: "Focus one task"
+    reads:
+      - planner.complete_task
+    returns:
+      ref: planner.task

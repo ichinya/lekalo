@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "lekalo/managed-ownership/v0.8.0",
+  "identity": "dev.lekalo.managed-ownership@0.8.0",
+  "project": "planner-fixture",
+  "inputs": ["model/planner.model.json"],
+  "modules": [
+    {
+      "module": "planner",
+      "mode": "managed",
+      "targets": [
+        {
+          "target": "node-typescript",
+          "profileRef": {
+            "id": "target-profile",
+            "version": "1",
+            "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+          },
+          "implementationRef": {
+            "id": "implementation-attachment",
+            "version": "1",
+            "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+          },
+          "generatedRoot": "apps/planner/gen",
+          "extensions": []
+        }
+      ]
+    }
+  ]
+}

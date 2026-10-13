@@ -1,0 +1,180 @@
+# Managed ownership and deterministic generation
+
+Status: **Implemented** managed lane core and CLI (issue #41). The lane covers
+explicit ownership admission, capability-qualified coverage, deterministic
+planning, confirmed staged applies with journal recovery, exact rollback and
+resolve, the upgrade diff, and neutral equivalence adjudication. Adapter
+protocol negotiation, lock-successor pinning, and the full promotion workflow
+from observed sources remain the documented boundaries of related roadmap
+items, not implemented behavior here.
+
+Owner: managed-lane maintainers.
+
+## The three mode statements
+
+The issue's mode statements are the semantic contract of this lane:
+
+1. The Lekalo Model owns supported application semantics.
+2. The adapter generates implementation and tests deterministically.
+3. Manual logic lives only in declared custom/foreign extension points.
+
+Managed permission is never inferred from the availability of a `generate`
+operation. A module becomes managed only through an explicit, caller-owned
+ownership configuration, and only after the pinned adapter evidence proves
+qualified full support for every required semantic.
+
+## Explicit ownership configuration
+
+`config/lekalo-ownership.json` (any safe caller-owned coordinate outside the
+reserved canonical trees) is the closed `lekalo/managed-ownership/v0.8.0`
+document. It assigns each exact module one of the modes `observed`,
+`contracted`, or `managed`, per target, with the generated root, the pinned
+profile and implementation attachments, and the explicit extension
+selections. Wildcards, prefix matches, overlapping generated roots, and
+duplicate assignments are refused (`LEK-MGD-001`); roots may not nest, so one
+file never has two owners. Its optional, sorted, unique `inputs` array selects
+supplemental provenance coordinates; omission selects none. Planning pins
+exactly these live files plus the ownership document itself. `--input FILE`
+may assert a declared selection but cannot add an undeclared coordinate to
+the closure. To add an input, review the ownership policy change first; no
+caller-held plan or journal can silently enlarge the provenance set.
+
+```text
+lekalo --json managed check --ownership config/lekalo-ownership.json --project .
+lekalo --json managed check --ownership config/lekalo-ownership.json --coverage config/coverage.json --project .
+```
+
+`managed check` is read-only: it validates the closed ownership document and,
+with `--coverage`, admits the pinned adapter evidence. Omitting a module keeps
+it in its recorded mode; a project without an ownership pin retains its
+existing behavior.
+
+## Capability admission
+
+The coverage document (`lekalo/managed-coverage/v0.8.0`) is the adapter's
+requirement ledger: per requirement id, kind, support level, witness pin, and,
+for rendered kinds, the deterministic projection plus the scenario sample.
+Admission refuses anything less than qualified full support
+(`LEK-MGD-003`, exit 4), an unmet protocol successor
+(`LEK-MGD-002`, exit 5), and any extension selection that is missing,
+ambiguous, unvalidated, or stale (`LEK-MGD-001`). Unsupported or unknown
+coverage never lowers the denominator; there is no handwritten fallback and
+no scaffold-as-managed mode.
+
+The offline adapter-entry check is a **lexical surface qualification**, not a
+runtime protocol-conformance test. It accepts call-shaped lifecycle symbols
+or an `operations: [...]` protocol declaration and checks the negotiation
+surface. An inert but correctly shaped protocol document can pass; this does
+not prove it dispatches requests. Native protocol execution remains the
+adapter/CI owner's gate. Binding resolution similarly checks top-level
+callable exports (including inline and multiline export clauses), not the
+behavior of their bodies.
+
+## Deterministic planning and the reviewed plan
+
+`managed plan` previews the immutable
+`lekalo/managed-generation-plan/v0.8.0` document and writes nothing. The plan
+pins the complete input closure, the coverage digest, the selected module and
+target, every output path with its action (`create`, `replace`, `delete`,
+`unchanged`), before/after digests, and its own digest over the payload
+without the self digest. The renderer is a pure function of the pinned
+closure: fixed UTF-8 with LF endings, sorted fields, no wall clock, no host
+paths, no ambient environment. Same inputs produce the same plan and the same
+bytes in any fresh root; a clean rebuild reviews `create` actions where a
+repeated no-op reviews `unchanged` actions, while the stable generation
+identity over the closure and complete output inventory stays equal.
+
+## Confirmed apply and recovery
+
+`managed apply` consumes a caller-saved plan with the exact
+`sha256:<plan-digest>` confirmation. Before any byte moves it rechecks the
+plan digest, the coverage pin, the ownership roots, every input closure
+digest, and the recorded generated before-state: moved inputs are
+`LEK-MGD-006`, edited or missing generated bytes are `LEK-MGD-004`, and a
+file that already occupies a create coordinate is `LEK-MGD-012` (exit 3).
+A **bound** generation — a coverage with validated custom extensions —
+renders handlers that invoke maintained hooks the offline lane cannot
+execute, so its commit additionally requires `--execution <file>`: an
+equivalence-shaped document pinning every rendered scenario's exact
+generated-test digest with its observed outcome (the reviewed sample
+expectation, which is what the generated test itself asserts). The
+evidence is verified against the staged inventory and retained as a
+custody object inside the transaction; previews stay free, and the
+equivalence gate consumes the retained evidence for bound coverages
+instead of refusing `bound-execution` forever.
+Publication is one recoverable transaction: the journal under
+`.lekalo/generated/manifests/managed/transactions/` moves through
+`prepared`, `publishing`, and `committed`; content-addressed snapshots under
+`objects/` retain exact before/after bytes; the generation record under
+`generations/` is the custody manifest; `current` names the committed
+generation. Any unresolved journal — or a stale mutation lock — blocks every
+further mutation with `LEK-MGD-011` until reconciliation. Only journal
+shapes the machinery itself writes ever anchor (`prepared`/`publishing` on
+apply with their exact pending sets, `restoring` on rollback, `prepared`/
+`restoring` with exactly one restore on resolve); an apply journal's
+retained plan must re-derive from the closure-pinned ownership document,
+the exact policy-selected file-pin set, the live derived authority, and the
+deterministic render from retained coverage. Its record closure must equal
+the writer's exact assembly of preserved base pins, that derived plan set,
+and the current reserved authority cohort — resolving an extra live file
+never grants a new lineage identity; a resolve journal's confirmation digest
+covers its prepared intent (generation, path, and exact drift), not its
+attempt id or transient phase. Recovery rederives that intent from the
+journal and converges behaviorally without a caller-saved preview or audit
+object: it closes an already-landed restore as completed, or abandons an
+unlanded restore preserving the reviewed drift (including absence) for a
+fresh confirmed retry. Recovery never restores a byte on a resolve journal's
+word, so a caller-planted "retained intent" object anchors nothing.
+
+## Cleanup, upgrade diff, rollback, resolve
+
+Cleanup deletes exactly recorded generated ownership inside the confirmed
+scope, with matching before digests; unclaimed neighbors survive and unknown
+files are never guessed disposable. `managed upgrade-plan` diffs the exact
+recipe and adapter pins of a candidate coverage document without writing.
+`managed rollback --to <generation>` restores a retained previous generation's
+exact bytes and custody pointer through the same journal states
+(`LEK-MGD-010` refuses missing or forged snapshots). `managed resolve --path
+<file> --restore` is the only way past manual drift, and it restores the
+exact recorded bytes — never a rebased baseline, never `--force`.
+
+## Behavioral equivalence
+
+`managed equivalence` adjudicates the closed
+`lekalo/managed-equivalence/v0.8.0` evidence document. Any qualified mismatch
+is `LEK-MGD-008` (invalid); unsupported or missing required coverage is
+`LEK-MGD-009` (unsupported); only a fully supported matching corpus passes.
+Timing metrics and raw sources are never part of the evidence.
+
+### Native-run attestation boundary
+
+For an **unbound** generation the offline core recomputes the deterministic
+projection from pinned coverage; a `match` receipt reports
+`evidenceBasis: "projection-recomputed"`. This is not a native runtime run.
+For a **bound** generation, `--execution` is a **caller-supplied native-run
+attestation**: the core verifies exact generated-test pins, complete scenario
+coverage, and outcome digests against the reviewed expectations. It does
+**not** launch the tests, authenticate their producer, or observe hook
+execution. Retaining the document in custody does not strengthen that trust
+boundary: the bound `match` receipt reports `evidenceBasis: "caller-attested"`.
+Detached evidence adjudication is likewise caller-attested.
+
+A fabricated but internally consistent document can claim `match` even for
+a throwing hook. The operator must independently execute and review every
+exact staged generated test with the pinned maintained bindings before
+supplying this attestation; publishing it is an explicit trust decision, not
+proof of machine-observed success. CI must still execute the native tests.
+Missing evidence blocks a bound commit and cannot be bypassed by editing
+`plan.extensions`: the plan selection must equal qualified admission.
+
+## Contracts and diagnostics
+
+The lane adds seven closed families at `0.8.0` — `managed-ownership`,
+`managed-coverage`, `managed-generation-plan`, `managed-generation-record`,
+`managed-transaction`, `managed-rollback-plan`, `managed-equivalence` — and
+the `diagnostic-registry` union successor `0.8.0` (534 entries) with the
+closed `managed.*` family `LEK-MGD-001..012`. Wire diagnostics remain
+`lekalo/diagnostic/v0.2.16`; predecessor producer pins are unchanged.
+Acceptance gates: `scripts/test-managed-contracts.mjs`,
+`scripts/test-managed-cli.mjs`, `scripts/test-managed-planner-e2e.mjs`, and
+the parity check `node scripts/gen-managed-contracts.mjs --check`.
