@@ -148,7 +148,7 @@ impl SearchFilters {
 }
 
 /// The shared page/project/input arguments.
-#[derive(Debug, Args)]
+#[derive(Debug, Clone, Args)]
 pub struct PageArgs {
     /// Page size (1..=100, default 20).
     #[arg(long, value_name = "N")]
@@ -285,10 +285,11 @@ fn run_query(request: &QueryRequest, page: &PageArgs, no_cache: bool) -> DomainR
     };
     let store = SearchStore::resolve(&root).ok();
     // The warm durable path: reuse the persisted admitted registration
-    // (its Model digest, pins, and admission all re-verify) instead of
-    // discarding it. Only a cursor-less, cache-enabled, manifest-less
-    // query takes it: an explicit `--inputs` always re-admits, and the
-    // bypass stays cold by contract.
+    // (its Model digest, pins, admission manifest, AND the full
+    // recomputed snapshot digest all re-verify) instead of discarding
+    // it. Only a cursor-less, cache-enabled, manifest-less query takes
+    // it: an explicit `--inputs` always re-admits, and the bypass stays
+    // cold by contract.
     if !no_cache && request.cursor.is_none() && page.inputs.is_none() {
         if let Some(store) = &store {
             if let Some(document) = warm_document(&root, &selection, store) {
@@ -296,10 +297,6 @@ fn run_query(request: &QueryRequest, page: &PageArgs, no_cache: bool) -> DomainR
             }
         }
     }
-    let service = match assemble(page, no_cache) {
-        Ok(service) => service,
-        Err(result) => return result,
-    };
     // A cursor page serves the validated durable generation, never a
     // recomputation: the token binds the persisted content digest, so
     // the persisted generation must exist, validate, and still match
@@ -328,6 +325,35 @@ fn run_query(request: &QueryRequest, page: &PageArgs, no_cache: bool) -> DomainR
         }
     } else {
         None
+    };
+    // The cold path re-admits the persisted registration when the
+    // request supplies no manifest (and the bypass is off): after
+    // Model drift the registration is rebuilt under the new Model
+    // partition instead of silently discarded, while a revoked,
+    // edited, or producer-drifted registration falls back to the
+    // honest canonical-only assembly. A cursor-bound request re-admits
+    // the SERVING generation's own recorded admission, so page two of
+    // a registered query is served under exactly the admission that
+    // issued it — never a flag the first page did not carry
+    // (issue #93 r5).
+    let readmitted = if !no_cache && page.inputs.is_none() {
+        let registered = durable.clone().or_else(|| {
+            let store = store.as_ref()?;
+            let digest = store.current().ok().flatten()?;
+            store.load(&digest).ok().flatten()
+        });
+        registered
+            .filter(|document| document.admission.is_some())
+            .and_then(|document| readmit_saved_registration(&root, &selection, &document))
+    } else {
+        None
+    };
+    let service = match readmitted {
+        Some(service) => service,
+        None => match assemble(page, no_cache) {
+            Ok(service) => service,
+            Err(result) => return result,
+        },
     };
     let index = match &durable {
         Some(document) => SearchIndex {
@@ -473,11 +499,16 @@ fn serve_document(
 /// recorded admitting manifest re-parses and re-hashes to its recorded
 /// canonical digest (revocation and edits are drift), and the current
 /// canonical Model compilation digest equals the recorded Model
-/// partition digest. A generation is reusable only when every
-/// partition it was built from still holds; otherwise the caller falls
-/// back to the cold assembly. Absent admission (a canonical-only
-/// build) stays valid: a manifest added later does not rewrite what a
-/// manifest-less build honestly recorded.
+/// partition digest. Finally the full admitted snapshot is recomputed
+/// exactly the way build would and its content digest must equal the
+/// stored generation's — the same derivation proof the cursor path and
+/// the freshness oracle perform — so a self-consistent forge that only
+/// edits stored card bytes never serves, whatever its pins say
+/// (issue #93 r5). A generation is reusable only when every partition
+/// it was built from still holds AND its content derives from them;
+/// otherwise the caller falls back to the cold assembly. Absent
+/// admission (a canonical-only build) stays valid: a manifest added
+/// later does not rewrite what a manifest-less build honestly recorded.
 fn warm_document(
     root: &std::path::Path,
     selection: &lekalo_core::loader::LoadSelection,
@@ -515,7 +546,51 @@ fn warm_document(
     if document.model_digest.as_deref() != Some(model_digest.as_str()) {
         return None;
     }
+    // The derivation proof: the admitted snapshot is recomputed under
+    // the recorded admission semantics (pins and cap included) and its
+    // content digest must equal the stored generation's byte for byte.
+    // Pin verification alone proves the inputs are unchanged — this
+    // proves the stored OUTPUT was derived from them.
+    let reconstructed = reconstruct_manifest(&document)?;
+    let fresh =
+        recompute_snapshot_digest(selection, &reconstructed, document.admission.clone()).ok()?;
+    if fresh != document.digest {
+        return None;
+    }
     Some(document)
+}
+
+/// Re-admit one persisted registration (issue #93 r5): the recorded
+/// admitting manifest re-reads confined under the canonical project
+/// root, re-parses, and re-hashes to its recorded canonical digest
+/// (revocation, edits, and cap changes are drift — never silently
+/// bypassed), and the recorded producer pins ride a reconstructed
+/// manifest so every producer byte re-verifies before a card of that
+/// registration can serve. Returns the fully admitted service of
+/// exactly that registration, or `None` when the registration can no
+/// longer be honestly re-admitted (the caller then falls back to the
+/// canonical-only assembly).
+fn readmit_saved_registration(
+    root: &std::path::Path,
+    selection: &lekalo_core::loader::LoadSelection,
+    document: &lekalo_core::search::IndexDocument,
+) -> Option<Service> {
+    let admission = document.admission.as_ref()?;
+    let canonical_root = std::fs::canonicalize(root).ok()?;
+    let path = root.join(&admission.path);
+    let bytes = read_confined(&canonical_root, &path, "status").ok()?;
+    let manifest = SearchInputs::parse(&bytes).ok()?;
+    let canonical = format!(
+        "sha256:{}",
+        lekalo_core::search::sha256_of(manifest.canonical_bytes().as_bytes())
+    );
+    if canonical != admission.digest || manifest.max_postings() as u64 != admission.max_postings {
+        return None;
+    }
+    let reconstructed = reconstruct_manifest(document)?;
+    let service =
+        assemble_with_manifest(selection, &reconstructed, document.admission.clone()).ok()?;
+    Some(service)
 }
 
 /// The durable snapshot document of one admitted run: the exact cards,
@@ -603,15 +678,33 @@ fn assemble(page: &PageArgs, no_cache: bool) -> Result<Service, DomainResult> {
         "sha256:{}",
         lekalo_core::search::sha256_of(compilation.project.to_canonical_json().as_bytes())
     );
+    // The declared Model-pin digest: the exact bytes every declared
+    // producer `modelRef` binds to (the same digest input the
+    // requirements/trace owners' own custody uses), so admission can
+    // verify a declared pin names THIS Model revision (issue #93 r5).
+    let model_pin = ModelPin {
+        digest: format!(
+            "sha256:{}",
+            lekalo_core::search::sha256_of(
+                lekalo_core::loader::canonical_model_bytes(&_model).as_bytes()
+            )
+        ),
+        version: _model.model_version.as_str().to_owned(),
+    };
     let cap = lekalo_core::search::MAX_POSTINGS;
     let mut projection = project_ir(&compilation.project, cap);
     attach_effects(&mut projection, &graph, cap);
     // Every producer domain starts `unknown`: absence of admitted
     // evidence is never silently read as proof of completeness (or of
-    // absence). Admitted producers overwrite their own domain's row.
+    // absence) — including the effects domain, whose detected evidence
+    // arrives only through an admitted producer (the canonical
+    // declared graph still answers reads/writes; its coverage is
+    // simply not claimed complete while the detected side is
+    // unadmitted). Admitted producers overwrite their own domain's
+    // row (issue #93 r5).
     let mut coverage: Vec<lekalo_core::search::CoverageRow> = vec![
         coverage_row("ir", "complete"),
-        coverage_row("effects", "complete"),
+        coverage_row("effects", "unknown"),
         coverage_row("trace", "unknown"),
         coverage_row("requirements", "unknown"),
         coverage_row("bindings", "unknown"),
@@ -664,6 +757,7 @@ fn assemble(page: &PageArgs, no_cache: bool) -> Result<Service, DomainResult> {
                 &compilation.project,
                 &mut projection,
                 &mut coverage,
+                &model_pin,
             )?;
             pins = admitted.pins;
             dropped_rows = admitted.dropped_rows;
@@ -1398,6 +1492,21 @@ fn decode_diagnostics_envelope(
     let rows = map["findings"]
         .as_array()
         .ok_or_else(|| producer_invalid("producer-shape", "diagnostics"))?;
+    // Schema/runtime bounds parity (issue #93 r5): the published
+    // `findings.maxItems`/`findingCount.maximum` (4096) is enforced
+    // here BEFORE allocation and projection — a document beyond the
+    // published bound is the same refusal Ajv gives, never an
+    // admitted-but-schema-invalid input.
+    const MAX_DIAGNOSTIC_ROWS: usize = 4096;
+    if rows.len() > MAX_DIAGNOSTIC_ROWS {
+        return Err(producer_invalid("producer-shape", "diagnostics"));
+    }
+    if metadata["findingCount"]
+        .as_u64()
+        .map_or(true, |count| count > MAX_DIAGNOSTIC_ROWS as u64)
+    {
+        return Err(producer_invalid("producer-shape", "diagnostics"));
+    }
     let mut findings = Vec::with_capacity(rows.len());
     for row in rows {
         let Some(row) = row.as_object() else {
@@ -1547,6 +1656,23 @@ fn decode_ownership_profile_envelope(
     let artifact_rows = map["artifacts"]
         .as_array()
         .ok_or_else(|| producer_invalid("producer-shape", "ownership-profile"))?;
+    // Schema/runtime bounds parity (issue #93 r5): every published
+    // array/count bound of the ownership-profile contract (4096 for
+    // artifacts, profiles, members, and both metadata counts) is
+    // enforced BEFORE allocation and projection.
+    const MAX_OWNERSHIP_ROWS: usize = 4096;
+    if artifact_rows.len() > MAX_OWNERSHIP_ROWS {
+        return Err(producer_invalid("producer-shape", "ownership-profile"));
+    }
+    if metadata["artifactCount"]
+        .as_u64()
+        .map_or(true, |count| count > MAX_OWNERSHIP_ROWS as u64)
+        || metadata["profileCount"]
+            .as_u64()
+            .map_or(true, |count| count > MAX_OWNERSHIP_ROWS as u64)
+    {
+        return Err(producer_invalid("producer-shape", "ownership-profile"));
+    }
     let mut artifacts = Vec::with_capacity(artifact_rows.len());
     for row in artifact_rows {
         let Some(row) = row.as_object() else {
@@ -1581,6 +1707,9 @@ fn decode_ownership_profile_envelope(
     let profile_rows = map["profiles"]
         .as_array()
         .ok_or_else(|| producer_invalid("producer-shape", "ownership-profile"))?;
+    if profile_rows.len() > MAX_OWNERSHIP_ROWS {
+        return Err(producer_invalid("producer-shape", "ownership-profile"));
+    }
     let mut profiles = Vec::with_capacity(profile_rows.len());
     for row in profile_rows {
         let Some(row) = row.as_object() else {
@@ -1602,6 +1731,12 @@ fn decode_ownership_profile_envelope(
         let members = row["members"]
             .as_array()
             .ok_or_else(|| producer_invalid("producer-malformed", "ownership-profile"))?;
+        // The published `members` bound (1..=4096) is enforced before
+        // allocation (an empty profile was already refused by the
+        // admission-time custody check; the upper bound is parity).
+        if members.len() > MAX_OWNERSHIP_ROWS {
+            return Err(producer_invalid("producer-shape", "ownership-profile"));
+        }
         let mut member_ids = Vec::with_capacity(members.len());
         for member in members {
             let Some(member) = member.as_str() else {
@@ -1642,6 +1777,16 @@ fn producer_invalid(detail: &'static str, producer: &'static str) -> DomainResul
     ))
 }
 
+/// The declared Model-pin binding of one admitted run: the digest of
+/// the exact canonical Model bytes (the same digest input every
+/// declared producer `modelRef` binds to) plus the Model's version —
+/// admission verifies declared pins against exactly these (issue
+/// #93 r5).
+struct ModelPin {
+    digest: String,
+    version: String,
+}
+
 /// The admitted custody facts of one manifest: the consumed pins (each
 /// with the exact live-bytes digest) and the counted unattachable rows.
 struct Admitted {
@@ -1666,6 +1811,7 @@ fn admit_producers(
     project: &lekalo_core::ir::CompiledProject,
     projection: &mut Projection,
     coverage: &mut Vec<lekalo_core::search::CoverageRow>,
+    model_pin: &ModelPin,
 ) -> Result<Admitted, DomainResult> {
     let canonical_root = std::fs::canonicalize(root).map_err(|_| {
         DomainResult::invalid(lekalo_core::search::diagnostic_input_invalid(
@@ -1708,11 +1854,32 @@ fn admit_producers(
                     // foreign manifest never joins this project's view.
                     check_producer_project(&document.manifest().project_ref, project)?;
                 }
-                let complete = project_trace(projection, &document, cap);
-                states.push(("trace", if complete { "complete" } else { "partial" }));
+                // Declared Model-pin custody (issue #93 r5): the trace's
+                // own `modelRef.digest` names the exact Model revision
+                // its relations were extracted against. A pin that does
+                // not bind the ACTIVE Model is an explicit unverified
+                // binding gap — never a verified link: the trace domain
+                // serves honestly partial and every witness it produces
+                // is capped at `extracted` (the same disclosure the
+                // reviewers' contract names, never a silently
+                // authoritative foreign-revision join).
+                let pin_matches = document.manifest().model_ref.digest == model_pin.digest;
+                let complete = project_trace(projection, &document, cap, pin_matches);
+                states.push((
+                    "trace",
+                    if complete && pin_matches {
+                        "complete"
+                    } else {
+                        "partial"
+                    },
+                ));
                 states.push((
                     "requirements",
-                    if complete { "complete" } else { "partial" },
+                    if complete && pin_matches {
+                        "complete"
+                    } else {
+                        "partial"
+                    },
                 ));
             }
             lekalo_core::search::ProducerKind::ObservedIndex => {
@@ -1791,8 +1958,23 @@ fn admit_producers(
                 if let Some(project) = project_id {
                     check_producer_project(attachment.project_id().as_str(), project)?;
                 }
-                project_requirements(projection, &attachment, cap);
-                states.push(("requirements", "complete"));
+                // Declared Model-pin custody (issue #93 r5): the
+                // attachment's own `modelRef` (exact Model version plus
+                // canonical Model digest) must bind THIS Model revision
+                // for a verified link. A pin that names another
+                // revision is an explicit unverified binding gap: the
+                // requirements domain serves honestly partial and the
+                // implements witnesses are capped at `extracted` — the
+                // same custody rule the attachment's own resolver
+                // enforces, disclosed instead of silently verified.
+                let model_ref = attachment.model_ref();
+                let pin_matches = model_ref.model_version == model_pin.version
+                    && model_ref.digest.as_str() == model_pin.digest;
+                project_requirements(projection, &attachment, cap, pin_matches);
+                states.push((
+                    "requirements",
+                    if pin_matches { "complete" } else { "partial" },
+                ));
             }
             lekalo_core::search::ProducerKind::ErrorContract => {
                 let registry = lekalo_core::error_contract::ErrorRegistry::from_bytes(&bytes)
@@ -1818,11 +2000,15 @@ fn admit_producers(
                 // subject must name a real card of THIS projection — a
                 // diagnostic for `planner.does_not_exist` is a dangling
                 // `def:` relation, never a complete card. Then identity:
-                // two findings sharing an id but disagreeing on rule or
-                // subject are conflicting diagnostic identities — the
-                // conflict is refused, never silently collapsed by
-                // card-map insertion into a false `unique` answer.
-                let mut seen: std::collections::BTreeMap<&str, (&str, &str)> =
+                // the full statement identity is (rule, subject,
+                // severity, disposition) — two findings sharing an id
+                // but disagreeing on ANY identity member are
+                // conflicting diagnostic statements: the conflict is a
+                // typed refusal, never silently collapsed by card-map
+                // insertion or input order into a false survivor
+                // (issue #93 r5). Only an exact re-statement of the
+                // same statement is a legal duplicate row.
+                let mut seen: std::collections::BTreeMap<&str, (&str, &str, &str, &str)> =
                     std::collections::BTreeMap::new();
                 for finding in &envelope.findings {
                     if !projection
@@ -1831,11 +2017,16 @@ fn admit_producers(
                     {
                         return Err(producer_invalid("subject-unknown", "diagnostics"));
                     }
-                    let identity = (finding.rule.as_str(), finding.subject.as_str());
+                    let identity = (
+                        finding.rule.as_str(),
+                        finding.subject.as_str(),
+                        finding.severity.as_str(),
+                        finding.disposition.as_str(),
+                    );
                     match seen.insert(finding.id.as_str(), identity) {
                         // A first sighting, or an exact re-statement of
-                        // the same identity: only a DISAGREEING reuse of
-                        // one id is a conflicting diagnostic identity.
+                        // the same statement: only a DISAGREEING reuse
+                        // of one id is a conflicting diagnostic identity.
                         None => {}
                         Some(previous) if previous == identity => {}
                         _ => return Err(producer_invalid("identity-conflict", "diagnostics")),
@@ -1867,6 +2058,53 @@ fn admit_producers(
                 states.push(("profiles", "complete"));
             }
         }
+    }
+    // Requirement→native-binding joins (issue #93 r5): every observed
+    // binding card of a typed native symbol inherits its definition
+    // card's joined requirement/scenario/gate refs. The join runs as a
+    // post-pass over the finished projection, so it is independent of
+    // manifest ordering (the requirements attachment and trace
+    // producers may be admitted before or after the observed index).
+    // Only typed native identities join — the binding card's own `id`
+    // names the definition card — never filename inference.
+    let binding_keys: Vec<String> = projection
+        .cards
+        .keys()
+        .filter(|key| key.starts_with("bind:"))
+        .cloned()
+        .collect();
+    for binding_key in binding_keys {
+        let definition_key = format!("def:{}", binding_key.trim_start_matches("bind:"));
+        let joined = projection.cards.get(&definition_key).map(|definition| {
+            (
+                definition.requirements.clone(),
+                definition.scenarios.clone(),
+                definition.gates.clone(),
+            )
+        });
+        let Some((requirements, scenarios, gates)) = joined else {
+            continue;
+        };
+        let Some(card) = projection.cards.get_mut(&binding_key) else {
+            continue;
+        };
+        let mut omitted = card.omitted;
+        for requirement in requirements {
+            if !card.requirements.contains(&requirement) {
+                lekalo_core::search::push_fact(&mut card.requirements, &mut omitted, requirement);
+            }
+        }
+        for scenario in scenarios {
+            if !card.scenarios.contains(&scenario) {
+                lekalo_core::search::push_fact(&mut card.scenarios, &mut omitted, scenario);
+            }
+        }
+        for gate in gates {
+            if !card.gates.contains(&gate) {
+                lekalo_core::search::push_fact(&mut card.gates, &mut omitted, gate);
+            }
+        }
+        card.omitted = omitted;
     }
     // One row per admitted domain: the worst observed state wins, so a
     // partial producer never advertises complete coverage.
@@ -1945,8 +2183,40 @@ fn project_trace(
     projection: &mut Projection,
     manifest: &lekalo_core::trace::TraceManifest,
     cap: usize,
+    pin_matches: bool,
 ) -> bool {
     let complete = manifest.manifest().completeness.as_str() == "full";
+    // Relationship lifecycle custody (issue #93 r5): a relation recorded
+    // `stale` is carried onto every product of its join — the witness
+    // trust, the bridged typed refs, and the freshness of cards whose
+    // every incident relation is stale — and it is honored in default
+    // joins (stale joins surface only under `--include-stale`), so a
+    // stale relationship can never be laundered into a current one by
+    // silence or by the BFS.
+    let stale = |status: lekalo_core::trace::Status| status == lekalo_core::trace::Status::Stale;
+    let mut any_stale_relation = false;
+    // Per node: (has any incident relation, every incident relation stale).
+    let mut node_relations: std::collections::BTreeMap<String, (bool, bool)> =
+        std::collections::BTreeMap::new();
+    for relation in manifest.relations() {
+        let relation_stale = stale(relation.status);
+        any_stale_relation = any_stale_relation || relation_stale;
+        for endpoint in [&relation.from_node, &relation.to_node] {
+            let entry = node_relations
+                .entry(endpoint.clone())
+                .or_insert((false, true));
+            entry.0 = true;
+            entry.1 = entry.1 && relation_stale;
+        }
+    }
+    // A trace node whose every incident relation is stale serves as a
+    // visibly stale card: excluded by default, reconstructed under
+    // `--include-stale` (an isolated node with no relations keeps its
+    // as-recorded freshness — it asserts no relationship).
+    let node_freshness = |node_id: &str| match node_relations.get(node_id) {
+        Some((true, true)) => Freshness::Stale,
+        _ => Freshness::AsRecorded,
+    };
     // The provider namespace of every requirement node: the
     // sourceSystem of its incident relations. Requirement external IDs
     // reused across providers stay separately qualified, never merged.
@@ -2021,7 +2291,7 @@ fn project_trace(
             visibility: None,
             ownership: None,
             confidence: Confidence::Extracted,
-            freshness: Freshness::AsRecorded,
+            freshness: node_freshness(&node.node_id),
             completeness: Completeness::Complete,
             omitted: 0,
             provenance: "trace".to_owned(),
@@ -2077,29 +2347,41 @@ fn project_trace(
     // The traversal graph is keyed by RAW node ids, so test and
     // artifact intermediate nodes (and every relation's cited
     // evidenceRefs) bridge the chain even though they never receive
-    // cards: cards are mapped only at projection time.
-    let mut trace_graph: std::collections::BTreeMap<String, Vec<String>> = Default::default();
-    let bridge =
-        |graph: &mut std::collections::BTreeMap<String, Vec<String>>, left: &str, right: &str| {
-            if left == right || left.is_empty() || right.is_empty() {
-                return;
-            }
-            graph
-                .entry(left.to_owned())
-                .or_default()
-                .push(right.to_owned());
-            graph
-                .entry(right.to_owned())
-                .or_default()
-                .push(left.to_owned());
-        };
+    // cards: cards are mapped only at projection time. Every edge
+    // carries its relationship staleness, so the materializer can keep
+    // a current-path ref current and mark a stale-only-path ref stale.
+    let mut trace_graph: std::collections::BTreeMap<String, Vec<(String, bool)>> =
+        Default::default();
+    let bridge = |graph: &mut std::collections::BTreeMap<String, Vec<(String, bool)>>,
+                  left: &str,
+                  right: &str,
+                  edge_stale: bool| {
+        if left == right || left.is_empty() || right.is_empty() {
+            return;
+        }
+        graph
+            .entry(left.to_owned())
+            .or_default()
+            .push((right.to_owned(), edge_stale));
+        graph
+            .entry(right.to_owned())
+            .or_default()
+            .push((left.to_owned(), edge_stale));
+    };
     for relation in &relations {
-        bridge(&mut trace_graph, &relation.from, &relation.to);
+        let relation_stale = stale(relation.status);
+        bridge(
+            &mut trace_graph,
+            &relation.from,
+            &relation.to,
+            relation_stale,
+        );
         // Cited evidence nodes bridge the chain too: a requirement
-        // reaches a gate through the test artifact that verifies it.
+        // reaches a gate through the test artifact that verifies it
+        // (inheriting the citing relation's staleness).
         for evidence in &relation.evidence_refs {
-            bridge(&mut trace_graph, &relation.from, evidence);
-            bridge(&mut trace_graph, evidence, &relation.to);
+            bridge(&mut trace_graph, &relation.from, evidence, relation_stale);
+            bridge(&mut trace_graph, evidence, &relation.to, relation_stale);
         }
     }
     for relation in &relations {
@@ -2134,8 +2416,18 @@ fn project_trace(
                 relation: relation.kind.clone(),
                 other: other_key.clone(),
                 direction: direction.to_owned(),
-                trust: lekalo_core::search::Trust::Detected,
-                confidence: trace_witness_confidence(relation.confidence, relation.status),
+                // The relationship's own lifecycle state rides the
+                // witness trust: a stale relation is a stale-trust
+                // witness, matched only under `--include-stale`.
+                trust: if stale(relation.status) {
+                    lekalo_core::search::Trust::Stale
+                } else {
+                    lekalo_core::search::Trust::Detected
+                },
+                confidence: pin_capped(
+                    trace_witness_confidence(relation.confidence, relation.status),
+                    pin_matches,
+                ),
             });
             relations.sort_by(|left, right| {
                 (
@@ -2156,7 +2448,23 @@ fn project_trace(
     }
     // Materialize the transitive typed refs from the trace graph.
     materialize_trace_refs(projection, &trace_graph, &node_keys, cap);
-    complete
+    // A trace whose relations carry staleness is an honestly partial
+    // join, whatever its declared completeness envelope.
+    complete && !any_stale_relation
+}
+
+/// Cap one witness confidence when the producer's declared Model pin
+/// does not bind the active Model: an unverified binding gap never
+/// yields a verified link (issue #93 r5).
+fn pin_capped(confidence: Confidence, pin_matches: bool) -> Confidence {
+    if pin_matches {
+        confidence
+    } else {
+        match confidence {
+            Confidence::Canonical | Confidence::Verified => Confidence::Extracted,
+            other => other,
+        }
+    }
 }
 
 /// The per-relationship confidence of one trace relation, mapped from
@@ -2195,11 +2503,15 @@ fn trace_witness_confidence(
 /// `node_keys` only at projection time, so traversal never loses a hop
 /// merely because an intermediate node carries no card of its own.
 /// Every card reachable from a requirement card carries that
-/// requirement's ref, and likewise for scenario and gate cards. Lists
-/// stay deduplicated, bounded, and omission-counted (never silent).
+/// requirement's ref, and likewise for scenario and gate cards. A card
+/// reached ONLY through stale relations carries the ref under the
+/// explicit `stale:` marker (matched only under `--include-stale`),
+/// while a current-path reach stays a current ref (issue #93 r5).
+/// Lists stay deduplicated, bounded, and omission-counted (never
+/// silent).
 fn materialize_trace_refs(
     projection: &mut Projection,
-    trace_graph: &std::collections::BTreeMap<String, Vec<String>>,
+    trace_graph: &std::collections::BTreeMap<String, Vec<(String, bool)>>,
     node_keys: &std::collections::BTreeMap<String, String>,
     cap: usize,
 ) {
@@ -2250,24 +2562,39 @@ fn materialize_trace_refs(
             }
             None => continue,
         };
-        // BFS over the RAW node graph from every node that mapped to
-        // this seed card; visited nodes map to cards only at the end.
-        let mut visited: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-        let mut frontier: Vec<String> = Vec::new();
-        for (card, node) in &node_of_card {
-            if *card == seed_key.as_str() {
-                frontier.push((*node).to_owned());
-                visited.insert((*node).to_owned());
+        // Two reachability passes over the RAW node graph from every
+        // node that mapped to this seed card: one restricted to current
+        // (non-stale) edges, one over every edge. A node both reach is
+        // current; a node only the all-edges pass reaches joins
+        // through at least one stale relationship and carries the
+        // `stale:`-marked ref.
+        let seeds_of_card: Vec<String> = node_of_card
+            .iter()
+            .filter(|(card, _)| *card == seed_key.as_str())
+            .map(|(_, node)| (*node).to_owned())
+            .collect();
+        let bfs = |stale_edges_included: bool| {
+            let mut visited: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+            let mut frontier: Vec<String> = seeds_of_card.clone();
+            for node in &frontier {
+                visited.insert(node.clone());
             }
-        }
-        while let Some(current) = frontier.pop() {
-            for neighbor in trace_graph.get(&current).cloned().unwrap_or_default() {
-                if visited.insert(neighbor.clone()) {
-                    frontier.push(neighbor);
+            while let Some(current) = frontier.pop() {
+                for (neighbor, edge_stale) in trace_graph.get(&current).cloned().unwrap_or_default()
+                {
+                    if edge_stale && !stale_edges_included {
+                        continue;
+                    }
+                    if visited.insert(neighbor.clone()) {
+                        frontier.push(neighbor);
+                    }
                 }
             }
-        }
-        for reached in visited {
+            visited
+        };
+        let current_reachable = bfs(false);
+        let all_reachable = bfs(true);
+        for reached in all_reachable {
             let Some(card_key) = card_of_node.get(reached.as_str()) else {
                 continue;
             };
@@ -2275,13 +2602,19 @@ fn materialize_trace_refs(
             if card_key == seed_key {
                 continue;
             }
+            let current = current_reachable.contains(reached.as_str());
             let Some(card) = projection.cards.get_mut(&card_key) else {
                 continue;
             };
+            let marked = if current {
+                reference.clone()
+            } else {
+                format!("stale:{reference}")
+            };
             let mut omitted = card.omitted;
             let list = get_list(card);
-            if !list.contains(&reference) {
-                lekalo_core::search::push_fact(list, &mut omitted, reference.clone());
+            if !list.contains(&marked) {
+                lekalo_core::search::push_fact(list, &mut omitted, marked);
                 card.omitted = omitted;
             }
         }
@@ -2502,7 +2835,16 @@ fn project_observed(
             card.bindings = merged;
             if freshness == Freshness::Stale {
                 card.freshness = Freshness::Stale;
-            } else if !path_admitted && card.completeness == Completeness::Complete {
+            }
+            if (!path_admitted || identity_withheld || candidates_withheld > 0)
+                && card.completeness == Completeness::Complete
+            {
+                // The definition card mirrors the binding card's
+                // disclosure: when any recorded binding fact of this
+                // event was withheld (location, identity, or
+                // candidates), the merged bindings list is silently
+                // truncated for the same reason and `complete` would
+                // overclaim one event's evidence (issue #93 r5).
                 card.completeness = Completeness::Withheld;
             }
         }
@@ -2654,6 +2996,7 @@ fn project_requirements(
     projection: &mut Projection,
     attachment: &lekalo_core::requirements::RequirementsAttachment,
     cap: usize,
+    pin_matches: bool,
 ) {
     for reference in attachment.references() {
         let key = format!("req:{}:{}", reference.source, reference.requirement);
@@ -2721,7 +3064,10 @@ fn project_requirements(
                 other: key.clone(),
                 direction: "outgoing".to_owned(),
                 trust: lekalo_core::search::Trust::Detected,
-                confidence: Confidence::Verified,
+                // A verified implements witness requires the
+                // attachment's declared Model pin to bind this Model;
+                // a foreign pin discloses an unverified binding gap.
+                confidence: pin_capped(Confidence::Verified, pin_matches),
             };
             if !card.relations.contains(&witness) {
                 card.relations.push(witness);
@@ -3161,14 +3507,17 @@ pub fn run_search_index(command: SearchIndexCommands, no_cache: bool) -> DomainR
                 }
             };
             // Incremental update, partition-reuse first: when the
-            // persisted generation's Model partition digest, every
-            // producer pin, and the admitting manifest configuration
+            // request names NO replacement manifest and the persisted
+            // generation's Model partition digest, every producer pin,
+            // the admitting manifest, and the full recomputed snapshot
             // all re-verify, the immutable generation is still exactly
-            // what a rebuild would publish — no producer is re-decoded,
-            // no projection is recomputed, and the no-op republishes
-            // the same digest. Anything else falls through to the full
-            // rebuild (which also repairs poisoned/aliased storage).
-            if is_update {
+            // what a rebuild would publish. The derivation check rebuilds
+            // the projection; reuse avoids rewriting the immutable store,
+            // not producer decoding. An explicit `--inputs` NEVER takes this
+            // path: a replacement, revocation, cap change, or invalid
+            // manifest path must control the operation, never be
+            // silently discarded against a warm store (issue #93 r5).
+            if is_update && page.inputs.is_none() {
                 if let Some(document) = warm_document(&root, &selection, &store) {
                     let digest = document.digest.trim_start_matches("sha256:").to_owned();
                     let json = format!(
@@ -3182,9 +3531,35 @@ pub fn run_search_index(command: SearchIndexCommands, no_cache: bool) -> DomainR
                     return DomainResult::receipt(json, human);
                 }
             }
-            let service = match assemble(page, no_cache) {
-                Ok(service) => service,
-                Err(result) => return result,
+            // The persisted registration is re-admitted when the request
+            // supplies no replacement manifest: a drift update rebuilds
+            // the registration under the new Model partition instead of
+            // silently destroying it with a canonical-only publish
+            // (issue #93 r5). A registration that can no longer be
+            // honestly re-admitted (revoked or edited manifest, drifted
+            // producer pins) falls back to the canonical-only assembly —
+            // only an explicit `--inputs` re-admits from a manifest.
+            let service = if page.inputs.is_none() {
+                let registered = store
+                    .current()
+                    .ok()
+                    .flatten()
+                    .and_then(|digest| store.load(&digest).ok().flatten())
+                    .filter(|document| document.admission.is_some());
+                match registered
+                    .and_then(|document| readmit_saved_registration(&root, &selection, &document))
+                {
+                    Some(service) => service,
+                    None => match assemble(page, no_cache) {
+                        Ok(service) => service,
+                        Err(result) => return result,
+                    },
+                }
+            } else {
+                match assemble(page, no_cache) {
+                    Ok(service) => service,
+                    Err(result) => return result,
+                }
             };
             // The index assembles under the run's admitted cap BEFORE any
             // publication: a budget refusal is a typed denial, never a
@@ -3216,8 +3591,12 @@ pub fn run_search_index(command: SearchIndexCommands, no_cache: bool) -> DomainR
                 })
                 .unwrap_or(false);
             if current_valid {
+                // The receipt names the invoked command, never a
+                // hardcoded one (issue #93 r5): a no-op `build` over a
+                // current store is a `search-index-build` reuse.
                 let json = format!(
-                    "{{\"status\":\"valid\",\"operation\":\"search-index-update\",\"digest\":\"sha256:{digest}\",\"cards\":{},\"reused\":true}}",
+                    "{{\"status\":\"valid\",\"operation\":\"search-index-{}\",\"digest\":\"sha256:{digest}\",\"cards\":{},\"reused\":true}}",
+                    if is_update { "update" } else { "build" },
                     document.cards.len()
                 );
                 let human = format!(
@@ -3228,11 +3607,25 @@ pub fn run_search_index(command: SearchIndexCommands, no_cache: bool) -> DomainR
             }
             let mut document = document;
             document.digest = format!("sha256:{digest}");
-            if store.publish(&document).is_err() {
-                return DomainResult::invalid(lekalo_core::search::diagnostic_input_invalid(
-                    "publish-failed",
-                    None,
-                ));
+            // Publish-side validation: a snapshot whose own loader would
+            // refuse it (dangling qualified keys, unresolvable postings,
+            // privacy-violating paths) is a typed build/update refusal,
+            // never a published generation the store brands corrupt
+            // (issue #93 r5).
+            match store.publish(&document) {
+                Ok(()) => {}
+                Err(lekalo_core::search::index::StoreError::Corrupt) => {
+                    return DomainResult::invalid(lekalo_core::search::diagnostic_input_invalid(
+                        "index-invalid",
+                        None,
+                    ))
+                }
+                Err(_) => {
+                    return DomainResult::invalid(lekalo_core::search::diagnostic_input_invalid(
+                        "publish-failed",
+                        None,
+                    ))
+                }
             }
             let json = format!(
                 "{{\"status\":\"valid\",\"operation\":\"search-index-{}\",\"digest\":\"sha256:{digest}\",\"cards\":{}}}",
@@ -3405,12 +3798,23 @@ fn assemble_with_manifest(
         "sha256:{}",
         lekalo_core::search::sha256_of(compilation.project.to_canonical_json().as_bytes())
     );
+    // The declared Model-pin digest every declared producer `modelRef`
+    // must name (issue #93 r5).
+    let model_pin = ModelPin {
+        digest: format!(
+            "sha256:{}",
+            lekalo_core::search::sha256_of(
+                lekalo_core::loader::canonical_model_bytes(&_model).as_bytes()
+            )
+        ),
+        version: _model.model_version.as_str().to_owned(),
+    };
     let cap = lekalo_core::search::MAX_POSTINGS;
     let mut projection = project_ir(&compilation.project, cap);
     attach_effects(&mut projection, &graph, cap);
     let mut coverage: Vec<lekalo_core::search::CoverageRow> = vec![
         coverage_row("ir", "complete"),
-        coverage_row("effects", "complete"),
+        coverage_row("effects", "unknown"),
         coverage_row("trace", "unknown"),
         coverage_row("requirements", "unknown"),
         coverage_row("bindings", "unknown"),
@@ -3438,6 +3842,7 @@ fn assemble_with_manifest(
         &compilation.project,
         &mut projection,
         &mut coverage,
+        &model_pin,
     )?;
     let run_cap = manifest
         .max_postings()

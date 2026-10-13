@@ -825,6 +825,23 @@ fn runtime_placement_failure(entry_type: EntryType, logical: &str) -> Option<Sca
     None
 }
 
+/// The runtime-artifact name policy of the cache owner's subtree
+/// (`.lekalo/cache/**`): the full closed source grammar minus the
+/// source-document case rule. SQLite WAL teardown can leave transient
+/// platform-spelled sidecars beside the governed database (e.g.
+/// `CACHE.SQLITE-SHM.tmp` on Windows case-insensitive filesystems);
+/// those names are runtime artifacts, never source documents, so the
+/// case rule must not brick every project-loading command while they
+/// exist. Every other hostile spelling — traversal, escapes, devices,
+/// short names, nonportable characters — still refuses on sight
+/// (issue #93 r5).
+fn runtime_cache_violation(path: &str) -> Option<&'static str> {
+    // Normalize ASCII case only for validation, not filesystem access.
+    // Merely swallowing path-case would skip later portability checks
+    // on an uppercase name that also contains hostile characters.
+    path_violation(&path.to_ascii_lowercase())
+}
+
 /// Ports `scanGovernedTree`: fail-closed, sorted, bounded directory scan.
 fn scan_governed_tree(
     fs: &Fs,
@@ -854,7 +871,16 @@ fn scan_governed_tree(
         if entry_type != EntryType::File && entry_type != EntryType::Directory {
             return Some(StructureReason::new("structure.path-special").at(&logical));
         }
-        if let Some(code) = path_violation(&name) {
+        // The cache owner's subtree is policed under the runtime-artifact
+        // name policy; every other subtree keeps the full source grammar.
+        let in_runtime_cache =
+            dir_logical == ".lekalo/cache" || dir_logical.starts_with(".lekalo/cache/");
+        let violation = if in_runtime_cache {
+            runtime_cache_violation(&name)
+        } else {
+            path_violation(&name)
+        };
+        if let Some(code) = violation {
             return Some(StructureReason::new(code).at(&logical));
         }
         if let Some(failure) = visit(entry_type, &name, &logical) {
@@ -1339,5 +1365,82 @@ mod grammar_tests {
         assert!(starts_with_drive_or_scheme("a+b:"));
         assert!(!starts_with_drive_or_scheme("planner"));
         assert!(!starts_with_drive_or_scheme("a/b"));
+    }
+
+    #[test]
+    fn wal_open_close_and_transient_sidecars_revalidate() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path().canonicalize().expect("canonical root");
+        #[cfg(windows)]
+        let root = {
+            let text = root.to_string_lossy();
+            std::path::PathBuf::from(text.strip_prefix(r"\\?\").unwrap_or(&text))
+        };
+        std::fs::create_dir_all(root.join("lekalo")).expect("model home");
+        std::fs::write(root.join("lekalo/project.yaml"), "project: wal-probe\n").expect("marker");
+        std::fs::create_dir_all(root.join(".lekalo/cache")).expect("cache home");
+        let connection = rusqlite::Connection::open(root.join(".lekalo/cache/cache.sqlite"))
+            .expect("open WAL database");
+        connection
+            .execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE probe (id INTEGER);")
+            .expect("enable WAL and create table");
+        assert!(matches!(
+            Fs::validate_project(&root),
+            StructureOutcome::Valid(_)
+        ));
+        drop(connection);
+        std::fs::write(root.join(".lekalo/cache/CACHE.SQLITE-SHM.tmp"), b"teardown")
+            .expect("Windows teardown spelling");
+        assert!(matches!(
+            Fs::validate_project(&root),
+            StructureOutcome::Valid(_)
+        ));
+        std::fs::write(root.join("lekalo/Upper.yaml"), b"not runtime").expect("source control");
+        assert!(!matches!(
+            Fs::validate_project(&root),
+            StructureOutcome::Valid(_)
+        ));
+    }
+
+    #[test]
+    fn runtime_cache_names_tolerate_platform_spellings_but_refuse_hostile_ones() {
+        // The Windows WAL-teardown transient spelling (uppercase sidecar
+        // with a `.tmp` tail) is a runtime artifact, never a source
+        // document: the cache owner's subtree admits it.
+        assert_eq!(runtime_cache_violation("CACHE.SQLITE-SHM.tmp"), None);
+        assert_eq!(runtime_cache_violation("cache.sqlite-wal"), None);
+        assert_eq!(runtime_cache_violation("current.json"), None);
+        assert_eq!(
+            runtime_cache_violation("CACHE*.tmp"),
+            Some("structure.path-segment")
+        );
+        assert_eq!(
+            runtime_cache_violation("Cache/../secret"),
+            Some("structure.path-traversal")
+        );
+        // The case exemption is the ONLY relaxation: every hostile
+        // spelling still refuses under the cache subtree.
+        assert_eq!(
+            runtime_cache_violation("cache-sqlite/../../secrets"),
+            Some("structure.path-traversal")
+        );
+        assert_eq!(
+            runtime_cache_violation("con.sqlite"),
+            Some("structure.path-device")
+        );
+        assert_eq!(
+            runtime_cache_violation("cache%2fsqlite"),
+            Some("structure.path-escape")
+        );
+        assert_eq!(
+            runtime_cache_violation("cache~1.wal"),
+            Some("structure.path-short-name")
+        );
+        // The source grammar itself never relaxed: uppercase still
+        // refuses outside the cache owner's subtree.
+        assert_eq!(
+            path_violation("CACHE.SQLITE-SHM.tmp"),
+            Some("structure.path-case")
+        );
     }
 }

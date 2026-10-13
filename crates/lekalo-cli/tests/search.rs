@@ -2141,3 +2141,1138 @@ fn persisted_generation_keeps_nine_signatures_and_reloads_clean() {
         "the wire discloses the omitted ninth fact"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Issue #93 r5 regressions: the warm/update lifecycle trust boundary,
+// publish-side validation, Model-pin and relation-status custody,
+// registration preservation, completeness honesty, requirement→binding
+// joins, statement-identity conflicts, schema/runtime bound parity, the
+// Windows runtime-cache name policy, and receipt honesty.
+// ---------------------------------------------------------------------------
+
+/// Write one probe producer document plus its single-input manifest
+/// under the disposable project's `evidence/` tree, returning the
+/// manifest's project-relative path.
+fn write_probe_manifest(
+    project: &Path,
+    document: &serde_json::Value,
+    name: &str,
+    kind: &str,
+    identity: &str,
+) -> String {
+    std::fs::write(
+        project.join("evidence").join(name),
+        serde_json::to_vec_pretty(document).expect("producer bytes"),
+    )
+    .expect("write producer");
+    let producer_path = format!("evidence/{name}");
+    let manifest = serde_json::json!({
+        "schemaVersion": "lekalo/search-inputs/v0.8.0",
+        "identity": "dev.lekalo.search-inputs@0.8.0",
+        "projectId": "planner",
+        "inputs": [
+            {"kind": kind, "path": producer_path, "identity": identity}
+        ]
+    });
+    std::fs::write(
+        project.join("evidence/probe-manifest.json"),
+        serde_json::to_vec_pretty(&manifest).expect("manifest bytes"),
+    )
+    .expect("write manifest");
+    "evidence/probe-manifest.json".to_owned()
+}
+
+fn read_evidence(project: &Path, name: &str) -> serde_json::Value {
+    serde_json::from_str(
+        &std::fs::read_to_string(project.join("evidence").join(name)).expect("read evidence"),
+    )
+    .expect("evidence json")
+}
+
+/// A self-consistent forged generation (edited card, rebound digest,
+/// renamed file, repointed pointer — NO cursor involved) never serves
+/// an ordinary warm query: the warm path now carries the same
+/// derivation proof as the cursor path and the freshness oracle, and
+/// the honest re-admitted answer (which also repairs the pointer) is
+/// served instead (issue #93 r5).
+#[test]
+fn warm_forged_generation_never_serves() {
+    let (project, _guard) = disposable_project();
+    assert_eq!(exit_code(&build_once(&project)), 0);
+    // Forge: edit one card, recompute the canonical content digest,
+    // store under the new name, repoint current.json.
+    let store = project.join(".lekalo/cache/search");
+    let pointer = std::fs::read_to_string(store.join("current.json")).expect("pointer");
+    let old_hex = json_from(&pointer)["digest"]
+        .as_str()
+        .expect("digest")
+        .to_owned();
+    let mut document: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(store.join(&old_hex)).expect("generation"))
+            .expect("generation json");
+    for card in document["cards"].as_array_mut().expect("cards") {
+        if card["key"] == "def:planner.focus_task" {
+            card["description"] = serde_json::Value::from("FORGED_WARM_CANARY");
+        }
+    }
+    let mut record = document.clone();
+    record["digest"] = serde_json::Value::from("");
+    let canonical = serde_json::to_string(&record).expect("canonical");
+    let forged_hex = sha256_hex_test(canonical.as_bytes());
+    document["digest"] = serde_json::Value::from(format!("sha256:{forged_hex}"));
+    std::fs::write(
+        store.join(&forged_hex),
+        serde_json::to_string(&document).expect("payload"),
+    )
+    .expect("write forged");
+    std::fs::write(
+        store.join("current.json"),
+        format!("{{\"digest\":\"{forged_hex}\"}}"),
+    )
+    .expect("repoint");
+    // The freshness oracle honestly calls the store stale...
+    let status = json(&lekalo_in(
+        &project,
+        &["--json", "search-index", "status", "--project", "."],
+    ));
+    assert_eq!(status["searchIndex"]["state"], "stale");
+    // Probe the ordinary cursor-less query against the planted forge
+    // BEFORE an update can repair it.
+    let query = lekalo_in(
+        &project,
+        &[
+            "--json",
+            "find",
+            "--id",
+            "planner.focus_task",
+            "--project",
+            ".",
+        ],
+    );
+    assert_eq!(exit_code(&query), 0, "{}", stderr_text(&query));
+    assert!(!stdout_text(&query).contains("FORGED_WARM_CANARY"));
+    // Replant the same forge to independently exercise update reuse.
+    std::fs::write(
+        store.join("current.json"),
+        format!("{{\"digest\":\"{forged_hex}\"}}"),
+    )
+    .expect("repoint for update");
+    // Update re-admits the registration and republishes the true
+    // generation — never `reused:true` over the forge.
+    let update = lekalo_in(
+        &project,
+        &["--json", "search-index", "update", "--project", "."],
+    );
+    assert_eq!(exit_code(&update), 0, "{}", stderr_text(&update));
+    assert!(
+        !stdout_text(&update).contains("\"reused\":true"),
+        "no-op reuse over a forged generation: {}",
+        stdout_text(&update)
+    );
+    let repaired = json(&lekalo_in(
+        &project,
+        &["--json", "search-index", "status", "--project", "."],
+    ));
+    assert_eq!(repaired["searchIndex"]["state"], "ready");
+    // ...and the ordinary cursor-less warm query serves the re-admitted
+    // truth over the repaired store, never the forged bytes.
+    let query = lekalo_in(
+        &project,
+        &[
+            "--json",
+            "find",
+            "--id",
+            "planner.focus_task",
+            "--project",
+            ".",
+        ],
+    );
+    assert_eq!(exit_code(&query), 0, "{}", stderr_text(&query));
+    assert!(
+        !stdout_text(&query).contains("FORGED_WARM_CANARY"),
+        "forged stored content never serves warm"
+    );
+}
+
+/// `search-index update --inputs <manifest>` honors the requested
+/// admission: a replacement manifest republishes under the new
+/// admission (never `reused:true` of the old generation), and a missing
+/// manifest path is a typed refusal, never a success receipt
+/// (issue #93 r5).
+#[test]
+fn update_honors_an_explicit_replacement_manifest() {
+    let (project, _guard) = disposable_project();
+    assert_eq!(exit_code(&build_once(&project)), 0);
+    let first = json(&lekalo_in(
+        &project,
+        &["--json", "search-index", "status", "--project", "."],
+    ));
+    let original = first["searchIndex"]["generation"]
+        .as_str()
+        .expect("digest")
+        .to_owned();
+    // A one-producer effects-only manifest is a real replacement
+    // admission: build honors it, so update must too.
+    let manifest = serde_json::json!({
+        "schemaVersion": "lekalo/search-inputs/v0.8.0",
+        "identity": "dev.lekalo.search-inputs@0.8.0",
+        "projectId": "planner",
+        "inputs": [
+            {"kind": "effects", "path": "evidence/effects.detected.json",
+             "identity": "dev.lekalo.effects@0.2.16"}
+        ]
+    });
+    std::fs::write(
+        project.join("evidence/effects-only.json"),
+        serde_json::to_vec_pretty(&manifest).expect("manifest bytes"),
+    )
+    .expect("write manifest");
+    let update = lekalo_in(
+        &project,
+        &[
+            "--json",
+            "search-index",
+            "update",
+            "--project",
+            ".",
+            "--inputs",
+            "evidence/effects-only.json",
+        ],
+    );
+    assert_eq!(exit_code(&update), 0, "{}", stderr_text(&update));
+    let receipt = json(&update);
+    assert_ne!(receipt["reused"], serde_json::Value::from(true));
+    assert_ne!(
+        receipt["digest"].as_str().expect("digest"),
+        original,
+        "the explicit manifest controls the published generation"
+    );
+    // The replacement registration serves: the smaller admission has no
+    // binding producers.
+    let bindings = json(&lekalo_in(
+        &project,
+        &["--json", "find", "--kind", "binding", "--project", "."],
+    ));
+    assert_eq!(
+        bindings["items"].as_array().expect("items").len(),
+        0,
+        "the explicit replacement admission shrank the served set"
+    );
+    // A nonexistent manifest is a typed refusal, never a silent reuse.
+    let missing = lekalo_in(
+        &project,
+        &[
+            "--json",
+            "search-index",
+            "update",
+            "--project",
+            ".",
+            "--inputs",
+            "evidence/does-not-exist.json",
+        ],
+    );
+    assert_eq!(exit_code(&missing), 1, "{}", stdout_text(&missing));
+    assert_eq!(
+        json(&missing)["diagnostics"][0]["id"],
+        "search.input-invalid"
+    );
+}
+
+/// A published generation is self-validating: an observed record whose
+/// symbol the Model no longer defines (a ghost `def:` target) never
+/// publishes a generation the store's own loader brands corrupt — the
+/// qualified identity attaches only to existing cards and publication
+/// validates before it writes (issue #93 r5).
+#[test]
+fn ghost_observed_symbol_publishes_a_self_validating_generation() {
+    let (project, _guard) = disposable_project();
+    let observed_path = project.join("evidence/observed.index.json");
+    let original = std::fs::read_to_string(&observed_path).expect("read index");
+    // Typed round-trip: the observed wire only admits its exact
+    // canonical rendering, so the probe mutates the typed index and
+    // re-renders through the owners' own canonical serializer.
+    let mut index: lekalo_core::observed::ObservedIndex =
+        serde_json::from_str(&original).expect("typed parse");
+    let mut ghost = index.symbols[0].clone();
+    ghost.id = "planner.ghost_probe".to_owned();
+    ghost.stable_key = Some("apps/api/src/planner/ghost.ts#ghostProbe".to_owned());
+    ghost.location = Some(lekalo_core::observed::types::SourceLocation {
+        path: "apps/api/src/planner/ghost.ts".to_owned(),
+        line: Some(3),
+    });
+    ghost.candidates = Vec::new();
+    let position = index
+        .symbols
+        .iter()
+        .position(|record| record.id.as_str() > "planner.ghost_probe")
+        .unwrap_or(index.symbols.len());
+    index.symbols.insert(position, ghost);
+    std::fs::write(
+        &observed_path,
+        lekalo_core::observed::canonical_bytes(&index).expect("canonical"),
+    )
+    .expect("write observed");
+    let build = lekalo_in(
+        &project,
+        &[
+            "--json",
+            "search-index",
+            "build",
+            "--project",
+            ".",
+            "--inputs",
+            "evidence/search-inputs.json",
+        ],
+    );
+    assert_eq!(exit_code(&build), 0, "{}", stderr_text(&build));
+    // Immediately after: the durable store must serve its own bytes.
+    let status = json(&lekalo_in(
+        &project,
+        &["--json", "search-index", "status", "--project", "."],
+    ));
+    assert_eq!(
+        status["searchIndex"]["state"], "ready",
+        "the published generation is self-validating"
+    );
+    // The ghost's binding card is searchable; its qualified identity
+    // never dangles off a nonexistent definition card.
+    let query = json(&lekalo_in(
+        &project,
+        &[
+            "--json",
+            "find",
+            "--id",
+            "planner.ghost_probe",
+            "--project",
+            ".",
+        ],
+    ));
+    let keys: Vec<&str> = query["items"]
+        .as_array()
+        .expect("items")
+        .iter()
+        .map(|item| item["card"]["key"].as_str().expect("key"))
+        .collect();
+    assert!(keys.contains(&"bind:planner.ghost_probe"), "{keys:?}");
+}
+
+/// A removed Model definition with a surviving observed record does
+/// not leave a dangling qualified key in the updated generation.
+#[test]
+fn removed_definition_with_surviving_observed_record_reloads_cleanly() {
+    let (project, _guard) = disposable_project();
+    assert_eq!(exit_code(&build_once(&project)), 0);
+    let queries_path = project.join("lekalo/modules/planner/queries.yaml");
+    let queries = std::fs::read_to_string(&queries_path).expect("queries");
+    let removed = queries
+        .split("  - id: planner.get_status")
+        .next()
+        .expect("prefix");
+    assert_ne!(queries, removed);
+    std::fs::write(&queries_path, removed).expect("remove definition");
+    let update = lekalo_in(
+        &project,
+        &["--json", "search-index", "update", "--project", "."],
+    );
+    assert_eq!(exit_code(&update), 0, "{}", stdout_text(&update));
+    let status = json(&lekalo_in(
+        &project,
+        &["--json", "search-index", "status", "--project", "."],
+    ));
+    assert_eq!(status["searchIndex"]["state"], "ready");
+    let query = json(&lekalo_in(
+        &project,
+        &["--json", "find", "--kind", "binding", "--project", "."],
+    ));
+    assert!(query["items"]
+        .as_array()
+        .expect("bindings")
+        .iter()
+        .any(|item| item["card"]["key"] == "bind:planner.get_status"));
+}
+
+/// A declared producer Model pin that does not bind the active Model is
+/// an explicit unverified binding gap: the trace domain serves
+/// honestly partial and its implements witnesses are capped at
+/// `extracted` — never a verified link built on a foreign revision
+/// (issue #93 r5).
+#[test]
+fn foreign_model_pins_disclose_unverified_binding_gaps() {
+    let (project, _guard) = disposable_project();
+    let mut trace = read_evidence(&project, "trace.openspec.json");
+    trace["modelRef"]["digest"] = serde_json::Value::from(
+        "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    );
+    let manifest = write_probe_manifest(
+        &project,
+        &trace,
+        "trace.foreign-pin.json",
+        "trace",
+        "dev.lekalo.trace-manifest@0.2.16",
+    );
+    let query = lekalo_in(
+        &project,
+        &[
+            "--json",
+            "find",
+            "--id",
+            "planner.focus_task",
+            "--project",
+            ".",
+            "--inputs",
+            &manifest,
+        ],
+    );
+    assert_eq!(exit_code(&query), 0, "{}", stderr_text(&query));
+    let envelope = json(&query);
+    let card = &envelope["items"][0]["card"];
+    let implements = card["relations"]
+        .as_array()
+        .expect("relations")
+        .iter()
+        .find(|witness| witness["relation"] == "implements")
+        .expect("the foreign-pin trace still joins");
+    assert_ne!(
+        implements["confidence"], "verified",
+        "a foreign Model pin never yields a verified link"
+    );
+    assert_eq!(implements["confidence"], "extracted");
+    let rows = envelope["coverage"].as_array().expect("coverage");
+    for domain in ["trace", "requirements"] {
+        let row = rows
+            .iter()
+            .find(|row| row["domain"] == domain)
+            .expect("row");
+        assert_eq!(row["state"], "partial", "the binding gap is disclosed");
+    }
+}
+
+/// Independently pin-bearing requirement attachments never silently
+/// verify relationships against a foreign Model either.
+#[test]
+fn foreign_requirement_model_pin_caps_relationship_confidence() {
+    let (project, _guard) = disposable_project();
+    let mut attachment = read_evidence(&project, "requirements.attachment.json");
+    attachment["modelRef"]["digest"] = serde_json::json!(
+        "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    );
+    let manifest = write_probe_manifest(
+        &project,
+        &attachment,
+        "requirements.foreign-pin.json",
+        "requirements",
+        "dev.lekalo.requirements@0.2.16",
+    );
+    let query = lekalo_in(
+        &project,
+        &[
+            "--json",
+            "find",
+            "--id",
+            "planner.focus_task",
+            "--project",
+            ".",
+            "--inputs",
+            &manifest,
+        ],
+    );
+    assert_eq!(exit_code(&query), 0, "{}", stdout_text(&query));
+    let envelope = json(&query);
+    let row = envelope["coverage"]
+        .as_array()
+        .expect("coverage")
+        .iter()
+        .find(|row| row["domain"] == "requirements")
+        .expect("requirements row");
+    assert_eq!(row["state"], "partial");
+    let relations = envelope["items"][0]["card"]["relations"]
+        .as_array()
+        .expect("relations");
+    assert!(!relations.is_empty());
+    assert!(relations
+        .iter()
+        .all(|relation| relation["confidence"] != "verified"));
+}
+
+/// Trace relations recorded `stale` never bridge default joins: the
+/// joined requirement/gate cards and the bridged definition cards are
+/// excluded by default and reconstructed under `--include-stale`
+/// (issue #93 r5).
+#[test]
+fn stale_trace_relations_do_not_bridge_default_joins() {
+    let (project, _guard) = disposable_project();
+    let mut trace = read_evidence(&project, "trace.openspec.json");
+    trace["completeness"] = serde_json::Value::from("partial");
+    trace["gaps"] = serde_json::json!([
+        {"gapKind": "missing-gate", "status": "candidate",
+         "anchorNode": "requirement:PLANNER-REQ-001",
+         "expected": "openspec.native.gate.focus"}
+    ]);
+    for relation in trace["relations"].as_array_mut().expect("relations") {
+        relation["status"] = serde_json::Value::from("stale");
+    }
+    let manifest = write_probe_manifest(
+        &project,
+        &trace,
+        "trace.all-stale.json",
+        "trace",
+        "dev.lekalo.trace-manifest@0.2.16",
+    );
+    let run = |extra: &[&str]| {
+        let mut args: Vec<&str> = vec![
+            "--json",
+            "find",
+            "--requirement",
+            "PLANNER-REQ-001",
+            "--requirement-source",
+            "openspec",
+        ];
+        args.extend_from_slice(extra);
+        args.push("--project");
+        args.push(".");
+        args.push("--inputs");
+        args.push(&manifest);
+        lekalo_in(&project, &args)
+    };
+    let default = run(&[]);
+    assert_eq!(exit_code(&default), 0, "{}", stderr_text(&default));
+    let default_keys: Vec<String> = json(&default)["items"]
+        .as_array()
+        .map(|items| {
+            items
+                .iter()
+                .map(|item| item["card"]["key"].as_str().expect("key").to_owned())
+                .collect()
+        })
+        .unwrap_or_default();
+    assert!(
+        default_keys.is_empty(),
+        "stale relations never bridge the default join: {default_keys:?}"
+    );
+    let included = run(&["--include-stale"]);
+    assert_eq!(exit_code(&included), 0, "{}", stderr_text(&included));
+    let included_envelope = json(&included);
+    let stale_keys: Vec<&str> = included_envelope["items"]
+        .as_array()
+        .expect("items")
+        .iter()
+        .map(|item| item["card"]["key"].as_str().expect("key"))
+        .collect();
+    assert!(
+        stale_keys.contains(&"req:openspec:PLANNER-REQ-001")
+            && stale_keys.contains(&"def:planner.focus_task")
+            && stale_keys.contains(&"gate:hlv.gate.focus"),
+        "--include-stale reconstructs the stale chain: {stale_keys:?}"
+    );
+}
+
+/// Page two of a registered query continues without re-passing
+/// `--inputs`: the cursor path re-admits the serving generation's own
+/// recorded admission, so the identical request paginates the same
+/// ranked set (issue #93 r5).
+#[test]
+fn registered_cursor_continues_without_repassing_inputs() {
+    let (project, _guard) = disposable_project();
+    assert_eq!(exit_code(&build_once(&project)), 0);
+    let first = json(&lekalo_in(
+        &project,
+        &[
+            "--json",
+            "find",
+            "--kind",
+            "command",
+            "--limit",
+            "1",
+            "--project",
+            ".",
+        ],
+    ));
+    assert_eq!(first["status"], "valid");
+    let cursor = first["page"]["next"]
+        .as_str()
+        .expect("a registered query issues a cursor")
+        .to_owned();
+    let continued = lekalo_in(
+        &project,
+        &[
+            "--json",
+            "find",
+            "--kind",
+            "command",
+            "--limit",
+            "1",
+            "--cursor",
+            &cursor,
+            "--project",
+            ".",
+        ],
+    );
+    assert_eq!(
+        exit_code(&continued),
+        0,
+        "the identical continuation serves without extra flags: {}",
+        stdout_text(&continued)
+    );
+    let second = json(&continued);
+    assert_eq!(second["status"], "valid");
+    let keys: Vec<&str> = second["items"]
+        .as_array()
+        .expect("page two items")
+        .iter()
+        .map(|item| item["card"]["key"].as_str().expect("key"))
+        .collect();
+    assert!(!keys.is_empty(), "page two carries the next ranked row");
+    let first_key = first["items"][0]["card"]["key"].as_str().expect("key");
+    assert!(
+        !keys.contains(&first_key),
+        "concatenated pages never repeat a row"
+    );
+}
+
+/// Drift update preserves the saved registration: after a Model edit a
+/// plain `search-index update` rebuilds the registration under the new
+/// Model partition (republish, never a canonical-only clobber), and
+/// the drifted ordinary query re-admits the registration instead of
+/// silently discarding the producers (issue #93 r5).
+#[test]
+fn drift_update_preserves_the_registration() {
+    let (project, _guard) = disposable_project();
+    assert_eq!(exit_code(&build_once(&project)), 0);
+    let before = json(&lekalo_in(
+        &project,
+        &["--json", "search-index", "status", "--project", "."],
+    ));
+    let original = before["searchIndex"]["generation"]
+        .as_str()
+        .expect("digest")
+        .to_owned();
+    // Model drift: one description change.
+    let commands = project.join("lekalo/modules/planner/commands.yaml");
+    let body = std::fs::read_to_string(&commands).expect("read commands");
+    std::fs::write(
+        &commands,
+        body.replace(
+            "Focus one user task planning record",
+            "Focus one user task now",
+        ),
+    )
+    .expect("drift model");
+    // A plain update republishes the registration under the new Model
+    // partition FIRST (before any query repairs the store): never a
+    // canonical-only clobber that destroys the registration.
+    let update = lekalo_in(
+        &project,
+        &["--json", "search-index", "update", "--project", "."],
+    );
+    assert_eq!(exit_code(&update), 0, "{}", stderr_text(&update));
+    let receipt = json(&update);
+    assert_ne!(receipt["reused"], serde_json::Value::from(true));
+    assert_ne!(
+        receipt["digest"].as_str().expect("digest"),
+        original,
+        "drift republishes under the new Model partition"
+    );
+    // The registration survived: bindings and requirement joins serve.
+    let bindings = json(&lekalo_in(
+        &project,
+        &["--json", "find", "--kind", "binding", "--project", "."],
+    ));
+    assert!(
+        !bindings["items"].as_array().expect("items").is_empty(),
+        "the producer registration survives the drift update"
+    );
+    let drifted = json(&lekalo_in(
+        &project,
+        &[
+            "--json",
+            "find",
+            "--requirement",
+            "PLANNER-REQ-001",
+            "--requirement-source",
+            "openspec",
+            "--project",
+            ".",
+        ],
+    ));
+    let drifted_keys: Vec<&str> = drifted["items"]
+        .as_array()
+        .map(|items| {
+            items
+                .iter()
+                .map(|item| item["card"]["key"].as_str().expect("key"))
+                .collect()
+        })
+        .unwrap_or_default();
+    assert!(
+        drifted_keys.contains(&"req:openspec:PLANNER-REQ-001"),
+        "the drifted query re-admits the registration, never discards it: {drifted_keys:?}"
+    );
+    let status = json(&lekalo_in(
+        &project,
+        &["--json", "search-index", "status", "--project", "."],
+    ));
+    assert_eq!(status["searchIndex"]["state"], "ready");
+}
+
+/// An absent effects producer is `unknown`, never `complete`: a
+/// canonical-only field-writer query answers a disclosed empty set
+/// with the coverage warning, and the admitted producer raises the
+/// domain (issue #93 r5).
+#[test]
+fn absent_effects_producer_reports_unknown_coverage() {
+    let (project, _guard) = disposable_project();
+    let cold = json(&lekalo_in(
+        &project,
+        &[
+            "--json",
+            "find",
+            "--writes",
+            "planner.user_task_planning.focused_at",
+            "--project",
+            ".",
+        ],
+    ));
+    assert_eq!(cold["status"], "valid");
+    assert_eq!(cold["selection"], "none");
+    let rows = cold["coverage"].as_array().expect("coverage");
+    let effects = rows
+        .iter()
+        .find(|row| row["domain"] == "effects")
+        .expect("effects row");
+    assert_eq!(
+        effects["state"], "unknown",
+        "an absent producer never claims completeness"
+    );
+    let codes = cold["reasonCodes"].as_array().expect("codes");
+    assert!(
+        codes.contains(&serde_json::Value::from("search.coverage-incomplete")),
+        "the confident empty answer is disclosed: {codes:?}"
+    );
+    // Control: the admitted producer answers the two field writers.
+    let warm = json(&lekalo_in(
+        &project,
+        &[
+            "--json",
+            "find",
+            "--writes",
+            "planner.user_task_planning.focused_at",
+            "--project",
+            ".",
+            "--inputs",
+            "evidence/search-inputs.json",
+        ],
+    ));
+    let keys: Vec<&str> = warm["items"]
+        .as_array()
+        .map(|items| {
+            items
+                .iter()
+                .map(|item| item["card"]["key"].as_str().expect("key"))
+                .collect()
+        })
+        .unwrap_or_default();
+    assert!(
+        keys.contains(&"def:planner.focus_task") && keys.contains(&"def:planner.refocus_task"),
+        "{keys:?}"
+    );
+}
+
+/// Requirement joins reach the native binding cards: the definition's
+/// joined requirement refs flow onto `bind:` cards, so "which bindings
+/// implement this requirement" answers through typed identities
+/// (issue #93 r5).
+#[test]
+fn requirement_joins_reach_native_binding_cards() {
+    let (project, _guard) = disposable_project();
+    assert_eq!(exit_code(&build_once(&project)), 0);
+    let query = json(&lekalo_in(
+        &project,
+        &[
+            "--json",
+            "find",
+            "--requirement",
+            "PLANNER-REQ-001",
+            "--requirement-source",
+            "openspec",
+            "--kind",
+            "binding",
+            "--project",
+            ".",
+        ],
+    ));
+    assert_eq!(query["status"], "valid");
+    let keys: Vec<&str> = query["items"]
+        .as_array()
+        .map(|items| {
+            items
+                .iter()
+                .map(|item| item["card"]["key"].as_str().expect("key"))
+                .collect()
+        })
+        .unwrap_or_default();
+    assert!(
+        keys.contains(&"bind:planner.focus_task"),
+        "the requirement reaches its native binding: {keys:?}"
+    );
+}
+
+/// Conflicting diagnostic statements on one finding id are a typed
+/// identity conflict, never last-write-wins: same id and rule/subject
+/// but a different severity or disposition refuses; an exact
+/// restatement stays a legal duplicate (issue #93 r5).
+#[test]
+fn conflicting_diagnostic_statements_refuse() {
+    let (project, _guard) = disposable_project();
+    let base = read_evidence(&project, "diagnostics.json");
+    // Same id, same rule and subject, conflicting lifecycle statements.
+    let mut conflicting = base.clone();
+    conflicting["findings"]
+        .as_array_mut()
+        .expect("findings")
+        .push(serde_json::json!({
+            "id": "focus-concurrency-001",
+            "rule": "planner.focus-concurrency",
+            "subject": "planner.focus_task",
+            "severity": "info",
+            "disposition": "resolved"
+        }));
+    conflicting["metadata"]["findingCount"] =
+        serde_json::Value::from(conflicting["findings"].as_array().expect("findings").len());
+    let manifest = write_probe_manifest(
+        &project,
+        &conflicting,
+        "diagnostics.conflict.json",
+        "diagnostics",
+        "dev.lekalo.search-diagnostics@0.8.0",
+    );
+    let refused = lekalo_in(
+        &project,
+        &[
+            "--json",
+            "find",
+            "--kind",
+            "diagnostic",
+            "--project",
+            ".",
+            "--inputs",
+            &manifest,
+        ],
+    );
+    assert_eq!(exit_code(&refused), 1, "{}", stdout_text(&refused));
+    assert_eq!(
+        json(&refused)["diagnostics"][0]["data"]["detail"],
+        "identity-conflict"
+    );
+    // An exact restatement is a legal duplicate: the active finding
+    // still serves beside its re-stated copy.
+    let mut restated = base.clone();
+    let original = restated["findings"][0].clone();
+    restated["findings"]
+        .as_array_mut()
+        .expect("findings")
+        .push(original);
+    restated["metadata"]["findingCount"] =
+        serde_json::Value::from(restated["findings"].as_array().expect("findings").len());
+    let manifest = write_probe_manifest(
+        &project,
+        &restated,
+        "diagnostics.restated.json",
+        "diagnostics",
+        "dev.lekalo.search-diagnostics@0.8.0",
+    );
+    let admitted = lekalo_in(
+        &project,
+        &[
+            "--json",
+            "find",
+            "--diagnostic",
+            "planner.focus-concurrency",
+            "--project",
+            ".",
+            "--inputs",
+            &manifest,
+        ],
+    );
+    assert_eq!(exit_code(&admitted), 0, "{}", stdout_text(&admitted));
+    let envelope = json(&admitted);
+    let keys: Vec<&str> = envelope["items"]
+        .as_array()
+        .map(|items| {
+            items
+                .iter()
+                .map(|item| item["card"]["key"].as_str().expect("key"))
+                .collect()
+        })
+        .unwrap_or_default();
+    assert!(keys.contains(&"diag:focus-concurrency-001"), "{keys:?}");
+}
+
+/// The published producer row bounds are enforced at admission: a
+/// diagnostics snapshot with 4097 findings and an ownership profile
+/// with 4097 members are the same refusal the published schemas give
+/// (issue #93 r5).
+#[test]
+fn producer_row_bounds_match_the_published_schemas() {
+    let (project, _guard) = disposable_project();
+    let base = read_evidence(&project, "diagnostics.json");
+    let mut oversize = base.clone();
+    {
+        let findings = oversize["findings"].as_array_mut().expect("findings");
+        let template = findings[0].clone();
+        findings.clear();
+        for index in 0..4097 {
+            let mut row = template.clone();
+            row["id"] = serde_json::Value::from(format!("bound-probe-{index:04}"));
+            findings.push(row);
+        }
+        oversize["metadata"]["findingCount"] = serde_json::Value::from(findings.len());
+    }
+    let manifest = write_probe_manifest(
+        &project,
+        &oversize,
+        "diagnostics.oversize.json",
+        "diagnostics",
+        "dev.lekalo.search-diagnostics@0.8.0",
+    );
+    let refused = lekalo_in(
+        &project,
+        &[
+            "--json",
+            "find",
+            "--kind",
+            "diagnostic",
+            "--project",
+            ".",
+            "--inputs",
+            &manifest,
+        ],
+    );
+    assert_eq!(exit_code(&refused), 1, "{}", stdout_text(&refused));
+    assert_eq!(
+        json(&refused)["diagnostics"][0]["id"],
+        "search.input-invalid"
+    );
+    // The exact schema maximum remains admissible (even though the
+    // default result page is bounded independently).
+    oversize["findings"].as_array_mut().expect("findings").pop();
+    oversize["metadata"]["findingCount"] = serde_json::json!(4096);
+    let maximum_manifest = write_probe_manifest(
+        &project,
+        &oversize,
+        "diagnostics.maximum.json",
+        "diagnostics",
+        "dev.lekalo.search-diagnostics@0.8.0",
+    );
+    let admitted = lekalo_in(
+        &project,
+        &[
+            "--json",
+            "find",
+            "--kind",
+            "diagnostic",
+            "--project",
+            ".",
+            "--inputs",
+            &maximum_manifest,
+        ],
+    );
+    assert_eq!(exit_code(&admitted), 0, "{}", stdout_text(&admitted));
+    // The ownership-profile member bound.
+    let mut ownership = read_evidence(&project, "ownership-profile.json");
+    {
+        let members = ownership["profiles"][0]["members"]
+            .as_array_mut()
+            .expect("members");
+        let member = members[0].clone();
+        members.clear();
+        for _ in 0..4097 {
+            members.push(member.clone());
+        }
+    }
+    let manifest = write_probe_manifest(
+        &project,
+        &ownership,
+        "ownership.oversize.json",
+        "ownership-profile",
+        "dev.lekalo.search-ownership-profile@0.8.0",
+    );
+    let refused = lekalo_in(
+        &project,
+        &[
+            "--json",
+            "find",
+            "--kind",
+            "command",
+            "--project",
+            ".",
+            "--inputs",
+            &manifest,
+        ],
+    );
+    assert_eq!(exit_code(&refused), 1, "{}", stdout_text(&refused));
+    assert_eq!(
+        json(&refused)["diagnostics"][0]["id"],
+        "search.input-invalid"
+    );
+    ownership["profiles"][0]["members"]
+        .as_array_mut()
+        .expect("members")
+        .pop();
+    let maximum_manifest = write_probe_manifest(
+        &project,
+        &ownership,
+        "ownership.maximum.json",
+        "ownership-profile",
+        "dev.lekalo.search-ownership-profile@0.8.0",
+    );
+    let admitted = lekalo_in(
+        &project,
+        &[
+            "--json",
+            "find",
+            "--kind",
+            "command",
+            "--project",
+            ".",
+            "--inputs",
+            &maximum_manifest,
+        ],
+    );
+    assert_eq!(exit_code(&admitted), 0, "{}", stdout_text(&admitted));
+}
+
+/// Runtime cache artifacts never brick search: the Windows WAL-teardown
+/// spelling under `.lekalo/cache/` is a runtime artifact name, so the
+/// governed-tree scan keeps serving while it exists (issue #93 r5).
+#[test]
+fn runtime_cache_artifacts_never_brick_search() {
+    let (project, _guard) = disposable_project();
+    assert_eq!(exit_code(&build_once(&project)), 0);
+    std::fs::write(
+        project.join(".lekalo/cache/CACHE.SQLITE-SHM.tmp"),
+        b"transient wal sidecar",
+    )
+    .expect("plant sidecar");
+    let query = lekalo_in(
+        &project,
+        &[
+            "--json",
+            "find",
+            "--id",
+            "planner.focus_task",
+            "--project",
+            ".",
+        ],
+    );
+    assert_eq!(
+        exit_code(&query),
+        0,
+        "a runtime cache artifact never refuses the query: {}",
+        stdout_text(&query)
+    );
+    let status = json(&lekalo_in(
+        &project,
+        &["--json", "search-index", "status", "--project", "."],
+    ));
+    assert_eq!(status["searchIndex"]["state"], "ready");
+}
+
+/// The definition card mirrors the binding card's withholding
+/// disclosure: when candidates of one observed event were withheld, the
+/// merged definition card serializes `withheld`, never a complete
+/// bindings list over silently truncated evidence (issue #93 r5).
+#[test]
+fn definition_card_discloses_withheld_bindings() {
+    let (project, _guard) = disposable_project();
+    let observed_path = project.join("evidence/observed.index.json");
+    let original = std::fs::read_to_string(&observed_path).expect("read index");
+    // Typed round-trip (the observed wire admits only its exact
+    // canonical rendering): the get_status record gains five hostile
+    // candidate spellings beside its admitted location.
+    let mut index: lekalo_core::observed::ObservedIndex =
+        serde_json::from_str(&original).expect("typed parse");
+    let record = index
+        .symbols
+        .iter_mut()
+        .find(|record| record.id == "planner.get_status")
+        .expect("get_status record");
+    let fingerprint = record.fingerprint.clone();
+    for spelling in [
+        "../outside/secrets/keys.ts#leak",
+        ".git/hooks/evil.ts#hook",
+        "C:/Windows/system32/evil.ts#x",
+        "apps/api/src/planner/Upper.ts#ok",
+        "apps/api/src/planner/spaces name.ts#s",
+    ] {
+        let (path, _symbol) = spelling.rsplit_once('#').expect("path#symbol");
+        record
+            .candidates
+            .push(lekalo_core::observed::types::CandidateRecord {
+                native: spelling.to_owned(),
+                path: path.to_owned(),
+                line: Some(4),
+                fingerprint: fingerprint.clone(),
+                confidence: lekalo_core::observed::types::Confidence::High,
+            });
+    }
+    std::fs::write(
+        &observed_path,
+        lekalo_core::observed::canonical_bytes(&index).expect("canonical"),
+    )
+    .expect("write observed");
+    assert_eq!(exit_code(&build_once(&project)), 0);
+    let query = json(&lekalo_in(
+        &project,
+        &[
+            "--json",
+            "find",
+            "--id",
+            "planner.get_status",
+            "--project",
+            ".",
+        ],
+    ));
+    let cards: Vec<&serde_json::Value> = query["items"]
+        .as_array()
+        .expect("items")
+        .iter()
+        .map(|item| &item["card"])
+        .collect();
+    let binding = cards
+        .iter()
+        .find(|card| card["key"] == "bind:planner.get_status")
+        .expect("binding card");
+    let definition = cards
+        .iter()
+        .find(|card| card["key"] == "def:planner.get_status")
+        .expect("definition card");
+    assert_eq!(binding["completeness"], "withheld");
+    assert_eq!(
+        definition["completeness"], "withheld",
+        "the merged definition mirrors the event's withholding disclosure"
+    );
+}
+
+/// A no-op `build` receipt names the build command: the operation field
+/// never contradicts the invoked command (issue #93 r5).
+#[test]
+fn no_op_build_receipt_names_the_build_command() {
+    let (project, _guard) = disposable_project();
+    assert_eq!(exit_code(&build_once(&project)), 0);
+    let rebuild = lekalo_in(
+        &project,
+        &[
+            "--json",
+            "search-index",
+            "build",
+            "--project",
+            ".",
+            "--inputs",
+            "evidence/search-inputs.json",
+        ],
+    );
+    assert_eq!(exit_code(&rebuild), 0, "{}", stderr_text(&rebuild));
+    let receipt = json(&rebuild);
+    assert_eq!(receipt["operation"], "search-index-build");
+    assert_eq!(receipt["reused"], serde_json::Value::from(true));
+}

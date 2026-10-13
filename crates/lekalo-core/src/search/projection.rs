@@ -815,9 +815,17 @@ pub fn requirement_key(source: &str, requirement: &str) -> String {
 
 /// Record one additional exact qualified identity for a card (the
 /// byte-exact `exact-qualified` ranking tier source). Bounded per card
-/// and deduplicated; the identity set never widens a card's key.
+/// and deduplicated; the identity set never widens a card's key. An
+/// identity attaches only to a card that EXISTS: a recorded native
+/// binding whose symbol the Model no longer defines must never leave
+/// a dangling qualified-key entry — the published generation's own
+/// loader refuses those, so admission never creates one (a published
+/// generation is self-validating, issue #93 r5).
 pub fn add_qualified_id(projection: &mut Projection, key: &str, identity: String, cap: usize) {
     if identity.is_empty() || identity.len() > 256 {
+        return;
+    }
+    if !projection.cards.contains_key(key) {
         return;
     }
     let entry = projection
@@ -857,5 +865,61 @@ mod tests {
             requirement_key("", "PLANNER-REQ-001"),
             "req:PLANNER-REQ-001"
         );
+    }
+
+    #[test]
+    fn qualified_ids_attach_only_to_existing_cards() {
+        let cap = crate::search::version::MAX_POSTINGS;
+        let mut projection = Projection::default();
+        let card = Card {
+            key: "def:planner.focus_task".to_owned(),
+            kind: CardKind::Command,
+            subkind: None,
+            module: None,
+            id: Some("planner.focus_task".to_owned()),
+            name: None,
+            description: None,
+            signatures: Vec::new(),
+            relations: Vec::new(),
+            effects: Vec::new(),
+            bindings: Vec::new(),
+            locations: Vec::new(),
+            requirements: Vec::new(),
+            scenarios: Vec::new(),
+            gates: Vec::new(),
+            portability: None,
+            visibility: None,
+            ownership: None,
+            confidence: Confidence::Extracted,
+            freshness: Freshness::Current,
+            completeness: Completeness::Complete,
+            omitted: 0,
+            provenance: "ir".to_owned(),
+        };
+        add_card(&mut projection, card, cap);
+        // An identity for a card that exists attaches.
+        add_qualified_id(
+            &mut projection,
+            "def:planner.focus_task",
+            "apps/api/src/planner/focus-task.ts#focusTask".to_owned(),
+            cap,
+        );
+        assert_eq!(
+            projection.qualified_ids["def:planner.focus_task"],
+            vec!["apps/api/src/planner/focus-task.ts#focusTask".to_owned()]
+        );
+        // An identity for a card that does NOT exist (a recorded native
+        // binding whose symbol the Model no longer defines) never
+        // attaches: a published generation is self-validating and its
+        // own loader refuses dangling qualified keys (issue #93 r5).
+        add_qualified_id(
+            &mut projection,
+            "def:planner.ghost_probe",
+            "apps/api/src/planner/ghost.ts#ghostProbe".to_owned(),
+            cap,
+        );
+        assert!(!projection
+            .qualified_ids
+            .contains_key("def:planner.ghost_probe"));
     }
 }

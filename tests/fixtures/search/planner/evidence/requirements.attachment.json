@@ -4,7 +4,7 @@
   "projectId": "planner",
   "modelRef": {
     "modelVersion": "0.2.16",
-    "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    "digest": "sha256:21b281bacf1edd5721906ec234f45df88e79841b278e2c5ea311acefe860180a"
   },
   "providers": [
     {

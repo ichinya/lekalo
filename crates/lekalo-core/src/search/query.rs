@@ -420,7 +420,13 @@ fn is_pattern_value(value: &str, max_bytes: usize, first: impl Fn(char) -> bool)
 pub fn domain_needed(domain: &str, request: &QueryRequest) -> bool {
     let filters = &request.filters;
     match domain {
-        "ir" | "effects" => true,
+        "ir" => true,
+        // The effects domain is the declared+detected effect evidence:
+        // it is needed exactly when the request asks effect questions
+        // (reads/writes selectors). An ordinary id/kind/module query
+        // never depends on effect coverage, so its `unknown` state
+        // stays quiet and cannot degrade an otherwise complete answer.
+        "effects" => !filters.reads.is_empty() || !filters.writes.is_empty(),
         "trace" => {
             !filters.requirements.is_empty()
                 || !filters.requirement_sources.is_empty()
@@ -1020,18 +1026,20 @@ fn admits(index: &SearchIndex, card: &Card, filters: &FilterSet) -> bool {
     }
     if !any_of(&filters.requirements, |requirement| {
         (card.kind == CardKind::Requirement && card.id.as_deref() == Some(requirement))
-            || card.requirements.iter().any(|reference| {
-                reference == requirement || reference.ends_with(&format!(":{requirement}"))
-            })
+            || card
+                .requirements
+                .iter()
+                .any(|reference| reference_match(reference, requirement, filters.include_stale))
     }) {
         return false;
     }
     if !any_of(&filters.requirement_sources, |source| {
-        (card.kind == CardKind::Requirement && card.key.starts_with(&format!("req:{source}:")))
+        let prefix = format!("req:{source}:");
+        (card.kind == CardKind::Requirement && card.key.starts_with(&prefix))
             || card
                 .requirements
                 .iter()
-                .any(|reference| reference.starts_with(&format!("req:{source}:")))
+                .any(|reference| reference_source_match(reference, &prefix, filters.include_stale))
     }) {
         return false;
     }
@@ -1097,9 +1105,9 @@ fn admits(index: &SearchIndex, card: &Card, filters: &FilterSet) -> bool {
     if !filters.relations.is_empty() && !filters.related_to.is_empty() {
         let matched = filters.relations.iter().any(|relation| {
             filters.related_to.iter().any(|related| {
-                card.relations
-                    .iter()
-                    .any(|witness| witness_matches_relation(witness, relation, related))
+                card.relations.iter().any(|witness| {
+                    witness_matches_relation(witness, relation, related, filters.include_stale)
+                })
             })
         });
         if !matched {
@@ -1154,6 +1162,30 @@ fn admits(index: &SearchIndex, card: &Card, filters: &FilterSet) -> bool {
     // the index records their provenance and the filter stage here.
     let _ = index;
     true
+}
+
+/// Whether one joined requirement ref matches the selector. A ref the
+/// trace materializer marked `stale:` (its relationship chain ran only
+/// through stale relations) matches ONLY under the explicit
+/// `--include-stale` path — relationship staleness is never laundered
+/// into a current join by silence (issue #93 r5).
+fn reference_match(reference: &str, requirement: &str, include_stale: bool) -> bool {
+    match reference.strip_prefix("stale:") {
+        Some(_) if !include_stale => false,
+        Some(rest) => rest == requirement || rest.ends_with(&format!(":{requirement}")),
+        None => reference == requirement || reference.ends_with(&format!(":{requirement}")),
+    }
+}
+
+/// Whether one joined requirement ref carries the provider-namespace
+/// qualifier the `--requirement-source` selector names (stale-marked
+/// refs honor `--include-stale` exactly like `reference_match`).
+fn reference_source_match(reference: &str, prefix: &str, include_stale: bool) -> bool {
+    match reference.strip_prefix("stale:") {
+        Some(_) if !include_stale => false,
+        Some(rest) => rest.starts_with(prefix),
+        None => reference.starts_with(prefix),
+    }
 }
 
 /// Whether one effect witness matches a `resource` / `resource.field`
@@ -1212,8 +1244,18 @@ fn witness_matches(
     })
 }
 
-/// Whether one direct incident relation witness matches.
-fn witness_matches_relation(witness: &RelationWitness, relation: &str, related: &str) -> bool {
+/// Whether one direct incident relation witness matches. Stale-trust
+/// witnesses (a trace relation recorded `stale`) match only under the
+/// explicit include-stale path, exactly like stale effect witnesses.
+fn witness_matches_relation(
+    witness: &RelationWitness,
+    relation: &str,
+    related: &str,
+    include_stale: bool,
+) -> bool {
+    if witness.trust == crate::search::projection::Trust::Stale && !include_stale {
+        return false;
+    }
     let wanted = if related.starts_with("def:")
         || related.starts_with("req:")
         || related.starts_with("target:")

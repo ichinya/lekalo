@@ -15,6 +15,7 @@
 //! IDs, installation paths, and cache-hit telemetry.
 
 use std::collections::BTreeMap;
+use std::io::Read as _;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -256,10 +257,25 @@ impl SearchStore {
         self.root.join(digest)
     }
 
-    /// Read the published current generation digest, if any.
+    /// Read the published current generation digest, if any. The
+    /// pointer is a tiny fixed-shape JSON document: the read is bounded
+    /// BEFORE allocation (a planted oversize pointer never loads),
+    /// unlike a whole-file read that pays for the bytes it refuses.
     pub fn current(&self) -> Result<Option<String>, StoreError> {
-        let bytes = match std::fs::read(self.current_path()) {
-            Ok(bytes) => bytes,
+        /// The pointer is `{"digest":"<64 hex>"}` — 82 bytes; anything
+        /// past a small fixed bound is corrupt, never allocated.
+        const MAX_POINTER_BYTES: u64 = 256;
+        let bytes = match std::fs::File::open(self.current_path()) {
+            Ok(file) => {
+                let mut bytes = Vec::new();
+                file.take(MAX_POINTER_BYTES + 1)
+                    .read_to_end(&mut bytes)
+                    .map_err(|_| StoreError::Io)?;
+                if bytes.len() > MAX_POINTER_BYTES as usize {
+                    return Err(StoreError::Corrupt);
+                }
+                bytes
+            }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(_) => return Err(StoreError::Io),
         };
@@ -300,8 +316,24 @@ impl SearchStore {
         {
             return Err(StoreError::Corrupt);
         }
-        let bytes = match std::fs::read(self.generation_path(digest)) {
-            Ok(bytes) => bytes,
+        let path = self.generation_path(digest);
+        // Bound BEFORE allocation: the on-disk length is checked before
+        // any byte is read into memory, exactly like the producer-side
+        // `read_confined`/`take` helpers (the eventual verdict is the
+        // same `Corrupt`; the allocation is not unbounded).
+        if let Ok(metadata) = std::fs::metadata(&path) {
+            if metadata.len() > MAX_INDEX_BYTES as u64 {
+                return Err(StoreError::Corrupt);
+            }
+        }
+        let bytes = match std::fs::File::open(&path) {
+            Ok(file) => {
+                let mut bytes = Vec::new();
+                file.take(MAX_INDEX_BYTES as u64 + 1)
+                    .read_to_end(&mut bytes)
+                    .map_err(|_| StoreError::Io)?;
+                bytes
+            }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(_) => return Err(StoreError::Io),
         };
@@ -361,6 +393,13 @@ impl SearchStore {
         }
         let digest = sha256_digest(canonical.as_bytes());
         record.digest = format!("sha256:{digest}");
+        // A published generation is self-validating: the complete
+        // document must satisfy the same closed structural invariants
+        // its own loader enforces before any byte is written, so a
+        // structural violation is a typed publication refusal, never a
+        // durable generation the store's own `load` refuses to serve
+        // (issue #93 r5: publish-side validation).
+        validate_document(&record).map_err(|_| StoreError::Corrupt)?;
         let payload = canonical_json(&serde_json::to_value(&record).map_err(|_| StoreError::Io)?);
         let final_path = self.generation_path(&digest);
         let existing_ok = self.load(&digest).is_ok_and(|loaded| loaded.is_some());
@@ -556,6 +595,7 @@ pub fn sha256_of(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::search::projection::{CardKind, Completeness, Confidence, Freshness};
 
     #[test]
     fn status_reports_a_missing_store_without_creating_it() {
@@ -563,5 +603,109 @@ mod tests {
         let store = SearchStore::resolve(temp.path()).expect("resolves");
         assert_eq!(store.status().state, "missing");
         assert!(!temp.path().join(".lekalo/cache/search").exists());
+    }
+
+    /// The empty bones of a schema-valid document (empty digest field;
+    /// publish computes it) for store-level probes.
+    fn skeleton_document() -> IndexDocument {
+        IndexDocument {
+            schema_version: INDEX_SCHEMA_VERSION.to_owned(),
+            identity: INDEX_IDENTITY.to_owned(),
+            recipe: RECIPE.to_owned(),
+            project_id: Some("planner".to_owned()),
+            digest: String::new(),
+            inputs: Vec::new(),
+            policy_digest:
+                "sha256:0000000000000000000000000000000000000000000000000000000000000000".to_owned(),
+            model_digest: None,
+            admission: None,
+            coverage: Vec::new(),
+            cards: Vec::new(),
+            postings: BTreeMap::new(),
+            qualified_ids: BTreeMap::new(),
+        }
+    }
+
+    #[test]
+    fn publish_refuses_a_generation_its_own_loader_rejects() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let store = SearchStore::resolve(temp.path()).expect("resolves");
+        let mut document = skeleton_document();
+        // A qualified identity dangling off a card that does not exist:
+        // exactly the violation `load` brands corrupt (issue #93 r5 —
+        // publish-side validation).
+        document.qualified_ids.insert(
+            "def:planner.ghost".to_owned(),
+            vec!["planner.ghost".to_owned()],
+        );
+        assert_eq!(store.publish(&document), Err(StoreError::Corrupt));
+        // Nothing was published: the store stays missing.
+        assert_eq!(store.status().state, "missing");
+        // The same document without the dangling identity publishes and
+        // reloads clean (the guard is the violation, not the mechanism).
+        let mut valid = skeleton_document();
+        valid.cards.push(Card {
+            key: "def:planner.ghost".to_owned(),
+            kind: CardKind::Command,
+            subkind: None,
+            module: None,
+            id: Some("planner.ghost".to_owned()),
+            name: None,
+            description: None,
+            signatures: Vec::new(),
+            relations: Vec::new(),
+            effects: Vec::new(),
+            bindings: Vec::new(),
+            locations: Vec::new(),
+            requirements: Vec::new(),
+            scenarios: Vec::new(),
+            gates: Vec::new(),
+            portability: None,
+            visibility: None,
+            ownership: None,
+            confidence: Confidence::Extracted,
+            freshness: Freshness::Current,
+            completeness: Completeness::Complete,
+            omitted: 0,
+            provenance: "ir".to_owned(),
+        });
+        valid.qualified_ids.insert(
+            "def:planner.ghost".to_owned(),
+            vec!["planner.ghost".to_owned()],
+        );
+        assert_eq!(store.publish(&valid), Ok(()));
+        assert_eq!(store.status().state, "ready");
+        let current = store.current().expect("valid pointer");
+        assert_eq!(store.publish(&document), Err(StoreError::Corrupt));
+        assert_eq!(store.current().expect("preserved pointer"), current);
+    }
+
+    #[test]
+    fn oversize_generation_and_pointer_bytes_are_refused_corrupt() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let store = SearchStore::resolve(temp.path()).expect("resolves");
+        std::fs::create_dir_all(temp.path().join(".lekalo/cache/search")).expect("store home");
+        // A planted oversize generation: the on-disk length is checked
+        // BEFORE any byte is read into memory (issue #93 r5 — bounded
+        // reads), and the verdict is the same Corrupt as before.
+        let hex = "a".repeat(64);
+        let oversize = temp.path().join(".lekalo/cache/search").join(&hex);
+        std::fs::write(&oversize, vec![b'x'; MAX_INDEX_BYTES + 4096]).expect("oversize");
+        assert_eq!(store.load(&hex), Err(StoreError::Corrupt));
+        // An oversize current pointer is corrupt without a full read.
+        std::fs::write(
+            temp.path().join(".lekalo/cache/search/current.json"),
+            format!("{{\"digest\":\"{}\"}}", "b".repeat(4096)),
+        )
+        .expect("oversize pointer");
+        assert_eq!(store.current(), Err(StoreError::Corrupt));
+        // A valid prefix plus excessive whitespace must not be accepted
+        // just because the bounded read happened to truncate the tail.
+        std::fs::write(
+            temp.path().join(".lekalo/cache/search/current.json"),
+            format!("{{\"digest\":\"{hex}\"}}{}", " ".repeat(4096)),
+        )
+        .expect("pointer with oversize tail");
+        assert_eq!(store.current(), Err(StoreError::Corrupt));
     }
 }

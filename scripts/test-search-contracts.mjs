@@ -197,6 +197,44 @@ for (const [name, validator, base, path, value] of [
   if (validator(hostile)) fail(`producer-parity-${name}`, { path, value });
 }
 
+// 3c. Schema/runtime bound parity at the maximum: every published
+//     array/count bound is exercised at exactly max (valid) and max+1
+//     (invalid) — the runtime decoders enforce the same bounds, so a
+//     document is admitted if and only if it validates (issue #93 r5).
+const boundedRows = (template, count) =>
+  Array.from({ length: count }, (_unused, index) => ({
+    ...template,
+    id: `bound-${String(index).padStart(4, "0")}`,
+  }));
+const diagnosticsMax = clone(diagnosticsFixture);
+diagnosticsMax.findings = boundedRows(diagnosticsFixture.findings[0], 4096);
+diagnosticsMax.metadata.findingCount = 4096;
+if (!validateDiagnostics(diagnosticsMax)) {
+  fail("producer-parity-diagnostics-findings-max", validateDiagnostics.errors);
+}
+const diagnosticsOver = clone(diagnosticsFixture);
+diagnosticsOver.findings = boundedRows(diagnosticsFixture.findings[0], 4097);
+diagnosticsOver.metadata.findingCount = 4097;
+if (validateDiagnostics(diagnosticsOver)) {
+  fail("producer-parity-diagnostics-findings-over", { findings: 4097 });
+}
+const ownershipMax = clone(ownershipFixture);
+ownershipMax.profiles[0].members = Array.from(
+  { length: 4096 },
+  (_unused, _index) => ownershipFixture.profiles[0].members[0],
+);
+if (!validateOwnership(ownershipMax)) {
+  fail("producer-parity-ownership-members-max", validateOwnership.errors);
+}
+const ownershipOver = clone(ownershipFixture);
+ownershipOver.profiles[0].members = Array.from(
+  { length: 4097 },
+  (_unused, _index) => ownershipFixture.profiles[0].members[0],
+);
+if (validateOwnership(ownershipOver)) {
+  fail("producer-parity-ownership-members-over", { members: 4097 });
+}
+
 // 4. The recorded query/result/index request shapes: golden request
 //    documents (closed grammar) and negative vectors (refused shapes).
 const goldenDir = "tests/fixtures/search/golden";
@@ -254,7 +292,7 @@ process.stdout.write(
       searchRules: searchCodes.size,
       goldenRequests: goldens,
       detectedEffects: detected.length,
-      producerParityVectors: 11,
+      producerParityVectors: 15,
     },
     null,
     2,

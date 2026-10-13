@@ -81,6 +81,7 @@
         "--requirement PLANNER-REQ-001"
       ],
       "relevant": [
+        "bind:planner.focus_task",
         "def:planner.focus_flow",
         "def:planner.focus_task",
         "def:planner.refocus_task",
@@ -88,9 +89,9 @@
         "req:openspec:PLANNER-REQ-001"
       ],
       "expectedSelection": "ambiguous",
-      "expectedTop": "def:planner.focus_flow",
-      "expectedPrecision": 0.8,
-      "toleratedIrrelevant": "the gate card that covers the same requirement chain is a tolerated sixth row, not a false answer",
+      "expectedTop": "bind:planner.focus_task",
+      "expectedPrecision": 0.85,
+      "toleratedIrrelevant": "the gate card that covers the same requirement chain is a tolerated seventh row, not a false answer",
       "rgPattern": "PLANNER-REQ-001",
       "rgRelevantFiles": [
         "evidence/trace.openspec.json",
@@ -123,7 +124,7 @@
     },
     {
       "id": "binding-prefix",
-      "family": "taskhub-observed-binding",
+      "family": "observed-binding",
       "question": "What native bindings live under apps/api/src/planner?",
       "command": "find",
       "flags": [
@@ -151,7 +152,7 @@
     },
     {
       "id": "native-symbol",
-      "family": "taskhub-observed-binding",
+      "family": "observed-binding",
       "question": "Which semantic operation does the focusTask native symbol bind to?",
       "command": "find",
       "flags": [
@@ -405,6 +406,40 @@
       "rgNoHitNegative": true,
       "rgRelevantFiles": [],
       "rgExpectedFilePrecision": 1
+    },
+    {
+      "id": "taskhub-create-task-binding",
+      "family": "taskhub-observed-consumer",
+      "fixture": "taskhub",
+      "question": "Which native binding implements the Taskhub create_task command?",
+      "command": "find",
+      "flags": ["--kind binding", "--id taskhub_tasks.create_task"],
+      "relevant": ["bind:taskhub_tasks.create_task"],
+      "expectedSelection": "ambiguous",
+      "expectedTop": "bind:taskhub_tasks.create_task",
+      "expectedPrecision": 1,
+      "toleratedIrrelevant": "none: exact observed binding",
+      "rgPattern": "createTask",
+      "rgRelevantFiles": ["packages/tasks/src/index.ts"],
+      "rgToleratedIrrelevant": "four caller/re-export files mention createTask but do not define the binding",
+      "rgExpectedFilePrecision": 0.2
+    },
+    {
+      "id": "taskhub-task-type-binding",
+      "family": "taskhub-observed-consumer",
+      "fixture": "taskhub",
+      "question": "Where is the Taskhub Task type bound in native source?",
+      "command": "find",
+      "flags": ["--kind binding", "--id taskhub_tasks.task"],
+      "relevant": ["bind:taskhub_tasks.task"],
+      "expectedSelection": "ambiguous",
+      "expectedTop": "bind:taskhub_tasks.task",
+      "expectedPrecision": 1,
+      "toleratedIrrelevant": "none: exact observed binding",
+      "rgPattern": "interface Task",
+      "rgRelevantFiles": ["packages/tasks/src/index.ts"],
+      "rgToleratedIrrelevant": "the events contract also declares a Task-prefixed interface",
+      "rgExpectedFilePrecision": 0.5
     }
   ]
 }
