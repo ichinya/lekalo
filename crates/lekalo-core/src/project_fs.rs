@@ -109,6 +109,50 @@ fn metadata_is_link(metadata: &std::fs::Metadata) -> bool {
     }
 }
 
+/// Whether one path's raw metadata identifies a link (symlink or
+/// Windows reparse point): the shared physical-custody predicate for
+/// shells that read governed trees outside the loader itself.
+pub fn metadata_is_physical_link(metadata: &std::fs::Metadata) -> bool {
+    metadata.file_type().is_symlink() || metadata_is_link(metadata)
+}
+
+/// The hard-link count of one file, for physical-custody checks: a
+/// second link means the bytes live outside the governed tree as
+/// well. Windows has no stable link count in std, so the file is
+/// opened and `nNumberOfLinks` is read through
+/// `GetFileInformationByHandle` (the accepted run-history pattern):
+/// a count that cannot be read is `None` — the check is verifiable
+/// or the caller refuses, never assumes. Unix reads `nlink`.
+pub fn windows_link_count(path: &std::path::Path) -> Option<u32> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::Storage::FileSystem::{
+            GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
+        };
+        let file = std::fs::File::open(path).ok()?;
+        let mut info: BY_HANDLE_FILE_INFORMATION = unsafe { std::mem::zeroed() };
+        let ok = unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut info) };
+        if ok == 0 {
+            return None;
+        }
+        Some(info.nNumberOfLinks)
+    }
+    #[cfg(unix)]
+    {
+        let _ = path;
+        None
+    }
+}
+
+/// The Unix hard-link count of one file (`nlink`), the physical-custody
+/// counterpart of [`windows_link_count`].
+#[cfg(unix)]
+pub fn unix_link_count(metadata: &std::fs::Metadata) -> Option<u32> {
+    use std::os::unix::fs::MetadataExt;
+    Some(metadata.nlink() as u32)
+}
+
 /// Ports `checkPathGrammar`: the closed project-relative path grammar.
 ///
 /// Returns the first stable `structure.*` violation code, or `None` when the

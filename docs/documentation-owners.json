@@ -4,6 +4,7 @@
   "cliSourceDigest": "sha256:35edb040ef4b64853a2ecd923eaa06c843118eeda09c86a89b7fc3b76b689d03",
   "cliSourceDigest": "sha256:0b43d52f1bd5df151289dee7346b23f0cb36d01a91ff5dc1b53ea1984287ace2",
   "cliSourceDigest": "sha256:db26f4d612fe35091cd147a57ef8135d94df8185b9e828fa2989e2317a26ed91",
+  "cliSourceDigest": "sha256:efefc07137d0da4c44e0135fa124408ea7080c8057e73c90db2e78298feb21d0",
   "p0Pages": [
     {
       "page": "README.md",
@@ -1446,6 +1447,39 @@
       "status": "implemented"
     },
     {
+      "id": "cli:pilot",
+      "kind": "command",
+      "command": "pilot",
+      "usage": "lekalo pilot [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:1a939abde287339d8416986c6abd5830b90e2bf6c232d713a44d1cf611661fbb",
+      "summary": "Validate the issue #51 worklog-changelog pilot composition against its pinned project: the pure composition contract",
+      "leaf": false,
+      "owner": "docs/m8/issue-51-implementation.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:pilot admit",
+      "kind": "command",
+      "command": "pilot admit",
+      "usage": "lekalo pilot admit [OPTIONS] <PATH> <COMPOSITION>",
+      "helpDigest": "sha256:f00860fd1c7f30ba688fdcc1b9cc5a08fabaecc74dab194032e1ef946b1baa2f",
+      "summary": "Admit one evidence report under the selected profile, bound to the exact composition document it pins: strict refuses any required unsupported or unknown row (exit 4) while keeping the report; permissive emits the degraded verdict",
+      "leaf": true,
+      "owner": "docs/m8/issue-51-implementation.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:pilot validate",
+      "kind": "command",
+      "command": "pilot validate",
+      "usage": "lekalo pilot validate [OPTIONS] <PATH>",
+      "helpDigest": "sha256:f37a3ba0bba675ff5ce097b9f732afadc3a7c7acc1a1bdf7e012d5190ff0119e",
+      "summary": "Validate one composition document against its pinned project: custody, role resolution, effect separation, approval binding, snapshot immutability, public allowlist, replay scopes, and capability coverage",
+      "leaf": true,
+      "owner": "docs/m8/issue-51-implementation.md",
+      "status": "implemented"
+    },
+    {
       "id": "cli:portability",
       "kind": "command",
       "command": "portability",
@@ -2616,6 +2650,7 @@
       "sourceDigest": "sha256:825ad37b829f38264e265e551e706609a9598dbe41a295ebe6071b4446b07979",
       "sourceDigest": "sha256:6b6b7b7f6f6fea0efceb5de717be66b3d5ec1a96d0280b187e2ed8c45b29d811",
       "sourceDigest": "sha256:56e70ef5a44ff460d42ed3d8b66dc0c4b59771316acaeb0e2536b383c4ffed4d",
+      "sourceDigest": "sha256:2c6d5d805a7e338fc85edd94bac2ac7d4a8e61e9b26322c4de7eb0c146aaa300",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2663,6 +2698,7 @@
       "sourceDigest": "sha256:01337ff7b3156edc81c8d50cee3233ef655c06b7639371ab93c9a7ca9214f0cd",
       "sourceDigest": "sha256:0c300ecb05e59b6b0db2f261967b9542121a5216b3513bea16e7b9a4f22687c3",
       "sourceDigest": "sha256:9d5e26f716d1575291c9be73eeaef8dc293d5e36c91bbdc8306d129253d8d065",
+      "sourceDigest": "sha256:d4277c3e296c4c9b382f8ad6ae809eda4e47c1dfda4596343c310c0f6b5c1fcb",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3645,6 +3681,24 @@
       "source": "contracts/waiver-input.schema.v0.6.5.json",
       "sourceDigest": "sha256:061d6713a74da631ac2c812efb23c19e30acb6c7a064fb1a4fd011bfce3ae176",
       "owner": "docs/waivers.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/worklog-changelog-evidence.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/worklog-changelog-evidence.schema.v0.8.0.json",
+      "sourceDigest": "sha256:39f5a82fafc6e94b4b968e46badd579521d434b92058fdb2bc3c357b0c8392e6",
+      "owner": "docs/m8/issue-51-implementation.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/worklog-changelog-pilot.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/worklog-changelog-pilot.schema.v0.8.0.json",
+      "sourceDigest": "sha256:fcf2ba0b7bf8f6210a75f9821af993a88d4086933d0b5a5bb2c1858cd1333ae0",
+      "owner": "docs/m8/issue-51-implementation.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },

@@ -142,6 +142,12 @@ impl Diagnostic {
         &self.message
     }
 
+    /// The exact registry generation this diagnostic was admitted
+    /// from (a predecessor producer keeps its own pin).
+    pub fn registry_version(&self) -> &str {
+        &self.registry_version
+    }
+
     /// The bounded structured data of this diagnostic.
     pub fn data(&self) -> &DataObject {
         &self.data

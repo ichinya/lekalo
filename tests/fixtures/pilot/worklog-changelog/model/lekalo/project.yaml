@@ -1,0 +1,1 @@
+{"schema_version":"0.2.16","definitions":[{"id":"taskhub","kind":"project","version":1,"description":"Synthetic target-neutral pilot project for independent worklog and opt-in changelog effects","derived_from":["TASKHUB-REQ-001","TASKHUB-REQ-002"]}]}

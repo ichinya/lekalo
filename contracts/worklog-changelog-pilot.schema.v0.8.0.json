@@ -1,0 +1,600 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.worklog-changelog-pilot.schema@0.8.0",
+  "title": "Lekalo worklog-changelog pilot composition",
+  "description": "Issue #51 closed composition contract: the neutral pilot Model pins, the selected operation roles with their declared effect boundaries, replay scopes, approval and snapshot field references, the public field allowlist, and required capabilities. No runtime values, secrets, or physical paths.",
+  "type": "object",
+  "additionalProperties": false,
+  "unevaluatedProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "projectId",
+    "closed",
+    "modelRef",
+    "irRef",
+    "consumed",
+    "operations",
+    "independentEffects",
+    "correlations",
+    "approvals",
+    "snapshots",
+    "publicAllowlist",
+    "replayScopes",
+    "capabilityRequirements"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/worklog-changelog-pilot/v0.8.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.worklog-changelog-pilot@0.8.0"
+    },
+    "projectId": {
+      "$ref": "#/$defs/semanticId"
+    },
+    "closed": {
+      "const": true
+    },
+    "modelRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "modelVersion",
+        "digest"
+      ],
+      "properties": {
+        "modelVersion": {
+          "const": "0.2.16"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      }
+    },
+    "irRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity",
+        "digest"
+      ],
+      "properties": {
+        "identity": {
+          "const": "dev.lekalo.ir@0.2.16"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      }
+    },
+    "consumed": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "family",
+          "ref"
+        ],
+        "properties": {
+          "family": {
+            "enum": [
+              "authorization",
+              "transaction-concurrency",
+              "extended-effects",
+              "error-contract",
+              "invariant-transition",
+              "requirements"
+            ]
+          },
+          "ref": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "identity",
+              "version",
+              "digest"
+            ],
+            "properties": {
+              "identity": {
+                "type": "string",
+                "pattern": "^dev\\.lekalo\\.[a-z0-9-]+@0\\.2\\.16$",
+                "maxLength": 128
+              },
+              "version": {
+                "const": "0.2.16"
+              },
+              "digest": {
+                "type": "string",
+                "pattern": "^sha256:[a-f0-9]{64}$"
+              }
+            }
+          }
+        }
+      }
+    },
+    "operations": {
+      "type": "array",
+      "minItems": 12,
+      "maxItems": 128,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/operationRole"
+      }
+    },
+    "independentEffects": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 128,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/independenceRule"
+      }
+    },
+    "correlations": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "correlationId",
+          "keyRef",
+          "memberOperations"
+        ],
+        "properties": {
+          "correlationId": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]*$|^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+(/[a-z][a-z0-9_-]+)*$",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "keyRef": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          },
+          "memberOperations": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/roleName"
+            }
+          }
+        }
+      }
+    },
+    "approvals": {
+      "type": "array",
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "approvalId",
+          "operation",
+          "previewRevisionField",
+          "previewDigestField",
+          "tenantField",
+          "destinationField",
+          "authorityField",
+          "policyRevisionField"
+        ],
+        "properties": {
+          "approvalId": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]*$|^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+(/[a-z][a-z0-9_-]+)*$",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "operation": {
+            "$ref": "#/$defs/roleName"
+          },
+          "previewRevisionField": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          },
+          "previewDigestField": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          },
+          "tenantField": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          },
+          "destinationField": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          },
+          "authorityField": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          },
+          "policyRevisionField": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          }
+        }
+      }
+    },
+    "snapshots": {
+      "type": "array",
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "snapshotId",
+          "entity",
+          "revisionField",
+          "digestField",
+          "schemaVersionField",
+          "immutability"
+        ],
+        "properties": {
+          "snapshotId": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]*$|^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+(/[a-z][a-z0-9_-]+)*$",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "entity": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]*$|^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+(/[a-z][a-z0-9_-]+)*$",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "revisionField": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          },
+          "digestField": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          },
+          "schemaVersionField": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          },
+          "immutability": {
+            "enum": [
+              "append_only"
+            ]
+          }
+        }
+      }
+    },
+    "publicAllowlist": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dto",
+        "fields",
+        "excluded",
+        "rendering"
+      ],
+      "properties": {
+        "dto": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]*$|^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+(/[a-z][a-z0-9_-]+)*$",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/publicField"
+          }
+        },
+        "excluded": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          }
+        },
+        "rendering": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "defaultMode",
+            "urlPolicy"
+          ],
+          "properties": {
+            "defaultMode": {
+              "enum": [
+                "plain_text"
+              ]
+            },
+            "urlPolicy": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "schemes",
+                "rejectEncoded",
+                "rejectControlChars"
+              ],
+              "properties": {
+                "schemes": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 8,
+                  "uniqueItems": true,
+                  "items": {
+                    "enum": [
+                      "https",
+                      "http"
+                    ]
+                  }
+                },
+                "rejectEncoded": {
+                  "const": true
+                },
+                "rejectControlChars": {
+                  "const": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "replayScopes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/replayScope"
+      }
+    },
+    "capabilityRequirements": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "requirementId",
+          "capability",
+          "minimum",
+          "reason",
+          "operationRefs"
+        ],
+        "properties": {
+          "requirementId": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]*$|^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+(/[a-z][a-z0-9_-]+)*$",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "capability": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.:/@-]+$",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "minimum": {
+            "enum": [
+              "full",
+              "partial"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "operationRefs": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/roleName"
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "semanticId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*$|^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+(/[a-z][a-z0-9_-]+)*$",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "roleName": {
+      "enum": [
+        "worklog.complete_task",
+        "worklog.write_worklog",
+        "worklog.edit_worklog",
+        "worklog.request_provider_comment",
+        "worklog.deliver_provider_comment",
+        "changelog.create_draft",
+        "changelog.edit_draft",
+        "changelog.preview_entry",
+        "changelog.approve_entry",
+        "changelog.publish_entry",
+        "changelog.withdraw_entry",
+        "changelog.public_entry"
+      ]
+    },
+    "publicField": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "type",
+        "source"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+        },
+        "type": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]+$",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "source": {
+          "enum": [
+            "snapshot",
+            "reviewed_projection"
+          ]
+        }
+      }
+    },
+    "operationRole": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation",
+        "effects",
+        "commitBoundary",
+        "defaultSelection"
+      ],
+      "properties": {
+        "operation": {
+          "$ref": "#/$defs/roleName"
+        },
+        "effects": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/effectDeclaration"
+          }
+        },
+        "commitBoundary": {
+          "enum": [
+            "local",
+            "local_then_external",
+            "read_only"
+          ]
+        },
+        "defaultSelection": {
+          "const": false
+        },
+        "replay": {
+          "$ref": "#/$defs/replayScope"
+        }
+      }
+    },
+    "effectDeclaration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "effectId"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "create",
+            "update",
+            "delete",
+            "emit-event",
+            "enqueue-job",
+            "external-call",
+            "publish-output",
+            "audit-log",
+            "read"
+          ]
+        },
+        "effectId": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]*$|^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+(/[a-z][a-z0-9_-]+)*$",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "independenceRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation",
+        "mustNotEnable"
+      ],
+      "properties": {
+        "operation": {
+          "$ref": "#/$defs/roleName"
+        },
+        "mustNotEnable": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/roleName"
+          }
+        }
+      }
+    },
+    "replayScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation",
+        "scope",
+        "keyRef",
+        "duplicate",
+        "sameKeyDifferentRequest",
+        "payloadBinding"
+      ],
+      "properties": {
+        "operation": {
+          "$ref": "#/$defs/roleName"
+        },
+        "scope": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]*$|^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+(/[a-z][a-z0-9_-]+)*$",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "keyRef": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+        },
+        "duplicate": {
+          "enum": [
+            "replay_result",
+            "conflict"
+          ]
+        },
+        "sameKeyDifferentRequest": {
+          "const": "conflict"
+        },
+        "payloadBinding": {
+          "enum": [
+            "canonical_digest",
+            "none"
+          ]
+        }
+      }
+    }
+  }
+}

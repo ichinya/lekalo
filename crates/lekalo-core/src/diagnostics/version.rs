@@ -77,6 +77,11 @@ pub const ADOPTION_REGISTRY_VERSION: &str = "0.8.0";
 /// their pinned registries.
 pub const M8_REGISTRY_VERSION: &str = "0.8.0";
 
+/// The issue #51 union successor: the pilot composition family
+/// (`worklog-changelog.*`, LEK-WC-001..007) on top of the merged union.
+/// Predecessor producers keep their exact pins.
+pub const PILOT_REGISTRY_VERSION: &str = "0.8.0";
+
 /// The closed diagnostic schema version.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DiagnosticSchemaVersion {
