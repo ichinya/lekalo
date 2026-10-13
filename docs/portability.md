@@ -200,7 +200,14 @@ truncated extraction, an empty assessment, an incomplete migration surface
 any blocking obligation. The verdict is computed from the typed members of
 the report — never from the bounded diagnostics presentation channel — so
 a schema-legal evidence manifest crowded with thousands of ordinary
-findings can never green a surface the report itself marks incomplete. A
+findings can never green a surface the report itself marks incomplete.
+The coverage-gap verdict is itself computed from the untruncated domain
+join of the scope, never from the emission-clipped affected lists: a
+legal model whose affected closure exceeds the published join bounds —
+an input the `maxSubjects` envelope admits — still has every affected
+scenario checked for gate coverage, so a gap beyond the emitted prefix
+carries its pinned indication and its collect-evidence planning row,
+marks the surface incomplete, and denies. A
 pass means the assessed scope has no known unresolved obligation — it is
 never a claim that two native implementations behave equivalently.
 
@@ -213,7 +220,11 @@ construction: `requirements`, `witnesses`, `evidenceRefs`, `prerequisites`,
 subjects and per-subject row lists, the diagnostics list, and the planning
 rows are each capped at their schema maxima with an explicit named
 diagnostic (`*-clipped`, `diagnostics-bound`) — never a silent truncation,
-never an overflow a conforming consumer must reject. The diagnostics list
+never an overflow a conforming consumer must reject. The affected-join
+clip caps presentation only: the migration surface's typed counts,
+coverage-gap verdict, and collect-evidence rows derive from the
+untruncated domain join, so the emitted prefix can never hide a gap from
+the strict gate. The diagnostics list
 reserves the tail of its published bound: ordinary findings stop eight
 slots before the maximum, verdict-bearing diagnostics (every
 truncation disclosure and each `gate-coverage-unknown` gap) land inside
